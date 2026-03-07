@@ -14,6 +14,7 @@ jobs:
           - { name: "core", path: "core", timeout: "30m" }
           - { name: "sphinx", path: "core/sphinx", timeout: "30m" }
           - { name: "server", path: "server", timeout: "30m" }
+          - { name: "pigeonhole", path: "pigeonhole", timeout: "30m" }
     runs-on: ${{ matrix.os }}
     name: test-${{ matrix.test-suite.name }}-${{ matrix.arch }}
     steps:

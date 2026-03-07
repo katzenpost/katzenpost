@@ -83,14 +83,6 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest
 	// not reached
 }
 
-func (c *incomingConn) countReplicas(doc *pki.Document) (int, error) {
-	replicaKeys, err := replicaCommon.GetReplicaKeys(doc)
-	if err != nil {
-		return 0, err
-	}
-	return len(replicaKeys), nil
-}
-
 // replicaMessage's are sent from the courier to the replica storage servers
 func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) *commands.ReplicaMessageReply {
 	c.log.Debug("REPLICA_HANDLER: Starting handleReplicaMessage processing")
@@ -114,25 +106,21 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	}
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
+	keypair, err := c.l.server.envelopeKeys.EnsureKey(replicaEpoch)
 	if err != nil {
-		c.log.Errorf("handleReplicaMessage envelopeKeys.GetKeypair failed: %s", err)
-		return nil
+		c.log.Errorf("handleReplicaMessage envelopeKeys.EnsureKey failed: %s", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
-	c.log.Debug("Attempting to decapsulate message")
 	requestRaw, err := scheme.Decapsulate(keypair.PrivateKey, ct)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
-
-	c.log.Debug("Successfully decapsulated message, parsing command")
 	msg, err := pigeonhole.ParseReplicaInnerMessage(requestRaw)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to parse inner message: %s", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidPayload, envelopeHash, []byte{}, 0, false)
 	}
-	c.log.Debug("Successfully parsed command")
 
 	// Use the ephemeralPublicKey we already unmarshaled earlier
 	senderpubkey := ephemeralPublicKey
@@ -141,11 +129,6 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	if doc == nil {
 		c.log.Error("handleReplicaMessage failed: no PKI document available")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0, false)
-	}
-	numReplicas, err := c.countReplicas(doc)
-	if err != nil {
-		c.log.Errorf("handleReplicaMessage failed to count replicas: %s", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
 	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
 	if err != nil {
@@ -158,17 +141,22 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		myCmd := msg.ReadMsg
 		c.log.Debugf("REPLICA_HANDLER: Processing decrypted ReplicaRead command for BoxID: %x", myCmd.BoxID)
 
-		// Check if this replica is responsible for the BoxID using sharding
+		// Check if this replica is in the shard for this BoxID
+		// Only shard members should read locally - intermediate replicas must proxy
 		shards, err := replicaCommon.GetShards(&myCmd.BoxID, doc)
 		if err != nil {
-			c.log.Errorf("handleReplicaMessage failed to get shards: %s", err)
+			c.log.Errorf("handleReplicaMessage read failed to get shards: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 		}
 
-		// Check if this replica is one of the shards for this BoxID
+		if len(shards) == 0 {
+			c.log.Errorf("handleReplicaMessage read failed, zero shards available for BoxID: %x", myCmd.BoxID)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
+		}
+
 		myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
 		if err != nil {
-			c.log.Errorf("handleReplicaMessage failed to marshal identity key: %s", err)
+			c.log.Errorf("handleReplicaMessage read failed to marshal identity key: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 		}
 
@@ -180,40 +168,82 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			}
 		}
 
-		if !isShard {
-			if numReplicas >= 3 {
-				// This replica is NOT responsible for the BoxID - proxy to the correct replica
-				c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
-				reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
-				c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
-				return reply
+		if isShard {
+			// This replica is in the shard - read locally
+			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x - reading locally", myCmd.BoxID)
+			readReply := c.handleReplicaRead(myCmd)
+			// Always encrypt the reply (success or error) so the client can decrypt and see the error code
+			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+				ReadReply: readReply,
 			}
+			replyInnerMessageBlob := replyInnerMessage.Bytes()
+			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+			if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
+				c.log.Debugf("REPLICA_HANDLER: Found data locally for BoxID %x", myCmd.BoxID)
+			} else {
+				c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x but data not found locally (error code: %d)", myCmd.BoxID, readReply.ErrorCode)
+			}
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
 		}
 
-		readReply := c.handleReplicaRead(myCmd)
-		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-			ReadReply: readReply,
-		}
-		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
+		// This replica is NOT in the shard - proxy to the correct replica
+		c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
+		reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
+		c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
+		return reply
 	case msg.WriteMsg != nil:
 		myCmd := msg.WriteMsg
 		c.log.Debugf("Processing decrypted ReplicaWrite command for BoxID: %x", myCmd.BoxID)
-		writeReply := c.handleReplicaWrite(myCmd)
 
-		if numReplicas >= 3 {
-			cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
-			wireCmd := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, cmds)
-			c.l.server.connector.DispatchReplication(wireCmd)
+		// Check if this replica is in the shard for this BoxID
+		// Intermediate replicas must NOT write locally - only shard members store data
+		shards, err := replicaCommon.GetShards(&myCmd.BoxID, doc)
+		if err != nil {
+			c.log.Errorf("handleReplicaMessage write failed to get shards: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 		}
 
-		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-			WriteReply: writeReply,
+		myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
+		if err != nil {
+			c.log.Errorf("handleReplicaMessage write failed to marshal identity key: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 		}
-		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, writeReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, false)
+
+		isShard := false
+		for _, shard := range shards {
+			if hmac.Equal(shard.IdentityKey, myIdentityKey) {
+				isShard = true
+				break
+			}
+		}
+
+		if isShard {
+			// This replica is in the shard - write locally
+			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x - writing locally", myCmd.BoxID)
+			writeReply := c.handleReplicaWrite(myCmd)
+
+			// If write succeeded, trigger replication to other K-1 shard replicas
+			// This is the only place replication is triggered (from intermediary level)
+			// to avoid infinite loops between shard replicas
+			if writeReply.ErrorCode == pigeonhole.ReplicaSuccess {
+				wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, nil)
+				c.log.Debugf("REPLICA_HANDLER: Dispatching replication for BoxID %x to other shards", myCmd.BoxID)
+				c.l.server.connector.DispatchReplication(wireWrite)
+			}
+
+			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+				MessageType: 1,
+				WriteReply:  writeReply,
+			}
+			replyInnerMessageBlob := replyInnerMessage.Bytes()
+			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, writeReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, false)
+		}
+
+		// This replica is NOT in the shard - proxy the write to a shard replica
+		// The receiving shard will handle replication to other K-1 shards
+		c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - proxying write to shard", myCmd.BoxID)
+		return c.proxyWriteRequest(myCmd, senderpubkey, envelopeHash)
 	default:
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
@@ -279,30 +309,121 @@ func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *p
 
 func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
 	c.log.Debugf("Handling replica write request for BoxID: %x", replicaWrite.BoxID)
+
+	// Check if this is a tombstone (empty payload)
+	isTombstone := replicaWrite.PayloadLen == 0 || len(replicaWrite.Payload) == 0
+
+	var reply *pigeonhole.ReplicaWriteReply
+	if isTombstone {
+		reply = c.handleTombstone(replicaWrite)
+	} else {
+		// Validate payload size against geometry limits
+		nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+		pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+		if err != nil {
+			c.log.Errorf("handleReplicaWrite failed to derive pigeonhole geometry: %v", err)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorInternalError,
+			}
+		}
+
+		// The payload is BACAP ciphertext, which must be exactly the expected size
+		expectedCiphertextSize := pigeonholeGeo.CalculateBoxCiphertextLength()
+		if len(replicaWrite.Payload) != expectedCiphertextSize {
+			c.log.Errorf("handleReplicaWrite invalid payload size: got %d bytes, expected exactly %d bytes",
+				len(replicaWrite.Payload), expectedCiphertextSize)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorInvalidPayload,
+			}
+		}
+
+		// Normal write path
+		s := ed25519.Scheme()
+		verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
+		if err != nil {
+			c.log.Errorf("handleReplicaWrite failed to unmarshal BoxID as public key: %v", err)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorInvalidBoxID,
+			}
+		}
+		if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
+			c.log.Error("handleReplicaWrite signature verification failed")
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
+			}
+		}
+		// Convert trunnel type to wire command for state handling
+		wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, nil)
+		// Check if box already exists before attempting write
+		exists, err := c.l.server.state.boxExists(&replicaWrite.BoxID)
+		if err != nil {
+			c.log.Errorf("handleReplicaWrite: failed to check box existence: %v", err)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,
+			}
+		}
+		if exists {
+			c.log.Debugf("handleReplicaWrite: BoxID %x already exists, rejecting write", replicaWrite.BoxID)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorBoxAlreadyExists,
+			}
+		}
+
+		err = c.l.server.state.handleReplicaWrite(wireWrite)
+		if err != nil {
+			// Check if this is the "already exists" case - this is expected during replication
+			if errors.Is(err, ErrBoxAlreadyExists) {
+				c.log.Debugf("handleReplicaWrite: BoxID already exists (idempotent write)")
+				return &pigeonhole.ReplicaWriteReply{
+					ErrorCode: pigeonhole.ReplicaErrorBoxAlreadyExists,
+				}
+			}
+			c.log.Errorf("handleReplicaWrite state update failed: %v", err)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,
+			}
+		}
+		c.log.Debug("Replica write successful")
+		reply = &pigeonhole.ReplicaWriteReply{
+			ErrorCode: pigeonhole.ReplicaSuccess,
+		}
+	}
+	return reply
+}
+
+// handleTombstone processes a tombstone message, which is a BACAP message with
+// an empty payload used to delete previously stored messages. This selectively
+// breaks unlinkability guarantees to allow users to delete messages after sending them.
+func (c *incomingConn) handleTombstone(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
+	c.log.Debugf("Processing tombstone for BoxID: %x", replicaWrite.BoxID)
+
+	// Verify the signature against an empty payload
 	s := ed25519.Scheme()
 	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
 	if err != nil {
-		c.log.Errorf("handleReplicaWrite failed to unmarshal BoxID as public key: %v", err)
+		c.log.Errorf("handleTombstone failed to unmarshal BoxID as public key: %v", err)
 		return &pigeonhole.ReplicaWriteReply{
 			ErrorCode: pigeonhole.ReplicaErrorInvalidBoxID,
 		}
 	}
-	if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
-		c.log.Error("handleReplicaWrite signature verification failed")
+
+	if !s.Verify(verifyKey, []byte{}, replicaWrite.Signature[:], nil) {
+		c.log.Error("handleTombstone signature verification failed")
 		return &pigeonhole.ReplicaWriteReply{
 			ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
 		}
 	}
-	// Convert trunnel type to wire command for state handling
-	wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, nil)
-	err = c.l.server.state.handleReplicaWrite(wireWrite)
+
+	// Store the tombstone (empty payload with signature) in the database
+	err = c.l.server.state.handleReplicaTombstone(replicaWrite.BoxID, replicaWrite.Signature)
 	if err != nil {
-		c.log.Errorf("handleReplicaWrite state update failed: %v", err)
+		c.log.Errorf("handleTombstone storage failed: %v", err)
 		return &pigeonhole.ReplicaWriteReply{
 			ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,
 		}
 	}
-	c.log.Debug("Replica write successful")
+
+	c.log.Debugf("Tombstone processed successfully for BoxID: %x", replicaWrite.BoxID)
 	return &pigeonhole.ReplicaWriteReply{
 		ErrorCode: pigeonhole.ReplicaSuccess,
 	}
@@ -340,36 +461,8 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
 	}
 
-	// Get our own identity key to exclude ourselves from the target shards
-	myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: failed to marshal identity key: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
-	}
-
-	// Select a random shard that is not ourselves
-	var availableShards []*pki.ReplicaDescriptor
-	for _, shard := range shards {
-		if !hmac.Equal(shard.IdentityKey, myIdentityKey) {
-			availableShards = append(availableShards, shard)
-		}
-	}
-
-	if len(availableShards) == 0 {
-		c.log.Error("PROXY_REQUEST: no suitable target shard found")
-		return c.createReplicaMessageReply(
-			c.l.server.cfg.ReplicaNIKEScheme,
-			pigeonhole.ReplicaErrorInternalError,
-			originalEnvelopeHash,
-			[]byte{},
-			0,
-			false,
-		)
-	}
-
-	// Select a random shard for load distribution
-	targetShard := availableShards[rand.NewMath().Intn(len(availableShards))]
-	c.log.Debugf("PROXY_REQUEST: Proxying read request to replica: %s", targetShard.Name)
+	// select a random shard
+	targetShard := shards[rand.NewMath().Intn(len(shards))]
 
 	// Get current replica epoch and keypair
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
@@ -469,6 +562,144 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 
 	// No envelope reply data - just return the error code
 	return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, reply.ErrorCode, originalEnvelopeHash, []byte{}, replicaID, true)
+}
+
+// proxyWriteRequest forwards a write request to the appropriate shard replica
+// and returns the reply that should be sent back to the original client.
+// This is used when an intermediate replica receives a write for a BoxID
+// that it doesn't shard - it proxies to a shard replica to get the actual result.
+func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, originalSenderPubkey nike.PublicKey, originalEnvelopeHash *[32]byte) *commands.ReplicaMessageReply {
+	// Input validation
+	if replicaWrite == nil {
+		c.log.Error("proxyWriteRequest: replicaWrite is nil")
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
+	}
+
+	c.log.Debugf("proxyWriteRequest: Starting proxy for BoxID: %x", replicaWrite.BoxID)
+
+	// Get PKI document
+	doc := c.l.server.PKIWorker.PKIDocument()
+	if doc == nil {
+		c.log.Error("proxyWriteRequest: no PKI document available")
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
+	}
+
+	// Get replica ID
+	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: failed to get replica ID: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
+	}
+
+	// Calculate shards for this BoxID
+	shards, err := replicaCommon.GetShards(&replicaWrite.BoxID, doc)
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: failed to get shards: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
+	}
+
+	// Select a random shard
+	targetShard := shards[rand.NewMath().Intn(len(shards))]
+
+	// Get current replica epoch and keypair
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: failed to get keypair: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
+	}
+
+	// Create MKEM scheme
+	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+	scheme := mkem.NewScheme(nikeScheme)
+
+	// Create the inner message containing the write request
+	innerMessage := pigeonhole.ReplicaInnerMessage{
+		MessageType: 1, // 1 = write
+		WriteMsg:    replicaWrite,
+	}
+	innerMessageBlob := innerMessage.Bytes()
+
+	// Get the target replica's envelope public key (ONLY current epoch)
+	targetEnvelopeKeyBytes, exists := targetShard.EnvelopeKeys[replicaEpoch]
+	if !exists {
+		c.log.Errorf("proxyWriteRequest: no envelope key found for target replica %s at current epoch %d", targetShard.Name, replicaEpoch)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
+	}
+
+	targetEnvelopeKey, err := nikeScheme.UnmarshalBinaryPublicKey(targetEnvelopeKeyBytes)
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: failed to unmarshal target envelope key: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
+	}
+
+	c.log.Debugf("proxyWriteRequest: Using envelope key for target replica %s at current epoch %d", targetShard.Name, replicaEpoch)
+
+	// Encapsulate the message for the target replica using MKEM
+	mkemPrivateKey, envelope := scheme.Encapsulate([]nike.PublicKey{targetEnvelopeKey}, innerMessageBlob)
+
+	// Create the ReplicaMessage command to send to target replica
+	replicaMessage := &commands.ReplicaMessage{
+		Cmds:               commands.NewStorageReplicaCommands(c.geo, nikeScheme),
+		PigeonholeGeometry: nil,
+		Scheme:             nikeScheme,
+		SenderEPubKey:      envelope.EphemeralPublicKey.Bytes(),
+		DEK:                envelope.DEKCiphertexts[0],
+		Ciphertext:         envelope.Envelope,
+	}
+
+	// Calculate the target replica's identity hash for routing
+	idHash := blake2b.Sum256(targetShard.IdentityKey)
+
+	// Send the proxy request synchronously
+	reply, err := c.sendProxyRequestSync(replicaMessage, &idHash, targetShard, mkemPrivateKey, targetEnvelopeKey, scheme)
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: failed to send proxy request to %s: %v", targetShard.Name, err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorReplicationFailed, originalEnvelopeHash, []byte{}, replicaID, false)
+	}
+
+	// Process the reply and re-encrypt for the original client
+	if reply == nil {
+		c.log.Error("proxyWriteRequest: received nil reply from target replica")
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID, false)
+	}
+
+	c.log.Debugf("proxyWriteRequest: Received proxy reply from %s with error code: %d", targetShard.Name, reply.ErrorCode)
+
+	// Decrypt the envelope reply from the target replica
+	if len(reply.EnvelopeReply) > 0 {
+		decryptedReply, err := scheme.DecryptEnvelope(mkemPrivateKey, targetEnvelopeKey, reply.EnvelopeReply)
+		if err != nil {
+			c.log.Errorf("proxyWriteRequest: failed to decrypt proxy reply envelope: %v", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID, false)
+		}
+
+		// Parse the decrypted reply to get the actual write reply data
+		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(decryptedReply)
+		if err != nil {
+			c.log.Errorf("proxyWriteRequest: failed to parse proxy reply inner message: %v", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID, false)
+		}
+
+		if replyInnerMessage.WriteReply == nil {
+			c.log.Error("proxyWriteRequest: proxy reply does not contain write reply")
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID, false)
+		}
+
+		// Now re-encrypt the write reply data for the original client
+		newReplyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+			MessageType: 1,
+			WriteReply:  replyInnerMessage.WriteReply,
+		}
+		newReplyInnerMessageBlob := newReplyInnerMessage.Bytes()
+		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
+
+		// Return the reply encrypted for the original client
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, replyInnerMessage.WriteReply.ErrorCode, originalEnvelopeHash, envelopeReply.Envelope, replicaID, false)
+	}
+
+	// No envelope reply data - just return the error code
+	return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, reply.ErrorCode, originalEnvelopeHash, []byte{}, replicaID, false)
 }
 
 // sendProxyRequestSync sends a proxy request synchronously to the target replica

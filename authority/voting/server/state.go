@@ -28,6 +28,7 @@ import (
 	"net"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -60,6 +61,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/quic/common"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 const (
@@ -97,6 +99,12 @@ type document struct {
 	raw []byte
 }
 
+// authorizedReplicaInfo holds the identifier and static ReplicaID for an authorized replica
+type authorizedReplicaInfo struct {
+	Identifier string
+	ReplicaID  uint8
+}
+
 type state struct {
 	sync.RWMutex
 	worker.Worker
@@ -113,7 +121,7 @@ type state struct {
 	authorizedMixes        map[[publicKeyHashSize]byte]string
 	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
 	authorizedServiceNodes map[[publicKeyHashSize]byte]string
-	authorizedReplicaNodes map[[publicKeyHashSize]byte]string
+	authorizedReplicaNodes map[[publicKeyHashSize]byte]*authorizedReplicaInfo
 	authorizedAuthorities  map[[publicKeyHashSize]byte]bool
 	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
 	authorityNames         map[[publicKeyHashSize]byte]string
@@ -129,6 +137,12 @@ type state struct {
 	reveals            map[uint64]map[[publicKeyHashSize]byte][]byte
 	commits            map[uint64]map[[publicKeyHashSize]byte][]byte
 	verifiers          map[[publicKeyHashSize]byte]sign.PublicKey
+
+	// cachedReplicaEnvelopeKeys caches envelope keys from replica descriptors.
+	// Indexed by ReplicaID -> replica epoch -> public key bytes.
+	// This allows envelope keys to persist across PKI epochs even if a replica
+	// is temporarily offline.
+	cachedReplicaEnvelopeKeys map[uint8]map[uint64][]byte
 
 	updateCh chan interface{}
 
@@ -641,33 +655,139 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 	lambdaG := computeLambdaG(s.s.cfg)
 	s.log.Debugf("computed lambdaG is %f", lambdaG)
 
+	// Build ConfiguredReplicaIDs and ConfiguredReplicaIdentityKeys from all authorized replicas.
+	// These lists remain stable even when replicas are offline, enabling consistent hashing.
+	type replicaInfo struct {
+		id  uint8
+		key []byte
+	}
+	replicaInfos := make([]replicaInfo, 0, len(s.authorizedReplicaNodes))
+	for keyHash, info := range s.authorizedReplicaNodes {
+		pubKey, ok := s.reverseHash[keyHash]
+		if !ok {
+			s.log.Errorf("getDocument: missing reverse hash for authorized replica %x", keyHash)
+			continue
+		}
+		keyBytes, err := pubKey.MarshalBinary()
+		if err != nil {
+			s.log.Errorf("getDocument: failed to marshal identity key: %v", err)
+			continue
+		}
+		replicaInfos = append(replicaInfos, replicaInfo{
+			id:  info.ReplicaID,
+			key: keyBytes,
+		})
+	}
+	// Sort by identity key for deterministic ordering across all authorities
+	slices.SortFunc(replicaInfos, func(a, b replicaInfo) int {
+		return slices.Compare(a.key, b.key)
+	})
+
+	// Extract sorted IDs and keys
+	configuredReplicaIDs := make([]uint8, len(replicaInfos))
+	configuredReplicaKeys := make([][]byte, len(replicaInfos))
+	for i, info := range replicaInfos {
+		configuredReplicaIDs[i] = info.id
+		configuredReplicaKeys[i] = info.key
+	}
+
+	// Build ReplicaEnvelopeKeys from the tallied replica descriptors and cached keys.
+	// We use the tallied descriptors (which all authorities agree on) as the authoritative source,
+	// supplemented by cached keys for replicas that are temporarily offline.
+	// We keep keys for previous, current, and next replica epochs.
+	currentReplicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	replicaEnvelopeKeys := s.buildReplicaEnvelopeKeys(replicaDescriptors, currentReplicaEpoch)
+
 	// Build the Document.
 	doc := &pki.Document{
-		Epoch:              s.votingEpoch,
-		GenesisEpoch:       s.genesisEpoch,
-		SendRatePerMinute:  params.SendRatePerMinute,
-		Mu:                 params.Mu,
-		MuMaxDelay:         params.MuMaxDelay,
-		LambdaP:            params.LambdaP,
-		LambdaPMaxDelay:    params.LambdaPMaxDelay,
-		LambdaL:            params.LambdaL,
-		LambdaLMaxDelay:    params.LambdaLMaxDelay,
-		LambdaD:            params.LambdaD,
-		LambdaDMaxDelay:    params.LambdaDMaxDelay,
-		LambdaM:            params.LambdaM,
-		LambdaMMaxDelay:    params.LambdaMMaxDelay,
-		LambdaG:            lambdaG,
-		LambdaGMaxDelay:    params.LambdaGMaxDelay,
-		Topology:           topology,
-		GatewayNodes:       gateways,
-		ServiceNodes:       serviceNodes,
-		StorageReplicas:    replicaDescriptors,
-		SharedRandomValue:  srv,
-		PriorSharedRandom:  s.priorSRV,
-		SphinxGeometryHash: s.geo.Hash(),
-		PKISignatureScheme: s.s.cfg.Server.PKISignatureScheme,
+		Epoch:                         s.votingEpoch,
+		GenesisEpoch:                  s.genesisEpoch,
+		SendRatePerMinute:             params.SendRatePerMinute,
+		Mu:                            params.Mu,
+		MuMaxDelay:                    params.MuMaxDelay,
+		LambdaP:                       params.LambdaP,
+		LambdaPMaxDelay:               params.LambdaPMaxDelay,
+		LambdaL:                       params.LambdaL,
+		LambdaLMaxDelay:               params.LambdaLMaxDelay,
+		LambdaD:                       params.LambdaD,
+		LambdaDMaxDelay:               params.LambdaDMaxDelay,
+		LambdaM:                       params.LambdaM,
+		LambdaMMaxDelay:               params.LambdaMMaxDelay,
+		LambdaG:                       lambdaG,
+		LambdaGMaxDelay:               params.LambdaGMaxDelay,
+		Topology:                      topology,
+		GatewayNodes:                  gateways,
+		ServiceNodes:                  serviceNodes,
+		StorageReplicas:               replicaDescriptors,
+		ConfiguredReplicaIDs:          configuredReplicaIDs,
+		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
+		ReplicaEnvelopeKeys:           replicaEnvelopeKeys,
+		SharedRandomValue:             srv,
+		PriorSharedRandom:             s.priorSRV,
+		SphinxGeometryHash:            s.geo.Hash(),
+		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
 	}
 	return doc
+}
+
+// buildReplicaEnvelopeKeys builds the ReplicaEnvelopeKeys map for the document.
+// It uses the tallied replica descriptors (which all authorities agree on) as the
+// authoritative source, supplemented by cached keys for replicas that are temporarily
+// offline. Only keys for the previous, current, and next replica epochs are included.
+// It also prunes old keys from the cache.
+func (s *state) buildReplicaEnvelopeKeys(talliedDescriptors []*pki.ReplicaDescriptor, currentReplicaEpoch uint64) map[uint8]map[uint64][]byte {
+	result := make(map[uint8]map[uint64][]byte)
+
+	// Define the range of replica epochs to keep: previous, current, next
+	var minEpoch uint64
+	if currentReplicaEpoch > 0 {
+		minEpoch = currentReplicaEpoch - 1
+	}
+	maxEpoch := currentReplicaEpoch + 1
+
+	// Helper to add a key to the result if it's in the valid epoch range
+	addKey := func(replicaID uint8, replicaEpoch uint64, keyBytes []byte) {
+		if replicaEpoch < minEpoch || replicaEpoch > maxEpoch {
+			return
+		}
+		if _, ok := result[replicaID]; !ok {
+			result[replicaID] = make(map[uint64][]byte)
+		}
+		// Only add if not already present (tallied descriptors take precedence)
+		if _, exists := result[replicaID][replicaEpoch]; !exists {
+			keyCopy := make([]byte, len(keyBytes))
+			copy(keyCopy, keyBytes)
+			result[replicaID][replicaEpoch] = keyCopy
+		}
+	}
+
+	// First, add keys from tallied descriptors (these are authoritative - all authorities agree)
+	// Also cache these keys for future epochs when the replica might be temporarily offline.
+	for _, desc := range talliedDescriptors {
+		s.cacheEnvelopeKeys(desc)
+		for replicaEpoch, keyBytes := range desc.EnvelopeKeys {
+			addKey(desc.ReplicaID, replicaEpoch, keyBytes)
+		}
+	}
+
+	// Then, supplement with cached keys for replicas that may be temporarily offline.
+	// The cache may contain keys from previous PKI epochs for replicas that are
+	// not in the current tally but whose envelope keys are still valid.
+	for replicaID, epochKeys := range s.cachedReplicaEnvelopeKeys {
+		for replicaEpoch, keyBytes := range epochKeys {
+			if replicaEpoch >= minEpoch && replicaEpoch <= maxEpoch {
+				addKey(replicaID, replicaEpoch, keyBytes)
+			} else if replicaEpoch < minEpoch {
+				// Prune old keys from cache
+				delete(s.cachedReplicaEnvelopeKeys[replicaID], replicaEpoch)
+				s.log.Debugf("Pruned old envelope key for replica %d, replica epoch %d (current: %d)",
+					replicaID, replicaEpoch, currentReplicaEpoch)
+			}
+			// Keys for future epochs beyond maxEpoch are kept in cache but not included in document
+		}
+	}
+
+	return result
 }
 
 func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescriptor) bool {
@@ -1030,8 +1150,8 @@ func (s *state) PeerName(identityKeyHash []byte) string {
 		return name
 	}
 	// Check replica nodes
-	if name, ok := s.authorizedReplicaNodes[pk]; ok {
-		return name
+	if replicaInfo, ok := s.authorizedReplicaNodes[pk]; ok {
+		return replicaInfo.Identifier
 	}
 	// Check authorities
 	if name, ok := s.authorityNames[pk]; ok {
@@ -1615,16 +1735,20 @@ func (s *state) pruneDocuments() {
 
 func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool {
 	pk := hash.Sum256(desc.IdentityKey)
-	name, ok := s.authorizedReplicaNodes[pk]
+	replicaInfo, ok := s.authorizedReplicaNodes[pk]
 	if !ok {
 		s.log.Errorf("StorageReplica authentication failure: key hash %x not in map", pk)
 		return false
 	}
-	if name != desc.Name {
-		s.log.Errorf("StorageReplica authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
+	if replicaInfo.Identifier != desc.Name {
+		s.log.Errorf("StorageReplica authentication failure: name mismatch - map has '%s', descriptor has '%s'", replicaInfo.Identifier, desc.Name)
 		return false
 	}
-	s.log.Debugf("StorageReplica authentication OK: %s with hash %x", name, pk)
+	if replicaInfo.ReplicaID != desc.ReplicaID {
+		s.log.Errorf("StorageReplica authentication failure: ReplicaID mismatch - config has '%d', descriptor has '%d'", replicaInfo.ReplicaID, desc.ReplicaID)
+		return false
+	}
+	s.log.Debugf("StorageReplica authentication OK: %s (ReplicaID=%d) with hash %x", replicaInfo.Identifier, replicaInfo.ReplicaID, pk)
 	return true
 }
 
@@ -2038,9 +2162,33 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	// Store the parsed descriptor
 	s.replicaDescriptors[epoch][pk] = desc
 
+	// Note: We don't cache envelope keys here. Caching happens after the tally
+	// in buildReplicaEnvelopeKeys, so only keys from consensus-agreed descriptors
+	// are cached. This ensures deterministic document generation across authorities.
+
 	s.log.Noticef("Node %x: Successfully submitted replica descriptor for epoch %v.", pk, epoch)
 	s.onUpdate()
 	return nil
+}
+
+// cacheEnvelopeKeys caches the envelope keys from a replica descriptor.
+// This method assumes the state lock is already held.
+func (s *state) cacheEnvelopeKeys(desc *pki.ReplicaDescriptor) {
+	replicaID := desc.ReplicaID
+
+	// Ensure the inner map exists for this replica
+	if _, ok := s.cachedReplicaEnvelopeKeys[replicaID]; !ok {
+		s.cachedReplicaEnvelopeKeys[replicaID] = make(map[uint64][]byte)
+	}
+
+	// Cache each envelope key from the descriptor
+	for replicaEpoch, keyBytes := range desc.EnvelopeKeys {
+		// Make a copy of the key bytes to avoid reference issues
+		keyCopy := make([]byte, len(keyBytes))
+		copy(keyCopy, keyBytes)
+		s.cachedReplicaEnvelopeKeys[replicaID][replicaEpoch] = keyCopy
+		s.log.Debugf("Cached envelope key for replica %d, replica epoch %d", replicaID, replicaEpoch)
+	}
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
@@ -2401,7 +2549,7 @@ func newState(s *Server) (*state, error) {
 		st.authorizedServiceNodes[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
-	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]string)
+	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]*authorizedReplicaInfo)
 	for _, v := range st.s.cfg.StorageReplicas {
 		var identityPublicKey sign.PublicKey
 		var err error
@@ -2420,7 +2568,11 @@ func newState(s *Server) (*state, error) {
 		}
 
 		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedReplicaNodes[pk] = v.Identifier
+		st.authorizedReplicaNodes[pk] = &authorizedReplicaInfo{
+			Identifier: v.Identifier,
+			ReplicaID:  v.ReplicaID,
+		}
+		st.reverseHash[pk] = identityPublicKey
 	}
 
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
@@ -2445,6 +2597,7 @@ func newState(s *Server) (*state, error) {
 	st.signatures = make(map[uint64]map[[publicKeyHashSize]byte]*cert.Signature)
 	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 	st.priorSRV = make([][]byte, 0)
+	st.cachedReplicaEnvelopeKeys = make(map[uint8]map[uint64][]byte)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
