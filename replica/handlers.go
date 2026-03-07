@@ -172,18 +172,18 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			// This replica is in the shard - read locally
 			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x - reading locally", myCmd.BoxID)
 			readReply := c.handleReplicaRead(myCmd)
+			// Always encrypt the reply (success or error) so the client can decrypt and see the error code
+			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+				ReadReply: readReply,
+			}
+			replyInnerMessageBlob := replyInnerMessage.Bytes()
+			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
 			if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
 				c.log.Debugf("REPLICA_HANDLER: Found data locally for BoxID %x", myCmd.BoxID)
-				replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-					ReadReply: readReply,
-				}
-				replyInnerMessageBlob := replyInnerMessage.Bytes()
-				envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
+			} else {
+				c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x but data not found locally (error code: %d)", myCmd.BoxID, readReply.ErrorCode)
 			}
-			// Data not found locally but we are a shard - return not found
-			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x but data not found locally", myCmd.BoxID)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, []byte{}, replicaID, true)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
 		}
 
 		// This replica is NOT in the shard - proxy to the correct replica
