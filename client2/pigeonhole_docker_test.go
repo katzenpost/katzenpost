@@ -1044,8 +1044,9 @@ func TestBoxIDNotFoundError(t *testing.T) {
 	t.Log("Encrypted read request for non-existent box")
 
 	// Send the read request - this should fail with ErrBoxIDNotFound
+	// Use StartResendingEncryptedMessageNoRetry to get immediate error without retries
 	replyIndex := uint8(0)
-	_, err = bobThinClient.StartResendingEncryptedMessage(
+	_, err = bobThinClient.StartResendingEncryptedMessageNoRetry(
 		ctx,
 		readCap,       // readCap
 		nil,           // writeCap (nil for read operations)
