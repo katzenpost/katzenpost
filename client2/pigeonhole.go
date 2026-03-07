@@ -1714,6 +1714,20 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 	d.replyLock.Unlock()
 
+	// Handle writes: for write operations, we don't expect any payload data.
+	// A successful write returns nil plaintext and nil error.
+	if !arqMessage.IsRead {
+		d.log.Debugf("handlePayloadReply: Write operation completed successfully")
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+				QueryID:   arqMessage.QueryID,
+				ErrorCode: thin.ThinClientSuccess,
+			},
+		})
+		return
+	}
+
 	// Handle tombstones: empty plaintext means the box was tombstoned.
 	// Skip unpadding since tombstones have no padded payload.
 	if len(plaintext) == 0 {
@@ -1833,6 +1847,17 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 		// If not a read operation, return the MKEM-decrypted payload as-is
 		d.log.Debugf("decryptPigeonholeReply: Returning MKEM-decrypted payload of length %d", len(innerMsg.ReadReply.Payload))
 		return innerMsg.ReadReply.Payload, nil
+	}
+
+	// Handle write reply
+	if innerMsg.MessageType == 1 && innerMsg.WriteReply != nil {
+		d.log.Debugf("decryptPigeonholeReply: Processing write reply, ErrorCode: %d", innerMsg.WriteReply.ErrorCode)
+		if innerMsg.WriteReply.ErrorCode != 0 {
+			// Return a structured error with the replica error code
+			return nil, &replicaError{code: innerMsg.WriteReply.ErrorCode}
+		}
+		// Write succeeded - return nil payload (no data to return for writes)
+		return nil, nil
 	}
 
 	d.log.Errorf("decryptPigeonholeReply: Unexpected inner message type: %d", innerMsg.MessageType)
