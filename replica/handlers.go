@@ -605,7 +605,8 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 
 	// Create the inner message containing the write request
 	innerMessage := pigeonhole.ReplicaInnerMessage{
-		WriteMsg: replicaWrite,
+		MessageType: 1, // 1 = write
+		WriteMsg:    replicaWrite,
 	}
 	innerMessageBlob := innerMessage.Bytes()
 
