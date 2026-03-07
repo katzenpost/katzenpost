@@ -1057,22 +1057,23 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 
 	// Create the ARQ message with initial state WaitingForACK
 	message := &ARQMessage{
-		AppID:              request.AppID,
-		QueryID:            req.QueryID,
-		EnvelopeHash:       req.EnvelopeHash,
-		DestinationIdHash:  destIdHash,
-		RecipientQueueID:   recipientQueueID,
-		Payload:            req.MessageCiphertext,
-		SURBID:             surbID,
-		SURBDecryptionKeys: surbKey,
-		Retransmissions:    0,
-		SentAt:             time.Now(),
-		ReplyETA:           rtt,
-		EnvelopeDescriptor: req.EnvelopeDescriptor,
-		IsRead:             isRead,
-		State:              ARQStateWaitingForACK,
-		ReadCap:            req.ReadCap,
-		NextMessageIndex:   req.NextMessageIndex,
+		AppID:                  request.AppID,
+		QueryID:                req.QueryID,
+		EnvelopeHash:           req.EnvelopeHash,
+		DestinationIdHash:      destIdHash,
+		RecipientQueueID:       recipientQueueID,
+		Payload:                req.MessageCiphertext,
+		SURBID:                 surbID,
+		SURBDecryptionKeys:     surbKey,
+		Retransmissions:        0,
+		SentAt:                 time.Now(),
+		ReplyETA:               rtt,
+		EnvelopeDescriptor:     req.EnvelopeDescriptor,
+		IsRead:                 isRead,
+		State:                  ARQStateWaitingForACK,
+		ReadCap:                req.ReadCap,
+		NextMessageIndex:       req.NextMessageIndex,
+		NoRetryOnBoxIDNotFound: req.NoRetryOnBoxIDNotFound,
 	}
 
 	// Store in ARQ maps
@@ -1228,28 +1229,6 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	// Check for error in the reply
 	if courierEnvelopeReply.ErrorCode != 0 {
-		// For write operations, BoxAlreadyExists means the original write succeeded
-		// (this happens when a write times out but actually went through, and we retry).
-		// Treat this as success for idempotent write semantics.
-		if !arqMessage.IsRead && courierEnvelopeReply.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
-			d.log.Debugf("handlePigeonholeARQReply: BoxAlreadyExists for write operation, treating as success (idempotent retry)")
-			// Remove from ARQ tracking
-			d.replyLock.Lock()
-			delete(d.arqSurbIDMap, *arqMessage.SURBID)
-			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-			d.replyLock.Unlock()
-
-			// Send success to thin client
-			conn.sendResponse(&Response{
-				AppID: arqMessage.AppID,
-				StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-					QueryID:   arqMessage.QueryID,
-					ErrorCode: thin.ThinClientSuccess,
-				},
-			})
-			return
-		}
-
 		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", courierEnvelopeReply.ErrorCode)
 		// Remove from ARQ tracking and send error to thin client
 		d.replyLock.Lock()
@@ -1692,10 +1671,11 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		// Check if this is a BoxIDNotFound error for a READ operation
 		// This is a transient error - the data might not have been replicated yet
 		// Schedule a retry instead of returning the error immediately (up to a limit)
+		// Skip retries if NoRetryOnBoxIDNotFound is set (caller wants immediate error)
 		var re *replicaError
 		const maxBoxIDNotFoundRetries = 10
 		if errors.As(err, &re) && re.code == pigeonhole.ReplicaErrorBoxIDNotFound && arqMessage.IsRead &&
-			arqMessage.Retransmissions < maxBoxIDNotFoundRetries {
+			!arqMessage.NoRetryOnBoxIDNotFound && arqMessage.Retransmissions < maxBoxIDNotFoundRetries {
 			d.log.Debugf("handlePayloadReply: BoxIDNotFound for read operation, scheduling retry (%d/%d)",
 				arqMessage.Retransmissions+1, maxBoxIDNotFoundRetries)
 

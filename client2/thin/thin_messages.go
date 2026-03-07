@@ -256,6 +256,12 @@ type StartResendingEncryptedMessage struct {
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
 	// mixnet and is used to resume the read operation.
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+
+	// NoRetryOnBoxIDNotFound controls whether BoxIDNotFound errors on reads
+	// trigger automatic retries. By default (false), reads will retry up to
+	// 10 times to handle replication lag. Set to true to get immediate
+	// BoxIDNotFound error without retries.
+	NoRetryOnBoxIDNotFound bool `cbor:"no_retry_on_box_id_not_found,omitempty"`
 }
 
 // CancelResendingEncryptedMessage requests the daemon to cancel resending an encrypted message.

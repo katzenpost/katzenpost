@@ -104,4 +104,9 @@ type ARQMessage struct {
 
 	// NextMessageIndex is the message index for BACAP decryption (only for read operations).
 	NextMessageIndex []byte
+
+	// NoRetryOnBoxIDNotFound disables automatic retries on BoxIDNotFound for read operations.
+	// When true, BoxIDNotFound is returned immediately. When false (default), reads retry
+	// up to 10 times to handle replication lag.
+	NoRetryOnBoxIDNotFound bool
 }

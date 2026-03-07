@@ -489,6 +489,103 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 	}
 }
 
+// StartResendingEncryptedMessageNoRetry is like StartResendingEncryptedMessage but disables
+// automatic retries on BoxIDNotFound errors. Use this when you want immediate error feedback
+// rather than waiting for potential replication lag to resolve.
+// The CancelResendingEncryptedMessage method can cancel operations started with either method.
+func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (plaintext []byte, err error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+	if envelopeHash == nil {
+		return nil, errors.New("envelopeHash cannot be nil")
+	}
+
+	isRead := readCap != nil
+
+	// Send request - the daemon will handle the FSM for ACK and payload
+	if replyIndex != nil {
+		t.log.Debugf("StartResendingEncryptedMessageNoRetry: Sending request (isRead=%v, replyIndex=%d)", isRead, *replyIndex)
+	} else {
+		t.log.Debugf("StartResendingEncryptedMessageNoRetry: Sending request (isRead=%v, replyIndex=nil)", isRead)
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		StartResendingEncryptedMessage: &StartResendingEncryptedMessage{
+			QueryID:                queryID,
+			ReadCap:                readCap,
+			WriteCap:               writeCap,
+			NextMessageIndex:       nextMessageIndex,
+			ReplyIndex:             replyIndex,
+			EnvelopeDescriptor:     envelopeDescriptor,
+			MessageCiphertext:      messageCiphertext,
+			EnvelopeHash:           envelopeHash,
+			NoRetryOnBoxIDNotFound: true,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err = t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wait for reply from daemon
+	// For writes: daemon sends reply after receiving ACK
+	// For reads: daemon sends reply after receiving payload (after ACK)
+	// The daemon may also send error responses (e.g., BoxIDNotFound) which will cause this to exit
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *StartResendingEncryptedMessageReply:
+			if v.QueryID == nil {
+				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+
+			// Check for any error (including BoxIDNotFound, internal errors, etc.)
+			// Map error codes to sentinel errors for better error handling
+			if v.ErrorCode != ThinClientSuccess {
+				err := errorCodeToSentinel(v.ErrorCode)
+				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Received error response: %v", err)
+				return nil, err
+			}
+
+			// Success case
+			// For write operations, this is the ACK reply
+			// For read operations, this is the payload reply
+			if !isRead {
+				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Write operation complete")
+			} else {
+				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Read operation complete, payload length=%d", len(v.Plaintext))
+			}
+			return v.Plaintext, nil
+
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
 // CancelResendingEncryptedMessage cancels ARQ resending for an encrypted message.
 //
 // This method stops the automatic repeat request (ARQ) for a previously started
