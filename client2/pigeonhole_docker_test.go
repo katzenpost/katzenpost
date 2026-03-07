@@ -1007,3 +1007,58 @@ func TestTombstoneRange(t *testing.T) {
 
 	t.Logf("✓ All %d boxes successfully tombstoned and verified", numMessages)
 }
+
+// TestBoxIDNotFoundError tests that we receive an ErrBoxIDNotFound error
+// when attempting to read from a box that has never been written to.
+//
+// This test verifies:
+// - Reading from a non-existent box returns ErrBoxIDNotFound
+// - The error can be checked using errors.Is()
+func TestBoxIDNotFoundError(t *testing.T) {
+	// Setup Bob thin client (reader)
+	bobThinClient := setupThinClient(t)
+	defer bobThinClient.Close()
+
+	// Validate PKI document
+	validatePKIDocument(t, bobThinClient)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Create a new keypair - but we will NOT write any message to it
+	t.Log("=== Creating a fresh keypair (no message will be written) ===")
+	seed := make([]byte, 32)
+	_, err := rand.Reader.Read(seed)
+	require.NoError(t, err)
+
+	_, readCap, firstIndex, err := bobThinClient.NewKeypair(ctx, seed)
+	require.NoError(t, err)
+	require.NotNil(t, readCap, "ReadCap should not be nil")
+	t.Log("Created fresh keypair - no message written to this box")
+
+	// Attempt to read from the non-existent box
+	t.Log("=== Attempting to read from non-existent box ===")
+	bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, err := bobThinClient.EncryptRead(ctx, readCap, firstIndex)
+	require.NoError(t, err)
+	require.NotEmpty(t, bobCiphertext, "EncryptRead should return ciphertext")
+	t.Log("Encrypted read request for non-existent box")
+
+	// Send the read request - this should fail with ErrBoxIDNotFound
+	replyIndex := uint8(0)
+	_, err = bobThinClient.StartResendingEncryptedMessage(
+		ctx,
+		readCap,       // readCap
+		nil,           // writeCap (nil for read operations)
+		bobNextIndex,  // nextMessageIndex
+		&replyIndex,   // replyIndex
+		bobEnvDesc,    // envelopeDescriptor
+		bobCiphertext, // messageCiphertext
+		bobEnvHash,    // envelopeHash
+	)
+
+	// Verify we got the expected ErrBoxIDNotFound error
+	require.Error(t, err, "Expected an error when reading from non-existent box")
+	require.ErrorIs(t, err, thin.ErrBoxIDNotFound, "Expected ErrBoxIDNotFound error, got: %v", err)
+
+	t.Log("✓ SUCCESS: Correctly received ErrBoxIDNotFound error when reading from non-existent box")
+}
