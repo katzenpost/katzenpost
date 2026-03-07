@@ -236,7 +236,8 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.l.server.connector.DispatchReplication(wireCmd)
 
 		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-			WriteReply: writeReply,
+			MessageType: 1,
+			WriteReply:  writeReply,
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
