@@ -106,10 +106,10 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	}
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
+	keypair, err := c.l.server.envelopeKeys.EnsureKey(replicaEpoch)
 	if err != nil {
-		c.log.Errorf("handleReplicaMessage envelopeKeys.GetKeypair failed: %s", err)
-		return nil
+		c.log.Errorf("handleReplicaMessage envelopeKeys.EnsureKey failed: %s", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
 	requestRaw, err := scheme.Decapsulate(keypair.PrivateKey, ct)
 	if err != nil {
