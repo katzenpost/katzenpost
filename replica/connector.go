@@ -174,7 +174,12 @@ func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
 	// replication happens asynchronously. Never drops - will eventually
 	// send when there's space in the channel.
 	co.Go(func() {
-		co.replicationCh <- cmd
+		select {
+		case <-co.HaltCh():
+			// Shutting down, discard the replication
+			return
+		case co.replicationCh <- cmd:
+		}
 	})
 }
 
