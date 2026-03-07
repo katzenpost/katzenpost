@@ -92,7 +92,7 @@ func (c *Client) WaitForCurrentDocument() {
 	}
 	epoch, _, _ := epochtime.Now()
 	err := c.pki.updateDocument(epoch)
-	if err != nil {
+	if err != nil && c.log != nil {
 		c.log.Errorf("WaitForCurrentDocument failed on updateDocument with err: %s", err.Error())
 	}
 }
