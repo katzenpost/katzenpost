@@ -40,15 +40,36 @@ func TestReplicaReplication(t *testing.T) {
 
 	// Wait for replicas to be ready and PKI documents to be synchronized
 	t.Logf("REPLICATION_TEST: Waiting for replicas to fully initialize...")
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 
-	// Force all replicas to fetch PKI documents to ensure consistency
+	// Force all replicas to fetch PKI documents and update connectors
 	for i, replica := range env.replicas {
 		t.Logf("REPLICATION_TEST: Forcing PKI fetch for replica %d", i)
 		err := replica.PKIWorker.ForceFetchPKI()
 		require.NoError(t, err)
+		replica.ForceConnectorUpdate()
 	}
-	time.Sleep(2 * time.Second)
+
+	// Wait for inter-replica connections to be established
+	t.Logf("REPLICATION_TEST: Waiting for inter-replica connections...")
+	expectedConns := len(env.replicas) - 1 // Each replica connects to all others
+	maxWait := 30 * time.Second
+	startTime := time.Now()
+	for time.Since(startTime) < maxWait {
+		allConnected := true
+		for i, replica := range env.replicas {
+			connCount := replica.ConnectionCount()
+			if connCount < expectedConns {
+				allConnected = false
+				t.Logf("REPLICATION_TEST: Replica %d has %d/%d connections", i, connCount, expectedConns)
+			}
+		}
+		if allConnected {
+			t.Logf("REPLICATION_TEST: All replicas connected to each other")
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
 
 	// --- Setup BACAP: Alice creates a write capability and gives Bob a read capability ---
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)

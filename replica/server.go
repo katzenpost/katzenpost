@@ -53,6 +53,7 @@ type GenericConnector interface {
 	DispatchCommand(cmd commands.Command, idHash *[32]byte)
 	DispatchReplication(cmd *commands.ReplicaWrite)
 	QueueForRetry(cmd commands.Command, idHash [32]byte)
+	ConnectionCount() int
 }
 
 type Server struct {
@@ -427,4 +428,20 @@ func (s *Server) startServices(pkiClient pki.Client) error {
 	s.connector = newConnector(s)
 
 	return nil
+}
+
+// ConnectionCount returns the number of active outgoing connections to other replicas.
+// This is useful for testing to verify inter-replica connections are established.
+func (s *Server) ConnectionCount() int {
+	if s.connector == nil {
+		return 0
+	}
+	return s.connector.ConnectionCount()
+}
+
+// ForceConnectorUpdate triggers the connector to rescan PKI and spawn new connections.
+func (s *Server) ForceConnectorUpdate() {
+	if s.connector != nil {
+		s.connector.ForceUpdate()
+	}
 }

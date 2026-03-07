@@ -293,3 +293,8 @@ func (m *mockConnector) DispatchCommand(cmd commands.Command, idHash *[32]byte) 
 func (m *mockConnector) QueueForRetry(cmd commands.Command, idHash [32]byte) {
 	// Mock implementation: no-op for testing purposes
 }
+
+func (m *mockConnector) ConnectionCount() int {
+	// Mock implementation: return 0 for testing purposes
+	return 0
+}

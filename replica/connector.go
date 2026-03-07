@@ -348,6 +348,13 @@ func (co *Connector) CloseAllCh() chan interface{} {
 	return co.closeAllCh
 }
 
+// ConnectionCount returns the number of active outgoing connections.
+func (co *Connector) ConnectionCount() int {
+	co.RLock()
+	defer co.RUnlock()
+	return len(co.conns)
+}
+
 func (co *Connector) onNewConn(c *outgoingConn) {
 	nodeID := hash.Sum256(c.dst.IdentityKey)
 
