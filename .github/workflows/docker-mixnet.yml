@@ -74,6 +74,9 @@ jobs:
       - name: run pigeonhole tombstone range test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_tombstone_range && cat coverage.part >> ../coverage.out
 
+      - name: run pigeonhole box ID not found error test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_box_id_not_found && cat coverage.part >> ../coverage.out
+
       - name: Stop the mixnet
         run: |
           cd docker && make stop
