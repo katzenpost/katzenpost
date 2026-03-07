@@ -370,18 +370,20 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 // is synthetic and does not connect to any real directory authorities.
 func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaID int, sphinxGeo *geo.Geometry, portBase int) *config.Config {
 	return &config.Config{
-		DisableDecoyTraffic: true,
-		DataDir:             dataDir,
-		Identifier:          fmt.Sprintf(testReplicaNameFormat, replicaID),
-		WireKEMScheme:       linkScheme.Name(),
-		PKISignatureScheme:  pkiScheme.Name(),
-		ReplicaNIKEScheme:   replicaCommon.NikeScheme.Name(),
-		SphinxGeometry:      sphinxGeo,
-		Addresses:           []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
-		GenerateOnly:        false,
-		ConnectTimeout:      60000,  // 60 seconds
-		HandshakeTimeout:    30000,  // 30 seconds
-		ReauthInterval:      300000, // 5 minutes
+		DisableDecoyTraffic:    true,
+		DataDir:                dataDir,
+		Identifier:             fmt.Sprintf(testReplicaNameFormat, replicaID),
+		WireKEMScheme:          linkScheme.Name(),
+		PKISignatureScheme:     pkiScheme.Name(),
+		ReplicaNIKEScheme:      replicaCommon.NikeScheme.Name(),
+		SphinxGeometry:         sphinxGeo,
+		Addresses:              []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
+		GenerateOnly:           false,
+		ConnectTimeout:         60000,  // 60 seconds
+		HandshakeTimeout:       30000,  // 30 seconds
+		ReauthInterval:         300000, // 5 minutes
+		ReplicationWorkerCount: 4,      // Enable replication workers for inter-shard replication
+		ReplicationQueueLength: 100,    // Queue length for replication operations
 		Logging: &config.Logging{
 			Disable: false,
 			Level:   "DEBUG",
