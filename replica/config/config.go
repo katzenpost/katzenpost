@@ -19,6 +19,7 @@ const (
 	defaultReplicationQueueLength = 100        // Default queue length for replication operations
 	defaultOutgoingQueueSize      = 64         // Default queue size for outgoing connections
 	defaultKeepAliveInterval      = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
+	defaultReplicationWorkerCount = 4          // Default number of replication worker goroutines
 )
 
 // Type aliases for common configuration structures
@@ -88,6 +89,11 @@ type Config struct {
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
 
+	// ReplicationWorkerCount specifies the number of goroutines in the
+	// replication worker pool. Higher values allow more concurrent replication
+	// to shard members under high write load.
+	ReplicationWorkerCount int
+
 	// DisableDecoyTraffic disables sending decoy traffic.
 	DisableDecoyTraffic bool
 
@@ -137,6 +143,9 @@ func (c *Config) setDefaultTimeouts() {
 	}
 	if c.KeepAliveInterval <= 0 {
 		c.KeepAliveInterval = defaultKeepAliveInterval
+	}
+	if c.ReplicationWorkerCount <= 0 {
+		c.ReplicationWorkerCount = defaultReplicationWorkerCount
 	}
 }
 

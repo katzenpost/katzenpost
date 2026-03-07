@@ -383,6 +383,12 @@ func newConnector(server *Server) *Connector {
 	}
 
 	co.Go(co.worker)
-	co.Go(co.replicationWorker)
+
+	// Spawn a pool of replication workers to handle high write throughput
+	workerCount := server.cfg.ReplicationWorkerCount
+	co.log.Noticef("Starting %d replication workers", workerCount)
+	for i := 0; i < workerCount; i++ {
+		co.Go(co.replicationWorker)
+	}
 	return co
 }
