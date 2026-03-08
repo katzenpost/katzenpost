@@ -1115,7 +1115,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 	require.NoError(t, err, "First write should succeed")
 	t.Log("✓ First write succeeded")
 
-	// Wait for propagation
+	// Wait for propagation to ensure the first write is fully replicated
 	t.Log("Waiting for message propagation...")
 	time.Sleep(5 * time.Second)
 
@@ -1126,28 +1126,8 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 	require.NoError(t, err, "EncryptWrite should succeed even for duplicate")
 	t.Log("✓ Encrypted second message")
 
-	// First send gets ACK from courier (write is queued)
-	t.Log("--- First send: expecting ACK from courier ---")
-	_, err = thinClient.StartResendingEncryptedMessage(
-		ctx,
-		nil,         // readCap
-		writeCap,    // writeCap
-		nil,         // nextMessageIndex
-		nil,         // replyIndex
-		envDesc2,    // envelopeDescriptor
-		ciphertext2, // messageCiphertext
-		envHash2,    // envelopeHash
-	)
-	// First call returns success (ACK received)
-	require.NoError(t, err, "First send should succeed with ACK")
-	t.Log("✓ First send received ACK")
-
-	// Wait for replica to process and cache the error response
-	t.Log("Waiting for replica to process write...")
-	time.Sleep(30 * time.Second)
-
-	// Second send retrieves the cached error from courier
-	t.Log("--- Second send: expecting cached error response ---")
+	// Send the second write - should fail with BoxAlreadyExists
+	// The daemon now waits for the payload reply from the replica, which contains the error
 	_, err = thinClient.StartResendingEncryptedMessage(
 		ctx,
 		nil,         // readCap

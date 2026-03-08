@@ -1257,29 +1257,10 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 			// Transition to ACKReceived state
 			arqMessage.State = ARQStateACKReceived
 
-			// For write queries, ACK is the terminal state - we're done
-			if !arqMessage.IsRead {
-				d.log.Debugf("handlePigeonholeARQReply: Write query complete")
-				// Remove from ARQ tracking
-				d.replyLock.Lock()
-				delete(d.arqSurbIDMap, *arqMessage.SURBID)
-				delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-				d.replyLock.Unlock()
-
-				// Send success to thin client
-				conn.sendResponse(&Response{
-					AppID: arqMessage.AppID,
-					StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-						QueryID:   arqMessage.QueryID,
-						ErrorCode: thin.ThinClientSuccess,
-					},
-				})
-				return
-			}
-
-			// For read queries, we need to send another SURB to get the payload
+			// For both reads and writes, we need to send another SURB to get the payload reply
+			// The payload reply contains the actual result from the replica (success or error like BoxAlreadyExists)
 			// Generate a new SURB and send it to the courier
-			d.log.Debugf("handlePigeonholeARQReply: Read query ACK received, sending new SURB for payload")
+			d.log.Debugf("handlePigeonholeARQReply: ACK received (isRead=%v), sending new SURB for payload", arqMessage.IsRead)
 
 			// Create a new SURB ID for the payload request
 			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
