@@ -586,6 +586,102 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, 
 	}
 }
 
+// StartResendingEncryptedMessageReturnBoxExists is like StartResendingEncryptedMessage but returns
+// BoxAlreadyExists errors instead of treating them as idempotent success. Use this when you want
+// to detect whether a write was actually performed or if the box already existed.
+// The CancelResendingEncryptedMessage method can cancel operations started with this method.
+func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (plaintext []byte, err error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+	if envelopeHash == nil {
+		return nil, errors.New("envelopeHash cannot be nil")
+	}
+
+	isRead := readCap != nil
+
+	// Send request - the daemon will handle the FSM for ACK and payload
+	if replyIndex != nil {
+		t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Sending request (isRead=%v, replyIndex=%d)", isRead, *replyIndex)
+	} else {
+		t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Sending request (isRead=%v, replyIndex=nil)", isRead)
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		StartResendingEncryptedMessage: &StartResendingEncryptedMessage{
+			QueryID:                      queryID,
+			ReadCap:                      readCap,
+			WriteCap:                     writeCap,
+			NextMessageIndex:             nextMessageIndex,
+			ReplyIndex:                   replyIndex,
+			EnvelopeDescriptor:           envelopeDescriptor,
+			MessageCiphertext:            messageCiphertext,
+			EnvelopeHash:                 envelopeHash,
+			NoIdempotentBoxAlreadyExists: true,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err = t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wait for reply from daemon
+	// For writes: daemon sends reply after receiving payload (containing success or error)
+	// For reads: daemon sends reply after receiving payload (after ACK)
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *StartResendingEncryptedMessageReply:
+			if v.QueryID == nil {
+				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+
+			// Check for any error (including BoxAlreadyExists, BoxIDNotFound, internal errors, etc.)
+			// Map error codes to sentinel errors for better error handling
+			if v.ErrorCode != ThinClientSuccess {
+				err := errorCodeToSentinel(v.ErrorCode)
+				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Received error response: %v", err)
+				return nil, err
+			}
+
+			// Success case
+			// For write operations, this is the payload reply
+			// For read operations, this is the payload reply
+			if !isRead {
+				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Write operation complete")
+			} else {
+				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Read operation complete, payload length=%d", len(v.Plaintext))
+			}
+			return v.Plaintext, nil
+
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
 // CancelResendingEncryptedMessage cancels ARQ resending for an encrypted message.
 //
 // This method stops the automatic repeat request (ARQ) for a previously started

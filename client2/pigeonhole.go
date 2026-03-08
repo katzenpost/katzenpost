@@ -1057,23 +1057,24 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 
 	// Create the ARQ message with initial state WaitingForACK
 	message := &ARQMessage{
-		AppID:                  request.AppID,
-		QueryID:                req.QueryID,
-		EnvelopeHash:           req.EnvelopeHash,
-		DestinationIdHash:      destIdHash,
-		RecipientQueueID:       recipientQueueID,
-		Payload:                req.MessageCiphertext,
-		SURBID:                 surbID,
-		SURBDecryptionKeys:     surbKey,
-		Retransmissions:        0,
-		SentAt:                 time.Now(),
-		ReplyETA:               rtt,
-		EnvelopeDescriptor:     req.EnvelopeDescriptor,
-		IsRead:                 isRead,
-		State:                  ARQStateWaitingForACK,
-		ReadCap:                req.ReadCap,
-		NextMessageIndex:       req.NextMessageIndex,
-		NoRetryOnBoxIDNotFound: req.NoRetryOnBoxIDNotFound,
+		AppID:                        request.AppID,
+		QueryID:                      req.QueryID,
+		EnvelopeHash:                 req.EnvelopeHash,
+		DestinationIdHash:            destIdHash,
+		RecipientQueueID:             recipientQueueID,
+		Payload:                      req.MessageCiphertext,
+		SURBID:                       surbID,
+		SURBDecryptionKeys:           surbKey,
+		Retransmissions:              0,
+		SentAt:                       time.Now(),
+		ReplyETA:                     rtt,
+		EnvelopeDescriptor:           req.EnvelopeDescriptor,
+		IsRead:                       isRead,
+		State:                        ARQStateWaitingForACK,
+		ReadCap:                      req.ReadCap,
+		NextMessageIndex:             req.NextMessageIndex,
+		NoRetryOnBoxIDNotFound:       req.NoRetryOnBoxIDNotFound,
+		NoIdempotentBoxAlreadyExists: req.NoIdempotentBoxAlreadyExists,
 	}
 
 	// Store in ARQ maps
@@ -1709,6 +1710,35 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 					d.log.Debugf("handlePayloadReply: Sent retry for BoxIDNotFound, attempt %d", arqMessage.Retransmissions)
 					return
 				}
+			}
+		}
+
+		// Check if this is a BoxAlreadyExists error for a WRITE operation
+		// By default, treat this as idempotent success - the write has already been persisted
+		// However, if NoIdempotentBoxAlreadyExists is set, return the error instead
+		if errors.As(err, &re) && re.code == pigeonhole.ReplicaErrorBoxAlreadyExists && !arqMessage.IsRead {
+			if arqMessage.NoIdempotentBoxAlreadyExists {
+				// Client wants to know about BoxAlreadyExists - don't treat as success
+				d.log.Debugf("handlePayloadReply: BoxAlreadyExists for write operation - returning error (NoIdempotentBoxAlreadyExists=true)")
+				// Fall through to error handling below
+			} else {
+				d.log.Debugf("handlePayloadReply: BoxAlreadyExists for write operation - treating as idempotent success")
+
+				// Remove from ARQ tracking
+				d.replyLock.Lock()
+				delete(d.arqSurbIDMap, *arqMessage.SURBID)
+				delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+				d.replyLock.Unlock()
+
+				// Send success response (idempotent write)
+				conn.sendResponse(&Response{
+					AppID: arqMessage.AppID,
+					StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+						QueryID:   arqMessage.QueryID,
+						ErrorCode: thin.ThinClientSuccess,
+					},
+				})
+				return
 			}
 		}
 

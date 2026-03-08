@@ -109,4 +109,9 @@ type ARQMessage struct {
 	// When true, BoxIDNotFound is returned immediately. When false (default), reads retry
 	// up to 10 times to handle replication lag.
 	NoRetryOnBoxIDNotFound bool
+
+	// NoIdempotentBoxAlreadyExists disables treating BoxAlreadyExists as idempotent success
+	// for write operations. When true, BoxAlreadyExists is returned as an error.
+	// When false (default), BoxAlreadyExists is treated as success (the write already happened).
+	NoIdempotentBoxAlreadyExists bool
 }

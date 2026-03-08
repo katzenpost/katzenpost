@@ -262,6 +262,12 @@ type StartResendingEncryptedMessage struct {
 	// 10 times to handle replication lag. Set to true to get immediate
 	// BoxIDNotFound error without retries.
 	NoRetryOnBoxIDNotFound bool `cbor:"no_retry_on_box_id_not_found,omitempty"`
+
+	// NoIdempotentBoxAlreadyExists controls whether BoxAlreadyExists errors on writes
+	// are treated as idempotent success. By default (false), BoxAlreadyExists is treated
+	// as success (the write already happened). Set to true to return BoxAlreadyExists
+	// as an error instead.
+	NoIdempotentBoxAlreadyExists bool `cbor:"no_idempotent_box_already_exists,omitempty"`
 }
 
 // CancelResendingEncryptedMessage requests the daemon to cancel resending an encrypted message.

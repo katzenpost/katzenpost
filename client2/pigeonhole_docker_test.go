@@ -1127,8 +1127,9 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 	t.Log("✓ Encrypted second message")
 
 	// Send the second write - should fail with BoxAlreadyExists
-	// The daemon now waits for the payload reply from the replica, which contains the error
-	_, err = thinClient.StartResendingEncryptedMessage(
+	// Use StartResendingEncryptedMessageReturnBoxExists to get the error instead of
+	// treating it as idempotent success
+	_, err = thinClient.StartResendingEncryptedMessageReturnBoxExists(
 		ctx,
 		nil,         // readCap
 		writeCap,    // writeCap
