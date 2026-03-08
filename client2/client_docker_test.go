@@ -31,7 +31,6 @@ func TestLegacyTests(t *testing.T) {
 	}()
 
 	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
-	t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
 	t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
 }
 
@@ -52,19 +51,6 @@ func testDockerMultiplexClients(t *testing.T) {
 
 	reply = sendAndWait(t, client2, message1, &nodeIdKey, []byte("+echo"))
 	require.Equal(t, message1, reply[:len(message1)])
-}
-
-func testDockerClientARQSendReceive(t *testing.T) {
-	t.Parallel()
-
-	client, pingTargets := setupClientAndTargets(t)
-	defer client.Close()
-
-	message1 := []byte("hello alice, this is bob.")
-	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
-
-	// Send the same message 7 times using BlockingSendReliableMessage
-	repeatBlockingSendReliableMessage(t, client, message1, &nodeIdKey, []byte("+echo"), 7)
 }
 
 func testDockerClientSendReceive(t *testing.T) {

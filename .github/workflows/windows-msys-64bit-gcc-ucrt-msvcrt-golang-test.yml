@@ -22,6 +22,7 @@ jobs:
           - { name: "core", path: "core", timeout: "30m" }
           - { name: "sphinx", path: "core/sphinx", timeout: "30m" }
           - { name: "server", path: "server", timeout: "30m" }
+          - { name: "pigeonhole", path: "pigeonhole", timeout: "30m" }
       fail-fast: false
     runs-on: ${{ matrix.OS }}
     name: test-${{ matrix.test-suite.name }}-windows
