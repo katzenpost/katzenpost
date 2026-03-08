@@ -1371,9 +1371,10 @@ func TestArqDoResendWithNilListener(t *testing.T) {
 	t.Log("arqDoResend nil listener test completed successfully")
 }
 
-// TestARQSuccessWriteACK tests the ARQ success code path for write operations (ACK).
-// This tests the full path: SURB reply arrives -> handlePigeonholeARQReply -> success response sent.
-func TestARQSuccessWriteACK(t *testing.T) {
+// TestARQSuccessWritePayload tests the ARQ success code path for write operations.
+// Writes now wait for a payload reply (not just ACK) to get the actual result from the replica.
+// This tests the full path: SURB reply arrives -> handlePigeonholeARQReply -> handlePayloadReply -> success response sent.
+func TestARQSuccessWritePayload(t *testing.T) {
 	require := require.New(t)
 
 	// Create a minimal daemon with required fields
@@ -1391,12 +1392,58 @@ func TestARQSuccessWriteACK(t *testing.T) {
 	sphinxInstance, err := sphinx.FromGeometry(cfg.SphinxGeometry)
 	require.NoError(err)
 
-	// Create a Client with the sphinx instance
+	// Generate replica NIKE keys for the mock PKI document
+	replicaNikeScheme := replicaCommon.NikeScheme
+	replica0PubKey, replica0PrivKey, err := replicaNikeScheme.GenerateKeyPair()
+	require.NoError(err)
+	replica0PubKeyBytes, err := replica0PubKey.MarshalBinary()
+	require.NoError(err)
+
+	replica1PubKey, _, err := replicaNikeScheme.GenerateKeyPair()
+	require.NoError(err)
+	replica1PubKeyBytes, err := replica1PubKey.MarshalBinary()
+	require.NoError(err)
+
+	// Get current replica epoch
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+
+	// Create mock replica descriptors
+	replica0Desc := &cpki.ReplicaDescriptor{
+		Name:      "replica0",
+		ReplicaID: 0,
+		EnvelopeKeys: map[uint64][]byte{
+			replicaEpoch: replica0PubKeyBytes,
+		},
+	}
+	replica1Desc := &cpki.ReplicaDescriptor{
+		Name:      "replica1",
+		ReplicaID: 1,
+		EnvelopeKeys: map[uint64][]byte{
+			replicaEpoch: replica1PubKeyBytes,
+		},
+	}
+
+	// Create mock PKI document
+	currentEpoch, _, _ := epochtime.Now()
+	mockDoc := &cpki.Document{
+		Epoch:           currentEpoch,
+		StorageReplicas: []*cpki.ReplicaDescriptor{replica0Desc, replica1Desc},
+	}
+
+	// Create a Client with the sphinx instance and mock PKI
 	client := &Client{
 		cfg:    cfg,
 		sphinx: sphinxInstance,
 		geo:    cfg.SphinxGeometry,
+		pki: &pki{
+			c:   nil, // Will be set below
+			log: logBackend.GetLogger("pki"),
+		},
 	}
+	client.pki.c = client
+
+	// Store the mock PKI document
+	client.pki.docs.Store(currentEpoch, &CachedDoc{Doc: mockDoc})
 
 	rates := &Rates{}
 	egressCh := make(chan *Request, 10)
@@ -1423,6 +1470,21 @@ func TestARQSuccessWriteACK(t *testing.T) {
 		channelRepliesLock:        new(sync.RWMutex),
 	}
 
+	// Generate client's NIKE keypair for the envelope
+	clientPubKey, clientPrivKey, err := replicaNikeScheme.GenerateKeyPair()
+	require.NoError(err)
+	clientPrivKeyBytes, err := clientPrivKey.MarshalBinary()
+	require.NoError(err)
+
+	// Create an EnvelopeDescriptor that stores the client's private key
+	envelopeDesc := &EnvelopeDescriptor{
+		EnvelopeKey: clientPrivKeyBytes,
+		ReplicaNums: [2]uint8{0, 1},
+		Epoch:       replicaEpoch,
+	}
+	envelopeDescBytes, err := envelopeDesc.Bytes()
+	require.NoError(err)
+
 	// Generate test identifiers
 	testAppID := &[AppIDLength]byte{}
 	copy(testAppID[:], []byte("arq-success-appid"))
@@ -1445,15 +1507,29 @@ func TestARQSuccessWriteACK(t *testing.T) {
 	testSURBID := &[sphinxConstants.SURBIDLength]byte{}
 	copy(testSURBID[:], surb[:sphinxConstants.SURBIDLength])
 
-	// Create a CourierQueryReply with ReplyType=0 (envelope reply) and
-	// CourierEnvelopeReply with ReplyType=0 (ACK) and ErrorCode=0 (success)
+	// Create a ReplicaMessageReplyInnerMessage with WriteReply (success)
+	writeReplyInnerMsg := &pigeonhole.ReplicaMessageReplyInnerMessage{
+		MessageType: 1, // 1 = write_reply
+		WriteReply: &pigeonhole.ReplicaWriteReply{
+			ErrorCode: 0, // Success
+		},
+	}
+	writeReplyInnerMsgBytes := writeReplyInnerMsg.Bytes()
+
+	// Encrypt the reply using MKEM EnvelopeReply (replica encrypts for client)
+	// This uses DH between replica's private key and client's public key
+	encryptedPayload := replicaCommon.MKEMNikeScheme.EnvelopeReply(
+		replica0PrivKey, clientPubKey, writeReplyInnerMsgBytes,
+	)
+
+	// Create a CourierEnvelopeReply with ReplyType=Payload containing the encrypted write reply
 	courierEnvelopeReply := &pigeonhole.CourierEnvelopeReply{
 		EnvelopeHash: *testEnvelopeHash,
 		ReplyIndex:   0,
-		ReplyType:    pigeonhole.ReplyTypeACK, // ACK for write success
-		PayloadLen:   0,
-		Payload:      []byte{},
-		ErrorCode:    0, // Success
+		ReplyType:    pigeonhole.ReplyTypePayload, // Payload reply (not ACK)
+		PayloadLen:   uint32(len(encryptedPayload.Envelope)),
+		Payload:      encryptedPayload.Envelope,
+		ErrorCode:    0,
 	}
 
 	courierQueryReply := &pigeonhole.CourierQueryReply{
@@ -1479,7 +1555,6 @@ func TestARQSuccessWriteACK(t *testing.T) {
 		b, _, _, err := sphinxInstance.Unwrap(nodes[i].privateKey, pkt)
 		require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 		if i == len(path)-1 {
-			// At the final hop, b contains the encrypted payload
 			finalCiphertext = b
 		}
 	}
@@ -1498,13 +1573,16 @@ func TestARQSuccessWriteACK(t *testing.T) {
 	listener.connsLock.Unlock()
 
 	// Register the ARQ message in the daemon's maps
+	// Set state to ACKReceived to simulate that we already received an ACK
 	arqMessage := &ARQMessage{
 		AppID:              testAppID,
 		QueryID:            testQueryID,
 		EnvelopeHash:       testEnvelopeHash,
 		SURBID:             testSURBID,
 		SURBDecryptionKeys: surbKeys,
-		IsRead:             false, // Write operation
+		EnvelopeDescriptor: envelopeDescBytes,
+		IsRead:             false,               // Write operation
+		State:              ARQStateACKReceived, // Already received ACK, waiting for payload
 	}
 
 	d.replyLock.Lock()
@@ -1527,8 +1605,8 @@ func TestARQSuccessWriteACK(t *testing.T) {
 		require.NotNil(resp.StartResendingEncryptedMessageReply)
 		require.Equal(thin.ThinClientSuccess, resp.StartResendingEncryptedMessageReply.ErrorCode)
 		require.Equal(testQueryID, resp.StartResendingEncryptedMessageReply.QueryID)
-		require.Empty(resp.StartResendingEncryptedMessageReply.Plaintext) // ACK has no plaintext
-		t.Logf("ARQ success write ACK test passed - received success response with ErrorCode=%d",
+		require.Empty(resp.StartResendingEncryptedMessageReply.Plaintext) // Writes have no plaintext
+		t.Logf("ARQ success write payload test passed - received success response with ErrorCode=%d",
 			resp.StartResendingEncryptedMessageReply.ErrorCode)
 	case <-time.After(2 * time.Second):
 		t.Fatal("Expected a response but got none within timeout")
