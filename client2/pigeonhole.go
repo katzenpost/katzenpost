@@ -1673,23 +1673,19 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		var re *replicaError
 		const maxBoxIDNotFoundRetries = 10
 
-		// Extract boxIdx64 for logging
-		var boxIdx64 uint64 = 0
-		if len(arqMessage.NextMessageIndex) >= 8 {
-			boxIdx64 = uint64(arqMessage.NextMessageIndex[0]) |
-				uint64(arqMessage.NextMessageIndex[1])<<8 |
-				uint64(arqMessage.NextMessageIndex[2])<<16 |
-				uint64(arqMessage.NextMessageIndex[3])<<24 |
-				uint64(arqMessage.NextMessageIndex[4])<<32 |
-				uint64(arqMessage.NextMessageIndex[5])<<40 |
-				uint64(arqMessage.NextMessageIndex[6])<<48 |
-				uint64(arqMessage.NextMessageIndex[7])<<56
+		// Log all conditions for debugging retry logic
+		isReplicaError := errors.As(err, &re)
+		var replicaErrorCode uint8
+		if isReplicaError {
+			replicaErrorCode = re.code
 		}
+		d.log.Debugf("handlePayloadReply: error=%v, isReplicaError=%v, replicaErrorCode=%d (BoxIDNotFound=%d), IsRead=%v, NoRetryOnBoxIDNotFound=%v, Retransmissions=%d",
+			err, isReplicaError, replicaErrorCode, pigeonhole.ReplicaErrorBoxIDNotFound, arqMessage.IsRead, arqMessage.NoRetryOnBoxIDNotFound, arqMessage.Retransmissions)
 
-		if errors.As(err, &re) && re.code == pigeonhole.ReplicaErrorBoxIDNotFound && arqMessage.IsRead &&
+		if isReplicaError && re.code == pigeonhole.ReplicaErrorBoxIDNotFound && arqMessage.IsRead &&
 			!arqMessage.NoRetryOnBoxIDNotFound && arqMessage.Retransmissions < maxBoxIDNotFoundRetries {
-			d.log.Debugf("handlePayloadReply: BoxIDNotFound for read operation boxIdx64=%d, NoRetryOnBoxIDNotFound=%v, scheduling retry (%d/%d)",
-				boxIdx64, arqMessage.NoRetryOnBoxIDNotFound, arqMessage.Retransmissions+1, maxBoxIDNotFoundRetries)
+			d.log.Debugf("handlePayloadReply: BoxIDNotFound for read operation, scheduling retry (%d/%d)",
+				arqMessage.Retransmissions+1, maxBoxIDNotFoundRetries)
 
 			// Create a new SURB ID for the retry
 			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
@@ -1737,16 +1733,16 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 						// Don't return error - the ARQ timer will retry
 					}
 
-					d.log.Debugf("handlePayloadReply: Sent retry for BoxIDNotFound boxIdx64=%d, attempt %d", boxIdx64, arqMessage.Retransmissions)
+					d.log.Debugf("handlePayloadReply: Sent retry for BoxIDNotFound, attempt %d", arqMessage.Retransmissions)
 					return
 				}
 			}
-		} else if errors.As(err, &re) && re.code == pigeonhole.ReplicaErrorBoxIDNotFound && arqMessage.IsRead {
+		} else if isReplicaError && re.code == pigeonhole.ReplicaErrorBoxIDNotFound && arqMessage.IsRead {
 			// Log why we're NOT retrying
 			if arqMessage.NoRetryOnBoxIDNotFound {
-				d.log.Debugf("handlePayloadReply: BoxIDNotFound for boxIdx64=%d, NOT retrying (NoRetryOnBoxIDNotFound=true)", boxIdx64)
+				d.log.Debugf("handlePayloadReply: BoxIDNotFound - NOT retrying (NoRetryOnBoxIDNotFound=true)")
 			} else if arqMessage.Retransmissions >= maxBoxIDNotFoundRetries {
-				d.log.Debugf("handlePayloadReply: BoxIDNotFound for boxIdx64=%d, NOT retrying (max retries %d reached)", boxIdx64, maxBoxIDNotFoundRetries)
+				d.log.Debugf("handlePayloadReply: BoxIDNotFound - NOT retrying (max retries %d reached)", maxBoxIDNotFoundRetries)
 			}
 		}
 
