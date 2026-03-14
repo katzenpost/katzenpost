@@ -1064,6 +1064,125 @@ func TestBoxIDNotFoundError(t *testing.T) {
 	t.Log("✓ SUCCESS: Correctly received ErrBoxIDNotFound error when reading from non-existent box")
 }
 
+// TestReadBeforeWrite tests the race condition where a read is attempted
+// before the corresponding write has been made. This verifies that the
+// retry logic in kpclientd (for BoxIDNotFound errors) works correctly:
+//
+// 1. Alice and Bob share a keypair (same box ID)
+// 2. Bob starts reading BEFORE Alice writes (box doesn't exist yet)
+// 3. Alice writes to the box after a delay
+// 4. Bob's read should eventually succeed due to retry mechanism
+//
+// This test validates that the default retry behavior (NoRetryOnBoxIDNotFound=false)
+// correctly handles the case where data hasn't been replicated yet.
+func TestReadBeforeWrite(t *testing.T) {
+	// Setup Alice and Bob thin clients
+	aliceThinClient := setupThinClient(t)
+	defer aliceThinClient.Close()
+	bobThinClient := setupThinClient(t)
+	defer bobThinClient.Close()
+
+	// Validate PKI documents
+	aliceDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := aliceDoc.Epoch
+	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
+	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+	t.Logf("Using PKI document for epoch %d", currentEpoch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	// Create keypair - Alice gets WriteCap, Bob gets ReadCap, both target same box
+	t.Log("=== Setup: Creating shared keypair ===")
+	seed := make([]byte, 32)
+	_, err := rand.Reader.Read(seed)
+	require.NoError(t, err)
+
+	aliceWriteCap, bobReadCap, firstIndex, err := aliceThinClient.NewKeypair(ctx, seed)
+	require.NoError(t, err)
+	require.NotNil(t, aliceWriteCap, "Alice: WriteCap is nil")
+	require.NotNil(t, bobReadCap, "Bob: ReadCap is nil")
+
+	// Log the box ID both will be using
+	boxID := firstIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+	t.Logf("Shared Box ID: %x", boxID.Bytes())
+
+	// Channel to receive Bob's read result
+	type readResult struct {
+		plaintext []byte
+		err       error
+	}
+	bobResultChan := make(chan readResult, 1)
+
+	// Start Bob's read in a goroutine BEFORE Alice writes
+	// This read will initially fail with BoxIDNotFound, but should retry
+	t.Log("=== Step 1: Bob starts reading (box doesn't exist yet) ===")
+	go func() {
+		// Encrypt Bob's read request
+		bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, err := bobThinClient.EncryptRead(ctx, bobReadCap, firstIndex)
+		if err != nil {
+			bobResultChan <- readResult{nil, err}
+			return
+		}
+
+		// Send read request - this uses DEFAULT behavior (retries enabled)
+		// The read will fail initially with BoxIDNotFound, but kpclientd will retry
+		replyIndex := uint8(0)
+		plaintext, err := bobThinClient.StartResendingEncryptedMessage(
+			ctx,
+			bobReadCap,    // readCap
+			nil,           // writeCap (nil for read operations)
+			bobNextIndex,  // nextMessageIndex
+			&replyIndex,   // replyIndex
+			bobEnvDesc,    // envelopeDescriptor
+			bobCiphertext, // messageCiphertext
+			bobEnvHash,    // envelopeHash
+		)
+		bobResultChan <- readResult{plaintext, err}
+	}()
+
+	// Wait a bit to ensure Bob's read is in-flight and retrying
+	t.Log("=== Step 2: Waiting 5 seconds before Alice writes ===")
+	time.Sleep(5 * time.Second)
+
+	// Alice writes the message
+	t.Log("=== Step 3: Alice writes message (while Bob is retrying) ===")
+	aliceMessage := []byte("Hello Bob! I wrote this after you started reading.")
+	t.Logf("Alice: Writing message (%d bytes): %q", len(aliceMessage), aliceMessage)
+
+	aliceCiphertext, aliceEnvDesc, aliceEnvHash, err := aliceThinClient.EncryptWrite(ctx, aliceMessage, aliceWriteCap, firstIndex)
+	require.NoError(t, err)
+	require.NotEmpty(t, aliceCiphertext, "Alice: EncryptWrite returned empty ciphertext")
+
+	replyIndex := uint8(0)
+	_, err = aliceThinClient.StartResendingEncryptedMessage(
+		ctx,
+		nil,             // readCap (nil for write operations)
+		aliceWriteCap,   // writeCap
+		nil,             // nextMessageIndex (not needed for writes)
+		&replyIndex,     // replyIndex
+		aliceEnvDesc,    // envelopeDescriptor
+		aliceCiphertext, // messageCiphertext
+		aliceEnvHash,    // envelopeHash
+	)
+	require.NoError(t, err)
+	t.Log("Alice: Write completed")
+
+	// Wait for Bob's read to complete
+	t.Log("=== Step 4: Waiting for Bob's read to succeed ===")
+	select {
+	case result := <-bobResultChan:
+		require.NoError(t, result.err, "Bob's read should eventually succeed after Alice's write")
+		require.NotEmpty(t, result.plaintext, "Bob should receive the message")
+		require.Equal(t, aliceMessage, result.plaintext, "Bob's decrypted message should match Alice's original")
+		t.Logf("Bob: Received message: %q", result.plaintext)
+		t.Log("✓ SUCCESS: Bob's read succeeded after Alice's write (retry mechanism worked!)")
+
+	case <-ctx.Done():
+		t.Fatal("Test timed out waiting for Bob's read to complete")
+	}
+}
+
 // TestBoxAlreadyExistsError tests that we receive an ErrBoxAlreadyExists error
 // when attempting to write to a box that has already been written to.
 //
