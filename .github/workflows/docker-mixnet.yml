@@ -80,6 +80,9 @@ jobs:
       - name: run pigeonhole box already exists error test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_box_already_exists && cat coverage.part >> ../coverage.out
 
+      - name: run pigeonhole read before write test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_read_before_write && cat coverage.part >> ../coverage.out
+
       - name: Stop the mixnet
         run: |
           cd docker && make stop
