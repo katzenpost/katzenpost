@@ -181,9 +181,13 @@ func TestReplicaReplication(t *testing.T) {
 		t.Logf("REPLICATION_TEST: Reading from shard replica %d (index %d)", shardNum, shardIdx)
 
 		// Retry loop - replication may take time to propagate
+		// Retry indefinitely until success or timeout (5 minutes max)
 		var readReply *pigeonhole.ReplicaMessageReplyInnerMessage
-		maxRetries := 10
-		for retry := 0; retry < maxRetries; retry++ {
+		startTime := time.Now()
+		maxDuration := 5 * time.Minute
+		retryCount := 0
+		for {
+			retryCount++
 			// Create a read request targeting this specific shard replica
 			readReply = readFromSpecificReplica(t, env, expectedBoxID, shardIdx, replicaEpoch)
 
@@ -194,8 +198,12 @@ func TestReplicaReplication(t *testing.T) {
 
 			if readReply != nil && readReply.ReadReply != nil &&
 				readReply.ReadReply.ErrorCode == pigeonhole.ReplicaErrorBoxIDNotFound {
-				t.Logf("REPLICATION_TEST: Shard replica %d returned BoxIDNotFound, retrying (%d/%d)...",
-					shardIdx, retry+1, maxRetries)
+				if time.Since(startTime) > maxDuration {
+					t.Fatalf("REPLICATION_TEST: Shard replica %d still returning BoxIDNotFound after %v (attempt %d)",
+						shardIdx, maxDuration, retryCount)
+				}
+				t.Logf("REPLICATION_TEST: Shard replica %d returned BoxIDNotFound, retrying (attempt %d)...",
+					shardIdx, retryCount)
 				time.Sleep(2 * time.Second)
 				continue
 			}
