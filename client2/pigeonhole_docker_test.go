@@ -1168,6 +1168,13 @@ func TestReadBeforeWrite(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("Alice: Write completed")
 
+	// Wait for message propagation to storage replicas
+	// This is needed because Alice's write ACK only confirms the message was received,
+	// not that it has been replicated to all storage nodes. Bob's retry might hit a
+	// different node that doesn't have the data yet.
+	t.Log("Waiting for message propagation to storage replicas (30 seconds)")
+	time.Sleep(30 * time.Second)
+
 	// Wait for Bob's read to complete
 	t.Log("=== Step 4: Waiting for Bob's read to succeed ===")
 	select {
