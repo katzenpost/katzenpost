@@ -1146,3 +1146,102 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 
 	t.Log("✓ SUCCESS: Correctly received ErrBoxAlreadyExists error when writing to existing box")
 }
+
+func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
+	// Setup thin client
+	thinClient := setupThinClient(t)
+	defer thinClient.Close()
+
+	// Validate PKI document
+	validatePKIDocument(t, thinClient)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Create a new keypair
+	t.Log("=== Creating a keypair for the test ===")
+	seed := make([]byte, 32)
+	_, err := rand.Reader.Read(seed)
+	require.NoError(t, err)
+
+	writeCap, _, firstIndex, err := thinClient.NewKeypair(ctx, seed)
+	require.NoError(t, err)
+	require.NotNil(t, writeCap, "WriteCap should not be nil")
+	t.Log("✓ Created keypair")
+
+	// First write - should succeed
+	t.Log("=== First write (should succeed) ===")
+	message1 := []byte("First message - this should work")
+	ciphertext1, envDesc1, envHash1, err := thinClient.EncryptWrite(ctx, message1, writeCap, firstIndex)
+	require.NoError(t, err)
+	require.NotEmpty(t, ciphertext1, "EncryptWrite should return ciphertext")
+	t.Log("✓ Encrypted first message")
+
+	// Send the first write
+	_, err = thinClient.StartResendingEncryptedMessage(
+		ctx,
+		nil,         // readCap (nil for write operations)
+		writeCap,    // writeCap
+		nil,         // nextMessageIndex (nil for write operations)
+		nil,         // replyIndex (nil for write operations)
+		envDesc1,    // envelopeDescriptor
+		ciphertext1, // messageCiphertext
+		envHash1,    // envelopeHash
+	)
+	require.NoError(t, err, "First write should succeed")
+	t.Log("✓ First write succeeded")
+
+	// Wait for propagation to ensure the first write is fully replicated
+	t.Log("Waiting for message propagation...")
+	time.Sleep(5 * time.Second)
+
+	// Compose copy temp stream
+	tempSeed := make([]byte, 32)
+	_, err = rand.Reader.Read(tempSeed)
+	require.NoError(t, err)
+
+	tempWriteCap, _, tempFirstIndex, err := thinClient.NewKeypair(ctx, tempSeed)
+	require.NoError(t, err)
+	require.NotNil(t, tempWriteCap, "Temp WriteCap is nil")
+
+	largePayload := make([]byte, 2000)
+	_, err = rand.Reader.Read(largePayload)
+	require.NoError(t, err)
+
+	streamID := thinClient.NewStreamID()
+	copyStreamChunks, err := thinClient.CreateCourierEnvelopesFromPayload(ctx, streamID, largePayload, writeCap, firstIndex, true /* isLast */)
+	require.NoError(t, err)
+	require.NotEmpty(t, copyStreamChunks, "CreateCourierEnvelopesFromPayload returned empty chunks")
+	numChunks := len(copyStreamChunks)
+
+	tempIndex := tempFirstIndex
+	replyIndex := uint8(0)
+
+	for i, chunk := range copyStreamChunks {
+		t.Logf("--- Writing copy stream chunk %d/%d to temporary channel ---", i+1, numChunks)
+
+		// Encrypt the chunk for the copy stream
+		ciphertext, envDesc, envHash, err := thinClient.EncryptWrite(ctx, chunk, tempWriteCap, tempIndex)
+		require.NoError(t, err)
+		require.NotEmpty(t, ciphertext, "EncryptWrite returned empty ciphertext for chunk %d", i+1)
+		t.Logf("Alice: Encrypted copy stream chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
+
+		// Send the encrypted chunk to the copy stream
+		_, err = thinClient.StartResendingEncryptedMessage(
+			ctx, nil, tempWriteCap, nil, &replyIndex,
+			envDesc, ciphertext, envHash)
+		require.NoError(t, err)
+		t.Logf("Alice: Sent copy stream chunk %d to temporary channel", i+1)
+
+		// Increment temp index for next chunk
+		tempIndex, err = thinClient.NextMessageBoxIndex(ctx, tempIndex)
+		require.NoError(t, err)
+	}
+
+	// Wait for all chunks to propagate to the copy stream
+	t.Log("Waiting for copy stream chunks to propagate to temporary channel (30 seconds)")
+	time.Sleep(30 * time.Second)
+
+	err = thinClient.StartResendingCopyCommand(ctx, tempWriteCap)
+	require.Error(t, err)
+}
