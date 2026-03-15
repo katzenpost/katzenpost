@@ -1189,6 +1189,11 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 		Doc:  doc,
 		Blob: nil,
 	})
+	// Also store for next epoch to avoid failure if epoch boundary is crossed during test.
+	client.pki.docs.Store(currentEpoch+1, &CachedDoc{
+		Doc:  doc,
+		Blob: nil,
+	})
 
 	d := &Daemon{
 		logbackend:                logBackend,
