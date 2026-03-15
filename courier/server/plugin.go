@@ -594,13 +594,18 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 
 	switch {
 	case ok:
-		// If the cached entry contains only errors (e.g. BoxIDNotFound), re-dispatch to the
-		// replicas so a fresh query can reflect any writes that happened since the last attempt.
-		// storeOrReplaceReply will overwrite the cached error if the replica now returns success.
+		// If the cached entry contains only read errors (e.g. BoxIDNotFound), trigger an
+		// async re-dispatch to the replicas so the cache gets refreshed for the next client
+		// retry. We still return the cached error immediately via handleOldMessage so that
+		// NoRetry clients receive the error and stop, while Retry clients' next request will
+		// find either success or a fresh BoxIDNotFound in the cache.
 		if e.cacheEntryHasOnlyErrors(cacheEntry) {
-			e.log.Debugf("OnCommand: Cached entry for %x has error replies, re-dispatching to replicas", envHash)
-			e.storePendingRequest(envHash, requestID, surb)
-			return e.handleNewMessage(envHash, courierMessage)
+			e.log.Debugf("OnCommand: Cached entry for %x has read errors, triggering async re-dispatch", envHash)
+			go func() {
+				if err := e.propagateQueryToReplicas(courierMessage); err != nil {
+					e.log.Errorf("OnCommand: async re-dispatch for %x failed: %s", envHash, err)
+				}
+			}()
 		}
 		e.log.Debugf("OnCommand: Found cached entry for envelope hash %x, calling handleOldMessage", envHash)
 		return e.handleOldMessage(cacheEntry, envHash, courierMessage)
