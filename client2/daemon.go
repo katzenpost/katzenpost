@@ -1581,36 +1581,14 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	d.log.Debugf("Pigeonhole ARQ resend (attempt %d) for EnvelopeHash %x", message.Retransmissions+1, message.EnvelopeHash[:])
 	delete(d.arqSurbIDMap, *surbID)
 
-	// Get a new random Courier for this retry
-	_, doc := d.client.CurrentDocument()
-	if doc == nil {
-		d.log.Warningf("ARQ resend: no PKI document available, rescheduling")
-		// Re-add to map and reschedule
-		d.arqSurbIDMap[*surbID] = message
-		d.replyLock.Unlock()
-		// Reschedule for later
-		if d.arqTimerQueue != nil {
-			retryTime := time.Now().Add(RoundTripTimeSlop)
-			d.arqTimerQueue.Push(uint64(retryTime.UnixNano()), surbID)
-		}
-		return
-	}
-
-	destIdHash, recipientQueueID, err := GetRandomCourier(doc)
-	if err != nil {
-		d.log.Warningf("ARQ resend: failed to get courier: %s, rescheduling", err)
-		// Re-add to map and reschedule
-		d.arqSurbIDMap[*surbID] = message
-		d.replyLock.Unlock()
-		if d.arqTimerQueue != nil {
-			retryTime := time.Now().Add(RoundTripTimeSlop)
-			d.arqTimerQueue.Push(uint64(retryTime.UnixNano()), surbID)
-		}
-		return
-	}
+	// Reuse the same courier for retries so the courier's dedup cache stays consistent.
+	// Switching couriers can cause a different courier to see BoxAlreadyExists (for writes)
+	// or BoxIDNotFound (for reads) and get into an infinite re-dispatch loop.
+	destIdHash := message.DestinationIdHash
+	recipientQueueID := message.RecipientQueueID
 
 	newsurbID := &[sphinxConstants.SURBIDLength]byte{}
-	_, err = rand.Reader.Read(newsurbID[:])
+	_, err := rand.Reader.Read(newsurbID[:])
 	if err != nil {
 		panic(err)
 	}
@@ -1631,8 +1609,6 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	message.SURBDecryptionKeys = k
 	message.ReplyETA = rtt
 	message.SentAt = time.Now()
-	message.DestinationIdHash = destIdHash
-	message.RecipientQueueID = recipientQueueID
 	message.Retransmissions += 1
 	d.arqSurbIDMap[*newsurbID] = message
 
