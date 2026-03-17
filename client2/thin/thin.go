@@ -678,8 +678,8 @@ func (t *ThinClient) worker() {
 			default:
 			}
 			t.log.Errorf("thin client ReceiveMessage failed: %v", err)
-			if err == io.EOF {
-				// XXX: should we halt ThinClient on EOF??
+			// Halt on any error that indicates the connection is permanently broken.
+			if err == io.EOF || err == io.ErrClosedPipe {
 				go t.Halt()
 				return
 			}
@@ -925,6 +925,13 @@ func (t *ThinClient) worker() {
 		case message.CreateCourierEnvelopesFromPayloadsReply != nil:
 			select {
 			case t.eventSink <- message.CreateCourierEnvelopesFromPayloadsReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.SetStreamBufferReply != nil:
+			select {
+			case t.eventSink <- message.SetStreamBufferReply:
 				continue
 			case <-t.HaltCh():
 				return

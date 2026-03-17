@@ -1131,6 +1131,69 @@ func (t *ThinClient) NewStreamID() *[StreamIDLength]byte {
 	return id
 }
 
+// SetStreamBuffer restores the buffered encoder state for a given stream ID.
+// This is useful for crash recovery: after a restart, call this with the buffer
+// that was returned in CreateEnvelopesResult.Buffer before the crash, then
+// continue calling CreateCourierEnvelopesFromMultiPayload as normal.
+func (t *ThinClient) SetStreamBuffer(ctx context.Context, streamID *[StreamIDLength]byte, buffer []byte) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if streamID == nil {
+		return errors.New("streamID cannot be nil")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		SetStreamBuffer: &SetStreamBuffer{
+			QueryID:  queryID,
+			StreamID: streamID,
+			Buffer:   buffer,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return errHalting
+		}
+
+		switch v := event.(type) {
+		case *SetStreamBufferReply:
+			if v.QueryID == nil {
+				t.log.Debugf("SetStreamBuffer: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("SetStreamBuffer: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return nil
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
 // CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
 //
 // This method automatically chunks the payload into appropriately-sized pieces and
