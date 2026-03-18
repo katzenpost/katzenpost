@@ -888,7 +888,7 @@ func TestTombstoning(t *testing.T) {
 	time.Sleep(30 * time.Second)
 
 	// Step 2: Bob reads and verifies
-	ciphertext, envDesc, envHash, err := bob.EncryptRead(ctx, readCap, firstIndex)
+	ciphertext, envDesc, envHash, err = bob.EncryptRead(ctx, readCap, firstIndex)
 	require.NoError(t, err)
 	firstIndexBytes, err := firstIndex.MarshalBinary()
 	require.NoError(t, err)
