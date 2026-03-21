@@ -442,14 +442,15 @@ func generateReplicaKeys(t *testing.T, dataDir, pkiSignatureSchemeName, wireKEMS
 
 func createCourierConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxGeo *geo.Geometry) *courierConfig.Config {
 	return &courierConfig.Config{
-		DataDir:          dataDir,
-		WireKEMScheme:    linkScheme.Name(),
-		PKIScheme:        pkiScheme.Name(),
-		EnvelopeScheme:   replicaCommon.NikeScheme.Name(),
-		SphinxGeometry:   sphinxGeo,
-		ConnectTimeout:   60000,
-		HandshakeTimeout: 30000,
-		ReauthInterval:   300000, // 5 minutes to prevent connection churn during test
+		DataDir:             dataDir,
+		WireKEMScheme:       linkScheme.Name(),
+		PKIScheme:           pkiScheme.Name(),
+		EnvelopeScheme:      replicaCommon.NikeScheme.Name(),
+		SphinxGeometry:      sphinxGeo,
+		ConnectTimeout:      60000,
+		HandshakeTimeout:    30000,
+		ReauthInterval:      300000, // 5 minutes to prevent connection churn during test
+		DisableDecoyTraffic: true,
 
 		Logging: &courierConfig.Logging{
 			Disable: false,
