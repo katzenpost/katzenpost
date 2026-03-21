@@ -31,6 +31,9 @@ import (
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
+// GitCommit is the git commit hash, set at build time via -ldflags
+var GitCommit = "unknown"
+
 // ErrGenerateOnly is the error returned when the server initialization
 // terminates due to the `GenerateOnly` debug config option.
 var ErrGenerateOnly = errors.New("server: GenerateOnly set")
@@ -49,6 +52,8 @@ type GenericConnector interface {
 	ForceUpdate()
 	DispatchCommand(cmd commands.Command, idHash *[32]byte)
 	DispatchReplication(cmd *commands.ReplicaWrite)
+	QueueForRetry(cmd commands.Command, idHash [32]byte)
+	ConnectionCount() int
 }
 
 type Server struct {
@@ -126,6 +131,7 @@ func (s *Server) initLogging() error {
 	if err == nil {
 		s.log = s.logBackend.GetLogger("replica")
 		s.log.Noticef("Katzenpost replica version: %s", versioninfo.Short())
+		s.log.Noticef("Katzenpost replica git revision: %s", GitCommit)
 		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err
@@ -422,4 +428,20 @@ func (s *Server) startServices(pkiClient pki.Client) error {
 	s.connector = newConnector(s)
 
 	return nil
+}
+
+// ConnectionCount returns the number of active outgoing connections to other replicas.
+// This is useful for testing to verify inter-replica connections are established.
+func (s *Server) ConnectionCount() int {
+	if s.connector == nil {
+		return 0
+	}
+	return s.connector.ConnectionCount()
+}
+
+// ForceConnectorUpdate triggers the connector to rescan PKI and spawn new connections.
+func (s *Server) ForceConnectorUpdate() {
+	if s.connector != nil {
+		s.connector.ForceUpdate()
+	}
 }

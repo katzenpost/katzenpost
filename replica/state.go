@@ -26,6 +26,7 @@ const (
 
 var (
 	ErrBoxIDNotFound       = errors.New("Box ID not found")
+	ErrBoxAlreadyExists    = errors.New("BoxID already exists, writes are immutable")
 	ErrFailedDBRead        = errors.New("Failed to read from database")
 	ErrFailedToDeserialize = errors.New("Failed to deserialize data from DB")
 	ErrDBClosed            = errors.New("DB is closed")
@@ -111,6 +112,25 @@ func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pi
 	return box, nil
 }
 
+// boxExists checks if a BoxID already exists in the database.
+// Returns true if the box exists, false otherwise.
+func (s *state) boxExists(boxID *[32]byte) (bool, error) {
+	if s.db == nil {
+		return false, ErrDBClosed
+	}
+
+	ro := grocksdb.NewDefaultReadOptions()
+	defer ro.Destroy()
+	existing, err := s.db.Get(ro, boxID[:])
+	if err != nil {
+		s.log.Errorf("state: Failed to check if BoxID %x exists: %s", boxID, err)
+		return false, err
+	}
+	defer existing.Free()
+
+	return existing.Size() > 0, nil
+}
+
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	s.log.Debugf("state: Starting replica write for BoxID: %x", replicaWrite.BoxID)
 
@@ -119,6 +139,21 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		s.log.Error("state: Database is closed, cannot perform write")
 		return fmt.Errorf(errDatabaseClosed)
 	}
+
+	// Check if BoxID already exists (writes are immutable, only tombstones can overwrite)
+	ro := grocksdb.NewDefaultReadOptions()
+	defer ro.Destroy()
+	existing, err := s.db.Get(ro, replicaWrite.BoxID[:])
+	if err != nil {
+		s.log.Errorf("state: Failed to check existing entry for BoxID %x: %s", replicaWrite.BoxID, err)
+		return fmt.Errorf("failed to check existing entry: %w", err)
+	}
+	if existing.Size() > 0 {
+		existing.Free()
+		s.log.Debugf("state: BoxID %x already exists, rejecting write (writes are immutable)", replicaWrite.BoxID)
+		return ErrBoxAlreadyExists
+	}
+	existing.Free()
 
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
@@ -130,12 +165,46 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	copy(box.BoxID[:], replicaWrite.BoxID[:])
 	copy(box.Signature[:], replicaWrite.Signature[:])
 	s.log.Debugf("state: Attempting to write %d bytes to database", len(box.Bytes()))
-	err := s.db.Put(wo, box.BoxID[:], box.Bytes())
+	err = s.db.Put(wo, box.BoxID[:], box.Bytes())
 	if err != nil {
 		s.log.Errorf("state: Failed to write to database: %s", err)
 		return err
 	}
 	s.log.Debug("state: Successfully handled replica write")
+	return nil
+}
+
+// handleReplicaTombstone stores a tombstone (empty payload with signature) in the database.
+// Tombstones are BACAP messages with empty payloads that overwrite previously stored messages.
+// This allows readers to verify the tombstone was intentionally created by the writer.
+func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) error {
+	s.log.Debugf("state: Processing tombstone for BoxID: %x", boxID)
+
+	// Check if database is still open
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform tombstone write")
+		return fmt.Errorf(errDatabaseClosed)
+	}
+
+	wo := grocksdb.NewDefaultWriteOptions()
+	defer wo.Destroy()
+
+	// Store the tombstone as a Box with empty payload
+	box := &pigeonhole.Box{
+		PayloadLen: 0,
+		Payload:    nil,
+	}
+	copy(box.BoxID[:], boxID[:])
+	copy(box.Signature[:], signature[:])
+
+	s.log.Debugf("state: Writing tombstone to database for BoxID: %x", boxID)
+	err := s.db.Put(wo, box.BoxID[:], box.Bytes())
+	if err != nil {
+		s.log.Errorf("state: Failed to write tombstone for BoxID %x to database: %s", boxID, err)
+		return err
+	}
+
+	s.log.Debugf("state: Successfully stored tombstone for BoxID: %x", boxID)
 	return nil
 }
 

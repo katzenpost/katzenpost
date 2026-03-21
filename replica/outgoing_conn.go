@@ -55,8 +55,6 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !c.validateReplicaInPKI(creds) {
 		return false
 	}
-
-	c.log.Debug("OutgoingConn: Authentication successful")
 	return true
 }
 
@@ -118,6 +116,24 @@ func (c *outgoingConn) worker() {
 
 	defer func() {
 		c.log.Debugf("Halting connect worker.")
+		// Drain any pending commands from the channel and queue them for retry
+		// before closing. This prevents losing commands when connections fail.
+		idHash := hash.Sum256(c.dst.IdentityKey)
+		pendingCount := 0
+		for {
+			select {
+			case cmd := <-c.ch:
+				c.co.QueueForRetry(cmd, idHash)
+				pendingCount++
+			default:
+				// Channel is empty
+				if pendingCount > 0 {
+					c.log.Debugf("Queued %d pending commands for retry after connection closed", pendingCount)
+				}
+				goto done
+			}
+		}
+	done:
 		c.co.OnClosedConn(c)
 		close(c.ch)
 	}()
@@ -367,13 +383,20 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			continue
 		case cmd := <-c.ch:
 			if err := w.SendCommand(cmd); err != nil {
-				c.log.Debugf("SendCommand failed: %v", err)
+				c.log.Debugf("SendCommand failed: %v, queuing for retry", err)
+				// Re-queue the command for retry since we don't know if it was delivered
+				idHash := hash.Sum256(c.dst.IdentityKey)
+				c.co.QueueForRetry(cmd, idHash)
 				return
 			}
 
 			response, err := w.RecvCommand()
 			if err != nil {
-				c.log.Debugf("Failed to receive command: %v", err)
+				c.log.Debugf("Failed to receive command: %v, queuing for retry", err)
+				// Re-queue the command for retry since we don't know if it was delivered
+				// The command was sent but we didn't get acknowledgment
+				idHash := hash.Sum256(c.dst.IdentityKey)
+				c.co.QueueForRetry(cmd, idHash)
 				return
 			}
 			switch responseCmd := response.(type) {

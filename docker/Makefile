@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -7,6 +7,8 @@ help:
 	@echo " stop               - stop the testnet"
 	@echo " client-restart     - restart just the kpclientd daemon"
 	@echo " client-logs        - view kpclientd daemon logs"
+	@echo " courier-restart    - restart courier plugin via thwack interface"
+	@echo " servicenode-restart - restart servicenode container (heavier)"
 	@echo " wait               - wait for testnet to have consensus"
 	@echo " watch              - tail -F all logs"
 	@echo " watch-replicas     - monitor all replica logs"
@@ -31,7 +33,7 @@ no_mixdecoy?=true
 mixes=3
 auths=3
 gateways=1
-serviceNodes=1
+serviceNodes=3
 
 # Parameters
 sr=0
@@ -46,6 +48,8 @@ lDMax=3000
 lM=0.0005
 lMMax=100
 lGMax=1000
+lR=0.0005
+lRMax=1000
 
 UserForwardPayloadLength=2000
 
@@ -79,7 +83,8 @@ log_level=DEBUG
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
-ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+gitcommit=$(shell git rev-parse --short HEAD)
+ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/replica.GitCommit=${gitcommit}"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
@@ -115,6 +120,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--serviceNodes ${serviceNodes} \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
+		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
@@ -128,6 +134,7 @@ config-only: | $(net_name)
 		--serviceNodes ${serviceNodes} \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
+		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
 		${noMixDecoy} ${noDecoy} \
@@ -162,6 +169,25 @@ client-logs:
 	@echo "Tailing kpclientd daemon logs (Ctrl+C to exit)..."
 	cd $(net_name) && $(docker_compose) logs -f --tail 20 kpclientd
 
+courier-restart:
+	@echo "Stopping courier plugin via thwack management interface..."
+	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock' || true
+	@sleep 1
+	@echo "Cleaning and rebuilding courier binary..."
+	rm -fv $(net_name)/courier.$(distro)
+	make $(make_args) $(net_name)/courier.$(distro)
+	@echo "Starting courier plugin via thwack management interface..."
+	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock'
+	@echo "Courier service restarted with updated code"
+
+servicenode-restart:
+	@echo "Cleaning and rebuilding courier binary..."
+	rm -fv $(net_name)/courier.$(distro)
+	make $(make_args) $(net_name)/courier.$(distro)
+	@echo "Restarting servicenode1 container..."
+	cd $(net_name) && $(docker_compose) restart servicenode1
+	@echo "Servicenode restarted with updated courier binary"
+
 watch:
 	tail -F $(net_name)/*/*.log
 
@@ -179,12 +205,12 @@ watch-mixes:
 	tail -F $(net_name)/mix*/katzenpost.log
 
 watch-courier:
-	@echo "Monitoring courier service log (Ctrl+C to exit)..."
-	tail -F $(net_name)/servicenode1/courier/courier.log
+	@echo "Monitoring all courier service logs (Ctrl+C to exit)..."
+	tail -F $(net_name)/servicenode*/courier/courier.log
 
 watch-servicenode:
-	@echo "Monitoring service node log (Ctrl+C to exit)..."
-	tail -F $(net_name)/servicenode1/katzenpost.log
+	@echo "Monitoring all service node logs (Ctrl+C to exit)..."
+	tail -F $(net_name)/servicenode*/katzenpost.log
 
 watch-gateway:
 	@echo "Monitoring gateway log (Ctrl+C to exit)..."
@@ -196,8 +222,8 @@ watch-all-separate:
 	@(tail -F $(net_name)/replica*/katzenpost.log | sed 's/^/[REPLICA] /' &) ; \
 	(tail -F $(net_name)/auth*/katzenpost.log | sed 's/^/[AUTH] /' &) ; \
 	(tail -F $(net_name)/mix*/katzenpost.log | sed 's/^/[MIX] /' &) ; \
-	(tail -F $(net_name)/servicenode1/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
-	(tail -F $(net_name)/servicenode1/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
+	(tail -F $(net_name)/servicenode*/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
+	(tail -F $(net_name)/servicenode*/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
 	(tail -F $(net_name)/gateway1/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
 	wait
 
@@ -232,7 +258,7 @@ alpine_base.stamp:
 	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/alpine:20250108 sh -c '\
 		adduser katzenpost --gecos "" --disabled-password && \
 		apk update && apk upgrade && \
-		apk add gcc musl-dev make pv rocksdb-dev g++ curl && \
+		apk add gcc musl-dev make pv rocksdb-dev g++ curl netcat-openbsd && \
 		curl -fsSL https://go.dev/dl/go1.26.0.linux-amd64.tar.gz | tar -C /usr/local -xzf - && \
 		ln -s /usr/local/go/bin/go /usr/bin/go && \
 		ln -s /usr/local/go/bin/gofmt /usr/bin/gofmt' \
@@ -296,6 +322,10 @@ clean-bin: stop
 	rm -vf ./$(net_name)/*.$(distro)
 
 clean-local: clean-bin
+	# Clean up replica data files (preserve .toml configs)
+	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
+	# Clean up courier data files (preserve .toml configs)
+	rm -rfv $(net_name)/servicenode*/courier/*.log $(net_name)/servicenode*/courier/*.db $(net_name)/servicenode*/courier/link.*.pem
 	git clean -f -x $(net_name)
 	git status .
 

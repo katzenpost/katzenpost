@@ -146,6 +146,10 @@ performance optimization and security requirements.`,
 		"maximum delay for lambdaM in milliseconds")
 	cmd.Flags().Uint64Var(&cfg.LGMax, "lambdaGMax", 100,
 		"maximum delay for gateway lambda in milliseconds")
+	cmd.Flags().Float64Var(&cfg.LR, "lambdaR", 0.0005,
+		"inverse of mean courier/replica decoy send rate")
+	cmd.Flags().Uint64Var(&cfg.LRMax, "lambdaRMax", 1000,
+		"maximum delay for lambdaR in milliseconds")
 
 	// Logging flags
 	cmd.Flags().StringVar(&cfg.LogLevel, "logLevel", genconfig.DebugLogLevel,

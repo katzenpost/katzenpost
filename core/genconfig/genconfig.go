@@ -102,6 +102,8 @@ type Config struct {
 	LM                       float64
 	LMMax                    uint64
 	LGMax                    uint64
+	LR                       float64
+	LRMax                    uint64
 }
 
 type Katzenpost struct {
@@ -146,6 +148,12 @@ type NodeById []*vConfig.Node
 func (a NodeById) Len() int           { return len(a) }
 func (a NodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
+
+type StorageReplicaNodeById []*vConfig.StorageReplicaNode
+
+func (a StorageReplicaNodeById) Len() int           { return len(a) }
+func (a StorageReplicaNodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a StorageReplicaNodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
 
 func AddressesFromURLs(addrs []string) map[string][]string {
 	addresses := make(map[string][]string)
@@ -299,6 +307,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg := new(rConfig.Config)
 
 	cfg.Identifier = fmt.Sprintf("replica%d", s.ReplicaNodeIdx+1)
+	cfg.ReplicaID = uint8(s.ReplicaNodeIdx)
 	cfg.SphinxGeometry = s.SphinxGeometry
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.ReplicaNIKEScheme = s.ReplicaNIKEScheme.Name()
@@ -314,6 +323,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.ConnectTimeout = config.DefaultConnectTimeout
 	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
 	cfg.ReauthInterval = config.DefaultReauthInterval
+	cfg.DisableDecoyTraffic = true
 
 	authorities := make([]*vConfig.Authority, 0, len(s.Authorities))
 	i := 0
@@ -543,12 +553,13 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	return nil
 }
 
-func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
-	replicas := []*vConfig.Node{}
+func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.StorageReplicaNode, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
+	replicas := []*vConfig.StorageReplicaNode{}
 	for _, replicaCfg := range s.ReplicaNodeConfigs {
-		node := &vConfig.Node{
+		node := &vConfig.StorageReplicaNode{
 			Identifier:           replicaCfg.Identifier,
 			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, IdentityPublicKeyFile),
+			ReplicaID:            replicaCfg.ReplicaID,
 		}
 		replicas = append(replicas, node)
 	}
@@ -570,7 +581,7 @@ func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 		}
 	}
 
-	sort.Sort(NodeById(replicas))
+	sort.Sort(StorageReplicaNodeById(replicas))
 	sort.Sort(NodeById(mixes))
 	sort.Sort(NodeById(gateways))
 	sort.Sort(NodeById(serviceNodes))
@@ -599,6 +610,8 @@ func RunGenConfig(cfg Config) error {
 		LambdaM:           cfg.LM,
 		LambdaMMaxDelay:   cfg.LMMax,
 		LambdaGMaxDelay:   cfg.LGMax,
+		LambdaR:           cfg.LR,
+		LambdaRMaxDelay:   cfg.LRMax,
 	}
 
 	// Initialize katzenpost struct

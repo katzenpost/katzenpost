@@ -75,11 +75,13 @@ type ReplicaWrite struct {
 func (c *ReplicaWrite) String() string { return "ReplicaWrite" }
 
 func (c *ReplicaWrite) ToBytes() []byte {
-	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + len(c.Payload)
-
-	if c.Payload == nil {
-		panic("ReplicaWrite.Payload ")
+	// Handle tombstones (nil or empty payload)
+	payloadLen := 0
+	if c.Payload != nil {
+		payloadLen = len(c.Payload)
 	}
+	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + payloadLen
+
 	out := make([]byte, cmdOverhead, cmdOverhead+cmdLen)
 	out[0] = byte(replicaWrite)
 	out[1] = 0
@@ -87,7 +89,9 @@ func (c *ReplicaWrite) ToBytes() []byte {
 
 	out = append(out, c.BoxID[:]...)
 	out = append(out, c.Signature[:]...)
-	out = append(out, c.Payload...)
+	if c.Payload != nil {
+		out = append(out, c.Payload...)
+	}
 
 	// optional traffic padding
 	if c.Cmds == nil {
@@ -97,7 +101,13 @@ func (c *ReplicaWrite) ToBytes() []byte {
 }
 
 func (c *ReplicaWrite) Length() int {
-	var payloadSize = c.PigeonholeGeometry.CalculateBoxCiphertextLength()
+	var payloadSize int
+	if c.PigeonholeGeometry != nil {
+		payloadSize = c.PigeonholeGeometry.CalculateBoxCiphertextLength()
+	} else if c.Payload != nil {
+		payloadSize = len(c.Payload)
+	}
+	// payloadSize is 0 for tombstones (nil geometry and nil payload)
 	return cmdOverhead + bacap.BoxIDSize + bacap.SignatureSize + payloadSize
 }
 

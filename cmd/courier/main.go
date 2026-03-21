@@ -5,6 +5,10 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"os"
+
+	"github.com/carlmjohnson/versioninfo"
 
 	"github.com/katzenpost/katzenpost/courier/server"
 	"github.com/katzenpost/katzenpost/courier/server/config"
@@ -12,9 +16,16 @@ import (
 
 func main() {
 	var configFile string
+	var printVersion bool
 
 	flag.StringVar(&configFile, "c", "", "configuration file")
+	flag.BoolVar(&printVersion, "v", false, "print version and exit")
 	flag.Parse()
+
+	if printVersion {
+		fmt.Fprintln(os.Stdout, versioninfo.Short())
+		os.Exit(0)
+	}
 
 	cfg, err := config.LoadFile(configFile)
 	if err != nil {

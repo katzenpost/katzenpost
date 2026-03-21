@@ -132,8 +132,16 @@ type Document struct {
 	// that mixes will sample to determine send timing of gateway node loop decoy traffic.
 	LambdaG float64
 
-	// LambdaMMaxDelay is the maximum send interval in milliseconds.
+	// LambdaGMaxDelay is the maximum send interval in milliseconds.
 	LambdaGMaxDelay uint64
+
+	// LambdaR is the inverse of the mean of the exponential distribution
+	// that the courier and storage replicas will sample to determine the
+	// send timing of decoy traffic between each other.
+	LambdaR float64
+
+	// LambdaRMaxDelay is the maximum send interval in milliseconds.
+	LambdaRMaxDelay uint64
 
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
@@ -149,6 +157,23 @@ type Document struct {
 	// StorageReplicas is the list of Storage Replica nodes that do not talk over the mixnet
 	// but are expected to handle connections from the Service Nodes and the other replicas.
 	StorageReplicas []*ReplicaDescriptor
+
+	// ConfiguredReplicaIDs is the complete set of ReplicaIDs configured for this network.
+	// This set is stable and does not change when replicas go offline.
+	// It is used for consistent sharding so that shard assignments remain stable
+	// even when replicas are temporarily unavailable.
+	ConfiguredReplicaIDs []uint8 `cbor:"ConfiguredReplicaIDs,omitempty"`
+
+	// ConfiguredReplicaIdentityKeys is the complete set of identity public keys
+	// for all configured replicas. This set is stable and does not change when replicas
+	// go offline. It is used for consistent hashing to determine shard assignments.
+	ConfiguredReplicaIdentityKeys [][]byte `cbor:"ConfiguredReplicaIdentityKeys,omitempty"`
+
+	// ReplicaEnvelopeKeys contains envelope public keys for all configured replicas,
+	// indexed by ReplicaID and then by replica epoch. This map includes keys from
+	// replicas that are temporarily offline, using cached values from previous epochs.
+	// It contains keys for the previous, current, and next replica epochs.
+	ReplicaEnvelopeKeys map[uint8]map[uint64][]byte `cbor:"ReplicaEnvelopeKeys,omitempty"`
 
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
@@ -210,6 +235,16 @@ func (d *Document) String() string {
 	s += "}\n"
 	s += fmt.Sprintf("StorageReplicas:[]{%v}", d.StorageReplicas)
 	s += "}}\n"
+
+	s += "ReplicaEnvelopeKeys:{\n"
+	for replicaID, epochKeys := range d.ReplicaEnvelopeKeys {
+		s += fmt.Sprintf("  ReplicaID %d: {", replicaID)
+		for epoch, key := range epochKeys {
+			s += fmt.Sprintf(" epoch %d: %x,", epoch, key[:min(8, len(key))])
+		}
+		s += "}\n"
+	}
+	s += "}\n"
 
 	for id, signedCommit := range d.SharedRandomCommit {
 		commit, err := cert.GetCertified(signedCommit)
@@ -286,19 +321,21 @@ func (d *Document) GetReplicaIDByIdentityKey(idkey sign.PublicKey) (uint8, error
 	if err != nil {
 		return 0, err
 	}
-	for i := 0; i < len(d.StorageReplicas); i++ {
-		if hmac.Equal(keyblob, d.StorageReplicas[i].IdentityKey) {
-			return uint8(i), nil
+	for _, replica := range d.StorageReplicas {
+		if hmac.Equal(keyblob, replica.IdentityKey) {
+			return replica.ReplicaID, nil
 		}
 	}
 	return 0, errors.New("replica not found")
 }
 
 func (d *Document) GetReplicaNodeByReplicaID(replicaID uint8) (*ReplicaDescriptor, error) {
-	if replicaID > uint8(len(d.StorageReplicas)-1) {
-		panic("replicaID out of bounds")
+	for _, replica := range d.StorageReplicas {
+		if replica.ReplicaID == replicaID {
+			return replica, nil
+		}
 	}
-	return d.StorageReplicas[replicaID], nil
+	return nil, fmt.Errorf("replica with ID %d not found", replicaID)
 }
 
 func (d *Document) GetReplicaNodeByKeyHash(keyhash *[32]byte) (*ReplicaDescriptor, error) {

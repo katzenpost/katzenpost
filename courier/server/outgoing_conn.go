@@ -45,8 +45,8 @@ type outgoingConn struct {
 	co         GenericConnector
 	log        *logging.Logger
 
-	dst *cpki.ReplicaDescriptor
-	ch  chan *commands.ReplicaMessage
+	dst    *cpki.ReplicaDescriptor
+	sender *sender
 
 	id         uint64
 	retryDelay time.Duration
@@ -109,7 +109,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) {
 	select {
-	case c.ch <- mesg:
+	case c.sender.in <- &courierSenderRequest{ReplicaMessage: mesg}:
 	default:
 		// Drop-tail.  This would be better as a RingChannel from the channels
 		// package (Drop-head), but it doesn't provide a way to tell if the
@@ -124,6 +124,10 @@ func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) {
 	}
 }
 
+func (c *outgoingConn) updateDecoyRate(rate, maxDelay uint64) {
+	c.sender.UpdateRate(rate, maxDelay)
+}
+
 func (c *outgoingConn) worker() {
 	var (
 		// XXX NOTE(david): we might need to adjust these to be aligned with our pki worker thread
@@ -134,7 +138,7 @@ func (c *outgoingConn) worker() {
 	defer func() {
 		c.log.Debugf("Halting connect worker.")
 		c.co.OnClosedConn(c)
-		close(c.ch)
+		c.sender.Halt()
 	}()
 
 	dialCtx, dialer, dialCheckCreds := c.initializeWorker()
@@ -319,6 +323,16 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 	defer w.Close()
 
+	if doc := c.co.Server().PKI.PKIDocument(); doc != nil {
+		rate := uint64(1.0 / doc.LambdaR)
+		if rate == 0 {
+			rate = 1
+		}
+		c.sender.UpdateRate(rate, doc.LambdaRMaxDelay)
+	}
+	c.sender.UpdateConnectionStatus(true)
+	defer c.sender.UpdateConnectionStatus(false)
+
 	receiveCmdCh := c.startPeerReader(w)
 	cmdCh, cmdCloseCh := c.startCommandSender(w)
 	defer close(cmdCh)
@@ -378,7 +392,6 @@ func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
 				return
 			}
 
-			c.log.Debugf("DEBUG: Received command from replica: %T", rawCmd)
 
 			select {
 			case <-c.HaltCh():
@@ -429,8 +442,8 @@ func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, re
 				return false
 			}
 			continue
-		case cmd := <-c.ch:
-			if c.handleOutgoingCommand(cmd, cmdCh, closeCh) {
+		case req := <-c.sender.out:
+			if c.handleOutgoingCommand(req.command(), cmdCh, closeCh) {
 				return true
 			}
 			continue
@@ -473,10 +486,8 @@ func (c *outgoingConn) handleOutgoingCommand(cmd commands.Command, cmdCh chan co
 
 // processIncomingReply processes replies from the peer
 func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Command {
-	c.log.Debugf("DEBUG: Processing reply from receiveCmdCh: %T", replyCmd)
 	switch cmdOrErr := replyCmd.(type) {
 	case commands.Command:
-		c.log.Debugf("DEBUG: Got command from replica: %T", cmdOrErr)
 		return cmdOrErr
 	case error:
 		c.log.Errorf("Received wire protocol RecvCommand error: %s", cmdOrErr)
@@ -487,19 +498,14 @@ func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Comma
 
 // handleCommand processes received commands from the storage replicas
 func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
-	c.log.Debugf("DEBUG: Handling response command: %T", rawCmd)
 	switch replycmd := rawCmd.(type) {
 	case *commands.NoOp:
-		c.log.Debugf("Received NoOp.")
 	case *commands.Disconnect:
 		c.log.Debugf("Received Disconnect from peer.")
 		return false
 	case *commands.ReplicaMessageReply:
-		c.log.Debugf("DEBUG: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeReplyLen: %d: %v",
-			replycmd.IsRead, replycmd.ErrorCode, len(replycmd.EnvelopeReply), replycmd.EnvelopeReply)
 		c.courier.HandleReply(replycmd)
 	case *commands.ReplicaDecoy:
-		c.log.Debugf("Received ReplicaDecoy.")
 	default:
 		c.log.Errorf("BUG, Received unexpected command from replica peer: %s", rawCmd)
 		return false
@@ -519,10 +525,13 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *conf
 		courier:    courier,
 		co:         co,
 		dst:        dst,
-		ch:         make(chan *commands.ReplicaMessage, cfg.MaxQueueSize),
 		id:         atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("courier outgoing:%d", c.id))
+
+	senderIn := make(chan *courierSenderRequest, cfg.MaxQueueSize)
+	senderOut := make(chan *courierSenderRequest, 1)
+	c.sender = newSender(senderIn, senderOut, cfg.DisableDecoyTraffic, co.Server().LogBackend(), courier.cmds)
 
 	c.log.Debugf("New outgoing connection: %+v", dst.DisplayWithSchemes(linkScheme, idScheme, envelopeScheme))
 
