@@ -451,6 +451,7 @@ func createCourierConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 		HandshakeTimeout:    30000,
 		ReauthInterval:      300000, // 5 minutes to prevent connection churn during test
 		DisableDecoyTraffic: true,
+		MaxQueueSize:        courierConfig.DefaultMaxQueueSize,
 
 		Logging: &courierConfig.Logging{
 			Disable: false,
