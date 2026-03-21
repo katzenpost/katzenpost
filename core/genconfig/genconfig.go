@@ -102,6 +102,8 @@ type Config struct {
 	LM                       float64
 	LMMax                    uint64
 	LGMax                    uint64
+	LR                       float64
+	LRMax                    uint64
 }
 
 type Katzenpost struct {
@@ -608,6 +610,8 @@ func RunGenConfig(cfg Config) error {
 		LambdaM:           cfg.LM,
 		LambdaMMaxDelay:   cfg.LMMax,
 		LambdaGMaxDelay:   cfg.LGMax,
+		LambdaR:           cfg.LR,
+		LambdaRMaxDelay:   cfg.LRMax,
 	}
 
 	// Initialize katzenpost struct

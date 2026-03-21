@@ -48,6 +48,8 @@ lDMax=3000
 lM=0.0005
 lMMax=100
 lGMax=1000
+lR=0.0005
+lRMax=1000
 
 UserForwardPayloadLength=2000
 
@@ -118,6 +120,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--serviceNodes ${serviceNodes} \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
+		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
@@ -131,6 +134,7 @@ config-only: | $(net_name)
 		--serviceNodes ${serviceNodes} \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
+		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
 		${noMixDecoy} ${noDecoy} \

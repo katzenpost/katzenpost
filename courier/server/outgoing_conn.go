@@ -323,13 +323,12 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 	defer w.Close()
 
-	// XXX FIXME: add lambdaR to PKI doc format; for now use lambdaP.
 	if doc := c.co.Server().PKI.PKIDocument(); doc != nil {
-		rate := uint64(1.0 / doc.LambdaP)
+		rate := uint64(1.0 / doc.LambdaR)
 		if rate == 0 {
 			rate = 1
 		}
-		c.sender.UpdateRate(rate, doc.LambdaPMaxDelay)
+		c.sender.UpdateRate(rate, doc.LambdaRMaxDelay)
 	}
 	c.sender.UpdateConnectionStatus(true)
 	defer c.sender.UpdateConnectionStatus(false)

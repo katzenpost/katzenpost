@@ -173,12 +173,11 @@ func (co *Connector) updateDecoyRates() {
 	if doc == nil {
 		return
 	}
-	// XXX FIXME: add lambdaR to PKI doc format; for now use lambdaP.
-	rate := uint64(1.0 / doc.LambdaP)
+	rate := uint64(1.0 / doc.LambdaR)
 	if rate == 0 {
 		rate = 1
 	}
-	maxDelay := doc.LambdaPMaxDelay
+	maxDelay := doc.LambdaRMaxDelay
 
 	co.RLock()
 	defer co.RUnlock()

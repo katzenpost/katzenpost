@@ -117,14 +117,12 @@ func (c *incomingConn) worker() {
 		sender.Halt()
 		return
 	}
-	// XXX FIXME(David): add a new lamda parameter to our pki doc format, lambdaR.
-	// for now use lambdaP
-	// LambdaP is the inverse of the rate, so rate = 1/LambdaP
-	rate := uint64(1.0 / doc.LambdaP)
+	// LambdaR is the inverse of the rate for courier/replica decoy traffic.
+	rate := uint64(1.0 / doc.LambdaR)
 	if rate == 0 {
-		rate = 1 // Minimum rate of 1 message per time unit
+		rate = 1
 	}
-	maxDelay := doc.LambdaPMaxDelay
+	maxDelay := doc.LambdaRMaxDelay
 	sender.UpdateRate(rate, maxDelay)
 	sender.UpdateConnectionStatus(true)
 

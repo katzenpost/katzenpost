@@ -715,6 +715,8 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		LambdaMMaxDelay:               params.LambdaMMaxDelay,
 		LambdaG:                       lambdaG,
 		LambdaGMaxDelay:               params.LambdaGMaxDelay,
+		LambdaR:                       params.LambdaR,
+		LambdaRMaxDelay:               params.LambdaRMaxDelay,
 		Topology:                      topology,
 		GatewayNodes:                  gateways,
 		ServiceNodes:                  serviceNodes,
@@ -1371,6 +1373,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			LambdaMMaxDelay:   vote.LambdaMMaxDelay,
 			LambdaG:           computeLambdaG(s.s.cfg),
 			LambdaGMaxDelay:   vote.LambdaGMaxDelay,
+			LambdaR:           vote.LambdaR,
+			LambdaRMaxDelay:   vote.LambdaRMaxDelay,
 		}
 		b := bytes.Buffer{}
 		e := gob.NewEncoder(&b)

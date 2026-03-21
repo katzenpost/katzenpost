@@ -68,6 +68,8 @@ const (
 	defaultLambdaDMaxPercentile = 0.99999
 	defaultLambdaM              = 0.00025
 	defaultLambdaMMaxPercentile = 0.99999
+	defaultLambdaR              = 0.00025
+	defaultLambdaRMaxPercentile = 0.99999
 
 	publicKeyHashSize = 32
 )
@@ -153,6 +155,14 @@ type Parameters struct {
 
 	// LambdaGMaxDelay sets the maximum delay for LambdaG.
 	LambdaGMaxDelay uint64
+
+	// LambdaR is the inverse of the mean of the exponential distribution
+	// that the courier and storage replicas will sample to determine the
+	// send timing of decoy traffic between each other.
+	LambdaR float64
+
+	// LambdaRMaxDelay sets the maximum delay for LambdaR.
+	LambdaRMaxDelay uint64
 }
 
 func (pCfg *Parameters) validate() error {
@@ -191,6 +201,12 @@ func (pCfg *Parameters) validate() error {
 	}
 	if pCfg.LambdaGMaxDelay == 0 {
 		return errors.New("LambdaGMaxDelay must be set")
+	}
+	if pCfg.LambdaR < 0 {
+		return fmt.Errorf("config: Parameters: LambdaR %v is invalid", pCfg.LambdaR)
+	}
+	if pCfg.LambdaRMaxDelay > absoluteMaxDelay {
+		return fmt.Errorf("config: Parameters: LambdaRMaxDelay %v is out of range", pCfg.LambdaRMaxDelay)
 	}
 
 	return nil
@@ -232,6 +248,12 @@ func (pCfg *Parameters) applyDefaults() {
 	}
 	if pCfg.LambdaMMaxDelay == 0 {
 		pCfg.LambdaMMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaM, defaultLambdaMMaxPercentile))
+	}
+	if pCfg.LambdaR == 0 {
+		pCfg.LambdaR = defaultLambdaR
+	}
+	if pCfg.LambdaRMaxDelay == 0 {
+		pCfg.LambdaRMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaR, defaultLambdaRMaxPercentile))
 	}
 }
 
