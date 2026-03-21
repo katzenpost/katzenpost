@@ -393,7 +393,6 @@ func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
 				return
 			}
 
-			c.log.Debugf("DEBUG: Received command from replica: %T", rawCmd)
 
 			select {
 			case <-c.HaltCh():
@@ -488,10 +487,8 @@ func (c *outgoingConn) handleOutgoingCommand(cmd commands.Command, cmdCh chan co
 
 // processIncomingReply processes replies from the peer
 func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Command {
-	c.log.Debugf("DEBUG: Processing reply from receiveCmdCh: %T", replyCmd)
 	switch cmdOrErr := replyCmd.(type) {
 	case commands.Command:
-		c.log.Debugf("DEBUG: Got command from replica: %T", cmdOrErr)
 		return cmdOrErr
 	case error:
 		c.log.Errorf("Received wire protocol RecvCommand error: %s", cmdOrErr)
@@ -502,19 +499,14 @@ func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Comma
 
 // handleCommand processes received commands from the storage replicas
 func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
-	c.log.Debugf("DEBUG: Handling response command: %T", rawCmd)
 	switch replycmd := rawCmd.(type) {
 	case *commands.NoOp:
-		c.log.Debugf("Received NoOp.")
 	case *commands.Disconnect:
 		c.log.Debugf("Received Disconnect from peer.")
 		return false
 	case *commands.ReplicaMessageReply:
-		c.log.Debugf("DEBUG: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeReplyLen: %d: %v",
-			replycmd.IsRead, replycmd.ErrorCode, len(replycmd.EnvelopeReply), replycmd.EnvelopeReply)
 		c.courier.HandleReply(replycmd)
 	case *commands.ReplicaDecoy:
-		c.log.Debugf("Received ReplicaDecoy.")
 	default:
 		c.log.Errorf("BUG, Received unexpected command from replica peer: %s", rawCmd)
 		return false
