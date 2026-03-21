@@ -384,14 +384,22 @@ func runReceive(configFile string, thinClientOnly bool, readCapB64, startIndexB6
 
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			// Encrypt read request
-			ciphertext, nextIndexBytes, envDesc, envHash, err := thinClient.EncryptRead(ctx, readCap, currentIndex)
+			ciphertext, envDesc, envHash, err := thinClient.EncryptRead(ctx, readCap, currentIndex)
 			if err != nil {
 				return fmt.Errorf("failed to encrypt read for box %d: %w", boxNum, err)
+			}
+			currentIndexBytes, err := currentIndex.MarshalBinary()
+			if err != nil {
+				return fmt.Errorf("failed to marshal index for box %d: %w", boxNum, err)
 			}
 
 			// Send and wait for reply
 			var replyIndex uint8 = 0
-			plaintext, readErr = thinClient.StartResendingEncryptedMessage(ctx, readCap, nil, nextIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
+			result, rerr := thinClient.StartResendingEncryptedMessage(ctx, readCap, nil, currentIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
+			readErr = rerr
+			if readErr == nil && result != nil {
+				plaintext = result.Plaintext
+			}
 			if readErr == nil && len(plaintext) > 0 {
 				// Success
 				break

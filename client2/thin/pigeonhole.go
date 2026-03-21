@@ -14,6 +14,20 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 )
 
+// StartResendingResult is returned by StartResendingEncryptedMessage and its variants.
+type StartResendingResult struct {
+	// Plaintext is the decrypted message for read operations, or empty for writes.
+	Plaintext []byte
+
+	// CourierIdentityHash is the 32-byte hash of the identity key of the courier that
+	// handled this message. Callers can watch PKI document updates for this courier
+	// disappearing from consensus and cancel+re-encrypt if needed.
+	CourierIdentityHash *[32]byte
+
+	// CourierQueueID is the queue ID of the courier that handled this message.
+	CourierQueueID []byte
+}
+
 // errorCodeToSentinel maps error codes to sentinel errors for StartResendingEncryptedMessage.
 // This allows callers to use errors.Is() for specific error handling.
 //
@@ -167,7 +181,6 @@ func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (writeCap *bac
 //
 // Returns:
 //   - []byte: Encrypted message ciphertext to send to courier
-//   - []byte: Next message index for subsequent reads
 //   - []byte: Envelope descriptor for decrypting the reply
 //   - *[32]byte: Hash of the courier envelope
 //   - error: Any error encountered during encryption
@@ -175,22 +188,22 @@ func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (writeCap *bac
 // Example:
 //
 //	ctx := context.Background()
-//	ciphertext, nextIndex, envDesc, envHash, err := client.EncryptRead(
+//	ciphertext, envDesc, envHash, err := client.EncryptRead(
 //		ctx, readCap, messageBoxIndex)
 //	if err != nil {
 //		log.Fatal("Failed to encrypt read:", err)
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, nextMessageIndex []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
+func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
 	if ctx == nil {
-		return nil, nil, nil, nil, errContextCannotBeNil
+		return nil, nil, nil, errContextCannotBeNil
 	}
 	if readCap == nil {
-		return nil, nil, nil, nil, errors.New("readCap cannot be nil")
+		return nil, nil, nil, errors.New("readCap cannot be nil")
 	}
 	if messageBoxIndex == nil {
-		return nil, nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
+		return nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
@@ -207,17 +220,17 @@ func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, me
 
 	err = t.writeMessage(req)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return nil, nil, nil, nil, ctx.Err()
+			return nil, nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, nil, nil, errHalting
+			return nil, nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -231,9 +244,9 @@ func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, me
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.MessageCiphertext, v.NextMessageIndex, v.EnvelopeDescriptor, v.EnvelopeHash, nil
+			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
@@ -397,7 +410,7 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //		}
 //	}
 //	fmt.Printf("Received: %s\n", plaintext)
-func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (plaintext []byte, err error) {
+func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -431,8 +444,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err = t.writeMessage(req)
-	if err != nil {
+	if err := t.writeMessage(req); err != nil {
 		return nil, err
 	}
 
@@ -477,7 +489,11 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 			} else {
 				t.log.Debugf("StartResendingEncryptedMessage: Read operation complete, payload length=%d", len(v.Plaintext))
 			}
-			return v.Plaintext, nil
+			return &StartResendingResult{
+				Plaintext:           v.Plaintext,
+				CourierIdentityHash: v.CourierIdentityHash,
+				CourierQueueID:      v.CourierQueueID,
+			}, nil
 
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
@@ -493,7 +509,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 // automatic retries on BoxIDNotFound errors. Use this when you want immediate error feedback
 // rather than waiting for potential replication lag to resolve.
 // The CancelResendingEncryptedMessage method can cancel operations started with either method.
-func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (plaintext []byte, err error) {
+func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -528,8 +544,7 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, 
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err = t.writeMessage(req)
-	if err != nil {
+	if err := t.writeMessage(req); err != nil {
 		return nil, err
 	}
 
@@ -574,7 +589,11 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, 
 			} else {
 				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Read operation complete, payload length=%d", len(v.Plaintext))
 			}
-			return v.Plaintext, nil
+			return &StartResendingResult{
+				Plaintext:           v.Plaintext,
+				CourierIdentityHash: v.CourierIdentityHash,
+				CourierQueueID:      v.CourierQueueID,
+			}, nil
 
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
@@ -590,7 +609,7 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, 
 // BoxAlreadyExists errors instead of treating them as idempotent success. Use this when you want
 // to detect whether a write was actually performed or if the box already existed.
 // The CancelResendingEncryptedMessage method can cancel operations started with this method.
-func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (plaintext []byte, err error) {
+func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -625,8 +644,7 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(ctx context.C
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err = t.writeMessage(req)
-	if err != nil {
+	if err := t.writeMessage(req); err != nil {
 		return nil, err
 	}
 
@@ -670,7 +688,11 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(ctx context.C
 			} else {
 				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Read operation complete, payload length=%d", len(v.Plaintext))
 			}
-			return v.Plaintext, nil
+			return &StartResendingResult{
+				Plaintext:           v.Plaintext,
+				CourierIdentityHash: v.CourierIdentityHash,
+				CourierQueueID:      v.CourierQueueID,
+			}, nil
 
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
@@ -1614,15 +1636,19 @@ func (t *ThinClient) SendNestedCopy(
 			var reconstructedStream []byte
 			readIdx := sourceIntermediate.firstIndex
 			for len(reconstructedStream) < len(expectedBlob) {
-				ciphertext, nextIdx, envDesc, envHash, err := t.EncryptRead(ctx, sourceIntermediate.readCap, readIdx)
+				ciphertext, envDesc, envHash, err := t.EncryptRead(ctx, sourceIntermediate.readCap, readIdx)
 				if err != nil {
 					return err
 				}
-				plaintext, err := t.StartResendingEncryptedMessage(ctx, sourceIntermediate.readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash)
+				readIdxBytes, err := readIdx.MarshalBinary()
 				if err != nil {
 					return err
 				}
-				reconstructedStream = append(reconstructedStream, plaintext...)
+				result, err := t.StartResendingEncryptedMessage(ctx, sourceIntermediate.readCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
+				if err != nil {
+					return err
+				}
+				reconstructedStream = append(reconstructedStream, result.Plaintext...)
 				readIdx, err = t.NextMessageBoxIndex(ctx, readIdx)
 				if err != nil {
 					return err

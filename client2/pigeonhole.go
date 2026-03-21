@@ -1165,9 +1165,11 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 		conn.sendResponse(&Response{
 			AppID: request.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:   arqMessage.QueryID,
-				ErrorCode: thin.ThinClientErrorStartResendingCancelled,
-				Plaintext: nil,
+				QueryID:             arqMessage.QueryID,
+				ErrorCode:           thin.ThinClientErrorStartResendingCancelled,
+				Plaintext:           nil,
+				CourierIdentityHash: arqMessage.DestinationIdHash,
+				CourierQueueID:      arqMessage.RecipientQueueID,
 			},
 		})
 	}
@@ -1260,8 +1262,10 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:   arqMessage.QueryID,
-				ErrorCode: courierEnvelopeReply.ErrorCode,
+				QueryID:             arqMessage.QueryID,
+				ErrorCode:           courierEnvelopeReply.ErrorCode,
+				CourierIdentityHash: arqMessage.DestinationIdHash,
+				CourierQueueID:      arqMessage.RecipientQueueID,
 			},
 		})
 		return
@@ -1760,8 +1764,10 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 				conn.sendResponse(&Response{
 					AppID: arqMessage.AppID,
 					StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-						QueryID:   arqMessage.QueryID,
-						ErrorCode: thin.ThinClientSuccess,
+						QueryID:             arqMessage.QueryID,
+						ErrorCode:           thin.ThinClientSuccess,
+						CourierIdentityHash: arqMessage.DestinationIdHash,
+						CourierQueueID:      arqMessage.RecipientQueueID,
 					},
 				})
 				return
@@ -1801,8 +1807,10 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:   arqMessage.QueryID,
-				ErrorCode: errorCode,
+				QueryID:             arqMessage.QueryID,
+				ErrorCode:           errorCode,
+				CourierIdentityHash: arqMessage.DestinationIdHash,
+				CourierQueueID:      arqMessage.RecipientQueueID,
 			},
 		})
 		return
@@ -1821,8 +1829,10 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:   arqMessage.QueryID,
-				ErrorCode: thin.ThinClientSuccess,
+				QueryID:             arqMessage.QueryID,
+				ErrorCode:           thin.ThinClientSuccess,
+				CourierIdentityHash: arqMessage.DestinationIdHash,
+				CourierQueueID:      arqMessage.RecipientQueueID,
 			},
 		})
 		return
@@ -1835,9 +1845,11 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:   arqMessage.QueryID,
-				Plaintext: []byte{},
-				ErrorCode: thin.ThinClientSuccess,
+				QueryID:             arqMessage.QueryID,
+				Plaintext:           []byte{},
+				ErrorCode:           thin.ThinClientSuccess,
+				CourierIdentityHash: arqMessage.DestinationIdHash,
+				CourierQueueID:      arqMessage.RecipientQueueID,
 			},
 		})
 		return
@@ -1850,8 +1862,10 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:   arqMessage.QueryID,
-				ErrorCode: thin.ThinClientErrorInternalError,
+				QueryID:             arqMessage.QueryID,
+				ErrorCode:           thin.ThinClientErrorInternalError,
+				CourierIdentityHash: arqMessage.DestinationIdHash,
+				CourierQueueID:      arqMessage.RecipientQueueID,
 			},
 		})
 		return
@@ -1861,9 +1875,11 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	conn.sendResponse(&Response{
 		AppID: arqMessage.AppID,
 		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-			QueryID:   arqMessage.QueryID,
-			Plaintext: unpaddedPlaintext,
-			ErrorCode: thin.ThinClientSuccess,
+			QueryID:             arqMessage.QueryID,
+			Plaintext:           unpaddedPlaintext,
+			ErrorCode:           thin.ThinClientSuccess,
+			CourierIdentityHash: arqMessage.DestinationIdHash,
+			CourierQueueID:      arqMessage.RecipientQueueID,
 		},
 	})
 }

@@ -279,6 +279,14 @@ type StartResendingEncryptedMessageReply struct {
 	// ErrorCode indicates the reason for a failure to start resending the encrypted message if any.
 	// Otherwise it is set to zero for success.
 	ErrorCode uint8 `cbor:"error_code"`
+
+	// CourierIdentityHash is the 32-byte hash of the identity key of the courier that was
+	// selected to handle this message. Callers can watch PKI document updates for this
+	// courier disappearing from consensus and cancel+re-encrypt if it does.
+	CourierIdentityHash *[32]byte `cbor:"courier_identity_hash"`
+
+	// CourierQueueID is the queue ID of the courier that was selected.
+	CourierQueueID []byte `cbor:"courier_queue_id"`
 }
 
 // String returns a string representation of the StartResendingEncryptedMessageReply.
@@ -286,7 +294,7 @@ func (e *StartResendingEncryptedMessageReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("StartResendingEncryptedMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("StartResendingEncryptedMessageReply: %d bytes plaintext", len(e.Plaintext))
+	return fmt.Sprintf("StartResendingEncryptedMessageReply: %d bytes plaintext, courier=%x", len(e.Plaintext), e.CourierIdentityHash)
 }
 
 // CancelResendingEncryptedMessageReply is the reply to a CancelResendingEncryptedMessage request.
