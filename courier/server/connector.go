@@ -131,6 +131,7 @@ func (co *Connector) worker() {
 		// Start outgoing connections as needed, based on the PKI documents
 		// and current time.
 		co.spawnNewConns()
+		co.updateDecoyRates()
 
 		timer.Reset(resweepInterval)
 	}
@@ -164,6 +165,25 @@ func (co *Connector) spawnNewConns() {
 
 		c := newOutgoingConn(co, v, co.server.cfg, co.server.Courier)
 		co.onNewConn(c)
+	}
+}
+
+func (co *Connector) updateDecoyRates() {
+	doc := co.server.PKI.PKIDocument()
+	if doc == nil {
+		return
+	}
+	// XXX FIXME: add lambdaR to PKI doc format; for now use lambdaP.
+	rate := uint64(1.0 / doc.LambdaP)
+	if rate == 0 {
+		rate = 1
+	}
+	maxDelay := doc.LambdaPMaxDelay
+
+	co.RLock()
+	defer co.RUnlock()
+	for _, c := range co.conns {
+		c.updateDecoyRate(rate, maxDelay)
 	}
 }
 
