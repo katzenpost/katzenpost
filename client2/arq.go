@@ -16,7 +16,7 @@ const (
 
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold.
-	RoundTripTimeSlop = (60 * time.Second)
+	RoundTripTimeSlop = (20 * time.Second)
 )
 
 // ARQState represents the state of an ARQ message in the stop-and-wait protocol.
