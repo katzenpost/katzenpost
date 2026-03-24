@@ -53,7 +53,6 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest
 		c.log.Debug("Received disconnect from peer")
 		return nil, false
 	case *commands.ReplicaDecoy:
-		c.log.Debug("Received ReplicaDecoy from peer")
 		decoyReply := &commands.ReplicaDecoy{
 			Cmds: commands.NewStorageReplicaCommands(c.geo, schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)),
 		}
