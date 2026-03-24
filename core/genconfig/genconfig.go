@@ -288,16 +288,17 @@ func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
 	return &courierConfig.Config{
-		PKI:              pki,
-		Logging:          &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
-		WireKEMScheme:    s.WireKEMScheme,
-		PKIScheme:        s.PkiSignatureScheme.Name(),
-		EnvelopeScheme:   s.ReplicaNIKEScheme.Name(),
-		DataDir:          datadir,
-		SphinxGeometry:   s.SphinxGeometry,
-		ConnectTimeout:   config.DefaultConnectTimeout,
-		HandshakeTimeout: config.DefaultHandshakeTimeout,
-		ReauthInterval:   config.DefaultReauthInterval,
+		PKI:                 pki,
+		Logging:             &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
+		WireKEMScheme:       s.WireKEMScheme,
+		PKIScheme:           s.PkiSignatureScheme.Name(),
+		EnvelopeScheme:      s.ReplicaNIKEScheme.Name(),
+		DataDir:             datadir,
+		SphinxGeometry:      s.SphinxGeometry,
+		ConnectTimeout:      config.DefaultConnectTimeout,
+		HandshakeTimeout:    config.DefaultHandshakeTimeout,
+		ReauthInterval:      config.DefaultReauthInterval,
+		DisableDecoyTraffic: true,
 	}
 }
 
