@@ -44,7 +44,9 @@ func (c *incomingConn) createReplicaMessageReply(nikeScheme string, errorCode ui
 }
 
 func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest, bool) {
-	c.log.Debugf("onReplicaCommand received command type: %T with value: %+v", rawCmd, rawCmd)
+	if _, isDecoy := rawCmd.(*commands.ReplicaDecoy); !isDecoy {
+		c.log.Debugf("onReplicaCommand received command type: %T with value: %+v", rawCmd, rawCmd)
+	}
 	switch cmd := rawCmd.(type) {
 	case *commands.NoOp:
 		c.log.Debug("Received NoOp from peer")

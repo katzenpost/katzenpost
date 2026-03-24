@@ -181,11 +181,13 @@ func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) 
 			c.log.Debugf("Failed to send response: nil command")
 			return
 		}
-		c.log.Debugf("Sending response command: %T", cmd)
+		_, isDecoy := cmd.(*commands.ReplicaDecoy)
+		if !isDecoy {
+			c.log.Debugf("Sending response command: %T", cmd)
+		}
 		if err := session.SendCommand(cmd); err != nil {
-			// Only log as debug since this is expected when connections close
 			c.log.Debugf("Failed to send response: %v", err)
-		} else {
+		} else if !isDecoy {
 			c.log.Debugf("Successfully sent response command: %T", cmd)
 		}
 	} else {
@@ -299,9 +301,13 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 		}
 
 		if resp != nil {
-			c.log.Debugf("Sending response to inCh: %T", resp)
+			if resp.ReplicaDecoy == nil {
+				c.log.Debugf("Sending response to inCh: %T", resp)
+			}
 			inCh <- resp
-			c.log.Debugf("Successfully sent response to inCh")
+			if resp.ReplicaDecoy == nil {
+				c.log.Debugf("Successfully sent response to inCh")
+			}
 		} else {
 			c.log.Debugf("No response to send (resp is nil)")
 		}
