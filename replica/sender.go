@@ -12,6 +12,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 // senderRequest represents a command to send to a peer
@@ -84,7 +85,7 @@ func (s *sender) worker() {
 			var toSend *senderRequest
 			select {
 			case toSend = <-s.in:
-				// Real response available - send it
+				instrument.IncomingMessagesSent()
 			case <-s.HaltCh():
 				return
 			default:
@@ -97,6 +98,7 @@ func (s *sender) worker() {
 						Cmds: s.commands,
 					},
 				}
+				instrument.IncomingDecoysSent()
 			}
 			if toSend != nil {
 				select {

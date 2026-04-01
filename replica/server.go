@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 // GitCommit is the git commit hash, set at build time via -ldflags
@@ -254,6 +255,13 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	if err := s.startServices(pkiClient); err != nil {
 		return nil, err
 	}
+
+	if cfg.MetricsAddress != "" {
+		s.log.Noticef("Starting prometheus metrics listener on %s", cfg.MetricsAddress)
+	} else {
+		s.log.Notice("Prometheus metrics listener disabled (MetricsAddress not set)")
+	}
+	instrument.StartPrometheusListener(cfg.MetricsAddress)
 
 	isOk = true
 

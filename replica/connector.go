@@ -19,6 +19,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 type Connector struct {
@@ -237,6 +238,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 		}
 
 		co.DispatchCommand(cmd, &idHash)
+		instrument.ReplicationDispatched()
 	}
 
 	if totalTargets == 0 {

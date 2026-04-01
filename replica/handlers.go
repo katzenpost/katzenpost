@@ -22,6 +22,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 // createReplicaMessageReply creates a ReplicaMessageReply with proper PigeonholeGeometry
@@ -55,6 +56,7 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest
 		c.log.Debug("Received disconnect from peer")
 		return nil, false
 	case *commands.ReplicaDecoy:
+		instrument.IncomingDecoysReceived()
 		decoyReply := &commands.ReplicaDecoy{
 			Cmds: commands.NewStorageReplicaCommands(c.geo, schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)),
 		}

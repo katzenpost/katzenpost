@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 var incomingConnID uint64
@@ -305,6 +306,7 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 				c.log.Debugf("Sending response to inCh: %T", resp)
 			}
 			inCh <- resp
+			instrument.IncomingQueueLength(fmt.Sprintf("%d", c.id), len(inCh))
 			if resp.ReplicaDecoy == nil {
 				c.log.Debugf("Successfully sent response to inCh")
 			}

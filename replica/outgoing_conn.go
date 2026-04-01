@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	httpCommon "github.com/katzenpost/katzenpost/quic/common"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 var outgoingConnID uint64
@@ -96,17 +97,8 @@ func (c *outgoingConn) validateReplicaInPKI(creds *wire.PeerCredentials) bool {
 func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
 	select {
 	case c.ch <- cmd:
-	default:
-		// Drop-tail.  This would be better as a RingChannel from the channels
-		// package (Drop-head), but it doesn't provide a way to tell if the
-		// item was discared or not.
-		//
-		// The drops here should basically only happen if the link is down,
-		// since the connection worker will handle dropping commands when the
-		// link is congested.
-		//
-		// Note: Not logging here because this would get spammy, and we may be
-		// under catastrophic load, in which case we can't afford to log.
+		instrument.OutgoingQueueLength(c.dst.Name, len(c.ch))
+	case <-c.co.CloseAllCh():
 	}
 }
 

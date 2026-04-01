@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"path/filepath"
 
@@ -94,6 +95,10 @@ type Config struct {
 	// to shard members under high write load.
 	ReplicationWorkerCount int
 
+	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
+	// If empty, no metrics listener is started.
+	MetricsAddress string
+
 	// DisableDecoyTraffic disables sending decoy traffic.
 	DisableDecoyTraffic bool
 
@@ -119,6 +124,12 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 
 	if err := c.validatePKIConfiguration(); err != nil {
 		return err
+	}
+
+	if c.MetricsAddress != "" {
+		if _, err := netip.ParseAddrPort(c.MetricsAddress); err != nil {
+			return fmt.Errorf("config: MetricsAddress '%v' is invalid: %v", c.MetricsAddress, err)
+		}
 	}
 
 	return c.setupLoggingDefaults()
