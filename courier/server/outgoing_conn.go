@@ -523,7 +523,7 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *conf
 
 	senderIn := make(chan *courierSenderRequest, cfg.MaxQueueSize)
 	senderOut := make(chan *courierSenderRequest, 1)
-	c.sender = newSender(senderIn, senderOut, cfg.DisableDecoyTraffic, co.Server().LogBackend(), courier.cmds)
+	c.sender = newSender(senderIn, senderOut, cfg.DisableDecoyTraffic, co.Server().LogBackend(), courier.cmds, dst.Name)
 
 	c.log.Debugf("New outgoing connection: %+v", dst.DisplayWithSchemes(linkScheme, idScheme, envelopeScheme))
 

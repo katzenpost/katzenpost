@@ -47,6 +47,7 @@ type sender struct {
 	out              chan *senderRequest
 	sendQueryOrDecoy *common.ExpDist
 	disableDecoys    bool
+	peerName         string
 
 	commands *commands.Commands
 }
@@ -55,7 +56,7 @@ type sender struct {
 // methods UpdateConnectionStatus and UpdateRates are called.
 // The worker only works when we have a connection and when we have
 // a rate set.
-func newSender(in chan *senderRequest, out chan *senderRequest, disableDecoys bool, logBackend *log.Backend, commands *commands.Commands) *sender {
+func newSender(in chan *senderRequest, out chan *senderRequest, disableDecoys bool, logBackend *log.Backend, commands *commands.Commands, peerName string) *sender {
 	s := &sender{
 		log:              logBackend.GetLogger("replica/sender"),
 		in:               in,
@@ -63,6 +64,7 @@ func newSender(in chan *senderRequest, out chan *senderRequest, disableDecoys bo
 		sendQueryOrDecoy: common.NewExpDist(),
 		disableDecoys:    disableDecoys,
 		commands:         commands,
+		peerName:         peerName,
 	}
 	s.Go(s.worker)
 	return s
@@ -86,6 +88,7 @@ func (s *sender) worker() {
 			select {
 			case toSend = <-s.in:
 				instrument.IncomingMessagesSent()
+				instrument.IncomingQueueLength(s.peerName, len(s.in))
 			case <-s.HaltCh():
 				return
 			default:

@@ -43,13 +43,14 @@ type sender struct {
 	out              chan *courierSenderRequest
 	sendQueryOrDecoy *common.ExpDist
 	disableDecoys    bool
+	replicaName      string
 
 	commands *commands.Commands
 }
 
 // newSender creates a sender and starts its worker goroutine. It remains idle
 // until UpdateRate and UpdateConnectionStatus(true) are called.
-func newSender(in chan *courierSenderRequest, out chan *courierSenderRequest, disableDecoys bool, logBackend *log.Backend, cmds *commands.Commands) *sender {
+func newSender(in chan *courierSenderRequest, out chan *courierSenderRequest, disableDecoys bool, logBackend *log.Backend, cmds *commands.Commands, replicaName string) *sender {
 	s := &sender{
 		log:              logBackend.GetLogger("courier/sender"),
 		in:               in,
@@ -57,6 +58,7 @@ func newSender(in chan *courierSenderRequest, out chan *courierSenderRequest, di
 		sendQueryOrDecoy: common.NewExpDist(),
 		disableDecoys:    disableDecoys,
 		commands:         cmds,
+		replicaName:      replicaName,
 	}
 	s.Go(s.worker)
 	return s
@@ -78,6 +80,7 @@ func (s *sender) worker() {
 			select {
 			case toSend = <-s.in:
 				instrument.MessagesSent()
+				instrument.QueueLength(s.replicaName, len(s.in))
 			case <-s.HaltCh():
 				return
 			default:

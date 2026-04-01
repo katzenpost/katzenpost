@@ -110,7 +110,7 @@ func (c *incomingConn) worker() {
 	outCh := make(chan *senderRequest, 100)
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
-	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds)
+	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds, fmt.Sprintf("%d", c.id))
 
 	doc := c.l.server.PKIWorker.PKIDocument()
 	if doc == nil {
