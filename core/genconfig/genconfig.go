@@ -124,6 +124,7 @@ type Katzenpost struct {
 
 	NodeConfigs        []*sConfig.Config
 	ReplicaNodeConfigs []*rConfig.Config
+	CourierConfigs     []*courierConfig.Config
 
 	BasePort        uint16
 	LastPort        uint16
@@ -287,7 +288,7 @@ func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
 	}
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
-	return &courierConfig.Config{
+	cfg := &courierConfig.Config{
 		PKI:                 pki,
 		Logging:             &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
 		WireKEMScheme:       s.WireKEMScheme,
@@ -300,6 +301,9 @@ func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
 		ReauthInterval:      config.DefaultReauthInterval,
 		DisableDecoyTraffic: true,
 	}
+	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
+	s.LastPort++
+	return cfg
 }
 
 func (s *Katzenpost) GenReplicaNodeConfig() error {
@@ -315,6 +319,9 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
 
 	cfg.Addresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastReplicaPort)}
+	s.LastReplicaPort++
+
+	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastReplicaPort)
 	s.LastReplicaPort++
 
 	cfg.DataDir = filepath.Join(s.BaseDir, cfg.Identifier)
@@ -433,6 +440,7 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 		internalCourierDatadir := filepath.Join(s.BaseDir, cfg.Server.Identifier, CourierService)
 		courierCfg := s.GenCourierConfig(internalCourierDatadir)
+		s.CourierConfigs = append(s.CourierConfigs, courierCfg)
 
 		linkPubKey := CfgLinkKey(courierCfg, courierDataDir, courierCfg.WireKEMScheme)
 		linkBlob := kempem.ToPublicPEMString(linkPubKey)
@@ -1037,6 +1045,14 @@ scrape_configs:
 	for _, cfg := range s.NodeConfigs {
 		Write(f, `    - %s
 `, cfg.Server.MetricsAddress)
+	}
+	for _, cfg := range s.ReplicaNodeConfigs {
+		Write(f, `    - %s
+`, cfg.MetricsAddress)
+	}
+	for _, cfg := range s.CourierConfigs {
+		Write(f, `    - %s
+`, cfg.MetricsAddress)
 	}
 	return nil
 }
