@@ -87,6 +87,7 @@ type Config struct {
 	PkiSignatureScheme       string
 	NoDecoy                  bool
 	NoMixDecoy               bool
+	NoMetrics                bool
 	DialTimeout              int
 	MaxPKIDelay              int
 	PollingIntvl             int
@@ -135,6 +136,7 @@ type Katzenpost struct {
 	GatewayIdx      int
 	ServiceNodeIdx  int
 	NoMixDecoy      bool
+	NoMetrics       bool
 	DebugConfig     *cConfig.Debug
 }
 
@@ -710,6 +712,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 		PollingInterval:             cfg.PollingIntvl,
 	}
 	s.NoMixDecoy = cfg.NoMixDecoy
+	s.NoMetrics = cfg.NoMetrics
 
 	return s
 }
@@ -884,9 +887,16 @@ func GenerateOutputFiles(s *Katzenpost, cfg *Config) error {
 		return fmt.Errorf("failed to generate docker-compose: %v", err)
 	}
 
-	err = s.GenPrometheus()
-	if err != nil {
-		return fmt.Errorf("failed to generate prometheus config: %v", err)
+	if !s.NoMetrics {
+		err = s.GenPrometheus()
+		if err != nil {
+			return fmt.Errorf("failed to generate prometheus config: %v", err)
+		}
+
+		err = s.GenGrafana()
+		if err != nil {
+			return fmt.Errorf("failed to generate grafana config: %v", err)
+		}
 	}
 
 	return nil
@@ -1036,24 +1046,183 @@ func (s *Katzenpost) GenPrometheus() error {
 
 	Write(f, `
 scrape_configs:
-- job_name: katzenpost
-  scrape_interval: 1s
-  static_configs:
-  - targets:
 `)
 
-	for _, cfg := range s.NodeConfigs {
-		Write(f, `    - %s
-`, cfg.Server.MetricsAddress)
-	}
 	for _, cfg := range s.ReplicaNodeConfigs {
-		Write(f, `    - %s
-`, cfg.MetricsAddress)
+		Write(f, `- job_name: %s
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['%s']
+`, cfg.Identifier, cfg.MetricsAddress)
 	}
-	for _, cfg := range s.CourierConfigs {
-		Write(f, `    - %s
-`, cfg.MetricsAddress)
+	for i, cfg := range s.CourierConfigs {
+		Write(f, `- job_name: courier%d
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['%s']
+`, i+1, cfg.MetricsAddress)
 	}
+	return nil
+}
+
+func (s *Katzenpost) GenGrafana() error {
+	grafanaDir := filepath.Join(s.OutDir, "grafana")
+	dsDir := filepath.Join(grafanaDir, "provisioning", "datasources")
+	dbProvDir := filepath.Join(grafanaDir, "provisioning", "dashboards")
+	dbDir := filepath.Join(grafanaDir, "dashboards")
+	os.MkdirAll(dsDir, 0755)
+	os.MkdirAll(dbProvDir, 0755)
+	os.MkdirAll(dbDir, 0755)
+
+	// Datasource config
+	dsFile := filepath.Join(dsDir, "prometheus.yml")
+	log.Printf(WritingLogFormat, dsFile)
+	ds, err := os.Create(dsFile)
+	if err != nil {
+		return err
+	}
+	defer ds.Close()
+	Write(ds, `apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:9090
+    isDefault: true
+    editable: false
+`)
+
+	// Dashboard provisioning config
+	dbProvFile := filepath.Join(dbProvDir, "dashboards.yml")
+	log.Printf(WritingLogFormat, dbProvFile)
+	dbProv, err := os.Create(dbProvFile)
+	if err != nil {
+		return err
+	}
+	defer dbProv.Close()
+	Write(dbProv, `apiVersion: 1
+providers:
+  - name: Default
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+`)
+
+	// Dashboard JSON
+	dbFile := filepath.Join(dbDir, "katzenpost.json")
+	log.Printf(WritingLogFormat, dbFile)
+	db, err := os.Create(dbFile)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	Write(db, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Katzenpost Courier & Replica",
+  "uid": "katzenpost-decoy",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Courier: Decoys Sent (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_courier_decoys_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "Courier: Messages Sent (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_courier_messages_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "Courier: Messages Received (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "rate(katzenpost_courier_messages_received_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "Courier: Queue Length",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "katzenpost_courier_queue_length", "refId": "A", "legendFormat": "{{job}} - {{replica}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "Replica: Incoming Decoys Received (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_replica_incoming_decoys_received_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "Replica: Incoming Decoys Sent (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_replica_incoming_decoys_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 7,
+      "title": "Replica: Messages Sent (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_replica_incoming_messages_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 8,
+      "title": "Replica: Replication Dispatched (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_replica_replication_dispatched_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 9,
+      "title": "Replica: Incoming Queue Length",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "targets": [{"expr": "katzenpost_replica_incoming_queue_length", "refId": "A", "legendFormat": "{{job}} - {{peer}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 10,
+      "title": "Replica: Outgoing Queue Length",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "targets": [{"expr": "katzenpost_replica_outgoing_queue_length", "refId": "A", "legendFormat": "{{job}} - {{peer}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    }
+  ]
+}
+`)
 	return nil
 }
 
@@ -1168,15 +1337,36 @@ services:
 `, authCfg.Server.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, authCfg.Server.Identifier)
 	}
 
-	Write(f, `
+	if !s.NoMetrics {
+		Write(f, `
   %s:
     restart: "no"
     image: %s
+    pull_policy: if_not_present
     volumes:
       - ./:%s
     command: --config.file="%s/prometheus.yml"
     network_mode: host
 `, "metrics", "docker.io/prom/prometheus", s.BaseDir, s.BaseDir)
+
+		Write(f, `
+  grafana:
+    restart: "no"
+    image: docker.io/grafana/grafana:latest
+    pull_policy: if_not_present
+    volumes:
+      - ./%s/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./%s/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./%s/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    network_mode: host
+    depends_on:
+      - metrics
+`, "grafana", "grafana", "grafana")
+	}
 
 	Write(f, `
   kpclientd:

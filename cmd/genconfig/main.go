@@ -114,6 +114,8 @@ performance optimization and security requirements.`,
 		"disable decoy traffic generation for clients")
 	cmd.Flags().BoolVar(&cfg.NoMixDecoy, "noMixDecoy", true,
 		"disable decoy traffic generation for mix nodes")
+	cmd.Flags().BoolVar(&cfg.NoMetrics, "noMetrics", false,
+		"disable prometheus and grafana containers in docker-compose")
 	cmd.Flags().IntVar(&cfg.DialTimeout, "dialTimeout", 0,
 		"session dial timeout in seconds (0 for default)")
 	cmd.Flags().IntVar(&cfg.MaxPKIDelay, "maxPKIDelay", 0,
