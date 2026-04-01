@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/courier/server/config"
+	"github.com/katzenpost/katzenpost/courier/server/instrument"
 	"github.com/katzenpost/katzenpost/quic/common"
 )
 
@@ -110,17 +111,8 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) {
 	select {
 	case c.sender.in <- &courierSenderRequest{ReplicaMessage: mesg}:
-	default:
-		// Drop-tail.  This would be better as a RingChannel from the channels
-		// package (Drop-head), but it doesn't provide a way to tell if the
-		// item was discared or not.
-		//
-		// The drops here should basically only happen if the link is down,
-		// since the connection worker will handle dropping commands when the
-		// link is congested.
-		//
-		// Note: Not logging here because this would get spammy, and we may be
-		// under catastrophic load, in which case we can't afford to log.
+		instrument.QueueLength(c.dst.Name, len(c.sender.in))
+	case <-c.HaltCh():
 	}
 }
 

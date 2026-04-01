@@ -12,6 +12,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/courier/server/instrument"
 )
 
 // courierSenderRequest represents a command to send to a replica, either a
@@ -76,7 +77,7 @@ func (s *sender) worker() {
 			var toSend *courierSenderRequest
 			select {
 			case toSend = <-s.in:
-				// Real message available - send it.
+				instrument.MessagesSent()
 			case <-s.HaltCh():
 				return
 			default:
@@ -89,6 +90,7 @@ func (s *sender) worker() {
 						Cmds: s.commands,
 					},
 				}
+				instrument.DecoysSent()
 			}
 			if toSend != nil {
 				select {

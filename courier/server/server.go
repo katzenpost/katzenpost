@@ -22,6 +22,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/server/config"
+	"github.com/katzenpost/katzenpost/courier/server/instrument"
 )
 
 type GenericConnector interface {
@@ -84,6 +85,13 @@ func New(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
 	}
 
 	s.initializeServices()
+
+	if cfg.MetricsAddress != "" {
+		s.log.Noticef("Starting prometheus metrics listener on %s", cfg.MetricsAddress)
+	} else {
+		s.log.Notice("Prometheus metrics listener disabled (MetricsAddress not set)")
+	}
+	instrument.StartPrometheusListener(cfg.MetricsAddress)
 
 	return s, nil
 }

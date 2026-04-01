@@ -22,6 +22,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/courier/server/instrument"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -543,6 +544,8 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 
 // OnCommand is only called when we receive queries from the client via the mixnet
 func (e *Courier) OnCommand(cmd cborplugin.Command) error {
+	instrument.MessagesReceived()
+
 	var request *cborplugin.Request
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
