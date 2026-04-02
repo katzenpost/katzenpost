@@ -19,6 +19,7 @@ const (
 	defaultAddress                = ":3266"
 	defaultReplicationQueueLength = 100        // Default queue length for replication operations
 	defaultOutgoingQueueSize      = 64         // Default queue size for outgoing connections
+	defaultIncomingQueueSize      = 1000       // Default queue size for incoming connection sender
 	defaultKeepAliveInterval      = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
 	defaultReplicationWorkerCount = 4          // Default number of replication worker goroutines
 )
@@ -87,6 +88,11 @@ type Config struct {
 	// queued for outgoing connections.
 	OutgoingQueueSize int
 
+	// IncomingQueueSize specifies the buffer size for the incoming connection
+	// sender queue. This must be large enough to absorb response bursts
+	// between sender ticks without blocking command processing.
+	IncomingQueueSize int
+
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
 
@@ -151,6 +157,9 @@ func (c *Config) setDefaultTimeouts() {
 	}
 	if c.OutgoingQueueSize <= 0 {
 		c.OutgoingQueueSize = defaultOutgoingQueueSize
+	}
+	if c.IncomingQueueSize <= 0 {
+		c.IncomingQueueSize = defaultIncomingQueueSize
 	}
 	if c.KeepAliveInterval <= 0 {
 		c.KeepAliveInterval = defaultKeepAliveInterval
