@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
@@ -75,6 +76,10 @@ type Server struct {
 
 	// Proxy request manager for handling async proxy requests
 	proxyManager *ProxyRequestManager
+
+	// Proxy worker pool for handling proxy requests without blocking
+	// the incoming connection command loop.
+	proxyWorkerCh chan proxyWork
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -161,7 +166,11 @@ func (s *Server) halt() {
 		s.connector.Halt()
 	}
 
-	// Shutdown the proxy manager to clean up pending requests
+	// Shutdown the proxy worker pool and manager
+	if s.proxyWorkerCh != nil {
+		close(s.proxyWorkerCh)
+		s.Wait()
+	}
 	if s.proxyManager != nil {
 		s.proxyManager.Shutdown()
 	}
@@ -238,7 +247,23 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	}
 
 	// Initialize proxy request manager
-	s.proxyManager = NewProxyRequestManager(s.log)
+	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
+
+	// Start proxy worker pool
+	s.proxyWorkerCh = make(chan proxyWork, s.cfg.ProxyWorkerCount*2)
+	for i := 0; i < s.cfg.ProxyWorkerCount; i++ {
+		s.Add(1)
+		go func() {
+			defer s.Done()
+			for work := range s.proxyWorkerCh {
+				resp := work.conn.handleReplicaMessage(work.cmd)
+				work.conn.log.Debugf("handleReplicaMessage returned: %T", resp)
+				work.inCh <- &senderRequest{
+					ReplicaMessageReply: resp,
+				}
+			}
+		}()
+	}
 
 	if s.cfg.GenerateOnly {
 		return nil, ErrGenerateOnly

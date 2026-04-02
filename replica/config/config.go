@@ -22,6 +22,8 @@ const (
 	defaultIncomingQueueSize      = 1000       // Default queue size for incoming connection sender
 	defaultKeepAliveInterval      = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
 	defaultReplicationWorkerCount = 4          // Default number of replication worker goroutines
+	defaultProxyRequestTimeout    = 300        // Default proxy request timeout in seconds (5 minutes)
+	defaultProxyWorkerCount       = 8          // Default number of proxy request worker goroutines
 )
 
 // Type aliases for common configuration structures
@@ -101,6 +103,16 @@ type Config struct {
 	// to shard members under high write load.
 	ReplicationWorkerCount int
 
+	// ProxyRequestTimeout specifies the timeout in seconds for proxy requests
+	// to other replicas. This must be long enough for the request to traverse
+	// the replica-to-replica connection under decoy traffic load.
+	ProxyRequestTimeout int
+
+	// ProxyWorkerCount specifies the number of goroutines that handle proxy
+	// requests concurrently. This prevents proxy requests from blocking the
+	// incoming connection command loop.
+	ProxyWorkerCount int
+
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	// If empty, no metrics listener is started.
 	MetricsAddress string
@@ -166,6 +178,12 @@ func (c *Config) setDefaultTimeouts() {
 	}
 	if c.ReplicationWorkerCount <= 0 {
 		c.ReplicationWorkerCount = defaultReplicationWorkerCount
+	}
+	if c.ProxyRequestTimeout <= 0 {
+		c.ProxyRequestTimeout = defaultProxyRequestTimeout
+	}
+	if c.ProxyWorkerCount <= 0 {
+		c.ProxyWorkerCount = defaultProxyWorkerCount
 	}
 }
 

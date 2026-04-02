@@ -25,6 +25,13 @@ import (
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
+// proxyWork represents a proxy request dispatched to the worker pool.
+type proxyWork struct {
+	conn *incomingConn
+	cmd  *commands.ReplicaMessage
+	inCh chan *senderRequest
+}
+
 // createReplicaMessageReply creates a ReplicaMessageReply with proper PigeonholeGeometry
 func (c *incomingConn) createReplicaMessageReply(nikeScheme string, errorCode uint8, envelopeHash *[32]byte, envelopeReply []byte, replicaID uint8, isRead bool) *commands.ReplicaMessageReply {
 	scheme := schemes.ByName(nikeScheme)
@@ -44,7 +51,7 @@ func (c *incomingConn) createReplicaMessageReply(nikeScheme string, errorCode ui
 	}
 }
 
-func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest, bool) {
+func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, inCh chan *senderRequest) (*senderRequest, bool) {
 	if _, isDecoy := rawCmd.(*commands.ReplicaDecoy); !isDecoy {
 		c.log.Debugf("onReplicaCommand received command type: %T with value: %+v", rawCmd, rawCmd)
 	}
@@ -74,11 +81,14 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest
 		}, true
 	case *commands.ReplicaMessage:
 		c.log.Debugf("Processing ReplicaMessage command with ciphertext length: %d", len(cmd.Ciphertext))
-		resp := c.handleReplicaMessage(cmd)
-		c.log.Debugf("handleReplicaMessage returned: %T", resp)
-		return &senderRequest{
-			ReplicaMessageReply: resp,
-		}, true
+		// Dispatch to the proxy worker pool so we don't block the
+		// command loop while waiting for a proxy response.
+		c.l.server.proxyWorkerCh <- proxyWork{
+			conn: c,
+			cmd:  cmd,
+			inCh: inCh,
+		}
+		return nil, true
 	default:
 		c.log.Errorf("Received unexpected command type: %T", cmd)
 		return nil, false
@@ -715,8 +725,8 @@ func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMess
 	c.l.server.connector.DispatchCommand(replicaMessage, idHash)
 	c.log.Debugf("Dispatched proxy request to %s, waiting for response", targetShard.Name)
 
-	// Wait for the response with timeout
-	timeout := 30 * time.Second
+	// Wait for the response with configurable timeout
+	timeout := time.Duration(c.l.server.cfg.ProxyRequestTimeout) * time.Second
 	select {
 	case reply := <-responseCh:
 		if reply == nil {
@@ -726,7 +736,7 @@ func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMess
 		return reply, nil
 
 	case <-time.After(timeout):
-		c.log.Errorf("Timeout waiting for proxy response from %s", targetShard.Name)
+		c.log.Errorf("Timeout waiting for proxy response from %s after %v", targetShard.Name, timeout)
 		return nil, fmt.Errorf("timeout waiting for proxy response")
 	}
 }

@@ -295,7 +295,7 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 		}
 
 		// Handle all of the storage replica commands.
-		resp, allGood := c.onReplicaCommand(rawCmd)
+		resp, allGood := c.onReplicaCommand(rawCmd, inCh)
 		if !allGood {
 			c.log.Debugf("Got a disconnect or we failed to handle replica command: %v", rawCmd)
 			return
