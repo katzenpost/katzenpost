@@ -1246,6 +1246,15 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		log.Fatal(err)
 	}
 
+	// helper to write environment block when epoch duration is set
+	writeEnv := func() {
+		if s.EpochDuration != "" {
+			Write(f, `
+    environment:
+      - KATZENPOST_EPOCH_DURATION=%s`, s.EpochDuration)
+		}
+	}
+
 	Write(f, `
 services:
 `)
@@ -1257,9 +1266,10 @@ services:
     volumes:
       - ./:%s
     command: %s/server%s -f %s/%s/katzenpost.toml
-    network_mode: host
-
-    depends_on:`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+    network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		writeEnv()
+		Write(f, `
+    depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			Write(f, `
       - %s`, authCfg.Server.Identifier)
@@ -1274,9 +1284,10 @@ services:
     volumes:
       - ./:%s
     command: %s/server%s -f %s/%s/katzenpost.toml
-    network_mode: host
-
-    depends_on:`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+    network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		writeEnv()
+		Write(f, `
+    depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			Write(f, `
       - %s`, authCfg.Server.Identifier)
@@ -1295,8 +1306,10 @@ services:
     volumes:
       - ./:%s
     command: %s/server%s -f %s/mix%d/katzenpost.toml
-    network_mode: host
-    depends_on:`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
+    network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
+		writeEnv()
+		Write(f, `
+    depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			// is this depends_on stuff actually necessary?
 			// there was a bit more of it before this function was regenerating docker-compose.yaml...
@@ -1318,8 +1331,10 @@ services:
     volumes:
       - ./:%s
     command: %s/replica%s -f %s/replica%d/replica.toml
-    network_mode: host
-    depends_on:`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
+    network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
+		writeEnv()
+		Write(f, `
+    depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			// is this depends_on stuff actually necessary?
 			// there was a bit more of it before this function was regenerating docker-compose.yaml...
@@ -1336,8 +1351,10 @@ services:
     volumes:
       - ./:%s
     command: %s/dirauth%s -f %s/%s/authority.toml
-    network_mode: host
-`, authCfg.Server.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, authCfg.Server.Identifier)
+    network_mode: host`, authCfg.Server.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, authCfg.Server.Identifier)
+		writeEnv()
+		Write(f, `
+`)
 	}
 
 	if !s.NoMetrics {
@@ -1378,7 +1395,9 @@ services:
     volumes:
       - ./:%s
     command: %s/kpclientd%s -c %s/client2/client.toml
-    network_mode: host
-`, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir)
+    network_mode: host`, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir)
+	writeEnv()
+	Write(f, `
+`)
 	return nil
 }
