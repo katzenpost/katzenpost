@@ -80,7 +80,7 @@ func getEpoch(t time.Time) (current uint64, elapsed, till time.Duration) {
 
 func init() {
 	if WarpedEpoch == "true" {
-		Period = 2 * time.Minute
+		Period = 4 * time.Minute
 	}
 
 	durationText := os.Getenv("KATZENPOST_EPOCH_DURATION")

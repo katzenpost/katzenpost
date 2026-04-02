@@ -1445,10 +1445,8 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	d.replyLock.Lock()
-	if request.SendMessage != nil {
-		// Old API: store in regular replies
-		d.replies[*request.SendMessage.SURBID] = replyDescriptor{
-			ID:      request.SendMessage.ID,
+	if isLoopDecoy {
+		d.decoys[*surbID] = replyDescriptor{
 			appID:   request.AppID,
 			surbKey: surbKey,
 		}
@@ -1456,8 +1454,10 @@ func (d *Daemon) send(request *Request) {
 		return
 	}
 
-	if isLoopDecoy {
-		d.decoys[*surbID] = replyDescriptor{
+	if request.SendMessage != nil {
+		// Old API: store in regular replies
+		d.replies[*request.SendMessage.SURBID] = replyDescriptor{
+			ID:      request.SendMessage.ID,
 			appID:   request.AppID,
 			surbKey: surbKey,
 		}
