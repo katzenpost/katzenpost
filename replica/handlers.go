@@ -79,12 +79,32 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, inCh chan *send
 		c.l.server.Add(1)
 		go func() {
 			defer c.l.server.Done()
-			c.l.server.proxySema <- struct{}{}
+			select {
+			case <-c.l.closeAllCh:
+				c.log.Debugf("Terminating gracefully.")
+				return
+			default:
+			}
+			select {
+			case c.l.server.proxySema <- struct{}{}:
+			case <-c.l.closeAllCh:
+				c.log.Debugf("Terminating gracefully.")
+				return
+			}
 			defer func() { <-c.l.server.proxySema }()
 			resp := c.handleReplicaMessage(cmd)
 			c.log.Debugf("handleReplicaMessage returned: %T", resp)
-			inCh <- &senderRequest{
-				ReplicaMessageReply: resp,
+			select {
+			case <-c.l.closeAllCh:
+				c.log.Debugf("Terminating gracefully.")
+				return
+			default:
+			}
+			select {
+			case inCh <- &senderRequest{ReplicaMessageReply: resp}:
+			case <-c.l.closeAllCh:
+				c.log.Debugf("Terminating gracefully.")
+				return
 			}
 		}()
 		return nil, true
@@ -727,15 +747,21 @@ func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMess
 	// Wait for the response with configurable timeout
 	timeout := time.Duration(c.l.server.cfg.ProxyRequestTimeout) * time.Second
 	select {
+	case <-c.l.closeAllCh:
+		return nil, fmt.Errorf("shutting down")
+	default:
+	}
+	select {
 	case reply := <-responseCh:
 		if reply == nil {
 			return nil, fmt.Errorf("received nil reply from target replica")
 		}
 		c.log.Debugf("Received proxy reply from %s with error code: %d", targetShard.Name, reply.ErrorCode)
 		return reply, nil
-
 	case <-time.After(timeout):
 		c.log.Errorf("Timeout waiting for proxy response from %s after %v", targetShard.Name, timeout)
 		return nil, fmt.Errorf("timeout waiting for proxy response")
+	case <-c.l.closeAllCh:
+		return nil, fmt.Errorf("shutting down")
 	}
 }

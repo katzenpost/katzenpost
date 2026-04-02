@@ -301,8 +301,17 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 			if resp.ReplicaDecoy == nil {
 				c.log.Debugf("Sending response to inCh: %T", resp)
 			}
-			inCh <- resp
-			instrument.IncomingQueueLength(fmt.Sprintf("%d", c.id), len(inCh))
+			select {
+			case <-c.l.closeAllCh:
+				return
+			default:
+			}
+			select {
+			case inCh <- resp:
+				instrument.IncomingQueueLength(fmt.Sprintf("%d", c.id), len(inCh))
+			case <-c.l.closeAllCh:
+				return
+			}
 		}
 	}
 }
