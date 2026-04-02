@@ -28,9 +28,9 @@ help:
 	@echo
 
 warped?=true
-no_decoy?=false
+no_decoy?=true
 no_mixdecoy?=true
-epoch_duration?=
+epoch_duration?=2m
 mixes=3
 auths=3
 gateways=1
