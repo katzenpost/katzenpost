@@ -85,6 +85,7 @@ type Config struct {
 	Nike                     string
 	UserForwardPayloadLength int
 	PkiSignatureScheme       string
+	EpochDuration            string
 	NoDecoy                  bool
 	NoMixDecoy               bool
 	NoMetrics                bool
@@ -137,6 +138,7 @@ type Katzenpost struct {
 	ServiceNodeIdx  int
 	NoMixDecoy      bool
 	NoMetrics       bool
+	EpochDuration   string
 	DebugConfig     *cConfig.Debug
 }
 
@@ -713,6 +715,8 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	}
 	s.NoMixDecoy = cfg.NoMixDecoy
 	s.NoMetrics = cfg.NoMetrics
+	s.EpochDuration = cfg.EpochDuration
+
 	return s
 }
 

@@ -110,6 +110,8 @@ performance optimization and security requirements.`,
 		"user forward payload length in bytes for Sphinx packets")
 
 	// Traffic and timing flags
+	cmd.Flags().StringVar(&cfg.EpochDuration, "epochDuration", "",
+		"set KATZENPOST_EPOCH_DURATION env var in docker-compose services (e.g., 2m)")
 	cmd.Flags().BoolVar(&cfg.NoDecoy, "noDecoy", false,
 		"disable decoy traffic for clients, couriers, and replicas")
 	cmd.Flags().BoolVar(&cfg.NoMixDecoy, "noMixDecoy", true,
