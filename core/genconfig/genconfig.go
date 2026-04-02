@@ -301,7 +301,7 @@ func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
 		ConnectTimeout:      config.DefaultConnectTimeout,
 		HandshakeTimeout:    config.DefaultHandshakeTimeout,
 		ReauthInterval:      config.DefaultReauthInterval,
-		DisableDecoyTraffic: true,
+		DisableDecoyTraffic: s.DebugConfig.DisableDecoyTraffic,
 	}
 	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
 	s.LastPort++
@@ -333,7 +333,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.ConnectTimeout = config.DefaultConnectTimeout
 	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
 	cfg.ReauthInterval = config.DefaultReauthInterval
-	cfg.DisableDecoyTraffic = true
+	cfg.DisableDecoyTraffic = s.DebugConfig.DisableDecoyTraffic
 
 	authorities := make([]*vConfig.Authority, 0, len(s.Authorities))
 	i := 0
@@ -713,7 +713,6 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	}
 	s.NoMixDecoy = cfg.NoMixDecoy
 	s.NoMetrics = cfg.NoMetrics
-
 	return s
 }
 
