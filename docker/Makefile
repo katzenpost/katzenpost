@@ -30,6 +30,7 @@ help:
 warped?=true
 no_decoy?=false
 no_mixdecoy?=true
+epoch_duration?=
 mixes=3
 auths=3
 gateways=1
@@ -78,6 +79,10 @@ ifeq ($(no_decoy),true)
   noDecoy=--noDecoy
 endif
 
+ifneq ($(epoch_duration),)
+  epochDurationFlag=--epochDuration $(epoch_duration)
+endif
+
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=DEBUG
 
@@ -123,7 +128,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noDecoy} \
+		${noMixDecoy} ${noDecoy} ${epochDurationFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
 
 # Generate configuration files only (without docker containers)
@@ -137,7 +142,7 @@ config-only: | $(net_name)
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noDecoy} \
+		${noMixDecoy} ${noDecoy} ${epochDurationFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 	@echo "Configuration files generated in ./$(net_name)/"
 	@echo "Tests can now use the symlinked configs (e.g., client2/testdata/client.toml -> ../../docker/$(net_name)/client2/client.toml)"
