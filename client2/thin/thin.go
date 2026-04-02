@@ -495,6 +495,9 @@ func (t *ThinClient) IsConnected() bool {
 //		log.Printf("Error during shutdown: %v", err)
 //	}
 func (t *ThinClient) Close() error {
+	if t.conn == nil {
+		return nil
+	}
 
 	req := &Request{
 		ThinClose: &ThinClose{},
