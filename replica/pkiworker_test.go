@@ -90,8 +90,10 @@ func createTestSetup(t *testing.T) *testSetup {
 		WireKEMScheme:      linkScheme.Name(),
 		PKISignatureScheme: pkiScheme.Name(),
 		ReplicaNIKEScheme:  replicaScheme.Name(),
-		SphinxGeometry:     geometry,
-		Addresses:          []string{testReplicaAddress},
+		SphinxGeometry:      geometry,
+		Addresses:           []string{testReplicaAddress},
+		ProxyWorkerCount:    8,
+		ProxyRequestTimeout: 300,
 	}
 
 	server, err := New(cfg)
