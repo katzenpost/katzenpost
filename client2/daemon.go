@@ -1472,11 +1472,13 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
-		panic("doc is nil")
+		d.log.Warning("sendLoopDecoy: no PKI document available, skipping")
+		return
 	}
 	echoServices := common.FindServices(EchoService, doc)
 	if len(echoServices) == 0 {
-		panic("wtf no echo services")
+		d.log.Warning("sendLoopDecoy: no echo services available, skipping")
+		return
 	}
 	echoService := echoServices[d.secureRand.Intn(len(echoServices))]
 
@@ -1504,11 +1506,13 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 func (d *Daemon) sendDropDecoy() {
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
-		panic("doc is nil")
+		d.log.Warning("sendDropDecoy: no PKI document available, skipping")
+		return
 	}
 	echoServices := common.FindServices(EchoService, doc)
 	if len(echoServices) == 0 {
-		panic("wtf no echo services")
+		d.log.Warning("sendDropDecoy: no echo services available, skipping")
+		return
 	}
 	echoService := echoServices[d.secureRand.Intn(len(echoServices))]
 
