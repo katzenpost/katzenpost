@@ -80,12 +80,12 @@ func (s *sender) worker() {
 			select {
 			case toSend = <-s.in:
 				instrument.MessagesSent()
-				instrument.QueueLength(s.replicaName, len(s.in))
 			case <-s.HaltCh():
 				return
 			default:
 				// No real message - send decoy if enabled.
 				if s.disableDecoys {
+					instrument.QueueLength(s.replicaName, len(s.in))
 					continue
 				}
 				toSend = &courierSenderRequest{
@@ -95,6 +95,7 @@ func (s *sender) worker() {
 				}
 				instrument.DecoysSent()
 			}
+			instrument.QueueLength(s.replicaName, len(s.in))
 			if toSend != nil {
 				select {
 				case s.out <- toSend:
