@@ -786,39 +786,27 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 		boxIDList = append(boxIDList, *boxID)
 
 		// Read the box from replicas (raw CopyStreamElement bytes) with retry logic
-		const maxReadRetries = 5
 		const baseReadDelay = 500 * time.Millisecond
+		const maxReadDelay = 30 * time.Second
 		var boxPlaintext []byte
-		var readErr error
-		readSuccess := false
 
-		for readAttempt := 0; readAttempt < maxReadRetries; readAttempt++ {
+		for readAttempt := 0; ; readAttempt++ {
+			var readErr error
 			boxPlaintext, readErr = e.readNextBox(reader, boxID)
-			if readErr != nil {
-				if readAttempt < maxReadRetries-1 {
-					// Exponential backoff: 500ms, 1s, 2s, 4s
-					delay := baseReadDelay * time.Duration(1<<readAttempt)
-					e.log.Warningf("processCopyCommand: Failed to read box %x (attempt %d/%d): %v, retrying in %v",
-						boxID[:8], readAttempt+1, maxReadRetries, readErr, delay)
-					time.Sleep(delay)
-				}
-			} else {
-				readSuccess = true
+			if readErr == nil {
 				if readAttempt > 0 {
 					e.log.Debugf("processCopyCommand: Successfully read box %x on attempt %d", boxID[:8], readAttempt+1)
 				}
 				break
 			}
-		}
-
-		if !readSuccess {
-			e.log.Errorf("processCopyCommand: Failed to read box %x after %d attempts: %v", boxID[:], maxReadRetries, readErr)
-			return &pigeonhole.CourierQueryReply{
-				ReplyType: 1,
-				CopyCommandReply: &pigeonhole.CopyCommandReply{
-					ErrorCode: 1,
-				},
+			// Exponential backoff capped at maxReadDelay
+			delay := baseReadDelay * time.Duration(1<<min(readAttempt, 6))
+			if delay > maxReadDelay {
+				delay = maxReadDelay
 			}
+			e.log.Warningf("processCopyCommand: Failed to read box %x (attempt %d): %v, retrying in %v",
+				boxID[:8], readAttempt+1, readErr, delay)
+			time.Sleep(delay)
 		}
 
 		// Add box data to streaming envelope decoder
@@ -839,37 +827,24 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 		// Process each decoded envelope
 		for _, envelope := range envelopes {
 			// Send envelope immediately to replicas with retry logic
-			const maxRetries = 5
 			const baseDelay = 100 * time.Millisecond
-			var lastErr error
-			success := false
+			const maxDelay = 30 * time.Second
 
-			for attempt := 0; attempt < maxRetries; attempt++ {
-				if err := e.propagateQueryToReplicas(envelope); err != nil {
-					lastErr = err
-					if attempt < maxRetries-1 {
-						// Exponential backoff: 100ms, 200ms, 400ms, 800ms
-						delay := baseDelay * time.Duration(1<<attempt)
-						e.log.Warningf("processCopyCommand: Failed to send envelope (attempt %d/%d): %v, retrying in %v",
-							attempt+1, maxRetries, err, delay)
-						time.Sleep(delay)
-					}
-				} else {
-					success = true
+			for attempt := 0; ; attempt++ {
+				if err := e.propagateQueryToReplicas(envelope); err == nil {
 					if attempt > 0 {
 						e.log.Debugf("processCopyCommand: Successfully sent envelope on attempt %d", attempt+1)
 					}
 					break
-				}
-			}
-
-			if !success {
-				e.log.Errorf("processCopyCommand: Failed to send envelope after %d attempts: %v", maxRetries, lastErr)
-				return &pigeonhole.CourierQueryReply{
-					ReplyType: 1,
-					CopyCommandReply: &pigeonhole.CopyCommandReply{
-						ErrorCode: 1,
-					},
+				} else {
+					// Exponential backoff capped at maxDelay
+					delay := baseDelay * time.Duration(1<<min(attempt, 8))
+					if delay > maxDelay {
+						delay = maxDelay
+					}
+					e.log.Warningf("processCopyCommand: Failed to send envelope (attempt %d): %v, retrying in %v",
+						attempt+1, err, delay)
+					time.Sleep(delay)
 				}
 			}
 			numEnvelopes++
