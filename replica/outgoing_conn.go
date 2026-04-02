@@ -374,6 +374,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 			continue
 		case cmd := <-c.ch:
+			instrument.OutgoingQueueLength(c.dst.Name, len(c.ch))
 			if err := w.SendCommand(cmd); err != nil {
 				c.log.Debugf("SendCommand failed: %v, queuing for retry", err)
 				// Re-queue the command for retry since we don't know if it was delivered
