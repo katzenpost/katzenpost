@@ -110,8 +110,8 @@ performance optimization and security requirements.`,
 		"user forward payload length in bytes for Sphinx packets")
 
 	// Traffic and timing flags
-	cmd.Flags().BoolVar(&cfg.NoDecoy, "noDecoy", true,
-		"disable decoy traffic generation for clients")
+	cmd.Flags().BoolVar(&cfg.NoDecoy, "noDecoy", false,
+		"disable decoy traffic for clients, couriers, and replicas")
 	cmd.Flags().BoolVar(&cfg.NoMixDecoy, "noMixDecoy", true,
 		"disable decoy traffic generation for mix nodes")
 	cmd.Flags().BoolVar(&cfg.NoMetrics, "noMetrics", false,
