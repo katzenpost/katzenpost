@@ -160,8 +160,10 @@ func CreateTestConfig(t *testing.T, schemes *TestSchemes, geometry *geo.Geometry
 		WireKEMScheme:      schemes.Link.Name(),
 		PKISignatureScheme: schemes.PKI.Name(),
 		ReplicaNIKEScheme:  schemes.Replica.Name(),
-		SphinxGeometry:     geometry,
-		Addresses:          addresses,
+		SphinxGeometry:      geometry,
+		Addresses:           addresses,
+		ProxyWorkerCount:    8,
+		ProxyRequestTimeout: 300,
 	}
 }
 
