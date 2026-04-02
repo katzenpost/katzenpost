@@ -5,8 +5,9 @@ jobs:
   test_e2e_client2:
     env:
       warped: true
-      no_mixdecoy: false
-      no_decoy: false
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
       no_metrics: true
     strategy:
       matrix:
