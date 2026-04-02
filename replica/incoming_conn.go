@@ -106,8 +106,8 @@ func (c *incomingConn) worker() {
 
 	// Constant time message output whether or not decoy traffic
 	// is enabled.
-	inCh := make(chan *senderRequest, 100)
-	outCh := make(chan *senderRequest, 100)
+	inCh := make(chan *senderRequest, c.l.server.cfg.IncomingQueueSize)
+	outCh := make(chan *senderRequest, c.l.server.cfg.IncomingQueueSize)
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds, fmt.Sprintf("%d", c.id))
