@@ -88,12 +88,12 @@ func (s *sender) worker() {
 			select {
 			case toSend = <-s.in:
 				instrument.IncomingMessagesSent()
-				instrument.IncomingQueueLength(s.peerName, len(s.in))
 			case <-s.HaltCh():
 				return
 			default:
 				// No real response - send decoy if enabled
 				if s.disableDecoys {
+					instrument.IncomingQueueLength(s.peerName, len(s.in))
 					continue
 				}
 				toSend = &senderRequest{
@@ -103,6 +103,7 @@ func (s *sender) worker() {
 				}
 				instrument.IncomingDecoysSent()
 			}
+			instrument.IncomingQueueLength(s.peerName, len(s.in))
 			if toSend != nil {
 				select {
 				case s.out <- toSend:
