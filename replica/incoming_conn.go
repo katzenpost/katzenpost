@@ -176,23 +176,19 @@ func (c *incomingConn) egressSender(session *wire.Session, outCh chan *senderReq
 
 // sendResponse sends a response command if one is provided
 func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) {
-	if resp != nil {
-		cmd := resp.command()
-		if cmd == nil {
-			c.log.Debugf("Failed to send response: nil command")
-			return
-		}
-		_, isDecoy := cmd.(*commands.ReplicaDecoy)
-		if !isDecoy {
-			c.log.Debugf("Sending response command: %T", cmd)
-		}
-		if err := session.SendCommand(cmd); err != nil {
-			c.log.Debugf("Failed to send response: %v", err)
-		} else if !isDecoy {
-			c.log.Debugf("Successfully sent response command: %T", cmd)
-		}
-	} else {
-		c.log.Debugf("No response to send (resp is nil)")
+	if resp == nil {
+		return
+	}
+	cmd := resp.command()
+	if cmd == nil {
+		c.log.Debugf("Failed to send response: nil command")
+		return
+	}
+	_, isDecoy := cmd.(*commands.ReplicaDecoy)
+	if err := session.SendCommand(cmd); err != nil {
+		c.log.Debugf("Failed to send response: %v", err)
+	} else if !isDecoy {
+		c.log.Debugf("Sent response: %T", cmd)
 	}
 }
 
@@ -307,11 +303,6 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 			}
 			inCh <- resp
 			instrument.IncomingQueueLength(fmt.Sprintf("%d", c.id), len(inCh))
-			if resp.ReplicaDecoy == nil {
-				c.log.Debugf("Successfully sent response to inCh")
-			}
-		} else {
-			c.log.Debugf("No response to send (resp is nil)")
 		}
 	}
 }
