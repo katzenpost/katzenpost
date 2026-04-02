@@ -240,11 +240,11 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 		return nil, err
 	}
 
-	// Initialize proxy request manager and concurrency limiter
+	// Ensure config defaults are set (tests may skip FixupAndValidate).
+	s.cfg.SetDefaultTimeouts()
+
+	// Initialize proxy request manager and concurrency limiter.
 	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
-	if s.cfg.ProxyWorkerCount <= 0 {
-		return nil, fmt.Errorf("ProxyWorkerCount must be > 0")
-	}
 	s.proxySema = make(chan struct{}, s.cfg.ProxyWorkerCount)
 	s.log.Noticef("Proxy request concurrency limit: %d, timeout: %ds", s.cfg.ProxyWorkerCount, s.cfg.ProxyRequestTimeout)
 

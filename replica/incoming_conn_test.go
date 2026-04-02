@@ -109,6 +109,7 @@ func TestIncomingConn(t *testing.T) {
 		identityPublicKey: pk,
 		cfg:               cfg,
 		PKIWorker:         pkiWorker,
+		proxySema:         make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 
 	linkpubkey, linkprivkey, err := linkScheme.GenerateKeyPair()

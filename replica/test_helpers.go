@@ -174,12 +174,14 @@ func CreateTestServer(t *testing.T, cfg *config.Config, keys *TestKeys, logBacke
 		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
 
+	cfg.SetDefaultTimeouts()
 	s := &Server{
 		identityPublicKey:  keys.IdentityPubKey,
 		identityPrivateKey: keys.IdentityPrivKey,
 		linkKey:            keys.LinkPrivKey,
 		cfg:                cfg,
 		PKIWorker:          pkiWorker,
+		proxySema:          make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 
 	if logBackend != nil {

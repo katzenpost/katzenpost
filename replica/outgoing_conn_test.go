@@ -39,11 +39,13 @@ func TestOutgoingConn(t *testing.T) {
 		WorkerBase: pki.NewWorkerBase(nil, nil), // No PKI client needed for test
 	}
 
+	cfg.SetDefaultTimeouts()
 	s := &Server{
 		identityPublicKey: keys.IdentityPubKey,
 		cfg:               cfg,
 		logBackend:        logBackend,
 		PKIWorker:         pkiWorker,
+		proxySema:         make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 	pkiWorker.server = s
 	s.connector = newMockConnector(s)

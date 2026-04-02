@@ -84,6 +84,7 @@ func TestState(t *testing.T) {
 			Level:   "DEBUG",
 		},
 	}
+	cfg.SetDefaultTimeouts()
 
 	pkiWorker := &PKIWorker{
 		replicas:   replicaCommon.NewReplicaMap(),
@@ -94,6 +95,7 @@ func TestState(t *testing.T) {
 		identityPublicKey: pk,
 		cfg:               cfg,
 		PKIWorker:         pkiWorker,
+		proxySema:         make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 
 	s.connector = new(mockConnector)

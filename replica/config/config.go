@@ -126,7 +126,7 @@ type Config struct {
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
-	c.setDefaultTimeouts()
+	c.SetDefaultTimeouts()
 
 	if err := c.validateRequiredFields(); err != nil {
 		return err
@@ -153,8 +153,8 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 	return c.setupLoggingDefaults()
 }
 
-// setDefaultTimeouts sets default values for timeout configurations
-func (c *Config) setDefaultTimeouts() {
+// SetDefaultTimeouts sets default values for timeout configurations
+func (c *Config) SetDefaultTimeouts() {
 	if c.ReauthInterval <= 0 {
 		c.ReauthInterval = config.DefaultReauthInterval
 	}
