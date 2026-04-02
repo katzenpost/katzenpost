@@ -105,8 +105,6 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 
 // QueueForRetry adds a command to the retry queue when no connection is available
 func (co *Connector) QueueForRetry(cmd commands.Command, idHash [32]byte) {
-	const maxRetryAttempts = 5
-
 	co.retryQueueMu.Lock()
 	defer co.retryQueueMu.Unlock()
 
@@ -116,14 +114,8 @@ func (co *Connector) QueueForRetry(cmd commands.Command, idHash [32]byte) {
 			// Update existing entry
 			co.retryQueue[i].cmd = cmd
 			co.retryQueue[i].lastTry = time.Now()
-			if co.retryQueue[i].attempts < maxRetryAttempts {
-				co.retryQueue[i].attempts++
-				co.log.Debugf("Updated retry queue entry for %x, attempt %d/%d", idHash[:8], co.retryQueue[i].attempts, maxRetryAttempts)
-			} else {
-				co.log.Errorf("Max retry attempts (%d) reached for destination %x, dropping command: %v", maxRetryAttempts, idHash[:8], getBoxID(cmd))
-				// Remove from retry queue
-				co.retryQueue = append(co.retryQueue[:i], co.retryQueue[i+1:]...)
-			}
+			co.retryQueue[i].attempts++
+			co.log.Debugf("Updated retry queue entry for %x, attempt %d", idHash[:8], co.retryQueue[i].attempts)
 			return
 		}
 	}
