@@ -384,6 +384,8 @@ func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 		ReauthInterval:         300000, // 5 minutes
 		ReplicationWorkerCount: 4,      // Enable replication workers for inter-shard replication
 		ReplicationQueueLength: 100,    // Queue length for replication operations
+		ProxyWorkerCount:       8,      // Concurrency limit for proxy request goroutines
+		ProxyRequestTimeout:    300,    // 5 minutes
 		Logging: &config.Logging{
 			Disable: false,
 			Level:   "DEBUG",
@@ -792,7 +794,7 @@ func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.Stat
 // waitForCourierPKI waits for the courier to have a PKI document
 func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 	maxWait := 60 * time.Second // Increased for mixnet timing
-	checkInterval := 100 * time.Millisecond
+	checkInterval := 1 * time.Second
 	start := time.Now()
 
 	for time.Since(start) < maxWait {
@@ -809,7 +811,7 @@ func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 // waitForReplicasPKI waits for all replicas to have PKI documents
 func waitForReplicasPKI(t *testing.T, env *testEnvironment) {
 	maxWait := 60 * time.Second // Increased for mixnet timing
-	checkInterval := 100 * time.Millisecond
+	checkInterval := 1 * time.Second
 	start := time.Now()
 
 	for time.Since(start) < maxWait {
@@ -1051,7 +1053,7 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 // until we get a non-nil payload, indicating the replica response has been received
 func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeonhole.CourierEnvelope) *pigeonhole.CourierEnvelopeReply {
 	maxWait := 120 * time.Second // Increased to accommodate mixnet timing with constant time traffic
-	checkInterval := 100 * time.Millisecond
+	checkInterval := 1 * time.Second
 	start := time.Now()
 
 	for time.Since(start) < maxWait {

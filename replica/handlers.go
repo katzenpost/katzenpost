@@ -25,13 +25,6 @@ import (
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
-// proxyWork represents a proxy request dispatched to the worker pool.
-type proxyWork struct {
-	conn *incomingConn
-	cmd  *commands.ReplicaMessage
-	inCh chan *senderRequest
-}
-
 // createReplicaMessageReply creates a ReplicaMessageReply with proper PigeonholeGeometry
 func (c *incomingConn) createReplicaMessageReply(nikeScheme string, errorCode uint8, envelopeHash *[32]byte, envelopeReply []byte, replicaID uint8, isRead bool) *commands.ReplicaMessageReply {
 	scheme := schemes.ByName(nikeScheme)
@@ -81,13 +74,19 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, inCh chan *send
 		}, true
 	case *commands.ReplicaMessage:
 		c.log.Debugf("Processing ReplicaMessage command with ciphertext length: %d", len(cmd.Ciphertext))
-		// Dispatch to the proxy worker pool so we don't block the
-		// command loop while waiting for a proxy response.
-		c.l.server.proxyWorkerCh <- proxyWork{
-			conn: c,
-			cmd:  cmd,
-			inCh: inCh,
-		}
+		// Handle asynchronously so proxy requests don't block the
+		// command loop. Semaphore limits active handlers.
+		c.l.server.Add(1)
+		go func() {
+			defer c.l.server.Done()
+			c.l.server.proxySema <- struct{}{}
+			defer func() { <-c.l.server.proxySema }()
+			resp := c.handleReplicaMessage(cmd)
+			c.log.Debugf("handleReplicaMessage returned: %T", resp)
+			inCh <- &senderRequest{
+				ReplicaMessageReply: resp,
+			}
+		}()
 		return nil, true
 	default:
 		c.log.Errorf("Received unexpected command type: %T", cmd)
