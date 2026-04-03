@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 
@@ -89,6 +90,7 @@ type Config struct {
 	NoDecoy                  bool
 	NoMixDecoy               bool
 	NoMetrics                bool
+	Pyroscope                bool
 	DialTimeout              int
 	MaxPKIDelay              int
 	PollingIntvl             int
@@ -138,6 +140,7 @@ type Katzenpost struct {
 	ServiceNodeIdx  int
 	NoMixDecoy      bool
 	NoMetrics       bool
+	Pyroscope       bool
 	EpochDuration   string
 	DebugConfig     *cConfig.Debug
 }
@@ -715,6 +718,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	}
 	s.NoMixDecoy = cfg.NoMixDecoy
 	s.NoMetrics = cfg.NoMetrics
+	s.Pyroscope = cfg.Pyroscope
 	s.EpochDuration = cfg.EpochDuration
 
 	return s
@@ -1259,12 +1263,24 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		log.Fatal(err)
 	}
 
-	// helper to write environment block when epoch duration is set
-	writeEnv := func() {
+	// helper to write environment block
+	writeEnv := func(serviceName string) {
+		var envVars []string
 		if s.EpochDuration != "" {
+			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
+		}
+		if s.Pyroscope && strings.HasPrefix(serviceName, "auth") {
+			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://127.0.0.1:4040")
+			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-dirauth")
+			envVars = append(envVars, fmt.Sprintf("PYROSCOPE_SERVICE_TAG=%s", serviceName))
+		}
+		if len(envVars) > 0 {
 			Write(f, `
-    environment:
-      - KATZENPOST_EPOCH_DURATION=%s`, s.EpochDuration)
+    environment:`)
+			for _, v := range envVars {
+				Write(f, `
+      - %s`, v)
+			}
 		}
 	}
 
@@ -1280,7 +1296,7 @@ services:
       - ./:%s
     command: %s/server%s -f %s/%s/katzenpost.toml
     network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
-		writeEnv()
+		writeEnv(p.Identifier)
 		Write(f, `
     depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
@@ -1298,7 +1314,7 @@ services:
       - ./:%s
     command: %s/server%s -f %s/%s/katzenpost.toml
     network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
-		writeEnv()
+		writeEnv(p.Identifier)
 		Write(f, `
     depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
@@ -1320,7 +1336,7 @@ services:
       - ./:%s
     command: %s/server%s -f %s/mix%d/katzenpost.toml
     network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
-		writeEnv()
+		writeEnv(fmt.Sprintf("mix%d", i+1))
 		Write(f, `
     depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
@@ -1345,7 +1361,7 @@ services:
       - ./:%s
     command: %s/replica%s -f %s/replica%d/replica.toml
     network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
-		writeEnv()
+		writeEnv(fmt.Sprintf("replica%d", i+1))
 		Write(f, `
     depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
@@ -1365,7 +1381,7 @@ services:
       - ./:%s
     command: %s/dirauth%s -f %s/%s/authority.toml
     network_mode: host`, authCfg.Server.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, authCfg.Server.Identifier)
-		writeEnv()
+		writeEnv(authCfg.Server.Identifier)
 		Write(f, `
 `)
 	}
@@ -1401,6 +1417,16 @@ services:
 `, "grafana", "grafana", "grafana")
 	}
 
+	if s.Pyroscope {
+		Write(f, `
+  pyroscope:
+    restart: "no"
+    image: docker.io/grafana/pyroscope:latest
+    pull_policy: if_not_present
+    network_mode: host
+`)
+	}
+
 	Write(f, `
   kpclientd:
     restart: "no"
@@ -1409,7 +1435,7 @@ services:
       - ./:%s
     command: %s/kpclientd%s -c %s/client2/client.toml
     network_mode: host`, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir)
-	writeEnv()
+	writeEnv("kpclientd")
 	Write(f, `
 `)
 	return nil
