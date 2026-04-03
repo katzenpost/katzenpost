@@ -41,6 +41,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/authority/voting/server/profiling"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -229,6 +230,10 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
+	}
+
+	if err := profiling.Start(s.log); err != nil {
+		return nil, fmt.Errorf("failed to start profiling: %w", err)
 	}
 
 	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
