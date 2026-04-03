@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -40,8 +41,9 @@ type outgoingConn struct {
 	dst *cpki.ReplicaDescriptor
 	ch  chan commands.Command
 
-	id         uint64
-	retryDelay time.Duration
+	id          uint64
+	retryDelay  time.Duration
+	egressErrCh chan struct{}
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -329,7 +331,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		AuthenticationKey: c.co.Server().linkKey,
 		RandomReader:      rand.Reader,
 	}
-	envelopeScheme := schemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
+	envelopeScheme := nikeschemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
 	isInitiator := true
 	w, err := wire.NewStorageReplicaSession(cfg, envelopeScheme, isInitiator)
 	if err != nil {
@@ -350,84 +352,181 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 
+	// Set up the outgoing sender for fixed-throughput traffic.
+	// On each tick of the uniform random timer, send a real command
+	// if the queue has one, otherwise send a decoy.
+	outCh := make(chan commands.Command, c.co.Server().cfg.OutgoingQueueSize)
+	nikeScheme := nikeschemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
+	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
+	sender := newOutgoingSender(c.ch, outCh, c.co.Server().cfg.DisableDecoyTraffic, c.co.Server().LogBackend(), cmds, c.dst.Name)
+
+	doc := c.co.Server().PKIWorker.PKIDocument()
+	if doc == nil {
+		c.log.Errorf("Failed to get PKI document")
+		sender.Halt()
+		return
+	}
+	rate := uint64(1.0 / doc.LambdaR)
+	if rate == 0 {
+		rate = 1
+	}
+	maxDelay := doc.LambdaRMaxDelay
+	sender.UpdateRate(rate, maxDelay)
+	sender.UpdateConnectionStatus(true)
+
+	// Channel to signal egress goroutine to drain and exit
+	egressDoneCh := make(chan struct{})
+
+	// Start egress goroutine that sends commands over the wire
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.egressWorker(w, outCh, egressDoneCh)
+	}()
+
 	// Start the reauthenticate ticker.
 	reauthMs := time.Duration(c.co.Server().cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
+	// Wait for shutdown or reauth failure
 	for {
 		select {
 		case <-closeCh:
 			wasHalted = true
+			sender.UpdateConnectionStatus(false)
+			sender.Halt()
+			close(egressDoneCh)
+			wg.Wait()
 			return
 		case <-reauth.C:
-			// Each outgoing connection has a periodic 1/15 Hz timer to wake up
-			// and re-authenticate to handle the PKI document(s) changing.
 			creds, err := w.PeerCredentials()
 			if err != nil {
 				c.log.Debugf("replica outgoingConn: Session fail: %s", err)
+				sender.UpdateConnectionStatus(false)
+				sender.Halt()
+				close(egressDoneCh)
+				wg.Wait()
 				return
 			}
 			if !c.IsPeerValid(creds) {
 				c.log.Debugf("replica outgoingConn: Disconnecting, peer reauthenticate failed.")
+				sender.UpdateConnectionStatus(false)
+				sender.Halt()
+				close(egressDoneCh)
+				wg.Wait()
 				return
 			}
-			continue
-		case cmd := <-c.ch:
-			instrument.OutgoingQueueLength(c.dst.Name, len(c.ch))
-			if err := w.SendCommand(cmd); err != nil {
-				c.log.Debugf("SendCommand failed: %v, queuing for retry", err)
-				// Re-queue the command for retry since we don't know if it was delivered
-				idHash := hash.Sum256(c.dst.IdentityKey)
-				c.co.QueueForRetry(cmd, idHash)
-				return
-			}
+		case <-c.egressErrCh:
+			// Egress worker hit a send/recv error
+			sender.UpdateConnectionStatus(false)
+			sender.Halt()
+			close(egressDoneCh)
+			wg.Wait()
+			return
+		}
+	}
+}
 
-			response, err := w.RecvCommand()
-			if err != nil {
-				c.log.Debugf("Failed to receive command: %v, queuing for retry", err)
-				// Re-queue the command for retry since we don't know if it was delivered
-				// The command was sent but we didn't get acknowledgment
-				idHash := hash.Sum256(c.dst.IdentityKey)
-				c.co.QueueForRetry(cmd, idHash)
-				return
-			}
-			switch responseCmd := response.(type) {
-			case *commands.NoOp:
-				c.log.Debugf("replica outgoingConn: Received NoOp.")
-			case *commands.Disconnect:
-				c.log.Debugf("replica outgoingConn: Received Disconnect from peer.")
-				return
-			case *commands.ReplicaDecoy:
-			case *commands.ReplicaWriteReply:
-				c.log.Debugf("replica outgoingConn: Received ReplicaWriteReply error code: %d", responseCmd.ErrorCode)
-			case *commands.ReplicaMessageReply:
-				c.log.Debugf("replica outgoingConn: Received ReplicaMessageReply error code: %d", responseCmd.ErrorCode)
-				// Route the reply to the proxy manager
-				if c.co.Server().ProxyManager() != nil {
-					handled := c.co.Server().ProxyManager().HandleReply(responseCmd)
-					if handled {
-						c.log.Debugf("replica outgoingConn: ReplicaMessageReply routed to proxy manager")
-					} else {
-						c.log.Debugf("replica outgoingConn: ReplicaMessageReply not handled by proxy manager")
-					}
+// egressWorker reads commands from the sender output channel and sends them
+// over the wire session. It handles responses and signals errors back.
+func (c *outgoingConn) egressWorker(w wire.SessionInterface, outCh chan commands.Command, doneCh <-chan struct{}) {
+	for {
+		select {
+		case <-doneCh:
+			// Drain remaining commands
+			for {
+				select {
+				case cmd := <-outCh:
+					c.sendAndRecv(w, cmd)
+				default:
+					return
 				}
-			default:
-				c.log.Errorf("replica outgoingConn: BUG, Received unexpected command from replica peer: %s", responseCmd)
+			}
+		case cmd := <-outCh:
+			if !c.sendAndRecv(w, cmd) {
 				return
 			}
 		}
 	}
 }
 
+// sendAndRecv sends a command and processes the response.
+// Returns false if the connection should be closed.
+func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command) bool {
+	_, isDecoy := cmd.(*commands.ReplicaDecoy)
+	if err := w.SendCommand(cmd); err != nil {
+		if !isDecoy {
+			c.log.Debugf("SendCommand failed: %v, queuing for retry", err)
+			idHash := hash.Sum256(c.dst.IdentityKey)
+			c.co.QueueForRetry(cmd, idHash)
+		}
+		select {
+		case c.egressErrCh <- struct{}{}:
+		default:
+		}
+		return false
+	}
+
+	response, err := w.RecvCommand()
+	if err != nil {
+		if !isDecoy {
+			c.log.Debugf("Failed to receive command: %v, queuing for retry", err)
+			idHash := hash.Sum256(c.dst.IdentityKey)
+			c.co.QueueForRetry(cmd, idHash)
+		}
+		select {
+		case c.egressErrCh <- struct{}{}:
+		default:
+		}
+		return false
+	}
+
+	switch responseCmd := response.(type) {
+	case *commands.NoOp:
+		c.log.Debugf("replica outgoingConn: Received NoOp.")
+	case *commands.Disconnect:
+		c.log.Debugf("replica outgoingConn: Received Disconnect from peer.")
+		select {
+		case c.egressErrCh <- struct{}{}:
+		default:
+		}
+		return false
+	case *commands.ReplicaDecoy:
+		// Expected response to our decoy
+	case *commands.ReplicaWriteReply:
+		c.log.Debugf("replica outgoingConn: Received ReplicaWriteReply error code: %d", responseCmd.ErrorCode)
+	case *commands.ReplicaMessageReply:
+		c.log.Debugf("replica outgoingConn: Received ReplicaMessageReply error code: %d", responseCmd.ErrorCode)
+		if c.co.Server().ProxyManager() != nil {
+			handled := c.co.Server().ProxyManager().HandleReply(responseCmd)
+			if handled {
+				c.log.Debugf("replica outgoingConn: ReplicaMessageReply routed to proxy manager")
+			} else {
+				c.log.Debugf("replica outgoingConn: ReplicaMessageReply not handled by proxy manager")
+			}
+		}
+	default:
+		c.log.Errorf("replica outgoingConn: BUG, Received unexpected command from replica peer: %s", responseCmd)
+		select {
+		case c.egressErrCh <- struct{}{}:
+		default:
+		}
+		return false
+	}
+	return true
+}
+
 func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, geo *geo.Geometry, scheme kem.Scheme) *outgoingConn {
 	c := &outgoingConn{
-		scheme: scheme,
-		geo:    geo,
-		co:     co,
-		dst:    dst,
-		ch:     make(chan commands.Command, co.Server().cfg.OutgoingQueueSize),
-		id:     atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
+		scheme:      scheme,
+		geo:         geo,
+		co:          co,
+		dst:         dst,
+		ch:          make(chan commands.Command, co.Server().cfg.OutgoingQueueSize),
+		id:          atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
+		egressErrCh: make(chan struct{}, 1),
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("replica outgoing:%d", c.id))
 

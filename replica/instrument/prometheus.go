@@ -59,6 +59,18 @@ var (
 		},
 		[]string{"peer"},
 	)
+	outgoingDecoysSent = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_replica_outgoing_decoys_sent_total",
+			Help: "Number of decoy commands sent to other replicas",
+		},
+	)
+	outgoingMessagesSent = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_replica_outgoing_messages_sent_total",
+			Help: "Number of real commands sent to other replicas",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -72,6 +84,8 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(replicationDispatched)
 		prometheus.MustRegister(replicationLatency)
 		prometheus.MustRegister(outgoingQueueLength)
+		prometheus.MustRegister(outgoingDecoysSent)
+		prometheus.MustRegister(outgoingMessagesSent)
 	})
 
 	if address != "" {
@@ -113,4 +127,14 @@ func ReplicationLatency(seconds float64) {
 // OutgoingQueueLength sets the outgoing queue depth gauge for a peer
 func OutgoingQueueLength(peer string, length int) {
 	outgoingQueueLength.With(prometheus.Labels{"peer": peer}).Set(float64(length))
+}
+
+// OutgoingDecoysSent increments the counter for decoy commands sent to other replicas
+func OutgoingDecoysSent() {
+	outgoingDecoysSent.Inc()
+}
+
+// OutgoingMessagesSent increments the counter for real commands sent to other replicas
+func OutgoingMessagesSent() {
+	outgoingMessagesSent.Inc()
 }
