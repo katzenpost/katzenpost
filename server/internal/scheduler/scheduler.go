@@ -47,11 +47,33 @@ func (sch *scheduler) Halt() {
 }
 
 func (sch *scheduler) OnNewMixMaxDelay(newMixMaxDelay uint64) {
-	sch.maxDelayCh <- newMixMaxDelay
+	select {
+	case <-sch.HaltCh():
+		sch.log.Debugf("Terminating gracefully.")
+		return
+	default:
+	}
+	select {
+	case sch.maxDelayCh <- newMixMaxDelay:
+	case <-sch.HaltCh():
+		sch.log.Debugf("Terminating gracefully.")
+		return
+	}
 }
 
 func (sch *scheduler) OnPacket(pkt *packet.Packet) {
-	sch.inCh <- pkt
+	select {
+	case <-sch.HaltCh():
+		sch.log.Debugf("Terminating gracefully.")
+		return
+	default:
+	}
+	select {
+	case sch.inCh <- pkt:
+	case <-sch.HaltCh():
+		sch.log.Debugf("Terminating gracefully.")
+		return
+	}
 }
 
 func (sch *scheduler) worker() {

@@ -132,7 +132,18 @@ func isPrintableASCII(data []byte) bool {
 }
 
 func (p *gateway) OnPacket(pkt *packet.Packet) {
-	p.ch <- pkt
+	select {
+	case <-p.HaltCh():
+		p.log.Debugf("Terminating gracefully.")
+		return
+	default:
+	}
+	select {
+	case p.ch <- pkt:
+	case <-p.HaltCh():
+		p.log.Debugf("Terminating gracefully.")
+		return
+	}
 }
 
 func (p *gateway) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {

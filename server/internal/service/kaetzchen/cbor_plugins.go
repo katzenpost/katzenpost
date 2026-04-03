@@ -78,7 +78,18 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", pkt.ID)
 		return
 	}
-	handlerCh <- pkt
+	select {
+	case <-k.HaltCh():
+		k.log.Debugf("Terminating gracefully.")
+		return
+	default:
+	}
+	select {
+	case handlerCh <- pkt:
+	case <-k.HaltCh():
+		k.log.Debugf("Terminating gracefully.")
+		return
+	}
 }
 
 func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, pluginClient *cborplugin.Client) {
@@ -135,12 +146,23 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		return
 	}
 
-	pluginClient.WriteChan() <- &cborplugin.Request{
+	select {
+	case <-k.HaltCh():
+		k.log.Debugf("Terminating gracefully.")
+		return
+	default:
+	}
+	select {
+	case pluginClient.WriteChan() <- &cborplugin.Request{
 		ID:        pkt.ID,
 		RequestAt: time.Now(),
 		Delay:     pkt.Delay,
 		Payload:   payload,
 		SURB:      surb,
+	}:
+	case <-k.HaltCh():
+		k.log.Debugf("Terminating gracefully.")
+		return
 	}
 }
 
