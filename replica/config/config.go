@@ -17,11 +17,10 @@ import (
 
 const (
 	defaultAddress                = ":3266"
-	defaultReplicationQueueLength = 100        // Default queue length for replication operations
 	defaultOutgoingQueueSize      = 64         // Default queue size for outgoing connections
 	defaultIncomingQueueSize      = 1000       // Default queue size for incoming connection sender
 	defaultKeepAliveInterval      = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
-	defaultReplicationWorkerCount = 4          // Default number of replication worker goroutines
+	defaultMaxConcurrentReplications = 4       // Default max concurrent replication operations
 	defaultProxyRequestTimeout    = 300        // Default proxy request timeout in seconds (5 minutes)
 	defaultProxyWorkerCount       = 8          // Default number of proxy request worker goroutines
 )
@@ -82,10 +81,6 @@ type Config struct {
 	// reauthenticated in milliseconds.
 	ReauthInterval int
 
-	// ReplicationQueueLength specifies the maximum number of items that can be
-	// queued for replication operations.
-	ReplicationQueueLength int
-
 	// OutgoingQueueSize specifies the maximum number of commands that can be
 	// queued for outgoing connections.
 	OutgoingQueueSize int
@@ -98,10 +93,10 @@ type Config struct {
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
 
-	// ReplicationWorkerCount specifies the number of goroutines in the
-	// replication worker pool. Higher values allow more concurrent replication
+	// MaxConcurrentReplications specifies the maximum number of concurrent
+	// replication operations. Higher values allow more concurrent replication
 	// to shard members under high write load.
-	ReplicationWorkerCount int
+	MaxConcurrentReplications int
 
 	// ProxyRequestTimeout specifies the timeout in seconds for proxy requests
 	// to other replicas. This must be long enough for the request to traverse
@@ -164,9 +159,6 @@ func (c *Config) SetDefaultTimeouts() {
 	if c.ConnectTimeout <= 0 {
 		c.ConnectTimeout = config.DefaultConnectTimeout
 	}
-	if c.ReplicationQueueLength <= 0 {
-		c.ReplicationQueueLength = defaultReplicationQueueLength
-	}
 	if c.OutgoingQueueSize <= 0 {
 		c.OutgoingQueueSize = defaultOutgoingQueueSize
 	}
@@ -176,8 +168,8 @@ func (c *Config) SetDefaultTimeouts() {
 	if c.KeepAliveInterval <= 0 {
 		c.KeepAliveInterval = defaultKeepAliveInterval
 	}
-	if c.ReplicationWorkerCount <= 0 {
-		c.ReplicationWorkerCount = defaultReplicationWorkerCount
+	if c.MaxConcurrentReplications <= 0 {
+		c.MaxConcurrentReplications = defaultMaxConcurrentReplications
 	}
 	if c.ProxyRequestTimeout <= 0 {
 		c.ProxyRequestTimeout = defaultProxyRequestTimeout

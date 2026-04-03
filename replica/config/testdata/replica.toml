@@ -8,7 +8,6 @@ Addresses = ["tcp://127.0.0.1:33000"]
 ConnectTimeout = 60000
 HandshakeTimeout = 30000
 ReauthInterval = 300000
-ReplicationQueueLength = 100
 GenerateOnly = false
 
 [PKI]

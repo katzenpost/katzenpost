@@ -1222,6 +1222,19 @@ providers:
       "targets": [{"expr": "katzenpost_replica_outgoing_queue_length", "refId": "A", "legendFormat": "{{job}} - {{peer}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 11,
+      "title": "Replica: Replication Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_replica_replication_latency_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_replica_replication_latency_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_replica_replication_latency_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
     }
   ]
 }

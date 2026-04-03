@@ -32,7 +32,7 @@ type Connector struct {
 	conns         map[[constants.NodeIDLength]byte]*outgoingConn
 	forceUpdateCh chan interface{}
 
-	replicationCh chan *commands.ReplicaWrite
+	replicationSem chan struct{}
 
 	// Retry queue for commands that couldn't be dispatched due to missing connections
 	retryQueue   []retryCommand
@@ -162,17 +162,17 @@ func (co *Connector) processRetryQueue() {
 }
 
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
-	// Spawn a worker goroutine to avoid blocking the caller.
-	// This ensures the handler can return a reply immediately while
-	// replication happens asynchronously. Never drops - will eventually
-	// send when there's space in the channel.
 	co.Go(func() {
+		start := time.Now()
+		// Acquire semaphore slot (or bail on shutdown)
 		select {
 		case <-co.HaltCh():
-			// Shutting down, discard the replication
 			return
-		case co.replicationCh <- cmd:
+		case co.replicationSem <- struct{}{}:
 		}
+		defer func() { <-co.replicationSem }()
+		co.doReplication(cmd)
+		instrument.ReplicationLatency(time.Since(start).Seconds())
 	})
 }
 
@@ -242,22 +242,6 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 		co.log.Infof("REPLICATION: Successfully dispatched to all %d targets for BoxID %x", totalTargets, cmd.BoxID)
 	} else {
 		co.log.Warningf("REPLICATION: Only dispatched to %d/%d targets for BoxID %x (others queued for retry)", successCount, totalTargets, cmd.BoxID)
-	}
-}
-
-func (co *Connector) replicationWorker() {
-	// Create a dedicated logger for this goroutine (go-logging requires one logger per goroutine)
-	log := co.server.LogBackend().GetLogger("replica replicationWorker")
-	log.Noticef("REPLICATION: Starting replication worker")
-	for {
-		select {
-		case <-co.HaltCh():
-			log.Noticef("REPLICATION: Worker terminating gracefully")
-			return
-		case writeCmd := <-co.replicationCh:
-			log.Noticef("REPLICATION: Worker received write command for BoxID: %x", writeCmd.BoxID)
-			co.doReplication(writeCmd)
-		}
 	}
 }
 
@@ -389,18 +373,11 @@ func newConnector(server *Server) *Connector {
 		server:        server,
 		log:           server.LogBackend().GetLogger("replica Connector"),
 		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
-		replicationCh: make(chan *commands.ReplicaWrite, server.cfg.ReplicationQueueLength),
-		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
+		replicationSem: make(chan struct{}, server.cfg.MaxConcurrentReplications),
+		forceUpdateCh:  make(chan interface{}, 1), // See forceUpdate().
 		closeAllCh:    make(chan interface{}),
 	}
 
 	co.Go(co.worker)
-
-	// Spawn a pool of replication workers to handle high write throughput
-	workerCount := server.cfg.ReplicationWorkerCount
-	co.log.Noticef("Starting %d replication workers", workerCount)
-	for i := 0; i < workerCount; i++ {
-		co.Go(co.replicationWorker)
-	}
 	return co
 }

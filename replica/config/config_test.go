@@ -18,9 +18,6 @@ func TestConfig(t *testing.T) {
 		panic("Logging.Level should be DEBUG")
 	}
 
-	// Test that ReplicationQueueLength is set correctly
-	require.Equal(t, 100, c.ReplicationQueueLength)
-
 	// Test that default values are applied for new config parameters
 	require.Equal(t, defaultOutgoingQueueSize, c.OutgoingQueueSize)
 	require.Equal(t, defaultKeepAliveInterval, c.KeepAliveInterval)
@@ -31,7 +28,6 @@ func TestConfigDefaults(t *testing.T) {
 	c := &Config{}
 	c.SetDefaultTimeouts()
 
-	require.Equal(t, defaultReplicationQueueLength, c.ReplicationQueueLength)
 	require.Equal(t, defaultOutgoingQueueSize, c.OutgoingQueueSize)
 	require.Equal(t, defaultKeepAliveInterval, c.KeepAliveInterval)
 	require.Equal(t, config.DefaultConnectTimeout, c.ConnectTimeout)

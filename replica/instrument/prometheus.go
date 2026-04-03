@@ -45,6 +45,13 @@ var (
 			Help: "Number of replication commands dispatched to other replicas",
 		},
 	)
+	replicationLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_replica_replication_latency_seconds",
+			Help:    "Time from replication dispatch to completion, including semaphore wait",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
 	outgoingQueueLength = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "katzenpost_replica_outgoing_queue_length",
@@ -63,6 +70,7 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(incomingMessagesSent)
 		prometheus.MustRegister(incomingQueueLength)
 		prometheus.MustRegister(replicationDispatched)
+		prometheus.MustRegister(replicationLatency)
 		prometheus.MustRegister(outgoingQueueLength)
 	})
 
@@ -95,6 +103,11 @@ func IncomingQueueLength(peer string, length int) {
 // ReplicationDispatched increments the counter for replication commands dispatched
 func ReplicationDispatched() {
 	replicationDispatched.Inc()
+}
+
+// ReplicationLatency observes the duration of a replication operation
+func ReplicationLatency(seconds float64) {
+	replicationLatency.Observe(seconds)
 }
 
 // OutgoingQueueLength sets the outgoing queue depth gauge for a peer
