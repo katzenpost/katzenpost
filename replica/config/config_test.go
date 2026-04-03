@@ -29,7 +29,7 @@ func TestConfig(t *testing.T) {
 func TestConfigDefaults(t *testing.T) {
 	// Test that default values are applied when config values are not set
 	c := &Config{}
-	c.setDefaultTimeouts()
+	c.SetDefaultTimeouts()
 
 	require.Equal(t, defaultReplicationQueueLength, c.ReplicationQueueLength)
 	require.Equal(t, defaultOutgoingQueueSize, c.OutgoingQueueSize)
