@@ -1595,6 +1595,26 @@ func (s *state) pruneDocuments() {
 			delete(s.myconsensus, e)
 		}
 	}
+	for e := range s.reveals {
+		if e < cmpEpoch {
+			delete(s.reveals, e)
+		}
+	}
+	for e := range s.commits {
+		if e < cmpEpoch {
+			delete(s.commits, e)
+		}
+	}
+	for e := range s.signatures {
+		if e < cmpEpoch {
+			delete(s.signatures, e)
+		}
+	}
+	for e := range s.replicaDescriptors {
+		if e < cmpEpoch {
+			delete(s.replicaDescriptors, e)
+		}
+	}
 
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		return prunePersistedEpochs(tx, cmpEpoch)
