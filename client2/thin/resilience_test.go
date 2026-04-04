@@ -756,20 +756,14 @@ func TestDaemonInstanceTokenStoredOnDial(t *testing.T) {
 	nikeScheme := schemes.ByName("x25519")
 	token := [16]byte{0xCA, 0xFE, 0xBA, 0xBE}
 
-	// Accept and do handshake in the background.
+	serverConnCh := make(chan net.Conn, 1)
 	go func() {
 		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
 		mockDaemonHandshake(t, conn, token)
-		// Keep connection open until test ends.
-		buf := make([]byte, 4096)
-		for {
-			if _, err := conn.Read(buf); err != nil {
-				return
-			}
-		}
+		serverConnCh <- conn
 	}()
 
 	tc := NewThinClient(&Config{
@@ -781,7 +775,13 @@ func TestDaemonInstanceTokenStoredOnDial(t *testing.T) {
 
 	err = tc.Dial()
 	require.NoError(t, err)
-	defer tc.Close()
 
+	tc.connMu.RLock()
 	require.Equal(t, token, tc.daemonInstanceToken)
+	tc.connMu.RUnlock()
+
+	// Close the server connection first so worker() unblocks from readMessage().
+	serverConn := <-serverConnCh
+	serverConn.Close()
+	tc.Close()
 }
