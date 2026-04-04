@@ -157,6 +157,18 @@ performance optimization and security requirements.`,
 	cmd.Flags().Uint64Var(&cfg.LRMax, "lambdaRMax", 1000,
 		"maximum delay for lambdaR in milliseconds")
 
+	// Mix node scheduler tuning flags
+	cmd.Flags().IntVar(&cfg.SchedulerSlack, "schedulerSlack", 0,
+		"max allowed scheduler slack in milliseconds (0 for default 150ms)")
+	cmd.Flags().IntVar(&cfg.SchedulerMaxBurst, "schedulerMaxBurst", 0,
+		"max packets dispatched per scheduler wakeup (0 for default 16)")
+	cmd.Flags().IntVar(&cfg.SendSlack, "sendSlack", 0,
+		"max allowed send queue slack in milliseconds (0 for default 50ms)")
+	cmd.Flags().IntVar(&cfg.UnwrapDelay, "unwrapDelay", 0,
+		"max allowed unwrap queue delay in milliseconds (0 for default 250ms)")
+	cmd.Flags().IntVar(&cfg.NumSphinxWorkers, "numSphinxWorkers", 0,
+		"number of Sphinx crypto workers per mix node (0 for default 2)")
+
 	// Logging flags
 	cmd.Flags().StringVar(&cfg.LogLevel, "logLevel", genconfig.DebugLogLevel,
 		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")

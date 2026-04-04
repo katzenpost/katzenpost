@@ -108,6 +108,11 @@ type Config struct {
 	LGMax                    uint64
 	LR                       float64
 	LRMax                    uint64
+	SchedulerSlack           int
+	SchedulerMaxBurst        int
+	SendSlack                int
+	UnwrapDelay              int
+	NumSphinxWorkers         int
 }
 
 type Katzenpost struct {
@@ -138,11 +143,16 @@ type Katzenpost struct {
 	NodeIdx         int
 	GatewayIdx      int
 	ServiceNodeIdx  int
-	NoMixDecoy      bool
-	NoMetrics       bool
-	Pyroscope       bool
-	EpochDuration   string
-	DebugConfig     *cConfig.Debug
+	NoMixDecoy        bool
+	NoMetrics         bool
+	Pyroscope         bool
+	EpochDuration     string
+	DebugConfig       *cConfig.Debug
+	SchedulerSlack    int
+	SchedulerMaxBurst int
+	SendSlack         int
+	UnwrapDelay       int
+	NumSphinxWorkers  int
 }
 
 type AuthById []*vConfig.Authority
@@ -412,6 +422,21 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
 	cfg.Debug.SendDecoyTraffic = !s.NoMixDecoy
+	if s.SchedulerSlack > 0 {
+		cfg.Debug.SchedulerSlack = s.SchedulerSlack
+	}
+	if s.SchedulerMaxBurst > 0 {
+		cfg.Debug.SchedulerMaxBurst = s.SchedulerMaxBurst
+	}
+	if s.SendSlack > 0 {
+		cfg.Debug.SendSlack = s.SendSlack
+	}
+	if s.UnwrapDelay > 0 {
+		cfg.Debug.UnwrapDelay = s.UnwrapDelay
+	}
+	if s.NumSphinxWorkers > 0 {
+		cfg.Debug.NumSphinxWorkers = s.NumSphinxWorkers
+	}
 
 	// PKI section.
 	if isVoting {
@@ -720,6 +745,11 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.NoMetrics = cfg.NoMetrics
 	s.Pyroscope = cfg.Pyroscope
 	s.EpochDuration = cfg.EpochDuration
+	s.SchedulerSlack = cfg.SchedulerSlack
+	s.SchedulerMaxBurst = cfg.SchedulerMaxBurst
+	s.SendSlack = cfg.SendSlack
+	s.UnwrapDelay = cfg.UnwrapDelay
+	s.NumSphinxWorkers = cfg.NumSphinxWorkers
 
 	return s
 }

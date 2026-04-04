@@ -56,6 +56,13 @@ lRMax=1000
 
 UserForwardPayloadLength=2000
 
+# Mix node scheduler tuning (0 = use defaults)
+schedulerSlack=0
+schedulerMaxBurst=0
+sendSlack=0
+unwrapDelay=0
+numSphinxWorkers=0
+
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
 
@@ -88,6 +95,26 @@ endif
 ifeq ($(pyroscope),true)
   pyroscope_tags=-tags pyroscope
   pyroscopeFlag=--pyroscope
+endif
+
+ifneq ($(schedulerSlack),0)
+  schedulerSlackFlag=--schedulerSlack $(schedulerSlack)
+endif
+
+ifneq ($(schedulerMaxBurst),0)
+  schedulerMaxBurstFlag=--schedulerMaxBurst $(schedulerMaxBurst)
+endif
+
+ifneq ($(sendSlack),0)
+  sendSlackFlag=--sendSlack $(sendSlack)
+endif
+
+ifneq ($(unwrapDelay),0)
+  unwrapDelayFlag=--unwrapDelay $(unwrapDelay)
+endif
+
+ifneq ($(numSphinxWorkers),0)
+  numSphinxWorkersFlag=--numSphinxWorkers $(numSphinxWorkers)
 endif
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
@@ -136,6 +163,8 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} ${epochDurationFlag} ${pyroscopeFlag} \
+		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
+		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
 
 # Generate configuration files only (without docker containers)
@@ -150,6 +179,8 @@ config-only: | $(net_name)
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
 		${noMixDecoy} ${noDecoy} ${epochDurationFlag} ${pyroscopeFlag} \
+		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
+		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 	@echo "Configuration files generated in ./$(net_name)/"
 	@echo "Tests can now use the symlinked configs (e.g., client2/testdata/client.toml -> ../../docker/$(net_name)/client2/client.toml)"
