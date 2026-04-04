@@ -8,6 +8,7 @@ import (
 
 func IntoThinResponse(r *Response) *thin.Response {
 	return &thin.Response{
+		ShutdownEvent:             r.ShutdownEvent,
 		ConnectionStatusEvent:     r.ConnectionStatusEvent,
 		NewPKIDocumentEvent:       r.NewPKIDocumentEvent,
 		MessageSentEvent:          r.MessageSentEvent,

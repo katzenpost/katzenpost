@@ -5,7 +5,6 @@ package thin
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 
@@ -102,17 +101,14 @@ func errorCodeToSentinel(errorCode uint8) error {
 //		log.Fatal(err)
 //	}
 //
-//	writeCap, readCap, firstIndex, err := client.NewKeypair(ctx, seed)
+//	writeCap, readCap, firstIndex, err := client.NewKeypair(seed)
 //	if err != nil {
 //		log.Fatal("Failed to create keypair:", err)
 //	}
 //
 //	// Share readCap with Bob so he can read messages
 //	// Store writeCap for sending messages
-func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (writeCap *bacap.WriteCap, readCap *bacap.ReadCap, firstMessageIndex *bacap.MessageBoxIndex, err error) {
-	if ctx == nil {
-		return nil, nil, nil, errContextCannotBeNil
-	}
+func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap *bacap.ReadCap, firstMessageIndex *bacap.MessageBoxIndex, err error) {
 	if len(seed) != 32 {
 		return nil, nil, nil, errors.New("seed must be exactly 32 bytes")
 	}
@@ -136,8 +132,6 @@ func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (writeCap *bac
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return nil, nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return nil, nil, nil, errHalting
@@ -195,10 +189,7 @@ func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (writeCap *bac
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
-	if ctx == nil {
-		return nil, nil, nil, errContextCannotBeNil
-	}
+func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
 	if readCap == nil {
 		return nil, nil, nil, errors.New("readCap cannot be nil")
 	}
@@ -226,8 +217,6 @@ func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, me
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return nil, nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return nil, nil, nil, errHalting
@@ -286,10 +275,7 @@ func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, me
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
-	if ctx == nil {
-		return nil, nil, nil, errContextCannotBeNil
-	}
+func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
 	if writeCap == nil {
 		return nil, nil, nil, errors.New("writeCap cannot be nil")
 	}
@@ -318,8 +304,6 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return nil, nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return nil, nil, nil, errHalting
@@ -410,10 +394,7 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //		}
 //	}
 //	fmt.Printf("Received: %s\n", plaintext)
-func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
+func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if envelopeHash == nil {
 		return nil, errors.New("envelopeHash cannot be nil")
 	}
@@ -441,6 +422,10 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 		},
 	}
 
+	// Track in-flight request for replay on reconnect to new daemon instance
+	t.inFlightResends.Store(*envelopeHash, req)
+	defer t.inFlightResends.Delete(*envelopeHash)
+
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
@@ -448,15 +433,13 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 		return nil, err
 	}
 
-	// Wait for reply from daemon
+	// Wait for reply from daemon — blocks forever until success, error, or Close()
 	// For writes: daemon sends reply after receiving ACK
 	// For reads: daemon sends reply after receiving payload (after ACK)
 	// The daemon may also send error responses (e.g., BoxIDNotFound) which will cause this to exit
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return nil, errHalting
@@ -509,10 +492,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 // automatic retries on BoxIDNotFound errors. Use this when you want immediate error feedback
 // rather than waiting for potential replication lag to resolve.
 // The CancelResendingEncryptedMessage method can cancel operations started with either method.
-func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
+func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if envelopeHash == nil {
 		return nil, errors.New("envelopeHash cannot be nil")
 	}
@@ -541,6 +521,10 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, 
 		},
 	}
 
+	// Track in-flight request for replay on reconnect to new daemon instance
+	t.inFlightResends.Store(*envelopeHash, req)
+	defer t.inFlightResends.Delete(*envelopeHash)
+
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
@@ -555,8 +539,6 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, 
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return nil, errHalting
@@ -609,10 +591,7 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(ctx context.Context, 
 // BoxAlreadyExists errors instead of treating them as idempotent success. Use this when you want
 // to detect whether a write was actually performed or if the box already existed.
 // The CancelResendingEncryptedMessage method can cancel operations started with this method.
-func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
+func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if envelopeHash == nil {
 		return nil, errors.New("envelopeHash cannot be nil")
 	}
@@ -641,6 +620,10 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(ctx context.C
 		},
 	}
 
+	// Track in-flight request for replay on reconnect to new daemon instance
+	t.inFlightResends.Store(*envelopeHash, req)
+	defer t.inFlightResends.Delete(*envelopeHash)
+
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
@@ -654,8 +637,6 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(ctx context.C
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return nil, errHalting
@@ -726,13 +707,13 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(ctx context.C
 //	if err != nil {
 //		log.Printf("Failed to cancel resending: %v", err)
 //	}
-func (t *ThinClient) CancelResendingEncryptedMessage(ctx context.Context, envelopeHash *[32]byte) error {
-	if ctx == nil {
-		return errContextCannotBeNil
-	}
+func (t *ThinClient) CancelResendingEncryptedMessage(envelopeHash *[32]byte) error {
 	if envelopeHash == nil {
 		return errors.New("envelopeHash cannot be nil")
 	}
+
+	// Remove from in-flight tracking so it won't be replayed on reconnect
+	t.inFlightResends.Delete(*envelopeHash)
 
 	queryID := t.NewQueryID()
 	req := &Request{
@@ -740,6 +721,11 @@ func (t *ThinClient) CancelResendingEncryptedMessage(ctx context.Context, envelo
 			QueryID:      queryID,
 			EnvelopeHash: envelopeHash,
 		},
+	}
+
+	// If disconnected, just remove from tracking — daemon has no state to cancel
+	if !t.isConnected {
+		return nil
 	}
 
 	eventSink := t.EventSink()
@@ -753,8 +739,6 @@ func (t *ThinClient) CancelResendingEncryptedMessage(ctx context.Context, envelo
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return errHalting
@@ -812,13 +796,17 @@ func (t *ThinClient) CancelResendingEncryptedMessage(ctx context.Context, envelo
 //	if err != nil {
 //		log.Fatal("Copy command failed:", err)
 //	}
-func (t *ThinClient) StartResendingCopyCommand(ctx context.Context, writeCap *bacap.WriteCap) error {
-	if ctx == nil {
-		return errContextCannotBeNil
-	}
+func (t *ThinClient) StartResendingCopyCommand(writeCap *bacap.WriteCap) error {
 	if writeCap == nil {
 		return errors.New("writeCap cannot be nil")
 	}
+
+	// Compute WriteCapHash for in-flight tracking (matches daemon-side hash)
+	writeCapBytes, err := writeCap.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal WriteCap: %w", err)
+	}
+	writeCapHash := hash.Sum256(writeCapBytes)
 
 	queryID := t.NewQueryID()
 	req := &Request{
@@ -828,10 +816,14 @@ func (t *ThinClient) StartResendingCopyCommand(ctx context.Context, writeCap *ba
 		},
 	}
 
+	// Track in-flight request for replay on reconnect to new daemon instance
+	t.inFlightResends.Store(writeCapHash, req)
+	defer t.inFlightResends.Delete(writeCapHash)
+
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return err
 	}
@@ -839,8 +831,6 @@ func (t *ThinClient) StartResendingCopyCommand(ctx context.Context, writeCap *ba
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return errHalting
@@ -886,14 +876,10 @@ func (t *ThinClient) StartResendingCopyCommand(ctx context.Context, writeCap *ba
 // Returns:
 //   - error: Any error encountered during the operation
 func (t *ThinClient) StartResendingCopyCommandWithCourier(
-	ctx context.Context,
 	writeCap *bacap.WriteCap,
 	courierIdentityHash *[32]byte,
 	courierQueueID []byte,
 ) error {
-	if ctx == nil {
-		return errContextCannotBeNil
-	}
 	if writeCap == nil {
 		return errors.New("writeCap cannot be nil")
 	}
@@ -903,6 +889,13 @@ func (t *ThinClient) StartResendingCopyCommandWithCourier(
 	if len(courierQueueID) == 0 {
 		return errors.New("courierQueueID cannot be empty")
 	}
+
+	// Compute WriteCapHash for in-flight tracking (matches daemon-side hash)
+	writeCapBytes, err := writeCap.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal WriteCap: %w", err)
+	}
+	writeCapHash := hash.Sum256(writeCapBytes)
 
 	queryID := t.NewQueryID()
 	req := &Request{
@@ -914,10 +907,14 @@ func (t *ThinClient) StartResendingCopyCommandWithCourier(
 		},
 	}
 
+	// Track in-flight request for replay on reconnect to new daemon instance
+	t.inFlightResends.Store(writeCapHash, req)
+	defer t.inFlightResends.Delete(writeCapHash)
+
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return err
 	}
@@ -925,8 +922,6 @@ func (t *ThinClient) StartResendingCopyCommandWithCourier(
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return errHalting
@@ -979,13 +974,13 @@ func (t *ThinClient) StartResendingCopyCommandWithCourier(
 //	if err != nil {
 //		log.Printf("Failed to cancel copy command: %v", err)
 //	}
-func (t *ThinClient) CancelResendingCopyCommand(ctx context.Context, writeCapHash *[32]byte) error {
-	if ctx == nil {
-		return errContextCannotBeNil
-	}
+func (t *ThinClient) CancelResendingCopyCommand(writeCapHash *[32]byte) error {
 	if writeCapHash == nil {
 		return errors.New("writeCapHash cannot be nil")
 	}
+
+	// Remove from in-flight tracking so it won't be replayed on reconnect
+	t.inFlightResends.Delete(*writeCapHash)
 
 	queryID := t.NewQueryID()
 	req := &Request{
@@ -993,6 +988,11 @@ func (t *ThinClient) CancelResendingCopyCommand(ctx context.Context, writeCapHas
 			QueryID:      queryID,
 			WriteCapHash: writeCapHash,
 		},
+	}
+
+	// If disconnected, just remove from tracking — daemon has no state to cancel
+	if !t.isConnected {
+		return nil
 	}
 
 	eventSink := t.EventSink()
@@ -1006,8 +1006,6 @@ func (t *ThinClient) CancelResendingCopyCommand(ctx context.Context, writeCapHas
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return errHalting
@@ -1059,15 +1057,12 @@ func (t *ThinClient) CancelResendingCopyCommand(ctx context.Context, writeCapHas
 // Example:
 //
 //	ctx := context.Background()
-//	nextIndex, err := client.NextMessageBoxIndex(ctx, currentIndex)
+//	nextIndex, err := client.NextMessageBoxIndex(currentIndex)
 //	if err != nil {
 //		log.Fatal("Failed to increment index:", err)
 //	}
 //	// Use nextIndex for the next message
-func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *bacap.MessageBoxIndex) (nextMessageBoxIndex *bacap.MessageBoxIndex, err error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
+func (t *ThinClient) NextMessageBoxIndex(messageBoxIndex *bacap.MessageBoxIndex) (nextMessageBoxIndex *bacap.MessageBoxIndex, err error) {
 	if messageBoxIndex == nil {
 		return nil, errors.New("messageBoxIndex cannot be nil")
 	}
@@ -1091,8 +1086,6 @@ func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *b
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return nil, errHalting
@@ -1157,10 +1150,7 @@ func (t *ThinClient) NewStreamID() *[StreamIDLength]byte {
 // This is useful for crash recovery: after a restart, call this with the buffer
 // that was returned in CreateEnvelopesResult.Buffer before the crash, then
 // continue calling CreateCourierEnvelopesFromMultiPayload as normal.
-func (t *ThinClient) SetStreamBuffer(ctx context.Context, streamID *[StreamIDLength]byte, buffer []byte) error {
-	if ctx == nil {
-		return errContextCannotBeNil
-	}
+func (t *ThinClient) SetStreamBuffer(streamID *[StreamIDLength]byte, buffer []byte) error {
 	if streamID == nil {
 		return errors.New("streamID cannot be nil")
 	}
@@ -1185,8 +1175,6 @@ func (t *ThinClient) SetStreamBuffer(ctx context.Context, streamID *[StreamIDLen
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return errHalting
@@ -1255,15 +1243,15 @@ func (t *ThinClient) SetStreamBuffer(ctx context.Context, streamID *[StreamIDLen
 //	// Write each chunk to the copy stream
 //	copyIndex := copyStartIndex
 //	for _, chunk := range chunks {
-//		ciphertext, envDesc, envHash, epoch, err := client.EncryptWrite(ctx, chunk, copyWriteCap, copyIndex)
+//		ciphertext, envDesc, envHash, epoch, err := client.EncryptWrite(chunk, copyWriteCap, copyIndex)
 //		if err != nil {
 //			log.Fatal("Failed to encrypt chunk:", err)
 //		}
-//		_, err = client.StartResendingEncryptedMessage(ctx, nil, copyWriteCap, copyIndex.Bytes(), nil, envDesc, ciphertext, envHash, epoch)
+//		_, err = client.StartResendingEncryptedMessage(nil, copyWriteCap, copyIndex.Bytes(), nil, envDesc, ciphertext, envHash, epoch)
 //		if err != nil {
 //			log.Fatal("Failed to send chunk:", err)
 //		}
-//		copyIndex, _ = client.NextMessageBoxIndex(ctx, copyIndex)
+//		copyIndex, _ = client.NextMessageBoxIndex(copyIndex)
 //	}
 //
 //	// Send Copy command to courier
@@ -1271,10 +1259,7 @@ func (t *ThinClient) SetStreamBuffer(ctx context.Context, streamID *[StreamIDLen
 //	if err != nil || errorCode != 0 {
 //		log.Fatal("Copy command failed")
 //	}
-func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, streamID *[StreamIDLength]byte, payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isLast bool) (envelopes [][]byte, err error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
+func (t *ThinClient) CreateCourierEnvelopesFromPayload(streamID *[StreamIDLength]byte, payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isLast bool) (envelopes [][]byte, err error) {
 	if streamID == nil {
 		return nil, errors.New("streamID cannot be nil")
 	}
@@ -1308,8 +1293,6 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, stre
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return nil, errHalting
@@ -1361,10 +1344,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, stre
 // Returns:
 //   - *CreateEnvelopesResult: Contains envelopes and buffer state for crash recovery
 //   - error: Any error encountered
-func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(ctx context.Context, streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) (*CreateEnvelopesResult, error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
+func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) (*CreateEnvelopesResult, error) {
 	if streamID == nil {
 		return nil, errors.New("streamID cannot be nil")
 	}
@@ -1393,8 +1373,6 @@ func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(ctx context.Context,
 	for {
 		var event Event
 		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return nil, errHalting
@@ -1508,15 +1486,11 @@ func hashIdentityKey(key []byte) [32]byte {
 // Returns:
 //   - error: Any error encountered during the operation
 func (t *ThinClient) SendNestedCopy(
-	ctx context.Context,
 	payload []byte,
 	destWriteCap *bacap.WriteCap,
 	destFirstIndex *bacap.MessageBoxIndex,
 	courierPath []CourierDescriptor,
 ) error {
-	if ctx == nil {
-		return errContextCannotBeNil
-	}
 	if len(payload) == 0 {
 		return errors.New("payload cannot be empty")
 	}
@@ -1545,7 +1519,7 @@ func (t *ThinClient) SendNestedCopy(
 		if err != nil {
 			return err
 		}
-		writeCap, readCap, firstIdx, err := t.NewKeypair(ctx, seed)
+		writeCap, readCap, firstIdx, err := t.NewKeypair(seed)
 		if err != nil {
 			return err
 		}
@@ -1573,7 +1547,7 @@ func (t *ThinClient) SendNestedCopy(
 
 		streamID := t.NewStreamID()
 		chunks, err := t.CreateCourierEnvelopesFromPayload(
-			ctx, streamID, currentPayload, targetWriteCap, targetFirstIndex, true)
+			streamID, currentPayload, targetWriteCap, targetFirstIndex, true)
 		if err != nil {
 			return err
 		}
@@ -1598,7 +1572,7 @@ func (t *ThinClient) SendNestedCopy(
 		if err != nil {
 			return err
 		}
-		execTempWriteCap, _, execTempFirstIndex, err := t.NewKeypair(ctx, execTempSeed)
+		execTempWriteCap, _, execTempFirstIndex, err := t.NewKeypair(execTempSeed)
 		if err != nil {
 			return err
 		}
@@ -1607,22 +1581,22 @@ func (t *ThinClient) SendNestedCopy(
 		chunksToWrite := layers[layerIdx].chunks
 		execTempIdx := execTempFirstIndex
 		for _, chunk := range chunksToWrite {
-			ciphertext, envDesc, envHash, err := t.EncryptWrite(ctx, chunk, execTempWriteCap, execTempIdx)
+			ciphertext, envDesc, envHash, err := t.EncryptWrite(chunk, execTempWriteCap, execTempIdx)
 			if err != nil {
 				return err
 			}
-			_, err = t.StartResendingEncryptedMessage(ctx, nil, execTempWriteCap, nil, &replyIndex, envDesc, ciphertext, envHash)
+			_, err = t.StartResendingEncryptedMessage(nil, execTempWriteCap, nil, &replyIndex, envDesc, ciphertext, envHash)
 			if err != nil {
 				return err
 			}
-			execTempIdx, err = t.NextMessageBoxIndex(ctx, execTempIdx)
+			execTempIdx, err = t.NextMessageBoxIndex(execTempIdx)
 			if err != nil {
 				return err
 			}
 		}
 
 		// Issue CopyCommand with specified courier
-		err = t.StartResendingCopyCommandWithCourier(ctx, execTempWriteCap, courier.IdentityHash, courier.QueueID)
+		err = t.StartResendingCopyCommandWithCourier(execTempWriteCap, courier.IdentityHash, courier.QueueID)
 		if err != nil {
 			return err
 		}
@@ -1636,7 +1610,7 @@ func (t *ThinClient) SendNestedCopy(
 			var reconstructedStream []byte
 			readIdx := sourceIntermediate.firstIndex
 			for len(reconstructedStream) < len(expectedBlob) {
-				ciphertext, envDesc, envHash, err := t.EncryptRead(ctx, sourceIntermediate.readCap, readIdx)
+				ciphertext, envDesc, envHash, err := t.EncryptRead(sourceIntermediate.readCap, readIdx)
 				if err != nil {
 					return err
 				}
@@ -1644,12 +1618,12 @@ func (t *ThinClient) SendNestedCopy(
 				if err != nil {
 					return err
 				}
-				result, err := t.StartResendingEncryptedMessage(ctx, sourceIntermediate.readCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
+				result, err := t.StartResendingEncryptedMessage(sourceIntermediate.readCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
 				if err != nil {
 					return err
 				}
 				reconstructedStream = append(reconstructedStream, result.Plaintext...)
-				readIdx, err = t.NextMessageBoxIndex(ctx, readIdx)
+				readIdx, err = t.NextMessageBoxIndex(readIdx)
 				if err != nil {
 					return err
 				}
@@ -1666,7 +1640,6 @@ func (t *ThinClient) SendNestedCopy(
 // The daemon detects this and signs an empty payload instead of encrypting,
 // which the replica recognizes as a deletion request.
 func (c *ThinClient) TombstoneBox(
-	ctx context.Context,
 	writeCap *bacap.WriteCap,
 	boxIndex *bacap.MessageBoxIndex,
 ) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
@@ -1684,7 +1657,7 @@ func (c *ThinClient) TombstoneBox(
 	tomb := []byte{}
 
 	messageCiphertext, envelopeDescriptor, envelopeHash, err =
-		c.EncryptWrite(ctx, tomb, writeCap, boxIndex)
+		c.EncryptWrite(tomb, writeCap, boxIndex)
 	return
 }
 
@@ -1705,7 +1678,6 @@ type TombstoneRangeResult struct {
 // The daemon detects this and signs empty payloads instead of encrypting,
 // which the replica recognizes as deletion requests.
 func (c *ThinClient) TombstoneRange(
-	ctx context.Context,
 	writeCap *bacap.WriteCap,
 	start *bacap.MessageBoxIndex,
 	maxCount uint32,
@@ -1725,7 +1697,7 @@ func (c *ThinClient) TombstoneRange(
 	envelopes := make([]*TombstoneEnvelope, 0, maxCount)
 
 	for uint32(len(envelopes)) < maxCount {
-		messageCiphertext, envelopeDescriptor, envelopeHash, err := c.TombstoneBox(ctx, writeCap, cur)
+		messageCiphertext, envelopeDescriptor, envelopeHash, err := c.TombstoneBox(writeCap, cur)
 		if err != nil {
 			return &TombstoneRangeResult{
 				Envelopes: envelopes,

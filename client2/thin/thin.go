@@ -257,6 +257,15 @@ type ThinClient struct {
 
 	isConnected bool
 
+	// inFlightResends tracks StartResending* requests for replay on reconnect to a new daemon.
+	// Key: [32]byte (EnvelopeHash for encrypted messages, WriteCapHash for copy commands)
+	// Value: *Request (the full request to replay)
+	inFlightResends sync.Map
+
+	// daemonInstanceToken stores the instance token of the currently connected daemon.
+	// Used to detect whether a reconnect is to the same or a new daemon instance.
+	daemonInstanceToken [16]byte
+
 	// Legacy: These maps were previously used by BlockingSendReliableMessage (now removed).
 	// They may be removed in a future cleanup if no longer needed.
 	sentWaitChanMap  sync.Map // MessageID -> chan error
@@ -496,16 +505,16 @@ func (t *ThinClient) IsConnected() bool {
 //	}
 func (t *ThinClient) Close() error {
 	if t.conn == nil {
+		t.Halt()
 		return nil
 	}
 
+	// Try to send ThinClose to the daemon. If the connection is already
+	// closed (e.g., we're in the redial loop), this will fail — that's fine.
 	req := &Request{
 		ThinClose: &ThinClose{},
 	}
-	err := t.writeMessage(req)
-	if err != nil {
-		return err
-	}
+	_ = t.writeMessage(req)
 
 	// Halt workers before closing connection to avoid spurious error logs.
 	// Note: We intentionally do NOT close eventSink here. Closing a channel
@@ -580,6 +589,7 @@ func (t *ThinClient) Dial() error {
 
 	// Set connection state - allow both connected and offline modes
 	t.isConnected = message1.ConnectionStatusEvent.IsConnected
+	t.daemonInstanceToken = message1.ConnectionStatusEvent.InstanceToken
 
 	if !t.isConnected {
 		t.log.Infof("Daemon is not connected to mixnet - entering offline mode (channel operations will work)")
@@ -662,287 +672,403 @@ func (t *ThinClient) readMessage() (*Response, error) {
 	return response, nil
 }
 
-// worker is the main background worker that processes incoming messages from the daemon.
-func (t *ThinClient) worker() {
+// dispatchMessage routes a received message to the appropriate event sink.
+// Returns true if the message was handled, false if HaltCh fired.
+func (t *ThinClient) dispatchMessage(message *Response) bool {
+	switch {
+	case message.MessageIDGarbageCollected != nil:
+		select {
+		case t.eventSink <- message.MessageIDGarbageCollected:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.ConnectionStatusEvent != nil:
+		t.isConnected = message.ConnectionStatusEvent.IsConnected
+		select {
+		case t.eventSink <- message.ConnectionStatusEvent:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.NewPKIDocumentEvent != nil:
+		doc, err := t.parsePKIDoc(message.NewPKIDocumentEvent.Payload)
+		if err != nil {
+			t.log.Errorf("Failed to parse PKI document: %s", err)
+			return true // continue, don't halt on parse failure
+		}
+		event := &NewDocumentEvent{
+			Document: doc,
+		}
+		select {
+		case t.eventSink <- event:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.MessageSentEvent != nil:
+		isArq := false
+		if message.MessageSentEvent.MessageID != nil {
+			sentWaitChanRaw, ok := t.sentWaitChanMap.Load(*message.MessageSentEvent.MessageID)
+			if ok {
+				isArq = true
+				sentWaitChan := sentWaitChanRaw.(chan error)
+				var err error
+				if message.MessageSentEvent.Err != "" {
+					err = errors.New(message.MessageSentEvent.Err)
+				}
+				select {
+				case sentWaitChan <- err:
+				case <-t.HaltCh():
+					return false
+				}
+			}
+		}
+		if !isArq {
+			select {
+			case t.eventSink <- message.MessageSentEvent:
+			case <-t.HaltCh():
+				return false
+			}
+		}
+	case message.MessageReplyEvent != nil:
+		if message.MessageReplyEvent.Payload == nil {
+			if message.MessageReplyEvent.ErrorCode != ThinClientSuccess {
+				t.log.Errorf("message.Payload is nil due to error: %s", ThinClientErrorToString(message.MessageReplyEvent.ErrorCode))
+			} else {
+				t.log.Error("message.Payload is nil")
+			}
+		}
+		isArq := false
+		if message.MessageReplyEvent.MessageID != nil {
+			replyWaitChanRaw, ok := t.replyWaitChanMap.Load(*message.MessageReplyEvent.MessageID)
+			if ok {
+				isArq = true
+				replyWaitChan := replyWaitChanRaw.(chan *MessageReplyEvent)
+				select {
+				case replyWaitChan <- message.MessageReplyEvent:
+				case <-t.HaltCh():
+					return false
+				}
+			}
+		}
+		if !isArq {
+			select {
+			case t.eventSink <- message.MessageReplyEvent:
+			case <-t.HaltCh():
+				return false
+			}
+		}
+
+		/**  New Channel API **/
+
+	case message.ChannelQuerySentEvent != nil:
+		select {
+		case t.eventSink <- message.ChannelQuerySentEvent:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.ChannelQueryReplyEvent != nil:
+		select {
+		case t.eventSink <- message.ChannelQueryReplyEvent:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.CreateReadChannelReply != nil:
+		select {
+		case t.eventSink <- message.CreateReadChannelReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.CreateWriteChannelReply != nil:
+		select {
+		case t.eventSink <- message.CreateWriteChannelReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.WriteChannelReply != nil:
+		select {
+		case t.eventSink <- message.WriteChannelReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.ReadChannelReply != nil:
+		select {
+		case t.eventSink <- message.ReadChannelReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.ResumeWriteChannelReply != nil:
+		select {
+		case t.eventSink <- message.ResumeWriteChannelReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.ResumeReadChannelReply != nil:
+		select {
+		case t.eventSink <- message.ResumeReadChannelReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.ResumeWriteChannelQueryReply != nil:
+		select {
+		case t.eventSink <- message.ResumeWriteChannelQueryReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.ResumeReadChannelQueryReply != nil:
+		select {
+		case t.eventSink <- message.ResumeReadChannelQueryReply:
+		case <-t.HaltCh():
+			return false
+		}
+
+		/**  New Pigeonhole API **/
+
+	case message.NewKeypairReply != nil:
+		select {
+		case t.eventSink <- message.NewKeypairReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.EncryptReadReply != nil:
+		select {
+		case t.eventSink <- message.EncryptReadReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.EncryptWriteReply != nil:
+		select {
+		case t.eventSink <- message.EncryptWriteReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.StartResendingEncryptedMessageReply != nil:
+		select {
+		case t.eventSink <- message.StartResendingEncryptedMessageReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.CancelResendingEncryptedMessageReply != nil:
+		select {
+		case t.eventSink <- message.CancelResendingEncryptedMessageReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.StartResendingCopyCommandReply != nil:
+		select {
+		case t.eventSink <- message.StartResendingCopyCommandReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.CancelResendingCopyCommandReply != nil:
+		select {
+		case t.eventSink <- message.CancelResendingCopyCommandReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.NextMessageBoxIndexReply != nil:
+		select {
+		case t.eventSink <- message.NextMessageBoxIndexReply:
+		case <-t.HaltCh():
+			return false
+		}
+
+		/**  Copy Channel API **/
+
+	case message.CreateCourierEnvelopesFromPayloadReply != nil:
+		select {
+		case t.eventSink <- message.CreateCourierEnvelopesFromPayloadReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.CreateCourierEnvelopesFromPayloadsReply != nil:
+		select {
+		case t.eventSink <- message.CreateCourierEnvelopesFromPayloadsReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.SetStreamBufferReply != nil:
+		select {
+		case t.eventSink <- message.SetStreamBufferReply:
+		case <-t.HaltCh():
+			return false
+		}
+
+	default:
+		t.log.Errorf("bug: received invalid thin client message: %v", message)
+	}
+	return true
+}
+
+// redial attempts to reconnect to the daemon with exponential backoff.
+// Returns true on successful reconnect, false if HaltCh fires.
+func (t *ThinClient) redial() bool {
+	const (
+		initialBackoff = 1 * time.Second
+		maxBackoff     = 60 * time.Second
+		backoffFactor  = 2
+	)
+
+	network := t.cfg.Network
+	address := t.cfg.Address
+	backoff := initialBackoff
+
 	for {
 		select {
 		case <-t.HaltCh():
-			return
+			return false
 		default:
 		}
 
-		message, err := t.readMessage()
+		// Interruptible sleep
+		select {
+		case <-t.HaltCh():
+			return false
+		case <-time.After(backoff):
+		}
+
+		t.log.Debugf("Attempting to reconnect to daemon at %s://%s", network, address)
+		conn, err := net.Dial(network, address)
 		if err != nil {
-			// Check if we're shutting down before logging the error
-			// to avoid spurious "use of closed network connection" errors
+			t.log.Debugf("Reconnect failed: %v (backoff %v)", err, backoff)
+			backoff = backoff * backoffFactor
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			continue
+		}
+		t.conn = conn
+
+		// Handshake: read ConnectionStatusEvent
+		message1, err := t.readMessage()
+		if err != nil {
+			t.log.Errorf("Reconnect handshake failed (ConnectionStatusEvent): %v", err)
+			t.conn.Close()
+			continue
+		}
+		if message1.ConnectionStatusEvent == nil {
+			t.log.Errorf("Reconnect handshake failed: expected ConnectionStatusEvent")
+			t.conn.Close()
+			continue
+		}
+		t.isConnected = message1.ConnectionStatusEvent.IsConnected
+		t.daemonInstanceToken = message1.ConnectionStatusEvent.InstanceToken
+
+		// Handshake: read NewPKIDocumentEvent
+		message2, err := t.readMessage()
+		if err != nil {
+			t.log.Errorf("Reconnect handshake failed (NewPKIDocumentEvent): %v", err)
+			t.conn.Close()
+			continue
+		}
+		if message2.NewPKIDocumentEvent == nil {
+			t.log.Errorf("Reconnect handshake failed: expected NewPKIDocumentEvent")
+			t.conn.Close()
+			continue
+		}
+		if len(message2.NewPKIDocumentEvent.Payload) > 0 {
+			t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
+		}
+
+		t.log.Infof("Reconnected to daemon (connected=%v)", t.isConnected)
+		return true
+	}
+}
+
+// replayInFlightResends re-sends all tracked in-flight requests to the daemon.
+func (t *ThinClient) replayInFlightResends() {
+	t.inFlightResends.Range(func(key, value any) bool {
+		req := value.(*Request)
+		if err := t.writeMessage(req); err != nil {
+			t.log.Errorf("Failed to replay in-flight request: %v", err)
+		}
+		return true
+	})
+}
+
+// worker is the main background worker that processes incoming messages from the daemon.
+// It survives daemon disconnects by automatically reconnecting with exponential backoff.
+// Only HaltCh() (from Close()) causes this goroutine to exit.
+func (t *ThinClient) worker() {
+	receivedShutdown := false
+
+	for {
+		// === READ LOOP ===
+		var disconnectErr error
+	readLoop:
+		for {
 			select {
 			case <-t.HaltCh():
 				return
 			default:
 			}
-			t.log.Errorf("thin client ReceiveMessage failed: %v", err)
-			// Halt on any error that indicates the connection is permanently broken.
-			if err == io.EOF || err == io.ErrClosedPipe {
-				go t.Halt()
-				return
-			}
-			continue
-		}
-		if message == nil {
-			go t.Halt()
-			return
-		}
 
-		switch {
-		case message.ShutdownEvent != nil:
-			go t.Halt()
-			return
-		case message.MessageIDGarbageCollected != nil:
-			select {
-			case t.eventSink <- message.MessageIDGarbageCollected:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.ConnectionStatusEvent != nil:
-			select {
-			case t.eventSink <- message.ConnectionStatusEvent:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.NewPKIDocumentEvent != nil:
-			doc, err := t.parsePKIDoc(message.NewPKIDocumentEvent.Payload)
+			message, err := t.readMessage()
 			if err != nil {
-				t.log.Errorf("Failed to parse PKI document: %s", err)
-				// Gracefully halt the client on PKI parsing failure
-				go t.Halt()
-				return
-			}
-			event := &NewDocumentEvent{
-				Document: doc,
-			}
-			select {
-			case t.eventSink <- event:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.MessageSentEvent != nil:
-			isArq := false
-			if message.MessageSentEvent.MessageID != nil {
-				sentWaitChanRaw, ok := t.sentWaitChanMap.Load(*message.MessageSentEvent.MessageID)
-				if ok {
-					isArq = true
-					sentWaitChan := sentWaitChanRaw.(chan error)
-					var err error
-					if message.MessageSentEvent.Err != "" {
-						err = errors.New(message.MessageSentEvent.Err)
-					}
-					select {
-					case sentWaitChan <- err:
-					case <-t.HaltCh():
-						return
-					}
-				}
-			}
-			if !isArq {
+				// Check if we're shutting down before logging the error
 				select {
-				case t.eventSink <- message.MessageSentEvent:
-					continue
 				case <-t.HaltCh():
 					return
+				default:
 				}
-			}
-		case message.MessageReplyEvent != nil:
-			if message.MessageReplyEvent.Payload == nil {
-				if message.MessageReplyEvent.ErrorCode != ThinClientSuccess {
-					t.log.Errorf("message.Payload is nil due to error: %s", ThinClientErrorToString(message.MessageReplyEvent.ErrorCode))
-				} else {
-					t.log.Error("message.Payload is nil")
+				t.log.Errorf("thin client ReceiveMessage failed: %v", err)
+				if err == io.EOF || err == io.ErrClosedPipe {
+					disconnectErr = err
+					break readLoop
 				}
-			}
-			isArq := false
-			if message.MessageReplyEvent.MessageID != nil {
-				replyWaitChanRaw, ok := t.replyWaitChanMap.Load(*message.MessageReplyEvent.MessageID)
-				if ok {
-					isArq = true
-					replyWaitChan := replyWaitChanRaw.(chan *MessageReplyEvent)
-					select {
-					case replyWaitChan <- message.MessageReplyEvent:
-					case <-t.HaltCh():
-						return
-					}
+				// For other errors, also treat as disconnect
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					disconnectErr = err
+					break readLoop
 				}
+				continue
 			}
-			if !isArq {
-				select {
-				case t.eventSink <- message.MessageReplyEvent:
-				case <-t.HaltCh():
-					return
-				}
+			if message == nil {
+				disconnectErr = errConnectionLost
+				break readLoop
 			}
 
-			/**  New Channel API **/
-
-		case message.ChannelQuerySentEvent != nil:
-			select {
-			case t.eventSink <- message.ChannelQuerySentEvent:
+			// ShutdownEvent: daemon is shutting down gracefully
+			if message.ShutdownEvent != nil {
+				receivedShutdown = true
 				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.ChannelQueryReplyEvent != nil:
-			select {
-			case t.eventSink <- message.ChannelQueryReplyEvent:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.CreateReadChannelReply != nil:
-			select {
-			case t.eventSink <- message.CreateReadChannelReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.CreateWriteChannelReply != nil:
-			select {
-			case t.eventSink <- message.CreateWriteChannelReply:
-				continue
-			case <-t.HaltCh():
-				return
 			}
 
-		case message.WriteChannelReply != nil:
-			select {
-			case t.eventSink <- message.WriteChannelReply:
-				continue
-			case <-t.HaltCh():
-				return
+			if !t.dispatchMessage(message) {
+				return // HaltCh fired
 			}
-		case message.ReadChannelReply != nil:
-			select {
-			case t.eventSink <- message.ReadChannelReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.ResumeWriteChannelReply != nil:
-			select {
-			case t.eventSink <- message.ResumeWriteChannelReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.ResumeReadChannelReply != nil:
-			select {
-			case t.eventSink <- message.ResumeReadChannelReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.ResumeWriteChannelQueryReply != nil:
-			select {
-			case t.eventSink <- message.ResumeWriteChannelQueryReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.ResumeReadChannelQueryReply != nil:
-			select {
-			case t.eventSink <- message.ResumeReadChannelQueryReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-
-			/**  New Pigeonhole API **/
-
-		case message.NewKeypairReply != nil:
-			select {
-			case t.eventSink <- message.NewKeypairReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.EncryptReadReply != nil:
-			select {
-			case t.eventSink <- message.EncryptReadReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.EncryptWriteReply != nil:
-			select {
-			case t.eventSink <- message.EncryptWriteReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.StartResendingEncryptedMessageReply != nil:
-			select {
-			case t.eventSink <- message.StartResendingEncryptedMessageReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.CancelResendingEncryptedMessageReply != nil:
-			select {
-			case t.eventSink <- message.CancelResendingEncryptedMessageReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.StartResendingCopyCommandReply != nil:
-			select {
-			case t.eventSink <- message.StartResendingCopyCommandReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.CancelResendingCopyCommandReply != nil:
-			select {
-			case t.eventSink <- message.CancelResendingCopyCommandReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.NextMessageBoxIndexReply != nil:
-			select {
-			case t.eventSink <- message.NextMessageBoxIndexReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-
-			/**  Copy Channel API **/
-
-		case message.CreateCourierEnvelopesFromPayloadReply != nil:
-			select {
-			case t.eventSink <- message.CreateCourierEnvelopesFromPayloadReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.CreateCourierEnvelopesFromPayloadsReply != nil:
-			select {
-			case t.eventSink <- message.CreateCourierEnvelopesFromPayloadsReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-		case message.SetStreamBufferReply != nil:
-			select {
-			case t.eventSink <- message.SetStreamBufferReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-
-		default:
-			t.log.Errorf("bug: received invalid thin client message: %v", message)
 		}
+
+		// === DISCONNECT HANDLING ===
+		t.conn.Close()
+		t.isConnected = false
+		previousToken := t.daemonInstanceToken
+
+		event := &DaemonDisconnectedEvent{
+			IsGraceful: receivedShutdown,
+			Err:        disconnectErr,
+		}
+		select {
+		case t.eventSink <- event:
+		case <-t.HaltCh():
+			return
+		}
+
+		t.log.Infof("Daemon disconnected (graceful=%v, err=%v)", receivedShutdown, disconnectErr)
+		receivedShutdown = false
+
+		// === REDIAL LOOP ===
+		if !t.redial() {
+			return // HaltCh fired
+		}
+
+		// === CONDITIONAL REPLAY ===
+		if t.daemonInstanceToken != previousToken {
+			t.log.Infof("New daemon instance detected, replaying in-flight requests")
+			t.replayInFlightResends()
+		} else {
+			t.log.Infof("Same daemon instance, skipping replay")
+		}
+
+		// Back to top → re-enter read loop
 	}
 }
 

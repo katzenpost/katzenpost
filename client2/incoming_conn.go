@@ -73,8 +73,9 @@ func (c *incomingConn) sendPKIDoc(doc []byte) error {
 func (c *incomingConn) updateConnectionStatus(status error) {
 	message := &Response{
 		ConnectionStatusEvent: &thin.ConnectionStatusEvent{
-			IsConnected: status == nil,
-			Err:         nil,
+			IsConnected:   status == nil,
+			Err:           nil,
+			InstanceToken: c.listener.instanceToken,
 		},
 	}
 	select {

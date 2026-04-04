@@ -221,6 +221,10 @@ func (d *Daemon) halt() {
 	shutdownStart := time.Now()
 	d.log.Info("Starting graceful daemon shutdown")
 
+	// Step 0: Notify all connected thin clients that we're shutting down
+	d.log.Debug("Broadcasting ShutdownEvent to thin clients")
+	d.listener.broadcastShutdownEvent()
+
 	// Step 1: Stop listener
 	listenerStart := time.Now()
 	d.log.Debug("Stopping thin client listener")

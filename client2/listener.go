@@ -12,6 +12,9 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -38,6 +41,10 @@ type listener struct {
 
 	updatePKIDocCh chan *cpki.Document
 	updateStatusCh chan error
+
+	// instanceToken is a random token that uniquely identifies this daemon instance.
+	// Thin clients use it to detect same-instance reconnects vs new-instance reconnects.
+	instanceToken [16]byte
 
 	// Callback function to clean up channels when a connection closes
 	onAppDisconnectFn func(*[AppIDLength]byte)
@@ -235,6 +242,22 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 	return conn
 }
 
+// broadcastShutdownEvent sends a ShutdownEvent to all connected thin clients.
+// This uses direct socket writes rather than the channel-based sendToClientCh,
+// because during shutdown the writer goroutine may have already exited.
+func (l *listener) broadcastShutdownEvent() {
+	l.connsLock.RLock()
+	defer l.connsLock.RUnlock()
+	for _, c := range l.conns {
+		err := c.sendResponse(&Response{
+			ShutdownEvent: &thin.ShutdownEvent{},
+		})
+		if err != nil {
+			l.log.Debugf("Failed to send ShutdownEvent to client %x: %v", c.appID, err)
+		}
+	}
+}
+
 // New creates a new listener.
 func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend, onAppDisconnectFn func(*[AppIDLength]byte)) (*listener, error) {
 	ingressSize := 200
@@ -250,6 +273,12 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 	}
 
 	l.log = l.logBackend.GetLogger("client2/listener")
+
+	// Generate a random instance token to uniquely identify this daemon instance.
+	_, err := rand.Reader.Read(l.instanceToken[:])
+	if err != nil {
+		return nil, err
+	}
 
 	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic, logBackend)
 
