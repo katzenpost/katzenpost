@@ -1527,6 +1527,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_FEATURE_TOGGLES_DISABLE=kubernetesDashboards
     network_mode: host
     depends_on:
       - metrics
