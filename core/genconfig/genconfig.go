@@ -1099,6 +1099,13 @@ scrape_configs:
   - targets: ['%s']
 `, i+1, cfg.MetricsAddress)
 	}
+	for _, cfg := range s.NodeConfigs {
+		Write(f, `- job_name: %s
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['%s']
+`, cfg.Server.Identifier, cfg.Server.MetricsAddress)
+	}
 	return nil
 }
 
@@ -1269,6 +1276,85 @@ providers:
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    }
+  ]
+}
+`)
+
+	// Packet loss dashboard
+	plFile := filepath.Join(dbDir, "mix-packet-loss.json")
+	log.Printf(WritingLogFormat, plFile)
+	pl, err := os.Create(plFile)
+	if err != nil {
+		return err
+	}
+	defer pl.Close()
+	Write(pl, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Mix Network Packet Loss",
+  "uid": "katzenpost-packet-loss",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Packets Dropped (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_dropped_packets_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "Deadline Blown Drops (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_dropped_deadline_blown_packets_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "Invalid + Replayed Packets (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "rate(katzenpost_dropped_invalid_packets_total[1m])", "refId": "A", "legendFormat": "{{job}} invalid"},
+        {"expr": "rate(katzenpost_replayed_packets_total[1m])", "refId": "B", "legendFormat": "{{job}} replayed"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "Outgoing Packets Dropped (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "rate(katzenpost_dropped_outgoing_packets_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "Mix Queue Size",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "katzenpost_mix_queue_size", "refId": "A", "legendFormat": "{{job}} {{quantile}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "Ingress Queue Size",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "katzenpost_ingress_queue_size", "refId": "A", "legendFormat": "{{job}} {{quantile}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
     }
   ]
 }
