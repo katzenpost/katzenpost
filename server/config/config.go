@@ -47,7 +47,7 @@ const (
 	defaultNumServiceWorkers   = 3
 	defaultNumKaetzchenWorkers = 3
 	defaultUnwrapDelay         = 250 // 250 ms.
-	defaultSchedulerSlack      = 150 // 150 ms.
+	defaultSchedulerSlack      = 450 // 450 ms.
 	defaultSchedulerMaxBurst   = 16
 	defaultSendSlack           = 50        // 50 ms.
 	defaultDecoySlack          = 15 * 1000 // 15 sec.
