@@ -1343,7 +1343,7 @@ providers:
       "title": "Mix Queue Size",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
-      "targets": [{"expr": "katzenpost_mix_queue_size", "refId": "A", "legendFormat": "{{job}} {{quantile}}"}],
+      "targets": [{"expr": "rate(katzenpost_mix_queue_size_sum[1m]) / rate(katzenpost_mix_queue_size_count[1m])", "refId": "A", "legendFormat": "{{job}} avg"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
     },
@@ -1352,7 +1352,7 @@ providers:
       "title": "Ingress Queue Size",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
-      "targets": [{"expr": "katzenpost_ingress_queue_size", "refId": "A", "legendFormat": "{{job}} {{quantile}}"}],
+      "targets": [{"expr": "rate(katzenpost_ingress_queue_size_sum[1m]) / rate(katzenpost_ingress_queue_size_count[1m])", "refId": "A", "legendFormat": "{{job}} avg"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
     }
