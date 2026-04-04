@@ -242,7 +242,12 @@ type ThinClient struct {
 	log        *logging.Logger
 	logBackend *log.Backend
 
-	conn net.Conn
+	// connMu protects conn, isConnected, and daemonInstanceToken which are
+	// accessed by worker()/redial() and Close()/IsConnected() concurrently.
+	connMu              sync.RWMutex
+	conn                net.Conn
+	isConnected         bool
+	daemonInstanceToken [16]byte
 
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
@@ -255,16 +260,10 @@ type ThinClient struct {
 	drainAdd    chan chan Event
 	drainRemove chan chan Event
 
-	isConnected bool
-
 	// inFlightResends tracks StartResending* requests for replay on reconnect to a new daemon.
 	// Key: [32]byte (EnvelopeHash for encrypted messages, WriteCapHash for copy commands)
 	// Value: *Request (the full request to replay)
 	inFlightResends sync.Map
-
-	// daemonInstanceToken stores the instance token of the currently connected daemon.
-	// Used to detect whether a reconnect is to the same or a new daemon instance.
-	daemonInstanceToken [16]byte
 
 	// Legacy: These maps were previously used by BlockingSendReliableMessage (now removed).
 	// They may be removed in a future cleanup if no longer needed.
@@ -476,6 +475,8 @@ func (t *ThinClient) GetLogger(prefix string) *logging.Logger {
 // Returns:
 //   - bool: true if daemon is connected to mixnet, false otherwise
 func (t *ThinClient) IsConnected() bool {
+	t.connMu.RLock()
+	defer t.connMu.RUnlock()
 	return t.isConnected
 }
 
@@ -504,7 +505,11 @@ func (t *ThinClient) IsConnected() bool {
 //		log.Printf("Error during shutdown: %v", err)
 //	}
 func (t *ThinClient) Close() error {
-	if t.conn == nil {
+	t.connMu.RLock()
+	conn := t.conn
+	t.connMu.RUnlock()
+
+	if conn == nil {
 		t.Halt()
 		return nil
 	}
@@ -522,7 +527,7 @@ func (t *ThinClient) Close() error {
 	// exit when HaltCh() is closed, and consumers should also monitor HaltCh()
 	// to know when to stop reading from eventSink.
 	t.Halt()
-	return t.conn.Close()
+	return conn.Close()
 }
 
 // Dial establishes a connection to the client daemon and initializes the client.
@@ -570,11 +575,13 @@ func (t *ThinClient) Dial() error {
 	case "tcp":
 		fallthrough
 	case "unix":
-		var err error
-		t.conn, err = net.Dial(network, address)
+		conn, err := net.Dial(network, address)
 		if err != nil {
 			return err
 		}
+		t.connMu.Lock()
+		t.conn = conn
+		t.connMu.Unlock()
 	}
 
 	// WAIT for connection status message from daemon
@@ -588,8 +595,10 @@ func (t *ThinClient) Dial() error {
 	}
 
 	// Set connection state - allow both connected and offline modes
+	t.connMu.Lock()
 	t.isConnected = message1.ConnectionStatusEvent.IsConnected
 	t.daemonInstanceToken = message1.ConnectionStatusEvent.InstanceToken
+	t.connMu.Unlock()
 
 	if !t.isConnected {
 		t.log.Infof("Daemon is not connected to mixnet - entering offline mode (channel operations will work)")
@@ -683,7 +692,9 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 			return false
 		}
 	case message.ConnectionStatusEvent != nil:
+		t.connMu.Lock()
 		t.isConnected = message.ConnectionStatusEvent.IsConnected
+		t.connMu.Unlock()
 		select {
 		case t.eventSink <- message.ConnectionStatusEvent:
 		case <-t.HaltCh():
@@ -935,40 +946,47 @@ func (t *ThinClient) redial() bool {
 			}
 			continue
 		}
+		t.connMu.Lock()
 		t.conn = conn
+		t.connMu.Unlock()
 
 		// Handshake: read ConnectionStatusEvent
 		message1, err := t.readMessage()
 		if err != nil {
 			t.log.Errorf("Reconnect handshake failed (ConnectionStatusEvent): %v", err)
-			t.conn.Close()
+			conn.Close()
 			continue
 		}
 		if message1.ConnectionStatusEvent == nil {
 			t.log.Errorf("Reconnect handshake failed: expected ConnectionStatusEvent")
-			t.conn.Close()
+			conn.Close()
 			continue
 		}
+		t.connMu.Lock()
 		t.isConnected = message1.ConnectionStatusEvent.IsConnected
 		t.daemonInstanceToken = message1.ConnectionStatusEvent.InstanceToken
+		t.connMu.Unlock()
 
 		// Handshake: read NewPKIDocumentEvent
 		message2, err := t.readMessage()
 		if err != nil {
 			t.log.Errorf("Reconnect handshake failed (NewPKIDocumentEvent): %v", err)
-			t.conn.Close()
+			conn.Close()
 			continue
 		}
 		if message2.NewPKIDocumentEvent == nil {
 			t.log.Errorf("Reconnect handshake failed: expected NewPKIDocumentEvent")
-			t.conn.Close()
+			conn.Close()
 			continue
 		}
 		if len(message2.NewPKIDocumentEvent.Payload) > 0 {
 			t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
 		}
 
-		t.log.Infof("Reconnected to daemon (connected=%v)", t.isConnected)
+		t.connMu.RLock()
+		connected := t.isConnected
+		t.connMu.RUnlock()
+		t.log.Infof("Reconnected to daemon (connected=%v)", connected)
 		return true
 	}
 }
@@ -1038,9 +1056,11 @@ func (t *ThinClient) worker() {
 		}
 
 		// === DISCONNECT HANDLING ===
+		t.connMu.Lock()
 		t.conn.Close()
 		t.isConnected = false
 		previousToken := t.daemonInstanceToken
+		t.connMu.Unlock()
 
 		event := &DaemonDisconnectedEvent{
 			IsGraceful: receivedShutdown,
@@ -1061,7 +1081,10 @@ func (t *ThinClient) worker() {
 		}
 
 		// === CONDITIONAL REPLAY ===
-		if t.daemonInstanceToken != previousToken {
+		t.connMu.RLock()
+		newToken := t.daemonInstanceToken
+		t.connMu.RUnlock()
+		if newToken != previousToken {
 			t.log.Infof("New daemon instance detected, replaying in-flight requests")
 			t.replayInFlightResends()
 		} else {

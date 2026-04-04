@@ -724,7 +724,7 @@ func (t *ThinClient) CancelResendingEncryptedMessage(envelopeHash *[32]byte) err
 	}
 
 	// If disconnected, just remove from tracking — daemon has no state to cancel
-	if !t.isConnected {
+	if !t.IsConnected() {
 		return nil
 	}
 
@@ -991,7 +991,7 @@ func (t *ThinClient) CancelResendingCopyCommand(writeCapHash *[32]byte) error {
 	}
 
 	// If disconnected, just remove from tracking — daemon has no state to cancel
-	if !t.isConnected {
+	if !t.IsConnected() {
 		return nil
 	}
 
