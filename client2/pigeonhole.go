@@ -1279,13 +1279,39 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 			d.log.Debugf("handlePigeonholeARQReply: ACK received for EnvelopeHash %x, IsRead=%v",
 				arqMessage.EnvelopeHash[:], arqMessage.IsRead)
 
-			// Transition to ACKReceived state
-			arqMessage.State = ARQStateACKReceived
+			// For default writes (NoIdempotentBoxAlreadyExists=false), the ACK is sufficient.
+			// The courier sends the ACK immediately upon receipt, before dispatching to
+			// replicas. The ACK confirms the courier received the envelope and will
+			// dispatch it to both shard replicas. We don't need a second round-trip
+			// through the mixnet to learn the replica result, because BoxAlreadyExists
+			// is treated as idempotent success anyway.
+			if !arqMessage.IsRead && !arqMessage.NoIdempotentBoxAlreadyExists {
+				d.log.Debugf("handlePigeonholeARQReply: Write ACK received, returning success (single round-trip)")
+				d.replyLock.Lock()
+				delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+				d.replyLock.Unlock()
 
-			// For both reads and writes, we need to send another SURB to get the payload reply
-			// The payload reply contains the actual result from the replica (success or error like BoxAlreadyExists)
-			// Generate a new SURB and send it to the courier
-			d.log.Debugf("handlePigeonholeARQReply: ACK received (isRead=%v), sending new SURB for payload", arqMessage.IsRead)
+				conn.sendResponse(&Response{
+					AppID: arqMessage.AppID,
+					StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+						QueryID:             arqMessage.QueryID,
+						ErrorCode:           thin.ThinClientSuccess,
+						CourierIdentityHash: arqMessage.DestinationIdHash,
+						CourierQueueID:      arqMessage.RecipientQueueID,
+					},
+				})
+				return
+			}
+
+			// Transition to ACKReceived state.
+			// For reads and BoxAlreadyExists-aware writes (NoIdempotentBoxAlreadyExists=true),
+			// we need to send another SURB to get the payload reply.
+			// The payload reply contains the actual result from the replica:
+			// - For reads: the decrypted plaintext
+			// - For writes with NoIdempotentBoxAlreadyExists: the replica error code (e.g. BoxAlreadyExists)
+			arqMessage.State = ARQStateACKReceived
+			d.log.Debugf("handlePigeonholeARQReply: ACK received (isRead=%v, NoIdempotentBoxAlreadyExists=%v), sending new SURB for payload",
+				arqMessage.IsRead, arqMessage.NoIdempotentBoxAlreadyExists)
 
 			// Create a new SURB ID for the payload request
 			newSurbID := &[sphinxConstants.SURBIDLength]byte{}

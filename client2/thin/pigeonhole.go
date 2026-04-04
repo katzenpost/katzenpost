@@ -346,8 +346,15 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 // This is used for both read and write operations in the new Pigeonhole API.
 //
 // The daemon implements a finite state machine (FSM) for handling the stop-and-wait ARQ protocol:
-//   - For write operations (writeCap != nil, readCap == nil):
+//   - For default write operations (writeCap != nil, readCap == nil,
+//     noIdempotentBoxAlreadyExists == false):
 //     The method waits for an ACK from the courier and returns immediately.
+//     The ACK confirms the courier received the envelope and will dispatch it
+//     to both shard replicas. This requires only a single round-trip through
+//     the mixnet.
+//   - For BoxAlreadyExists-aware writes (noIdempotentBoxAlreadyExists == true):
+//     The method waits for an ACK, then sends a second SURB to retrieve the
+//     replica's error code. This requires two round-trips through the mixnet.
 //   - For read operations (readCap != nil, writeCap == nil):
 //     The method waits for an ACK from the courier, then the daemon automatically
 //     sends a new SURB to request the payload, and this method waits for the payload.
@@ -355,7 +362,6 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 //     the fully decrypted plaintext.
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
 //   - readCap: Read capability (can be nil for write operations, required for reads)
 //   - writeCap: Write capability (can be nil for read operations, required for writes)
 //   - nextMessageIndex: Next message index for BACAP decryption (required for reads)
