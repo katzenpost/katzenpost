@@ -1002,60 +1002,56 @@ func (t *ThinClient) replayInFlightResends() {
 	})
 }
 
+// readUntilDisconnect reads and dispatches messages until the connection drops
+// or HaltCh fires. Returns the disconnect error and whether a ShutdownEvent
+// was received before the disconnect. Returns (nil, false) if HaltCh fired.
+func (t *ThinClient) readUntilDisconnect() (disconnectErr error, graceful bool) {
+	for {
+		select {
+		case <-t.HaltCh():
+			return nil, false
+		default:
+		}
+
+		message, err := t.readMessage()
+		if err != nil {
+			select {
+			case <-t.HaltCh():
+				return nil, false
+			default:
+			}
+			t.log.Errorf("thin client ReceiveMessage failed: %v", err)
+			if err == io.EOF || err == io.ErrClosedPipe ||
+				strings.Contains(err.Error(), "use of closed network connection") {
+				return err, graceful
+			}
+			continue
+		}
+		if message == nil {
+			return errConnectionLost, graceful
+		}
+
+		if message.ShutdownEvent != nil {
+			graceful = true
+			continue
+		}
+
+		if !t.dispatchMessage(message) {
+			return nil, false // HaltCh fired
+		}
+	}
+}
+
 // worker is the main background worker that processes incoming messages from the daemon.
 // It survives daemon disconnects by automatically reconnecting with exponential backoff.
 // Only HaltCh() (from Close()) causes this goroutine to exit.
 func (t *ThinClient) worker() {
-	receivedShutdown := false
-
 	for {
-		// === READ LOOP ===
-		var disconnectErr error
-	readLoop:
-		for {
-			select {
-			case <-t.HaltCh():
-				return
-			default:
-			}
-
-			message, err := t.readMessage()
-			if err != nil {
-				// Check if we're shutting down before logging the error
-				select {
-				case <-t.HaltCh():
-					return
-				default:
-				}
-				t.log.Errorf("thin client ReceiveMessage failed: %v", err)
-				if err == io.EOF || err == io.ErrClosedPipe {
-					disconnectErr = err
-					break readLoop
-				}
-				// For other errors, also treat as disconnect
-				if strings.Contains(err.Error(), "use of closed network connection") {
-					disconnectErr = err
-					break readLoop
-				}
-				continue
-			}
-			if message == nil {
-				disconnectErr = errConnectionLost
-				break readLoop
-			}
-
-			// ShutdownEvent: daemon is shutting down gracefully
-			if message.ShutdownEvent != nil {
-				receivedShutdown = true
-				continue
-			}
-
-			if !t.dispatchMessage(message) {
-				return // HaltCh fired
-			}
+		disconnectErr, graceful := t.readUntilDisconnect()
+		if disconnectErr == nil {
+			return // HaltCh fired
 		}
 
-		// === DISCONNECT HANDLING ===
 		t.connMu.Lock()
 		t.conn.Close()
 		t.isConnected = false
@@ -1063,7 +1059,7 @@ func (t *ThinClient) worker() {
 		t.connMu.Unlock()
 
 		event := &DaemonDisconnectedEvent{
-			IsGraceful: receivedShutdown,
+			IsGraceful: graceful,
 			Err:        disconnectErr,
 		}
 		select {
@@ -1072,15 +1068,12 @@ func (t *ThinClient) worker() {
 			return
 		}
 
-		t.log.Infof("Daemon disconnected (graceful=%v, err=%v)", receivedShutdown, disconnectErr)
-		receivedShutdown = false
+		t.log.Infof("Daemon disconnected (graceful=%v, err=%v)", graceful, disconnectErr)
 
-		// === REDIAL LOOP ===
 		if !t.redial() {
 			return // HaltCh fired
 		}
 
-		// === CONDITIONAL REPLAY ===
 		t.connMu.RLock()
 		newToken := t.daemonInstanceToken
 		t.connMu.RUnlock()
@@ -1090,8 +1083,6 @@ func (t *ThinClient) worker() {
 		} else {
 			t.log.Infof("Same daemon instance, skipping replay")
 		}
-
-		// Back to top → re-enter read loop
 	}
 }
 
