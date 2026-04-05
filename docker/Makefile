@@ -30,6 +30,7 @@ help:
 warped?=true
 no_decoy?=true
 no_mixdecoy?=true
+no_metrics?=true
 pyroscope?=false
 epoch_duration?=2m
 mixes=3
@@ -86,6 +87,10 @@ endif
 
 ifeq ($(no_decoy),true)
   noDecoy=--noDecoy
+endif
+
+ifeq ($(no_metrics),true)
+  noMetricsFlag=--noMetrics
 endif
 
 ifneq ($(epoch_duration),)
@@ -162,7 +167,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noDecoy} ${epochDurationFlag} ${pyroscopeFlag} \
+		${noMixDecoy} ${noDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
@@ -178,7 +183,7 @@ config-only: | $(net_name)
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noDecoy} ${epochDurationFlag} ${pyroscopeFlag} \
+		${noMixDecoy} ${noDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
