@@ -58,6 +58,8 @@ func errorCodeToSentinel(errorCode uint8) error {
 		return ErrReplicationFailed
 	case 10: // ReplicaErrorBoxAlreadyExists
 		return ErrBoxAlreadyExists
+	case 11: // ReplicaErrorTombstone
+		return ErrTombstone
 
 	// Thin client decryption error codes
 	case ThinClientErrorMKEMDecryptionFailed:
@@ -68,6 +70,8 @@ func errorCodeToSentinel(errorCode uint8) error {
 	// Thin client operation error codes
 	case ThinClientErrorStartResendingCancelled:
 		return ErrStartResendingCancelled
+	case ThinClientErrorInvalidTombstoneSig:
+		return ErrInvalidTombstoneSignature
 
 	default:
 		// For other error codes (thin client errors, etc.), return a generic error

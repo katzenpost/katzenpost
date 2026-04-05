@@ -1870,8 +1870,9 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		return
 	}
 
-	// Handle tombstones: empty plaintext means the box was tombstoned.
-	// Skip unpadding since tombstones have no padded payload.
+	// Defensive fallback: detect tombstones by empty plaintext after BACAP decryption.
+	// The primary path is via ReplicaErrorTombstone from the replica, but this catches
+	// any case where the tombstone error code was not set.
 	if len(plaintext) == 0 {
 		d.log.Debugf("handlePayloadReply: Tombstone detected (empty plaintext)")
 		conn.sendResponse(&Response{
@@ -1879,7 +1880,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
 				QueryID:             arqMessage.QueryID,
 				Plaintext:           []byte{},
-				ErrorCode:           thin.ThinClientSuccess,
+				ErrorCode:           pigeonhole.ReplicaErrorTombstone,
 				CourierIdentityHash: arqMessage.DestinationIdHash,
 				CourierQueueID:      arqMessage.RecipientQueueID,
 			},
@@ -1948,8 +1949,8 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 	if innerMsg.MessageType == 0 && innerMsg.ReadReply != nil {
 		d.log.Debugf("decryptPigeonholeReply: Processing read reply, ErrorCode: %d, Payload length: %d",
 			innerMsg.ReadReply.ErrorCode, len(innerMsg.ReadReply.Payload))
-		if innerMsg.ReadReply.ErrorCode != 0 {
-			// Return a structured error with the replica error code
+		// Let tombstones fall through to BACAP signature validation
+		if innerMsg.ReadReply.ErrorCode != 0 && innerMsg.ReadReply.ErrorCode != pigeonhole.ReplicaErrorTombstone {
 			return nil, &replicaError{code: innerMsg.ReadReply.ErrorCode}
 		}
 
@@ -1975,7 +1976,7 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 			d.log.Errorf("decryptPigeonholeReply: BoxID comparison - Expected: %x, Got from replica: %x",
 				expectedBoxID.Bytes(), innerMsg.ReadReply.BoxID)
 
-			// Decrypt the BACAP payload
+			// Decrypt the BACAP payload (also verifies signature)
 			signature := (*[bacap.SignatureSize]byte)(innerMsg.ReadReply.Signature[:])
 			plaintext, err := statefulReader.DecryptNext(
 				[]byte(constants.PIGEONHOLE_CTX),
@@ -1983,8 +1984,17 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 				innerMsg.ReadReply.Payload,
 				*signature)
 			if err != nil {
+				if innerMsg.ReadReply.ErrorCode == pigeonhole.ReplicaErrorTombstone {
+					d.log.Errorf("decryptPigeonholeReply: tombstone signature verification failed: %v", err)
+					return nil, &replicaError{code: thin.ThinClientErrorInvalidTombstoneSig}
+				}
 				d.log.Errorf("decryptPigeonholeReply: BACAP decryption failed: %v", err)
 				return nil, fmt.Errorf("%w: %v", errBACAPDecryptionFailed, err)
+			}
+
+			if innerMsg.ReadReply.ErrorCode == pigeonhole.ReplicaErrorTombstone {
+				d.log.Debugf("decryptPigeonholeReply: verified tombstone at Idx64=%d", messageBoxIndex.Idx64)
+				return nil, &replicaError{code: pigeonhole.ReplicaErrorTombstone}
 			}
 
 			d.log.Debugf("decryptPigeonholeReply: BACAP decryption successful, plaintext length: %d", len(plaintext))

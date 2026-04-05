@@ -288,7 +288,15 @@ func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *p
 
 	switch {
 	case err == nil:
-		// no error, success code path
+		if len(resp.Payload) == 0 {
+			// Tombstone: box exists but payload was intentionally deleted
+			c.log.Debugf("Replica read found tombstone for BoxID: %x", replicaRead.BoxID)
+			return &pigeonhole.ReplicaReadReply{
+				BoxID:     resp.BoxID,
+				Signature: resp.Signature,
+				ErrorCode: pigeonhole.ReplicaErrorTombstone,
+			}
+		}
 		c.log.Debug("Replica read successful")
 		reply := &pigeonhole.ReplicaReadReply{
 			BoxID:      resp.BoxID,

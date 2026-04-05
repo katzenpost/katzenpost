@@ -8,6 +8,7 @@ package client2
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"testing"
 	"time"
 
@@ -890,10 +891,8 @@ func TestTombstoning(t *testing.T) {
 
 		ciphertext, envDesc, envHash, err = bob.EncryptRead(readCap, firstIndex)
 		require.NoError(t, err)
-		tombResult, err := bob.StartResendingEncryptedMessage(readCap, nil, firstIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
-		require.NoError(t, err)
-
-		if len(tombResult.Plaintext) == 0 {
+		_, err = bob.StartResendingEncryptedMessage(readCap, nil, firstIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
+		if errors.Is(err, thin.ErrTombstone) {
 			tombstoneVerified = true
 			t.Logf("✓ Bob verified tombstone on attempt %d", attempt)
 			break
@@ -990,9 +989,8 @@ func TestTombstoneRange(t *testing.T) {
 		require.NoError(t, err)
 		readIdxBytes, err := readIdx.MarshalBinary()
 		require.NoError(t, err)
-		tombResult, err := bob.StartResendingEncryptedMessage(readCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
-		require.NoError(t, err)
-		require.True(t, len(tombResult.Plaintext) == 0, "Expected tombstone plaintext (empty) for box %d", i+1)
+		_, err = bob.StartResendingEncryptedMessage(readCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
+		require.True(t, errors.Is(err, thin.ErrTombstone), "Expected ErrTombstone for box %d, got: %v", i+1, err)
 		t.Logf("✓ Bob verified tombstone %d", i+1)
 
 		readIdx, err = bob.NextMessageBoxIndex(readIdx)

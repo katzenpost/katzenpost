@@ -175,7 +175,23 @@ var (
 	// ErrStartResendingCancelled indicates that a StartResendingEncryptedMessage
 	// operation was cancelled via CancelResendingEncryptedMessage before completion.
 	ErrStartResendingCancelled = errors.New("start resending cancelled")
+
+	// ErrTombstone indicates that the read operation found a tombstone.
+	// The box was intentionally deleted by the writer. This is not a failure.
+	ErrTombstone = errors.New("tombstone")
+
+	// ErrInvalidTombstoneSignature indicates that a replica claimed a box is
+	// tombstoned but the BACAP signature verification failed.
+	ErrInvalidTombstoneSignature = errors.New("invalid tombstone signature")
 )
+
+// IsExpectedOutcome returns true for error codes that represent completed
+// operations rather than failures. These errors should not trigger retries.
+func IsExpectedOutcome(err error) bool {
+	return errors.Is(err, ErrTombstone) ||
+		errors.Is(err, ErrBoxIDNotFound) ||
+		errors.Is(err, ErrBoxAlreadyExists)
+}
 
 // ThinResponse encapsulates a message response from the mixnet that is passed
 // to the client application. This is part of the legacy API.

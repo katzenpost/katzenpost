@@ -15,6 +15,7 @@ const (
 	ReplicaErrorInvalidEpoch      uint8 = 8  // Invalid epoch
 	ReplicaErrorReplicationFailed uint8 = 9  // Replication to other replicas failed
 	ReplicaErrorBoxAlreadyExists  uint8 = 10 // Box already exists (writes are immutable)
+	ReplicaErrorTombstone         uint8 = 11 // Box contains a tombstone (intentional deletion)
 )
 
 // Courier envelope reply type constants

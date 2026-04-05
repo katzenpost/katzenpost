@@ -117,6 +117,11 @@ const (
 	// ThinClientErrorStartResendingCancelled indicates that a StartResendingEncryptedMessage
 	// operation was cancelled via CancelResendingEncryptedMessage before completion.
 	ThinClientErrorStartResendingCancelled uint8 = 24
+
+	// ThinClientErrorInvalidTombstoneSig indicates that a replica claimed a box is
+	// tombstoned but the signature verification failed. This means the tombstone is
+	// forged or corrupted.
+	ThinClientErrorInvalidTombstoneSig uint8 = 25
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -180,6 +185,8 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "BACAP decryption failed"
 	case ThinClientErrorStartResendingCancelled:
 		return "Start resending cancelled"
+	case ThinClientErrorInvalidTombstoneSig:
+		return "Invalid tombstone signature"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}
