@@ -112,6 +112,7 @@ func (d *Daemon) encryptRead(request *Request) {
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
+	d.log.Debugf("encryptRead: Idx64=%d, BoxID=%x", messageBoxIndex.Idx64, boxID)
 
 	// Get the CURRENT message index (the one we're reading from)
 	// This is needed for decryption later - we decrypt using the SAME index we read from
@@ -263,7 +264,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 		boxID, sigraw = messageBoxIndex.SignBox(writeCap, constants.PIGEONHOLE_CTX, []byte{})
 		copy(sig[:], sigraw)
 		ciphertext = nil // Empty payload for tombstone
-		d.log.Debugf("encryptWrite: Generated tombstone BoxID: %x", boxID)
+		d.log.Debugf("encryptWrite: Generated tombstone BoxID: %x, Idx64=%d", boxID, messageBoxIndex.Idx64)
 	} else {
 		// Normal write path: validate size, pad, and encrypt
 
@@ -301,7 +302,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		d.log.Debugf("encryptWrite: Generated BoxID: %x", boxID)
+		d.log.Debugf("encryptWrite: Generated BoxID: %x, Idx64=%d", boxID, messageBoxIndex.Idx64)
 		copy(sig[:], sigraw)
 	}
 
@@ -456,6 +457,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 			return
 		}
+		d.log.Debugf("createCourierEnvelopesFromPayload: Idx64=%d, BoxID=%x", currentIndex.Idx64, boxID)
 
 		sig := [bacap.SignatureSize]byte{}
 		copy(sig[:], sigraw)
@@ -720,6 +722,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
 				return
 			}
+			d.log.Debugf("createCourierEnvelopesFromPayloads: dest=%d, Idx64=%d, BoxID=%x", destIdx, currentIndex.Idx64, boxID)
 
 			sig := [bacap.SignatureSize]byte{}
 			copy(sig[:], sigraw)
@@ -919,6 +922,7 @@ func (d *Daemon) nextMessageBoxIndex(request *Request) {
 		d.sendNextMessageBoxIndexError(request, thin.ThinClientErrorInternalError)
 		return
 	}
+	d.log.Debugf("nextMessageBoxIndex: advanced from Idx64=%d to Idx64=%d", messageBoxIndex.Idx64, nextIndex.Idx64)
 
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
@@ -1021,8 +1025,10 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 
 	// Log the box ID (blinded ed25519 public key) for debugging
 	var boxIDHex string = "<unknown>"
+	var idx64Str string = "<unknown>"
 	if len(req.NextMessageIndex) > 0 {
 		if mbi, err := bacap.NewEmptyMessageBoxIndexFromBytes(req.NextMessageIndex); err == nil {
+			idx64Str = fmt.Sprintf("%d", mbi.Idx64)
 			if isRead && req.ReadCap != nil {
 				boxID := req.ReadCap.DeriveBoxID(mbi)
 				boxIDHex = fmt.Sprintf("%x", boxID.Bytes())
@@ -1032,8 +1038,8 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 			}
 		}
 	}
-	d.log.Debugf("startResendingEncryptedMessage: isRead=%v, boxID=%s, NoRetryOnBoxIDNotFound=%v, NoIdempotentBoxAlreadyExists=%v, EnvelopeHash=%x",
-		isRead, boxIDHex, req.NoRetryOnBoxIDNotFound, req.NoIdempotentBoxAlreadyExists, req.EnvelopeHash[:])
+	d.log.Debugf("startResendingEncryptedMessage: isRead=%v, Idx64=%s, boxID=%s, NoRetryOnBoxIDNotFound=%v, NoIdempotentBoxAlreadyExists=%v, EnvelopeHash=%x",
+		isRead, idx64Str, boxIDHex, req.NoRetryOnBoxIDNotFound, req.NoIdempotentBoxAlreadyExists, req.EnvelopeHash[:])
 
 	// Get a random Courier
 	_, doc := d.client.CurrentDocument()
@@ -1949,14 +1955,13 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 
 		// Perform BACAP decryption if this is a read operation
 		if arqMessage.IsRead && arqMessage.ReadCap != nil && arqMessage.NextMessageIndex != nil {
-			d.log.Debugf("decryptPigeonholeReply: Performing BACAP decryption")
-
 			// Deserialize the NextMessageIndex
 			messageBoxIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(arqMessage.NextMessageIndex)
 			if err != nil {
 				d.log.Errorf("decryptPigeonholeReply: Failed to deserialize MessageBoxIndex: %v", err)
 				return nil, fmt.Errorf("%w: failed to deserialize MessageBoxIndex: %v", errBACAPDecryptionFailed, err)
 			}
+			d.log.Debugf("decryptPigeonholeReply: Performing BACAP decryption, Idx64=%d", messageBoxIndex.Idx64)
 
 			// Create a StatefulReader from the ReadCap and NextMessageIndex
 			statefulReader, err := bacap.NewStatefulReaderWithIndex(arqMessage.ReadCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
