@@ -4,6 +4,7 @@
 package client2
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,15 +18,38 @@ import (
 )
 
 var (
-	dummyStatefulReader bacap.StatefulReader
-	dummyStatefulWriter bacap.StatefulWriter
-	dummyWriteCap       bacap.WriteCap
-	dummyReadCap        bacap.ReadCap
+	dummyStatefulReader  bacap.StatefulReader
+	dummyStatefulWriter  bacap.StatefulWriter
+	dummyWriteCap        bacap.WriteCap
+	dummyReadCap         bacap.ReadCap
+	dummyMessageBoxIndex bacap.MessageBoxIndex
 )
 
 func newValidationTestDaemon() *Daemon {
 	return &Daemon{
 		log: logging.MustGetLogger("test"),
+	}
+}
+
+func TestReplicaError(t *testing.T) {
+	err := &replicaError{code: 42}
+	require.Contains(t, err.Error(), "42")
+	require.Contains(t, err.Error(), "replica error code")
+}
+
+func TestGenerateUniqueChannelID(t *testing.T) {
+	d := &Daemon{
+		log:               logging.MustGetLogger("test"),
+		newChannelMapXXX:  make(map[uint16]bool),
+		newChannelMapLock: new(sync.RWMutex),
+	}
+
+	ids := make(map[uint16]bool)
+	for i := 0; i < 100; i++ {
+		id := d.generateUniqueChannelID()
+		require.False(t, ids[id], "generated duplicate channel ID %d", id)
+		require.NotEqual(t, uint16(0), id, "channel ID should never be 0")
+		ids[id] = true
 	}
 }
 
@@ -252,5 +276,127 @@ func TestValidateResumeReadChannelRequest(t *testing.T) {
 			},
 		}
 		require.Error(t, d.validateResumeReadChannelRequest(req))
+	})
+}
+
+func TestValidateResumeWriteChannelQueryRequest(t *testing.T) {
+	d := newValidationTestDaemon()
+	queryID := new([thin.QueryIDLength]byte)
+	envHash := new([32]byte)
+
+	t.Run("valid", func(t *testing.T) {
+		req := &Request{
+			ResumeWriteChannelQuery: &thin.ResumeWriteChannelQuery{
+				QueryID:            queryID,
+				WriteCap:           &dummyWriteCap,
+				MessageBoxIndex:    &dummyMessageBoxIndex,
+				EnvelopeDescriptor: []byte("desc"),
+				EnvelopeHash:       envHash,
+			},
+		}
+		require.NoError(t, d.validateResumeWriteChannelQueryRequest(req))
+	})
+
+	t.Run("nil QueryID", func(t *testing.T) {
+		req := &Request{
+			ResumeWriteChannelQuery: &thin.ResumeWriteChannelQuery{
+				WriteCap:           &dummyWriteCap,
+				MessageBoxIndex:    &dummyMessageBoxIndex,
+				EnvelopeDescriptor: []byte("desc"),
+				EnvelopeHash:       envHash,
+			},
+		}
+		require.Error(t, d.validateResumeWriteChannelQueryRequest(req))
+	})
+
+	t.Run("nil WriteCap", func(t *testing.T) {
+		req := &Request{
+			ResumeWriteChannelQuery: &thin.ResumeWriteChannelQuery{
+				QueryID:            queryID,
+				MessageBoxIndex:    &dummyMessageBoxIndex,
+				EnvelopeDescriptor: []byte("desc"),
+				EnvelopeHash:       envHash,
+			},
+		}
+		require.Error(t, d.validateResumeWriteChannelQueryRequest(req))
+	})
+
+	t.Run("nil MessageBoxIndex", func(t *testing.T) {
+		req := &Request{
+			ResumeWriteChannelQuery: &thin.ResumeWriteChannelQuery{
+				QueryID:            queryID,
+				WriteCap:           &dummyWriteCap,
+				EnvelopeDescriptor: []byte("desc"),
+				EnvelopeHash:       envHash,
+			},
+		}
+		require.Error(t, d.validateResumeWriteChannelQueryRequest(req))
+	})
+
+	t.Run("nil EnvelopeHash", func(t *testing.T) {
+		req := &Request{
+			ResumeWriteChannelQuery: &thin.ResumeWriteChannelQuery{
+				QueryID:            queryID,
+				WriteCap:           &dummyWriteCap,
+				MessageBoxIndex:    &dummyMessageBoxIndex,
+				EnvelopeDescriptor: []byte("desc"),
+			},
+		}
+		require.Error(t, d.validateResumeWriteChannelQueryRequest(req))
+	})
+}
+
+func TestValidateResumeReadChannelQueryRequest(t *testing.T) {
+	d := newValidationTestDaemon()
+	queryID := new([thin.QueryIDLength]byte)
+	envHash := new([32]byte)
+
+	t.Run("valid", func(t *testing.T) {
+		req := &Request{
+			ResumeReadChannelQuery: &thin.ResumeReadChannelQuery{
+				QueryID:            queryID,
+				ReadCap:            &dummyReadCap,
+				NextMessageIndex:   &dummyMessageBoxIndex,
+				EnvelopeDescriptor: []byte("desc"),
+				EnvelopeHash:       envHash,
+			},
+		}
+		require.NoError(t, d.validateResumeReadChannelQueryRequest(req))
+	})
+
+	t.Run("nil QueryID", func(t *testing.T) {
+		req := &Request{
+			ResumeReadChannelQuery: &thin.ResumeReadChannelQuery{
+				ReadCap:            &dummyReadCap,
+				NextMessageIndex:   &dummyMessageBoxIndex,
+				EnvelopeDescriptor: []byte("desc"),
+				EnvelopeHash:       envHash,
+			},
+		}
+		require.Error(t, d.validateResumeReadChannelQueryRequest(req))
+	})
+
+	t.Run("nil ReadCap", func(t *testing.T) {
+		req := &Request{
+			ResumeReadChannelQuery: &thin.ResumeReadChannelQuery{
+				QueryID:            queryID,
+				NextMessageIndex:   &dummyMessageBoxIndex,
+				EnvelopeDescriptor: []byte("desc"),
+				EnvelopeHash:       envHash,
+			},
+		}
+		require.Error(t, d.validateResumeReadChannelQueryRequest(req))
+	})
+
+	t.Run("nil EnvelopeHash", func(t *testing.T) {
+		req := &Request{
+			ResumeReadChannelQuery: &thin.ResumeReadChannelQuery{
+				QueryID:            queryID,
+				ReadCap:            &dummyReadCap,
+				NextMessageIndex:   &dummyMessageBoxIndex,
+				EnvelopeDescriptor: []byte("desc"),
+			},
+		}
+		require.Error(t, d.validateResumeReadChannelQueryRequest(req))
 	})
 }
