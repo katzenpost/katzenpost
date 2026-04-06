@@ -1025,7 +1025,7 @@ func TestOnWireConnDisconnectCommand(t *testing.T) {
 				return true
 			}
 			// After first doc, send Disconnect.
-			wireConn.SendCommand(&commands.Disconnect{})
+			wireConn.SendCommand(&commands.Disconnect{Cmds: cmds})
 			return false
 		}
 		return true
@@ -1111,4 +1111,147 @@ func TestOnWireConnMessageACKCallback(t *testing.T) {
 	}
 
 	c.Shutdown()
+}
+
+func TestForceFetchSendsToChannel(t *testing.T) {
+	conn := newTestConnection(t)
+	c := conn.client
+	c.conn = conn
+
+	c.ForceFetch()
+
+	select {
+	case <-conn.fetchCh:
+	default:
+		t.Fatal("ForceFetch should have sent to fetchCh")
+	}
+}
+
+func TestForceFetchChannelFull(t *testing.T) {
+	conn := newTestConnection(t)
+	c := conn.client
+	c.conn = conn
+
+	// Fill the buffered channel.
+	conn.fetchCh <- true
+
+	// Should not block.
+	c.ForceFetch()
+}
+
+func TestForceFetchPKISendsToChannel(t *testing.T) {
+	conn := newTestConnection(t)
+	c := conn.client
+	p := newPKI(c)
+	c.pki = p
+
+	c.ForceFetchPKI()
+
+	select {
+	case <-p.forceUpdateCh:
+	default:
+		t.Fatal("ForceFetchPKI should have sent to forceUpdateCh")
+	}
+}
+
+func TestForceFetchPKIChannelFull(t *testing.T) {
+	conn := newTestConnection(t)
+	c := conn.client
+	p := newPKI(c)
+	c.pki = p
+
+	// Fill the buffered channel.
+	p.forceUpdateCh <- true
+
+	// Should not block.
+	c.ForceFetchPKI()
+}
+
+func TestIsPeerValidSuccess(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.client.cfg.WireKEMScheme = "x25519"
+
+	linkScheme := kemSchemes.ByName("x25519")
+	linkPubKey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	linkKeyBytes, err := linkPubKey.MarshalBinary()
+	require.NoError(t, err)
+
+	idKey := make([]byte, 32)
+	_, err = rand.Reader.Read(idKey)
+	require.NoError(t, err)
+	identityHash := hash.Sum256(idKey)
+
+	conn.descriptor = &cpki.MixDescriptor{
+		Name:        "test-gateway",
+		LinkKey:     linkKeyBytes,
+		IdentityKey: idKey,
+	}
+
+	creds := &wire.PeerCredentials{
+		PublicKey:      linkPubKey,
+		AdditionalData: identityHash[:],
+	}
+	require.True(t, conn.IsPeerValid(creds))
+}
+
+func TestIsPeerValidLinkKeyMismatch(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.client.cfg.WireKEMScheme = "x25519"
+
+	linkScheme := kemSchemes.ByName("x25519")
+	expectedPubKey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	expectedKeyBytes, err := expectedPubKey.MarshalBinary()
+	require.NoError(t, err)
+
+	wrongPubKey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	idKey := make([]byte, 32)
+	_, err = rand.Reader.Read(idKey)
+	require.NoError(t, err)
+
+	conn.descriptor = &cpki.MixDescriptor{
+		Name:        "test-gateway",
+		LinkKey:     expectedKeyBytes,
+		IdentityKey: idKey,
+	}
+
+	creds := &wire.PeerCredentials{
+		PublicKey:      wrongPubKey,
+		AdditionalData: func() []byte { h := hash.Sum256(idKey); return h[:] }(),
+	}
+	require.False(t, conn.IsPeerValid(creds))
+}
+
+func TestIsPeerValidIdentityMismatch(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.client.cfg.WireKEMScheme = "x25519"
+
+	linkScheme := kemSchemes.ByName("x25519")
+	linkPubKey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	linkKeyBytes, err := linkPubKey.MarshalBinary()
+	require.NoError(t, err)
+
+	idKey := make([]byte, 32)
+	_, err = rand.Reader.Read(idKey)
+	require.NoError(t, err)
+
+	conn.descriptor = &cpki.MixDescriptor{
+		Name:        "test-gateway",
+		LinkKey:     linkKeyBytes,
+		IdentityKey: idKey,
+	}
+
+	wrongHash := make([]byte, 32)
+	_, err = rand.Reader.Read(wrongHash)
+	require.NoError(t, err)
+
+	creds := &wire.PeerCredentials{
+		PublicKey:      linkPubKey,
+		AdditionalData: wrongHash,
+	}
+	require.False(t, conn.IsPeerValid(creds))
 }
