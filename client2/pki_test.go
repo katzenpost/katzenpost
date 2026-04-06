@@ -772,9 +772,11 @@ func TestPKIWorkerOnDocumentCallbackOnlyOnce(t *testing.T) {
 	p.forceUpdateCh <- true
 	time.Sleep(100 * time.Millisecond)
 
-	require.Equal(t, 1, callCount, "OnDocumentFn should be called only once per epoch")
-
+	// Halt the worker before reading callCount to avoid a data race —
+	// OnDocumentFn runs on the worker goroutine.
 	p.Halt()
+
+	require.Equal(t, 1, callCount, "OnDocumentFn should be called only once per epoch")
 }
 
 func TestPKIWorkerFailedFetchSkipped(t *testing.T) {
@@ -796,17 +798,19 @@ func TestPKIWorkerFailedFetchSkipped(t *testing.T) {
 
 	p.Go(p.worker)
 
+	epoch, _, _ := epochtime.Now()
+
 	// First cycle: fetch fails and gets cached.
 	p.forceUpdateCh <- true
 	time.Sleep(100 * time.Millisecond)
 
-	epoch, _, _ := epochtime.Now()
-	require.Contains(t, p.failedFetches, epoch, "failed fetch should be cached")
-
 	// Second cycle: should skip (epoch is in failedFetches).
 	p.forceUpdateCh <- true
 	time.Sleep(100 * time.Millisecond)
-	require.Contains(t, p.failedFetches, epoch, "failed fetch should still be cached")
 
+	// Halt the worker before reading failedFetches to avoid a data race —
+	// the map is only accessed from the worker goroutine.
 	p.Halt()
+
+	require.Contains(t, p.failedFetches, epoch, "failed fetch should be cached")
 }
