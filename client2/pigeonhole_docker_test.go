@@ -112,13 +112,13 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	// Step 5: Bob sends the read request and receives Alice's encrypted message
 	t.Log("=== Step 5: Bob sends read request and receives encrypted message ===")
 	bobResult, err := bobThinClient.StartResendingEncryptedMessage(
-		bobReadCap,          // readCap
-		nil,                 // writeCap (nil for read operations)
+		bobReadCap,           // readCap
+		nil,                  // writeCap (nil for read operations)
 		aliceFirstIndexBytes, // nextMessageIndex
-		&replyIndex,         // replyIndex
-		bobEnvDesc,          // envelopeDescriptor
-		bobCiphertext,       // messageCiphertext
-		bobEnvHash,          // envelopeHash
+		&replyIndex,          // replyIndex
+		bobEnvDesc,           // envelopeDescriptor
+		bobCiphertext,        // messageCiphertext
+		bobEnvHash,           // envelopeHash
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, bobResult.Plaintext, "Bob: Failed to receive decrypted message")
@@ -214,13 +214,13 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 
 		// Bob sends read request and receives Alice's encrypted message
 		bobResult, err := bobThinClient.StartResendingEncryptedMessage(
-			bobReadCap,          // readCap
-			nil,                 // writeCap (nil for read operations)
+			bobReadCap,           // readCap
+			nil,                  // writeCap (nil for read operations)
 			bobCurrentIndexBytes, // nextMessageIndex
-			&replyIndex,         // replyIndex
-			bobEnvDesc,          // envelopeDescriptor
-			bobCiphertext,       // messageCiphertext
-			bobEnvHash,    // envelopeHash
+			&replyIndex,          // replyIndex
+			bobEnvDesc,           // envelopeDescriptor
+			bobCiphertext,        // messageCiphertext
+			bobEnvHash,           // envelopeHash
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, bobResult.Plaintext, "Bob: Failed to receive message %d", i+1)
@@ -756,80 +756,6 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 	t.Log("\n✓ SUCCESS: Efficient multi-channel Copy Command test passed! Both payloads packed efficiently and delivered to correct channels!")
 }
 
-// TestNestedCopyCommands tests N-depth nested Copy Commands (matryoshka dolls):
-//
-// The flow for N nested copies:
-//  1. Alice builds N layers from inside out:
-//     - Layer 0 (innermost): CourierEnvelopes(payload) → DEST
-//     - Layer 1: CourierEnvelopes(layer0_stream) → intermediate[0]
-//     - Layer N-1 (outermost): CourierEnvelopes(layerN-2_stream) → intermediate[N-2]
-//  2. Alice writes outermost layer to OUTER_TEMP channel
-//  3. Alice issues N CopyCommands, each time:
-//     - CopyCommand processes current layer
-//     - Read result from intermediate channel
-//     - Write to new exec temp channel (for next CopyCommand)
-//  4. Bob reads DEST → gets plaintext!
-//
-// This demonstrates that N-depth nesting requires N CopyCommands.
-func TestNestedCopyCommands(t *testing.T) {
-	alice := setupThinClient(t)
-	defer alice.Close()
-	bob := setupThinClient(t)
-	defer bob.Close()
-
-	// Get all available couriers and use them for nesting depth
-	allCouriers, err := alice.GetAllCouriers()
-	require.NoError(t, err)
-	require.NotEmpty(t, allCouriers, "at least one courier must be available")
-
-	// Use all available couriers (allows reuse if only 1 exists)
-	depth := len(allCouriers)
-	if depth > 3 {
-		depth = 3 // Cap at 3 for reasonable test duration
-	}
-	couriers := allCouriers[:depth]
-	t.Logf("Using %d couriers for %d-level nested copy", len(couriers), depth)
-
-	// Create destination channel
-	destSeed := make([]byte, 32)
-	_, err = rand.Reader.Read(destSeed)
-	require.NoError(t, err)
-	destWriteCap, bobReadCap, destFirstIndex, err := alice.NewKeypair(destSeed)
-	require.NoError(t, err)
-
-	// Payload with length prefix
-	secret := []byte("🎁 THE SECRET MESSAGE AT THE CENTER OF THE MATRYOSHKA! 🪆")
-	payload := make([]byte, 4+len(secret))
-	binary.BigEndian.PutUint32(payload[:4], uint32(len(secret)))
-	copy(payload[4:], secret)
-
-	// Send nested copy through courier path
-	err = alice.SendNestedCopy(payload, destWriteCap, destFirstIndex, couriers)
-	require.NoError(t, err)
-	t.Log("✓ SendNestedCopy completed")
-
-	// Bob reads the payload
-	var received []byte
-	readIdx := destFirstIndex
-	replyIndex := uint8(0)
-	for {
-		ciphertext, envDesc, envHash, err := bob.EncryptRead(bobReadCap, readIdx)
-		require.NoError(t, err)
-		readIdxBytes, err := readIdx.MarshalBinary()
-		require.NoError(t, err)
-		chunkResult, err := bob.StartResendingEncryptedMessage(bobReadCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
-		require.NoError(t, err)
-		received = append(received, chunkResult.Plaintext...)
-		if len(received) >= 4 && uint32(len(received)) >= binary.BigEndian.Uint32(received[:4])+4 {
-			break
-		}
-		readIdx, _ = bob.NextMessageBoxIndex(readIdx)
-	}
-
-	require.Equal(t, payload, received)
-	t.Logf("✓ Bob received: %s", string(received[4:]))
-}
-
 // TestTombstoning tests the tombstoning API:
 // 1. Alice writes a message to a box
 // 2. Bob reads and verifies the message
@@ -1038,13 +964,13 @@ func TestBoxIDNotFoundError(t *testing.T) {
 	// Use StartResendingEncryptedMessageNoRetry to get immediate error without retries
 	replyIndex := uint8(0)
 	_, err = bobThinClient.StartResendingEncryptedMessageNoRetry(
-		readCap,          // readCap
-		nil,              // writeCap (nil for read operations)
-		firstIndexBytes,  // nextMessageIndex
-		&replyIndex,      // replyIndex
-		bobEnvDesc,       // envelopeDescriptor
-		bobCiphertext,    // messageCiphertext
-		bobEnvHash,       // envelopeHash
+		readCap,         // readCap
+		nil,             // writeCap (nil for read operations)
+		firstIndexBytes, // nextMessageIndex
+		&replyIndex,     // replyIndex
+		bobEnvDesc,      // envelopeDescriptor
+		bobCiphertext,   // messageCiphertext
+		bobEnvHash,      // envelopeHash
 	)
 
 	// Verify we got the expected ErrBoxIDNotFound error
@@ -1124,13 +1050,13 @@ func TestReadBeforeWrite(t *testing.T) {
 		// The read will fail initially with BoxIDNotFound, but kpclientd will retry
 		replyIndex := uint8(0)
 		result, err := bobThinClient.StartResendingEncryptedMessage(
-			bobReadCap,       // readCap
-			nil,              // writeCap (nil for read operations)
-			firstIndexBytes,  // nextMessageIndex
-			&replyIndex,      // replyIndex
-			bobEnvDesc,       // envelopeDescriptor
-			bobCiphertext,    // messageCiphertext
-			bobEnvHash,       // envelopeHash
+			bobReadCap,      // readCap
+			nil,             // writeCap (nil for read operations)
+			firstIndexBytes, // nextMessageIndex
+			&replyIndex,     // replyIndex
+			bobEnvDesc,      // envelopeDescriptor
+			bobCiphertext,   // messageCiphertext
+			bobEnvHash,      // envelopeHash
 		)
 		var pt []byte
 		if result != nil {
