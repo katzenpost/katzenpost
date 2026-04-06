@@ -1342,6 +1342,13 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 			d.replyLock.Lock()
 			// Remove old SURB ID mapping
 			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			// Check if the connection was cleaned up while we were composing the packet.
+			// If so, don't re-insert — the client is gone and there's nobody to receive the result.
+			if d.listener.getConnection(arqMessage.AppID) == nil {
+				d.replyLock.Unlock()
+				d.log.Debugf("handlePigeonholeARQReply: connection gone for AppID %x, dropping ARQ for EnvelopeHash %x", arqMessage.AppID[:], arqMessage.EnvelopeHash[:])
+				return
+			}
 			// Update message with new SURB
 			arqMessage.SURBID = newSurbID
 			arqMessage.SURBDecryptionKeys = surbKey
@@ -1410,6 +1417,13 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 			d.replyLock.Lock()
 			// Remove old SURB ID mapping
 			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			// Check if the connection was cleaned up while we were composing the packet.
+			// If so, don't re-insert — the client is gone and there's nobody to receive the result.
+			if d.listener.getConnection(arqMessage.AppID) == nil {
+				d.replyLock.Unlock()
+				d.log.Debugf("handlePigeonholeARQReply: connection gone for AppID %x, dropping ARQ for EnvelopeHash %x", arqMessage.AppID[:], arqMessage.EnvelopeHash[:])
+				return
+			}
 			// Update message with new SURB
 			arqMessage.SURBID = newSurbID
 			arqMessage.SURBDecryptionKeys = surbKey
