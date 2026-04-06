@@ -1,5 +1,3 @@
-//go:build time_test
-
 // SPDX-FileCopyrightText: © 2023 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
