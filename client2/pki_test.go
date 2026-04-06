@@ -630,3 +630,183 @@ func TestPKIGetDocumentEpochMismatch(t *testing.T) {
 	require.Nil(t, doc)
 	require.Contains(t, err.Error(), "incorrect epoch")
 }
+
+// mockEpochAwareConsensusGetter returns ConsensusNotFound for epochs it doesn't
+// have, preventing the worker from failing on epoch+1 fetches.
+type mockEpochAwareConsensusGetter struct {
+	validEpochs map[uint64]bool
+}
+
+func (m *mockEpochAwareConsensusGetter) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
+	if m.validEpochs[epoch] {
+		return &commands.Consensus2{ErrorCode: commands.ConsensusOk}, nil
+	}
+	return &commands.Consensus2{ErrorCode: commands.ConsensusNotFound}, nil
+}
+
+func TestPKIWorkerForceUpdate(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+	cfg.Callbacks = &config.Callbacks{}
+
+	epoch, _, _ := epochtime.Now()
+	myMockPKIClient := &mockPKIClient{
+		doc: &cpki.Document{
+			Epoch:              epoch,
+			SphinxGeometryHash: cfg.SphinxGeometry.Hash(),
+		},
+	}
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
+	}
+
+	p := newPKI(c)
+	c.pki = p
+	p.consensusGetter = &mockEpochAwareConsensusGetter{
+		validEpochs: map[uint64]bool{epoch: true},
+	}
+
+	p.Go(p.worker)
+
+	// Force an immediate update cycle.
+	p.forceUpdateCh <- true
+
+	// Give the worker time to process.
+	time.Sleep(100 * time.Millisecond)
+
+	_, doc := p.currentDocument()
+	require.NotNil(t, doc, "worker should have fetched the document after forceUpdate")
+	require.Equal(t, epoch, doc.Epoch)
+
+	p.Halt()
+}
+
+func TestPKIWorkerOnDocumentCallback(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	epoch, _, _ := epochtime.Now()
+	myMockPKIClient := &mockPKIClient{
+		doc: &cpki.Document{
+			Epoch:              epoch,
+			SphinxGeometryHash: cfg.SphinxGeometry.Hash(),
+		},
+	}
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	callbackCh := make(chan *cpki.Document, 1)
+	cfg.Callbacks = &config.Callbacks{
+		OnDocumentFn: func(doc *cpki.Document) {
+			callbackCh <- doc
+		},
+	}
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
+	}
+
+	p := newPKI(c)
+	c.pki = p
+	p.consensusGetter = &mockEpochAwareConsensusGetter{
+		validEpochs: map[uint64]bool{epoch: true},
+	}
+
+	p.Go(p.worker)
+
+	// Force an update to trigger the callback.
+	p.forceUpdateCh <- true
+
+	select {
+	case doc := <-callbackCh:
+		require.Equal(t, epoch, doc.Epoch)
+	case <-time.After(2 * time.Second):
+		t.Fatal("OnDocumentFn was not called")
+	}
+
+	p.Halt()
+}
+
+func TestPKIWorkerOnDocumentCallbackOnlyOnce(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	epoch, _, _ := epochtime.Now()
+	myMockPKIClient := &mockPKIClient{
+		doc: &cpki.Document{
+			Epoch:              epoch,
+			SphinxGeometryHash: cfg.SphinxGeometry.Hash(),
+		},
+	}
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	callCount := 0
+	cfg.Callbacks = &config.Callbacks{
+		OnDocumentFn: func(doc *cpki.Document) {
+			callCount++
+		},
+	}
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
+	}
+
+	p := newPKI(c)
+	c.pki = p
+	p.consensusGetter = &mockEpochAwareConsensusGetter{
+		validEpochs: map[uint64]bool{epoch: true},
+	}
+
+	p.Go(p.worker)
+
+	// Force two update cycles for the same epoch.
+	p.forceUpdateCh <- true
+	time.Sleep(100 * time.Millisecond)
+	p.forceUpdateCh <- true
+	time.Sleep(100 * time.Millisecond)
+
+	require.Equal(t, 1, callCount, "OnDocumentFn should be called only once per epoch")
+
+	p.Halt()
+}
+
+func TestPKIWorkerFailedFetchSkipped(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+	cfg.Callbacks = &config.Callbacks{}
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  new(mockPKIClient),
+	}
+
+	p := newPKI(c)
+	c.pki = p
+	p.consensusGetter = &mockConsensusGetter{errorCode: commands.ConsensusGone}
+
+	p.Go(p.worker)
+
+	// First cycle: fetch fails and gets cached.
+	p.forceUpdateCh <- true
+	time.Sleep(100 * time.Millisecond)
+
+	epoch, _, _ := epochtime.Now()
+	require.Contains(t, p.failedFetches, epoch, "failed fetch should be cached")
+
+	// Second cycle: should skip (epoch is in failedFetches).
+	p.forceUpdateCh <- true
+	time.Sleep(100 * time.Millisecond)
+	require.Contains(t, p.failedFetches, epoch, "failed fetch should still be cached")
+
+	p.Halt()
+}
