@@ -107,6 +107,275 @@ func (a *authenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true // XXX
 }
 
+// setupTestGateway creates a mock gateway server and client config for connection tests.
+// The handler func is called for each GetConsensus2 request and must send the response.
+func setupTestGateway(t *testing.T, gwAddr string, handler func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, mycmd *commands.GetConsensus2)) (*config.Config, map[uint64][]byte) {
+	docs := make(map[uint64][]byte)
+
+	logbackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+
+	WireKEMSchemeName := "x25519"
+	linkScheme := kemSchemes.ByName(WireKEMSchemeName)
+
+	gwlinkPubKey, gwlinkPrivKey, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	authlinkPubKey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	auth := &authenticator{
+		log:     logbackend.GetLogger("authenticator"),
+		pubkey:  gwlinkPubKey,
+		privkey: gwlinkPrivKey,
+	}
+
+	pkiSchemeName := "ed25519"
+	pkiScheme := signSchemes.ByName(pkiSchemeName)
+	idPubKey, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	id := hash.Sum256From(idPubKey)
+
+	auth1IdPubKey, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	auth2IdPubKey, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	auth3IdPubKey, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	nikeScheme := schemes.ByName("x25519")
+	g := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 2000, false, 5)
+
+	pigeonholeGeometry, err := pigeonholeGeo.NewGeometryFromSphinx(g, nikeScheme)
+	require.NoError(t, err)
+
+	clientCfg := &config.Config{
+		ListenNetwork:      "tcp",
+		ListenAddress:      "127.0.0.1:0",
+		PKISignatureScheme: "ed25519",
+		WireKEMScheme:      "x25519",
+		SphinxGeometry:     g,
+		PigeonholeGeometry: pigeonholeGeometry,
+		Logging: &config.Logging{
+			Disable: false,
+			File:    "",
+			Level:   "DEBUG",
+		},
+		UpstreamProxy: &config.UpstreamProxy{},
+		Debug: &config.Debug{
+			EnableTimeSync: true,
+		},
+		CachedDocument: nil,
+		PinnedGateways: &config.Gateways{
+			Gateways: []*config.Gateway{
+				{
+					WireKEMScheme:      WireKEMSchemeName,
+					Name:               "gateway",
+					IdentityKey:        idPubKey,
+					LinkKey:            gwlinkPubKey,
+					PKISignatureScheme: pkiSchemeName,
+					Addresses:          []string{gwAddr},
+				},
+			},
+		},
+		VotingAuthority: &config.VotingAuthority{
+			Peers: []*vServerConfig.Authority{
+				{
+					Identifier:         "auth1",
+					IdentityPublicKey:  auth1IdPubKey,
+					PKISignatureScheme: pkiSchemeName,
+					LinkPublicKey:      authlinkPubKey,
+					WireKEMScheme:      WireKEMSchemeName,
+					Addresses:          []string{"tcp://127.0.0.1:1301"},
+				},
+				{
+					Identifier:         "auth2",
+					IdentityPublicKey:  auth2IdPubKey,
+					PKISignatureScheme: pkiSchemeName,
+					LinkPublicKey:      authlinkPubKey,
+					WireKEMScheme:      WireKEMSchemeName,
+					Addresses:          []string{"tcp://127.0.0.1:1302"},
+				},
+				{
+					Identifier:         "auth3",
+					IdentityPublicKey:  auth3IdPubKey,
+					PKISignatureScheme: pkiSchemeName,
+					LinkPublicKey:      authlinkPubKey,
+					WireKEMScheme:      WireKEMSchemeName,
+					Addresses:          []string{"tcp://127.0.0.1:1303"},
+				},
+			},
+		},
+		Callbacks:          nil,
+		PreferedTransports: nil,
+	}
+
+	go func() {
+		u, err := url.Parse(gwAddr)
+		require.NoError(t, err)
+
+		l, err := net.Listen("tcp", u.Host)
+		require.NoError(t, err)
+		defer l.Close()
+
+		conn, err := l.Accept()
+		require.NoError(t, err)
+
+		cfg := &wire.SessionConfig{
+			KEMScheme:          linkScheme,
+			PKISignatureScheme: pkiScheme,
+			Geometry:           g,
+			Authenticator:      auth,
+			AdditionalData:     id[:],
+			AuthenticationKey:  gwlinkPrivKey,
+			RandomReader:       rand.Reader,
+		}
+		wireConn, err := wire.NewSession(cfg, false)
+		require.NoError(t, err)
+
+		err = wireConn.Initialize(conn)
+		require.NoError(t, err)
+
+		cmds := commands.NewMixnetCommands(g)
+
+		for {
+			cmd, err := wireConn.RecvCommand()
+			if err != nil {
+				return
+			}
+			if cmd == nil {
+				return
+			}
+
+			switch mycmd := cmd.(type) {
+			case *commands.NoOp:
+				continue
+			case *commands.Disconnect:
+				return
+			case *commands.RetrieveMessage:
+				resp := &commands.MessageEmpty{
+					Cmds:     cmds,
+					Sequence: mycmd.Sequence,
+				}
+				if err = wireConn.SendCommand(resp); err != nil {
+					return
+				}
+			case *commands.GetConsensus2:
+				handler(t, wireConn, cmds, mycmd)
+			default:
+				return
+			}
+		}
+	}()
+
+	return clientCfg, docs
+}
+
+func setupClientCallbacks(cfg *config.Config) {
+	cfg.Callbacks = &config.Callbacks{}
+	cfg.Callbacks.OnConnFn = func(err error) {}
+	cfg.Callbacks.OnDocumentFn = func(*cpki.Document) {}
+	cfg.Callbacks.OnEmptyFn = func() error { return nil }
+	cfg.Callbacks.OnMessageFn = func([]byte) error { return nil }
+	cfg.Callbacks.OnACKFn = func(*[constants.SURBIDLength]byte, []byte) error { return nil }
+}
+
+func TestConnectionConsensusGoneSurvives(t *testing.T) {
+	gwAddr := "tcp://127.0.0.1:12346"
+	requestCount := 0
+
+	pkiSchemeName := "ed25519"
+	pkiScheme := signSchemes.ByName(pkiSchemeName)
+
+	auth1IdPubKey, auth1IdPrivKey, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+	auth2IdPubKey, auth2IdPrivKey, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+	auth3IdPubKey, auth3IdPrivKey, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	nikeScheme := schemes.ByName("x25519")
+	linkScheme := kemSchemes.ByName("x25519")
+	g := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 2000, false, 5)
+
+	clientCfg, _ := setupTestGateway(t, gwAddr, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, mycmd *commands.GetConsensus2) {
+		requestCount++
+		if requestCount == 1 {
+			// First request: return ConsensusGone.
+			resp := &commands.Consensus2{
+				Cmds:       cmds,
+				ErrorCode:  commands.ConsensusGone,
+				ChunkNum:   0,
+				ChunkTotal: 1,
+				Payload:    []byte{},
+			}
+			err := wireConn.SendCommand(resp)
+			require.NoError(t, err)
+			return
+		}
+
+		// Subsequent requests: return a valid document.
+		replicaScheme := schemes.ByName("x25519")
+		doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, nikeScheme, nil, 3, 3, 0, g, mycmd.Epoch)
+
+		docBytes, err := ccbor.Marshal((*document)(doc))
+		require.NoError(t, err)
+
+		rawcert, err := cert.Sign(auth1IdPrivKey, auth1IdPubKey, docBytes, mycmd.Epoch+5)
+		require.NoError(t, err)
+		rawcert, err = cert.SignMulti(auth2IdPrivKey, auth2IdPubKey, rawcert)
+		require.NoError(t, err)
+		rawcert, err = cert.SignMulti(auth3IdPrivKey, auth3IdPubKey, rawcert)
+		require.NoError(t, err)
+
+		chunkSize := cmds.MaxMessageLenServerToClient
+		chunks, err := cpki.Chunk(rawcert, chunkSize)
+		require.NoError(t, err)
+
+		for i, chunk := range chunks {
+			resp := &commands.Consensus2{
+				Cmds:       cmds,
+				ErrorCode:  commands.ConsensusOk,
+				ChunkNum:   uint32(i),
+				ChunkTotal: uint32(len(chunks)),
+				Payload:    chunk,
+			}
+			err = wireConn.SendCommand(resp)
+			require.NoError(t, err)
+		}
+	})
+
+	// Override the auth keys in the config to match our signing keys.
+	clientCfg.VotingAuthority.Peers[0].IdentityPublicKey = auth1IdPubKey
+	clientCfg.VotingAuthority.Peers[1].IdentityPublicKey = auth2IdPubKey
+	clientCfg.VotingAuthority.Peers[2].IdentityPublicKey = auth3IdPubKey
+
+	setupClientCallbacks(clientCfg)
+
+	logbackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+
+	c, err := New(clientCfg, logbackend)
+	require.NoError(t, err)
+
+	time.Sleep(time.Second)
+
+	err = c.Start()
+	require.NoError(t, err)
+
+	// Wait for the client to recover from ConsensusGone and fetch a valid doc.
+	time.Sleep(time.Second * 5)
+
+	_, doc := c.CurrentDocument()
+	require.NotNil(t, doc, "client should have recovered and fetched a document after ConsensusGone")
+	require.True(t, requestCount >= 2, "gateway should have received at least 2 GetConsensus2 requests")
+
+	c.Shutdown()
+}
+
 func TestConnection(t *testing.T) {
 	docs := make(map[uint64][]byte)
 

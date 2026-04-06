@@ -21,10 +21,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockConsensusGetter struct{}
+type mockConsensusGetter struct {
+	// If set, returns this error code for all epochs.
+	errorCode uint8
+	// If set, overrides errorCode for specific epochs.
+	epochErrors map[uint64]uint8
+}
 
 func (m *mockConsensusGetter) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
-	return &commands.Consensus2{}, nil
+	if m.epochErrors != nil {
+		if code, ok := m.epochErrors[epoch]; ok {
+			return &commands.Consensus2{ErrorCode: code}, nil
+		}
+	}
+	return &commands.Consensus2{ErrorCode: m.errorCode}, nil
 }
 
 type mockPKIClient struct {
@@ -315,4 +325,156 @@ func TestPKICachedDoc(t *testing.T) {
 	_, doc, err = p.getDocument(ctx, doc3.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, doc3, doc)
+}
+
+func TestPKIGetDocumentConsensusGone(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  new(mockPKIClient),
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = &mockConsensusGetter{errorCode: commands.ConsensusGone}
+
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO()
+
+	_, doc, err := p.getDocument(ctx, epoch)
+	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.Nil(t, doc)
+}
+
+func TestPKIGetDocumentConsensusNotFound(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  new(mockPKIClient),
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = &mockConsensusGetter{errorCode: commands.ConsensusNotFound}
+
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO()
+
+	_, doc, err := p.getDocument(ctx, epoch)
+	require.ErrorIs(t, err, errConsensusNotFound)
+	require.Nil(t, doc)
+}
+
+func TestPKIFailedFetchesCachesConsensusGone(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  new(mockPKIClient),
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = &mockConsensusGetter{errorCode: commands.ConsensusGone}
+
+	epoch, _, _ := epochtime.Now()
+
+	// Simulate what the worker loop does: fetch, then cache ErrNoDocument.
+	err = p.updateDocument(epoch)
+	require.ErrorIs(t, err, cpki.ErrNoDocument)
+
+	// Worker caches ErrNoDocument errors.
+	p.failedFetches[epoch] = err
+
+	// pruneFailures should keep the entry for the current epoch.
+	p.pruneFailures(epoch)
+	require.Contains(t, p.failedFetches, epoch)
+
+	// pruneFailures should remove it once the epoch advances.
+	p.pruneFailures(epoch + 1)
+	require.NotContains(t, p.failedFetches, epoch)
+}
+
+func TestPKIFailedFetchesDoesNotCacheConsensusNotFound(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  new(mockPKIClient),
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = &mockConsensusGetter{errorCode: commands.ConsensusNotFound}
+
+	epoch, _, _ := epochtime.Now()
+
+	// ConsensusNotFound returns errConsensusNotFound, not ErrNoDocument.
+	// The worker loop only caches ErrNoDocument, so this should not be cached.
+	err = p.updateDocument(epoch)
+	require.ErrorIs(t, err, errConsensusNotFound)
+
+	// Simulate the worker's switch: only ErrNoDocument is cached.
+	if err == cpki.ErrNoDocument {
+		p.failedFetches[epoch] = err
+	}
+	require.NotContains(t, p.failedFetches, epoch)
+}
+
+func TestPKIRecoveryAfterConsensusGone(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
+	}
+
+	epoch, _, _ := epochtime.Now()
+
+	// Gateway returns ConsensusGone for current epoch, Ok for next.
+	mock := &mockConsensusGetter{
+		epochErrors: map[uint64]uint8{
+			epoch: commands.ConsensusGone,
+		},
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = mock
+
+	// Current epoch is gone — worker would cache this.
+	err = p.updateDocument(epoch)
+	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	p.failedFetches[epoch] = err
+
+	// Next epoch should succeed (mock returns ConsensusOk by default).
+	myMockPKIClient.doc = &cpki.Document{
+		Epoch:              epoch + 1,
+		SphinxGeometryHash: c.cfg.SphinxGeometry.Hash(),
+	}
+	err = p.updateDocument(epoch + 1)
+	require.NoError(t, err)
+
+	// Verify we have the next epoch's document.
+	d := p.GetDocumentByEpoch(epoch + 1)
+	require.NotNil(t, d)
+	require.Equal(t, epoch+1, d.Epoch)
 }
