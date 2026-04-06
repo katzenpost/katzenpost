@@ -150,7 +150,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		gcReplyCh:          make(chan *gcReply),
 		replyLock:          new(sync.Mutex),
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqResendCh:        make(chan *[sphinxConstants.SURBIDLength]byte, 2),
+		arqResendCh:        make(chan *[sphinxConstants.SURBIDLength]byte, 64),
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		// Channel reply tracking
 		channelReplies:     make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
@@ -321,16 +321,13 @@ func (d *Daemon) Start() error {
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
-		// Use a timeout to prevent blocking during shutdown
 		go func() {
 			select {
 			case <-d.HaltCh():
 				return
+			case d.arqResendCh <- surbID:
 			case <-time.After(20 * time.Second):
 				d.log.Debugf("ARQ resend timeout for SURB ID %x", surbID[:])
-				return
-			default:
-				d.arqResend(surbID)
 			}
 		}()
 	})
@@ -1540,11 +1537,6 @@ func (d *Daemon) arqResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	case <-d.HaltCh():
 		return
 	case d.arqResendCh <- surbID:
-	default:
-		// If we can't send immediately and we're not halted,
-		// the channel might be full or the receiver is busy.
-		// Don't block during shutdown.
-		d.log.Debugf("ARQ resend channel full, dropping resend for SURB ID %x", surbID[:])
 	}
 }
 
