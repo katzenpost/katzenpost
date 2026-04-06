@@ -688,28 +688,35 @@ func (c *connection) onWireConn(w *wire.Session) {
 			panic("received Consensus when we are supposed to receive Consensus2")
 		case *commands.Consensus2:
 			if consensusCtx != nil {
-				if dechunker.ChunkNum == 0 {
-					dechunker.ChunkNum = int(cmd.ChunkNum)
-					dechunker.ChunkTotal = int(cmd.ChunkTotal)
-				}
-				err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
-				if err != nil {
-					panic(err)
-				}
-				if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
-					if len(dechunker.Output) == 0 {
-						// Handle empty dechunker output gracefully during shutdown
-						c.log.Debugf("Dechunker output is empty, likely due to shutdown")
-						wireErr = newProtocolError("empty consensus response during shutdown")
-						return
-					}
-
-					// last chunk
-					cmd.Payload = make([]byte, len(dechunker.Output))
-					copy(cmd.Payload, dechunker.Output)
+				// Check for error responses from the gateway.
+				if cmd.ErrorCode != commands.ConsensusOk {
+					c.log.Debugf("Received Consensus2 error code: %v for epoch %v", cmd.ErrorCode, consensusCtx.epoch)
 					consensusCtx.replyCh <- cmd
 					consensusCtx = nil
 					dechunker = cpki.NewDechunker()
+				} else {
+					if dechunker.ChunkNum == 0 {
+						dechunker.ChunkNum = int(cmd.ChunkNum)
+						dechunker.ChunkTotal = int(cmd.ChunkTotal)
+					}
+					err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
+					if err != nil {
+						panic(err)
+					}
+					if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
+						if len(dechunker.Output) == 0 {
+							c.log.Debugf("Dechunker output is empty after decompression")
+							wireErr = newProtocolError("empty consensus payload")
+							return
+						}
+
+						// last chunk
+						cmd.Payload = make([]byte, len(dechunker.Output))
+						copy(cmd.Payload, dechunker.Output)
+						consensusCtx.replyCh <- cmd
+						consensusCtx = nil
+						dechunker = cpki.NewDechunker()
+					}
 				}
 			} else {
 				// Spurious Consensus replies are a protocol violation.
@@ -892,10 +899,6 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 		case error:
 			return nil, resp
 		case *commands.Consensus2:
-			if len(resp.Payload) == 0 {
-				panic("--------------- len(resp.Payload) == 0")
-			}
-
 			return resp, nil
 		default:
 			panic("BUG: Worker returned invalid Consensus response")
