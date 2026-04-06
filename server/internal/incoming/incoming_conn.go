@@ -408,23 +408,35 @@ func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 
 func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
 	c.log.Info("onGetConsensus2")
-	respCmd := &commands.Consensus2{}
 
 	c.log.Info("BEFORE calling GetRawConsensus")
 	rawDoc, err := c.l.glue.PKI().GetRawConsensus(cmd.Epoch)
 	c.log.Info("AFTER calling GetRawConsensus")
 
+	var errorCode uint8
 	switch err {
 	case nil:
 		c.log.Info("err is nil")
-		respCmd.ErrorCode = commands.ConsensusOk
-		respCmd.Payload = rawDoc
+		errorCode = commands.ConsensusOk
 	case cpki.ErrNoDocument:
 		c.log.Infof("err ConsensusGone : %s", err)
-		respCmd.ErrorCode = commands.ConsensusGone
+		errorCode = commands.ConsensusGone
 	default: // Covers errNotCached
 		c.log.Infof("err ConsensusNotFound : %s", err)
-		respCmd.ErrorCode = commands.ConsensusNotFound
+		errorCode = commands.ConsensusNotFound
+	}
+
+	// For error responses, send a single empty chunk with the error code
+	// rather than chunking a nil document.
+	if errorCode != commands.ConsensusOk {
+		respCmd := &commands.Consensus2{
+			Cmds:       cmd.Cmds,
+			ErrorCode:  errorCode,
+			ChunkNum:   0,
+			ChunkTotal: 1,
+			Payload:    []byte{},
+		}
+		return c.w.SendCommand(respCmd)
 	}
 
 	chunkSize := cmd.Cmds.MaxMessageLenServerToClient
@@ -439,13 +451,12 @@ func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
 		chunk := chunks[i]
 		chunkCmd := &commands.Consensus2{
 			Cmds:       cmd.Cmds,
-			ErrorCode:  0,
+			ErrorCode:  commands.ConsensusOk,
 			ChunkNum:   uint32(i),
 			ChunkTotal: uint32(len(chunks)),
 			Payload:    chunk,
 		}
-		err := c.w.SendCommand(chunkCmd)
-		if err != nil {
+		if err := c.w.SendCommand(chunkCmd); err != nil {
 			return err
 		}
 	}
