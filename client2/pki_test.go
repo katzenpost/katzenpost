@@ -5,6 +5,7 @@ package client2
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -22,13 +23,15 @@ import (
 )
 
 type mockConsensusGetter struct {
-	// If set, returns this error code for all epochs.
-	errorCode uint8
-	// If set, overrides errorCode for specific epochs.
+	errorCode   uint8
 	epochErrors map[uint64]uint8
+	returnErr   error
 }
 
 func (m *mockConsensusGetter) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
+	if m.returnErr != nil {
+		return nil, m.returnErr
+	}
 	if m.epochErrors != nil {
 		if code, ok := m.epochErrors[epoch]; ok {
 			return &commands.Consensus2{ErrorCode: code}, nil
@@ -38,7 +41,8 @@ func (m *mockConsensusGetter) GetConsensus(ctx context.Context, epoch uint64) (*
 }
 
 type mockPKIClient struct {
-	doc *cpki.Document
+	doc            *cpki.Document
+	deserializeErr error
 }
 
 func (c *mockPKIClient) PostReplica(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *cpki.ReplicaDescriptor) error {
@@ -54,6 +58,9 @@ func (c *mockPKIClient) Post(ctx context.Context, epoch uint64, signingPrivateKe
 }
 
 func (c *mockPKIClient) Deserialize(raw []byte) (*cpki.Document, error) {
+	if c.deserializeErr != nil {
+		return nil, c.deserializeErr
+	}
 	return c.doc, nil
 }
 
@@ -477,4 +484,149 @@ func TestPKIRecoveryAfterConsensusGone(t *testing.T) {
 	d := p.GetDocumentByEpoch(epoch + 1)
 	require.NotNil(t, d)
 	require.Equal(t, epoch+1, d.Epoch)
+}
+
+func TestPKIGetDocumentNilConsensusGetter(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  new(mockPKIClient),
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = nil
+
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO()
+
+	_, doc, err := p.getDocument(ctx, epoch)
+	require.Error(t, err)
+	require.Nil(t, doc)
+	require.Contains(t, err.Error(), "consensus getter not initialized")
+}
+
+func TestPKIGetDocumentGetConsensusError(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  new(mockPKIClient),
+	}
+
+	p := newPKI(c)
+	someErr := errors.New("connection refused")
+	p.consensusGetter = &mockConsensusGetter{returnErr: someErr}
+
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO()
+
+	_, doc, err := p.getDocument(ctx, epoch)
+	require.ErrorIs(t, err, someErr)
+	require.Nil(t, doc)
+}
+
+func TestPKIGetDocumentUnknownErrorCode(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  new(mockPKIClient),
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = &mockConsensusGetter{errorCode: 99}
+
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO()
+
+	_, doc, err := p.getDocument(ctx, epoch)
+	require.Error(t, err)
+	require.Nil(t, doc)
+	require.Contains(t, err.Error(), "GetConsensus failed")
+}
+
+func TestPKIGetDocumentDeserializeFails(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  &mockPKIClient{deserializeErr: errors.New("corrupt payload")},
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = new(mockConsensusGetter)
+
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO()
+
+	_, doc, err := p.getDocument(ctx, epoch)
+	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.Nil(t, doc)
+}
+
+func TestPKIGetDocumentDeserializeReturnsNil(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	// doc defaults to nil, deserializeErr defaults to nil -> returns (nil, nil)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  new(mockPKIClient),
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = new(mockConsensusGetter)
+
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO()
+
+	_, doc, err := p.getDocument(ctx, epoch)
+	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.Nil(t, doc)
+}
+
+func TestPKIGetDocumentEpochMismatch(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	epoch, _, _ := epochtime.Now()
+	// Return a document for a different epoch than requested.
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  &mockPKIClient{doc: &cpki.Document{Epoch: epoch + 100}},
+	}
+
+	p := newPKI(c)
+	p.consensusGetter = new(mockConsensusGetter)
+
+	ctx := context.TODO()
+
+	_, doc, err := p.getDocument(ctx, epoch)
+	require.Error(t, err)
+	require.Nil(t, doc)
+	require.Contains(t, err.Error(), "incorrect epoch")
 }
