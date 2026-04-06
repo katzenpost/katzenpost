@@ -4,6 +4,8 @@
 package client2
 
 import (
+	"context"
+	"errors"
 	"net"
 	"net/url"
 	"testing"
@@ -630,4 +632,196 @@ func TestConnection(t *testing.T) {
 	require.Equal(t, docs[epoch], blob)
 
 	c.Shutdown()
+}
+
+// newTestConnection creates a minimal connection for unit testing channel-based
+// methods like sendPacket and GetConsensus without a wire connection.
+func newTestConnection(t *testing.T) *connection {
+	logbackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg: &config.Config{
+			Callbacks: &config.Callbacks{},
+		},
+	}
+	return newConnection(c)
+}
+
+func TestSendPacketNotConnected(t *testing.T) {
+	conn := newTestConnection(t)
+	// isConnected defaults to false
+	err := conn.sendPacket([]byte("test"))
+	require.ErrorIs(t, err, ErrNotConnected)
+}
+
+func TestSendPacketShutdown(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.isConnected = true
+	conn.isShutdown = true
+	err := conn.sendPacket([]byte("test"))
+	require.ErrorIs(t, err, ErrShutdown)
+}
+
+func TestSendPacketHaltDuringSend(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.isConnected = true
+
+	// Nobody reads from sendCh, so it blocks. Halt to unblock.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		conn.Halt()
+	}()
+
+	err := conn.sendPacket([]byte("test"))
+	require.ErrorIs(t, err, ErrShutdown)
+}
+
+func TestSendPacketSuccess(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.isConnected = true
+
+	// Consume from sendCh and call doneFn with nil (success).
+	go func() {
+		ctx := <-conn.sendCh
+		ctx.doneFn(nil)
+	}()
+
+	err := conn.sendPacket([]byte("test"))
+	require.NoError(t, err)
+}
+
+func TestGetConsensusNotConnected(t *testing.T) {
+	conn := newTestConnection(t)
+	ctx := context.TODO()
+	_, err := conn.GetConsensus(ctx, 1)
+	require.ErrorIs(t, err, ErrNotConnected)
+}
+
+func TestGetConsensusContextCanceled(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.isConnected = true
+
+	// getConsensusCh has buffer of 1, so fill it to force blocking on the second call.
+	conn.getConsensusCh <- &getConsensusCtx{
+		doneFn: func(error) {},
+	}
+
+	// Now the channel is full. Use an already-cancelled context.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := conn.GetConsensus(ctx, 1)
+	require.ErrorIs(t, err, errGetConsensusCanceled)
+}
+
+func TestGetConsensusHaltDuringDispatch(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.isConnected = true
+
+	// Fill the channel so GetConsensus blocks on dispatch.
+	conn.getConsensusCh <- &getConsensusCtx{
+		doneFn: func(error) {},
+	}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		conn.Halt()
+	}()
+
+	_, err := conn.GetConsensus(context.TODO(), 1)
+	require.ErrorIs(t, err, ErrShutdown)
+}
+
+func TestOnConnStatusChangeConnected(t *testing.T) {
+	conn := newTestConnection(t)
+	var called bool
+	conn.client.cfg.Callbacks.OnConnFn = func(err error) {
+		require.Nil(t, err)
+		called = true
+	}
+
+	conn.onConnStatusChange(nil)
+
+	conn.isConnectedLock.RLock()
+	require.True(t, conn.isConnected)
+	conn.isConnectedLock.RUnlock()
+	require.True(t, called)
+}
+
+func TestOnConnStatusChangeDisconnected(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.isConnected = true
+	var called bool
+	someErr := errors.New("connection lost")
+	conn.client.cfg.Callbacks.OnConnFn = func(err error) {
+		require.Equal(t, someErr, err)
+		called = true
+	}
+
+	conn.onConnStatusChange(someErr)
+
+	conn.isConnectedLock.RLock()
+	require.False(t, conn.isConnected)
+	conn.isConnectedLock.RUnlock()
+	require.True(t, called)
+}
+
+func TestOnConnStatusChangeDrainsSendCh(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.isConnected = true
+
+	errCh := make(chan error, 1)
+	// Pre-load sendCh with a pending send. sendCh is unbuffered, so use a goroutine.
+	go func() {
+		conn.sendCh <- &connSendCtx{
+			pkt: []byte("test"),
+			doneFn: func(err error) {
+				errCh <- err
+			},
+		}
+	}()
+	// Give the goroutine time to block on sendCh.
+	time.Sleep(50 * time.Millisecond)
+
+	conn.onConnStatusChange(errors.New("disconnected"))
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, ErrNotConnected)
+	case <-time.After(time.Second):
+		t.Fatal("doneFn was not called")
+	}
+}
+
+func TestOnConnStatusChangeDrainsConsensusCh(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.isConnected = true
+
+	errCh := make(chan error, 1)
+	conn.getConsensusCh <- &getConsensusCtx{
+		epoch: 1,
+		doneFn: func(err error) {
+			errCh <- err
+		},
+	}
+
+	conn.onConnStatusChange(errors.New("disconnected"))
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, ErrNotConnected)
+	case <-time.After(time.Second):
+		t.Fatal("doneFn was not called")
+	}
+}
+
+func TestOnConnStatusChangeShutdownNoCallback(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.isShutdown = true
+	conn.client.cfg.Callbacks.OnConnFn = func(err error) {
+		t.Fatal("OnConnFn should not be called during shutdown")
+	}
+
+	conn.onConnStatusChange(errors.New("some error"))
 }
