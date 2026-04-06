@@ -825,3 +825,290 @@ func TestOnConnStatusChangeShutdownNoCallback(t *testing.T) {
 
 	conn.onConnStatusChange(errors.New("some error"))
 }
+
+// testGatewayEnv holds the crypto keys and geometry needed for mock gateway tests.
+type testGatewayEnv struct {
+	pkiScheme      sign.Scheme
+	linkScheme     kem.Scheme
+	nikeScheme     nike.Scheme
+	geo            *geo.Geometry
+	authKeys       [3]struct {
+		pub  sign.PublicKey
+		priv sign.PrivateKey
+	}
+}
+
+func newTestGatewayEnv(t *testing.T) *testGatewayEnv {
+	env := &testGatewayEnv{
+		pkiScheme:  signSchemes.ByName("ed25519"),
+		linkScheme: kemSchemes.ByName("x25519"),
+		nikeScheme: schemes.ByName("x25519"),
+	}
+	env.geo = geo.GeometryFromUserForwardPayloadLength(env.nikeScheme, 2000, false, 5)
+	for i := range env.authKeys {
+		pub, priv, err := env.pkiScheme.GenerateKey()
+		require.NoError(t, err)
+		env.authKeys[i].pub = pub
+		env.authKeys[i].priv = priv
+	}
+	return env
+}
+
+// sendValidDocument sends a properly signed and chunked Consensus2 document.
+func (env *testGatewayEnv) sendValidDocument(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, epoch uint64) {
+	replicaScheme := schemes.ByName("x25519")
+	doc := generateDocument(t, env.pkiScheme, env.linkScheme, replicaScheme, env.nikeScheme, nil, 3, 3, 0, env.geo, epoch)
+	docBytes, err := ccbor.Marshal((*document)(doc))
+	require.NoError(t, err)
+	rawcert, err := cert.Sign(env.authKeys[0].priv, env.authKeys[0].pub, docBytes, epoch+5)
+	require.NoError(t, err)
+	rawcert, err = cert.SignMulti(env.authKeys[1].priv, env.authKeys[1].pub, rawcert)
+	require.NoError(t, err)
+	rawcert, err = cert.SignMulti(env.authKeys[2].priv, env.authKeys[2].pub, rawcert)
+	require.NoError(t, err)
+
+	chunkSize := cmds.MaxMessageLenServerToClient
+	chunks, err := cpki.Chunk(rawcert, chunkSize)
+	require.NoError(t, err)
+	for i, chunk := range chunks {
+		resp := &commands.Consensus2{
+			Cmds:       cmds,
+			ErrorCode:  commands.ConsensusOk,
+			ChunkNum:   uint32(i),
+			ChunkTotal: uint32(len(chunks)),
+			Payload:    chunk,
+		}
+		err = wireConn.SendCommand(resp)
+		require.NoError(t, err)
+	}
+}
+
+// setupTestGatewayFull creates a mock gateway with a general command handler.
+// The handler receives every command and the wire session to send responses.
+func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, handler func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool) *config.Config {
+	gwlinkPubKey, gwlinkPrivKey, err := env.linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	authlinkPubKey, _, err := env.linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	auth := &authenticator{
+		log:     func() *logging.Logger { lb, _ := log.New("", "DEBUG", false); return lb.GetLogger("auth") }(),
+		pubkey:  gwlinkPubKey,
+		privkey: gwlinkPrivKey,
+	}
+
+	idPubKey, _, err := env.pkiScheme.GenerateKey()
+	require.NoError(t, err)
+	id := hash.Sum256From(idPubKey)
+
+	pigeonholeGeometry, err := pigeonholeGeo.NewGeometryFromSphinx(env.geo, env.nikeScheme)
+	require.NoError(t, err)
+
+	clientCfg := &config.Config{
+		ListenNetwork:      "tcp",
+		ListenAddress:      "127.0.0.1:0",
+		PKISignatureScheme: "ed25519",
+		WireKEMScheme:      "x25519",
+		SphinxGeometry:     env.geo,
+		PigeonholeGeometry: pigeonholeGeometry,
+		Logging:            &config.Logging{Level: "DEBUG"},
+		UpstreamProxy:      &config.UpstreamProxy{},
+		Debug:              &config.Debug{EnableTimeSync: true},
+		PinnedGateways: &config.Gateways{
+			Gateways: []*config.Gateway{{
+				WireKEMScheme:      "x25519",
+				Name:               "gateway",
+				IdentityKey:        idPubKey,
+				LinkKey:            gwlinkPubKey,
+				PKISignatureScheme: "ed25519",
+				Addresses:          []string{gwAddr},
+			}},
+		},
+		VotingAuthority: &config.VotingAuthority{
+			Peers: []*vServerConfig.Authority{
+				{Identifier: "auth1", IdentityPublicKey: env.authKeys[0].pub, PKISignatureScheme: "ed25519", LinkPublicKey: authlinkPubKey, WireKEMScheme: "x25519", Addresses: []string{"tcp://127.0.0.1:1301"}},
+				{Identifier: "auth2", IdentityPublicKey: env.authKeys[1].pub, PKISignatureScheme: "ed25519", LinkPublicKey: authlinkPubKey, WireKEMScheme: "x25519", Addresses: []string{"tcp://127.0.0.1:1302"}},
+				{Identifier: "auth3", IdentityPublicKey: env.authKeys[2].pub, PKISignatureScheme: "ed25519", LinkPublicKey: authlinkPubKey, WireKEMScheme: "x25519", Addresses: []string{"tcp://127.0.0.1:1303"}},
+			},
+		},
+	}
+
+	go func() {
+		u, err := url.Parse(gwAddr)
+		require.NoError(t, err)
+		l, err := net.Listen("tcp", u.Host)
+		require.NoError(t, err)
+		defer l.Close()
+
+		conn, err := l.Accept()
+		require.NoError(t, err)
+
+		cfg := &wire.SessionConfig{
+			KEMScheme:          env.linkScheme,
+			PKISignatureScheme: env.pkiScheme,
+			Geometry:           env.geo,
+			Authenticator:      auth,
+			AdditionalData:     id[:],
+			AuthenticationKey:  gwlinkPrivKey,
+			RandomReader:       rand.Reader,
+		}
+		wireConn, err := wire.NewSession(cfg, false)
+		require.NoError(t, err)
+		err = wireConn.Initialize(conn)
+		require.NoError(t, err)
+
+		cmds := commands.NewMixnetCommands(env.geo)
+
+		for {
+			cmd, err := wireConn.RecvCommand()
+			if err != nil || cmd == nil {
+				return
+			}
+			// Return false from handler to stop the loop.
+			if !handler(t, wireConn, cmds, cmd) {
+				return
+			}
+		}
+	}()
+
+	return clientCfg
+}
+
+func TestOnWireConnMultiChunkConsensus(t *testing.T) {
+	env := newTestGatewayEnv(t)
+	gwAddr := "tcp://127.0.0.1:12350"
+
+	clientCfg := setupTestGatewayFull(t, gwAddr, env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
+		switch mycmd := cmd.(type) {
+		case *commands.RetrieveMessage:
+			resp := &commands.MessageEmpty{Cmds: cmds, Sequence: mycmd.Sequence}
+			wireConn.SendCommand(resp)
+		case *commands.GetConsensus2:
+			// Send a valid multi-chunk document.
+			env.sendValidDocument(t, wireConn, cmds, mycmd.Epoch)
+		}
+		return true
+	})
+	setupClientCallbacks(clientCfg)
+
+	logbackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+	c, err := New(clientCfg, logbackend)
+	require.NoError(t, err)
+
+	time.Sleep(time.Second)
+	err = c.Start()
+	require.NoError(t, err)
+	time.Sleep(time.Second * 3)
+
+	_, doc := c.CurrentDocument()
+	require.NotNil(t, doc, "client should have assembled a multi-chunk document")
+
+	c.Shutdown()
+}
+
+func TestOnWireConnDisconnectCommand(t *testing.T) {
+	env := newTestGatewayEnv(t)
+	gwAddr := "tcp://127.0.0.1:12351"
+	gotConsensus := false
+
+	clientCfg := setupTestGatewayFull(t, gwAddr, env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
+		switch mycmd := cmd.(type) {
+		case *commands.RetrieveMessage:
+			resp := &commands.MessageEmpty{Cmds: cmds, Sequence: mycmd.Sequence}
+			wireConn.SendCommand(resp)
+		case *commands.GetConsensus2:
+			if !gotConsensus {
+				gotConsensus = true
+				env.sendValidDocument(t, wireConn, cmds, mycmd.Epoch)
+				return true
+			}
+			// After first doc, send Disconnect.
+			wireConn.SendCommand(&commands.Disconnect{})
+			return false
+		}
+		return true
+	})
+	setupClientCallbacks(clientCfg)
+
+	logbackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+	c, err := New(clientCfg, logbackend)
+	require.NoError(t, err)
+
+	time.Sleep(time.Second)
+	err = c.Start()
+	require.NoError(t, err)
+	time.Sleep(time.Second * 3)
+
+	// Client should have gotten the first document before disconnect.
+	_, doc := c.CurrentDocument()
+	require.NotNil(t, doc)
+
+	c.Shutdown()
+}
+
+func TestOnWireConnMessageACKCallback(t *testing.T) {
+	env := newTestGatewayEnv(t)
+	gwAddr := "tcp://127.0.0.1:12352"
+	sentACK := false
+
+	ackCh := make(chan []byte, 1)
+
+	clientCfg := setupTestGatewayFull(t, gwAddr, env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
+		switch mycmd := cmd.(type) {
+		case *commands.RetrieveMessage:
+			if !sentACK {
+				sentACK = true
+				// Send a MessageACK instead of MessageEmpty.
+				var surbID [constants.SURBIDLength]byte
+				copy(surbID[:], []byte("test-surb-id-xxx"))
+				resp := &commands.MessageACK{
+					Geo:           env.geo,
+					Cmds:          cmds,
+					QueueSizeHint: 0,
+					Sequence:      mycmd.Sequence,
+					ID:            surbID,
+					Payload:       make([]byte, env.geo.PayloadTagLength+env.geo.ForwardPayloadLength),
+				}
+				wireConn.SendCommand(resp)
+			} else {
+				resp := &commands.MessageEmpty{Cmds: cmds, Sequence: mycmd.Sequence}
+				wireConn.SendCommand(resp)
+			}
+		case *commands.GetConsensus2:
+			env.sendValidDocument(t, wireConn, cmds, mycmd.Epoch)
+		}
+		return true
+	})
+
+	clientCfg.Callbacks = &config.Callbacks{
+		OnConnFn:     func(error) {},
+		OnDocumentFn: func(*cpki.Document) {},
+		OnEmptyFn:    func() error { return nil },
+		OnMessageFn:  func([]byte) error { return nil },
+		OnACKFn: func(id *[constants.SURBIDLength]byte, payload []byte) error {
+			ackCh <- id[:]
+			return nil
+		},
+	}
+
+	logbackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+	c, err := New(clientCfg, logbackend)
+	require.NoError(t, err)
+
+	time.Sleep(time.Second)
+	err = c.Start()
+	require.NoError(t, err)
+
+	select {
+	case id := <-ackCh:
+		require.Equal(t, []byte("test-surb-id-xxx"), id[:constants.SURBIDLength])
+	case <-time.After(10 * time.Second):
+		t.Fatal("OnACKFn was not called")
+	}
+
+	c.Shutdown()
+}
