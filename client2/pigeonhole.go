@@ -1833,6 +1833,53 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	})
 }
 
+type innerMessageType int
+
+const (
+	innerMessageRead  innerMessageType = 0
+	innerMessageWrite innerMessageType = 1
+)
+
+// classifyReadReplyError determines whether the read reply error code allows
+// proceeding with decryption. Success (0) and tombstone (11) proceed;
+// all other error codes are returned as replicaError.
+func classifyReadReplyError(errorCode uint8) (shouldProceed bool, isTombstone bool, err error) {
+	if errorCode == 0 {
+		return true, false, nil
+	}
+	if errorCode == pigeonhole.ReplicaErrorTombstone {
+		return true, true, nil
+	}
+	return false, false, &replicaError{code: errorCode}
+}
+
+// classifyInnerMessage validates and classifies a decrypted replica inner message.
+func classifyInnerMessage(msg *pigeonhole.ReplicaMessageReplyInnerMessage) (innerMessageType, error) {
+	switch msg.MessageType {
+	case 0:
+		if msg.ReadReply == nil {
+			return 0, fmt.Errorf("read reply (type 0) has nil ReadReply")
+		}
+		return innerMessageRead, nil
+	case 1:
+		if msg.WriteReply == nil {
+			return 0, fmt.Errorf("write reply (type 1) has nil WriteReply")
+		}
+		return innerMessageWrite, nil
+	default:
+		return 0, fmt.Errorf("unexpected inner message type: %d", msg.MessageType)
+	}
+}
+
+// classifyWriteReply processes a write reply, returning nil on success
+// or a replicaError on failure.
+func classifyWriteReply(reply *pigeonhole.ReplicaWriteReply) ([]byte, error) {
+	if reply.ErrorCode != 0 {
+		return nil, &replicaError{code: reply.ErrorCode}
+	}
+	return nil, nil
+}
+
 // decryptPigeonholeReply decrypts the Pigeonhole envelope reply using the stored EnvelopeDescriptor.
 func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.CourierEnvelopeReply) ([]byte, error) {
 	d.log.Debugf("decryptPigeonholeReply: Starting decryption, env.Payload length: %d", len(env.Payload))
@@ -1861,13 +1908,21 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 	}
 	d.log.Debugf("decryptPigeonholeReply: MKEM envelope decrypted, MessageType: %d", innerMsg.MessageType)
 
+	// Classify and validate the inner message
+	msgType, err := classifyInnerMessage(innerMsg)
+	if err != nil {
+		d.log.Errorf("decryptPigeonholeReply: %v", err)
+		return nil, err
+	}
+
 	// Handle read reply
-	if innerMsg.MessageType == 0 && innerMsg.ReadReply != nil {
+	if msgType == innerMessageRead {
 		d.log.Debugf("decryptPigeonholeReply: Processing read reply, ErrorCode: %d, Payload length: %d",
 			innerMsg.ReadReply.ErrorCode, len(innerMsg.ReadReply.Payload))
-		// Let tombstones fall through to BACAP signature validation
-		if innerMsg.ReadReply.ErrorCode != 0 && innerMsg.ReadReply.ErrorCode != pigeonhole.ReplicaErrorTombstone {
-			return nil, &replicaError{code: innerMsg.ReadReply.ErrorCode}
+
+		shouldProceed, _, err := classifyReadReplyError(innerMsg.ReadReply.ErrorCode)
+		if !shouldProceed {
+			return nil, err
 		}
 
 		// Perform BACAP decryption if this is a read operation
@@ -1923,16 +1978,6 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 	}
 
 	// Handle write reply
-	if innerMsg.MessageType == 1 && innerMsg.WriteReply != nil {
-		d.log.Debugf("decryptPigeonholeReply: Processing write reply, ErrorCode: %d", innerMsg.WriteReply.ErrorCode)
-		if innerMsg.WriteReply.ErrorCode != 0 {
-			// Return a structured error with the replica error code
-			return nil, &replicaError{code: innerMsg.WriteReply.ErrorCode}
-		}
-		// Write succeeded - return nil payload (no data to return for writes)
-		return nil, nil
-	}
-
-	d.log.Errorf("decryptPigeonholeReply: Unexpected inner message type: %d", innerMsg.MessageType)
-	return nil, fmt.Errorf("unexpected inner message type: %d", innerMsg.MessageType)
+	d.log.Debugf("decryptPigeonholeReply: Processing write reply, ErrorCode: %d", innerMsg.WriteReply.ErrorCode)
+	return classifyWriteReply(innerMsg.WriteReply)
 }
