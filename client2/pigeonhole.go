@@ -1627,141 +1627,132 @@ func (d *Daemon) sendCancelResendingCopyCommandError(request *Request, errorCode
 	})
 }
 
+// payloadErrorAction represents the action to take when a payload decryption error occurs.
+type payloadErrorAction int
+
+const (
+	payloadActionReturnError      payloadErrorAction = iota
+	payloadActionRetry                               // Retry (BoxIDNotFound on read)
+	payloadActionIdempotentSuccess                   // Treat as success (BoxAlreadyExists on write)
+)
+
+// determinePayloadErrorAction decides what to do with a decryption error
+// based on the error type and the ARQ message flags.
+func determinePayloadErrorAction(err error, isRead bool, noRetryOnBoxIDNotFound bool, noIdempotentBoxAlreadyExists bool) payloadErrorAction {
+	var re *replicaError
+	if !errors.As(err, &re) {
+		return payloadActionReturnError
+	}
+
+	// BoxIDNotFound on read: retry unless NoRetryOnBoxIDNotFound is set
+	if re.code == pigeonhole.ReplicaErrorBoxIDNotFound && isRead && !noRetryOnBoxIDNotFound {
+		return payloadActionRetry
+	}
+
+	// BoxAlreadyExists on write: idempotent success unless NoIdempotentBoxAlreadyExists is set
+	if re.code == pigeonhole.ReplicaErrorBoxAlreadyExists && !isRead && !noIdempotentBoxAlreadyExists {
+		return payloadActionIdempotentSuccess
+	}
+
+	return payloadActionReturnError
+}
+
+// mapDecryptionErrorToCode maps a decryption error to a thin client error code.
+func mapDecryptionErrorToCode(err error) uint8 {
+	switch {
+	case errors.Is(err, errMKEMDecryptionFailed):
+		return thin.ThinClientErrorMKEMDecryptionFailed
+	case errors.Is(err, errBACAPDecryptionFailed):
+		return thin.ThinClientErrorBACAPDecryptionFailed
+	default:
+		var re *replicaError
+		if errors.As(err, &re) {
+			return re.code
+		}
+		return thin.ThinClientErrorInternalError
+	}
+}
+
 // handlePayloadReply processes a payload reply and sends it to the thin client.
 func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply *pigeonhole.CourierEnvelopeReply, conn *incomingConn) {
 	plaintext, err := d.decryptPigeonholeReply(arqMessage, courierEnvelopeReply)
 	if err != nil {
 		d.log.Errorf("handlePayloadReply: failed to decrypt reply: %s", err)
 
-		// Check if this is a BoxIDNotFound error for a READ operation
-		// This is a transient error - the data might not have been replicated yet
-		// Schedule a retry instead of returning the error immediately
-		// Retry forever until cancelled - skip retries only if NoRetryOnBoxIDNotFound is set
-		var re *replicaError
-		isReplicaError := errors.As(err, &re)
+		action := determinePayloadErrorAction(err, arqMessage.IsRead, arqMessage.NoRetryOnBoxIDNotFound, arqMessage.NoIdempotentBoxAlreadyExists)
 
-		if isReplicaError && re.code == pigeonhole.ReplicaErrorBoxIDNotFound && arqMessage.IsRead &&
-			!arqMessage.NoRetryOnBoxIDNotFound {
+		switch action {
+		case payloadActionRetry:
 			d.log.Debugf("handlePayloadReply: BoxIDNotFound for read operation, scheduling retry (attempt %d)",
 				arqMessage.Retransmissions+1)
 
-			// Create a new SURB ID for the retry
 			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
 			_, err := rand.Reader.Read(newSurbID[:])
 			if err != nil {
 				d.log.Errorf("handlePayloadReply: failed to generate SURB ID for retry: %s", err)
-				// Fall through to error handling
-			} else {
-				// Compose a new packet with a new SURB for the retry
-				pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
-					DestinationIdHash: arqMessage.DestinationIdHash,
-					RecipientQueueID:  arqMessage.RecipientQueueID,
-					Payload:           arqMessage.Payload,
-				}, newSurbID)
-				if err != nil {
-					d.log.Errorf("handlePayloadReply: failed to compose packet for retry: %s", err)
-					// Fall through to error handling
-				} else {
-					// Update ARQ message with new SURB
-					d.replyLock.Lock()
-					// Remove old SURB ID mapping
-					delete(d.arqSurbIDMap, *arqMessage.SURBID)
-					// Update message with new SURB
-					arqMessage.SURBID = newSurbID
-					arqMessage.SURBDecryptionKeys = surbKey
-					arqMessage.Retransmissions++
-					arqMessage.SentAt = time.Now()
-					arqMessage.ReplyETA = rtt
-					// Reset state back to WaitingForACK for the retry
-					arqMessage.State = ARQStateWaitingForACK
-					// Add new SURB ID mapping
-					d.arqSurbIDMap[*newSurbID] = arqMessage
-					d.replyLock.Unlock()
-
-					// Schedule retry
-					myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
-					myRtt = myRtt.Add(RoundTripTimeSlop)
-					priority := uint64(myRtt.UnixNano())
-					d.arqTimerQueue.Push(priority, newSurbID)
-
-					// Send the packet
-					err = d.client.SendPacket(pkt)
-					if err != nil {
-						d.log.Errorf("handlePayloadReply: failed to send retry packet: %s", err)
-						// Don't return error - the ARQ timer will retry
-					}
-
-					d.log.Debugf("handlePayloadReply: Sent retry for BoxIDNotFound, attempt %d", arqMessage.Retransmissions)
-					return
-				}
+				break // fall through to error handling
 			}
-		} else if isReplicaError && re.code == pigeonhole.ReplicaErrorBoxIDNotFound && arqMessage.IsRead {
-			// Log why we're NOT retrying (only happens if NoRetryOnBoxIDNotFound=true)
-			if arqMessage.NoRetryOnBoxIDNotFound {
-				d.log.Debugf("handlePayloadReply: BoxIDNotFound - NOT retrying (NoRetryOnBoxIDNotFound=true)")
+
+			pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+				DestinationIdHash: arqMessage.DestinationIdHash,
+				RecipientQueueID:  arqMessage.RecipientQueueID,
+				Payload:           arqMessage.Payload,
+			}, newSurbID)
+			if err != nil {
+				d.log.Errorf("handlePayloadReply: failed to compose packet for retry: %s", err)
+				break // fall through to error handling
 			}
+
+			d.replyLock.Lock()
+			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			arqMessage.SURBID = newSurbID
+			arqMessage.SURBDecryptionKeys = surbKey
+			arqMessage.Retransmissions++
+			arqMessage.SentAt = time.Now()
+			arqMessage.ReplyETA = rtt
+			arqMessage.State = ARQStateWaitingForACK
+			d.arqSurbIDMap[*newSurbID] = arqMessage
+			d.replyLock.Unlock()
+
+			myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
+			myRtt = myRtt.Add(RoundTripTimeSlop)
+			priority := uint64(myRtt.UnixNano())
+			d.arqTimerQueue.Push(priority, newSurbID)
+
+			err = d.client.SendPacket(pkt)
+			if err != nil {
+				d.log.Errorf("handlePayloadReply: failed to send retry packet: %s", err)
+			}
+			d.log.Debugf("handlePayloadReply: Sent retry for BoxIDNotFound, attempt %d", arqMessage.Retransmissions)
+			return
+
+		case payloadActionIdempotentSuccess:
+			d.log.Debugf("handlePayloadReply: BoxAlreadyExists for write operation - treating as idempotent success")
+			d.replyLock.Lock()
+			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+			d.replyLock.Unlock()
+
+			conn.sendResponse(&Response{
+				AppID: arqMessage.AppID,
+				StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+					QueryID:             arqMessage.QueryID,
+					ErrorCode:           thin.ThinClientSuccess,
+					CourierIdentityHash: arqMessage.DestinationIdHash,
+					CourierQueueID:      arqMessage.RecipientQueueID,
+				},
+			})
+			return
 		}
 
-		// Check if this is a BoxAlreadyExists error for a WRITE operation
-		// By default, treat this as idempotent success - the write has already been persisted
-		// However, if NoIdempotentBoxAlreadyExists is set, return the error instead
-		if errors.As(err, &re) && re.code == pigeonhole.ReplicaErrorBoxAlreadyExists && !arqMessage.IsRead {
-			if arqMessage.NoIdempotentBoxAlreadyExists {
-				// Client wants to know about BoxAlreadyExists - don't treat as success
-				d.log.Debugf("handlePayloadReply: BoxAlreadyExists for write operation - returning error (NoIdempotentBoxAlreadyExists=true)")
-				// Fall through to error handling below
-			} else {
-				d.log.Debugf("handlePayloadReply: BoxAlreadyExists for write operation - treating as idempotent success")
-
-				// Remove from ARQ tracking
-				d.replyLock.Lock()
-				delete(d.arqSurbIDMap, *arqMessage.SURBID)
-				delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-				d.replyLock.Unlock()
-
-				// Send success response (idempotent write)
-				conn.sendResponse(&Response{
-					AppID: arqMessage.AppID,
-					StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-						QueryID:             arqMessage.QueryID,
-						ErrorCode:           thin.ThinClientSuccess,
-						CourierIdentityHash: arqMessage.DestinationIdHash,
-						CourierQueueID:      arqMessage.RecipientQueueID,
-					},
-				})
-				return
-			}
-		}
-
-		// Remove from ARQ tracking for all non-retryable error cases
+		// payloadActionReturnError (or retry/idempotent fell through on infrastructure failure)
 		d.replyLock.Lock()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
 
-		// Determine the specific error type
-		var errorCode uint8
-		switch {
-		case errors.Is(err, errMKEMDecryptionFailed):
-			// MKEM decryption failed
-			d.log.Debugf("handlePayloadReply: MKEM decryption failed")
-			errorCode = thin.ThinClientErrorMKEMDecryptionFailed
-		case errors.Is(err, errBACAPDecryptionFailed):
-			// BACAP decryption failed
-			d.log.Debugf("handlePayloadReply: BACAP decryption failed")
-			errorCode = thin.ThinClientErrorBACAPDecryptionFailed
-		default:
-			// Check if this is a replica error (with error code)
-			if errors.As(err, &re) {
-				// Replica error - use the exact error code from the replica
-				d.log.Debugf("handlePayloadReply: Replica error code %d", re.code)
-				errorCode = re.code
-			} else {
-				// Other decryption or internal error
-				d.log.Debugf("handlePayloadReply: Other error: %v", err)
-				errorCode = thin.ThinClientErrorInternalError
-			}
-		}
+		errorCode := mapDecryptionErrorToCode(err)
+		d.log.Debugf("handlePayloadReply: returning error code %d", errorCode)
 
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
