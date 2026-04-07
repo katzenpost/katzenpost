@@ -242,6 +242,97 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 	t.Logf("\n✓ SUCCESS: All %d messages sent and verified successfully!", numMessages)
 }
 
+// TestNewPigeonholeAPIMultipleMessagesBulk tests sending multiple messages in bulk:
+// all writes first, then all reads. Unlike TestNewPigeonholeAPIMultipleMessages which
+// interleaves send/read per message, this test sends all 3 messages before reading any.
+// This exercises multiple concurrent ARQ retry operations on the daemon — the pattern
+// that was broken when arqResendCh had a buffer of 2 and silently dropped resends.
+func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
+	// Setup Alice and Bob thin clients
+	aliceThinClient := setupThinClient(t)
+	defer aliceThinClient.Close()
+	bobThinClient := setupThinClient(t)
+	defer bobThinClient.Close()
+
+	// Validate PKI documents
+	aliceDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := aliceDoc.Epoch
+	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
+	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+
+	// Alice creates WriteCap and derives ReadCap for Bob
+	t.Log("=== Setup: Alice creates WriteCap and derives ReadCap for Bob ===")
+	aliceSeed := make([]byte, 32)
+	_, err := rand.Reader.Read(aliceSeed)
+	require.NoError(t, err)
+
+	aliceWriteCap, bobReadCap, aliceFirstIndex, err := aliceThinClient.NewKeypair(aliceSeed)
+	require.NoError(t, err)
+	require.NotNil(t, aliceWriteCap)
+	require.NotNil(t, bobReadCap)
+
+	numMessages := 3
+	messages := []string{
+		"Message 1: The package has been delivered.",
+		"Message 2: Proceed to the safe house.",
+		"Message 3: Mission accomplished.",
+	}
+
+	// Alice sends ALL messages first
+	aliceCurrentIndex := aliceFirstIndex
+	replyIndex := uint8(0)
+
+	for i := 0; i < numMessages; i++ {
+		aliceMessage := []byte(messages[i])
+		t.Logf("Alice: Sending message %d/%d: %q", i+1, numMessages, aliceMessage)
+
+		aliceCiphertext, aliceEnvDesc, aliceEnvHash, err := aliceThinClient.EncryptWrite(aliceMessage, aliceWriteCap, aliceCurrentIndex)
+		require.NoError(t, err)
+		require.NotEmpty(t, aliceCiphertext)
+
+		_, err = aliceThinClient.StartResendingEncryptedMessage(
+			nil, aliceWriteCap, nil, &replyIndex,
+			aliceEnvDesc, aliceCiphertext, aliceEnvHash)
+		require.NoError(t, err)
+		t.Logf("Alice: Sent message %d", i+1)
+
+		aliceCurrentIndex, err = aliceThinClient.NextMessageBoxIndex(aliceCurrentIndex)
+		require.NoError(t, err)
+	}
+
+	// Wait for propagation
+	t.Log("Waiting for message propagation (30 seconds)")
+	time.Sleep(30 * time.Second)
+
+	// Bob reads ALL messages
+	bobCurrentIndex := aliceFirstIndex
+
+	for i := 0; i < numMessages; i++ {
+		t.Logf("Bob: Reading message %d/%d", i+1, numMessages)
+
+		bobCiphertext, bobEnvDesc, bobEnvHash, err := bobThinClient.EncryptRead(bobReadCap, bobCurrentIndex)
+		require.NoError(t, err)
+		require.NotEmpty(t, bobCiphertext)
+		bobCurrentIndexBytes, err := bobCurrentIndex.MarshalBinary()
+		require.NoError(t, err)
+
+		bobResult, err := bobThinClient.StartResendingEncryptedMessage(
+			bobReadCap, nil, bobCurrentIndexBytes, &replyIndex,
+			bobEnvDesc, bobCiphertext, bobEnvHash)
+		require.NoError(t, err)
+		require.NotEmpty(t, bobResult.Plaintext)
+		t.Logf("Bob: Received message %d: %q", i+1, bobResult.Plaintext)
+
+		require.Equal(t, []byte(messages[i]), bobResult.Plaintext, "Message %d mismatch", i+1)
+		t.Logf("✓ Message %d verified!", i+1)
+
+		bobCurrentIndex, err = bobThinClient.NextMessageBoxIndex(bobCurrentIndex)
+		require.NoError(t, err)
+	}
+
+	t.Logf("\n✓ SUCCESS: All %d messages sent in bulk and verified!", numMessages)
+}
+
 // TestCreateCourierEnvelopesFromPayload tests the CreateCourierEnvelopesFromPayload API:
 // 1. Alice creates a large payload that will be automatically chunked
 // 2. Alice calls CreateCourierEnvelopesFromPayload to get copy stream chunks

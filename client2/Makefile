@@ -39,7 +39,12 @@ dockertest_new_pigeonhole_alice_sends_bob:
 dockertest_new_pigeonhole_multiple_messages:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNewPigeonholeAPIMultipleMessages"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNewPigeonholeAPIMultipleMessages$$"
+
+dockertest_new_pigeonhole_multiple_messages_bulk:
+	cd ../docker && make $(distro)_base.stamp
+	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNewPigeonholeAPIMultipleMessagesBulk"
 
 dockertest_copy_command:
 	cd ../docker && make $(distro)_base.stamp
@@ -87,7 +92,7 @@ dockertest_nested_copy:
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNestedCopyCommands"
 
-all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages dockertest_copy_command dockertest_multichannel dockertest_multichannel_efficient dockertest_tombstone_box dockertest_tombstone_range dockertest_box_id_not_found dockertest_box_already_exists dockertest_read_before_write dockertest_nested_copy
+all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages dockertest_new_pigeonhole_multiple_messages_bulk dockertest_copy_command dockertest_multichannel dockertest_multichannel_efficient dockertest_tombstone_box dockertest_tombstone_range dockertest_box_id_not_found dockertest_box_already_exists dockertest_read_before_write dockertest_nested_copy
 
 warpedclientdaemon:
 	cd ../cmd/kpclientd; go build -ldflags ${ldflags}
