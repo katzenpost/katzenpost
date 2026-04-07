@@ -277,7 +277,18 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 				MessageType: 1,
 				WriteReply:  writeReply,
 			}
-			replyInnerMessageBlob := replyInnerMessage.Bytes()
+			// Pad write reply so writes are indistinguishable from reads
+			nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+			pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+			if err != nil {
+				c.log.Errorf("REPLICA_HANDLER: failed to compute pigeonhole geometry: %s", err)
+				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
+			}
+			replyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&replyInnerMessage, pigeonholeGeo)
+			if err != nil {
+				c.log.Errorf("REPLICA_HANDLER: failed to pad write reply: %s", err)
+				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
+			}
 			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, writeReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID)
 		}
@@ -748,11 +759,22 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		}
 
 		// Now re-encrypt the write reply data for the original client
+		// Pad so write replies are indistinguishable from read replies
 		newReplyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 			MessageType: 1,
 			WriteReply:  replyInnerMessage.WriteReply,
 		}
-		newReplyInnerMessageBlob := newReplyInnerMessage.Bytes()
+		nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+		pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+		if err != nil {
+			c.log.Errorf("proxyWriteRequest: failed to compute pigeonhole geometry: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+		}
+		newReplyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&newReplyInnerMessage, pigeonholeGeo)
+		if err != nil {
+			c.log.Errorf("proxyWriteRequest: failed to pad write reply: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+		}
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
 
 		// Return the reply encrypted for the original client

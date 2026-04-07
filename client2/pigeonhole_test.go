@@ -311,6 +311,7 @@ func TestDaemonEncryptRead_Success(t *testing.T) {
 	})
 
 	d := &Daemon{
+		cfg:                       cfg,
 		logbackend:                logBackend,
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,

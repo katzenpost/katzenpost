@@ -140,8 +140,8 @@ func (d *Daemon) encryptRead(request *Request) {
 		return
 	}
 
-	// Create the envelope using the existing createEnvelopeFromMessage function
-	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessage(msg, doc, true, 0)
+	// Create the envelope with padding so reads are indistinguishable from writes
+	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, true, 0, d.cfg.PigeonholeGeometry)
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to create envelope: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)

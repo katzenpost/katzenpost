@@ -386,6 +386,90 @@ func TestTombstoneReadReplyMKEMCiphertextIndistinguishable(t *testing.T) {
 		"MKEM reply ciphertext must be identical size for tombstone and normal read reply")
 }
 
+// TestReadWriteQueryMKEMCiphertextIndistinguishable verifies that read and write
+// queries produce identical MKEM ciphertext sizes after padding.
+func TestReadWriteQueryMKEMCiphertextIndistinguishable(t *testing.T) {
+	nikeScheme := schemes.ByName("CTIDH1024-X25519")
+	mkemScheme := mkem.NewScheme(nikeScheme)
+	g := geo.NewGeometry(1000, nikeScheme)
+	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
+
+	replica0Pub, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	replica1Pub, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	replicaPubKeys := []nike.PublicKey{replica0Pub, replica1Pub}
+
+	readQuery := &ReplicaInnerMessage{
+		MessageType: 0,
+		ReadMsg: &ReplicaRead{
+			BoxID: [32]uint8{1},
+		},
+	}
+
+	writeQuery := &ReplicaInnerMessage{
+		MessageType: 1,
+		WriteMsg: &ReplicaWrite{
+			BoxID:      [32]uint8{1},
+			Signature:  [64]uint8{2},
+			PayloadLen: uint32(bacapCiphertextLen),
+			Payload:    make([]uint8, bacapCiphertextLen),
+		},
+	}
+
+	readPadded, err := PadInnerMessageForEncryption(readQuery, g)
+	require.NoError(t, err)
+	writePadded, err := PadInnerMessageForEncryption(writeQuery, g)
+	require.NoError(t, err)
+
+	_, readCiphertext := mkemScheme.Encapsulate(replicaPubKeys, readPadded)
+	_, writeCiphertext := mkemScheme.Encapsulate(replicaPubKeys, writePadded)
+
+	require.Equal(t, len(readCiphertext.Envelope), len(writeCiphertext.Envelope),
+		"MKEM ciphertext must be identical size for read and write queries")
+}
+
+// TestReadWriteReplyMKEMCiphertextIndistinguishable verifies that read and write
+// reply messages produce identical MKEM envelope reply sizes after padding.
+func TestReadWriteReplyMKEMCiphertextIndistinguishable(t *testing.T) {
+	nikeScheme := schemes.ByName("CTIDH1024-X25519")
+	mkemScheme := mkem.NewScheme(nikeScheme)
+	g := geo.NewGeometry(1000, nikeScheme)
+	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
+
+	_, replicaPriv, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	clientPub, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	readReply := &ReplicaMessageReplyInnerMessage{
+		MessageType: 0,
+		ReadReply: &ReplicaReadReply{
+			ErrorCode:  0,
+			BoxID:      [32]uint8{1},
+			Signature:  [64]uint8{2},
+			PayloadLen: uint32(bacapCiphertextLen),
+			Payload:    make([]uint8, bacapCiphertextLen),
+		},
+	}
+
+	writeReply := &ReplicaMessageReplyInnerMessage{
+		MessageType: 1,
+		WriteReply:  &ReplicaWriteReply{ErrorCode: 0},
+	}
+
+	readPadded, err := PadReplyInnerMessageForEncryption(readReply, g)
+	require.NoError(t, err)
+	writePadded, err := PadReplyInnerMessageForEncryption(writeReply, g)
+	require.NoError(t, err)
+
+	readEnvReply := mkemScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
+	writeEnvReply := mkemScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+
+	require.Equal(t, len(readEnvReply.Envelope), len(writeEnvReply.Envelope),
+		"MKEM reply ciphertext must be identical size for read and write replies")
+}
+
 func TestExtractMessageFromPaddedPayload(t *testing.T) {
 	t.Run("InvalidLength", func(t *testing.T) {
 		// Too short for length prefix
