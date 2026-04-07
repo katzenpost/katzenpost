@@ -30,7 +30,6 @@ func TestReplicaMessageReplyWithoutPadding(t *testing.T) {
 		EnvelopeHash:  envelopeHash,
 		ReplicaID:     123,
 		EnvelopeReply: payload,
-		IsRead:        true,
 	}
 
 	blob1 := reply1.ToBytes()
@@ -42,7 +41,6 @@ func TestReplicaMessageReplyWithoutPadding(t *testing.T) {
 	require.Equal(t, reply1.EnvelopeHash[:], reply2.EnvelopeHash[:])
 	require.Equal(t, reply1.ReplicaID, reply2.ReplicaID)
 	require.Equal(t, payload, reply2.EnvelopeReply)
-	require.Equal(t, reply1.IsRead, reply2.IsRead)
 
 	blob2 := reply2.ToBytes()
 	require.Equal(t, blob1, blob2)
@@ -71,7 +69,6 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 		EnvelopeHash:  envelopeHash,
 		ReplicaID:     123,
 		EnvelopeReply: payload,
-		IsRead:        true,
 	}
 
 	blob1 := reply1.ToBytes()
@@ -83,7 +80,6 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 	require.Equal(t, reply1.EnvelopeHash[:], reply2.EnvelopeHash[:])
 	require.Equal(t, reply1.ReplicaID, reply2.ReplicaID)
 	require.Equal(t, reply1.EnvelopeReply, reply2.EnvelopeReply)
-	require.Equal(t, reply1.IsRead, reply2.IsRead)
 
 	t.Logf("envelope reply: %x", reply2.EnvelopeReply)
 

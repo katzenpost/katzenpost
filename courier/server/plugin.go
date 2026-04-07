@@ -238,11 +238,9 @@ func (e *Courier) storeOrReplaceReply(entry *CourierBookKeeping, reply *commands
 		// No existing reply, store the new one
 		e.log.Infof("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
 		entry.EnvelopeReplies[replyIndex] = reply
-	} else if reply.IsRead && existing.ErrorCode != 0 {
-		// For read operations: always overwrite a cached error with the latest replica reply.
-		// The new reply may carry a different error code than the one cached, or may now be
-		// successful (e.g. the box was written since the last query), so keeping the old entry
-		// would return stale information to the client.
+	} else if existing.ErrorCode != 0 {
+		// Overwrite cached errors with newer replies. Errors may be transient
+		// (e.g. BoxIDNotFound that resolves when data propagates).
 		e.log.Infof("CacheReply: replacing cached error (err=%d) with new reply (err=%d) from replica %d at index %d",
 			existing.ErrorCode, reply.ErrorCode, reply.ReplicaID, replyIndex)
 		entry.EnvelopeReplies[replyIndex] = reply
@@ -497,12 +495,12 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
 		entry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
 		payload = entry.EnvelopeReply
-		e.log.Debugf("Found reply [len:%d err:%d read:%v] at requested index %d for %v", len(payload), entry.ErrorCode, entry.IsRead, courierMessage.ReplyIndex, envHash)
+		e.log.Debugf("Found reply [len:%d err:%d] at requested index %d for %v", len(payload), entry.ErrorCode, courierMessage.ReplyIndex, envHash)
 		// If the payload at requested index is empty, try the other index
 		if len(payload) == 0 && cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
 			oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1]
 			if len(oentry.EnvelopeReply) > 0 {
-				e.log.Debugf("entry at idx %v is empty; using other index with [len:%d err:%d read:%v]", courierMessage.ReplyIndex, len(oentry.EnvelopeReply), oentry.ErrorCode, oentry.IsRead)
+				e.log.Debugf("entry at idx %v is empty; using other index with [len:%d err:%d]", courierMessage.ReplyIndex, len(oentry.EnvelopeReply), oentry.ErrorCode)
 				courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
 				payload = oentry.EnvelopeReply
 			}
@@ -633,13 +631,12 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 }
 
 // cacheEntryHasOnlyErrors returns true when every replica reply that has arrived so far
-// is a read error (e.g. BoxIDNotFound). It returns false when at least one reply is absent
-// (still in flight), successful, or belongs to a write operation.
+// has a non-zero error code. It returns false when at least one reply is absent
+// (still in flight) or successful.
 //
-// We intentionally exclude write errors (e.g. BoxAlreadyExists): those must be returned
-// to the client as-is so the daemon can treat them as idempotent success. Re-dispatching
-// write errors would cause an infinite re-dispatch loop when a second courier sends the
-// same write after the ARQ timer fires and the replica already has the data.
+// When true, the courier triggers an async re-dispatch to replicas so the cache
+// gets refreshed. This handles transient errors like BoxIDNotFound that resolve
+// when data propagates.
 func (e *Courier) cacheEntryHasOnlyErrors(entry *CourierBookKeeping) bool {
 	if entry == nil {
 		return false
@@ -648,9 +645,6 @@ func (e *Courier) cacheEntryHasOnlyErrors(entry *CourierBookKeeping) bool {
 	for _, reply := range entry.EnvelopeReplies {
 		if reply == nil {
 			continue
-		}
-		if !reply.IsRead {
-			return false // write operations: return cached result directly
 		}
 		if reply.ErrorCode == 0 {
 			return false // at least one successful reply exists
