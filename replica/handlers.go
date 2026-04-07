@@ -208,7 +208,18 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 				ReadReply: readReply,
 			}
-			replyInnerMessageBlob := replyInnerMessage.Bytes()
+			// Pad read reply so tombstone reads are indistinguishable from normal reads
+			nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+			pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+			if err != nil {
+				c.log.Errorf("REPLICA_HANDLER: failed to compute pigeonhole geometry: %s", err)
+				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID, true)
+			}
+			replyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&replyInnerMessage, pigeonholeGeo)
+			if err != nil {
+				c.log.Errorf("REPLICA_HANDLER: failed to pad read reply: %s", err)
+				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID, true)
+			}
 			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
 			if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
 				c.log.Debugf("REPLICA_HANDLER: Found data locally for BoxID %x", myCmd.BoxID)
@@ -590,10 +601,21 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		}
 
 		// Now re-encrypt the read reply data for the original client
+		// Pad so tombstone reads are indistinguishable from normal reads
 		newReplyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 			ReadReply: replyInnerMessage.ReadReply,
 		}
-		newReplyInnerMessageBlob := newReplyInnerMessage.Bytes()
+		nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+		pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+		if err != nil {
+			c.log.Errorf("proxyReadRequest: failed to compute pigeonhole geometry: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID, true)
+		}
+		newReplyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&newReplyInnerMessage, pigeonholeGeo)
+		if err != nil {
+			c.log.Errorf("proxyReadRequest: failed to pad read reply: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID, true)
+		}
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
 
 		// Return the reply encrypted for the original client

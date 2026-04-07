@@ -17,6 +17,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/pigeonhole"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -320,8 +321,8 @@ func (d *Daemon) encryptWrite(request *Request) {
 		WriteMsg:    writeRequest,
 	}
 
-	// Create the envelope using the existing createEnvelopeFromMessage function
-	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessage(msg, doc, false, 0)
+	// Create the envelope with padding so tombstones are indistinguishable from normal writes
+	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, false, 0, d.cfg.PigeonholeGeometry)
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to create envelope: %v", err)
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
@@ -503,9 +504,15 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 			return
 		}
 
-		// Encrypt with MKEM to the replica public keys
+		// Pad and encrypt with MKEM to the replica public keys
+		paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, d.cfg.PigeonholeGeometry)
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromPayload: failed to pad inner message: %v", err)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			return
+		}
 		mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
-			replicaPubKeys, msg.Bytes(),
+			replicaPubKeys, paddedMsg,
 		)
 		mkemPublicKey := mkemPrivateKey.Public()
 		senderPubkey := mkemPublicKey.Bytes()
@@ -760,9 +767,15 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 				return
 			}
 
-			// Encrypt with MKEM to the replica public keys
+			// Pad and encrypt with MKEM to the replica public keys
+			paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, d.cfg.PigeonholeGeometry)
+			if err != nil {
+				d.log.Errorf("createCourierEnvelopesFromPayloads: failed to pad inner message: %v", err)
+				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
+				return
+			}
 			mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
-				replicaPubKeys, msg.Bytes(),
+				replicaPubKeys, paddedMsg,
 			)
 			mkemPublicKey := mkemPrivateKey.Public()
 			senderPubkey := mkemPublicKey.Bytes()
@@ -961,6 +974,10 @@ func (d *Daemon) sendNextMessageBoxIndexError(request *Request, errorCode uint8)
 
 // createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
 func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+	return createEnvelopeFromMessageWithPadding(msg, doc, isRead, replyIndex, nil)
+}
+
+func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8, geo *pigeonholeGeo.Geometry) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	var boxid *[bacap.BoxIDSize]byte
 	if isRead {
 		boxid = &msg.ReadMsg.BoxID
@@ -972,8 +989,20 @@ func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Do
 		return nil, nil, err
 	}
 
+	// Pad the inner message to the write size so tombstones are
+	// indistinguishable from normal writes. If geo is nil, no padding is applied.
+	var msgBytes []byte
+	if geo != nil {
+		msgBytes, err = pigeonhole.PadInnerMessageForEncryption(msg, geo)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to pad inner message: %w", err)
+		}
+	} else {
+		msgBytes = msg.Bytes()
+	}
+
 	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
+		replicaPubKeys, msgBytes,
 	)
 	mkemPublicKey := mkemPrivateKey.Public()
 
