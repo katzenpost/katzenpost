@@ -3,6 +3,7 @@
 package client2
 
 import (
+	"log"
 	"math"
 	"sync"
 	"time"
@@ -54,7 +55,7 @@ func (t *TimerQueue) Peek() *queue.Entry {
 func (t *TimerQueue) Pop() interface{} {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	return t.queue.Pop()
+	return t.queue.Dequeue()
 }
 
 func (t *TimerQueue) Len() int {
@@ -64,12 +65,14 @@ func (t *TimerQueue) Len() int {
 }
 
 func (t *TimerQueue) Push(priority uint64, value interface{}) {
+	log.Printf("TimerQueue.Push: priority=%d queueLen=%d pushChLen=%d", priority, t.Len(), len(t.pushCh))
 	select {
 	case t.pushCh <- &pushedItem{
 		priority: priority,
 		value:    value,
 	}:
 	case <-t.HaltCh():
+		log.Printf("TimerQueue.Push: halted while pushing")
 	}
 }
 
@@ -88,8 +91,10 @@ func (t *TimerQueue) worker() {
 
 			t.mutex.Lock()
 			m := t.queue.Peek()
-			t.queue.Pop()
+			t.queue.Dequeue()
+			qLen := t.queue.Len()
 			t.mutex.Unlock()
+			log.Printf("TimerQueue.worker: timer fired, popped item (nil=%v), queueLen=%d", m == nil, qLen)
 			if m != nil {
 				// Use a separate goroutine that respects the halt channel
 				go func(value interface{}) {
@@ -104,7 +109,9 @@ func (t *TimerQueue) worker() {
 		case item := <-t.pushCh:
 			t.mutex.Lock()
 			t.queue.Enqueue(item.priority, item.value)
+			qLen := t.queue.Len()
 			t.mutex.Unlock()
+			log.Printf("TimerQueue.worker: enqueued item, queueLen=%d", qLen)
 		}
 
 		if !timerFired && !timer.Stop() {
@@ -124,13 +131,14 @@ func (t *TimerQueue) worker() {
 				// when there are messages to schedule, we'll get woken up.
 				timer.Reset(math.MaxInt64)
 				t.mutex.Unlock()
+				log.Printf("TimerQueue.worker: queue empty, sleeping until next push")
 				break
 			}
 
 			// Figure out if the message needs to be handled now.
 			timeLeft := int64(m.Priority) - time.Now().UnixNano()
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
-				t.queue.Pop()
+				t.queue.Dequeue()
 				t.mutex.Unlock()
 				// Use a separate goroutine that respects the halt channel
 				go func(value interface{}) {
