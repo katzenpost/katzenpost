@@ -378,6 +378,42 @@ func (d *Daemon) sendEncryptWriteError(request *Request, errorCode uint8) {
 
 // createCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
 // This is part of the Pigeonhole API to prepare for the Copy Command.
+// chunkPayload splits a payload into chunks of at most maxChunkSize bytes.
+func chunkPayload(payload []byte, maxChunkSize int) [][]byte {
+	if len(payload) == 0 {
+		return nil
+	}
+	var chunks [][]byte
+	for offset := 0; offset < len(payload); offset += maxChunkSize {
+		end := offset + maxChunkSize
+		if end > len(payload) {
+			end = len(payload)
+		}
+		chunks = append(chunks, payload[offset:end])
+	}
+	return chunks
+}
+
+// validateEnvelopePayloadRequest validates inputs for createCourierEnvelopesFromPayload.
+// maxPlaintextPayloadLength is the geometry's MaxPlaintextPayloadLength.
+func validateEnvelopePayloadRequest(payload []byte, writeCap *bacap.WriteCap, startIndex *bacap.MessageBoxIndex, maxPlaintextPayloadLength int) error {
+	if writeCap == nil {
+		return fmt.Errorf("DestWriteCap is nil")
+	}
+	if startIndex == nil {
+		return fmt.Errorf("DestStartIndex is nil")
+	}
+	const maxPayloadSize = 10 * 1024 * 1024
+	if len(payload) > maxPayloadSize {
+		return fmt.Errorf("payload size %d exceeds maximum of %d bytes", len(payload), maxPayloadSize)
+	}
+	maxPayload := maxPlaintextPayloadLength - 4
+	if maxPayload <= 0 {
+		return fmt.Errorf("invalid geometry, maxPayload <= 0")
+	}
+	return nil
+}
+
 func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
@@ -390,45 +426,20 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	destStartIndex := request.CreateCourierEnvelopesFromPayload.DestStartIndex
 
 	// Validate inputs
-	if destWriteCap == nil {
-		d.log.Error("createCourierEnvelopesFromPayload: DestWriteCap is nil")
-		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	if destStartIndex == nil {
-		d.log.Error("createCourierEnvelopesFromPayload: DestStartIndex is nil")
+	if err := validateEnvelopePayloadRequest(payload, destWriteCap, destStartIndex, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength); err != nil {
+		d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
 		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
 
-	// Enforce 10MB size limit to prevent accidental memory exhaustion
-	const maxPayloadSize = 10 * 1024 * 1024 // 10MB
-	if len(payload) > maxPayloadSize {
-		d.log.Errorf("createCourierEnvelopesFromPayload: payload size %d exceeds maximum of %d bytes (10MB)", len(payload), maxPayloadSize)
-		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-
-	// Calculate the maximum user payload size per envelope.
-	// We need to leave room for the 4-byte length prefix that CreatePaddedPayload adds.
 	maxPayload := d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength - 4
-	if maxPayload <= 0 {
-		d.log.Error("createCourierEnvelopesFromPayload: invalid geometry, maxPayload <= 0")
-		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
-		return
-	}
+	chunks := chunkPayload(payload, maxPayload)
 
-	// Chunk the payload and create CourierEnvelopes
+	// Create CourierEnvelopes from chunks
 	var courierEnvelopes []*pigeonhole.CourierEnvelope
 	currentIndex := destStartIndex
 
-	for offset := 0; offset < len(payload); offset += maxPayload {
-		// Get the chunk
-		end := offset + maxPayload
-		if end > len(payload) {
-			end = len(payload)
-		}
-		chunk := payload[offset:end]
+	for _, chunk := range chunks {
 
 		// Pad the chunk to MaxPlaintextPayloadLength + 4 (length prefix is 4 bytes)
 		// This must match encryptWrite which also uses MaxPlaintextPayloadLength + 4

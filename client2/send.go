@@ -18,6 +18,23 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
+// validateSendMessageRequest validates the fields needed to compose a Sphinx packet.
+func validateSendMessageRequest(destinationIdHash *[32]byte, recipientQueueID []byte, payload []byte, maxPayloadLen int) error {
+	if destinationIdHash == nil {
+		return errors.New("request.DestinationIdHash is nil")
+	}
+	if len(recipientQueueID) == 0 {
+		return errors.New("client2: recipient is nil")
+	}
+	if len(recipientQueueID) > sConstants.RecipientIDLength {
+		return fmt.Errorf("client2: invalid recipient: '%v'", recipientQueueID)
+	}
+	if len(payload) > maxPayloadLen {
+		return fmt.Errorf("message too large: %v > %v", len(payload), maxPayloadLen)
+	}
+	return nil
+}
+
 // ComposeSphinxPacket is used to compose Sphinx packets.
 func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
 	// Extract fields from the appropriate sub-struct
@@ -37,18 +54,8 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		return nil, nil, 0, errors.New("request must have SendMessage")
 	}
 
-	if destinationIdHash == nil {
-		return nil, nil, 0, errors.New("request.DestinationIdHash is nil")
-	}
-	if len(recipientQueueID) == 0 {
-		return nil, nil, 0, errors.New("client2: recipient is nil")
-	}
-	if len(recipientQueueID) > sConstants.RecipientIDLength {
-		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", recipientQueueID)
-	}
-
-	if len(requestPayload) > c.geo.UserForwardPayloadLength {
-		return nil, nil, 0, fmt.Errorf("message too large: %v > %v", len(requestPayload), c.geo.UserForwardPayloadLength)
+	if err := validateSendMessageRequest(destinationIdHash, recipientQueueID, requestPayload, c.geo.UserForwardPayloadLength); err != nil {
+		return nil, nil, 0, err
 	}
 
 	payload := make([]byte, c.geo.UserForwardPayloadLength)

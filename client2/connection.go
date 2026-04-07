@@ -427,6 +427,14 @@ func (c *connection) onNetConn(conn net.Conn) {
 	c.onWireConn(w)
 }
 
+// checkSequence validates that the received command sequence matches the expected value.
+func checkSequence(expected, actual uint32) error {
+	if expected != actual {
+		return newProtocolError("invalid/unexpected sequence: %v (Expecting: %v)", actual, expected)
+	}
+	return nil
+}
+
 func (c *connection) onWireConn(w *wire.Session) {
 	c.onConnStatusChange(nil)
 
@@ -518,10 +526,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 	}
 	var seq uint32
 	checkSeq := func(cmdSeq uint32) error {
-		if seq != cmdSeq {
-			return newProtocolError("invalid/unexpected sequence: %v (Expecting: %v)", cmdSeq, seq)
-		}
-		return nil
+		return checkSequence(seq, cmdSeq)
 	}
 	nrReqs, nrResps := 0, 0
 	for {
