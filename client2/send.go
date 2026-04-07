@@ -179,7 +179,7 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 		return nil, time.Time{}, newPKIError("client2: makePath: no PKI document for current epoch")
 	}
 
-	src, dst, err := c.getSourceAndDestinationNodes(doc, gateway, destination, isForward)
+	src, dst, err := getSourceAndDestinationNodes(doc, gateway, destination, isForward)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -198,8 +198,8 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 	return p, t, err
 }
 
-// getSourceAndDestinationNodes retrieves the source and destination mix descriptors based on direction
-func (c *Client) getSourceAndDestinationNodes(doc *cpki.Document, gateway, destination *[32]byte, isForward bool) (*cpki.MixDescriptor, *cpki.MixDescriptor, error) {
+// getSourceAndDestinationNodes retrieves the source and destination mix descriptors based on direction.
+func getSourceAndDestinationNodes(doc *cpki.Document, gateway, destination *[32]byte, isForward bool) (*cpki.MixDescriptor, *cpki.MixDescriptor, error) {
 	srcNode, dstNode := gateway, destination
 	if !isForward {
 		srcNode, dstNode = dstNode, srcNode

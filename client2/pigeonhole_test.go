@@ -220,6 +220,8 @@ func (m *mockIncomingConn) toIncomingConn(_ *listener, logBackend *log.Backend) 
 				EncryptWriteReply:                    thinResp.EncryptWriteReply,
 				StartResendingEncryptedMessageReply:  thinResp.StartResendingEncryptedMessageReply,
 				CancelResendingEncryptedMessageReply: thinResp.CancelResendingEncryptedMessageReply,
+				NextMessageBoxIndexReply:             thinResp.NextMessageBoxIndexReply,
+				CreateCourierEnvelopesFromPayloadReply: thinResp.CreateCourierEnvelopesFromPayloadReply,
 			}
 			m.responseCh <- resp
 		}
@@ -2190,4 +2192,204 @@ func TestCancelResendingDuringARQRetry(t *testing.T) {
 	}, "arqDoResend should not panic after cancel")
 
 	t.Log("Cancel during ARQ retry test passed")
+}
+
+func setupDaemonWithMockConn(t *testing.T) (*Daemon, *[AppIDLength]byte, chan *Response) {
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	port, err := getFreePort()
+	require.NoError(t, err)
+	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
+		MaxPlaintextPayloadLength: 1000,
+		NIKEName:                  replicaCommon.NikeScheme.Name(),
+	}
+
+	client := &Client{cfg: cfg}
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	listener, listenerErr := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(t, listenerErr)
+	t.Cleanup(func() { listener.Shutdown() })
+
+	doc := createMockPKIDocument(t)
+	currentEpoch, _, _ := epochtime.Now()
+	client.pki = &pki{
+		c:    client,
+		log:  logBackend.GetLogger("pki"),
+		docs: sync.Map{},
+	}
+	client.pki.docs.Store(currentEpoch, &CachedDoc{
+		Doc:  doc,
+		Blob: nil,
+	})
+
+	d := &Daemon{
+		cfg:                       cfg,
+		logbackend:                logBackend,
+		log:                       logBackend.GetLogger("test"),
+		listener:                  listener,
+		client:                    client,
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:        new(sync.RWMutex),
+		replyLock:                 new(sync.Mutex),
+		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		copyStreamEncoders:        make(map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder),
+		copyStreamEncodersLock:    new(sync.Mutex),
+	}
+
+	testAppID := &[AppIDLength]byte{}
+	copy(testAppID[:], []byte("test-mock-conn00"))
+
+	responseCh := make(chan *Response, 10)
+	mockConn := &mockIncomingConn{
+		appID:      testAppID,
+		responseCh: responseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*testAppID] = mockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	return d, testAppID, responseCh
+}
+
+func TestNextMessageBoxIndex_Success(t *testing.T) {
+	d, testAppID, responseCh := setupDaemonWithMockConn(t)
+
+	// Create a real message box index via BACAP
+	writeCap, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+	firstIndex := statefulWriter.GetCurrentMessageIndex()
+
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("nextidx-query000"))
+
+	request := &Request{
+		AppID: testAppID,
+		NextMessageBoxIndex: &thin.NextMessageBoxIndex{
+			QueryID:         queryID,
+			MessageBoxIndex: firstIndex,
+		},
+	}
+
+	d.nextMessageBoxIndex(request)
+
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.NextMessageBoxIndexReply)
+		require.Equal(t, thin.ThinClientSuccess, resp.NextMessageBoxIndexReply.ErrorCode)
+		require.NotNil(t, resp.NextMessageBoxIndexReply.NextMessageBoxIndex)
+		// Index should have advanced
+		require.NotEqual(t, firstIndex.Idx64, resp.NextMessageBoxIndexReply.NextMessageBoxIndex.Idx64)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for response")
+	}
+}
+
+func TestNextMessageBoxIndex_NilIndex(t *testing.T) {
+	d, testAppID, responseCh := setupDaemonWithMockConn(t)
+
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("nextidx-nil00000"))
+
+	request := &Request{
+		AppID: testAppID,
+		NextMessageBoxIndex: &thin.NextMessageBoxIndex{
+			QueryID:         queryID,
+			MessageBoxIndex: nil,
+		},
+	}
+
+	d.nextMessageBoxIndex(request)
+
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.NextMessageBoxIndexReply)
+		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.NextMessageBoxIndexReply.ErrorCode)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for response")
+	}
+}
+
+func TestCreateCourierEnvelopesFromPayload_Success(t *testing.T) {
+	d, testAppID, responseCh := setupDaemonWithMockConn(t)
+
+	// Create a destination keypair
+	writeCap, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+	destStartIndex := statefulWriter.GetCurrentMessageIndex()
+
+	streamID := &[16]byte{}
+	copy(streamID[:], []byte("test-stream-id00"))
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("envelope-query00"))
+
+	payload := []byte("test payload for envelope creation")
+
+	request := &Request{
+		AppID: testAppID,
+		CreateCourierEnvelopesFromPayload: &thin.CreateCourierEnvelopesFromPayload{
+			QueryID:        queryID,
+			StreamID:       streamID,
+			Payload:        payload,
+			DestWriteCap:   writeCap,
+			DestStartIndex: destStartIndex,
+			IsLast:         true,
+		},
+	}
+
+	d.createCourierEnvelopesFromPayload(request)
+
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.CreateCourierEnvelopesFromPayloadReply)
+		require.Equal(t, thin.ThinClientSuccess, resp.CreateCourierEnvelopesFromPayloadReply.ErrorCode)
+		require.NotEmpty(t, resp.CreateCourierEnvelopesFromPayloadReply.Envelopes)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for response")
+	}
+}
+
+func TestCreateCourierEnvelopesFromPayload_NilWriteCap(t *testing.T) {
+	d, testAppID, responseCh := setupDaemonWithMockConn(t)
+
+	streamID := &[16]byte{}
+	queryID := &[thin.QueryIDLength]byte{}
+
+	request := &Request{
+		AppID: testAppID,
+		CreateCourierEnvelopesFromPayload: &thin.CreateCourierEnvelopesFromPayload{
+			QueryID:        queryID,
+			StreamID:       streamID,
+			Payload:        []byte("data"),
+			DestWriteCap:   nil,
+			DestStartIndex: nil,
+			IsLast:         true,
+		},
+	}
+
+	d.createCourierEnvelopesFromPayload(request)
+
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.CreateCourierEnvelopesFromPayloadReply)
+		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.CreateCourierEnvelopesFromPayloadReply.ErrorCode)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for response")
+	}
 }
