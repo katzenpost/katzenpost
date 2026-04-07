@@ -2507,3 +2507,52 @@ func TestSetStreamBuffer_Success(t *testing.T) {
 		t.Fatal("timeout waiting for response")
 	}
 }
+
+// TestClientQueryPaddingIndistinguishable proves that createEnvelopeFromMessageWithPadding
+// produces identical CiphertextLen for reads, writes, and tombstones.
+func TestClientQueryPaddingIndistinguishable(t *testing.T) {
+	doc := createMockPKIDocument(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+	geo := cfg.PigeonholeGeometry
+
+	readMsg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 0,
+		ReadMsg: &pigeonhole.ReplicaRead{
+			BoxID: [32]uint8{1},
+		},
+	}
+
+	bacapCiphertextLen := geo.CalculateBoxCiphertextLength()
+	writeMsg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1,
+		WriteMsg: &pigeonhole.ReplicaWrite{
+			BoxID:      [32]uint8{1},
+			Signature:  [64]uint8{2},
+			PayloadLen: uint32(bacapCiphertextLen),
+			Payload:    make([]uint8, bacapCiphertextLen),
+		},
+	}
+
+	tombstoneMsg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1,
+		WriteMsg: &pigeonhole.ReplicaWrite{
+			BoxID:     [32]uint8{1},
+			Signature: [64]uint8{2},
+		},
+	}
+
+	readEnv, _, err := createEnvelopeFromMessageWithPadding(readMsg, doc, true, 0, geo)
+	require.NoError(t, err)
+	writeEnv, _, err := createEnvelopeFromMessageWithPadding(writeMsg, doc, false, 0, geo)
+	require.NoError(t, err)
+	tombstoneEnv, _, err := createEnvelopeFromMessageWithPadding(tombstoneMsg, doc, false, 0, geo)
+	require.NoError(t, err)
+
+	require.Equal(t, readEnv.CiphertextLen, writeEnv.CiphertextLen,
+		"read and write envelopes must have identical CiphertextLen")
+	require.Equal(t, readEnv.CiphertextLen, tombstoneEnv.CiphertextLen,
+		"read and tombstone envelopes must have identical CiphertextLen")
+	t.Logf("All three envelopes have CiphertextLen=%d", readEnv.CiphertextLen)
+}

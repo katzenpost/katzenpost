@@ -1075,3 +1075,41 @@ func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeon
 	t.Fatalf("Timeout waiting for courier response for envelope hash %x", hash)
 	return nil // This will never be reached due to t.Fatalf, but needed for compilation
 }
+
+// TestReplicaReplyPaddingIndistinguishable proves that replica replies for reads
+// and writes produce identical EnvelopeReply sizes.
+func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
+	testEnv := setupTestEnvironment(t)
+	defer testEnv.cleanup()
+	time.Sleep(2 * time.Second)
+
+	waitForCourierPKI(t, testEnv)
+	waitForReplicasPKI(t, testEnv)
+
+	// 1. Write a box and get the write reply (with MKEM-encrypted payload)
+	aliceWriter1, _ := aliceAndBobKeyExchangeKeys(t, testEnv)
+	writeEnvelope := aliceComposesNextMessage(t, []byte("write payload"), testEnv, aliceWriter1)
+	_ = injectCourierEnvelope(t, testEnv, writeEnvelope) // immediate ACK
+	time.Sleep(3 * time.Second)
+	writeReply := waitForReplicaResponse(t, testEnv, writeEnvelope)
+	writeReplyLen := len(writeReply.Payload)
+	t.Logf("Write reply EnvelopeReply length: %d", writeReplyLen)
+	require.True(t, writeReplyLen > 0, "write reply should have MKEM-encrypted payload")
+
+	// 2. Write a box, then read it back and get the read reply
+	aliceWriter2, bobReader2 := aliceAndBobKeyExchangeKeys(t, testEnv)
+	writeEnvelope2 := aliceComposesNextMessage(t, []byte("read this back"), testEnv, aliceWriter2)
+	_ = injectCourierEnvelope(t, testEnv, writeEnvelope2)
+	time.Sleep(3 * time.Second)
+
+	readEnvelope, _ := composeReadRequest(t, testEnv, bobReader2)
+	readReply := waitForReplicaResponse(t, testEnv, readEnvelope)
+	readReplyLen := len(readReply.Payload)
+	t.Logf("Read reply EnvelopeReply length: %d", readReplyLen)
+	require.True(t, readReplyLen > 0, "read reply should have MKEM-encrypted payload")
+
+	// Assert read and write reply sizes are identical
+	require.Equal(t, readReplyLen, writeReplyLen,
+		"read and write replies must have identical EnvelopeReply size")
+	t.Logf("Read and write reply EnvelopeReply sizes are identical: %d bytes", readReplyLen)
+}
