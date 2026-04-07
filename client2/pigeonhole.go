@@ -1256,10 +1256,21 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	d.log.Debugf("handlePigeonholeARQReply: EnvelopeHash=%x, State=%d, ReplyType=%d, PayloadLen=%d, ErrorCode=%d, IsRead=%v",
 		arqMessage.EnvelopeHash[:], arqMessage.State, courierEnvelopeReply.ReplyType, courierEnvelopeReply.PayloadLen, courierEnvelopeReply.ErrorCode, arqMessage.IsRead)
 
-	// Check for error in the reply
-	if courierEnvelopeReply.ErrorCode != 0 {
-		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", courierEnvelopeReply.ErrorCode)
-		// Remove from ARQ tracking and send error to thin client
+	// Use the pure FSM to determine the action
+	transition := computeARQStateTransition(
+		arqMessage.State,
+		courierEnvelopeReply.ReplyType,
+		courierEnvelopeReply.ErrorCode,
+		arqMessage.IsRead,
+		arqMessage.NoIdempotentBoxAlreadyExists,
+	)
+
+	d.log.Debugf("handlePigeonholeARQReply: FSM transition: state=%d replyType=%d → action=%d newState=%d",
+		arqMessage.State, courierEnvelopeReply.ReplyType, transition.Action, transition.NewState)
+
+	switch transition.Action {
+	case ARQActionError:
+		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", transition.ErrorCode)
 		d.replyLock.Lock()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
@@ -1269,196 +1280,87 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 			AppID: arqMessage.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
 				QueryID:             arqMessage.QueryID,
-				ErrorCode:           courierEnvelopeReply.ErrorCode,
+				ErrorCode:           transition.ErrorCode,
 				CourierIdentityHash: arqMessage.DestinationIdHash,
 				CourierQueueID:      arqMessage.RecipientQueueID,
 			},
 		})
 		return
-	}
 
-	// FSM: Handle state transitions based on current state and reply type
-	switch arqMessage.State {
-	case ARQStateWaitingForACK:
-		// We're waiting for an ACK
-		if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK {
-			d.log.Debugf("handlePigeonholeARQReply: ACK received for EnvelopeHash %x, IsRead=%v",
-				arqMessage.EnvelopeHash[:], arqMessage.IsRead)
+	case ARQActionComplete:
+		d.log.Debugf("handlePigeonholeARQReply: Write ACK received, returning success (single round-trip)")
+		d.replyLock.Lock()
+		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+		d.replyLock.Unlock()
 
-			// For default writes (NoIdempotentBoxAlreadyExists=false), the ACK is sufficient.
-			// The courier sends the ACK immediately upon receipt, before dispatching to
-			// replicas. The ACK confirms the courier received the envelope and will
-			// dispatch it to both shard replicas. We don't need a second round-trip
-			// through the mixnet to learn the replica result, because BoxAlreadyExists
-			// is treated as idempotent success anyway.
-			if !arqMessage.IsRead && !arqMessage.NoIdempotentBoxAlreadyExists {
-				d.log.Debugf("handlePigeonholeARQReply: Write ACK received, returning success (single round-trip)")
-				d.replyLock.Lock()
-				delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-				d.replyLock.Unlock()
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+				QueryID:             arqMessage.QueryID,
+				ErrorCode:           thin.ThinClientSuccess,
+				CourierIdentityHash: arqMessage.DestinationIdHash,
+				CourierQueueID:      arqMessage.RecipientQueueID,
+			},
+		})
+		return
 
-				conn.sendResponse(&Response{
-					AppID: arqMessage.AppID,
-					StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-						QueryID:             arqMessage.QueryID,
-						ErrorCode:           thin.ThinClientSuccess,
-						CourierIdentityHash: arqMessage.DestinationIdHash,
-						CourierQueueID:      arqMessage.RecipientQueueID,
-					},
-				})
-				return
-			}
+	case ARQActionHandlePayload:
+		arqMessage.State = transition.NewState
+		d.handlePayloadReply(arqMessage, courierEnvelopeReply, conn)
+		return
 
-			// Transition to ACKReceived state.
-			// For reads and BoxAlreadyExists-aware writes (NoIdempotentBoxAlreadyExists=true),
-			// we need to send another SURB to get the payload reply.
-			// The payload reply contains the actual result from the replica:
-			// - For reads: the decrypted plaintext
-			// - For writes with NoIdempotentBoxAlreadyExists: the replica error code (e.g. BoxAlreadyExists)
-			arqMessage.State = ARQStateACKReceived
-			d.log.Debugf("handlePigeonholeARQReply: ACK received (isRead=%v, NoIdempotentBoxAlreadyExists=%v), sending new SURB for payload",
-				arqMessage.IsRead, arqMessage.NoIdempotentBoxAlreadyExists)
+	case ARQActionSendNewSURB:
+		arqMessage.State = transition.NewState
+		d.log.Debugf("handlePigeonholeARQReply: sending new SURB (isRead=%v, state=%d)",
+			arqMessage.IsRead, arqMessage.State)
 
-			// Create a new SURB ID for the payload request
-			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
-			_, err := rand.Reader.Read(newSurbID[:])
-			if err != nil {
-				d.log.Errorf("handlePigeonholeARQReply: failed to generate SURB ID for payload: %s", err)
-				return
-			}
-
-			// Compose a new packet with a new SURB for the payload request
-			pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
-				DestinationIdHash: arqMessage.DestinationIdHash,
-				RecipientQueueID:  arqMessage.RecipientQueueID,
-				Payload:           arqMessage.Payload,
-			}, newSurbID)
-			if err != nil {
-				d.log.Errorf("handlePigeonholeARQReply: failed to compose packet for payload: %s", err)
-				return
-			}
-
-			// Update ARQ message with new SURB
-			d.replyLock.Lock()
-			// Remove old SURB ID mapping
-			delete(d.arqSurbIDMap, *arqMessage.SURBID)
-			// Check if the connection was cleaned up while we were composing the packet.
-			// If so, don't re-insert — the client is gone and there's nobody to receive the result.
-			if d.listener.getConnection(arqMessage.AppID) == nil {
-				d.replyLock.Unlock()
-				d.log.Debugf("handlePigeonholeARQReply: connection gone for AppID %x, dropping ARQ for EnvelopeHash %x", arqMessage.AppID[:], arqMessage.EnvelopeHash[:])
-				return
-			}
-			// Update message with new SURB
-			arqMessage.SURBID = newSurbID
-			arqMessage.SURBDecryptionKeys = surbKey
-			arqMessage.Retransmissions++
-			arqMessage.SentAt = time.Now()
-			arqMessage.ReplyETA = rtt
-			// Add new SURB ID mapping
-			d.arqSurbIDMap[*newSurbID] = arqMessage
-			d.replyLock.Unlock()
-
-			// Schedule retry for payload
-			myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
-			myRtt = myRtt.Add(RoundTripTimeSlop)
-			priority := uint64(myRtt.UnixNano())
-			d.arqTimerQueue.Push(priority, newSurbID)
-
-			// Send the packet
-			err = d.client.SendPacket(pkt)
-			if err != nil {
-				d.log.Errorf("handlePigeonholeARQReply: failed to send payload request packet: %s", err)
-				// Don't return error - the ARQ will retry
-			}
-
-			d.log.Debugf("handlePigeonholeARQReply: Sent new SURB for payload, waiting for payload reply")
-			return
-		} else if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypePayload {
-			// Unexpected: we got payload before ACK
-			d.log.Warningf("handlePigeonholeARQReply: Received payload while waiting for ACK")
-			// Treat this as if we got both ACK and payload
-			arqMessage.State = ARQStatePayloadReceived
-			d.handlePayloadReply(arqMessage, courierEnvelopeReply, conn)
+		newSurbID := &[sphinxConstants.SURBIDLength]byte{}
+		_, err := rand.Reader.Read(newSurbID[:])
+		if err != nil {
+			d.log.Errorf("handlePigeonholeARQReply: failed to generate SURB ID: %s", err)
 			return
 		}
 
-	case ARQStateACKReceived:
-		// We've received ACK, now waiting for payload (only for reads)
-		if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypePayload {
-			d.log.Debugf("handlePigeonholeARQReply: Payload received for EnvelopeHash %x", arqMessage.EnvelopeHash[:])
-			arqMessage.State = ARQStatePayloadReceived
-			d.handlePayloadReply(arqMessage, courierEnvelopeReply, conn)
-			return
-		} else if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK {
-			// Duplicate ACK - data not ready yet, keep polling
-			d.log.Debugf("handlePigeonholeARQReply: Duplicate ACK received (data not ready), sending new SURB to continue polling")
-
-			// Create a new SURB ID for the next polling request
-			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
-			_, err := rand.Reader.Read(newSurbID[:])
-			if err != nil {
-				d.log.Errorf("handlePigeonholeARQReply: failed to generate SURB ID for polling: %s", err)
-				return
-			}
-
-			// Compose a new packet with a new SURB for the next polling request
-			pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
-				DestinationIdHash: arqMessage.DestinationIdHash,
-				RecipientQueueID:  arqMessage.RecipientQueueID,
-				Payload:           arqMessage.Payload,
-			}, newSurbID)
-			if err != nil {
-				d.log.Errorf("handlePigeonholeARQReply: failed to compose packet for polling: %s", err)
-				return
-			}
-
-			// Update ARQ message with new SURB
-			d.replyLock.Lock()
-			// Remove old SURB ID mapping
-			delete(d.arqSurbIDMap, *arqMessage.SURBID)
-			// Check if the connection was cleaned up while we were composing the packet.
-			// If so, don't re-insert — the client is gone and there's nobody to receive the result.
-			if d.listener.getConnection(arqMessage.AppID) == nil {
-				d.replyLock.Unlock()
-				d.log.Debugf("handlePigeonholeARQReply: connection gone for AppID %x, dropping ARQ for EnvelopeHash %x", arqMessage.AppID[:], arqMessage.EnvelopeHash[:])
-				return
-			}
-			// Update message with new SURB
-			arqMessage.SURBID = newSurbID
-			arqMessage.SURBDecryptionKeys = surbKey
-			arqMessage.Retransmissions++
-			arqMessage.SentAt = time.Now()
-			arqMessage.ReplyETA = rtt
-			// Add new SURB ID mapping
-			d.arqSurbIDMap[*newSurbID] = arqMessage
-			d.replyLock.Unlock()
-
-			// Schedule retry for next poll
-			myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
-			myRtt = myRtt.Add(RoundTripTimeSlop)
-			priority := uint64(myRtt.UnixNano())
-			d.arqTimerQueue.Push(priority, newSurbID)
-
-			// Send the packet
-			err = d.client.SendPacket(pkt)
-			if err != nil {
-				d.log.Errorf("handlePigeonholeARQReply: failed to send polling packet: %s", err)
-				// Don't return error - the ARQ will retry
-			}
-
-			d.log.Debugf("handlePigeonholeARQReply: Sent new SURB for continued polling, waiting for payload reply")
+		pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+			DestinationIdHash: arqMessage.DestinationIdHash,
+			RecipientQueueID:  arqMessage.RecipientQueueID,
+			Payload:           arqMessage.Payload,
+		}, newSurbID)
+		if err != nil {
+			d.log.Errorf("handlePigeonholeARQReply: failed to compose packet: %s", err)
 			return
 		}
 
-	case ARQStatePayloadReceived:
-		// Terminal state, shouldn't receive more replies
+		d.replyLock.Lock()
+		delete(d.arqSurbIDMap, *arqMessage.SURBID)
+		if d.listener.getConnection(arqMessage.AppID) == nil {
+			d.replyLock.Unlock()
+			d.log.Debugf("handlePigeonholeARQReply: connection gone for AppID %x, dropping ARQ for EnvelopeHash %x", arqMessage.AppID[:], arqMessage.EnvelopeHash[:])
+			return
+		}
+		arqMessage.SURBID = newSurbID
+		arqMessage.SURBDecryptionKeys = surbKey
+		arqMessage.Retransmissions++
+		arqMessage.SentAt = time.Now()
+		arqMessage.ReplyETA = rtt
+		d.arqSurbIDMap[*newSurbID] = arqMessage
+		d.replyLock.Unlock()
+
+		myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
+		myRtt = myRtt.Add(RoundTripTimeSlop)
+		priority := uint64(myRtt.UnixNano())
+		d.arqTimerQueue.Push(priority, newSurbID)
+
+		err = d.client.SendPacket(pkt)
+		if err != nil {
+			d.log.Errorf("handlePigeonholeARQReply: failed to send packet: %s", err)
+		}
+		return
+
+	case ARQActionIgnore:
 		d.log.Warningf("handlePigeonholeARQReply: Received reply in terminal state, ignoring")
 		return
 	}
-
-	d.log.Errorf("handlePigeonholeARQReply: Unexpected state/reply combination: state=%d, replyType=%d",
-		arqMessage.State, courierEnvelopeReply.ReplyType)
 }
 
 // handleCopyCommandARQReply handles replies to copy command ARQ messages.

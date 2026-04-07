@@ -37,6 +37,106 @@ const (
 	ARQStatePayloadReceived ARQState = 2
 )
 
+// ARQAction represents the action to take after an ARQ state transition.
+type ARQAction int
+
+const (
+	// ARQActionSendNewSURB means send a new SURB to continue the protocol.
+	ARQActionSendNewSURB ARQAction = iota
+	// ARQActionComplete means the operation completed successfully.
+	ARQActionComplete
+	// ARQActionHandlePayload means the payload reply should be processed.
+	ARQActionHandlePayload
+	// ARQActionError means the reply contained an error code.
+	ARQActionError
+	// ARQActionIgnore means the reply should be ignored (terminal state).
+	ARQActionIgnore
+)
+
+// ARQTransitionResult is the output of the ARQ state machine transition.
+type ARQTransitionResult struct {
+	NewState     ARQState
+	Action       ARQAction
+	ShouldRemove bool
+	ErrorCode    uint8
+}
+
+// computeARQStateTransition is the pure FSM logic for the pigeonhole ARQ protocol.
+// It determines what action to take based on the current state, reply type, and flags.
+func computeARQStateTransition(
+	state ARQState,
+	replyType uint8,
+	errorCode uint8,
+	isRead bool,
+	noIdempotentBoxAlreadyExists bool,
+) ARQTransitionResult {
+	// Error in reply → remove from tracking, report error
+	if errorCode != 0 {
+		return ARQTransitionResult{
+			NewState:     state,
+			Action:       ARQActionError,
+			ShouldRemove: true,
+			ErrorCode:    errorCode,
+		}
+	}
+
+	switch state {
+	case ARQStateWaitingForACK:
+		if replyType == 0 { // ReplyTypeACK
+			// For default writes (idempotent), ACK is sufficient
+			if !isRead && !noIdempotentBoxAlreadyExists {
+				return ARQTransitionResult{
+					NewState:     state,
+					Action:       ARQActionComplete,
+					ShouldRemove: true,
+				}
+			}
+			// Reads and non-idempotent writes need a payload reply
+			return ARQTransitionResult{
+				NewState:     ARQStateACKReceived,
+				Action:       ARQActionSendNewSURB,
+				ShouldRemove: false,
+			}
+		}
+		// Got payload while waiting for ACK — treat as both
+		return ARQTransitionResult{
+			NewState:     ARQStatePayloadReceived,
+			Action:       ARQActionHandlePayload,
+			ShouldRemove: false,
+		}
+
+	case ARQStateACKReceived:
+		if replyType == 1 { // ReplyTypePayload
+			return ARQTransitionResult{
+				NewState:     ARQStatePayloadReceived,
+				Action:       ARQActionHandlePayload,
+				ShouldRemove: false,
+			}
+		}
+		// Duplicate ACK — data not ready, keep polling
+		return ARQTransitionResult{
+			NewState:     ARQStateACKReceived,
+			Action:       ARQActionSendNewSURB,
+			ShouldRemove: false,
+		}
+
+	case ARQStatePayloadReceived:
+		// Terminal state — ignore
+		return ARQTransitionResult{
+			NewState:     ARQStatePayloadReceived,
+			Action:       ARQActionIgnore,
+			ShouldRemove: false,
+		}
+	}
+
+	// Unknown state — ignore
+	return ARQTransitionResult{
+		NewState:     state,
+		Action:       ARQActionIgnore,
+		ShouldRemove: false,
+	}
+}
+
 // ARQMessageType distinguishes between different types of ARQ messages.
 type ARQMessageType uint8
 
