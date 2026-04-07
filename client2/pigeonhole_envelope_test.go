@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
 func TestChunkPayload(t *testing.T) {
@@ -59,6 +61,98 @@ func TestChunkPayload(t *testing.T) {
 	t.Run("nil payload", func(t *testing.T) {
 		chunks := chunkPayload(nil, 100)
 		require.Len(t, chunks, 0)
+	})
+}
+
+func TestValidateStartResendingRequest(t *testing.T) {
+	queryID := new([thin.QueryIDLength]byte)
+	envHash := new([32]byte)
+	envDesc := []byte("descriptor")
+	ciphertext := []byte("ciphertext")
+
+	t.Run("valid read", func(t *testing.T) {
+		req := &thin.StartResendingEncryptedMessage{
+			QueryID:            queryID,
+			EnvelopeHash:       envHash,
+			MessageCiphertext:  ciphertext,
+			EnvelopeDescriptor: envDesc,
+			ReadCap:            &dummyReadCap,
+		}
+		require.NoError(t, validateStartResendingRequest(req))
+	})
+
+	t.Run("valid write", func(t *testing.T) {
+		req := &thin.StartResendingEncryptedMessage{
+			QueryID:            queryID,
+			EnvelopeHash:       envHash,
+			MessageCiphertext:  ciphertext,
+			EnvelopeDescriptor: envDesc,
+			WriteCap:           &dummyWriteCap,
+		}
+		require.NoError(t, validateStartResendingRequest(req))
+	})
+
+	t.Run("nil QueryID", func(t *testing.T) {
+		req := &thin.StartResendingEncryptedMessage{
+			EnvelopeHash:       envHash,
+			MessageCiphertext:  ciphertext,
+			EnvelopeDescriptor: envDesc,
+			ReadCap:            &dummyReadCap,
+		}
+		require.Error(t, validateStartResendingRequest(req))
+	})
+
+	t.Run("nil EnvelopeHash", func(t *testing.T) {
+		req := &thin.StartResendingEncryptedMessage{
+			QueryID:            queryID,
+			MessageCiphertext:  ciphertext,
+			EnvelopeDescriptor: envDesc,
+			ReadCap:            &dummyReadCap,
+		}
+		require.Error(t, validateStartResendingRequest(req))
+	})
+
+	t.Run("empty ciphertext", func(t *testing.T) {
+		req := &thin.StartResendingEncryptedMessage{
+			QueryID:            queryID,
+			EnvelopeHash:       envHash,
+			MessageCiphertext:  []byte{},
+			EnvelopeDescriptor: envDesc,
+			ReadCap:            &dummyReadCap,
+		}
+		require.Error(t, validateStartResendingRequest(req))
+	})
+
+	t.Run("empty envelope descriptor", func(t *testing.T) {
+		req := &thin.StartResendingEncryptedMessage{
+			QueryID:           queryID,
+			EnvelopeHash:      envHash,
+			MessageCiphertext: ciphertext,
+			ReadCap:           &dummyReadCap,
+		}
+		require.Error(t, validateStartResendingRequest(req))
+	})
+
+	t.Run("both ReadCap and WriteCap set", func(t *testing.T) {
+		req := &thin.StartResendingEncryptedMessage{
+			QueryID:            queryID,
+			EnvelopeHash:       envHash,
+			MessageCiphertext:  ciphertext,
+			EnvelopeDescriptor: envDesc,
+			ReadCap:            &dummyReadCap,
+			WriteCap:           &dummyWriteCap,
+		}
+		require.Error(t, validateStartResendingRequest(req))
+	})
+
+	t.Run("neither ReadCap nor WriteCap set", func(t *testing.T) {
+		req := &thin.StartResendingEncryptedMessage{
+			QueryID:            queryID,
+			EnvelopeHash:       envHash,
+			MessageCiphertext:  ciphertext,
+			EnvelopeDescriptor: envDesc,
+		}
+		require.Error(t, validateStartResendingRequest(req))
 	})
 }
 

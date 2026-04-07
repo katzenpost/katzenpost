@@ -1002,6 +1002,26 @@ func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Do
 
 // startResendingEncryptedMessage starts resending an encrypted Pigeonhole message
 // via the ARQ mechanism. It will retry forever until cancelled or successful.
+// validateStartResendingRequest validates the fields of a StartResendingEncryptedMessage request.
+func validateStartResendingRequest(req *thin.StartResendingEncryptedMessage) error {
+	if req.QueryID == nil {
+		return fmt.Errorf("QueryID is nil")
+	}
+	if req.EnvelopeHash == nil {
+		return fmt.Errorf("EnvelopeHash is nil")
+	}
+	if len(req.MessageCiphertext) == 0 {
+		return fmt.Errorf("MessageCiphertext is empty")
+	}
+	if len(req.EnvelopeDescriptor) == 0 {
+		return fmt.Errorf("EnvelopeDescriptor is empty")
+	}
+	if (req.ReadCap == nil && req.WriteCap == nil) || (req.ReadCap != nil && req.WriteCap != nil) {
+		return fmt.Errorf("exactly one of ReadCap or WriteCap must be set")
+	}
+	return nil
+}
+
 func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
@@ -1010,24 +1030,8 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	}
 
 	req := request.StartResendingEncryptedMessage
-	if req.QueryID == nil {
-		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	if req.EnvelopeHash == nil {
-		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	if len(req.MessageCiphertext) == 0 {
-		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	if len(req.EnvelopeDescriptor) == 0 {
-		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	// Either ReadCap or WriteCap must be set, but not both
-	if (req.ReadCap == nil && req.WriteCap == nil) || (req.ReadCap != nil && req.WriteCap != nil) {
+	if err := validateStartResendingRequest(req); err != nil {
+		d.log.Errorf("startResendingEncryptedMessage: %v", err)
 		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
