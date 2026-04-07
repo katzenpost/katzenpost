@@ -18,6 +18,7 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	hpqcRand "github.com/katzenpost/hpqc/rand"
 
@@ -1249,6 +1250,30 @@ func (d *Daemon) processEnvelopeReply(env *pigeonhole.CourierEnvelopeReply, chan
 }
 
 // decryptMKEMEnvelope decrypts the MKEM envelope and returns the inner message
+// tryDecryptMKEMWithReplicas attempts MKEM decryption using each replica's public key
+// in order, returning the decrypted payload and the replica number that succeeded.
+func tryDecryptMKEMWithReplicas(
+	mkemScheme *mkem.Scheme,
+	privateKey nike.PrivateKey,
+	envelope []byte,
+	replicaNums []uint8,
+	replicaPubKeys map[uint8]nike.PublicKey,
+) ([]byte, uint8, error) {
+	for _, replicaNum := range replicaNums {
+		pubKey, ok := replicaPubKeys[replicaNum]
+		if !ok {
+			continue
+		}
+		decrypted, err := mkemScheme.DecryptEnvelope(privateKey, pubKey, envelope)
+		if err != nil {
+			continue
+		}
+		return decrypted, replicaNum, nil
+	}
+	return nil, 0, errMKEMDecryptionFailed
+}
+
+
 func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
 	mkemPrivateKeyBytes, _ := privateKey.MarshalBinary()
 	fmt.Printf("BOB DECRYPTS WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
@@ -1262,42 +1287,37 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	// EnvelopeDescriptor.Epoch already contains the replica epoch
 	replicaEpoch := envelopeDesc.Epoch
 
-	// Try both replicas from the original envelope
-	var rawInnerMsg []byte
+	// Resolve replica public keys from the PKI document
+	replicaPubKeys := make(map[uint8]nike.PublicKey)
 	for _, replicaNum := range envelopeDesc.ReplicaNums {
 		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
 		if err != nil {
 			d.log.Errorf("MKEM DECRYPT: no replicaNum:%v in doc:%v", replicaNum, doc)
 			continue
 		}
-
 		replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
 		if !ok || len(replicaPubKeyBytes) == 0 {
 			d.log.Errorf("MKEM DECRYPT: no usable replicaPubKeyBytes in replicaEpoch:%v", replicaEpoch)
 			continue
 		}
-
 		replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
 		if err != nil {
 			d.log.Errorf("MKEM DECRYPT: can't parse replicaPubKey: %v", err)
 			continue
 		}
-
-		// Try to decrypt with this replica's public key
-		rawInnerMsg, err = replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
-		if err != nil {
-			d.log.Errorf("MKEM DECRYPT: failed to decrypt with replicaNum:%v: %v", replicaNum, err)
-			continue
-		}
-		// Successfully decrypted
-		d.log.Debugf("MKEM DECRYPT: successfully decrypted with replicaNum:%v", replicaNum)
-		break
+		replicaPubKeys[replicaNum] = replicaPubKey
 	}
 
-	if rawInnerMsg == nil {
+	// Try decryption with each replica's key
+	rawInnerMsg, replicaNum, err := tryDecryptMKEMWithReplicas(
+		replicaCommon.MKEMNikeScheme, privateKey, env.Payload,
+		envelopeDesc.ReplicaNums[:], replicaPubKeys,
+	)
+	if err != nil {
 		d.log.Errorf("MKEM DECRYPT FAILED with all possible replicas")
-		return nil, errMKEMDecryptionFailed
+		return nil, err
 	}
+	d.log.Debugf("MKEM DECRYPT: successfully decrypted with replicaNum:%v", replicaNum)
 	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
 	if err != nil {
 		d.log.Errorf("failed to unmarshal inner message: %s %v", err, rawInnerMsg)
