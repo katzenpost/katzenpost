@@ -19,6 +19,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/katzenpost/hpqc/rand"
@@ -105,7 +107,17 @@ full client mode where this ping tool starts it's own client daemon.`,
 			}
 
 			thinClient, daemon := initializeClient(cfg.ConfigFile, cfg.ThinClientOnly, logPath, cfg.LogLevel)
-			defer cleanup(daemon)
+			defer cleanup(thinClient, daemon)
+
+			// Ensure thin_close is sent even on Ctrl-C
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+			go func() {
+				<-sigCh
+				fmt.Println()
+				cleanup(thinClient, daemon)
+				os.Exit(0)
+			}()
 
 			executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff)
 			return nil
@@ -203,8 +215,11 @@ func executePing(thinClient *thin.ThinClient, service string, count, concurrency
 	sendPings(thinClient, desc, count, concurrency, printDiff)
 }
 
-// cleanup handles daemon shutdown
-func cleanup(daemon *client2.Daemon) {
+// cleanup closes the thin client connection and shuts down the daemon if running
+func cleanup(thinClient *thin.ThinClient, daemon *client2.Daemon) {
+	if thinClient != nil {
+		thinClient.Close()
+	}
 	if daemon != nil {
 		daemon.Shutdown()
 	}

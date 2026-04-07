@@ -18,6 +18,9 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -86,6 +89,15 @@ func runFetch(cfg Config) error {
 		Level: cfg.LogLevel,
 	}
 	client := thin.NewThinClient(thinCfg, logging)
+
+	// Ensure thin_close is sent even on Ctrl-C
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		client.Close()
+		os.Exit(0)
+	}()
 	defer client.Close()
 
 	// Connect to the daemon
