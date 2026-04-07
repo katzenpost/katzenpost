@@ -1409,6 +1409,28 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 	})
 }
 
+// validateStartResendingCopyCommandRequest validates the fields of a StartResendingCopyCommand request.
+func validateStartResendingCopyCommandRequest(req *thin.StartResendingCopyCommand) error {
+	if req.QueryID == nil {
+		return fmt.Errorf("QueryID is nil")
+	}
+	if req.WriteCap == nil {
+		return fmt.Errorf("WriteCap is nil")
+	}
+	return nil
+}
+
+// validateCancelResendingCopyCommandRequest validates the fields of a CancelResendingCopyCommand request.
+func validateCancelResendingCopyCommandRequest(req *thin.CancelResendingCopyCommand) error {
+	if req.QueryID == nil {
+		return fmt.Errorf("QueryID is nil")
+	}
+	if req.WriteCapHash == nil {
+		return fmt.Errorf("WriteCapHash is nil")
+	}
+	return nil
+}
+
 // startResendingCopyCommand starts resending a copy command via the ARQ mechanism.
 // It will retry forever until cancelled or successful.
 func (d *Daemon) startResendingCopyCommand(request *Request) {
@@ -1419,11 +1441,8 @@ func (d *Daemon) startResendingCopyCommand(request *Request) {
 	}
 
 	req := request.StartResendingCopyCommand
-	if req.QueryID == nil {
-		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	if req.WriteCap == nil {
+	if err := validateStartResendingCopyCommandRequest(req); err != nil {
+		d.log.Errorf("startResendingCopyCommand: %v", err)
 		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
@@ -1571,11 +1590,8 @@ func (d *Daemon) cancelResendingCopyCommand(request *Request) {
 	}
 
 	req := request.CancelResendingCopyCommand
-	if req.QueryID == nil {
-		d.sendCancelResendingCopyCommandError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	if req.WriteCapHash == nil {
+	if err := validateCancelResendingCopyCommandRequest(req); err != nil {
+		d.log.Errorf("cancelResendingCopyCommand: %v", err)
 		d.sendCancelResendingCopyCommandError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
