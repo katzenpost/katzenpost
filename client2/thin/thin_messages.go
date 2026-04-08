@@ -337,20 +337,18 @@ type NextMessageBoxIndex struct {
 // The payload is automatically chunked and each chunk is wrapped in a CourierEnvelope.
 // Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
 //
-// Multiple calls can be made with the same StreamID to build up a stream incrementally.
-// The first call creates a new encoder (first element gets IsStart=true).
-// The final call should have IsLast=true (last element gets IsFinal=true).
+// This method is stateless — no daemon state is kept between calls. Each call creates
+// a fresh encoder, encodes all envelopes, flushes, and returns. The caller controls
+// the copy stream boundaries via IsStart and IsLast flags.
+//
+// Multiple calls can target the same destination stream by using NextDestIndex from
+// the reply as the DestStartIndex for the next call.
 type CreateCourierEnvelopesFromPayload struct {
 	// QueryID is used for correlating this thin client request with the
 	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
-	// StreamID identifies the encoder instance for multi-call streams.
-	// All calls for the same stream must use the same StreamID.
-	// The encoder is created on first use and removed after IsLast=true.
-	StreamID *[StreamIDLength]byte `cbor:"stream_id"`
-
-	// Payload is the data to be written (any size).
+	// Payload is the data to be written (max 10MB).
 	Payload []byte `cbor:"payload"`
 
 	// DestWriteCap is the write capability for the destination channel.
@@ -359,9 +357,12 @@ type CreateCourierEnvelopesFromPayload struct {
 	// DestStartIndex is the starting index in the destination channel.
 	DestStartIndex *bacap.MessageBoxIndex `cbor:"dest_start_index"`
 
+	// IsStart indicates whether this is the first call in a multi-call sequence.
+	// When true, the first CopyStreamElement will have the IsStart flag set.
+	IsStart bool `cbor:"is_start"`
+
 	// IsLast indicates whether this is the last payload in the sequence.
-	// When true, the final CopyStreamElement will have IsFinal=true and
-	// the encoder instance will be removed.
+	// When true, the final CopyStreamElement will have IsFinal=true.
 	IsLast bool `cbor:"is_last"`
 }
 

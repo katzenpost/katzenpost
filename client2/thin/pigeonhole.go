@@ -1128,7 +1128,7 @@ func (t *ThinClient) NextMessageBoxIndex(messageBoxIndex *bacap.MessageBoxIndex)
 // NewStreamID generates a new cryptographically random stream identifier.
 //
 // CreateEnvelopesResult contains the result of creating courier envelopes,
-// including the envelopes and buffer state for crash recovery.
+// including the envelopes, buffer state for crash recovery, and next destination indices.
 type CreateEnvelopesResult struct {
 	// Envelopes contains the serialized CopyStreamElements ready to be written to boxes.
 	Envelopes [][]byte
@@ -1136,6 +1136,10 @@ type CreateEnvelopesResult struct {
 	// Buffer contains any data buffered by the encoder that hasn't been output yet.
 	// This can be persisted for crash recovery and restored via SetStreamBuffer.
 	Buffer []byte
+
+	// NextDestIndices contains the next destination message box index for each
+	// destination, in the same order as the destinations in the request.
+	NextDestIndices []*bacap.MessageBoxIndex
 }
 
 // Stream IDs are used to correlate multiple CreateCourierEnvelopesFromPayload
@@ -1216,78 +1220,44 @@ func (t *ThinClient) SetStreamBuffer(streamID *[StreamIDLength]byte, buffer []by
 
 // CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
 //
-// This method automatically chunks the payload into appropriately-sized pieces and
-// creates a CourierEnvelope for each chunk. The payload is limited to 10MB to prevent
-// accidental memory exhaustion.
+// This method is stateless — no daemon state is kept between calls. Each call creates
+// a fresh encoder, encodes all envelopes, flushes, and returns. The payload is limited
+// to 10MB to prevent accidental memory exhaustion.
 //
 // Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
-// The CopyStreamElement has a flags fields for indicating the first and last box in the stream.
+// The caller controls the copy stream boundaries via isStart and isLast flags.
 //
 // The returned chunks must be written to a temporary copy stream channel using
 // EncryptWrite + StartResendingEncryptedMessage. After the stream is complete,
-// a Copy command sent to the courier which contains the write capability for the
-// temporary copy stream.
+// send a Copy command to the courier with the write capability for the temp stream.
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
-//   - streamID: Identifies the encoder instance (use NewStreamID() for first call)
 //   - payload: The data to be written (max 10MB)
 //   - destWriteCap: Write capability for the destination channel
 //   - destStartIndex: Starting index in the destination channel
-//   - isLast: Whether this is the last payload in the sequence (sets IsFinal flag)
+//   - isStart: Whether this is the first call (sets IsStart flag on first element)
+//   - isLast: Whether this is the last call (sets IsFinal flag on last element)
 //
 // Returns:
 //   - [][]byte: Slice of CopyStreamElements ready to write to the copy stream
+//   - *bacap.MessageBoxIndex: Next destination index (use as destStartIndex in next call)
 //   - error: Any error encountered during envelope creation
-//
-// Example:
-//
-//	ctx := context.Background()
-//	streamID := client.NewStreamID()
-//	largePayload := make([]byte, 1024*1024) // 1MB payload
-//	chunks, err := client.CreateCourierEnvelopesFromPayload(ctx, streamID, largePayload, destWriteCap, destStartIndex, true)
-//	if err != nil {
-//		log.Fatal("Failed to create envelopes:", err)
-//	}
-//
-//	// Write each chunk to the copy stream
-//	copyIndex := copyStartIndex
-//	for _, chunk := range chunks {
-//		ciphertext, envDesc, envHash, epoch, err := client.EncryptWrite(chunk, copyWriteCap, copyIndex)
-//		if err != nil {
-//			log.Fatal("Failed to encrypt chunk:", err)
-//		}
-//		_, err = client.StartResendingEncryptedMessage(nil, copyWriteCap, copyIndex.Bytes(), nil, envDesc, ciphertext, envHash, epoch)
-//		if err != nil {
-//			log.Fatal("Failed to send chunk:", err)
-//		}
-//		copyIndex, _ = client.NextMessageBoxIndex(copyIndex)
-//	}
-//
-//	// Send Copy command to courier
-//	errorCode, err := client.SendCopyCommand(ctx, copyReadCap, courierIdHash, courierQueueID)
-//	if err != nil || errorCode != 0 {
-//		log.Fatal("Copy command failed")
-//	}
-func (t *ThinClient) CreateCourierEnvelopesFromPayload(streamID *[StreamIDLength]byte, payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isLast bool) (envelopes [][]byte, err error) {
-	if streamID == nil {
-		return nil, errors.New("streamID cannot be nil")
-	}
+func (t *ThinClient) CreateCourierEnvelopesFromPayload(payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isStart bool, isLast bool) (envelopes [][]byte, nextDestIndex *bacap.MessageBoxIndex, err error) {
 	if destWriteCap == nil {
-		return nil, errors.New("destWriteCap cannot be nil")
+		return nil, nil, errors.New("destWriteCap cannot be nil")
 	}
 	if destStartIndex == nil {
-		return nil, errors.New("destStartIndex cannot be nil")
+		return nil, nil, errors.New("destStartIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
 	req := &Request{
 		CreateCourierEnvelopesFromPayload: &CreateCourierEnvelopesFromPayload{
 			QueryID:        queryID,
-			StreamID:       streamID,
 			Payload:        payload,
 			DestWriteCap:   destWriteCap,
 			DestStartIndex: destStartIndex,
+			IsStart:        isStart,
 			IsLast:         isLast,
 		},
 	}
@@ -1297,7 +1267,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(streamID *[StreamIDLength
 
 	err = t.writeMessage(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	for {
@@ -1305,7 +1275,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(streamID *[StreamIDLength
 		select {
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, errHalting
+			return nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -1319,9 +1289,9 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(streamID *[StreamIDLength
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.Envelopes, nil
+			return v.Envelopes, v.NextDestIndex, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
@@ -1337,22 +1307,17 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(streamID *[StreamIDLength
 // CreateCourierEnvelopesFromPayload multiple times because all envelopes from all
 // destinations are packed together in the same encoder without wasting space.
 //
-// Please note that this method causes the client daemon to save state between multiple calls
-// using the same streamID. The streamID should be unique for each copy stream.
-// We MUST do this because the daemon needs to maintain state between calls to be able
-// to pack the envelopes together efficiently such that all the BACAP Box payload is used.
-//
-// **tl,dr;** If the client daemon crashes between calls using the same streamID, data will be lost.
-// The application will need to create a new stream and start over sending the data.
+// This method causes the client daemon to save state between multiple calls using the
+// same streamID. The streamID should be unique for each copy stream. Each reply includes
+// the current buffer state that can be persisted for crash recovery via SetStreamBuffer.
 //
 // Parameters:
-//   - ctx: Context for cancellation
 //   - streamID: Unique identifier for the stream (use NewStreamID() for first call)
 //   - destinations: Slice of DestinationPayload specifying payloads and their destination channels
 //   - isLast: Set to true on the final call to flush the encoder
 //
 // Returns:
-//   - *CreateEnvelopesResult: Contains envelopes and buffer state for crash recovery
+//   - *CreateEnvelopesResult: Contains envelopes, buffer state, and NextDestIndices
 //   - error: Any error encountered
 func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) (*CreateEnvelopesResult, error) {
 	if streamID == nil {
@@ -1402,8 +1367,9 @@ func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(streamID *[StreamIDL
 				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
 			return &CreateEnvelopesResult{
-				Envelopes: v.Envelopes,
-				Buffer:    v.Buffer,
+				Envelopes:       v.Envelopes,
+				Buffer:          v.Buffer,
+				NextDestIndices: v.NextDestIndices,
 			}, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected

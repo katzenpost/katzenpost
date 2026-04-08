@@ -55,6 +55,13 @@ func NewCopyStreamEncoder(geometry *geo.Geometry) *CopyStreamEncoder {
 	}
 }
 
+// SuppressStart prevents the encoder from setting the IsStart flag on the first
+// element it emits. This is used when the encoder is being used for a middle or
+// final segment of a multi-call stream where IsStart was already set by an earlier call.
+func (e *CopyStreamEncoder) SuppressStart() {
+	e.isFirstChunk = false
+}
+
 // AddEnvelope adds a CourierEnvelope to the encoder.
 // Returns serialized CopyStreamElements ready to be written to boxes.
 // Any remaining data that doesn't fill a complete element is buffered for the next call.
@@ -187,6 +194,49 @@ func (e *CopyStreamEncoder) Flush() [][]byte {
 
 	elemBytes, err := elem.MarshalBinary()
 	if err == nil {
+		elements = append(elements, elemBytes)
+	}
+
+	return elements
+}
+
+// FlushWithoutFinal returns all remaining buffered data as CopyStreamElement(s)
+// without setting the IsFinal flag on the last element. This is used for stateless
+// encoding where the caller knows this is not the last call in the stream.
+// Returns nil if there's no remaining data.
+func (e *CopyStreamEncoder) FlushWithoutFinal() [][]byte {
+	if len(e.buffer) == 0 {
+		return nil
+	}
+
+	var elements [][]byte
+
+	for len(e.buffer) > 0 {
+		chunkSize := e.maxChunkSize
+		if chunkSize > len(e.buffer) {
+			chunkSize = len(e.buffer)
+		}
+
+		chunkData := make([]byte, chunkSize)
+		copy(chunkData, e.buffer[:chunkSize])
+		e.buffer = e.buffer[chunkSize:]
+
+		var flags uint8
+		if e.isFirstChunk {
+			flags |= CopyStreamFlagStart
+			e.isFirstChunk = false
+		}
+
+		elem := &CopyStreamElement{
+			Flags:        flags,
+			EnvelopeLen:  uint32(len(chunkData)),
+			EnvelopeData: chunkData,
+		}
+
+		elemBytes, err := elem.MarshalBinary()
+		if err != nil {
+			continue
+		}
 		elements = append(elements, elemBytes)
 	}
 

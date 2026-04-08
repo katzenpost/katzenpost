@@ -2341,8 +2341,6 @@ func TestCreateCourierEnvelopesFromPayload_Success(t *testing.T) {
 	require.NoError(t, err)
 	destStartIndex := statefulWriter.GetCurrentMessageIndex()
 
-	streamID := &[16]byte{}
-	copy(streamID[:], []byte("test-stream-id00"))
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("envelope-query00"))
 
@@ -2352,10 +2350,10 @@ func TestCreateCourierEnvelopesFromPayload_Success(t *testing.T) {
 		AppID: testAppID,
 		CreateCourierEnvelopesFromPayload: &thin.CreateCourierEnvelopesFromPayload{
 			QueryID:        queryID,
-			StreamID:       streamID,
 			Payload:        payload,
 			DestWriteCap:   writeCap,
 			DestStartIndex: destStartIndex,
+			IsStart:        true,
 			IsLast:         true,
 		},
 	}
@@ -2367,6 +2365,7 @@ func TestCreateCourierEnvelopesFromPayload_Success(t *testing.T) {
 		require.NotNil(t, resp.CreateCourierEnvelopesFromPayloadReply)
 		require.Equal(t, thin.ThinClientSuccess, resp.CreateCourierEnvelopesFromPayloadReply.ErrorCode)
 		require.NotEmpty(t, resp.CreateCourierEnvelopesFromPayloadReply.Envelopes)
+		require.NotNil(t, resp.CreateCourierEnvelopesFromPayloadReply.NextDestIndex)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for response")
 	}
@@ -2375,17 +2374,16 @@ func TestCreateCourierEnvelopesFromPayload_Success(t *testing.T) {
 func TestCreateCourierEnvelopesFromPayload_NilWriteCap(t *testing.T) {
 	d, testAppID, responseCh := setupDaemonWithMockConn(t)
 
-	streamID := &[16]byte{}
 	queryID := &[thin.QueryIDLength]byte{}
 
 	request := &Request{
 		AppID: testAppID,
 		CreateCourierEnvelopesFromPayload: &thin.CreateCourierEnvelopesFromPayload{
 			QueryID:        queryID,
-			StreamID:       streamID,
 			Payload:        []byte("data"),
 			DestWriteCap:   nil,
 			DestStartIndex: nil,
+			IsStart:        true,
 			IsLast:         true,
 		},
 	}

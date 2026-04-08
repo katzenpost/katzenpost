@@ -433,15 +433,41 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		return
 	}
 
+	// Enforce 10MB size limit
+	const maxPayloadSize = 10 * 1024 * 1024
+	if len(payload) > maxPayloadSize {
+		d.log.Errorf("createCourierEnvelopesFromPayload: payload size %d exceeds maximum of %d bytes", len(payload), maxPayloadSize)
+		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
 	maxPayload := d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength - 4
 	chunks := chunkPayload(payload, maxPayload)
 
+	// Fetch PKI document once before the loop
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		d.log.Error("createCourierEnvelopesFromPayload: no PKI document available")
+		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Get replica epoch once before the loop
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+
+	// Create a single StatefulWriter for the destination
+	statefulWriter, err := bacap.NewStatefulWriter(destWriteCap, []byte(constants.PIGEONHOLE_CTX))
+	if err != nil {
+		d.log.Errorf("createCourierEnvelopesFromPayload: failed to create stateful writer: %v", err)
+		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	statefulWriter.NextIndex = destStartIndex
+
 	// Create CourierEnvelopes from chunks
 	var courierEnvelopes []*pigeonhole.CourierEnvelope
-	currentIndex := destStartIndex
 
 	for _, chunk := range chunks {
-
 		// Pad the chunk to MaxPlaintextPayloadLength + 4 (length prefix is 4 bytes)
 		// This must match encryptWrite which also uses MaxPlaintextPayloadLength + 4
 		paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
@@ -451,25 +477,14 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 			return
 		}
 
-		// Create a StatefulWriter from the destination WriteCap
-		statefulWriter, err := bacap.NewStatefulWriter(destWriteCap, []byte(constants.PIGEONHOLE_CTX))
+		// Encrypt the message and advance the writer state
+		boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(paddedPayload)
 		if err != nil {
-			d.log.Errorf("createCourierEnvelopesFromPayload: failed to create stateful writer: %v", err)
+			d.log.Errorf("createCourierEnvelopesFromPayload: failed to encrypt next message: %v", err)
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-
-		// Advance the writer to the current message box index
-		statefulWriter.NextIndex = currentIndex
-
-		// Encrypt the message using PrepareNext (doesn't advance state)
-		boxID, ciphertext, sigraw, err := statefulWriter.PrepareNext(paddedPayload)
-		if err != nil {
-			d.log.Errorf("createCourierEnvelopesFromPayload: failed to prepare next message: %v", err)
-			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
-			return
-		}
-		d.log.Debugf("createCourierEnvelopesFromPayload: Idx64=%d, BoxID=%x", currentIndex.Idx64, boxID)
+		d.log.Debugf("createCourierEnvelopesFromPayload: BoxID=%x", boxID)
 
 		sig := [bacap.SignatureSize]byte{}
 		copy(sig[:], sigraw)
@@ -486,14 +501,6 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		msg := &pigeonhole.ReplicaInnerMessage{
 			MessageType: 1, // 1 = write
 			WriteMsg:    writeRequest,
-		}
-
-		// Get the current PKI document
-		_, doc := d.client.CurrentDocument()
-		if doc == nil {
-			d.log.Error("createCourierEnvelopesFromPayload: no PKI document available")
-			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
-			return
 		}
 
 		// Get random intermediate replicas for this box
@@ -517,9 +524,6 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		mkemPublicKey := mkemPrivateKey.Public()
 		senderPubkey := mkemPublicKey.Bytes()
 
-		// Get the current replica epoch
-		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-
 		// Create the CourierEnvelope
 		courierEnvelope := &pigeonhole.CourierEnvelope{
 			IntermediateReplicas: intermediateReplicas,
@@ -534,32 +538,17 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		}
 
 		courierEnvelopes = append(courierEnvelopes, courierEnvelope)
-
-		// Advance to the next index
-		currentIndex, err = currentIndex.NextIndex()
-		if err != nil {
-			d.log.Errorf("createCourierEnvelopesFromPayload: failed to advance index: %v", err)
-			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
-			return
-		}
 	}
 
-	// Get or create encoder for this stream
-	streamID := request.CreateCourierEnvelopesFromPayload.StreamID
-	if streamID == nil {
-		d.log.Errorf("createCourierEnvelopesFromPayload: StreamID is required")
-		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
+	// Stateless: create a fresh encoder, encode, flush in one shot
+	isStart := request.CreateCourierEnvelopesFromPayload.IsStart
+	isLast := request.CreateCourierEnvelopesFromPayload.IsLast
+	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
 
-	d.copyStreamEncodersLock.Lock()
-	encoder, exists := d.copyStreamEncoders[*streamID]
-	if !exists {
-		// First call for this stream - create new encoder
-		encoder = pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
-		d.copyStreamEncoders[*streamID] = encoder
+	// If this is not the first call in the stream, suppress the auto-isStart
+	if !isStart {
+		encoder.SuppressStart()
 	}
-	d.copyStreamEncodersLock.Unlock()
 
 	// Encode CourierEnvelopes into copy stream format
 	var elements [][]byte
@@ -573,38 +562,32 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		elements = append(elements, newElements...)
 	}
 
-	// If this is the last call, flush and remove encoder
-	isLast := request.CreateCourierEnvelopesFromPayload.IsLast
-	var bufferState *pigeonhole.CopyStreamEncoderState
+	// Always flush — stateless, no buffering across calls
 	if isLast {
 		finalElements := encoder.Flush()
 		if finalElements != nil {
 			elements = append(elements, finalElements...)
 		}
-		// Remove encoder from map
-		d.copyStreamEncodersLock.Lock()
-		delete(d.copyStreamEncoders, *streamID)
-		d.copyStreamEncodersLock.Unlock()
-		// Buffer is empty after flush
-		bufferState = &pigeonhole.CopyStreamEncoderState{
-			Buffer: nil,
-		}
 	} else {
-		// Get the current buffer state for crash recovery
-		bufferState = encoder.GetBuffer()
+		finalElements := encoder.FlushWithoutFinal()
+		if finalElements != nil {
+			elements = append(elements, finalElements...)
+		}
 	}
 
-	d.log.Debugf("createCourierEnvelopesFromPayload: created %d CourierEnvelopes, encoded into %d elements (isLast=%v, bufferLen=%d)",
-		len(courierEnvelopes), len(elements), isLast, len(bufferState.Buffer))
+	// NextDestIndex is the writer's current NextIndex after processing all chunks
+	nextDestIndex := statefulWriter.NextIndex
 
-	// Send success response with buffer state for crash recovery
+	d.log.Debugf("createCourierEnvelopesFromPayload: created %d CourierEnvelopes, encoded into %d elements (isStart=%v, isLast=%v)",
+		len(courierEnvelopes), len(elements), isStart, isLast)
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadReply: &thin.CreateCourierEnvelopesFromPayloadReply{
-			QueryID:   request.CreateCourierEnvelopesFromPayload.QueryID,
-			Envelopes: elements,
-			Buffer:    bufferState.Buffer,
-			ErrorCode: thin.ThinClientSuccess,
+			QueryID:       request.CreateCourierEnvelopesFromPayload.QueryID,
+			Envelopes:     elements,
+			NextDestIndex: nextDestIndex,
+			ErrorCode:     thin.ThinClientSuccess,
 		},
 	})
 }
@@ -681,6 +664,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 	// Process all destinations and feed envelopes into the same encoder
 	var elements [][]byte
 	totalEnvelopes := 0
+	nextDestIndices := make([]*bacap.MessageBoxIndex, len(destinations))
 
 	for destIdx, dest := range destinations {
 		// Validate destination
@@ -811,6 +795,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 				return
 			}
 		}
+		nextDestIndices[destIdx] = currentIndex
 	}
 
 	// If this is the last call, flush and remove encoder
@@ -841,10 +826,11 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadsReply: &thin.CreateCourierEnvelopesFromPayloadsReply{
-			QueryID:   request.CreateCourierEnvelopesFromPayloads.QueryID,
-			Envelopes: elements,
-			Buffer:    bufferState.Buffer,
-			ErrorCode: thin.ThinClientSuccess,
+			QueryID:         request.CreateCourierEnvelopesFromPayloads.QueryID,
+			Envelopes:       elements,
+			Buffer:          bufferState.Buffer,
+			NextDestIndices: nextDestIndices,
+			ErrorCode:       thin.ThinClientSuccess,
 		},
 	})
 }

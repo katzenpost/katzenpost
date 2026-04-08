@@ -399,8 +399,7 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 
 	// Step 4: Create copy stream chunks from the large payload
 	t.Log("=== Step 4: Creating copy stream chunks from large payload ===")
-	streamID := aliceThinClient.NewStreamID()
-	copyStreamChunks, err := aliceThinClient.CreateCourierEnvelopesFromPayload(streamID, largePayload, destWriteCap, destFirstIndex, true /* isLast */)
+	copyStreamChunks, _, err := aliceThinClient.CreateCourierEnvelopesFromPayload(largePayload, destWriteCap, destFirstIndex, true /* isStart */, true /* isLast */)
 	require.NoError(t, err)
 	require.NotEmpty(t, copyStreamChunks, "CreateCourierEnvelopesFromPayload returned empty chunks")
 	numChunks := len(copyStreamChunks)
@@ -510,14 +509,14 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 // 1. Alice creates two destination channels (chan1 and chan2)
 // 2. Alice creates a temporary copy stream channel
 // 3. Alice creates two payloads - one for each destination channel
-// 4. Alice calls CreateCourierEnvelopesFromPayload twice with the same streamID but different WriteCaps
+// 4. Alice calls CreateCourierEnvelopesFromPayload twice with different WriteCaps
 // 5. Alice writes all copy stream chunks to the temporary channel
 // 6. Alice sends the Copy command to the courier
 // 7. Bob reads from both destination channels and verifies the payloads
 //
 // This test verifies:
 // - The Copy Command API can atomically write to multiple destination channels
-// - Multiple calls to CreateCourierEnvelopesFromPayload with the same streamID work correctly
+// - Multiple calls to CreateCourierEnvelopesFromPayload work correctly
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannel(t *testing.T) {
 	// Setup Alice and Bob thin clients
@@ -577,18 +576,17 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 	payload2 := []byte("This is the confidential data for Channel 2. Handle with care and discretion.")
 	t.Logf("Alice: Created payload2 for Channel 2 (%d bytes)", len(payload2))
 
-	// Step 4: Create copy stream chunks using same streamID but different WriteCaps
+	// Step 4: Create copy stream chunks for both channels
 	t.Log("=== Step 4: Creating copy stream chunks for both channels ===")
-	streamID := aliceThinClient.NewStreamID()
 
-	// First call: payload1 -> channel 1 (isLast=false)
-	chunks1, err := aliceThinClient.CreateCourierEnvelopesFromPayload(streamID, payload1, chan1WriteCap, chan1FirstIndex, false)
+	// First call: payload1 -> channel 1 (isStart=true, isLast=false)
+	chunks1, _, err := aliceThinClient.CreateCourierEnvelopesFromPayload(payload1, chan1WriteCap, chan1FirstIndex, true, false)
 	require.NoError(t, err)
 	require.NotEmpty(t, chunks1, "CreateCourierEnvelopesFromPayload returned empty chunks for channel 1")
 	t.Logf("Alice: Created %d chunks for Channel 1", len(chunks1))
 
-	// Second call: payload2 -> channel 2 (isLast=true)
-	chunks2, err := aliceThinClient.CreateCourierEnvelopesFromPayload(streamID, payload2, chan2WriteCap, chan2FirstIndex, true)
+	// Second call: payload2 -> channel 2 (isStart=false, isLast=true)
+	chunks2, _, err := aliceThinClient.CreateCourierEnvelopesFromPayload(payload2, chan2WriteCap, chan2FirstIndex, false, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, chunks2, "CreateCourierEnvelopesFromPayload returned empty chunks for channel 2")
 	t.Logf("Alice: Created %d chunks for Channel 2", len(chunks2))
@@ -1332,8 +1330,7 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 	_, err = rand.Reader.Read(largePayload)
 	require.NoError(t, err)
 
-	streamID := thinClient.NewStreamID()
-	copyStreamChunks, err := thinClient.CreateCourierEnvelopesFromPayload(streamID, largePayload, writeCap, firstIndex, true /* isLast */)
+	copyStreamChunks, _, err := thinClient.CreateCourierEnvelopesFromPayload(largePayload, writeCap, firstIndex, true /* isStart */, true /* isLast */)
 	require.NoError(t, err)
 	require.NotEmpty(t, copyStreamChunks, "CreateCourierEnvelopesFromPayload returned empty chunks")
 	numChunks := len(copyStreamChunks)
@@ -1368,4 +1365,285 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 
 	err = thinClient.StartResendingCopyCommand(tempWriteCap)
 	require.Error(t, err)
+}
+
+// TestFromPayloadMultiCall tests calling CreateCourierEnvelopesFromPayload multiple times
+// to send a large payload to a single destination stream.
+//
+// This exercises the stateless API: no streamID, explicit isStart/isLast flags,
+// and NextDestIndex returned in the reply so the caller never does index math.
+//
+// Flow:
+// 1. Alice creates a destination channel and a temp copy stream channel
+// 2. Alice splits a payload (3x box payload size) into 3 chunks
+// 3. Alice calls CreateCourierEnvelopesFromPayload 3 times, using NextDestIndex from each reply
+// 4. Alice writes all temp stream elements and sends the copy command
+// 5. Bob reads from the destination channel and verifies the reconstructed payload
+func TestFromPayloadMultiCall(t *testing.T) {
+	aliceThinClient := setupThinClient(t)
+	defer aliceThinClient.Close()
+	bobThinClient := setupThinClient(t)
+	defer bobThinClient.Close()
+
+	aliceDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := aliceDoc.Epoch
+	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
+	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+
+	// Create destination channel
+	destSeed := make([]byte, 32)
+	_, err := rand.Reader.Read(destSeed)
+	require.NoError(t, err)
+	destWriteCap, bobReadCap, destFirstIndex, err := aliceThinClient.NewKeypair(destSeed)
+	require.NoError(t, err)
+
+	// Create temp copy stream channel
+	tempSeed := make([]byte, 32)
+	_, err = rand.Reader.Read(tempSeed)
+	require.NoError(t, err)
+	tempWriteCap, _, tempFirstIndex, err := aliceThinClient.NewKeypair(tempSeed)
+	require.NoError(t, err)
+
+	// Use pigeonhole geometry to size the payload: 3x the max box payload
+	// so each chunk fills exactly one destination box.
+	maxPayload := aliceThinClient.GetConfig().PigeonholeGeometry.MaxPlaintextPayloadLength
+	t.Logf("MaxPlaintextPayloadLength = %d bytes", maxPayload)
+	chunkSize := maxPayload
+	fullPayload := make([]byte, 3*chunkSize)
+	_, err = rand.Reader.Read(fullPayload)
+	require.NoError(t, err)
+
+	chunk1 := fullPayload[:chunkSize]
+	chunk2 := fullPayload[chunkSize : 2*chunkSize]
+	chunk3 := fullPayload[2*chunkSize:]
+
+	// Call CreateCourierEnvelopesFromPayload 3 times using the new stateless API.
+	// No streamID. Explicit isStart/isLast. NextDestIndex in reply.
+	var allTempElements [][]byte
+	destIndex := destFirstIndex
+
+	// First call: isStart=true, isLast=false
+	envelopes1, nextDest1, err := aliceThinClient.CreateCourierEnvelopesFromPayload(
+		chunk1, destWriteCap, destIndex, true, false)
+	require.NoError(t, err)
+	require.NotEmpty(t, envelopes1)
+	require.NotNil(t, nextDest1)
+	allTempElements = append(allTempElements, envelopes1...)
+	t.Logf("Call 1: %d temp elements", len(envelopes1))
+
+	// Second call: isStart=false, isLast=false — uses NextDestIndex from reply
+	envelopes2, nextDest2, err := aliceThinClient.CreateCourierEnvelopesFromPayload(
+		chunk2, destWriteCap, nextDest1, false, false)
+	require.NoError(t, err)
+	require.NotEmpty(t, envelopes2)
+	require.NotNil(t, nextDest2)
+	allTempElements = append(allTempElements, envelopes2...)
+	t.Logf("Call 2: %d temp elements", len(envelopes2))
+
+	// Third call: isStart=false, isLast=true
+	envelopes3, nextDest3, err := aliceThinClient.CreateCourierEnvelopesFromPayload(
+		chunk3, destWriteCap, nextDest2, false, true)
+	require.NoError(t, err)
+	require.NotEmpty(t, envelopes3)
+	require.NotNil(t, nextDest3)
+	allTempElements = append(allTempElements, envelopes3...)
+	t.Logf("Call 3: %d temp elements", len(envelopes3))
+
+	// Write all temp stream elements
+	tempIndex := tempFirstIndex
+	replyIndex := uint8(0)
+	for i, elem := range allTempElements {
+		ciphertext, envDesc, envHash, err := aliceThinClient.EncryptWrite(elem, tempWriteCap, tempIndex)
+		require.NoError(t, err)
+		_, err = aliceThinClient.StartResendingEncryptedMessage(
+			nil, tempWriteCap, nil, &replyIndex,
+			envDesc, ciphertext, envHash)
+		require.NoError(t, err)
+		tempIndex, err = aliceThinClient.NextMessageBoxIndex(tempIndex)
+		require.NoError(t, err)
+		t.Logf("Wrote temp element %d/%d", i+1, len(allTempElements))
+	}
+
+	t.Log("Waiting for temp stream to propagate (30 seconds)")
+	time.Sleep(30 * time.Second)
+
+	// Send copy command
+	err = aliceThinClient.StartResendingCopyCommand(tempWriteCap)
+	require.NoError(t, err)
+	t.Log("Copy command completed")
+
+	// Bob reads all destination boxes and reconstructs the payload
+	bobIndex := destFirstIndex
+	var reconstructed []byte
+	for len(reconstructed) < len(fullPayload) {
+		bobCiphertext, bobEnvDesc, bobEnvHash, err := bobThinClient.EncryptRead(bobReadCap, bobIndex)
+		require.NoError(t, err)
+		bobIndexBytes, err := bobIndex.MarshalBinary()
+		require.NoError(t, err)
+
+		result, err := bobThinClient.StartResendingEncryptedMessage(
+			bobReadCap, nil, bobIndexBytes, &replyIndex,
+			bobEnvDesc, bobCiphertext, bobEnvHash)
+		require.NoError(t, err)
+		require.NotEmpty(t, result.Plaintext)
+		reconstructed = append(reconstructed, result.Plaintext...)
+
+		bobIndex, err = bobThinClient.NextMessageBoxIndex(bobIndex)
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, fullPayload, reconstructed, "Reconstructed payload doesn't match original")
+	t.Log("SUCCESS: FromPayload multi-call test passed")
+}
+
+// TestFromMultiPayloadMultiCall tests calling CreateCourierEnvelopesFromMultiPayload
+// multiple times, writing to two destination channels across two calls.
+//
+// This exercises the stateful API with NextDestIndices in the reply so the caller
+// can continue writing to the same destinations without index math.
+//
+// Flow:
+// 1. Alice creates two destination channels and a temp copy stream channel
+// 2. Alice calls CreateCourierEnvelopesFromMultiPayload twice with the same streamID
+// 3. The second call uses NextDestIndices from the first reply
+// 4. Alice writes all temp stream elements and sends the copy command
+// 5. Bob reads from both destination channels and verifies
+func TestFromMultiPayloadMultiCall(t *testing.T) {
+	aliceThinClient := setupThinClient(t)
+	defer aliceThinClient.Close()
+	bobThinClient := setupThinClient(t)
+	defer bobThinClient.Close()
+
+	aliceDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := aliceDoc.Epoch
+	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
+	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+
+	// Create two destination channels
+	chan1Seed := make([]byte, 32)
+	_, err := rand.Reader.Read(chan1Seed)
+	require.NoError(t, err)
+	chan1WriteCap, chan1ReadCap, chan1FirstIndex, err := aliceThinClient.NewKeypair(chan1Seed)
+	require.NoError(t, err)
+
+	chan2Seed := make([]byte, 32)
+	_, err = rand.Reader.Read(chan2Seed)
+	require.NoError(t, err)
+	chan2WriteCap, chan2ReadCap, chan2FirstIndex, err := aliceThinClient.NewKeypair(chan2Seed)
+	require.NoError(t, err)
+
+	// Create temp copy stream channel
+	tempSeed := make([]byte, 32)
+	_, err = rand.Reader.Read(tempSeed)
+	require.NoError(t, err)
+	tempWriteCap, _, tempFirstIndex, err := aliceThinClient.NewKeypair(tempSeed)
+	require.NoError(t, err)
+
+	streamID := aliceThinClient.NewStreamID()
+
+	// Use pigeonhole geometry to size payloads: each payload is exactly one box payload
+	// so each call writes one destination box per channel.
+	maxPayload := aliceThinClient.GetConfig().PigeonholeGeometry.MaxPlaintextPayloadLength
+	t.Logf("MaxPlaintextPayloadLength = %d bytes", maxPayload)
+
+	payload1a := make([]byte, maxPayload)
+	_, err = rand.Reader.Read(payload1a)
+	require.NoError(t, err)
+	payload2a := make([]byte, maxPayload)
+	_, err = rand.Reader.Read(payload2a)
+	require.NoError(t, err)
+	payload1b := make([]byte, maxPayload)
+	_, err = rand.Reader.Read(payload1b)
+	require.NoError(t, err)
+	payload2b := make([]byte, maxPayload)
+	_, err = rand.Reader.Read(payload2b)
+	require.NoError(t, err)
+
+	// First call: two destinations, isLast=false
+	result1, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload(streamID, []thin.DestinationPayload{
+		{Payload: payload1a, WriteCap: chan1WriteCap, StartIndex: chan1FirstIndex},
+		{Payload: payload2a, WriteCap: chan2WriteCap, StartIndex: chan2FirstIndex},
+	}, false)
+	require.NoError(t, err)
+	require.NotEmpty(t, result1.Envelopes)
+	require.Len(t, result1.NextDestIndices, 2)
+	t.Logf("Call 1: %d temp elements", len(result1.Envelopes))
+
+	// Second call: same destinations, continue where we left off, isLast=true
+	result2, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload(streamID, []thin.DestinationPayload{
+		{Payload: payload1b, WriteCap: chan1WriteCap, StartIndex: result1.NextDestIndices[0]},
+		{Payload: payload2b, WriteCap: chan2WriteCap, StartIndex: result1.NextDestIndices[1]},
+	}, true)
+	require.NoError(t, err)
+	require.NotEmpty(t, result2.Envelopes)
+	require.Len(t, result2.NextDestIndices, 2)
+	t.Logf("Call 2: %d temp elements", len(result2.Envelopes))
+
+	// Combine and write all temp stream elements
+	allElements := append(result1.Envelopes, result2.Envelopes...)
+	tempIndex := tempFirstIndex
+	replyIndex := uint8(0)
+	for i, elem := range allElements {
+		ciphertext, envDesc, envHash, err := aliceThinClient.EncryptWrite(elem, tempWriteCap, tempIndex)
+		require.NoError(t, err)
+		_, err = aliceThinClient.StartResendingEncryptedMessage(
+			nil, tempWriteCap, nil, &replyIndex,
+			envDesc, ciphertext, envHash)
+		require.NoError(t, err)
+		tempIndex, err = aliceThinClient.NextMessageBoxIndex(tempIndex)
+		require.NoError(t, err)
+		t.Logf("Wrote temp element %d/%d", i+1, len(allElements))
+	}
+
+	t.Log("Waiting for temp stream to propagate (30 seconds)")
+	time.Sleep(30 * time.Second)
+
+	// Send copy command
+	err = aliceThinClient.StartResendingCopyCommand(tempWriteCap)
+	require.NoError(t, err)
+	t.Log("Copy command completed")
+
+	// Bob reads from channel 1 — expects payload1a then payload1b
+	expectedChan1 := append(payload1a, payload1b...)
+	bobIndex := chan1FirstIndex
+	var chan1Data []byte
+	for len(chan1Data) < len(expectedChan1) {
+		bobCiphertext, bobEnvDesc, bobEnvHash, err := bobThinClient.EncryptRead(chan1ReadCap, bobIndex)
+		require.NoError(t, err)
+		bobIndexBytes, err := bobIndex.MarshalBinary()
+		require.NoError(t, err)
+		result, err := bobThinClient.StartResendingEncryptedMessage(
+			chan1ReadCap, nil, bobIndexBytes, &replyIndex,
+			bobEnvDesc, bobCiphertext, bobEnvHash)
+		require.NoError(t, err)
+		require.NotEmpty(t, result.Plaintext)
+		chan1Data = append(chan1Data, result.Plaintext...)
+		bobIndex, err = bobThinClient.NextMessageBoxIndex(bobIndex)
+		require.NoError(t, err)
+	}
+	require.Equal(t, expectedChan1, chan1Data, "Channel 1 data doesn't match")
+	t.Log("Channel 1 verified")
+
+	// Bob reads from channel 2 — expects payload2a then payload2b
+	expectedChan2 := append(payload2a, payload2b...)
+	bobIndex = chan2FirstIndex
+	var chan2Data []byte
+	for len(chan2Data) < len(expectedChan2) {
+		bobCiphertext, bobEnvDesc, bobEnvHash, err := bobThinClient.EncryptRead(chan2ReadCap, bobIndex)
+		require.NoError(t, err)
+		bobIndexBytes, err := bobIndex.MarshalBinary()
+		require.NoError(t, err)
+		result, err := bobThinClient.StartResendingEncryptedMessage(
+			chan2ReadCap, nil, bobIndexBytes, &replyIndex,
+			bobEnvDesc, bobCiphertext, bobEnvHash)
+		require.NoError(t, err)
+		require.NotEmpty(t, result.Plaintext)
+		chan2Data = append(chan2Data, result.Plaintext...)
+		bobIndex, err = bobThinClient.NextMessageBoxIndex(bobIndex)
+		require.NoError(t, err)
+	}
+	require.Equal(t, expectedChan2, chan2Data, "Channel 2 data doesn't match")
+	t.Log("Channel 2 verified")
+
+	t.Log("SUCCESS: FromMultiPayload multi-call test passed")
 }

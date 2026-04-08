@@ -727,18 +727,19 @@ func (e *ChannelQueryReplyEvent) String() string {
 // Copy Channel API:
 
 // CreateCourierEnvelopesFromPayloadReply is sent in response to a CreateCourierEnvelopesFromPayload request.
-// It provides multiple serialized CourierEnvelopes, one for each chunk of the payload.
+// It provides multiple serialized CopyStreamElements, one for each chunk of the payload.
 type CreateCourierEnvelopesFromPayloadReply struct {
 	// QueryID is used for correlating this reply with the CreateCourierEnvelopesFromPayload request
 	// that created it.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
-	// Envelopes is a slice of serialized CourierEnvelopes, one per chunk.
+	// Envelopes is a slice of serialized CopyStreamElements, one per chunk.
 	Envelopes [][]byte `cbor:"envelopes"`
 
-	// Buffer contains any data buffered by the encoder that hasn't been output yet.
-	// This can be persisted for crash recovery and restored via SetStreamBuffer.
-	Buffer []byte `cbor:"buffer"`
+	// NextDestIndex is the next destination message box index after all boxes
+	// consumed by this call. Use this as DestStartIndex in subsequent calls
+	// to continue writing to the same destination stream.
+	NextDestIndex *bacap.MessageBoxIndex `cbor:"next_dest_index"`
 
 	// ErrorCode indicates the success or failure of the envelope creation.
 	// A value of ThinClientSuccess indicates successful creation.
@@ -750,7 +751,7 @@ func (e *CreateCourierEnvelopesFromPayloadReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x numEnvelopes=%d bufferLen=%d", e.QueryID[:], len(e.Envelopes), len(e.Buffer))
+	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x numEnvelopes=%d", e.QueryID[:], len(e.Envelopes))
 }
 
 // CreateCourierEnvelopesFromPayloadsReply is sent in response to a CreateCourierEnvelopesFromPayloads request.
@@ -767,6 +768,12 @@ type CreateCourierEnvelopesFromPayloadsReply struct {
 	// Buffer contains any data buffered by the encoder that hasn't been output yet.
 	// This can be persisted for crash recovery and restored via SetStreamBuffer.
 	Buffer []byte `cbor:"buffer"`
+
+	// NextDestIndices contains the next destination message box index for each
+	// destination, in the same order as the destinations in the request.
+	// Use these as StartIndex in subsequent calls to continue writing to the
+	// same destination streams.
+	NextDestIndices []*bacap.MessageBoxIndex `cbor:"next_dest_indices"`
 
 	// ErrorCode indicates the success or failure of the envelope creation.
 	// A value of ThinClientSuccess indicates successful creation.
