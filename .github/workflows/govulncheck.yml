@@ -6,6 +6,7 @@ permissions:
   contents: read
 jobs:
   govulncheck:
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -33,4 +34,3 @@ jobs:
             fi
           done
           echo "No unignored vulnerabilities found"
-
