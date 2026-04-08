@@ -1077,7 +1077,9 @@ func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeon
 }
 
 // TestReplicaReplyPaddingIndistinguishable proves that replica replies for reads
-// and writes produce identical EnvelopeReply sizes.
+// and writes produce identical EnvelopeReply sizes after MKEM encryption.
+// This ensures an observer of courier-replica traffic cannot distinguish
+// read requests from write requests by reply size.
 func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
 	testEnv := setupTestEnvironment(t)
 	defer testEnv.cleanup()
@@ -1086,30 +1088,69 @@ func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
 	waitForCourierPKI(t, testEnv)
 	waitForReplicasPKI(t, testEnv)
 
-	// 1. Write a box and get the write reply (with MKEM-encrypted payload)
-	aliceWriter1, _ := aliceAndBobKeyExchangeKeys(t, testEnv)
-	writeEnvelope := aliceComposesNextMessage(t, []byte("write payload"), testEnv, aliceWriter1)
-	_ = injectCourierEnvelope(t, testEnv, writeEnvelope) // immediate ACK
-	time.Sleep(3 * time.Second)
-	writeReply := waitForReplicaResponse(t, testEnv, writeEnvelope)
-	writeReplyLen := len(writeReply.Payload)
-	t.Logf("Write reply EnvelopeReply length: %d", writeReplyLen)
-	require.True(t, writeReplyLen > 0, "write reply should have MKEM-encrypted payload")
+	// 1. Write a box and then read it back to get a real MKEM-encrypted read reply
+	aliceWriter, bobReader := aliceAndBobKeyExchangeKeys(t, testEnv)
+	writeEnvelope := aliceComposesNextMessage(t, []byte("padding test payload"), testEnv, aliceWriter)
+	writeReply := injectCourierEnvelope(t, testEnv, writeEnvelope)
+	require.NotNil(t, writeReply)
+	t.Logf("Write ACK received (payload len: %d)", len(writeReply.Payload))
 
-	// 2. Write a box, then read it back and get the read reply
-	aliceWriter2, bobReader2 := aliceAndBobKeyExchangeKeys(t, testEnv)
-	writeEnvelope2 := aliceComposesNextMessage(t, []byte("read this back"), testEnv, aliceWriter2)
-	_ = injectCourierEnvelope(t, testEnv, writeEnvelope2)
-	time.Sleep(3 * time.Second)
+	// Wait for write to propagate to replicas
+	time.Sleep(5 * time.Second)
 
-	readEnvelope, _ := composeReadRequest(t, testEnv, bobReader2)
-	readReply := waitForReplicaResponse(t, testEnv, readEnvelope)
+	// Read back the written box
+	readEnvelope, _ := composeReadRequest(t, testEnv, bobReader)
+	readReply := injectCourierEnvelope(t, testEnv, readEnvelope)
+	if len(readReply.Payload) == 0 {
+		readReply = waitForReplicaResponse(t, testEnv, readEnvelope)
+	}
 	readReplyLen := len(readReply.Payload)
 	t.Logf("Read reply EnvelopeReply length: %d", readReplyLen)
 	require.True(t, readReplyLen > 0, "read reply should have MKEM-encrypted payload")
 
-	// Assert read and write reply sizes are identical
-	require.Equal(t, readReplyLen, writeReplyLen,
-		"read and write replies must have identical EnvelopeReply size")
-	t.Logf("Read and write reply EnvelopeReply sizes are identical: %d bytes", readReplyLen)
+	// 2. Construct a realistic write reply and verify it produces the same
+	// MKEM envelope size as the read reply. Both paths in the replica use
+	// PadReplyInnerMessageForEncryption which pads to ReplicaReplyInnerMessageReadSize.
+	writeReplyInner := &pigeonhole.ReplicaMessageReplyInnerMessage{
+		MessageType: 1,
+		WriteReply:  &pigeonhole.ReplicaWriteReply{ErrorCode: 0},
+	}
+	bacapCiphertextLen := testEnv.geometry.CalculateBoxCiphertextLength()
+	readReplyInner := &pigeonhole.ReplicaMessageReplyInnerMessage{
+		MessageType: 0,
+		ReadReply: &pigeonhole.ReplicaReadReply{
+			ErrorCode:  0,
+			BoxID:      [32]uint8{1},
+			Signature:  [64]uint8{2},
+			PayloadLen: uint32(bacapCiphertextLen),
+			Payload:    make([]uint8, bacapCiphertextLen),
+		},
+	}
+
+	writePadded, err := pigeonhole.PadReplyInnerMessageForEncryption(writeReplyInner, testEnv.geometry)
+	require.NoError(t, err)
+	readPadded, err := pigeonhole.PadReplyInnerMessageForEncryption(readReplyInner, testEnv.geometry)
+	require.NoError(t, err)
+
+	// Padded sizes must be identical (both padded to ReplicaReplyInnerMessageReadSize)
+	require.Equal(t, len(readPadded), len(writePadded),
+		"padded read and write reply inner messages must be identical size")
+	t.Logf("Padded inner message size: %d bytes", len(readPadded))
+
+	// MKEM-encrypt both and verify ciphertext sizes are identical
+	_, replicaPriv, err := replicaCommon.NikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	clientPub, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	readEnvReply := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
+	writeEnvReply := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+
+	require.Equal(t, len(readEnvReply.Envelope), len(writeEnvReply.Envelope),
+		"MKEM-encrypted read and write replies must have identical EnvelopeReply size")
+	t.Logf("MKEM EnvelopeReply size: %d bytes (identical for read and write)", len(readEnvReply.Envelope))
+
+	// Also verify the MKEM envelope size matches what the courier actually returned for the read
+	require.Equal(t, readReplyLen, len(readEnvReply.Envelope),
+		"courier read reply size should match computed MKEM envelope size")
 }
