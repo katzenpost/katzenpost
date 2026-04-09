@@ -383,6 +383,9 @@ func (d *Daemon) ingressWorker() {
 			}
 			conn := d.listener.getConnection(mygcreply.appID)
 			if conn == nil {
+				if d.listener.queueReplyForDisconnected(mygcreply.appID, response) {
+					continue
+				}
 				d.log.Errorf("no connection associated with AppID %x", mygcreply.appID[:])
 				continue
 			}
@@ -458,12 +461,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	}
 
 	// Legacy API reply
-	conn := d.listener.getConnection(desc.appID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
-		return
-	}
-	conn.sendResponse(&Response{
+	response := &Response{
 		AppID: desc.appID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID: desc.ID,
@@ -471,7 +469,16 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 			Payload:   surbPayload,
 			ErrorCode: thin.ThinClientSuccess,
 		},
-	})
+	}
+	conn := d.listener.getConnection(desc.appID)
+	if conn == nil {
+		if d.listener.queueReplyForDisconnected(desc.appID, response) {
+			return
+		}
+		d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+		return
+	}
+	conn.sendResponse(response)
 }
 
 // decryptMKEMEnvelope decrypts the MKEM envelope and returns the inner message

@@ -214,7 +214,8 @@ func TestCloseStopsWorker(t *testing.T) {
 }
 
 // mockDaemonHandshake performs the daemon-side handshake: sends
-// ConnectionStatusEvent (with instance token) and NewPKIDocumentEvent.
+// ConnectionStatusEvent (with instance token), NewPKIDocumentEvent,
+// reads SessionToken, and sends SessionTokenReply.
 func mockDaemonHandshake(t *testing.T, conn net.Conn, token [16]byte) {
 	t.Helper()
 	sendMockResponse(t, conn, &Response{
@@ -226,6 +227,15 @@ func mockDaemonHandshake(t *testing.T, conn net.Conn, token [16]byte) {
 	sendMockResponse(t, conn, &Response{
 		NewPKIDocumentEvent: &NewPKIDocumentEvent{
 			Payload: []byte{},
+		},
+	})
+	// Read SessionToken from thin client
+	readMockRequest(t, conn)
+	// Send SessionTokenReply
+	sendMockResponse(t, conn, &Response{
+		SessionTokenReply: &SessionTokenReply{
+			AppID:   make([]byte, 16),
+			Resumed: false,
 		},
 	})
 }
@@ -298,8 +308,8 @@ func TestRedialAfterDisconnect(t *testing.T) {
 		t.Fatal("timed out waiting for first accept")
 	}
 
-	// Do the initial handshake.
-	mockDaemonHandshake(t, serverConn1, token1)
+	// Do the initial handshake (must be in goroutine to avoid deadlock on pipe).
+	go mockDaemonHandshake(t, serverConn1, token1)
 
 	// Read and process the handshake on the client side.
 	msg1, err := tc.readMessage()
@@ -311,6 +321,15 @@ func TestRedialAfterDisconnect(t *testing.T) {
 	msg2, err := tc.readMessage()
 	require.NoError(t, err)
 	require.NotNil(t, msg2.NewPKIDocumentEvent)
+
+	// Send SessionToken and read SessionTokenReply
+	err = tc.writeMessage(&Request{
+		SessionToken: &SessionToken{ClientInstanceToken: tc.instanceToken},
+	})
+	require.NoError(t, err)
+	msg3, err := tc.readMessage()
+	require.NoError(t, err)
+	require.NotNil(t, msg3.SessionTokenReply)
 
 	require.Equal(t, token1, tc.daemonInstanceToken)
 
@@ -411,12 +430,14 @@ func TestNewInstanceTokenReplaysRequests(t *testing.T) {
 	require.NoError(t, err)
 
 	serverConn1 := <-acceptCh
-	mockDaemonHandshake(t, serverConn1, token1)
+	go mockDaemonHandshake(t, serverConn1, token1)
 
 	msg1, _ := tc.readMessage()
 	tc.isConnected = msg1.ConnectionStatusEvent.IsConnected
 	tc.daemonInstanceToken = msg1.ConnectionStatusEvent.InstanceToken
 	tc.readMessage() // consume PKI doc
+	tc.writeMessage(&Request{SessionToken: &SessionToken{ClientInstanceToken: tc.instanceToken}})
+	tc.readMessage() // consume SessionTokenReply
 
 	// Seed an in-flight request.
 	envelopeHash := [32]byte{0xDE, 0xAD}
@@ -510,12 +531,14 @@ func TestSameInstanceTokenSkipsReplay(t *testing.T) {
 	require.NoError(t, err)
 
 	serverConn1 := <-acceptCh
-	mockDaemonHandshake(t, serverConn1, token)
+	go mockDaemonHandshake(t, serverConn1, token)
 
 	msg1, _ := tc.readMessage()
 	tc.isConnected = msg1.ConnectionStatusEvent.IsConnected
 	tc.daemonInstanceToken = msg1.ConnectionStatusEvent.InstanceToken
 	tc.readMessage() // consume PKI doc
+	tc.writeMessage(&Request{SessionToken: &SessionToken{ClientInstanceToken: tc.instanceToken}})
+	tc.readMessage() // consume SessionTokenReply
 
 	// Seed an in-flight request.
 	envelopeHash := [32]byte{0xDE, 0xAD}

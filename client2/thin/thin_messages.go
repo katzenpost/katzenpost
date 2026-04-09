@@ -474,6 +474,21 @@ type SendMessage struct {
 	Payload []byte `cbor:"payload"`
 }
 
+// SessionToken is sent by the thin client as its first request after the handshake.
+type SessionToken struct {
+	ClientInstanceToken [16]byte `cbor:"client_instance_token"`
+}
+
+// SessionTokenReply is the daemon's response to a SessionToken request.
+type SessionTokenReply struct {
+	AppID   []byte `cbor:"app_id"`
+	Resumed bool   `cbor:"resumed"`
+}
+
+func (r *SessionTokenReply) String() string {
+	return fmt.Sprintf("SessionTokenReply{Resumed: %v}", r.Resumed)
+}
+
 // ThinClose is used to indicate that the thin client is disconnecting
 // from the daemon.
 type ThinClose struct {
@@ -481,6 +496,8 @@ type ThinClose struct {
 
 // Response is the client daemon's response message to the thin client.
 type Response struct {
+
+	SessionTokenReply *SessionTokenReply `cbor:"session_token_reply"`
 
 	// ShutdownEvent is sent when the client daemon is shutting down.
 	ShutdownEvent *ShutdownEvent `cbor:"shutdown_event"`
@@ -541,6 +558,8 @@ type Response struct {
 // Request is the thin client's request message to the client daemon.
 // It can result in one or more Response messages being sent back to the thin client.
 type Request struct {
+
+	SessionToken *SessionToken `cbor:"session_token"`
 
 	// ThinClose is used to indicate that the thin client is disconnecting
 	// from the daemon.

@@ -46,8 +46,16 @@ type listener struct {
 	// Thin clients use it to detect same-instance reconnects vs new-instance reconnects.
 	instanceToken [16]byte
 
-	// Callback function to clean up channels when a connection closes
+	// Callback function to clean up state when a connection closes
 	onAppDisconnectFn func(*[AppIDLength]byte)
+
+	clientTokens     map[[16]byte]*[AppIDLength]byte
+	clientTokensLock sync.Mutex
+
+	disconnectedSessions     map[[AppIDLength]byte]*DisconnectedSession
+	disconnectedSessionsLock sync.Mutex
+
+	sessionGracePeriod time.Duration
 }
 
 func (l *listener) Shutdown() {
@@ -160,7 +168,56 @@ func (l *listener) onClosedConn(c *incomingConn) {
 	delete(l.conns, *c.appID)
 	l.connsLock.Unlock()
 
-	// Clean up all channels associated with this App ID
+	if c.explicitClose {
+		// ThinClose received: destroy all state immediately
+		if l.onAppDisconnectFn != nil {
+			l.onAppDisconnectFn(c.appID)
+		}
+		if c.clientToken != nil {
+			l.clientTokensLock.Lock()
+			delete(l.clientTokens, *c.clientToken)
+			l.clientTokensLock.Unlock()
+		}
+		return
+	}
+
+	if c.clientToken != nil {
+		// Unintentional disconnect from session-aware client: preserve state
+		appID := c.appID
+		token := *c.clientToken
+		l.disconnectedSessionsLock.Lock()
+		session := &DisconnectedSession{
+			AppID:        appID,
+			Token:        token,
+			DisconnectAt: time.Now(),
+		}
+		session.CleanupTimer = time.AfterFunc(l.sessionGracePeriod, func() {
+			l.disconnectedSessionsLock.Lock()
+			_, stillDisconnected := l.disconnectedSessions[*appID]
+			if !stillDisconnected {
+				l.disconnectedSessionsLock.Unlock()
+				return
+			}
+			delete(l.disconnectedSessions, *appID)
+			l.disconnectedSessionsLock.Unlock()
+
+			l.log.Infof("Grace period expired for session %x, cleaning up", appID[:4])
+
+			l.clientTokensLock.Lock()
+			delete(l.clientTokens, token)
+			l.clientTokensLock.Unlock()
+
+			if l.onAppDisconnectFn != nil {
+				l.onAppDisconnectFn(appID)
+			}
+		})
+		l.disconnectedSessions[*appID] = session
+		l.disconnectedSessionsLock.Unlock()
+		l.log.Infof("Preserving state for disconnected session %x (grace period %v)", appID[:4], l.sessionGracePeriod)
+		return
+	}
+
+	// Legacy client (no token): clean up immediately as before
 	if l.onAppDisconnectFn != nil {
 		l.onAppDisconnectFn(c.appID)
 	}
@@ -242,6 +299,102 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 	return conn
 }
 
+const (
+	defaultSessionGracePeriod = 30 * time.Minute
+	maxQueuedReplies          = 1000
+)
+
+type DisconnectedSession struct {
+	AppID         *[AppIDLength]byte
+	Token         [16]byte
+	DisconnectAt  time.Time
+	CleanupTimer  *time.Timer
+	QueuedReplies []*Response
+}
+
+// handleSessionToken processes a SessionToken request from a thin client.
+// If the token was previously registered, the connection resumes the old app ID.
+// Otherwise a new token->appID mapping is created.
+func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
+	l.clientTokensLock.Lock()
+	defer l.clientTokensLock.Unlock()
+
+	existingAppID, found := l.clientTokens[st.ClientInstanceToken]
+	if found {
+		oldAppID := *c.appID
+
+		l.connsLock.Lock()
+		delete(l.conns, oldAppID)
+		c.appID = existingAppID
+		l.conns[*existingAppID] = c
+		l.connsLock.Unlock()
+
+		// Cancel any pending cleanup timer and flush queued replies
+		l.disconnectedSessionsLock.Lock()
+		if session, ok := l.disconnectedSessions[*existingAppID]; ok {
+			session.CleanupTimer.Stop()
+			for _, reply := range session.QueuedReplies {
+				select {
+				case c.sendToClientCh <- reply:
+				default:
+					l.log.Warningf("Dropped queued reply during session resume (channel full)")
+				}
+			}
+			delete(l.disconnectedSessions, *existingAppID)
+		}
+		l.disconnectedSessionsLock.Unlock()
+
+		token := st.ClientInstanceToken
+		c.clientToken = &token
+		l.log.Infof("Session resumed for token %x -> AppID %x", st.ClientInstanceToken[:4], existingAppID[:4])
+
+		select {
+		case c.sendToClientCh <- &Response{
+			SessionTokenReply: &thin.SessionTokenReply{
+				AppID:   existingAppID[:],
+				Resumed: true,
+			},
+		}:
+		case <-l.HaltCh():
+		}
+		return
+	}
+
+	// New client: register token -> appID mapping
+	token := st.ClientInstanceToken
+	c.clientToken = &token
+	l.clientTokens[st.ClientInstanceToken] = c.appID
+	l.log.Infof("Session registered for token %x -> AppID %x", st.ClientInstanceToken[:4], c.appID[:4])
+
+	select {
+	case c.sendToClientCh <- &Response{
+		SessionTokenReply: &thin.SessionTokenReply{
+			AppID:   c.appID[:],
+			Resumed: false,
+		},
+	}:
+	case <-l.HaltCh():
+	}
+}
+
+// queueReplyForDisconnected buffers a reply for a disconnected session.
+// Returns true if the reply was queued, false if no disconnected session exists.
+func (l *listener) queueReplyForDisconnected(appID *[AppIDLength]byte, reply *Response) bool {
+	l.disconnectedSessionsLock.Lock()
+	defer l.disconnectedSessionsLock.Unlock()
+
+	session, ok := l.disconnectedSessions[*appID]
+	if !ok {
+		return false
+	}
+	if len(session.QueuedReplies) >= maxQueuedReplies {
+		l.log.Warningf("Dropped reply for disconnected session %x (queue full)", appID[:4])
+		return true
+	}
+	session.QueuedReplies = append(session.QueuedReplies, reply)
+	return true
+}
+
 // broadcastShutdownEvent sends a ShutdownEvent to all connected thin clients.
 // This uses direct socket writes rather than the channel-based sendToClientCh,
 // because during shutdown the writer goroutine may have already exited.
@@ -262,14 +415,17 @@ func (l *listener) broadcastShutdownEvent() {
 func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend, onAppDisconnectFn func(*[AppIDLength]byte)) (*listener, error) {
 	ingressSize := 200
 	l := &listener{
-		client:            client,
-		logBackend:        logBackend,
-		conns:             make(map[[AppIDLength]byte]*incomingConn),
-		connsLock:         new(sync.RWMutex),
-		ingressCh:         make(chan *Request, ingressSize),
-		updatePKIDocCh:    make(chan *cpki.Document, 2),
-		updateStatusCh:    make(chan error, 2),
-		onAppDisconnectFn: onAppDisconnectFn,
+		client:               client,
+		logBackend:           logBackend,
+		conns:                make(map[[AppIDLength]byte]*incomingConn),
+		connsLock:            new(sync.RWMutex),
+		ingressCh:            make(chan *Request, ingressSize),
+		updatePKIDocCh:       make(chan *cpki.Document, 2),
+		updateStatusCh:       make(chan error, 2),
+		onAppDisconnectFn:    onAppDisconnectFn,
+		clientTokens:         make(map[[16]byte]*[AppIDLength]byte),
+		disconnectedSessions: make(map[[AppIDLength]byte]*DisconnectedSession),
+		sessionGracePeriod:   defaultSessionGracePeriod,
 	}
 
 	l.log = l.logBackend.GetLogger("client2/listener")

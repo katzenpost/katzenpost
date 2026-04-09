@@ -8,6 +8,7 @@ import (
 
 func IntoThinResponse(r *Response) *thin.Response {
 	return &thin.Response{
+		SessionTokenReply:         r.SessionTokenReply,
 		ShutdownEvent:             r.ShutdownEvent,
 		ConnectionStatusEvent:     r.ConnectionStatusEvent,
 		NewPKIDocumentEvent:       r.NewPKIDocumentEvent,
@@ -37,6 +38,8 @@ type Response struct {
 	// AppID must be a unique identity for the client application
 	// that is receiving this Response.
 	AppID *[AppIDLength]byte
+
+	SessionTokenReply *thin.SessionTokenReply
 
 	ShutdownEvent *thin.ShutdownEvent
 
@@ -97,8 +100,9 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		CreateCourierEnvelopesFromPayloads: r.CreateCourierEnvelopesFromPayloads,
 		SetStreamBuffer:                    r.SetStreamBuffer,
 
-		SendMessage: r.SendMessage,
-		ThinClose:   r.ThinClose,
+		SessionToken: r.SessionToken,
+		SendMessage:  r.SendMessage,
+		ThinClose:    r.ThinClose,
 	}
 }
 
@@ -138,6 +142,8 @@ type Request struct {
 	CreateCourierEnvelopesFromPayloads *thin.CreateCourierEnvelopesFromPayloads
 
 	SetStreamBuffer *thin.SetStreamBuffer
+
+	SessionToken *thin.SessionToken
 
 	// Core functionality
 

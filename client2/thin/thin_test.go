@@ -256,6 +256,15 @@ func TestOfflineDialAndChannelOperations(t *testing.T) {
 			},
 		}
 		sendResponse(t, server, pkiResponse)
+
+		// Read SessionToken and send SessionTokenReply
+		readRequest(server)
+		sendResponse(t, server, &Response{
+			SessionTokenReply: &SessionTokenReply{
+				AppID:   make([]byte, 16),
+				Resumed: false,
+			},
+		})
 	}()
 
 	// Test that Dial() succeeds even when daemon reports not connected
@@ -340,6 +349,15 @@ func TestCloseDoesNotLogSpuriousErrors(t *testing.T) {
 			},
 		}
 		sendResponse(t, server, pkiResponse)
+
+		// Read SessionToken and send SessionTokenReply
+		readRequest(server)
+		sendResponse(t, server, &Response{
+			SessionTokenReply: &SessionTokenReply{
+				AppID:   make([]byte, 16),
+				Resumed: false,
+			},
+		})
 	}()
 
 	// Dial the daemon

@@ -27,6 +27,8 @@ type incomingConn struct {
 	appID *[AppIDLength]byte
 
 	sendToClientCh chan *Response
+	clientToken    *[16]byte
+	explicitClose  bool
 }
 
 func (c *incomingConn) recvRequest() (*Request, error) {
@@ -176,8 +178,13 @@ func (c *incomingConn) worker() {
 				return
 			}
 			if rawReq.ThinClose != nil {
+				c.explicitClose = true
 				c.log.Info("Thin client sent a disconnect request, closing thin client connection.")
 				return
+			}
+			if rawReq.SessionToken != nil {
+				c.listener.handleSessionToken(c, rawReq.SessionToken)
+				continue
 			}
 			c.log.Infof("Received Request from peer application.")
 			select {

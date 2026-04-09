@@ -264,6 +264,7 @@ type ThinClient struct {
 	conn                net.Conn
 	isConnected         bool
 	daemonInstanceToken [16]byte
+	instanceToken       [16]byte
 
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
@@ -438,7 +439,7 @@ func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
 	if err != nil {
 		panic(err)
 	}
-	return &ThinClient{
+	tc := &ThinClient{
 		isTCP:       strings.HasPrefix(strings.ToLower(cfg.Network), "tcp"),
 		cfg:         cfg,
 		log:         logBackend.GetLogger("thinclient"),
@@ -448,6 +449,10 @@ func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
 		drainRemove: make(chan chan Event),
 		pkiDocCache: make(map[uint64]*cpki.Document),
 	}
+	if _, err := rand.Reader.Read(tc.instanceToken[:]); err != nil {
+		panic(err)
+	}
+	return tc
 }
 
 // Shutdown cleanly shuts down the ThinClient instance.
@@ -520,6 +525,25 @@ func (t *ThinClient) IsConnected() bool {
 //	if err != nil {
 //		log.Printf("Error during shutdown: %v", err)
 //	}
+// Disconnect closes the connection without sending ThinClose.
+// The daemon preserves all state for this client's app ID, allowing
+// the client to reconnect and resume with the same session token.
+func (t *ThinClient) Disconnect() error {
+	t.connMu.RLock()
+	conn := t.conn
+	t.connMu.RUnlock()
+
+	if conn == nil {
+		t.Halt()
+		return nil
+	}
+	// Close the connection first to unblock any blocked reads,
+	// then halt workers.
+	err := conn.Close()
+	t.Halt()
+	return err
+}
+
 func (t *ThinClient) Close() error {
 	t.connMu.RLock()
 	conn := t.conn
@@ -636,6 +660,26 @@ func (t *ThinClient) Dial() error {
 	} else {
 		t.log.Infof("No PKI document available yet - will receive when available")
 	}
+	// Send SessionToken to identify this client across reconnections
+	err = t.writeMessage(&Request{
+		SessionToken: &SessionToken{
+			ClientInstanceToken: t.instanceToken,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to send SessionToken: %w", err)
+	}
+
+	// Read SessionTokenReply
+	message3, err := t.readMessage()
+	if err != nil {
+		return fmt.Errorf("failed to read SessionTokenReply: %w", err)
+	}
+	if message3.SessionTokenReply == nil {
+		panic("bug: thin client protocol sequence violation: expected SessionTokenReply")
+	}
+	t.log.Debugf("Session token reply: resumed=%v", message3.SessionTokenReply.Resumed)
+
 	t.Go(t.eventSinkWorker)
 	t.Go(t.worker)
 	return nil
@@ -701,6 +745,12 @@ func (t *ThinClient) readMessage() (*Response, error) {
 // Returns true if the message was handled, false if HaltCh fired.
 func (t *ThinClient) dispatchMessage(message *Response) bool {
 	switch {
+	case message.SessionTokenReply != nil:
+		select {
+		case t.eventSink <- message.SessionTokenReply:
+		case <-t.HaltCh():
+			return false
+		}
 	case message.MessageIDGarbageCollected != nil:
 		select {
 		case t.eventSink <- message.MessageIDGarbageCollected:
@@ -936,10 +986,35 @@ func (t *ThinClient) redial() bool {
 			t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
 		}
 
+		// Handshake: send SessionToken
+		err = t.writeMessage(&Request{
+			SessionToken: &SessionToken{
+				ClientInstanceToken: t.instanceToken,
+			},
+		})
+		if err != nil {
+			t.log.Errorf("Reconnect handshake failed (SessionToken send): %v", err)
+			conn.Close()
+			continue
+		}
+
+		message3, err := t.readMessage()
+		if err != nil {
+			t.log.Errorf("Reconnect handshake failed (SessionTokenReply): %v", err)
+			conn.Close()
+			continue
+		}
+		if message3.SessionTokenReply == nil {
+			t.log.Errorf("Reconnect handshake failed: expected SessionTokenReply")
+			conn.Close()
+			continue
+		}
+		t.log.Debugf("Reconnect session token reply: resumed=%v", message3.SessionTokenReply.Resumed)
+
 		t.connMu.RLock()
 		connected := t.isConnected
 		t.connMu.RUnlock()
-		t.log.Infof("Reconnected to daemon (connected=%v)", connected)
+		t.log.Infof("Reconnected to daemon (connected=%v, resumed=%v)", connected, message3.SessionTokenReply.Resumed)
 		return true
 	}
 }
