@@ -1,6 +1,7 @@
 name: govulncheck
 on:
-  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'  # every Monday at 06:00 UTC
   workflow_dispatch:
 permissions:
   contents: read
