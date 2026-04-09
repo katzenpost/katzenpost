@@ -8,7 +8,7 @@ RUN adduser katzenpost --gecos "" --disabled-password
 # Install build tools and runtime dependencies (but NOT rocksdb-dev from Alpine)
 RUN apk update && apk upgrade && \
     apk add gcc musl-dev make pv g++ curl netcat-openbsd \
-        bash git cmake linux-headers \
+        bash perl git cmake linux-headers \
         snappy-dev zstd-dev lz4-dev zlib-dev bzip2-dev
 
 # Build and install RocksDB from source at a pinned version
