@@ -305,7 +305,9 @@ debian_base.stamp:
 alpine_base_image?=ghcr.io/katzenpost/alpine-base:latest
 
 alpine_base.stamp:
-	$(docker) pull $(alpine_base_image)
+	$(docker) pull $(alpine_base_image) \
+	|| $(docker) build -t $(alpine_base_image) -f Dockerfile.alpine-base . \
+	&& ($(docker) push $(alpine_base_image) || true)
 	$(docker) tag $(alpine_base_image) katzenpost-alpine_base
 	touch $@
 

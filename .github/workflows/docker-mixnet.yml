@@ -5,7 +5,7 @@ jobs:
   test_e2e_client2:
     permissions:
       contents: read
-      packages: read
+      packages: write
     env:
       warped: true
       no_mixdecoy: true
