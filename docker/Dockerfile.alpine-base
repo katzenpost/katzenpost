@@ -1,0 +1,31 @@
+FROM docker.io/alpine:edge
+
+ARG ROCKSDB_VERSION=10.10.1
+ARG GO_VERSION=1.26.0
+
+RUN adduser katzenpost --gecos "" --disabled-password
+
+# Install build tools and runtime dependencies (but NOT rocksdb-dev from Alpine)
+RUN apk update && apk upgrade && \
+    apk add gcc musl-dev make pv g++ curl netcat-openbsd \
+        git cmake linux-headers \
+        snappy-dev zstd-dev lz4-dev zlib-dev bzip2-dev
+
+# Build and install RocksDB from source at a pinned version
+RUN cd /tmp && \
+    git clone --depth 1 --branch v${ROCKSDB_VERSION} https://github.com/facebook/rocksdb.git && \
+    cd rocksdb && \
+    make shared_lib -j$(nproc) && \
+    make install-shared && \
+    cd / && rm -rf /tmp/rocksdb
+
+# Ensure musl linker can find libraries in /usr/local/lib
+RUN echo "/usr/local/lib" >> /etc/ld-musl-x86_64.path
+
+# Remove build-only deps to keep image smaller
+RUN apk del git cmake linux-headers
+
+# Install Go
+RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xzf - && \
+    ln -s /usr/local/go/bin/go /usr/bin/go && \
+    ln -s /usr/local/go/bin/gofmt /usr/bin/gofmt

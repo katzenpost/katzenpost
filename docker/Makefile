@@ -302,16 +302,11 @@ debian_base.stamp:
 	$(docker) rm katzenpost_debian_base
 	touch $@
 
+alpine_base_image?=ghcr.io/katzenpost/alpine-base:latest
+
 alpine_base.stamp:
-	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/alpine:edge sh -c '\
-		adduser katzenpost --gecos "" --disabled-password && \
-		apk update && apk upgrade && \
-		apk add gcc musl-dev make pv rocksdb-dev g++ curl netcat-openbsd && \
-		curl -fsSL https://go.dev/dl/go1.26.0.linux-amd64.tar.gz | tar -C /usr/local -xzf - && \
-		ln -s /usr/local/go/bin/go /usr/bin/go && \
-		ln -s /usr/local/go/bin/gofmt /usr/bin/gofmt' \
-	&& $(docker) commit katzenpost_alpine_base katzenpost-alpine_base \
-	&& $(docker) rm katzenpost_alpine_base
+	$(docker) pull $(alpine_base_image)
+	$(docker) tag $(alpine_base_image) katzenpost-alpine_base
 	touch $@
 
 go-mod-tidy: $(distro)_base.stamp | $(net_name) $(cache_dir)
