@@ -124,16 +124,14 @@ func createFullMockPKIDocument(t *testing.T, geo *geo.Geometry) (*cpki.Document,
 		topology[layer] = []*cpki.MixDescriptor{mixDesc}
 	}
 
-	// Generate 2 replica descriptors
+	// Use pre-generated CTIDH keypair fixtures for replica descriptors
+	loadCTIDHFixtures()
 	replicaDescs := make([]*cpki.ReplicaDescriptor, 2)
 	configuredReplicaKeys := make([][]byte, 2)
 	for i := 0; i < 2; i++ {
-		rPub, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
-		require.NoError(t, err)
-		rPubBytes, err := rPub.MarshalBinary()
-		require.NoError(t, err)
+		rPubBytes := ctidhFixtures[i].PubBytes
 		rIdKey := make([]byte, 32)
-		_, err = rand.Reader.Read(rIdKey)
+		_, err := rand.Reader.Read(rIdKey)
 		require.NoError(t, err)
 
 		replicaDescs[i] = &cpki.ReplicaDescriptor{

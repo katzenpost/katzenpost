@@ -215,8 +215,7 @@ func TestEncryptReadHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	_, _, _, err = tc.EncryptRead(readCap, mbi)
@@ -232,8 +231,7 @@ func TestEncryptWriteHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	_, _, _, err = tc.EncryptWrite([]byte("data"), writeCap, mbi)
@@ -245,8 +243,7 @@ func TestStartResendingEncryptedMessageHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	_, err := tc.StartResendingEncryptedMessage(
@@ -265,8 +262,7 @@ func TestNextMessageBoxIndexHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	_, err = tc.NextMessageBoxIndex(mbi)
@@ -282,8 +278,7 @@ func TestSetStreamBufferHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	err = tc.SetStreamBuffer(streamID, []byte("buffer"))
@@ -299,8 +294,7 @@ func TestCreateCourierEnvelopesFromPayloadHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	_, _, err = tc.CreateCourierEnvelopesFromPayload(
@@ -317,8 +311,7 @@ func TestStartResendingCopyCommandHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	err = tc.StartResendingCopyCommand(writeCap)
@@ -330,8 +323,7 @@ func TestCancelResendingEncryptedMessageHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	err := tc.CancelResendingEncryptedMessage(&[32]byte{})
@@ -343,8 +335,7 @@ func TestCancelResendingCopyCommandHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	err := tc.CancelResendingCopyCommand(&[32]byte{})
@@ -356,8 +347,7 @@ func TestStartResendingEncryptedMessageNoRetryHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	_, err := tc.StartResendingEncryptedMessageNoRetry(
@@ -372,8 +362,7 @@ func TestStartResendingEncryptedMessageReturnBoxExistsHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	_, err := tc.StartResendingEncryptedMessageReturnBoxExists(
@@ -391,8 +380,7 @@ func TestStartResendingCopyCommandWithCourierHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	err = tc.StartResendingCopyCommandWithCourier(writeCap, &[32]byte{}, []byte("queue"))
@@ -411,8 +399,7 @@ func TestCreateCourierEnvelopesFromMultiPayloadHaltCh(t *testing.T) {
 
 	go func() {
 		readRequest(server)
-		time.Sleep(50 * time.Millisecond)
-		tc.Halt()
+		server.Close()
 	}()
 
 	_, err = tc.CreateCourierEnvelopesFromMultiPayload(

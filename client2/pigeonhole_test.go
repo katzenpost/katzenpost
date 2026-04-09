@@ -228,23 +228,20 @@ func (m *mockIncomingConn) toIncomingConn(_ *listener, logBackend *log.Backend) 
 // createMockPKIDocument creates a minimal PKI document with 2 replica descriptors
 // for use in testing encryptRead.
 func createMockPKIDocument(t *testing.T) *cpki.Document {
+	loadCTIDHFixtures()
 	currentEpoch, _, _ := epochtime.Now()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
-	// Create 2 replica descriptors with envelope keys
+	// Create 2 replica descriptors using pre-generated CTIDH keypair fixtures
 	replicaDescriptors := make([]*cpki.ReplicaDescriptor, 2)
 	configuredReplicaKeys := make([][]byte, 2)
 
 	for i := 0; i < 2; i++ {
-		// Generate a NIKE key pair for each replica
-		pubKey, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
-		require.NoError(t, err)
-		pubKeyBytes, err := pubKey.MarshalBinary()
-		require.NoError(t, err)
+		pubKeyBytes := ctidhFixtures[i].PubBytes
 
 		// Create identity key (just random bytes for testing)
 		identityKey := make([]byte, 32)
-		_, err = rand.Reader.Read(identityKey)
+		_, err := rand.Reader.Read(identityKey)
 		require.NoError(t, err)
 
 		replicaDescriptors[i] = &cpki.ReplicaDescriptor{
@@ -255,7 +252,6 @@ func createMockPKIDocument(t *testing.T) *cpki.Document {
 			},
 		}
 
-		// Store identity key for ConfiguredReplicaIdentityKeys
 		configuredReplicaKeys[i] = make([]byte, len(identityKey))
 		copy(configuredReplicaKeys[i], identityKey)
 	}
@@ -1324,17 +1320,14 @@ func TestARQSuccessWritePayload(t *testing.T) {
 	sphinxInstance, err := sphinx.FromGeometry(cfg.SphinxGeometry)
 	require.NoError(err)
 
-	// Generate replica NIKE keys for the mock PKI document
-	replicaNikeScheme := replicaCommon.NikeScheme
-	replica0PubKey, replica0PrivKey, err := replicaNikeScheme.GenerateKeyPair()
-	require.NoError(err)
-	replica0PubKeyBytes, err := replica0PubKey.MarshalBinary()
-	require.NoError(err)
+	// Use pre-generated replica NIKE keys
+	loadCTIDHFixtures()
+	replica0PrivKey := ctidhFixtures[3].Priv
+	replica0PubKeyBytes := ctidhFixtures[3].PubBytes
 
-	replica1PubKey, _, err := replicaNikeScheme.GenerateKeyPair()
-	require.NoError(err)
-	replica1PubKeyBytes, err := replica1PubKey.MarshalBinary()
-	require.NoError(err)
+	replica1PubKey := ctidhFixtures[4].Pub
+	_ = replica1PubKey
+	replica1PubKeyBytes := ctidhFixtures[4].PubBytes
 
 	// Get current replica epoch
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
@@ -1396,9 +1389,9 @@ func TestARQSuccessWritePayload(t *testing.T) {
 		replyLock:                 new(sync.Mutex),
 	}
 
-	// Generate client's NIKE keypair for the envelope
-	clientPubKey, clientPrivKey, err := replicaNikeScheme.GenerateKeyPair()
-	require.NoError(err)
+	// Use pre-generated CTIDH keypair for the client envelope key
+	clientPubKey := ctidhFixtures[5].Pub
+	clientPrivKey := ctidhFixtures[5].Priv
 	clientPrivKeyBytes, err := clientPrivKey.MarshalBinary()
 	require.NoError(err)
 

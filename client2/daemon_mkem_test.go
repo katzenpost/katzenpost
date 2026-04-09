@@ -14,15 +14,14 @@ import (
 )
 
 func TestTryDecryptMKEMWithReplicas(t *testing.T) {
-	scheme := replicaCommon.NikeScheme
+	loadCTIDHFixtures()
 	mkemScheme := replicaCommon.MKEMNikeScheme
 
-	// Generate envelope key pair (client side — used for MKEM encapsulation)
-	// Encapsulate gives us ephemeral private key + ciphertext
-	replica0Pub, replica0Priv, err := scheme.GenerateKeyPair()
-	require.NoError(t, err)
-	replica1Pub, replica1Priv, err := scheme.GenerateKeyPair()
-	require.NoError(t, err)
+	// Use pre-generated CTIDH keypair fixtures instead of slow key generation
+	replica0Pub := ctidhFixtures[0].Pub
+	replica0Priv := ctidhFixtures[0].Priv
+	replica1Pub := ctidhFixtures[1].Pub
+	replica1Priv := ctidhFixtures[1].Priv
 
 	// Client encapsulates to both replicas
 	plaintext := []byte("secret pigeonhole message")
@@ -62,10 +61,9 @@ func TestTryDecryptMKEMWithReplicas(t *testing.T) {
 	})
 
 	t.Run("fails when no replica key works", func(t *testing.T) {
-		_, wrongPriv, err := scheme.GenerateKeyPair()
-		require.NoError(t, err)
+		wrongPriv := ctidhFixtures[2].Priv // Pre-generated, won't match either replica
 
-		_, _, err = tryDecryptMKEMWithReplicas(
+		_, _, err := tryDecryptMKEMWithReplicas(
 			mkemScheme, wrongPriv, envelope0, []uint8{0, 1}, replicaPubKeys,
 		)
 		require.Error(t, err)
