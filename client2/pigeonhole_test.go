@@ -205,6 +205,7 @@ func (m *mockIncomingConn) toIncomingConn(_ *listener, logBackend *log.Backend) 
 				AppID:                                m.appID,
 				MessageSentEvent:                     thinResp.MessageSentEvent,
 				MessageReplyEvent:                    thinResp.MessageReplyEvent,
+				MessageIDGarbageCollected:            thinResp.MessageIDGarbageCollected,
 				NewKeypairReply:                      thinResp.NewKeypairReply,
 				EncryptReadReply:                     thinResp.EncryptReadReply,
 				EncryptWriteReply:                    thinResp.EncryptWriteReply,

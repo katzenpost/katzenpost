@@ -329,8 +329,6 @@ func (d *Daemon) egressWorker() {
 			switch {
 			case request.SendLoopDecoy != nil:
 				d.sendLoopDecoy(request)
-			case request.SendDropDecoy != nil:
-				d.sendDropDecoy()
 			case request.SendMessage != nil:
 				d.send(request)
 
@@ -629,8 +627,8 @@ func (d *Daemon) send(request *Request) {
 		return
 	}
 
-	if request.SendMessage != nil {
-		// Old API: store in regular replies
+	if request.SendMessage != nil && request.SendMessage.SURBID != nil {
+		// Old API: store in regular replies (only when a SURB was used)
 		d.replies[*request.SendMessage.SURBID] = replyDescriptor{
 			ID:      request.SendMessage.ID,
 			appID:   request.AppID,
@@ -678,33 +676,6 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	d.send(request)
 }
 
-func (d *Daemon) sendDropDecoy() {
-	_, doc := d.client.CurrentDocument()
-	if doc == nil {
-		d.log.Warning("sendDropDecoy: no PKI document available, skipping")
-		return
-	}
-	echoServices := common.FindServices(EchoService, doc)
-	if len(echoServices) == 0 {
-		d.log.Warning("sendDropDecoy: no echo services available, skipping")
-		return
-	}
-	echoService := echoServices[d.secureRand.Intn(len(echoServices))]
-
-	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
-	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
-
-	request := &Request{
-		SendMessage: &thin.SendMessage{
-			WithSURB:          false,
-			Payload:           payload,
-			DestinationIdHash: &serviceIdHash,
-			RecipientQueueID:  echoService.RecipientQueueID,
-		},
-	}
-
-	d.send(request)
-}
 
 func (d *Daemon) arqResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	select {

@@ -109,9 +109,6 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 type SendLoopDecoy struct {
 }
 
-type SendDropDecoy struct {
-}
-
 type Request struct {
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
@@ -152,8 +149,6 @@ type Request struct {
 	// Decoys
 
 	SendLoopDecoy *SendLoopDecoy
-
-	SendDropDecoy *SendDropDecoy
 
 	// Legacy API
 
