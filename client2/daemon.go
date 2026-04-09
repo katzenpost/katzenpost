@@ -16,7 +16,6 @@ import (
 	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
@@ -24,7 +23,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -73,18 +71,6 @@ type replyDescriptor struct {
 	surbKey []byte
 }
 
-// ReplyHandlerParams groups parameters for reply handler functions
-type ReplyHandlerParams struct {
-	AppID       *[AppIDLength]byte
-	MessageID   *[MessageIDLength]byte
-	ChannelID   uint16
-	ChannelDesc *ChannelDescriptor
-	EnvHash     *[hash.HashSize]byte
-	IsReader    bool
-	IsWriter    bool
-	ReplyIndex  uint8
-}
-
 type Daemon struct {
 	worker.Worker
 
@@ -112,22 +98,6 @@ type Daemon struct {
 	arqResendCh        chan *[sphinxConstants.SURBIDLength]byte
 	arqEnvelopeHashMap map[[32]byte]*[sphinxConstants.SURBIDLength]byte // EnvelopeHash -> SURB ID (for cancellation)
 
-	// Channel reply tracking (used by both old and new API)
-	channelReplies     map[[sphinxConstants.SURBIDLength]byte]replyDescriptor
-	channelRepliesLock *sync.RWMutex
-
-	// Channel management (new API)
-	newSurbIDToChannelMap     map[[sphinxConstants.SURBIDLength]byte]uint16
-	newSurbIDToChannelMapLock *sync.RWMutex
-	newChannelMap             map[uint16]*ChannelDescriptor
-	newChannelMapLock         *sync.RWMutex
-	newChannelMapXXX          map[uint16]bool
-
-	// Capability deduplication maps to prevent reusing read/write capabilities
-	usedReadCaps   map[[hash.HashSize]byte]bool // Maps hash of ReadCap to true
-	usedWriteCaps  map[[hash.HashSize]byte]bool // Maps hash of WriteCap to true
-	capabilityLock *sync.RWMutex                // Protects both capability maps
-
 	// Copy stream encoders for multi-call CreateCourierEnvelopesFromPayload
 	copyStreamEncoders     map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder
 	copyStreamEncodersLock *sync.Mutex
@@ -153,19 +123,6 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqResendCh:        make(chan *[sphinxConstants.SURBIDLength]byte, 64),
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		// Channel reply tracking
-		channelReplies:     make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock: new(sync.RWMutex),
-		// Channel management (new API)
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		// capability deduplication fields:
-		usedReadCaps:   make(map[[hash.HashSize]byte]bool),
-		usedWriteCaps:  make(map[[hash.HashSize]byte]bool),
-		capabilityLock: new(sync.RWMutex),
 		// Copy stream encoder management:
 		copyStreamEncoders:     make(map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder),
 		copyStreamEncodersLock: new(sync.Mutex),
@@ -177,22 +134,6 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		return nil, err
 	}
 	return d, nil
-}
-
-// generateUniqueChannelID generates a unique uint16 channel ID that's not already in use
-func (d *Daemon) generateUniqueChannelID() uint16 {
-	d.log.Debug("generateUniqueChannelID: Taking newChannelMapLock")
-	d.newChannelMapLock.Lock()
-	defer d.newChannelMapLock.Unlock()
-
-	for {
-		channelID := uint16(hpqcRand.NewMath().Intn(65535) + 1) // [1, 65535]
-
-		if _, exists := d.newChannelMapXXX[channelID]; !exists {
-			d.newChannelMapXXX[channelID] = true // reserve it
-			return channelID
-		}
-	}
 }
 
 func (d *Daemon) initLogging() error {
@@ -292,7 +233,7 @@ func (d *Daemon) Start() error {
 		return err
 	}
 
-	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend, d.cleanupChannelsForAppID)
+	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend, d.cleanupForAppID)
 	if err != nil {
 		return err
 	}
@@ -421,29 +362,6 @@ func (d *Daemon) egressWorker() {
 			case request.SetStreamBuffer != nil:
 				d.setStreamBuffer(request)
 
-				// OLD Pigeonhole Channel:
-
-			case request.SendChannelQuery != nil:
-				d.sendChannelQuery(request)
-			case request.CreateWriteChannel != nil:
-				d.createWriteChannel(request)
-			case request.CreateReadChannel != nil:
-				d.createReadChannel(request)
-			case request.WriteChannel != nil:
-				d.writeChannel(request)
-			case request.ResumeWriteChannel != nil:
-				d.resumeWriteChannel(request)
-			case request.ResumeWriteChannelQuery != nil:
-				d.resumeWriteChannelQuery(request)
-			case request.ReadChannel != nil:
-				d.readChannel(request)
-			case request.ResumeReadChannel != nil:
-				d.resumeReadChannel(request)
-			case request.ResumeReadChannelQuery != nil:
-				d.resumeReadChannelQuery(request)
-			case request.CloseChannel != nil:
-				d.closeChannel(request)
-
 			default:
 				panic("send operation not fully specified")
 			}
@@ -473,15 +391,6 @@ func (d *Daemon) ingressWorker() {
 				d.log.Errorf("failed to send Response: %s", err)
 			}
 		case surbID := <-d.gcSurbIDCh:
-			d.channelRepliesLock.RLock()
-			_, ok := d.channelReplies[*surbID]
-			d.channelRepliesLock.RUnlock()
-
-			if ok {
-				d.log.Debugf("Timer expired for channel SURB ID %x, but keeping state for retries", surbID[:])
-				continue
-			}
-
 			d.replyLock.Lock()
 			delete(d.replies, *surbID)
 			delete(d.decoys, *surbID)
@@ -493,7 +402,6 @@ func (d *Daemon) ingressWorker() {
 }
 
 func (d *Daemon) handleReply(reply *sphinxReply) {
-	isChannelReply := false
 	isReply := false
 	isARQReply := false
 	isDecoy := false
@@ -505,19 +413,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	myDecoyDescriptor, isDecoy := d.decoys[*reply.surbID]
 	arqMessage, isARQReply = d.arqSurbIDMap[*reply.surbID]
 	d.replyLock.Unlock()
-
-	d.channelRepliesLock.RLock()
-	myChannelReplyDescriptor, isChannelReply := d.channelReplies[*reply.surbID]
-	d.channelRepliesLock.RUnlock()
-
-	// Debug logging for channel reply lookup
-	if isChannelReply {
-		if myChannelReplyDescriptor.ID != nil {
-			d.log.Errorf("DEBUG: Found channel reply descriptor with MessageID %x for SURBID %x", myChannelReplyDescriptor.ID[:8], reply.surbID[:8])
-		} else {
-			d.log.Errorf("DEBUG: WARNING: Found channel reply descriptor with nil MessageID for SURBID %x", reply.surbID[:8])
-		}
-	}
 
 	switch {
 	case isReply:
@@ -531,12 +426,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		delete(d.decoys, *reply.surbID)
 		d.replyLock.Unlock()
 	case isARQReply:
-		// Pigeonhole ARQ reply handling
-		desc = replyDescriptor{
-			ID:      arqMessage.QueryID,
-			appID:   arqMessage.AppID,
-			surbKey: arqMessage.SURBDecryptionKeys,
-		}
 		peeked := d.arqTimerQueue.Peek()
 		if peeked != nil {
 			peekSurbId := peeked.Value.(*[sphinxConstants.SURBIDLength]byte)
@@ -551,12 +440,8 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		}
 		d.replyLock.Unlock()
 
-		// Handle the Pigeonhole ARQ reply
 		d.handlePigeonholeARQReply(arqMessage, reply)
 		return
-	case isChannelReply:
-		d.log.Debugf("Received channel reply for SURB ID %x", reply.surbID[:])
-		desc = myChannelReplyDescriptor
 	default:
 		return
 	}
@@ -572,681 +457,21 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		return
 	}
 
-	if isChannelReply {
-		err := d.handleChannelReply(desc.appID, desc.ID, reply.surbID, surbPayload)
-		if err != nil {
-			d.log.Errorf("BUG!Failed to handle channel reply: %s", err)
-
-			// send error code back to client
-			conn := d.listener.getConnection(desc.appID)
-			if conn == nil {
-				d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
-				return
-			}
-			err := conn.sendResponse(&Response{
-				AppID: desc.appID,
-				ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
-					MessageID: desc.ID,
-					ErrorCode: thin.ThinClientErrorInternalError,
-				},
-			})
-			if err != nil {
-				d.log.Errorf("failed to send error response to client: %s", err)
-			}
-		}
-
-		d.channelRepliesLock.Lock()
-		delete(d.channelReplies, *reply.surbID)
-		d.channelRepliesLock.Unlock()
-
-		d.newSurbIDToChannelMapLock.Lock()
-		delete(d.newSurbIDToChannelMap, *reply.surbID)
-		d.newSurbIDToChannelMapLock.Unlock()
-	} else {
-		// not a reply to a channel operation,
-		// thei is legacy API
-		conn := d.listener.getConnection(desc.appID)
-		if conn == nil {
-			d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
-			return
-		}
-		conn.sendResponse(&Response{
-			AppID: desc.appID,
-			MessageReplyEvent: &thin.MessageReplyEvent{
-				MessageID: desc.ID,
-				SURBID:    reply.surbID,
-				Payload:   surbPayload,
-				ErrorCode: thin.ThinClientSuccess, // No error
-			},
-		})
-	}
-}
-
-func (d *Daemon) validateResumeWriteChannelRequest(request *Request) error {
-	if request.ResumeWriteChannel.QueryID == nil {
-		return fmt.Errorf("QueryID cannot be nil when resuming an existing channel")
-	}
-	if request.ResumeWriteChannel.WriteCap == nil {
-		return fmt.Errorf("WriteCap cannot be nil when resuming an existing channel")
-	}
-	// Note(David): The rest of the fields are optional.
-	return nil
-}
-
-func (d *Daemon) validateResumeWriteChannelQueryRequest(request *Request) error {
-	if request.ResumeWriteChannelQuery.QueryID == nil {
-		return fmt.Errorf("QueryID cannot be nil when resuming an existing channel")
-	}
-	if request.ResumeWriteChannelQuery.WriteCap == nil {
-		return fmt.Errorf("WriteCap cannot be nil when resuming an existing channel")
-	}
-	if request.ResumeWriteChannelQuery.MessageBoxIndex == nil {
-		return fmt.Errorf("MessageBoxIndex cannot be nil when resuming an existing channel")
-	}
-	if request.ResumeWriteChannelQuery.EnvelopeDescriptor == nil {
-		return fmt.Errorf("EnvelopeDescriptor cannot be nil when resuming an existing channel")
-	}
-	if request.ResumeWriteChannelQuery.EnvelopeHash == nil {
-		return fmt.Errorf("EnvelopeHash cannot be nil when resuming an existing channel")
-	}
-	return nil
-}
-
-func (d *Daemon) resumeWriteChannel(request *Request) {
-	// validate request
-	if err := d.validateResumeWriteChannelRequest(request); err != nil {
-		d.log.Errorf("BUG, invalid request: %v", err)
-		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	// set used write cap map entry
-	_, err := request.ResumeWriteChannel.WriteCap.MarshalBinary()
-	if err != nil {
-		d.log.Errorf("BUG, failed to marshal write cap: %v", err)
-		d.sendResumeWriteChannelError(request, thin.ThinClientImpossibleHashError)
-		return
-	}
-
-	// use fields from the request to mutate our current state
-	channelID := d.generateUniqueChannelID()
-	var statefulWriter *bacap.StatefulWriter
-	if request.ResumeWriteChannel.MessageBoxIndex == nil {
-		statefulWriter, err = bacap.NewStatefulWriter(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
-		if err != nil {
-			d.log.Errorf("BUG, failed to create stateful writer: %v", err)
-			d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
-			return
-		}
-	} else {
-		statefulWriter, err = bacap.NewStatefulWriterWithIndex(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX, request.ResumeWriteChannel.MessageBoxIndex)
-		if err != nil {
-			d.log.Errorf("BUG, failed to create stateful writer: %v", err)
-			d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
-			return
-		}
-	}
-
-	myNewChannelDescriptor := &ChannelDescriptor{
-		AppID:               request.AppID,
-		StatefulWriter:      statefulWriter,
-		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-	}
-
-	d.newChannelMapLock.Lock()
-	d.newChannelMap[channelID] = myNewChannelDescriptor
-	d.newChannelMapLock.Unlock()
-
-	// send reply back to client
-	conn := d.listener.getConnection(request.AppID)
+	// Legacy API reply
+	conn := d.listener.getConnection(desc.appID)
 	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
+		d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
 		return
 	}
 	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		ResumeWriteChannelReply: &thin.ResumeWriteChannelReply{
-			QueryID:   request.ResumeWriteChannel.QueryID,
-			ChannelID: channelID,
+		AppID: desc.appID,
+		MessageReplyEvent: &thin.MessageReplyEvent{
+			MessageID: desc.ID,
+			SURBID:    reply.surbID,
+			Payload:   surbPayload,
 			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
-}
-
-func (d *Daemon) resumeWriteChannelQuery(request *Request) {
-	// validate request
-	if err := d.validateResumeWriteChannelQueryRequest(request); err != nil {
-		d.log.Errorf("BUG, invalid request: %v", err)
-		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	// set used write cap map entry
-	_, err := request.ResumeWriteChannelQuery.WriteCap.MarshalBinary()
-	if err != nil {
-		d.log.Errorf("BUG, failed to marshal write cap: %v", err)
-		d.sendResumeWriteChannelQueryError(request, thin.ThinClientImpossibleHashError)
-		return
-	}
-
-	// use fields from the request to mutate our current state
-	channelID := d.generateUniqueChannelID()
-	var statefulWriter *bacap.StatefulWriter
-	statefulWriter, err = bacap.NewStatefulWriterWithIndex(request.ResumeWriteChannelQuery.WriteCap, constants.PIGEONHOLE_CTX, request.ResumeWriteChannelQuery.MessageBoxIndex)
-	if err != nil {
-		d.log.Errorf("BUG, failed to create stateful writer: %v", err)
-		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	myNewChannelDescriptor := &ChannelDescriptor{
-		AppID:               request.AppID,
-		StatefulWriter:      statefulWriter,
-		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-	}
-
-	// handle optional fields which are only used for resumption of a previously prepared write query blob
-	// store envelope descriptor for later use
-	envelopeDesc, err := EnvelopeDescriptorFromBytes(request.ResumeWriteChannelQuery.EnvelopeDescriptor)
-	if err != nil {
-		// 20:40:22.483 ERRO katzenpost/client2: resumeWriteChannelQuery: Failed to parse envelope descriptor: cbor: 1999 bytes of extraneous data starting at index 1
-		//
-		d.log.Errorf("resumeWriteChannelQuery: Failed to parse envelope descriptor: %v", err)
-		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	envHash := request.ResumeWriteChannelQuery.EnvelopeHash
-	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
-
-	d.newChannelMapLock.Lock()
-	d.newChannelMap[channelID] = myNewChannelDescriptor
-	d.newChannelMapLock.Unlock()
-
-	// send reply back to client
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		ResumeWriteChannelQueryReply: &thin.ResumeWriteChannelQueryReply{
-			QueryID:   request.ResumeWriteChannelQuery.QueryID,
-			ChannelID: channelID,
-			ErrorCode: thin.ThinClientSuccess,
-		},
-	})
-}
-
-func (d *Daemon) sendResumeWriteChannelQueryError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		ResumeWriteChannelQueryReply: &thin.ResumeWriteChannelQueryReply{
-			QueryID:   request.ResumeWriteChannelQuery.QueryID,
-			ErrorCode: errorCode,
-		},
-	})
-}
-
-func (d *Daemon) sendResumeWriteChannelError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		ResumeWriteChannelReply: &thin.ResumeWriteChannelReply{
-			QueryID:   request.ResumeWriteChannel.QueryID,
-			ErrorCode: errorCode,
-		},
-	})
-}
-
-func (d *Daemon) validateResumeReadChannelRequest(request *Request) error {
-	if request.ResumeReadChannel.QueryID == nil {
-		return fmt.Errorf("queryID cannot be nil")
-	}
-	if request.ResumeReadChannel.ReadCap == nil {
-		return fmt.Errorf("readCap cannot be nil")
-	}
-	return nil
-}
-
-func (d *Daemon) validateResumeReadChannelQueryRequest(request *Request) error {
-	if request.ResumeReadChannelQuery.QueryID == nil {
-		return fmt.Errorf("queryID cannot be nil")
-	}
-	if request.ResumeReadChannelQuery.ReadCap == nil {
-		return fmt.Errorf("readCap cannot be nil")
-	}
-	if request.ResumeReadChannelQuery.NextMessageIndex == nil {
-		return fmt.Errorf("nextMessageIndex cannot be nil")
-	}
-	if request.ResumeReadChannelQuery.EnvelopeDescriptor == nil {
-		return fmt.Errorf("envelopeDescriptor cannot be nil")
-	}
-	if request.ResumeReadChannelQuery.EnvelopeHash == nil {
-		return fmt.Errorf("envelopeHash cannot be nil")
-	}
-	return nil
-}
-
-func (d *Daemon) resumeReadChannel(request *Request) {
-	// NOTE(David):
-	// handle the request in several steps:
-	// 1. validate request
-	// 2. set used read cap map entry
-	// 3. create new channel descriptor
-	// 4. inspect optional request fields that are only used for resumption of a previously prepared read query blob
-	d.log.Debugf("daemon.resumeReadChannel")
-	err := d.validateResumeReadChannelRequest(request)
-	if err != nil {
-		d.log.Errorf("BUG, invalid request: %v", err)
-		d.sendResumeReadChannelError(request, thin.ThinClientErrorInvalidResumeReadChannelRequest)
-		return
-	}
-
-	_, err = request.ResumeReadChannel.ReadCap.MarshalBinary()
-	if err != nil {
-		d.log.Errorf("BUG, failed to marshal read cap: %v", err)
-		d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
-		d.sendResumeReadChannelError(request, thin.ThinClientErrorConnectionLost)
-		return
-	}
-	channelID := d.generateUniqueChannelID()
-	d.log.Debugf("chan:%d assigned to resumeReadRequest", channelID)
-	var statefulReader *bacap.StatefulReader
-	if request.ResumeReadChannel.NextMessageIndex == nil {
-		// TODO: in these cases we should clean up the channel reservation
-		statefulReader, err = bacap.NewStatefulReader(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
-		if err != nil {
-			d.log.Errorf("BUG, failed to create stateful reader: %v", err)
-			d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
-			return
-		}
-	} else {
-		statefulReader, err = bacap.NewStatefulReaderWithIndex(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX, request.ResumeReadChannel.NextMessageIndex)
-		if err != nil {
-			d.log.Errorf("BUG, failed to create stateful reader: %v", err)
-			d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
-			return
-		}
-	}
-
-	myNewChannelDescriptor := &ChannelDescriptor{
-		AppID:               request.AppID,
-		StatefulReader:      statefulReader,
-		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-	}
-	d.log.Debugf("chan:%d resumeReadRequest: updating newChannelMap with descriptor", channelID)
-	d.newChannelMapLock.Lock()
-	d.newChannelMap[channelID] = myNewChannelDescriptor
-	d.newChannelMapLock.Unlock()
-	d.log.Debugf("chan:%d resumeReadRequest: updated newChannelMapLock", channelID)
-
-	// send reply back to client
-	d.log.Debugf("chan:%d resumeReadRequest: sending ResumeReadChannelReply", channelID)
-	err = conn.sendResponse(&Response{
-		AppID: request.AppID,
-		ResumeReadChannelReply: &thin.ResumeReadChannelReply{
-			QueryID:   request.ResumeReadChannel.QueryID,
-			ChannelID: channelID,
-			ErrorCode: thin.ThinClientSuccess,
-		},
-	})
-	if err != nil {
-		d.log.Errorf("chan:%d resumeReadRequest: conn.sendResponse: %v", channelID, err)
-	}
-	d.log.Debugf("chan:%d resumeReadRequest: sent ResumeReadChannelReply", channelID)
-}
-
-func (d *Daemon) sendResumeReadChannelQueryError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		ResumeReadChannelQueryReply: &thin.ResumeReadChannelQueryReply{
-			QueryID:   request.ResumeReadChannelQuery.QueryID,
-			ErrorCode: errorCode,
-		},
-	})
-}
-
-func (d *Daemon) resumeReadChannelQuery(request *Request) {
-	// NOTE(David):
-	// handle the request in several steps:
-	// 1. validate request
-	// 2. set used read cap map entry
-	// 3. create new channel descriptor
-	// 4. inspect optional request fields that are only used for resumption of a previously prepared read query blob
-
-	err := d.validateResumeReadChannelQueryRequest(request)
-	if err != nil {
-		d.log.Errorf("BUG, invalid request: %v", err)
-		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInvalidResumeReadChannelRequest)
-		return
-	}
-
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
-		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorConnectionLost)
-		return
-	}
-	channelID := d.generateUniqueChannelID()
-	var statefulReader *bacap.StatefulReader
-	statefulReader, err = bacap.NewStatefulReaderWithIndex(
-		request.ResumeReadChannelQuery.ReadCap,
-		constants.PIGEONHOLE_CTX,
-		request.ResumeReadChannelQuery.NextMessageIndex)
-	if err != nil {
-		d.log.Errorf("BUG, failed to create stateful reader: %v", err)
-		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	myNewChannelDescriptor := &ChannelDescriptor{
-		AppID:               request.AppID,
-		StatefulReader:      statefulReader,
-		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-	}
-
-	// store envelope descriptor for later use
-	envelopeDesc, err := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
-	if err != nil {
-		d.log.Errorf("resumeReadChannelQuery: Failed to parse envelope descriptor: %v", err)
-		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	envHash := request.ResumeReadChannelQuery.EnvelopeHash
-	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
-
-	d.newChannelMapLock.Lock()
-	d.newChannelMap[channelID] = myNewChannelDescriptor
-	d.newChannelMapLock.Unlock()
-
-	// send reply back to client
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		ResumeReadChannelQueryReply: &thin.ResumeReadChannelQueryReply{
-			QueryID:   request.ResumeReadChannelQuery.QueryID,
-			ChannelID: channelID,
-			ErrorCode: thin.ThinClientSuccess,
-		},
-	})
-}
-
-func (d *Daemon) sendResumeReadChannelError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		ResumeReadChannelReply: &thin.ResumeReadChannelReply{
-			QueryID:   request.ResumeReadChannel.QueryID,
-			ErrorCode: errorCode,
-		},
-	})
-}
-
-// handleChannelReply tries to handle the reply and if successful it sends a
-// response to the appropriate thin client connection. Otherwise it returns an error.
-func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
-	mesgID *[MessageIDLength]byte,
-	surbid *[sphinxConstants.SURBIDLength]byte,
-	payload []byte) error {
-
-	// First, parse the courier query reply to check what type of reply it is
-	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(payload)
-	if err != nil {
-		return fmt.Errorf("BUG, failed to unmarshal courier query reply: %s", err)
-	}
-
-	// Handle envelope replies (read/write operations)
-	switch {
-	case courierQueryReply.ReplyType == 0:
-		return d.handleCourierEnvelopeReply(appid, mesgID, surbid, courierQueryReply.EnvelopeReply)
-	case courierQueryReply.ReplyType == 1:
-		return fmt.Errorf("BUG, copy command replies are not supported in the new API yet")
-	}
-
-	// not reached
-	return nil
-}
-
-func mapCourierErrorToThinClientError(courierErrorCode uint8) uint8 {
-	switch courierErrorCode {
-	case pigeonhole.EnvelopeErrorSuccess:
-		return thin.ThinClientSuccess
-	case pigeonhole.EnvelopeErrorInvalidEnvelope:
-		return thin.ThinClientErrorInvalidRequest
-	case pigeonhole.EnvelopeErrorCacheCorruption:
-		return thin.ThinClientErrorCourierCacheCorruption
-	case pigeonhole.EnvelopeErrorPropagationError:
-		return thin.ThinClientPropagationError
-	default:
-		return thin.ThinClientErrorInternalError
-	}
-}
-
-func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
-	mesgID *[MessageIDLength]byte,
-	surbid *[sphinxConstants.SURBIDLength]byte,
-	courierEnvelopeReply *pigeonhole.CourierEnvelopeReply) error {
-
-	channelID, channelDesc, err := d.lookupNewChannel(surbid)
-	if err != nil {
-		// NOTE(David): we could possibly send a reply to the thin client indicating this bug/error
-		// but instead we're going to rely on the logging. Either way it's not recoverable.
-		return fmt.Errorf("BUG, SURB ID not found: %v", err)
-	}
-
-	conn := d.listener.getConnection(appid)
-	if conn == nil {
-		return fmt.Errorf("BUG, no connection associated with AppID %x", appid[:])
-	}
-
-	isReader, isWriter, err := d.validateNewChannel(channelID, channelDesc)
-	if err != nil {
-		return fmt.Errorf("BUG, invalid channel: %v", err)
-	}
-
-	if courierEnvelopeReply == nil {
-		return fmt.Errorf("BUG, courier envelope reply is nil")
-	}
-
-	d.log.Debugf("DEBUG: Processing courier envelope reply - ReplyType=%d, ErrorCode=%d, PayloadLen=%d, isWriter=%v, isReader=%v",
-		courierEnvelopeReply.ReplyType, courierEnvelopeReply.ErrorCode, courierEnvelopeReply.PayloadLen, isWriter, isReader)
-
-	switch {
-	case courierEnvelopeReply.ErrorCode != 0:
-		// send error response to client
-		// mapCourierErrorToThinClientError(courierEnvelopeReply.ErrorCode)
-		return conn.sendResponse(&Response{
-			AppID: appid,
-			ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
-				MessageID: mesgID,
-				Payload:   []byte{},
-				ErrorCode: mapCourierErrorToThinClientError(courierEnvelopeReply.ErrorCode),
-			},
-		})
-	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK:
-		d.log.Debugf("DEBUG: Received ACK reply for channel %d, isWriter=%v", channelID, isWriter)
-		// ACK indicates successful write operation - advance StatefulWriter state
-		if false { // if isWriter {
-			// TODO: the application can (and will) resend the same message several times to the courier,
-			// each of them warranting an ACK, which will cause the stream to skip messages.
-			// For now, clients should use the ResumeWriteChannel API to set the index.
-			// is this what we want?
-			channelDesc.StatefulWriterLock.Lock()
-			d.log.Debugf("DEBUG: Advancing StatefulWriter state for channel %d", channelID)
-			err := channelDesc.StatefulWriter.AdvanceState()
-			channelDesc.StatefulWriterLock.Unlock()
-			if err != nil {
-				d.log.Errorf("Failed to advance StatefulWriter state for channel %d: %s", channelID, err)
-				// Continue to send response even if state advancement fails
-			} else {
-				d.log.Debugf("DEBUG: Successfully advanced StatefulWriter state for channel %d", channelID)
-			}
-		}
-
-		// send empty response to client
-		return conn.sendResponse(&Response{
-			AppID: appid,
-			ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
-				MessageID: mesgID,
-				Payload:   []byte{},
-				ErrorCode: thin.ThinClientSuccess,
-			},
-		})
-	case courierEnvelopeReply.Payload == nil || courierEnvelopeReply.PayloadLen == 0:
-		// send empty response to client (for non-ACK empty replies)
-		return conn.sendResponse(&Response{
-			AppID: appid,
-			ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
-				MessageID: mesgID,
-				Payload:   []byte{},
-				ErrorCode: thin.ThinClientSuccess,
-			},
-		})
-	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypePayload:
-
-		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierEnvelopeReply, channelDesc)
-		if err != nil {
-			d.log.Errorf("NEW API REPLY: Failed to process envelope reply: %s", err)
-			return err
-		}
-
-		d.log.Infof("NEW API REPLY: Decrypting MKEM Envelope env:%v envelopeDesc:%v", env, envelopeDesc)
-
-		innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
-		if err != nil {
-			d.log.Errorf("NEW API REPLY: Failed to decrypt MKEM envelope: %s", err)
-			return err
-		}
-
-		envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
-
-		d.log.Errorf("channellID %d decrypted MKEM envelope messageid:%v envHash:%v isReader:%v isWriter:%v innerMsg.ReadReply:%v innerMsg.WriteReply:", channelID, mesgID, envHash, isReader, isWriter, innerMsg.ReadReply, innerMsg.WriteReply)
-		// from here on here, these two switch cases are the success cases:
-		switch {
-		case innerMsg.ReadReply != nil:
-			params := &ReplyHandlerParams{
-				AppID:       appid,
-				MessageID:   mesgID,
-				ChannelID:   channelID,
-				ChannelDesc: channelDesc,
-				EnvHash:     envHash,
-				IsReader:    isReader,
-				IsWriter:    isWriter,
-				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
-			}
-			if !isReader {
-				d.log.Errorf("channelID %d ReadReply for !isReader", channelID)
-			}
-			return d.handleNewReadReply(params, innerMsg.ReadReply)
-		case innerMsg.WriteReply != nil:
-			params := &ReplyHandlerParams{
-				AppID:       appid,
-				MessageID:   mesgID,
-				ChannelID:   channelID,
-				ChannelDesc: channelDesc,
-				EnvHash:     envHash,
-				IsReader:    isReader,
-				IsWriter:    isWriter,
-				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
-			}
-			if !isWriter {
-				d.log.Errorf("channelID %d WriteReply for !isWriter", channelID)
-			}
-			return d.handleNewWriteReply(params, innerMsg.WriteReply)
-		}
-
-		// if we got this far something failed
-		d.log.Errorf("bug 6, invalid book keeping for channelID %d", channelID)
-
-		// send error code back to client
-		return conn.sendResponse(&Response{
-			AppID: appid,
-			ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
-				MessageID: mesgID,
-				Payload:   []byte{},
-				ErrorCode: thin.ThinClientErrorInvalidChannel,
-			},
-		})
-	}
-
-	// not reached
-	return nil
-}
-
-// lookupNewChannel finds the channel descriptor for a given SURB ID (new API)
-func (d *Daemon) lookupNewChannel(surbid *[sphinxConstants.SURBIDLength]byte) (uint16, *ChannelDescriptor, error) {
-	d.newSurbIDToChannelMapLock.RLock()
-	channelID, ok := d.newSurbIDToChannelMap[*surbid]
-	d.newSurbIDToChannelMapLock.RUnlock()
-	if !ok {
-		d.log.Errorf("BUG no channelID found for surbID %x in new API", surbid[:])
-		return 0, nil, fmt.Errorf("no channelID found for surbID %x in new API", surbid[:])
-	}
-
-	d.newChannelMapLock.RLock()
-	channelDesc, ok := d.newChannelMap[channelID]
-	d.newChannelMapLock.RUnlock()
-	if !ok || channelDesc == nil {
-		d.log.Errorf("BUG no channel found for channelID %d in new API", channelID)
-		return 0, nil, fmt.Errorf("no channel found for channelID %d in new API", channelID)
-	}
-
-	return channelID, channelDesc, nil
-}
-
-// processEnvelopeReply processes the courier envelope reply and extracts necessary information
-func (d *Daemon) processEnvelopeReply(env *pigeonhole.CourierEnvelopeReply, channelDesc *ChannelDescriptor) (*pigeonhole.CourierEnvelopeReply, *EnvelopeDescriptor, nike.PrivateKey, error) {
-	envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
-
-	// DEBUG: Log envelope hash and map size when processing reply
-	channelDesc.EnvelopeDescriptorsLock.RLock()
-	mapSize := len(channelDesc.EnvelopeDescriptors)
-	envelopeDesc, ok := channelDesc.EnvelopeDescriptors[*envHash]
-	channelDesc.EnvelopeDescriptorsLock.RUnlock()
-
-	fmt.Printf("PROCESSING REPLY ENVELOPE HASH: %x (map size: %d, exists: %t)\n", envHash[:], mapSize, ok)
-
-	if !ok {
-		d.log.Errorf("no envelope descriptor found for hash %x", envHash[:])
-		return nil, nil, nil, fmt.Errorf("no envelope descriptor found for hash %x", envHash[:])
-	}
-
-	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
-	if err != nil {
-		d.log.Errorf("failed to unmarshal private key: %s", err)
-		return nil, nil, nil, fmt.Errorf("failed to unmarshal private key: %s", err)
-	}
-
-	if len(env.Payload) == 0 {
-		d.log.Debugf("received empty payload for envelope hash %x - no data available yet", envHash[:])
-		return nil, nil, nil, fmt.Errorf("no data available for read operation")
-	}
-
-	return env, envelopeDesc, privateKey, nil
 }
 
 // decryptMKEMEnvelope decrypts the MKEM envelope and returns the inner message
@@ -1325,84 +550,6 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	}
 
 	return innerMsg, nil
-}
-
-func (d *Daemon) validateSendChannelQueryRequest(request *Request) error {
-	if request.SendChannelQuery.MessageID == nil {
-		return fmt.Errorf("MessageID cannot be nil")
-	}
-	if request.SendChannelQuery.ChannelID == nil {
-		return fmt.Errorf("ChannelID cannot be nil")
-	}
-	if request.SendChannelQuery.DestinationIdHash == nil {
-		return fmt.Errorf("DestinationIdHash cannot be nil")
-	}
-	if request.SendChannelQuery.RecipientQueueID == nil {
-		return fmt.Errorf("RecipientQueueID cannot be nil")
-	}
-	if request.SendChannelQuery.Payload == nil {
-		return fmt.Errorf("Payload cannot be nil")
-	}
-	return nil
-}
-
-func (d *Daemon) sendChannelQuery(request *Request) {
-	err := d.validateSendChannelQueryRequest(request)
-	if err != nil {
-		d.log.Errorf("BUG, invalid request: %v", err)
-		d.sendErrorResponse(request, thin.ThinClientErrorInvalidRequest, "SendChannelQuery")
-		return
-	}
-
-	var surbKey []byte
-	var rtt time.Duration
-	var now time.Time
-
-	surbID := common.NewSURBID()
-	surbKey, rtt, err = d.client.SendChannelQuery(request.SendChannelQuery, surbID)
-	if err != nil {
-		d.log.Debugf("SendCiphertext error: %s", err.Error())
-	}
-
-	now = time.Now()
-	fetchInterval := d.client.GetPollInterval()
-	slop := time.Second
-	duration := rtt + fetchInterval + slop
-	replyArrivalTime := now.Add(duration)
-
-	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
-
-	incomingConn := d.listener.getConnection(request.AppID)
-	if incomingConn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
-		return
-	}
-
-	response := &Response{
-		AppID: request.AppID,
-		ChannelQuerySentEvent: &thin.ChannelQuerySentEvent{
-			MessageID: request.SendChannelQuery.MessageID,
-			SentAt:    now,
-			ReplyETA:  rtt,
-			ErrorCode: thin.ThinClientSuccess,
-		},
-	}
-	err = incomingConn.sendResponse(response)
-	if err != nil {
-		d.log.Errorf("failed to send Response: %s", err)
-	}
-
-	d.channelRepliesLock.Lock()
-	d.channelReplies[*surbID] = replyDescriptor{
-		ID:      request.SendChannelQuery.MessageID,
-		appID:   request.AppID,
-		surbKey: surbKey,
-	}
-	d.channelRepliesLock.Unlock()
-
-	d.newSurbIDToChannelMapLock.Lock()
-	d.newSurbIDToChannelMap[*surbID] = *request.SendChannelQuery.ChannelID
-	d.newSurbIDToChannelMapLock.Unlock()
 }
 
 func (d *Daemon) send(request *Request) {
@@ -1656,186 +803,48 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 }
 
-// validateNewChannel performs sanity checks on the channel descriptor and determines channel type (new API)
-func (d *Daemon) validateNewChannel(channelID uint16, channelDesc *ChannelDescriptor) (bool, bool, error) {
-	// sanity check
-	if channelDesc.StatefulReader == nil && channelDesc.StatefulWriter == nil {
-		d.log.Errorf("bug 1, invalid book keeping for channelID %d", channelID)
-		return false, false, fmt.Errorf("bug 1, invalid book keeping for channelID %d", channelID)
-	}
-	if channelDesc.StatefulReader != nil && channelDesc.StatefulWriter != nil {
-		d.log.Errorf("bug 2, invalid book keeping for channelID %d", channelID)
-		return false, false, fmt.Errorf("bug 2, invalid book keeping for channelID %d", channelID)
-	}
-	if channelDesc.EnvelopeDescriptors == nil {
-		d.log.Errorf("bug 3, invalid book keeping for channelID %d", channelID)
-		return false, false, fmt.Errorf("bug 3, invalid book keeping for channelID %d", channelID)
-	}
+// cleanupForAppID cleans up all daemon state associated with a given App ID.
+// This is called when a thin client disconnects to ensure proper cleanup.
+func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
+	d.log.Infof("cleanupForAppID: cleaning up state for App ID %x", appID[:])
 
-	isReader := channelDesc.StatefulReader != nil
-	isWriter := channelDesc.StatefulWriter != nil
-	return isReader, isWriter, nil
-}
+	cleanedARQ := 0
+	cleanedReplies := 0
+	cleanedDecoys := 0
 
-// validateReadReplySignature checks if the signature is valid (not all zeros)
-func (d *Daemon) validateReadReplySignature(signature [64]uint8) error {
-	var zeroSig [64]uint8
-	if signature == zeroSig {
-		d.log.Debugf("replica returned zero signature for read operation")
-		return fmt.Errorf("replica read reply has zero signature")
-	}
-	return nil
-}
-
-// decryptReadReplyPayload handles the decryption and extraction of the payload
-func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
-	params.ChannelDesc.StatefulReaderLock.Lock()
-	defer params.ChannelDesc.StatefulReaderLock.Unlock()
-
-	boxid, err := params.ChannelDesc.StatefulReader.NextBoxID()
-	if err != nil {
-		d.log.Errorf("Failed to get next box ID for channel %d: %s", params.ChannelID, err)
-		return nil, fmt.Errorf("failed to get next box ID: %s", err)
-	}
-	saved := params.ChannelDesc.StatefulReader.NextIndex
-
-	// BACAP decrypt the payload
-	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
-	innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
-		[]byte(constants.PIGEONHOLE_CTX),
-		*boxid,
-		readReply.Payload,
-		*signature)
-
-	if err != nil {
-		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
-		return nil, fmt.Errorf("failed to decrypt next: %s", err)
-	} else {
-		//if params.ReadChannel.MessageBoxIndex != nil {
-		params.ChannelDesc.StatefulReader.NextIndex = saved // restore it because DecryptNext advanced it
-		d.log.Errorf("BACAP state NOTNOT advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
-		// } else {
-		// 	      d.log.Errorf("BACAP state advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
-		//  }
-	}
-
-	// Extract the original message from the padded payload
-	originalMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(innerplaintext)
-	if err != nil {
-		d.log.Errorf("Failed to extract message from padded payload: %s", err)
-		return nil, fmt.Errorf("failed to extract message from padded payload: %s", err)
-	}
-
-	return originalMessage, nil
-}
-
-// processReadReplyPayload processes the read reply and returns payload and error
-func (d *Daemon) processReadReplyPayload(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
-	if readReply.ErrorCode != 0 {
-		d.log.Errorf("read failed for channel %d with error code %d (ReplicaErrorNotFound = 1)", params.ChannelID, readReply.ErrorCode)
-		return nil, fmt.Errorf("read failed with error code %d", readReply.ErrorCode)
-	}
-
-	if err := d.validateReadReplySignature(readReply.Signature); err != nil {
-		return nil, err
-	}
-
-	return d.decryptReadReplyPayload(params, readReply)
-}
-
-// handleNewReadReply processes a read reply (new API)
-func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) error {
-	if !params.IsReader {
-		d.log.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
-		return fmt.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
-	}
-
-	conn := d.listener.getConnection(params.AppID)
-	if conn == nil {
-		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
-	}
-
-	var errorCode uint8 = thin.ThinClientSuccess
-	var payload []byte
-	var err error
-	if readReply.ErrorCode == 1 {
-		// this is "box not found"
-		payload = []byte{}
-	} else {
-		if readReply.ErrorCode == 0 {
-			payload, err = d.processReadReplyPayload(params, readReply)
-			if err != nil {
-				d.log.Errorf("chan %v failed to process read reply payload: %s", params.ChannelID, err)
-				payload = []byte{} // Ensure empty payload on error
-				errorCode = thin.ThinClientErrorInvalidPayload
+	d.replyLock.Lock()
+	if d.arqSurbIDMap != nil {
+		for surbID, message := range d.arqSurbIDMap {
+			if message.AppID != nil && *message.AppID == *appID {
+				delete(d.arqSurbIDMap, surbID)
+				cleanedARQ++
 			}
-		} else {
-			payload = []byte{}
-			errorCode = thin.ThinClientErrorInternalError // TODO this is a lie, it's a replica error.
 		}
 	}
-
-	if readReply.ErrorCode == 0 {
-		// deliver the read result to thin client if we can decrypt it
-		err = conn.sendResponse(&Response{
-			AppID: params.AppID,
-			MessageReplyEvent: &thin.MessageReplyEvent{
-				MessageID:  params.MessageID,
-				Payload:    payload,
-				ReplyIndex: &params.ReplyIndex,
-				ErrorCode:  errorCode,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("chan %d: failed to send MessageReplyEvent to client: %s", params.ChannelID, err)
+	if d.replies != nil {
+		for surbID, desc := range d.replies {
+			if desc.appID != nil && *desc.appID == *appID {
+				delete(d.replies, surbID)
+				cleanedReplies++
+			}
 		}
-	} else {
-		d.log.Warningf("handleNewReadReply: readReply has ErrorCode: %v so not sending MessageReplyEvent", readReply.ErrorCode)
+	}
+	if d.decoys != nil {
+		for surbID, desc := range d.decoys {
+			if desc.appID != nil && *desc.appID == *appID {
+				delete(d.decoys, surbID)
+				cleanedDecoys++
+			}
+		}
+	}
+	d.replyLock.Unlock()
+
+	if cleanedARQ == 0 && cleanedReplies == 0 && cleanedDecoys == 0 {
+		d.log.Debugf("cleanupForAppID: no state found for App ID %x", appID[:])
+		return
 	}
 
-	// deliver the read result to thin client
-	err = conn.sendResponse(&Response{
-		AppID: params.AppID,
-		ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
-			MessageID:  params.MessageID,
-			Payload:    payload,
-			ReplyIndex: &params.ReplyIndex,
-			ErrorCode:  errorCode,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("chan %d: failed to send read response to client: %s", params.ChannelID, err)
-	}
-
-	return nil
+	d.log.Infof("cleanupForAppID: cleaned %d ARQ, %d replies, %d decoys for App ID %x",
+		cleanedARQ, cleanedReplies, cleanedDecoys, appID[:])
 }
 
-func (d *Daemon) handleNewWriteReply(params *ReplyHandlerParams, writeReply *pigeonhole.ReplicaWriteReply) error {
-	if !params.IsWriter {
-		d.log.Errorf("bug 5, invalid book keeping for channelID %d", params.ChannelID)
-		return fmt.Errorf("bug 5, invalid book keeping for channelID %d", params.ChannelID)
-	}
-
-	conn := d.listener.getConnection(params.AppID)
-	if conn == nil {
-		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
-	}
-
-	// Note: StatefulWriter state is advanced in handleCourierEnvelopeReply when ACK is received
-
-	// deliver the write result to thin client
-	err := conn.sendResponse(&Response{
-		AppID: params.AppID,
-		ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
-			MessageID:  params.MessageID,
-			Payload:    []byte{}, // Empty payload for write operations
-			ReplyIndex: &params.ReplyIndex,
-			ErrorCode:  writeReply.ErrorCode,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to send write response to client: %s", err)
-	}
-
-	return nil
-}

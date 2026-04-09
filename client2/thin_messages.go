@@ -30,17 +30,6 @@ func IntoThinResponse(r *Response) *thin.Response {
 		CreateCourierEnvelopesFromPayloadsReply: r.CreateCourierEnvelopesFromPayloadsReply,
 		SetStreamBufferReply:                    r.SetStreamBufferReply,
 
-		// OLD Pigeonhole API:
-		CreateWriteChannelReply:      r.CreateWriteChannelReply,
-		CreateReadChannelReply:       r.CreateReadChannelReply,
-		WriteChannelReply:            r.WriteChannelReply,
-		ReadChannelReply:             r.ReadChannelReply,
-		ResumeWriteChannelReply:      r.ResumeWriteChannelReply,
-		ResumeReadChannelReply:       r.ResumeReadChannelReply,
-		ResumeWriteChannelQueryReply: r.ResumeWriteChannelQueryReply,
-		ResumeReadChannelQueryReply:  r.ResumeReadChannelQueryReply,
-		ChannelQuerySentEvent:        r.ChannelQuerySentEvent,
-		ChannelQueryReplyEvent:       r.ChannelQueryReplyEvent,
 	}
 }
 
@@ -87,27 +76,6 @@ type Response struct {
 
 	SetStreamBufferReply *thin.SetStreamBufferReply
 
-	// OLD Pigeonhole API:
-
-	CreateWriteChannelReply *thin.CreateWriteChannelReply
-
-	CreateReadChannelReply *thin.CreateReadChannelReply
-
-	WriteChannelReply *thin.WriteChannelReply
-
-	ReadChannelReply *thin.ReadChannelReply
-
-	ResumeWriteChannelReply *thin.ResumeWriteChannelReply
-
-	ResumeReadChannelReply *thin.ResumeReadChannelReply
-
-	ResumeWriteChannelQueryReply *thin.ResumeWriteChannelQueryReply
-
-	ResumeReadChannelQueryReply *thin.ResumeReadChannelQueryReply
-
-	ChannelQuerySentEvent *thin.ChannelQuerySentEvent
-
-	ChannelQueryReplyEvent *thin.ChannelQueryReplyEvent
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
@@ -128,18 +96,6 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		CreateCourierEnvelopesFromPayload:  r.CreateCourierEnvelopesFromPayload,
 		CreateCourierEnvelopesFromPayloads: r.CreateCourierEnvelopesFromPayloads,
 		SetStreamBuffer:                    r.SetStreamBuffer,
-
-		// Old Pigeonhole API:
-		SendChannelQuery:        r.SendChannelQuery,
-		CreateWriteChannel:      r.CreateWriteChannel,
-		CreateReadChannel:       r.CreateReadChannel,
-		WriteChannel:            r.WriteChannel,
-		ReadChannel:             r.ReadChannel,
-		ResumeWriteChannel:      r.ResumeWriteChannel,
-		ResumeWriteChannelQuery: r.ResumeWriteChannelQuery,
-		ResumeReadChannel:       r.ResumeReadChannel,
-		ResumeReadChannelQuery:  r.ResumeReadChannelQuery,
-		CloseChannel:            r.CloseChannel,
 
 		SendMessage: r.SendMessage,
 		ThinClose:   r.ThinClose,
@@ -182,28 +138,6 @@ type Request struct {
 	CreateCourierEnvelopesFromPayloads *thin.CreateCourierEnvelopesFromPayloads
 
 	SetStreamBuffer *thin.SetStreamBuffer
-
-	// OLD Pigeonhole API:
-
-	CreateWriteChannel *thin.CreateWriteChannel
-
-	CreateReadChannel *thin.CreateReadChannel
-
-	WriteChannel *thin.WriteChannel
-
-	ReadChannel *thin.ReadChannel
-
-	ResumeWriteChannel *thin.ResumeWriteChannel
-
-	ResumeReadChannel *thin.ResumeReadChannel
-
-	ResumeWriteChannelQuery *thin.ResumeWriteChannelQuery
-
-	ResumeReadChannelQuery *thin.ResumeReadChannelQuery
-
-	CloseChannel *thin.CloseChannel
-
-	SendChannelQuery *thin.SendChannelQuery
 
 	// Core functionality
 

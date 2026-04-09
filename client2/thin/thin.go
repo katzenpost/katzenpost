@@ -784,69 +784,6 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 			}
 		}
 
-		/**  New Channel API **/
-
-	case message.ChannelQuerySentEvent != nil:
-		select {
-		case t.eventSink <- message.ChannelQuerySentEvent:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.ChannelQueryReplyEvent != nil:
-		select {
-		case t.eventSink <- message.ChannelQueryReplyEvent:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.CreateReadChannelReply != nil:
-		select {
-		case t.eventSink <- message.CreateReadChannelReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.CreateWriteChannelReply != nil:
-		select {
-		case t.eventSink <- message.CreateWriteChannelReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.WriteChannelReply != nil:
-		select {
-		case t.eventSink <- message.WriteChannelReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.ReadChannelReply != nil:
-		select {
-		case t.eventSink <- message.ReadChannelReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.ResumeWriteChannelReply != nil:
-		select {
-		case t.eventSink <- message.ResumeWriteChannelReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.ResumeReadChannelReply != nil:
-		select {
-		case t.eventSink <- message.ResumeReadChannelReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.ResumeWriteChannelQueryReply != nil:
-		select {
-		case t.eventSink <- message.ResumeWriteChannelQueryReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.ResumeReadChannelQueryReply != nil:
-		select {
-		case t.eventSink <- message.ResumeReadChannelQueryReply:
-		case <-t.HaltCh():
-			return false
-		}
-
 		/**  New Pigeonhole API **/
 
 	case message.NewKeypairReply != nil:

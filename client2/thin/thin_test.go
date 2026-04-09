@@ -179,12 +179,6 @@ func TestOfflineChannelOperations(t *testing.T) {
 	// Test that operations requiring mixnet connectivity fail with appropriate errors
 	ctx := context.Background()
 
-	// Test SendChannelQuery fails in offline mode
-	testMessageID := thin.NewMessageID()
-	err = thin.SendChannelQuery(ctx, 1, []byte("test"), &[32]byte{}, []byte("queue"), testMessageID)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "cannot send channel query in offline mode")
-
 	// Test SendMessage fails in offline mode
 	surbID := thin.NewSURBID()
 	err = thin.SendMessage(surbID, []byte("test"), &[32]byte{}, []byte("queue"))

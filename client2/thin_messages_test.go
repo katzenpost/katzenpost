@@ -60,5 +60,4 @@ func TestFromThinRequestNilFields(t *testing.T) {
 	require.Nil(t, req.EncryptWrite)
 	require.Nil(t, req.SendMessage)
 	require.Nil(t, req.ThinClose)
-	require.Nil(t, req.SendChannelQuery)
 }

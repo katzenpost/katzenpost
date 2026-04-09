@@ -58,12 +58,6 @@ func TestDaemonNewKeypair_Success(t *testing.T) {
 		logbackend:                logBackend,
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	// Generate a seed - just 32 random bytes
@@ -135,12 +129,6 @@ func TestDaemonNewKeypair_InvalidSeed(t *testing.T) {
 		logbackend:                logBackend,
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -316,12 +304,6 @@ func TestDaemonEncryptRead_Success(t *testing.T) {
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
 		client:                    client,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	// Create a WriteCap and ReadCap for testing
@@ -403,12 +385,6 @@ func TestDaemonEncryptRead_NilReadCap(t *testing.T) {
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
 		client:                    client,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -492,12 +468,6 @@ func TestDaemonEncryptWrite_Success(t *testing.T) {
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
 		client:                    client,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	// Create a WriteCap for testing
@@ -581,12 +551,6 @@ func TestDaemonEncryptWrite_NilWriteCap(t *testing.T) {
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
 		client:                    client,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -633,13 +597,6 @@ func TestARQCleanupOnAppDisconnect(t *testing.T) {
 		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	logBackend, err := log.New("", "debug", false)
@@ -685,7 +642,7 @@ func TestARQCleanupOnAppDisconnect(t *testing.T) {
 	require.Len(t, d.arqSurbIDMap, 3)
 	d.replyLock.Unlock()
 
-	d.cleanupChannelsForAppID(testAppID)
+	d.cleanupForAppID(testAppID)
 
 	d.replyLock.Lock()
 	require.NotContains(t, d.arqSurbIDMap, testSURBID1)
@@ -703,13 +660,6 @@ func TestArqDoResendWithNilConnection(t *testing.T) {
 		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	logBackend, err := log.New("", "debug", false)
@@ -776,13 +726,6 @@ func TestArqDoResendWithHighRetryCountAndNilConnection(t *testing.T) {
 		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	logBackend, err := log.New("", "debug", false)
@@ -840,13 +783,6 @@ func TestRaceConditionARQResendAfterDisconnect(t *testing.T) {
 		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	logBackend, err := log.New("", "debug", false)
@@ -906,7 +842,7 @@ func TestRaceConditionARQResendAfterDisconnect(t *testing.T) {
 			}
 		}()
 		time.Sleep(5 * time.Millisecond)
-		d.cleanupChannelsForAppID(testAppID)
+		d.cleanupForAppID(testAppID)
 	}()
 
 	for _, surbID := range surbIDs {
@@ -995,12 +931,6 @@ func TestAliceSendsBobMessage(t *testing.T) {
 		listener:                  listener,
 		client:                    client,
 		cfg:                       cfg,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	t.Log("=== Step 1: Alice creates WriteCap and derives ReadCap for Bob ===")
@@ -1210,12 +1140,6 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 		listener:                  listener,
 		client:                    client,
 		cfg:                       cfg,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		replyLock:                 new(sync.Mutex),
@@ -1342,13 +1266,6 @@ func TestArqDoResendWithNilListener(t *testing.T) {
 		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 		listener:                  nil,
 	}
 
@@ -1476,12 +1393,6 @@ func TestARQSuccessWritePayload(t *testing.T) {
 		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 	}
 
 	// Generate client's NIKE keypair for the envelope
@@ -1706,12 +1617,6 @@ func TestStartResendingEncryptedMessage_ValidationErrors(t *testing.T) {
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
 		client:                    client,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		replyLock:                 new(sync.Mutex),
@@ -1908,12 +1813,6 @@ func TestCancelResendingEncryptedMessage(t *testing.T) {
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
 		client:                    client,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		replyLock:                 new(sync.Mutex),
@@ -2109,12 +2008,6 @@ func TestCancelResendingDuringARQRetry(t *testing.T) {
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
 		client:                    client,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		replyLock:                 new(sync.Mutex),
@@ -2242,12 +2135,6 @@ func setupDaemonWithMockConn(t *testing.T) (*Daemon, *[AppIDLength]byte, chan *R
 		log:                       logBackend.GetLogger("test"),
 		listener:                  listener,
 		client:                    client,
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
 		replyLock:                 new(sync.Mutex),
 		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),

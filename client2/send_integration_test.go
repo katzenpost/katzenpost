@@ -239,13 +239,7 @@ func setupFullClient(t *testing.T) (*Daemon, *Client, *[AppIDLength]byte, chan *
 		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
+		replyLock:          new(sync.Mutex),
 		copyStreamEncoders:        make(map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder),
 		secureRand:                rand.NewMath(),
 		timerQueue:                NewTimerQueue(func(interface{}) {}),
@@ -607,34 +601,6 @@ func TestSendCiphertext(t *testing.T) {
 	require.True(t, rtt > 0)
 
 	// Verify packet was sent
-	select {
-	case pkt := <-packetCh:
-		require.NotEmpty(t, pkt)
-	case <-time.After(5 * time.Second):
-		t.Fatal("packet not received")
-	}
-}
-
-func TestSendChannelQuery(t *testing.T) {
-	_, client, _, _, packetCh := setupFullClient(t)
-
-	_, doc := client.CurrentDocument()
-	require.NotNil(t, doc)
-	serviceIdHash := hash.Sum256(doc.ServiceNodes[0].IdentityKey)
-
-	surbID := &[sphinxConstants.SURBIDLength]byte{}
-	_, err := rand.Reader.Read(surbID[:])
-	require.NoError(t, err)
-
-	surbKey, rtt, err := client.SendChannelQuery(&thin.SendChannelQuery{
-		DestinationIdHash: &serviceIdHash,
-		RecipientQueueID:  []byte("courier"),
-		Payload:           []byte("channel query payload"),
-	}, surbID)
-	require.NoError(t, err)
-	require.NotEmpty(t, surbKey)
-	require.True(t, rtt > 0)
-
 	select {
 	case pkt := <-packetCh:
 		require.NotEmpty(t, pkt)

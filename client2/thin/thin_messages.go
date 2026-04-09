@@ -422,6 +422,29 @@ type SetStreamBuffer struct {
 	Buffer []byte `cbor:"buffer"`
 }
 
+// SendChannelQuery is used to send a Pigeonhole protocol ciphertext query payload
+// through the mix network.
+type SendChannelQuery struct {
+	// MessageID is the unique identifier for the request associated with the
+	// query reply.
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+
+	// ChannelID is optional and only used for sending channel messages.
+	// For non-channel messages, this field should be nil.
+	ChannelID *uint16 `cbor:"channel_id,omitempty"`
+
+	// DestinationIdHash is 32 byte hash of the destination Service's
+	// identity public key.
+	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
+
+	// RecipientQueueID is the queue identity which will receive the message.
+	// This queue ID is meant to be the queue ID of the Pigeonhole protocol Courier service.
+	RecipientQueueID []byte `cbor:"recipient_queue_id"`
+
+	// Payload is the Pigeonole protocol ciphertext payload which will be encapsulated in the Sphinx payload.
+	Payload []byte `cbor:"payload"`
+}
+
 // Common API:
 
 // SendMessage is used to send a message through the mix network
@@ -503,38 +526,6 @@ type Response struct {
 	// NextMessageBoxIndexReply is sent when the client daemon successfully increments a MessageBoxIndex.
 	NextMessageBoxIndexReply *NextMessageBoxIndexReply `cbor:"next_message_box_index_reply"`
 
-	// Old Pigeonhole API:
-
-	// CreateWriteChannelReply is sent when the client daemon successfully creates a write channel.
-	CreateWriteChannelReply *CreateWriteChannelReply `cbor:"create_write_channel_reply"`
-
-	// CreateReadChannelReply is sent when the client daemon successfully creates a read channel.
-	CreateReadChannelReply *CreateReadChannelReply `cbor:"create_read_channel_reply"`
-
-	// WriteChannelReply is sent when the client daemon successfully writes a message to a channel.
-	WriteChannelReply *WriteChannelReply `cbor:"write_channel_reply"`
-
-	// ReadChannelReply is sent when the client daemon successfully reads a message from a channel.
-	ReadChannelReply *ReadChannelReply `cbor:"read_channel_reply"`
-
-	// ResumeWriteChannelReply is sent when the client daemon successfully resumes a write channel.
-	ResumeWriteChannelReply *ResumeWriteChannelReply `cbor:"resume_write_channel_reply"`
-
-	// ResumeWriteChannelQueryReply is sent when the client daemon successfully resumes a write channel.
-	ResumeWriteChannelQueryReply *ResumeWriteChannelQueryReply `cbor:"resume_write_channel_query_reply"`
-
-	// ResumeReadChannelReply is sent when the client daemon successfully resumes a read channel.
-	ResumeReadChannelReply *ResumeReadChannelReply `cbor:"resume_read_channel_reply"`
-
-	// ResumeReadChannelQueryReply is sent when the client daemon successfully resumes a read channel.
-	ResumeReadChannelQueryReply *ResumeReadChannelQueryReply `cbor:"resume_read_channel_query_reply"`
-
-	// ChannelQuerySentEvent is sent when the client daemon successfully sends a channel query.
-	ChannelQuerySentEvent *ChannelQuerySentEvent `cbor:"channel_query_sent_event"`
-
-	// ChannelQueryReplyEvent is sent when the client daemon receives a reply to a channel query.
-	ChannelQueryReplyEvent *ChannelQueryReplyEvent `cbor:"channel_query_reply_event"`
-
 	// Copy Channel API:
 
 	// CreateCourierEnvelopesFromPayloadReply is sent when the client daemon successfully creates courier envelopes from a payload.
@@ -599,35 +590,4 @@ type Request struct {
 	// SetStreamBuffer is used to restore the buffered state for a stream (for crash recovery).
 	SetStreamBuffer *SetStreamBuffer `cbor:"set_stream_buffer"`
 
-	// OLD Pigeonhole API
-
-	// CreateWriteChannel is used to create a new Pigeonhole write channel.
-	CreateWriteChannel *CreateWriteChannel `cbor:"create_write_channel"`
-
-	// CreateReadChannel is used to create a new Pigeonhole read channel.
-	CreateReadChannel *CreateReadChannel `cbor:"create_read_channel"`
-
-	// WriteChannel is used to write to a Pigeonhole channel.
-	WriteChannel *WriteChannel `cbor:"write_channel"`
-
-	// ReadChannel is used to read from a Pigeonhole channel.
-	ReadChannel *ReadChannel `cbor:"read_channel"`
-
-	// ResumeWriteChannel is used to resume a write operation that was previously
-	ResumeWriteChannel *ResumeWriteChannel `cbor:"resume_write_channel"`
-
-	// ResumeWriteChannelQuery is used to resume a write operation that was previously
-	ResumeWriteChannelQuery *ResumeWriteChannelQuery `cbor:"resume_write_channel_query"`
-
-	// ResumeReadChannel is used to resume a read operation that was previously
-	ResumeReadChannel *ResumeReadChannel `cbor:"resume_read_channel"`
-
-	// ResumeReadChannelQuery is used to resume a read operation that was previously
-	ResumeReadChannelQuery *ResumeReadChannelQuery `cbor:"resume_read_channel_query"`
-
-	// CloseChannel is used to close a Pigeonhole channel.
-	CloseChannel *CloseChannel `cbor:"close_channel"`
-
-	// SendChannelQuery is used to send a message through the mix network
-	SendChannelQuery *SendChannelQuery `cbor:"send_channel_query"`
 }
