@@ -28,7 +28,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/spool"
-	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 type mockServer struct {
@@ -170,18 +169,9 @@ func (s *mockService) KaetzchenForPKI() (map[string]map[string]interface{}, map[
 
 type mockGateway struct {
 	count int
-
-	userName string
-	userKey  kem.PublicKey
 }
 
 func (p *mockGateway) Halt() {}
-
-func (p *mockGateway) UserDB() userdb.UserDB {
-	return &mockUserDB{
-		gateway: p,
-	}
-}
 
 func (p *mockGateway) Spool() spool.Spool {
 	return &mockSpool{}
@@ -194,32 +184,6 @@ func (p *mockGateway) AuthenticateClient(*wire.PeerCredentials) bool {
 func (p *mockGateway) OnPacket(*packet.Packet) {
 	p.count++
 }
-
-type mockUserDB struct {
-	gateway *mockGateway
-}
-
-func (u *mockUserDB) Exists([]byte) bool {
-	return true
-}
-
-func (u *mockUserDB) IsValid([]byte, kem.PublicKey) bool { return true }
-
-func (u *mockUserDB) Add([]byte, kem.PublicKey, bool) error { return nil }
-
-func (u *mockUserDB) SetIdentity([]byte, kem.PublicKey) error { return nil }
-
-func (u *mockUserDB) Link([]byte) (kem.PublicKey, error) {
-	return nil, nil
-}
-
-func (u *mockUserDB) Identity([]byte) (kem.PublicKey, error) {
-	return u.gateway.userKey, nil
-}
-
-func (u *mockUserDB) Remove([]byte) error { return nil }
-
-func (u *mockUserDB) Close() {}
 
 type mockSpool struct{}
 
@@ -235,11 +199,9 @@ func (s *mockSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 func (s *mockSpool) Remove(u []byte) error { return nil }
 
-func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[32]byte]interface{}) error {
+func (s *mockSpool) VacuumExpired(ignoreIdentities map[[32]byte]interface{}) error {
 	return nil
 }
-
-func (s *mockSpool) Vacuum(udb userdb.UserDB) error { return nil }
 
 func (s *mockSpool) Close() {}
 

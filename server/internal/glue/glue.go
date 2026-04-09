@@ -32,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/spool"
-	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 // Glue is the structure that binds the internal components together.
@@ -75,7 +74,6 @@ type PKI interface {
 
 type Gateway interface {
 	Halt()
-	UserDB() userdb.UserDB
 	Spool() spool.Spool
 	AuthenticateClient(*wire.PeerCredentials) bool
 	OnPacket(*packet.Packet)

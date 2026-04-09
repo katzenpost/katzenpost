@@ -20,7 +20,6 @@ package spool
 
 import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 // Spool is the interface provided by all user messgage spool implementations.
@@ -38,14 +37,9 @@ type Spool interface {
 	// Remove removes the spool identified by the username from the database.
 	Remove(u []byte) error
 
-	// Vacuum removes the spools that do not correspond to valid users in the
-	// provided UserDB.
-	Vacuum(udb userdb.UserDB) error
-
-	// VacuumExpired removes expired users from the userdb and then
-	// removes their spools unless the identity is present in the given
-	// ignoreIdentities.
-	VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[constants.RecipientIDLength]byte]interface{}) error
+	// VacuumExpired removes spools for identities not in the provided
+	// set of connected clients.
+	VacuumExpired(ignoreIdentities map[[constants.RecipientIDLength]byte]interface{}) error
 
 	// Close closes the Spool instance.
 	Close()
