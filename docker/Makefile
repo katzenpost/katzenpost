@@ -303,7 +303,7 @@ debian_base.stamp:
 	touch $@
 
 alpine_base.stamp:
-	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/alpine:20250108 sh -c '\
+	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/alpine:edge sh -c '\
 		adduser katzenpost --gecos "" --disabled-password && \
 		apk update && apk upgrade && \
 		apk add gcc musl-dev make pv rocksdb-dev g++ curl netcat-openbsd && \

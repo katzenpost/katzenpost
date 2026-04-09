@@ -1,5 +1,5 @@
 
-.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server kpclientd map sphinx replica install-replica-deps copycat
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server kpclientd map sphinx replica install-replica-deps
 
 .PHONY: update-go-deps
 update-go-deps:
@@ -12,7 +12,7 @@ ifneq (,$(wildcard vendor))
 	go mod vendor
 endif
 
-all: server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx copycat
+all: server dirauth genconfig ping courier replica echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server kpclientd sphinx
 
 server:
 	cd cmd/server; go build
@@ -53,32 +53,40 @@ kpclientd:
 sphinx:
 	cd cmd/sphinx; go build
 
-copycat:
-	cd cmd/copycat; go build
+ROCKSDB_VERSION = 10.10.1
 
 install-replica-deps:
 	@set -e; \
-	echo "Checking for RocksDB..."; \
-	if ! pkg-config --exists rocksdb; then \
-		echo "RocksDB missing"; \
+	echo "Checking for RocksDB $(ROCKSDB_VERSION)..."; \
+	installed_ver="$$(pkg-config --modversion rocksdb 2>/dev/null || echo none)"; \
+	if [ "$$installed_ver" = "$(ROCKSDB_VERSION)" ]; then \
+		echo "RocksDB $(ROCKSDB_VERSION) already installed"; \
+	else \
+		if [ "$$installed_ver" != "none" ]; then \
+			echo "RocksDB $$installed_ver found, need $(ROCKSDB_VERSION) — removing old version..."; \
+			sudo rm -f /usr/local/lib/librocksdb.*; \
+			sudo rm -rf /usr/local/include/rocksdb; \
+			sudo rm -f /usr/local/lib/pkgconfig/rocksdb.pc; \
+			sudo ldconfig; \
+		else \
+			echo "RocksDB not found"; \
+		fi; \
 		echo "Installing build dependencies..."; \
 		sudo apt-get install -y \
 			cmake build-essential pkg-config gcc-14 g++-14 \
 			libsnappy-dev libzstd-dev liblz4-dev \
 			zlib1g-dev libbz2-dev liburing-dev libgflags-dev; \
-		echo "Building RocksDB from source..."; \
+		echo "Building RocksDB $(ROCKSDB_VERSION) from source..."; \
 		tmpdir="$$(mktemp -d)"; \
 		cd "$$tmpdir"; \
-		git clone https://github.com/facebook/rocksdb.git; \
+		git clone --depth 1 --branch v$(ROCKSDB_VERSION) https://github.com/facebook/rocksdb.git; \
 		cd rocksdb; \
-		git checkout v10.2.1; \
 		env CC=gcc-14 CXX=g++-14 make shared_lib -j$$(nproc); \
-		echo "Installing RocksDB..."; \
+		echo "Installing RocksDB $(ROCKSDB_VERSION)..."; \
 		sudo make install; \
 		sudo ldconfig; \
-		echo "RocksDB installed successfully!"; \
-	else \
-		echo "Using existing RocksDB installation"; \
+		rm -rf "$$tmpdir"; \
+		echo "RocksDB $(ROCKSDB_VERSION) installed successfully!"; \
 	fi
 
 # Build replica (requires RocksDB dependencies)
