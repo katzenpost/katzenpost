@@ -186,16 +186,15 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 
 	rng := rand.NewMath()
 	p, t, err := path.New(rng, c.cfg.SphinxGeometry, doc, recipient, src, dst, surbID, baseTime, true, isForward)
-	if err == nil {
-		// XXX Do not log the paths, too verbose.
-		// c.logPath(doc, p)
+	if err != nil {
+		return nil, time.Time{}, err
 	}
 
 	if len(p) == 0 {
-		panic("path is zero length")
+		return nil, time.Time{}, fmt.Errorf("path selection returned zero hops")
 	}
 
-	return p, t, err
+	return p, t, nil
 }
 
 // getSourceAndDestinationNodes retrieves the source and destination mix descriptors based on direction.
