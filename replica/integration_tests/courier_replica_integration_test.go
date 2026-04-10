@@ -933,8 +933,10 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 		t.Logf("Successfully wrote box %d", i+1)
 	}
 
-	// Wait for writes to propagate to replicas before reading
-	time.Sleep(5 * time.Second)
+	// Wait for writes to propagate to replicas before reading.
+	// On slow CI runners, proxy connections between replicas may take
+	// longer to establish and process writes.
+	time.Sleep(10 * time.Second)
 
 	// Now read back the sequence of boxes
 	t.Logf("Reading back sequence of %d boxes", len(messages))
