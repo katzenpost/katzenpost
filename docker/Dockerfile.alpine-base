@@ -15,7 +15,7 @@ RUN apk update && apk upgrade && \
 RUN cd /tmp && \
     git clone --depth 1 --branch v${ROCKSDB_VERSION} https://github.com/facebook/rocksdb.git && \
     cd rocksdb && \
-    make shared_lib -j$(nproc) && \
+    PORTABLE=1 make shared_lib -j$(nproc) && \
     make install-shared && \
     cd / && rm -rf /tmp/rocksdb
 
