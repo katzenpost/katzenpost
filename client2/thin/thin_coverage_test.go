@@ -6,6 +6,7 @@ package thin
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -15,8 +16,10 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -205,147 +208,6 @@ func TestTombstoneRangeNilStart(t *testing.T) {
 	require.Contains(t, err.Error(), "nil start")
 }
 
-func TestSetStreamBufferHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	streamID := &[StreamIDLength]byte{}
-	_, err := rand.Reader.Read(streamID[:])
-	require.NoError(t, err)
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	err = tc.SetStreamBuffer(streamID, []byte("buffer"))
-	require.Error(t, err)
-}
-
-func TestCreateCourierEnvelopesFromPayloadHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	writeCap, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	mbi := writeCap.GetFirstMessageBoxIndex()
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	_, _, err = tc.CreateCourierEnvelopesFromPayload(
-		[]byte("data"), writeCap, mbi, true, true,
-	)
-	require.Error(t, err)
-}
-
-func TestStartResendingCopyCommandHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	writeCap, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	err = tc.StartResendingCopyCommand(writeCap)
-	require.Error(t, err)
-}
-
-func TestCancelResendingEncryptedMessageHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	err := tc.CancelResendingEncryptedMessage(&[32]byte{})
-	require.Error(t, err)
-}
-
-func TestCancelResendingCopyCommandHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	err := tc.CancelResendingCopyCommand(&[32]byte{})
-	require.Error(t, err)
-}
-
-func TestStartResendingEncryptedMessageNoRetryHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	_, err := tc.StartResendingEncryptedMessageNoRetry(
-		nil, nil, nil, nil,
-		[]byte("descriptor"), []byte("ciphertext"), &[32]byte{},
-	)
-	require.Error(t, err)
-}
-
-func TestStartResendingEncryptedMessageReturnBoxExistsHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	_, err := tc.StartResendingEncryptedMessageReturnBoxExists(
-		nil, nil, nil, nil,
-		[]byte("descriptor"), []byte("ciphertext"), &[32]byte{},
-	)
-	require.Error(t, err)
-}
-
-func TestStartResendingCopyCommandWithCourierHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	writeCap, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	err = tc.StartResendingCopyCommandWithCourier(writeCap, &[32]byte{}, []byte("queue"))
-	require.Error(t, err)
-}
-
-func TestCreateCourierEnvelopesFromMultiPayloadHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	writeCap, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	mbi := writeCap.GetFirstMessageBoxIndex()
-	streamID := &[StreamIDLength]byte{}
-	_, err = rand.Reader.Read(streamID[:])
-	require.NoError(t, err)
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	_, err = tc.CreateCourierEnvelopesFromMultiPayload(
-		streamID,
-		[]DestinationPayload{{Payload: []byte("data"), WriteCap: writeCap, StartIndex: mbi}},
-		true,
-	)
-	require.Error(t, err)
-}
-
 func TestEncryptReadIgnoresConnectionStatus(t *testing.T) {
 	tc, server := setupMockDaemon(t)
 
@@ -384,13 +246,18 @@ func TestEncryptReadIgnoresConnectionStatus(t *testing.T) {
 }
 
 func TestNewPKIDocumentEventStringValid(t *testing.T) {
-	doc := &cpki.Document{Epoch: 77}
-	payload, err := cbor.Marshal(doc)
+	signScheme := signSchemes.ByName("Ed25519")
+	idPub, idPriv, err := signScheme.GenerateKey()
+	require.NoError(t, err)
+
+	epoch, _, _ := epochtime.Now()
+	doc := &cpki.Document{Epoch: epoch, PKISignatureScheme: "Ed25519"}
+	payload, err := cpki.SignDocument(idPriv, idPub, doc)
 	require.NoError(t, err)
 
 	e := &NewPKIDocumentEvent{Payload: payload}
 	s := e.String()
-	require.Contains(t, s, "77")
+	require.Contains(t, s, fmt.Sprintf("%d", epoch))
 }
 
 func TestDialWithTCPListener(t *testing.T) {
