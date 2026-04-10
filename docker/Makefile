@@ -217,6 +217,9 @@ client-logs:
 	@echo "Tailing kpclientd daemon logs (Ctrl+C to exit)..."
 	cd $(net_name) && $(docker_compose) logs -f --tail 20 kpclientd
 
+client-logs-snapshot:
+	cd $(net_name) && $(docker_compose) logs --tail 200 kpclientd
+
 courier-restart:
 	@echo "Stopping courier plugin via thwack management interface..."
 	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock' || true

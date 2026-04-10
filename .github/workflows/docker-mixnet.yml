@@ -86,7 +86,7 @@ jobs:
       - name: Dump kpclientd logs on failure
         if: failure()
         run: |
-          cd docker && docker compose -f voting_mixnet/docker-compose.yml logs --tail 200 kpclientd
+          cd docker && make client-logs-snapshot
 
       - name: Stop the mixnet
         run: |
