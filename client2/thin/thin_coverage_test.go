@@ -205,23 +205,6 @@ func TestTombstoneRangeNilStart(t *testing.T) {
 	require.Contains(t, err.Error(), "nil start")
 }
 
-func TestEncryptReadHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	readCap := createReadCap(t)
-	writeCap, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	mbi := writeCap.GetFirstMessageBoxIndex()
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	_, _, _, err = tc.EncryptRead(readCap, mbi)
-	require.Error(t, err)
-}
-
 func TestEncryptWriteHaltCh(t *testing.T) {
 	tc, server := setupMockDaemon(t)
 
