@@ -83,6 +83,11 @@ jobs:
       - name: run pigeonhole read before write test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_read_before_write && cat coverage.part >> ../coverage.out
 
+      - name: Dump kpclientd logs on failure
+        if: failure()
+        run: |
+          cd docker && docker compose -f voting_mixnet/docker-compose.yml logs --tail 200 kpclientd
+
       - name: Stop the mixnet
         run: |
           cd docker && make stop
