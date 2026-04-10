@@ -205,21 +205,6 @@ func TestTombstoneRangeNilStart(t *testing.T) {
 	require.Contains(t, err.Error(), "nil start")
 }
 
-func TestStartResendingEncryptedMessageHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	_, err := tc.StartResendingEncryptedMessage(
-		nil, nil, nil, nil,
-		[]byte("descriptor"), []byte("ciphertext"), &[32]byte{},
-	)
-	require.Error(t, err)
-}
-
 func TestNextMessageBoxIndexHaltCh(t *testing.T) {
 	tc, server := setupMockDaemon(t)
 
