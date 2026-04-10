@@ -35,9 +35,9 @@ jobs:
           path: |
             /usr/local/rocksdb
             /tmp/rocksdb-build-cache
-          key: ${{ runner.os }}-rocksdb-v10.10.1-${{ hashFiles('.github/workflows/replica-tests.yml') }}
+          key: ${{ runner.os }}-rocksdb-v10.9.1-${{ hashFiles('.github/workflows/replica-tests.yml') }}
           restore-keys: |
-            ${{ runner.os }}-rocksdb-v10.10.1-
+            ${{ runner.os }}-rocksdb-v10.9.1-
             ${{ runner.os }}-rocksdb-
 
       - name: Cache gflags build
@@ -81,7 +81,7 @@ jobs:
             cd /tmp
             git clone https://github.com/facebook/rocksdb.git
             cd rocksdb
-            git checkout v10.10.1
+            git checkout v10.9.1
             make shared_lib -j$(nproc)
             sudo mkdir -p /usr/local/rocksdb/lib
             sudo mkdir -p /usr/local/rocksdb/include
