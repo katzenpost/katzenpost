@@ -61,9 +61,10 @@ jobs:
       - name: Dump replica logs on failure
         if: failure()
         run: |
-          cd docker/voting_mixnet && ls -la replica*/ 2>&1 | head -30
-          cd docker/voting_mixnet && for r in replica*/; do echo "=== $r ===" && cat "${r}katzenpost.log" 2>&1 | tail -20; done
-          cd docker && $(if which podman >/dev/null 2>&1; then echo "podman compose"; else echo "docker compose"; fi) -f voting_mixnet/docker-compose.yml logs --tail 30 replica1 replica2 replica3 replica4 replica5 2>&1 | tail -100
+          cd docker && ls -la voting_mixnet/replica1/ && \
+          for r in voting_mixnet/replica*/; do echo "=== $r ===" && cat "${r}katzenpost.log" 2>&1 | tail -20 || echo "no log file"; done && \
+          cd voting_mixnet && podman compose ps -a 2>&1 | head -30 && \
+          podman compose logs --tail 30 replica1 replica2 replica3 replica4 replica5 2>&1 | tail -100
 
       - name: Stop the mixnet
         run: |
