@@ -306,11 +306,12 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 
 	courier := createCourierServer(t, courierCfg, sharedMockPKIClient)
 
-	// Force all replicas to fetch PKI documents first
+	// Force all replicas to fetch PKI documents and establish connections to peers
 	for i, replica := range replicas {
 		t.Logf("Forcing PKI fetch for replica %d during setup", i)
 		err = replica.PKIWorker.ForceFetchPKI()
 		require.NoError(t, err)
+		replica.ForceConnectorUpdate()
 	}
 
 	// Force courier to fetch PKI documents, then update connector
