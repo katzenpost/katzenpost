@@ -62,7 +62,7 @@ func createFullMockPKIDocument(t *testing.T, geo *geo.Geometry) (*cpki.Document,
 		LinkKey:       gatewayLinkKey,
 		IsGatewayNode: true,
 		Addresses:     map[string][]string{"tcp4": {"tcp4://127.0.0.1:30001"}},
-		MixKeys:       map[uint64][]byte{currentEpoch: gatewayMixKey},
+		MixKeys:       map[uint64][]byte{currentEpoch: gatewayMixKey, currentEpoch + 1: gatewayMixKey},
 	}
 
 	// Generate service node with courier
@@ -93,7 +93,7 @@ func createFullMockPKIDocument(t *testing.T, geo *geo.Geometry) (*cpki.Document,
 			"courier": {"endpoint": "courier"},
 			"echo":    {"endpoint": "+echo"},
 		},
-		MixKeys:       map[uint64][]byte{currentEpoch: serviceMixKey},
+		MixKeys:       map[uint64][]byte{currentEpoch: serviceMixKey, currentEpoch + 1: serviceMixKey},
 	}
 
 	// Generate 3 mix layers — each needs MixKeys for the current epoch
@@ -119,7 +119,7 @@ func createFullMockPKIDocument(t *testing.T, geo *geo.Geometry) (*cpki.Document,
 			IdentityKey: mixIdKey,
 			LinkKey:     mixLinkKey,
 			Addresses:   map[string][]string{"tcp4": {fmt.Sprintf("tcp4://127.0.0.1:3000%d", layer+3)}},
-			MixKeys:     map[uint64][]byte{currentEpoch: mixKeyBytes},
+			MixKeys:     map[uint64][]byte{currentEpoch: mixKeyBytes, currentEpoch + 1: mixKeyBytes},
 		}
 		topology[layer] = []*cpki.MixDescriptor{mixDesc}
 	}
