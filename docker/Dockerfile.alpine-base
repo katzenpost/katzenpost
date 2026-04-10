@@ -19,11 +19,12 @@ RUN cd /tmp && \
     make install-shared && \
     cd / && rm -rf /tmp/rocksdb
 
+# Remove build-only deps while apk still works (before adding /usr/local/lib
+# to the linker path, which would shadow system libz.so and break apk)
+RUN apk del git cmake linux-headers
+
 # Ensure musl linker can find libraries in /usr/local/lib
 RUN echo "/usr/local/lib" >> /etc/ld-musl-x86_64.path
-
-# Remove build-only deps to keep image smaller
-RUN apk del git cmake linux-headers
 
 # Install Go
 RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xzf - && \
