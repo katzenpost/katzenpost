@@ -47,46 +47,21 @@ jobs:
       - name: Sleep for a few seconds to allow the mixnet to fully start
         run: sleep 5
 
-      - name: run old client core end to end tests
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest-legacy && cat coverage.part >> ../coverage.out
+      - name: run legacy client end to end tests
+        run: cd client2 && make dockertest-legacy
 
-      - name: run new Pigeonhole API Alice sends Bob test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_new_pigeonhole_alice_sends_bob && cat coverage.part >> ../coverage.out
-
-      - name: run new Pigeonhole API multiple messages test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_new_pigeonhole_multiple_messages && cat coverage.part >> ../coverage.out
-
-      - name: run new Pigeonhole API multiple messages bulk test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_new_pigeonhole_multiple_messages_bulk && cat coverage.part >> ../coverage.out
-
-      - name: run pigeonhole copy command test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_copy_command && cat coverage.part >> ../coverage.out
-
-      - name: run pigeonhole multi-channel copy command test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_multichannel && cat coverage.part >> ../coverage.out
-
-      - name: run pigeonhole efficient multi-channel copy command test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_multichannel_efficient && cat coverage.part >> ../coverage.out
-
-      - name: run pigeonhole tombstone box test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_tombstone_box && cat coverage.part >> ../coverage.out
-
-      - name: run pigeonhole tombstone range test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_tombstone_range && cat coverage.part >> ../coverage.out
-
-      - name: run pigeonhole box ID not found error test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_box_id_not_found && cat coverage.part >> ../coverage.out
-
-      - name: run pigeonhole box already exists error test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_box_already_exists && cat coverage.part >> ../coverage.out
-
-      - name: run pigeonhole read before write test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_read_before_write && cat coverage.part >> ../coverage.out
+      - name: run all pigeonhole integration tests
+        run: cd client2 && make dockertest_all_pigeonhole
 
       - name: Dump kpclientd logs on failure
         if: failure()
         run: |
           cd docker && make client-logs-snapshot
+
+      - name: Dump replica logs on failure
+        if: failure()
+        run: |
+          cd docker && tail -50 voting_mixnet/replica*/katzenpost.log
 
       - name: Stop the mixnet
         run: |
