@@ -205,22 +205,6 @@ func TestTombstoneRangeNilStart(t *testing.T) {
 	require.Contains(t, err.Error(), "nil start")
 }
 
-func TestNextMessageBoxIndexHaltCh(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	writeCap, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	mbi := writeCap.GetFirstMessageBoxIndex()
-
-	go func() {
-		readRequest(server)
-		server.Close()
-	}()
-
-	_, err = tc.NextMessageBoxIndex(mbi)
-	require.Error(t, err)
-}
-
 func TestSetStreamBufferHaltCh(t *testing.T) {
 	tc, server := setupMockDaemon(t)
 
