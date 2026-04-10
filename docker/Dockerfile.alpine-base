@@ -23,8 +23,10 @@ RUN cd /tmp && \
 # to the linker path, which would shadow system libz.so and break apk)
 RUN apk del git cmake linux-headers
 
-# Ensure musl linker can find libraries in /usr/local/lib
-RUN echo "/usr/local/lib" >> /etc/ld-musl-x86_64.path
+# Ensure musl linker can find RocksDB in /usr/local/lib.
+# ld-musl-x86_64.path REPLACES the default search path, so we must
+# include the standard directories explicitly.
+RUN echo "/lib:/usr/local/lib:/usr/lib" > /etc/ld-musl-x86_64.path
 
 # Install Go
 RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xzf - && \
