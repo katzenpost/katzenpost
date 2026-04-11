@@ -21,6 +21,7 @@ import (
 )
 
 func TestLegacyTests(t *testing.T) {
+	t.Parallel()
 	// Setup signal handling for graceful shutdown
 	haltCh := make(chan os.Signal, 1)
 	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)

@@ -36,6 +36,7 @@ import (
 // - Real Sphinx packets
 // - Real PQ Noise wire protocol
 func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
+	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -133,6 +134,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 // to verify that state management (PrepareNext/AdvanceState) works correctly
 // in the real Docker environment.
 func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
+	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -248,6 +250,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 // This exercises multiple concurrent ARQ retry operations on the daemon — the pattern
 // that was broken when arqResendCh had a buffer of 2 and silently dropped resends.
 func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
+	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -347,6 +350,7 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 // - The courier can decode the copy stream and execute all writes atomically
 // - Bob can read and reconstruct the original large payload
 func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
+	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -519,6 +523,7 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 // - Multiple calls to CreateCourierEnvelopesFromPayload work correctly
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannel(t *testing.T) {
+	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -684,6 +689,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 // - Multiple destination payloads are packed efficiently into the copy stream
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannelEfficient(t *testing.T) {
+	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -851,6 +857,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 // 3. Alice tombstones the box (deletes it with an empty payload)
 // 4. Bob reads again and verifies the tombstone
 func TestTombstoning(t *testing.T) {
+	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
 	bob := setupThinClient(t)
@@ -924,6 +931,7 @@ func TestTombstoning(t *testing.T) {
 // 3. Alice tombstones all boxes using TombstoneRange
 // 4. Bob reads again and verifies all boxes are tombstoned
 func TestTombstoneRange(t *testing.T) {
+	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
 	bob := setupThinClient(t)
@@ -1022,6 +1030,7 @@ func TestTombstoneRange(t *testing.T) {
 // - Reading from a non-existent box returns ErrBoxIDNotFound
 // - The error can be checked using errors.Is()
 func TestBoxIDNotFoundError(t *testing.T) {
+	t.Parallel()
 	// Setup Bob thin client (reader)
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
@@ -1081,6 +1090,7 @@ func TestBoxIDNotFoundError(t *testing.T) {
 // This test validates that the default retry behavior (NoRetryOnBoxIDNotFound=false)
 // correctly handles the case where data hasn't been replicated yet.
 func TestReadBeforeWrite(t *testing.T) {
+	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -1203,6 +1213,7 @@ func TestReadBeforeWrite(t *testing.T) {
 // - Writing to the same box again returns ErrBoxAlreadyExists
 // - The error can be checked using errors.Is()
 func TestBoxAlreadyExistsError(t *testing.T) {
+	t.Parallel()
 	// Setup thin client
 	thinClient := setupThinClient(t)
 	defer thinClient.Close()
@@ -1274,6 +1285,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 }
 
 func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
+	t.Parallel()
 	// Setup thin client
 	thinClient := setupThinClient(t)
 	defer thinClient.Close()
@@ -1380,6 +1392,7 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 // 4. Alice writes all temp stream elements and sends the copy command
 // 5. Bob reads from the destination channel and verifies the reconstructed payload
 func TestFromPayloadMultiCall(t *testing.T) {
+	t.Parallel()
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
 	bobThinClient := setupThinClient(t)
@@ -1509,6 +1522,7 @@ func TestFromPayloadMultiCall(t *testing.T) {
 // 4. Alice writes all temp stream elements and sends the copy command
 // 5. Bob reads from both destination channels and verifies
 func TestFromMultiPayloadMultiCall(t *testing.T) {
+	t.Parallel()
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
 	bobThinClient := setupThinClient(t)

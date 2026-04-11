@@ -47,11 +47,8 @@ jobs:
       - name: Sleep for a few seconds to allow the mixnet to fully start
         run: sleep 5
 
-      - name: run legacy client end to end tests
-        run: cd client2 && make dockertest-legacy
-
-      - name: run all pigeonhole integration tests
-        run: cd client2 && make dockertest_all_pigeonhole
+      - name: run all docker integration tests in parallel
+        run: cd client2 && make dockertest-all
 
       - name: Dump kpclientd logs on failure
         if: failure()

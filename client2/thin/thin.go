@@ -1556,10 +1556,6 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 
 // BlockingSendMessage sends a message and blocks until a reply is received.
 //
-// DEPRECATED: This method is part of the legacy API. New applications should
-// use the Pigeonhole Channel API (CreateWriteChannel, WriteChannel, etc.) which
-// provides better reliability, ordering guarantees, and state management.
-//
 // This method provides a synchronous request-response pattern by automatically
 // generating a SURB ID, sending the message, and waiting for the reply. It
 // blocks until either a reply is received or the context times out.
