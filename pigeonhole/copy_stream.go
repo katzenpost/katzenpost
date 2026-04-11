@@ -22,7 +22,7 @@ const (
 const CopyStreamElementOverhead = 5
 
 // ===========================================================================
-// CLIENT SECTION - Used by client2/pigeonhole.go
+// CLIENT SECTION - Used by client/pigeonhole.go
 // ===========================================================================
 
 // CopyStreamEncoder is a streaming encoder for the copy stream format.

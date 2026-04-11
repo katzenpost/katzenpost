@@ -2,7 +2,7 @@ name: docker mixnet integration tests
 on: [pull_request]
 jobs:
 
-  test_e2e_client2:
+  test_e2e_client:
     permissions:
       contents: read
       packages: write
@@ -48,7 +48,7 @@ jobs:
         run: sleep 5
 
       - name: run all docker integration tests in parallel
-        run: cd client2 && make dockertest-all
+        run: cd client && make dockertest-all
 
       - name: Dump kpclientd logs on failure
         if: failure()

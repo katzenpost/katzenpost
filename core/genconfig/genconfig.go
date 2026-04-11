@@ -29,8 +29,8 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	cConfig "github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/client2/thin"
+	cConfig "github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/common/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -58,7 +58,6 @@ const (
 	LinkPrivateKeyFile     = "link.private.pem"
 	CourierService         = "courier"
 	ClientIdentifier       = "client"
-	Client2Identifier      = "client2"
 	DebugLogLevel          = "DEBUG"
 	AuthNodeFormat         = "auth%d"
 	WritingLogFormat       = "writing %s"
@@ -193,10 +192,10 @@ func AddressesFromURLs(addrs []string) map[string][]string {
 	return addresses
 }
 
-// this generates the thin client config and NOT the client2 daemon config
+// this generates the thin client config and NOT the client daemon config
 func (s *Katzenpost) GenClient2ThinCfg(net, addr string) error {
 	log.Print("genClient2ThinCfg begin")
-	os.MkdirAll(filepath.Join(s.OutDir, "client2"), 0700)
+	os.MkdirAll(filepath.Join(s.OutDir, "client"), 0700)
 	cfg := new(thin.Config)
 
 	cfg.SphinxGeometry = s.SphinxGeometry
@@ -217,7 +216,7 @@ func (s *Katzenpost) GenClient2ThinCfg(net, addr string) error {
 
 func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	log.Print("genClient2Cfg begin")
-	os.MkdirAll(filepath.Join(s.OutDir, "client2"), 0700)
+	os.MkdirAll(filepath.Join(s.OutDir, "client"), 0700)
 	os.MkdirAll(filepath.Join(s.OutDir, "thinclient"), 0700)
 
 	cfg := new(cConfig.Config)
@@ -275,7 +274,7 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	}
 	err := SaveCfg(cfg, s.OutDir)
 	if err != nil {
-		log.Printf("save client2 config failure %s", err.Error())
+		log.Printf("save client config failure %s", err.Error())
 		return err
 	}
 	return nil
@@ -792,7 +791,7 @@ func SetupGeometry(s *Katzenpost, cfg *Config) error {
 
 	s.ReplicaNIKEScheme = replicaCommon.NikeScheme
 
-	// Generate pigeonhole geometry once for use in both client2 and thin client configs
+	// Generate pigeonhole geometry once for use in both client and thin client configs
 	var err error
 	s.PigeonholeGeometry, err = pigeonholeGeo.NewGeometryFromSphinx(s.SphinxGeometry, s.ReplicaNIKEScheme)
 	if err != nil {
@@ -906,12 +905,12 @@ func GenerateClientConfigurations(s *Katzenpost) error {
 
 	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonAddress)
 	if err != nil {
-		return fmt.Errorf("failed to generate client2 config: %v", err)
+		return fmt.Errorf("failed to generate client config: %v", err)
 	}
 
 	err = s.GenClient2ThinCfg(clientDaemonNetwork, clientDaemonAddress)
 	if err != nil {
-		return fmt.Errorf("failed to generate client2 thin config: %v", err)
+		return fmt.Errorf("failed to generate client thin config: %v", err)
 	}
 
 	return nil
@@ -942,9 +941,9 @@ func GenerateOutputFiles(s *Katzenpost, cfg *Config) error {
 func Identifier(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
-		return Client2Identifier
+		return ClientIdentifier
 	case *thin.Config:
-		return Client2Identifier
+		return ClientIdentifier
 	case *vConfig.Config:
 		return cfg.(*vConfig.Config).Server.Identifier
 	case *sConfig.Config:
@@ -1550,7 +1549,7 @@ services:
     image: %s
     volumes:
       - ./:%s
-    command: %s/kpclientd%s -c %s/client2/client.toml
+    command: %s/kpclientd%s -c %s/client/client.toml
     network_mode: host`, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir)
 	writeEnv("kpclientd")
 	Write(f, `

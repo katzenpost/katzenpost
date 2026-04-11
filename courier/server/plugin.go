@@ -19,7 +19,7 @@ import (
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
-	"github.com/katzenpost/katzenpost/client2/constants"
+	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/server/instrument"

@@ -173,7 +173,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
 
 # Generate configuration files only (without docker containers)
-# This is useful for tests that depend on config files existing (e.g., client2/testdata symlinks)
+# This is useful for tests that depend on config files existing (e.g., client/testdata symlinks)
 config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
 	cd ../cmd/genconfig && go build && ./genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
@@ -188,7 +188,7 @@ config-only: | $(net_name)
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 	@echo "Configuration files generated in ./$(net_name)/"
-	@echo "Tests can now use the symlinked configs (e.g., client2/testdata/client.toml -> ../../docker/$(net_name)/client2/client.toml)"
+	@echo "Tests can now use the symlinked configs (e.g., client/testdata/client.toml -> ../../docker/$(net_name)/client/client.toml)"
 
 $(net_name)/running.stamp:
 	make $(make_args) start
@@ -297,7 +297,7 @@ show-latest-vote:
 
 wait: $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-	/$(net_name)/fetch.$(distro) -f /$(net_name)/client2/thinclient.toml
+	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient.toml
 
 debian_base.stamp:
 	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c "echo -e 'deb https://deb.debian.org/debian bullseye main\ndeb https://deb.debian.org/debian bullseye-updates main\ndeb https://deb.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list && cat /etc/apt/sources.list && apt update && apt upgrade -y && apt install -y pv && adduser katzenpost --gecos '' --disabled-password && apt update && apt upgrade -y"
@@ -387,7 +387,7 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) --thin -c /go/katzenpost/client2/testdata/thinclient.toml -s echo --print-diff -n 10
+        /$(net_name)/ping.$(distro) --thin -c /go/katzenpost/client/testdata/thinclient.toml -s echo --print-diff -n 10
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)

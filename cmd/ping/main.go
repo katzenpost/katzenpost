@@ -24,9 +24,9 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/client2"
-	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/spf13/cobra"
 )
@@ -141,7 +141,7 @@ full client mode where this ping tool starts it's own client daemon.`,
 }
 
 // initializeClient sets up either thin client or full daemon mode
-func initializeClient(configFile string, thinClientOnly bool, logPath string, logLevel string) (*thin.ThinClient, *client2.Daemon) {
+func initializeClient(configFile string, thinClientOnly bool, logPath string, logLevel string) (*thin.ThinClient, *client.Daemon) {
 	if thinClientOnly {
 		return initializeThinClient(configFile, logPath, logLevel), nil
 	}
@@ -170,7 +170,7 @@ func initializeThinClient(configFile string, logPath string, logLevel string) *t
 }
 
 // initializeFullClient sets up full daemon mode
-func initializeFullClient(configFile string, logPath string, logLevel string) (*thin.ThinClient, *client2.Daemon) {
+func initializeFullClient(configFile string, logPath string, logLevel string) (*thin.ThinClient, *client.Daemon) {
 	cfg, err := config.LoadFile(configFile)
 	if err != nil {
 		panic(fmt.Errorf("failed to open config: %s", err))
@@ -185,7 +185,7 @@ func initializeFullClient(configFile string, logPath string, logLevel string) (*
 	cfg.Logging.Disable = false
 
 	// create a client and connect to the mixnet Gateway
-	daemon, err := client2.NewDaemon(cfg)
+	daemon, err := client.NewDaemon(cfg)
 	if err != nil {
 		panic(err)
 	}
@@ -216,7 +216,7 @@ func executePing(thinClient *thin.ThinClient, service string, count, concurrency
 }
 
 // cleanup closes the thin client connection and shuts down the daemon if running
-func cleanup(thinClient *thin.ThinClient, daemon *client2.Daemon) {
+func cleanup(thinClient *thin.ThinClient, daemon *client.Daemon) {
 	if thinClient != nil {
 		thinClient.Close()
 	}

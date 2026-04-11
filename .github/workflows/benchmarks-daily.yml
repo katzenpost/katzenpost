@@ -62,7 +62,7 @@ jobs:
 
           echo "" | tee -a benchmark-results.txt
           echo "=== Client Benchmarks ===" | tee -a benchmark-results.txt
-          go test -bench=. -benchmem -run='^$' ./client2/... 2>&1 | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./client/... 2>&1 | tee -a benchmark-results.txt
 
           echo "" | tee -a benchmark-results.txt
           echo "=== Server Benchmarks ===" | tee -a benchmark-results.txt

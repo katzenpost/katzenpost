@@ -117,8 +117,6 @@ test-unit: test-config
 	cd authority && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Running client unit tests..."
 	cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-	@echo "Running client2 unit tests..."
-	cd client2 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Running core unit tests..."
 	cd core && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Running NIKE Sphinx unit tests..."
@@ -128,10 +126,7 @@ test-unit: test-config
 	@echo "Running courier unit tests..."
 	cd courier && GORACE=history_size=7 go test -coverprofile=coverage.out -v -failfast -timeout 30m ./...
 
-	@echo "Running map unit tests..."
-	cd map && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-	@echo "Running stream unit tests..."
-	cd stream && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
 	@echo "All unit tests completed successfully!"
 
 # Run replica unit tests (requires RocksDB dependencies)
@@ -153,12 +148,12 @@ bench-sphinx:
 	@echo ""
 	@echo "Sphinx benchmarks completed!"
 
-# Run all wire handshake benchmarks (client2, courier, mix server, dirauth, replica)
+# Run all wire handshake benchmarks (client, courier, mix server, dirauth, replica)
 bench-handshake:
 	@echo "Running all wire handshake benchmarks..."
 	@echo ""
 	@echo "=== Client2 Handshake Benchmarks ==="
-	go test -v -run=^$$ -bench=. -benchtime=3x ./client2/
+	go test -v -run=^$$ -bench=. -benchtime=3x ./client/
 	@echo ""
 	@echo "=== Dirauth Client Handshake Benchmarks ==="
 	go test -v -run=^$$ -bench=. -benchtime=3x ./authority/voting/client/
@@ -194,4 +189,4 @@ act-clean:
 	@echo "Cleanup complete."
 
 act: act-clean
-	act --bind --container-options "-v /etc/ssl/certs:/etc/ssl/certs:ro -v /usr/share/ca-certificates:/usr/share/ca-certificates:ro -v /run/user/$(shell id -u)/podman/podman.sock:/var/run/docker.sock" -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -j test_e2e_client2
+	act --bind --container-options "-v /etc/ssl/certs:/etc/ssl/certs:ro -v /usr/share/ca-certificates:/usr/share/ca-certificates:ro -v /run/user/$(shell id -u)/podman/podman.sock:/var/run/docker.sock" -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -j test_e2e_client

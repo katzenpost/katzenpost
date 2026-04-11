@@ -13,7 +13,7 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/client2/constants"
+	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 

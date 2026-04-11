@@ -1,0 +1,336 @@
+// SPDX-FileCopyrightText: Copyright (C) 2026 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package thin
+
+import (
+	"context"
+	"encoding/binary"
+	"fmt"
+	"net"
+	"testing"
+	"time"
+
+	"github.com/fxamacker/cbor/v2"
+
+	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/rand"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
+	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSendMessageConnected(t *testing.T) {
+	tc, server := setupMockDaemon(t)
+	tc.connMu.Lock()
+	tc.isConnected = true
+	tc.connMu.Unlock()
+
+	go func() {
+		readRequest(server)
+	}()
+
+	surbID := &[sConstants.SURBIDLength]byte{}
+	_, err := rand.Reader.Read(surbID[:])
+	require.NoError(t, err)
+
+	err = tc.SendMessage(surbID, []byte("hello"), &[32]byte{}, []byte("queue"))
+	require.NoError(t, err)
+}
+
+func TestSendMessageWithoutReplyConnected(t *testing.T) {
+	tc, server := setupMockDaemon(t)
+	tc.connMu.Lock()
+	tc.isConnected = true
+	tc.connMu.Unlock()
+
+	go func() {
+		readRequest(server)
+	}()
+
+	err := tc.SendMessageWithoutReply([]byte("hello"), &[32]byte{}, []byte("queue"))
+	require.NoError(t, err)
+}
+
+func TestBlockingSendMessageSuccess(t *testing.T) {
+	tc, server := setupMockDaemon(t)
+	tc.connMu.Lock()
+	tc.isConnected = true
+	tc.connMu.Unlock()
+
+	go func() {
+		req, err := readRequest(server)
+		if err != nil {
+			return
+		}
+		surbID := req.SendMessage.SURBID
+
+		sendResponse(t, server, &Response{
+			MessageSentEvent: &MessageSentEvent{
+				MessageID: &[MessageIDLength]byte{},
+				SURBID:    surbID,
+				SentAt:    time.Now(),
+			},
+		})
+
+		sendResponse(t, server, &Response{
+			MessageReplyEvent: &MessageReplyEvent{
+				MessageID: &[MessageIDLength]byte{},
+				SURBID:    surbID,
+				Payload:   []byte("reply-payload"),
+			},
+		})
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	reply, err := tc.BlockingSendMessage(ctx, []byte("hello"), &[32]byte{}, []byte("queue"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("reply-payload"), reply)
+}
+
+func TestBlockingSendMessageIgnoresEventsAndMismatchedReplies(t *testing.T) {
+	tc, server := setupMockDaemon(t)
+	tc.connMu.Lock()
+	tc.isConnected = true
+	tc.connMu.Unlock()
+
+	go func() {
+		req, err := readRequest(server)
+		if err != nil {
+			return
+		}
+		surbID := req.SendMessage.SURBID
+
+		// GC event (ignored)
+		sendResponse(t, server, &Response{
+			MessageIDGarbageCollected: &MessageIDGarbageCollected{
+				MessageID: &[MessageIDLength]byte{1},
+			},
+		})
+
+		// PKI doc event (ignored)
+		doc := &cpki.Document{Epoch: 99}
+		docBytes, _ := cbor.Marshal(doc)
+		sendResponse(t, server, &Response{
+			NewPKIDocumentEvent: &NewPKIDocumentEvent{Payload: docBytes},
+		})
+
+		// MessageSentEvent (ignored)
+		sendResponse(t, server, &Response{
+			MessageSentEvent: &MessageSentEvent{
+				MessageID: &[MessageIDLength]byte{},
+				SURBID:    surbID,
+			},
+		})
+
+		// Mismatched SURB reply (ignored)
+		sendResponse(t, server, &Response{
+			MessageReplyEvent: &MessageReplyEvent{
+				MessageID: &[MessageIDLength]byte{},
+				SURBID:    &[sConstants.SURBIDLength]byte{0xFF},
+				Payload:   []byte("wrong"),
+			},
+		})
+
+		// Matching reply
+		sendResponse(t, server, &Response{
+			MessageReplyEvent: &MessageReplyEvent{
+				MessageID: &[MessageIDLength]byte{},
+				SURBID:    surbID,
+				Payload:   []byte("correct"),
+			},
+		})
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	reply, err := tc.BlockingSendMessage(ctx, []byte("hello"), &[32]byte{}, []byte("queue"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("correct"), reply)
+}
+
+func TestTombstoneRangeSuccess(t *testing.T) {
+	tc, server := setupMockDaemon(t)
+
+	writeCap, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	firstIdx := writeCap.GetFirstMessageBoxIndex()
+
+	// Compute expected next indices so the mock replies return them
+	secondIdx, err := firstIdx.NextIndex()
+	require.NoError(t, err)
+	thirdIdx, err := secondIdx.NextIndex()
+	require.NoError(t, err)
+	expectedNextIndices := []*bacap.MessageBoxIndex{secondIdx, thirdIdx}
+
+	go func() {
+		for i := 0; i < 2; i++ {
+			req, err := readRequest(server)
+			if err != nil {
+				return
+			}
+			queryID := req.EncryptWrite.QueryID
+			sendResponse(t, server, &Response{
+				EncryptWriteReply: &EncryptWriteReply{
+					QueryID:             queryID,
+					MessageCiphertext:   []byte("ciphertext"),
+					EnvelopeDescriptor:  []byte("descriptor"),
+					EnvelopeHash:        &[32]byte{byte(i)},
+					NextMessageBoxIndex: expectedNextIndices[i],
+					ErrorCode:           ThinClientSuccess,
+				},
+			})
+		}
+	}()
+
+	result, err := tc.TombstoneRange(writeCap, firstIdx, 2)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Envelopes, 2)
+	require.NotNil(t, result.Next)
+	require.Equal(t, thirdIdx.Idx64, result.Next.Idx64)
+}
+
+func TestTombstoneRangeNilWriteCap(t *testing.T) {
+	tc := newTestThinClientNoConn(t)
+	_, err := tc.TombstoneRange(nil, &bacap.MessageBoxIndex{}, 1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil writeCap")
+}
+
+func TestTombstoneRangeNilStart(t *testing.T) {
+	writeCap, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	tc := newTestThinClientNoConn(t)
+	_, err = tc.TombstoneRange(writeCap, nil, 1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil start")
+}
+
+func TestEncryptReadIgnoresConnectionStatus(t *testing.T) {
+	tc, server := setupMockDaemon(t)
+
+	readCap := createReadCap(t)
+	writeCap, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	mbi := writeCap.GetFirstMessageBoxIndex()
+
+	go func() {
+		req, err := readRequest(server)
+		if err != nil {
+			return
+		}
+		queryID := req.EncryptRead.QueryID
+
+		// ConnectionStatusEvent first (ignored by EncryptRead)
+		sendResponse(t, server, &Response{
+			ConnectionStatusEvent: &ConnectionStatusEvent{IsConnected: true},
+		})
+
+		sendResponse(t, server, &Response{
+			EncryptReadReply: &EncryptReadReply{
+				QueryID:             queryID,
+				MessageCiphertext:   []byte("ct"),
+				EnvelopeDescriptor:  []byte("desc"),
+				EnvelopeHash:        &[32]byte{},
+				NextMessageBoxIndex: mbi,
+				ErrorCode:           ThinClientSuccess,
+			},
+		})
+	}()
+
+	ct, _, _, nextIdx, err := tc.EncryptRead(readCap, mbi)
+	require.NoError(t, err)
+	require.Equal(t, []byte("ct"), ct)
+	require.NotNil(t, nextIdx)
+}
+
+func TestNewPKIDocumentEventStringValid(t *testing.T) {
+	signScheme := signSchemes.ByName("Ed25519")
+	idPub, idPriv, err := signScheme.GenerateKey()
+	require.NoError(t, err)
+
+	epoch, _, _ := epochtime.Now()
+	doc := &cpki.Document{Epoch: epoch, PKISignatureScheme: "Ed25519"}
+	payload, err := cpki.SignDocument(idPriv, idPub, doc)
+	require.NoError(t, err)
+
+	e := &NewPKIDocumentEvent{Payload: payload}
+	s := e.String()
+	require.Contains(t, s, fmt.Sprintf("%d", epoch))
+}
+
+func TestDialWithTCPListener(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		sendMockResponse(t, conn, &Response{
+			ConnectionStatusEvent: &ConnectionStatusEvent{IsConnected: true},
+		})
+
+		doc := &cpki.Document{Epoch: 1}
+		docBytes, _ := cbor.Marshal(doc)
+		sendMockResponse(t, conn, &Response{
+			NewPKIDocumentEvent: &NewPKIDocumentEvent{Payload: docBytes},
+		})
+
+		readRequest(conn)
+		sendMockResponse(t, conn, &Response{
+			SessionTokenReply: &SessionTokenReply{
+				AppID:   make([]byte, 16),
+				Resumed: false,
+			},
+		})
+
+		time.Sleep(time.Second)
+	}()
+
+	nikeScheme := schemes.ByName("x25519")
+	tc := NewThinClient(&Config{
+		SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
+		PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
+		Network:            "tcp",
+		Address:            ln.Addr().String(),
+	}, &config.Logging{Level: "DEBUG"})
+
+	err = tc.Dial()
+	require.NoError(t, err)
+	tc.Close()
+}
+
+func createReadCap(t *testing.T) *bacap.ReadCap {
+	t.Helper()
+	wc, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	return wc.ReadCap()
+}
+
+// sendMockResponseRaw writes a CBOR response with length prefix (for use in TestDialWithTCPListener)
+func sendMockResponseRaw(conn net.Conn, resp *Response) error {
+	blob, err := cbor.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	prefix := make([]byte, 4)
+	binary.BigEndian.PutUint32(prefix, uint32(len(blob)))
+	_, err = conn.Write(append(prefix, blob...))
+	return err
+}

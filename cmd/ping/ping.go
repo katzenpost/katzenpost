@@ -29,8 +29,8 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
-	"github.com/katzenpost/katzenpost/client2/common"
-	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/client/common"
+	"github.com/katzenpost/katzenpost/client/thin"
 )
 
 var basePayload = []byte(`Data encryption is used widely to protect the content of Internet
