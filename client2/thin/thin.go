@@ -1416,10 +1416,6 @@ func (t *ThinClient) NewQueryID() *[QueryIDLength]byte {
 
 // SendMessageWithoutReply sends a fire-and-forget message using the legacy API.
 //
-// DEPRECATED: This method is part of the legacy API. New applications should
-// use the Pigeonhole API (NewKeypair, EncryptWrite, StartResendingEncryptedMessage,
-// etc.) which provides better reliability and state management.
-//
 // This method sends a message without any reply capability. The message is
 // encapsulated in a Sphinx packet and sent through the mixnet, but no response
 // can be received. This is suitable for notifications or one-way communication.
@@ -1467,10 +1463,6 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 }
 
 // SendMessage sends a message with reply capability using the legacy API.
-//
-// DEPRECATED: This method is part of the legacy API. New applications should
-// use the Pigeonhole API (NewKeypair, EncryptWrite, StartResendingEncryptedMessage,
-// etc.) which provides better reliability and state management.
 //
 // This method sends a message with a Single Use Reply Block (SURB) that allows
 // the destination to send a reply. The method is asynchronous - it only blocks
