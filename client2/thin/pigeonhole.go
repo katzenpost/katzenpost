@@ -366,7 +366,7 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 // Parameters:
 //   - readCap: Read capability (can be nil for write operations, required for reads)
 //   - writeCap: Write capability (can be nil for read operations, required for writes)
-//   - nextMessageIndex: Next message index for BACAP decryption (required for reads)
+//   - messageBoxIndex: Current message box index being operated on (required for reads)
 //   - replyIndex: Index of the reply to use (typically 0 or 1)
 //   - envelopeDescriptor: Serialized envelope descriptor for MKEM decryption
 //   - messageCiphertext: MKEM-encrypted message to send (from EncryptRead or EncryptWrite)
@@ -402,7 +402,7 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 //		}
 //	}
 //	fmt.Printf("Received: %s\n", plaintext)
-func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if envelopeHash == nil {
 		return nil, errors.New("envelopeHash cannot be nil")
 	}
@@ -422,7 +422,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 			QueryID:            queryID,
 			ReadCap:            readCap,
 			WriteCap:           writeCap,
-			NextMessageIndex:   nextMessageIndex,
+			MessageBoxIndex:    messageBoxIndex,
 			ReplyIndex:         replyIndex,
 			EnvelopeDescriptor: envelopeDescriptor,
 			MessageCiphertext:  messageCiphertext,
@@ -500,7 +500,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 // automatic retries on BoxIDNotFound errors. Use this when you want immediate error feedback
 // rather than waiting for potential replication lag to resolve.
 // The CancelResendingEncryptedMessage method can cancel operations started with either method.
-func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if envelopeHash == nil {
 		return nil, errors.New("envelopeHash cannot be nil")
 	}
@@ -520,7 +520,7 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCa
 			QueryID:                queryID,
 			ReadCap:                readCap,
 			WriteCap:               writeCap,
-			NextMessageIndex:       nextMessageIndex,
+			MessageBoxIndex:        messageBoxIndex,
 			ReplyIndex:             replyIndex,
 			EnvelopeDescriptor:     envelopeDescriptor,
 			MessageCiphertext:      messageCiphertext,
@@ -599,7 +599,7 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCa
 // BoxAlreadyExists errors instead of treating them as idempotent success. Use this when you want
 // to detect whether a write was actually performed or if the box already existed.
 // The CancelResendingEncryptedMessage method can cancel operations started with this method.
-func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if envelopeHash == nil {
 		return nil, errors.New("envelopeHash cannot be nil")
 	}
@@ -619,7 +619,7 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *baca
 			QueryID:                      queryID,
 			ReadCap:                      readCap,
 			WriteCap:                     writeCap,
-			NextMessageIndex:             nextMessageIndex,
+			MessageBoxIndex:              messageBoxIndex,
 			ReplyIndex:                   replyIndex,
 			EnvelopeDescriptor:           envelopeDescriptor,
 			MessageCiphertext:            messageCiphertext,

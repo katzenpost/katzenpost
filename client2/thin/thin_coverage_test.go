@@ -241,7 +241,6 @@ func TestEncryptReadIgnoresConnectionStatus(t *testing.T) {
 			EncryptReadReply: &EncryptReadReply{
 				QueryID:             queryID,
 				MessageCiphertext:   []byte("ct"),
-				NextMessageIndex:    []byte("nmi"),
 				EnvelopeDescriptor:  []byte("desc"),
 				EnvelopeHash:        &[32]byte{},
 				NextMessageBoxIndex: mbi,

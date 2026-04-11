@@ -202,8 +202,8 @@ type ARQMessage struct {
 	// ReadCap is the read capability for BACAP decryption (only for read operations).
 	ReadCap *bacap.ReadCap
 
-	// NextMessageIndex is the message index for BACAP decryption (only for read operations).
-	NextMessageIndex []byte
+	// MessageBoxIndex is the current message box index being operated on (only for read operations).
+	MessageBoxIndex []byte
 
 	// NoRetryOnBoxIDNotFound disables automatic retries on BoxIDNotFound for read operations.
 	// When true, BoxIDNotFound is returned immediately. When false (default), reads retry

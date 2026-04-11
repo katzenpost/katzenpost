@@ -115,15 +115,6 @@ func (d *Daemon) encryptRead(request *Request) {
 	}
 	d.log.Debugf("encryptRead: Idx64=%d, BoxID=%x", messageBoxIndex.Idx64, boxID)
 
-	// Get the CURRENT message index (the one we're reading from)
-	// This is needed for decryption later - we decrypt using the SAME index we read from
-	currentMessageIndex := statefulReader.GetCurrentMessageIndex()
-	if currentMessageIndex == nil {
-		d.log.Error("encryptRead: current message index is nil")
-		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
 	// Create the ReplicaInnerMessage for a read operation
 	msg := &pigeonhole.ReplicaInnerMessage{
 		MessageType: 0, // 0 = read
@@ -170,14 +161,6 @@ func (d *Daemon) encryptRead(request *Request) {
 		Envelope:  courierEnvelope,
 	}
 
-	// Marshal the current message index to bytes
-	currentMessageIndexBytes, err := currentMessageIndex.MarshalBinary()
-	if err != nil {
-		d.log.Errorf("encryptRead: failed to marshal current message index: %v", err)
-		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
 	// Compute the next message box index
 	nextMessageBoxIndex, err := messageBoxIndex.NextIndex()
 	if err != nil {
@@ -191,7 +174,6 @@ func (d *Daemon) encryptRead(request *Request) {
 		EncryptReadReply: &thin.EncryptReadReply{
 			QueryID:             request.EncryptRead.QueryID,
 			MessageCiphertext:   courierQuery.Bytes(),
-			NextMessageIndex:    currentMessageIndexBytes,
 			EnvelopeDescriptor:  envelopeDescriptorBytes,
 			EnvelopeHash:        envHash,
 			NextMessageBoxIndex: nextMessageBoxIndex,
@@ -1074,8 +1056,8 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	// Log the box ID (blinded ed25519 public key) for debugging
 	var boxIDHex string = "<unknown>"
 	var idx64Str string = "<unknown>"
-	if len(req.NextMessageIndex) > 0 {
-		if mbi, err := bacap.NewEmptyMessageBoxIndexFromBytes(req.NextMessageIndex); err == nil {
+	if len(req.MessageBoxIndex) > 0 {
+		if mbi, err := bacap.NewEmptyMessageBoxIndexFromBytes(req.MessageBoxIndex); err == nil {
 			idx64Str = fmt.Sprintf("%d", mbi.Idx64)
 			if isRead && req.ReadCap != nil {
 				boxID := req.ReadCap.DeriveBoxID(mbi)
@@ -1142,7 +1124,7 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		IsRead:                       isRead,
 		State:                        ARQStateWaitingForACK,
 		ReadCap:                      req.ReadCap,
-		NextMessageIndex:             req.NextMessageIndex,
+		MessageBoxIndex:              req.MessageBoxIndex,
 		NoRetryOnBoxIDNotFound:       req.NoRetryOnBoxIDNotFound,
 		NoIdempotentBoxAlreadyExists: req.NoIdempotentBoxAlreadyExists,
 	}
@@ -1981,16 +1963,16 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 		}
 
 		// Perform BACAP decryption if this is a read operation
-		if arqMessage.IsRead && arqMessage.ReadCap != nil && arqMessage.NextMessageIndex != nil {
-			// Deserialize the NextMessageIndex
-			messageBoxIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(arqMessage.NextMessageIndex)
+		if arqMessage.IsRead && arqMessage.ReadCap != nil && arqMessage.MessageBoxIndex != nil {
+			// Deserialize the MessageBoxIndex
+			messageBoxIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(arqMessage.MessageBoxIndex)
 			if err != nil {
 				d.log.Errorf("decryptPigeonholeReply: Failed to deserialize MessageBoxIndex: %v", err)
 				return nil, fmt.Errorf("%w: failed to deserialize MessageBoxIndex: %v", errBACAPDecryptionFailed, err)
 			}
 			d.log.Debugf("decryptPigeonholeReply: Performing BACAP decryption, Idx64=%d", messageBoxIndex.Idx64)
 
-			// Create a StatefulReader from the ReadCap and NextMessageIndex
+			// Create a StatefulReader from the ReadCap and MessageBoxIndex
 			statefulReader, err := bacap.NewStatefulReaderWithIndex(arqMessage.ReadCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
 			if err != nil {
 				d.log.Errorf("decryptPigeonholeReply: Failed to create StatefulReader: %v", err)

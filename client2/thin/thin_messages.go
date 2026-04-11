@@ -245,9 +245,8 @@ type StartResendingEncryptedMessage struct {
 	// WriteCap is the write capability that grants access to the channel.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
 
-	// NextMessageIndex is the next message index that should be used when
-	// encrypting the next read.
-	NextMessageIndex []byte `cbor:"next_message_index"`
+	// MessageBoxIndex is the current message box index being operated on.
+	MessageBoxIndex []byte `cbor:"message_box_index"`
 
 	// ReplyIndex is the index of the reply that was actually used when processing.
 	// This field is optional - if nil, the daemon will use the default reply index.

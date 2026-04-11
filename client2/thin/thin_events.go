@@ -234,10 +234,6 @@ type EncryptReadReply struct {
 	// to the Courier service.
 	MessageCiphertext []byte `cbor:"message_ciphertext"`
 
-	// NextMessageIndex is the next message index that should be used when
-	// encrypting the next read.
-	NextMessageIndex []byte `cbor:"next_message_index"`
-
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
 	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
 

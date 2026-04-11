@@ -350,7 +350,6 @@ func TestDaemonEncryptRead_Success(t *testing.T) {
 		require.Equal(t, thin.ThinClientSuccess, resp.EncryptReadReply.ErrorCode)
 		require.Equal(t, queryID, resp.EncryptReadReply.QueryID)
 		require.NotEmpty(t, resp.EncryptReadReply.MessageCiphertext)
-		require.NotEmpty(t, resp.EncryptReadReply.NextMessageIndex)
 		require.NotEmpty(t, resp.EncryptReadReply.EnvelopeDescriptor)
 		require.NotNil(t, resp.EncryptReadReply.EnvelopeHash)
 	case <-time.After(time.Second):

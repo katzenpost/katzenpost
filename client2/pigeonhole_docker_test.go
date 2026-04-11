@@ -86,7 +86,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	aliceResult, err := aliceThinClient.StartResendingEncryptedMessage(
 		nil,             // readCap (nil for write operations)
 		aliceWriteCap,   // writeCap
-		nil,             // nextMessageIndex (not needed for writes)
+		nil,             // messageBoxIndex (not needed for writes)
 		&replyIndex,     // replyIndex
 		aliceEnvDesc,    // envelopeDescriptor
 		aliceCiphertext, // messageCiphertext
@@ -115,7 +115,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	bobResult, err := bobThinClient.StartResendingEncryptedMessage(
 		bobReadCap,           // readCap
 		nil,                  // writeCap (nil for read operations)
-		aliceFirstIndexBytes, // nextMessageIndex
+		aliceFirstIndexBytes, // messageBoxIndex
 		&replyIndex,          // replyIndex
 		bobEnvDesc,           // envelopeDescriptor
 		bobCiphertext,        // messageCiphertext
@@ -191,7 +191,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 		aliceResult, err := aliceThinClient.StartResendingEncryptedMessage(
 			nil,             // readCap (nil for write operations)
 			aliceWriteCap,   // writeCap
-			nil,             // nextMessageIndex (not needed for writes)
+			nil,             // messageBoxIndex (not needed for writes)
 			&replyIndex,     // replyIndex
 			aliceEnvDesc,    // envelopeDescriptor
 			aliceCiphertext, // messageCiphertext
@@ -220,7 +220,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 		bobResult, err := bobThinClient.StartResendingEncryptedMessage(
 			bobReadCap,           // readCap
 			nil,                  // writeCap (nil for read operations)
-			bobCurrentIndexBytes, // nextMessageIndex
+			bobCurrentIndexBytes, // messageBoxIndex
 			&replyIndex,          // replyIndex
 			bobEnvDesc,           // envelopeDescriptor
 			bobCiphertext,        // messageCiphertext
@@ -1060,7 +1060,7 @@ func TestBoxIDNotFoundError(t *testing.T) {
 	_, err = bobThinClient.StartResendingEncryptedMessageNoRetry(
 		readCap,         // readCap
 		nil,             // writeCap (nil for read operations)
-		firstIndexBytes, // nextMessageIndex
+		firstIndexBytes, // messageBoxIndex
 		&replyIndex,     // replyIndex
 		bobEnvDesc,      // envelopeDescriptor
 		bobCiphertext,   // messageCiphertext
@@ -1147,7 +1147,7 @@ func TestReadBeforeWrite(t *testing.T) {
 		result, err := bobThinClient.StartResendingEncryptedMessage(
 			bobReadCap,      // readCap
 			nil,             // writeCap (nil for read operations)
-			firstIndexBytes, // nextMessageIndex
+			firstIndexBytes, // messageBoxIndex
 			&replyIndex,     // replyIndex
 			bobEnvDesc,      // envelopeDescriptor
 			bobCiphertext,   // messageCiphertext
@@ -1177,7 +1177,7 @@ func TestReadBeforeWrite(t *testing.T) {
 	_, err = aliceThinClient.StartResendingEncryptedMessage(
 		nil,             // readCap (nil for write operations)
 		aliceWriteCap,   // writeCap
-		nil,             // nextMessageIndex (not needed for writes)
+		nil,             // messageBoxIndex (not needed for writes)
 		&replyIndex,     // replyIndex
 		aliceEnvDesc,    // envelopeDescriptor
 		aliceCiphertext, // messageCiphertext
@@ -1240,7 +1240,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 	_, err = thinClient.StartResendingEncryptedMessage(
 		nil,         // readCap (nil for write operations)
 		writeCap,    // writeCap
-		nil,         // nextMessageIndex (nil for write operations)
+		nil,         // messageBoxIndex (nil for write operations)
 		nil,         // replyIndex (nil for write operations)
 		envDesc1,    // envelopeDescriptor
 		ciphertext1, // messageCiphertext
@@ -1266,7 +1266,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 	_, err = thinClient.StartResendingEncryptedMessageReturnBoxExists(
 		nil,         // readCap
 		writeCap,    // writeCap
-		nil,         // nextMessageIndex
+		nil,         // messageBoxIndex
 		nil,         // replyIndex
 		envDesc2,    // envelopeDescriptor
 		ciphertext2, // messageCiphertext
@@ -1312,7 +1312,7 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 	_, err = thinClient.StartResendingEncryptedMessage(
 		nil,         // readCap (nil for write operations)
 		writeCap,    // writeCap
-		nil,         // nextMessageIndex (nil for write operations)
+		nil,         // messageBoxIndex (nil for write operations)
 		nil,         // replyIndex (nil for write operations)
 		envDesc1,    // envelopeDescriptor
 		ciphertext1, // messageCiphertext
