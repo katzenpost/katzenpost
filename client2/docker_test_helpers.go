@@ -6,7 +6,9 @@
 package client2
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -90,22 +92,26 @@ func setupClientAndTargets(t *testing.T) (*thin.ThinClient, []*cpki.MixDescripto
 	return client, targets
 }
 
-// sendAndWait sends a message and waits for a reply
-func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte) []byte {
+// sendAndWait sends a message and waits for a reply, returning an error on timeout or failure.
+func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte) ([]byte, error) {
 	surbID := client.NewSURBID()
 	eventSink := client.EventSink()
 	err := client.SendMessage(surbID, message, nodeID, queueID)
-	require.NoError(t, err)
+	if err != nil {
+		return nil, fmt.Errorf("SendMessage: %w", err)
+	}
 
+	timeout := time.After(1 * time.Minute)
 	for {
 		var event thin.Event
 		select {
 		case event = <-eventSink:
-		case <-shutdownCh: // exit if halted
-			// interrupt caught, shutdown client
+		case <-timeout:
+			return nil, fmt.Errorf("timed out waiting for reply")
+		case <-shutdownCh:
 			t.Log("Interrupt caught - shutting down client")
 			client.Halt()
-			return nil
+			return nil, fmt.Errorf("interrupted")
 		}
 
 		switch v := event.(type) {
@@ -114,7 +120,7 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 		case *thin.ConnectionStatusEvent:
 			t.Log("ConnectionStatusEvent")
 			if !v.IsConnected {
-				panic("socket connection lost")
+				return nil, fmt.Errorf("socket connection lost")
 			}
 		case *thin.NewDocumentEvent:
 			t.Log("NewDocumentEvent")
@@ -122,21 +128,28 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 			t.Log("MessageSentEvent")
 		case *thin.MessageReplyEvent:
 			t.Log("MessageReplyEvent")
-			require.Equal(t, surbID[:], v.SURBID[:])
-			return v.Payload
+			if fmt.Sprintf("%x", surbID[:]) != fmt.Sprintf("%x", v.SURBID[:]) {
+				return nil, fmt.Errorf("SURBID mismatch")
+			}
+			return v.Payload, nil
 		default:
-			panic("impossible event type")
+			return nil, fmt.Errorf("unexpected event type: %T", v)
 		}
 	}
-	panic("impossible event type")
 }
 
-// repeatSendAndWait sends the same message multiple times using sendAndWait
-func repeatSendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte, count int) {
+// repeatSendAndWait sends the same message multiple times using sendAndWait.
+func repeatSendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte, count int) error {
 	for i := 0; i < count; i++ {
-		reply := sendAndWait(t, client, message, nodeID, queueID)
-		require.Equal(t, message, reply[:len(message)])
+		reply, err := sendAndWait(t, client, message, nodeID, queueID)
+		if err != nil {
+			return err
+		}
+		if len(reply) < len(message) || string(reply[:len(message)]) != string(message) {
+			return fmt.Errorf("reply mismatch on iteration %d", i)
+		}
 	}
+	return nil
 }
 
 func init() {

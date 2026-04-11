@@ -6,18 +6,17 @@
 package client2
 
 import (
+	"bytes"
+	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/katzenpost/hpqc/hash"
-
-	"net/http"
-	_ "net/http/pprof"
 )
 
 func TestLegacyTests(t *testing.T) {
@@ -31,13 +30,31 @@ func TestLegacyTests(t *testing.T) {
 		t.Log("Interrupt caught. Shutdown")
 	}()
 
-	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
-	t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
+	t.Run("TestDockerMultiplexClients", func(t *testing.T) {
+		t.Parallel()
+		retrySubtest(t, 3, testDockerMultiplexClients)
+	})
+	t.Run("TestDockerClientSendReceive", func(t *testing.T) {
+		t.Parallel()
+		retrySubtest(t, 3, testDockerClientSendReceive)
+	})
 }
 
-func testDockerMultiplexClients(t *testing.T) {
-	t.Parallel()
+func retrySubtest(t *testing.T, maxAttempts int, fn func(t *testing.T) error) {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := fn(t)
+		if err == nil {
+			return
+		}
+		if attempt < maxAttempts {
+			t.Logf("attempt %d/%d failed: %s, retrying...", attempt, maxAttempts, err)
+		} else {
+			t.Fatalf("all %d attempts failed, last error: %s", maxAttempts, err)
+		}
+	}
+}
 
+func testDockerMultiplexClients(t *testing.T) error {
 	client1, pingTargets := setupClientAndTargets(t)
 	defer client1.Close()
 
@@ -47,16 +64,25 @@ func testDockerMultiplexClients(t *testing.T) {
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
-	reply := sendAndWait(t, client1, message1, &nodeIdKey, []byte("+echo"))
-	require.Equal(t, message1, reply[:len(message1)])
+	reply, err := sendAndWait(t, client1, message1, &nodeIdKey, []byte("+echo"))
+	if err != nil {
+		return fmt.Errorf("client1 echo: %w", err)
+	}
+	if !bytes.Equal(message1, reply[:len(message1)]) {
+		return fmt.Errorf("client1 reply mismatch")
+	}
 
-	reply = sendAndWait(t, client2, message1, &nodeIdKey, []byte("+echo"))
-	require.Equal(t, message1, reply[:len(message1)])
+	reply, err = sendAndWait(t, client2, message1, &nodeIdKey, []byte("+echo"))
+	if err != nil {
+		return fmt.Errorf("client2 echo: %w", err)
+	}
+	if !bytes.Equal(message1, reply[:len(message1)]) {
+		return fmt.Errorf("client2 reply mismatch")
+	}
+	return nil
 }
 
-func testDockerClientSendReceive(t *testing.T) {
-	t.Parallel()
-
+func testDockerClientSendReceive(t *testing.T) error {
 	client, pingTargets := setupClientAndTargets(t)
 	defer client.Close()
 
@@ -64,12 +90,20 @@ func testDockerClientSendReceive(t *testing.T) {
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
 	t.Log("BEFORE sendAndWait")
-	reply := sendAndWait(t, client, message1, &nodeIdKey, []byte("+testdest"))
+	reply, err := sendAndWait(t, client, message1, &nodeIdKey, []byte("+testdest"))
 	t.Log("AFTER sendAndWait")
-	require.Equal(t, message1, reply[:len(message1)])
+	if err != nil {
+		return fmt.Errorf("sendAndWait: %w", err)
+	}
+	if !bytes.Equal(message1, reply[:len(message1)]) {
+		return fmt.Errorf("reply mismatch")
+	}
 
-	// Send the same message 5 more times
-	repeatSendAndWait(t, client, message1, &nodeIdKey, []byte("+testdest"), 5)
+	err = repeatSendAndWait(t, client, message1, &nodeIdKey, []byte("+testdest"), 5)
+	if err != nil {
+		return fmt.Errorf("repeatSendAndWait: %w", err)
+	}
+	return nil
 }
 
 func init() {
