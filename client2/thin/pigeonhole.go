@@ -1443,32 +1443,6 @@ func hashIdentityKey(key []byte) [32]byte {
 	return hash.Sum256(key)
 }
 
-// TombstoneBox creates a tombstone for a single pigeonhole box.
-// The tombstone is created by sending an empty plaintext to EncryptWrite.
-// The daemon detects this and signs an empty payload instead of encrypting,
-// which the replica recognizes as a deletion request.
-func (c *ThinClient) TombstoneBox(
-	writeCap *bacap.WriteCap,
-	boxIndex *bacap.MessageBoxIndex,
-) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
-
-	if writeCap == nil {
-		err = fmt.Errorf("nil writeCap")
-		return
-	}
-	if boxIndex == nil {
-		err = fmt.Errorf("nil boxIndex")
-		return
-	}
-
-	// Tombstones are created by sending an empty plaintext
-	tomb := []byte{}
-
-	messageCiphertext, envelopeDescriptor, envelopeHash, _, err =
-		c.EncryptWrite(tomb, writeCap, boxIndex)
-	return
-}
-
 type TombstoneEnvelope struct {
 	MessageCiphertext  []byte
 	EnvelopeDescriptor []byte
@@ -1482,9 +1456,11 @@ type TombstoneRangeResult struct {
 }
 
 // TombstoneRange creates tombstones for a range of pigeonhole boxes.
-// The tombstones are created by sending empty plaintexts to EncryptWrite.
+// Tombstones are created by calling EncryptWrite with an empty plaintext.
 // The daemon detects this and signs empty payloads instead of encrypting,
 // which the replica recognizes as deletion requests.
+//
+// To tombstone a single box, use maxCount=1.
 func (c *ThinClient) TombstoneRange(
 	writeCap *bacap.WriteCap,
 	start *bacap.MessageBoxIndex,
@@ -1505,7 +1481,7 @@ func (c *ThinClient) TombstoneRange(
 	envelopes := make([]*TombstoneEnvelope, 0, maxCount)
 
 	for uint32(len(envelopes)) < maxCount {
-		messageCiphertext, envelopeDescriptor, envelopeHash, err := c.TombstoneBox(writeCap, cur)
+		messageCiphertext, envelopeDescriptor, envelopeHash, nextIndex, err := c.EncryptWrite([]byte{}, writeCap, cur)
 		if err != nil {
 			return &TombstoneRangeResult{
 				Envelopes: envelopes,
@@ -1520,13 +1496,7 @@ func (c *ThinClient) TombstoneRange(
 			BoxIndex:           cur,
 		})
 
-		cur, err = cur.NextIndex()
-		if err != nil {
-			return &TombstoneRangeResult{
-				Envelopes: envelopes,
-				Next:      cur,
-			}, err
-		}
+		cur = nextIndex
 	}
 
 	return &TombstoneRangeResult{

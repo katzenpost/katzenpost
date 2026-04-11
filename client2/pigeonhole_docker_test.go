@@ -889,10 +889,12 @@ func TestTombstoning(t *testing.T) {
 	require.Equal(t, message, readResult.Plaintext)
 	t.Logf("✓ Bob read message: %q", string(readResult.Plaintext))
 
-	// Step 3: Alice tombstones the box
-	tombCiphertext, tombEnvDesc, tombEnvHash, err := alice.TombstoneBox(writeCap, firstIndex)
+	// Step 3: Alice tombstones the box using TombstoneRange with count=1
+	tombResult, err := alice.TombstoneRange(writeCap, firstIndex, 1)
 	require.NoError(t, err)
-	_, err = alice.StartResendingEncryptedMessage(nil, writeCap, nil, nil, tombEnvDesc, tombCiphertext, tombEnvHash)
+	require.Len(t, tombResult.Envelopes, 1)
+	tombEnvelope := tombResult.Envelopes[0]
+	_, err = alice.StartResendingEncryptedMessage(nil, writeCap, nil, nil, tombEnvelope.EnvelopeDescriptor, tombEnvelope.MessageCiphertext, tombEnvelope.EnvelopeHash)
 	require.NoError(t, err)
 	t.Log("✓ Alice tombstoned the box")
 

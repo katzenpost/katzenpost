@@ -166,6 +166,13 @@ func TestTombstoneRangeSuccess(t *testing.T) {
 	require.NoError(t, err)
 	firstIdx := writeCap.GetFirstMessageBoxIndex()
 
+	// Compute expected next indices so the mock replies return them
+	secondIdx, err := firstIdx.NextIndex()
+	require.NoError(t, err)
+	thirdIdx, err := secondIdx.NextIndex()
+	require.NoError(t, err)
+	expectedNextIndices := []*bacap.MessageBoxIndex{secondIdx, thirdIdx}
+
 	go func() {
 		for i := 0; i < 2; i++ {
 			req, err := readRequest(server)
@@ -175,11 +182,12 @@ func TestTombstoneRangeSuccess(t *testing.T) {
 			queryID := req.EncryptWrite.QueryID
 			sendResponse(t, server, &Response{
 				EncryptWriteReply: &EncryptWriteReply{
-					QueryID:            queryID,
-					MessageCiphertext:  []byte("ciphertext"),
-					EnvelopeDescriptor: []byte("descriptor"),
-					EnvelopeHash:       &[32]byte{byte(i)},
-					ErrorCode:          ThinClientSuccess,
+					QueryID:             queryID,
+					MessageCiphertext:   []byte("ciphertext"),
+					EnvelopeDescriptor:  []byte("descriptor"),
+					EnvelopeHash:        &[32]byte{byte(i)},
+					NextMessageBoxIndex: expectedNextIndices[i],
+					ErrorCode:           ThinClientSuccess,
 				},
 			})
 		}
@@ -190,6 +198,7 @@ func TestTombstoneRangeSuccess(t *testing.T) {
 	require.NotNil(t, result)
 	require.Len(t, result.Envelopes, 2)
 	require.NotNil(t, result.Next)
+	require.Equal(t, thirdIdx.Idx64, result.Next.Idx64)
 }
 
 func TestTombstoneRangeNilWriteCap(t *testing.T) {

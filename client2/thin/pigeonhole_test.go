@@ -1068,49 +1068,6 @@ func TestGetDistinctCouriersNotEnough(t *testing.T) {
 	require.Contains(t, err.Error(), "not enough couriers available")
 }
 
-func TestTombstoneBoxNilArgs(t *testing.T) {
-	tc, _ := setupMockDaemon(t)
-
-	_, _, _, err := tc.TombstoneBox(nil, newTestMessageBoxIndex(t))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "nil writeCap")
-
-	_, _, _, err = tc.TombstoneBox(newTestWriteCap(t), nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "nil boxIndex")
-}
-
-func TestTombstoneBoxSuccess(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	go func() {
-		req, err := readRequest(server)
-		if err != nil {
-			return
-		}
-		// TombstoneBox calls EncryptWrite with empty plaintext
-		require.NotNil(t, req.EncryptWrite)
-		require.Empty(t, req.EncryptWrite.Plaintext)
-
-		envHash := &[32]byte{1, 2, 3}
-		sendResponse(t, server, &Response{
-			EncryptWriteReply: &EncryptWriteReply{
-				QueryID:            req.EncryptWrite.QueryID,
-				MessageCiphertext:  []byte("tombstone-ct"),
-				EnvelopeDescriptor: []byte("tombstone-desc"),
-				EnvelopeHash:       envHash,
-				ErrorCode:          ThinClientSuccess,
-			},
-		})
-	}()
-
-	ct, desc, envHash, err := tc.TombstoneBox(newTestWriteCap(t), newTestMessageBoxIndex(t))
-	require.NoError(t, err)
-	require.Equal(t, []byte("tombstone-ct"), ct)
-	require.Equal(t, []byte("tombstone-desc"), desc)
-	require.NotNil(t, envHash)
-}
-
 func TestTombstoneRangeNilArgs(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 
