@@ -23,7 +23,7 @@ import (
 //   - ConnectionStatusEvent: Connection state changes
 //   - MessageReplyEvent: Replies to sent messages
 //   - NewDocumentEvent: PKI document updates
-//   - Channel operation events (CreateWriteChannelReply, etc.)
+//   - Pigeonhole API replies (NewKeypairReply, StartResendingEncryptedMessageReply, etc.)
 type Event interface {
 	// String returns a human-readable string representation of the Event.
 	String() string
@@ -235,6 +235,7 @@ type EncryptReadReply struct {
 	MessageCiphertext []byte `cbor:"message_ciphertext"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
+	// contains the private key material needed to decrypt the envelope reply.
 	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
 
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the

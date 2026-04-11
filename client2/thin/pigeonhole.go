@@ -87,7 +87,6 @@ func errorCodeToSentinel(errorCode uint8) error {
 // to allow them to read messages.
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
 //   - seed: 32-byte seed used to derive the keypair
 //
 // Returns:
@@ -98,7 +97,6 @@ func errorCodeToSentinel(errorCode uint8) error {
 //
 // Example:
 //
-//	ctx := context.Background()
 //	seed := make([]byte, 32)
 //	_, err := rand.Reader.Read(seed)
 //	if err != nil {
@@ -373,7 +371,9 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 //   - envelopeHash: Hash of the courier envelope
 //
 // Returns:
-//   - []byte: Fully decrypted plaintext from the reply (for reads) or empty (for writes)
+//   - *StartResendingResult: Contains Plaintext (decrypted message for reads, empty for writes),
+//     CourierIdentityHash (hash of the courier that handled this message), and
+//     CourierQueueID (queue ID of that courier).
 //   - error: Any error encountered during the operation. Specific errors can be checked
 //     using errors.Is():
 //   - ErrBoxIDNotFound: The requested box ID was not found on the replica
@@ -391,9 +391,8 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 //
 // Example:
 //
-//	ctx := context.Background()
-//	plaintext, err := client.StartResendingEncryptedMessage(
-//		ctx, readCap, nil, nextIndex, &replyIdx, envDesc, ciphertext, envHash)
+//	result, err := client.StartResendingEncryptedMessage(
+//		readCap, nil, nextIndex, &replyIdx, envDesc, ciphertext, envHash)
 //	if err != nil {
 //		if errors.Is(err, thin.ErrBoxIDNotFound) {
 //			log.Println("Box not found - may be empty or expired")
@@ -401,7 +400,7 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 //			log.Fatal("Failed to start resending:", err)
 //		}
 //	}
-//	fmt.Printf("Received: %s\n", plaintext)
+//	fmt.Printf("Received: %s\n", result.Plaintext)
 func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	if envelopeHash == nil {
 		return nil, errors.New("envelopeHash cannot be nil")
@@ -702,7 +701,6 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *baca
 //   - The message is no longer needed
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
 //   - envelopeHash: Hash of the courier envelope to cancel
 //
 // Returns:
@@ -710,8 +708,7 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *baca
 //
 // Example:
 //
-//	ctx := context.Background()
-//	err := client.CancelResendingEncryptedMessage(ctx, envHash)
+//	err := client.CancelResendingEncryptedMessage(envHash)
 //	if err != nil {
 //		log.Printf("Failed to cancel resending: %v", err)
 //	}
@@ -791,7 +788,6 @@ func (t *ThinClient) CancelResendingEncryptedMessage(envelopeHash *[32]byte) err
 //  5. Writes tombstones to clean up the temporary channel
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
 //   - writeCap: Write capability for the temporary copy stream channel
 //
 // Returns:
@@ -799,8 +795,7 @@ func (t *ThinClient) CancelResendingEncryptedMessage(envelopeHash *[32]byte) err
 //
 // Example:
 //
-//	ctx := context.Background()
-//	err := client.StartResendingCopyCommand(ctx, tempWriteCap)
+//	err := client.StartResendingCopyCommand(tempWriteCap)
 //	if err != nil {
 //		log.Fatal("Copy command failed:", err)
 //	}
@@ -876,7 +871,6 @@ func (t *ThinClient) StartResendingCopyCommand(writeCap *bacap.WriteCap) error {
 // different couriers should handle different layers for improved privacy.
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
 //   - writeCap: Write capability for the temporary copy stream channel
 //   - courierIdentityHash: Hash of the courier's identity key
 //   - courierQueueID: Queue ID for the courier service
@@ -969,7 +963,6 @@ func (t *ThinClient) StartResendingCopyCommandWithCourier(
 //   - The copy command is no longer needed
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
 //   - writeCapHash: Hash of the serialized WriteCap to cancel
 //
 // Returns:
@@ -977,8 +970,7 @@ func (t *ThinClient) StartResendingCopyCommandWithCourier(
 //
 // Example:
 //
-//	ctx := context.Background()
-//	err := client.CancelResendingCopyCommand(ctx, writeCapHash)
+//	err := client.CancelResendingCopyCommand(writeCapHash)
 //	if err != nil {
 //		log.Printf("Failed to cancel copy command: %v", err)
 //	}
@@ -1055,7 +1047,6 @@ func (t *ThinClient) CancelResendingCopyCommand(writeCapHash *[32]byte) error {
 // documented here: https://pkg.go.dev/github.com/katzenpost/hpqc/bacap
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
 //   - messageBoxIndex: Current message box index to increment
 //
 // Returns:
@@ -1064,7 +1055,6 @@ func (t *ThinClient) CancelResendingCopyCommand(writeCapHash *[32]byte) error {
 //
 // Example:
 //
-//	ctx := context.Background()
 //	nextIndex, err := client.NextMessageBoxIndex(currentIndex)
 //	if err != nil {
 //		log.Fatal("Failed to increment index:", err)
@@ -1123,8 +1113,6 @@ func (t *ThinClient) NextMessageBoxIndex(messageBoxIndex *bacap.MessageBoxIndex)
 	}
 }
 
-// NewStreamID generates a new cryptographically random stream identifier.
-//
 // CreateEnvelopesResult contains the result of creating courier envelopes,
 // including the envelopes, buffer state for crash recovery, and next destination indices.
 type CreateEnvelopesResult struct {
@@ -1140,9 +1128,10 @@ type CreateEnvelopesResult struct {
 	NextDestIndices []*bacap.MessageBoxIndex
 }
 
+// NewStreamID generates a new cryptographically random stream identifier.
 // Stream IDs are used to correlate multiple CreateCourierEnvelopesFromPayload
-// and CreateCourierEnvelopesFromMultiPayload
-// calls that belong to the same copy stream. Each stream should have a unique ID.
+// and CreateCourierEnvelopesFromMultiPayload calls that belong to the same
+// copy stream. Each stream should have a unique ID.
 //
 // Returns:
 //   - *[StreamIDLength]byte: A new random stream ID

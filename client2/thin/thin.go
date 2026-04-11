@@ -42,23 +42,19 @@
 // For more information about this API please see our API documentation, here:
 // https://katzenpost.network/docs/client_integration/#pigeonhole-channel-api
 //
-// The new Pigeonhole protocol provides the following messages and their corresponding
+// The Pigeonhole protocol provides the following messages and their corresponding
 // replies/events:
 //   - NewKeypair
 //   - EncryptRead
 //   - EncryptWrite
 //   - StartResendingEncryptedMessage
 //   - CancelResendingEncryptedMessage
+//   - StartResendingCopyCommand
+//   - CancelResendingCopyCommand
 //   - NextMessageBoxIndex
-//
-// The old Pigeonhole protocol API provides:
-//
-//   - CreateWriteChannel: Create a new channel for sending messages
-//   - CreateReadChannel: Create a channel for receiving messages
-//   - WriteChannel: Prepare a message for transmission
-//   - ReadChannel: Prepare a query to read the next message
-//   - SendChannelQuery: Send prepared queries to the mixnet
-//   - ResumeWriteChannel/ResumeReadChannel: Resume channels after restart
+//   - CreateCourierEnvelopesFromPayload
+//   - CreateCourierEnvelopesFromPayloads
+//   - SetStreamBuffer
 //
 // # Configuration
 //
@@ -501,30 +497,6 @@ func (t *ThinClient) IsConnected() bool {
 	return t.isConnected
 }
 
-// Close gracefully shuts down the thin client and closes the daemon connection.
-//
-// This method performs a clean shutdown by:
-//  1. Sending a close notification to the daemon
-//  2. Closing the network connection
-//  3. Stopping all background workers
-//  4. Closing internal event channels
-//
-// After calling Close(), the ThinClient instance should not be used further.
-// Any ongoing operations will be interrupted and may return errors.
-//
-// Returns:
-//   - error: Any error encountered during shutdown
-//
-// Example:
-//
-//	defer client.Close() // Ensure cleanup
-//
-//	// Use client...
-//
-//	err := client.Close()
-//	if err != nil {
-//		log.Printf("Error during shutdown: %v", err)
-//	}
 // Disconnect closes the connection without sending ThinClose.
 // The daemon preserves all state for this client's app ID, allowing
 // the client to reconnect and resume with the same session token.
@@ -544,6 +516,18 @@ func (t *ThinClient) Disconnect() error {
 	return err
 }
 
+// Close gracefully shuts down the thin client and closes the daemon connection.
+//
+// This method performs a clean shutdown by:
+//  1. Sending a close notification to the daemon
+//  2. Closing the network connection
+//  3. Stopping all background workers
+//
+// After calling Close(), the ThinClient instance should not be used further.
+// Any ongoing operations will be interrupted and may return errors.
+//
+// Returns:
+//   - error: Any error encountered during shutdown
 func (t *ThinClient) Close() error {
 	t.connMu.RLock()
 	conn := t.conn
@@ -1433,8 +1417,8 @@ func (t *ThinClient) NewQueryID() *[QueryIDLength]byte {
 // SendMessageWithoutReply sends a fire-and-forget message using the legacy API.
 //
 // DEPRECATED: This method is part of the legacy API. New applications should
-// use the Pigeonhole Channel API (CreateWriteChannel, WriteChannel, etc.) which
-// provides better reliability, ordering guarantees, and state management.
+// use the Pigeonhole API (NewKeypair, EncryptWrite, StartResendingEncryptedMessage,
+// etc.) which provides better reliability and state management.
 //
 // This method sends a message without any reply capability. The message is
 // encapsulated in a Sphinx packet and sent through the mixnet, but no response
@@ -1485,8 +1469,8 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 // SendMessage sends a message with reply capability using the legacy API.
 //
 // DEPRECATED: This method is part of the legacy API. New applications should
-// use the Pigeonhole Channel API (CreateWriteChannel, WriteChannel, etc.) which
-// provides better reliability, ordering guarantees, and state management.
+// use the Pigeonhole API (NewKeypair, EncryptWrite, StartResendingEncryptedMessage,
+// etc.) which provides better reliability and state management.
 //
 // This method sends a message with a Single Use Reply Block (SURB) that allows
 // the destination to send a reply. The method is asynchronous - it only blocks

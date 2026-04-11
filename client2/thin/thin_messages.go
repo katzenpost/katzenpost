@@ -198,7 +198,7 @@ func ThinClientErrorToString(errorCode uint8) string {
 // The reply type, is NewKeypairReply.
 type NewKeypair struct {
 	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
+	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 	// Seed is the 32 byte seed used to derive the keypair.
 	Seed []byte `cbor:"seed"`
@@ -207,7 +207,7 @@ type NewKeypair struct {
 // EncryptRead requests the encryption of a read operation for a given read capability.
 type EncryptRead struct {
 	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
+	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ReadCap is the read capability that grants access to the channel.
@@ -220,7 +220,7 @@ type EncryptRead struct {
 // EncryptWrite requests the encryption of a write operation for a given write capability.
 type EncryptWrite struct {
 	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
+	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// Plaintext is the plaintext message to be encrypted.
@@ -236,7 +236,7 @@ type EncryptWrite struct {
 // StartResendingEncryptedMessage requests the daemon to start resending an encrypted message.
 type StartResendingEncryptedMessage struct {
 	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
+	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ReadCap is the read capability that grants access to the channel.
@@ -279,10 +279,10 @@ type StartResendingEncryptedMessage struct {
 // CancelResendingEncryptedMessage requests the daemon to cancel resending an encrypted message.
 type CancelResendingEncryptedMessage struct {
 	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
+	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
-	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	// EnvelopeHash is the hash of the CourierEnvelope to cancel resending.
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 }
 
@@ -325,7 +325,7 @@ type CancelResendingCopyCommand struct {
 // the same WriteCap. The reply type is NextMessageBoxIndexReply.
 type NextMessageBoxIndex struct {
 	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
+	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// MessageBoxIndex is the current index to increment.
