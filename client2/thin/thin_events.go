@@ -245,6 +245,10 @@ type EncryptReadReply struct {
 	// mixnet and is used to resume the read operation.
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 
+	// NextMessageBoxIndex is the next message box index to use for subsequent
+	// read operations. This is computed by the daemon using BACAP's NextIndex.
+	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
+
 	// ErrorCode indicates the reason for a failure to encrypt the read if any.
 	// Otherwise it is set to zero for success.
 	ErrorCode uint8 `cbor:"error_code"`
@@ -274,6 +278,10 @@ type EncryptWriteReply struct {
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
 	// mixnet and is used to resume the write operation.
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+
+	// NextMessageBoxIndex is the next message box index to use for subsequent
+	// write operations. This is computed by the daemon using BACAP's NextIndex.
+	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
 
 	// ErrorCode indicates the reason for a failure to encrypt the write if any.
 	// Otherwise it is set to zero for success.

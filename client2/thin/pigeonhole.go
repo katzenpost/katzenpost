@@ -173,7 +173,6 @@ func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap 
 // ciphertext should be sent via StartResendingEncryptedMessage.
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
 //   - readCap: Read capability that grants access to the channel
 //   - messageBoxIndex: Starting read position for the channel
 //
@@ -181,24 +180,24 @@ func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap 
 //   - []byte: Encrypted message ciphertext to send to courier
 //   - []byte: Envelope descriptor for decrypting the reply
 //   - *[32]byte: Hash of the courier envelope
+//   - *bacap.MessageBoxIndex: Next message box index for subsequent reads
 //   - error: Any error encountered during encryption
 //
 // Example:
 //
-//	ctx := context.Background()
-//	ciphertext, envDesc, envHash, err := client.EncryptRead(
-//		ctx, readCap, messageBoxIndex)
+//	ciphertext, envDesc, envHash, nextIndex, err := client.EncryptRead(
+//		readCap, messageBoxIndex)
 //	if err != nil {
 //		log.Fatal("Failed to encrypt read:", err)
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
+func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, nextMessageBoxIndex *bacap.MessageBoxIndex, err error) {
 	if readCap == nil {
-		return nil, nil, nil, errors.New("readCap cannot be nil")
+		return nil, nil, nil, nil, errors.New("readCap cannot be nil")
 	}
 	if messageBoxIndex == nil {
-		return nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
+		return nil, nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
@@ -215,7 +214,7 @@ func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.
 
 	err = t.writeMessage(req)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	for {
@@ -223,7 +222,7 @@ func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.
 		select {
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, nil, errHalting
+			return nil, nil, nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -237,9 +236,9 @@ func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return nil, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, nil
+			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, v.NextMessageBoxIndex, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
@@ -257,7 +256,6 @@ func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.
 // ciphertext should be sent via StartResendingEncryptedMessage.
 //
 // Parameters:
-//   - ctx: Context for cancellation and timeout control
 //   - plaintext: The plaintext message to encrypt
 //   - writeCap: Write capability that grants access to the channel
 //   - messageBoxIndex: Starting write position for the channel
@@ -266,25 +264,25 @@ func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.
 //   - []byte: Encrypted message ciphertext to send to courier
 //   - []byte: Envelope descriptor for decrypting the reply
 //   - *[32]byte: Hash of the courier envelope
+//   - *bacap.MessageBoxIndex: Next message box index for subsequent writes
 //   - error: Any error encountered during encryption
 //
 // Example:
 //
-//	ctx := context.Background()
 //	plaintext := []byte("Hello, Bob!")
-//	ciphertext, envDesc, envHash, err := client.EncryptWrite(
-//		ctx, plaintext, writeCap, messageBoxIndex)
+//	ciphertext, envDesc, envHash, nextIndex, err := client.EncryptWrite(
+//		plaintext, writeCap, messageBoxIndex)
 //	if err != nil {
 //		log.Fatal("Failed to encrypt write:", err)
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
+func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, nextMessageBoxIndex *bacap.MessageBoxIndex, err error) {
 	if writeCap == nil {
-		return nil, nil, nil, errors.New("writeCap cannot be nil")
+		return nil, nil, nil, nil, errors.New("writeCap cannot be nil")
 	}
 	if messageBoxIndex == nil {
-		return nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
+		return nil, nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
@@ -302,7 +300,7 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 
 	err = t.writeMessage(req)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	for {
@@ -310,7 +308,7 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 		select {
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, nil, errHalting
+			return nil, nil, nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -324,9 +322,9 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return nil, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, nil
+			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, v.NextMessageBoxIndex, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
@@ -1466,7 +1464,7 @@ func (c *ThinClient) TombstoneBox(
 	// Tombstones are created by sending an empty plaintext
 	tomb := []byte{}
 
-	messageCiphertext, envelopeDescriptor, envelopeHash, err =
+	messageCiphertext, envelopeDescriptor, envelopeHash, _, err =
 		c.EncryptWrite(tomb, writeCap, boxIndex)
 	return
 }

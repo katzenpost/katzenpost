@@ -230,19 +230,21 @@ func TestEncryptReadIgnoresConnectionStatus(t *testing.T) {
 
 		sendResponse(t, server, &Response{
 			EncryptReadReply: &EncryptReadReply{
-				QueryID:            queryID,
-				MessageCiphertext:  []byte("ct"),
-				NextMessageIndex:   []byte("nmi"),
-				EnvelopeDescriptor: []byte("desc"),
-				EnvelopeHash:       &[32]byte{},
-				ErrorCode:          ThinClientSuccess,
+				QueryID:             queryID,
+				MessageCiphertext:   []byte("ct"),
+				NextMessageIndex:    []byte("nmi"),
+				EnvelopeDescriptor:  []byte("desc"),
+				EnvelopeHash:        &[32]byte{},
+				NextMessageBoxIndex: mbi,
+				ErrorCode:           ThinClientSuccess,
 			},
 		})
 	}()
 
-	ct, _, _, err := tc.EncryptRead(readCap, mbi)
+	ct, _, _, nextIdx, err := tc.EncryptRead(readCap, mbi)
 	require.NoError(t, err)
 	require.Equal(t, []byte("ct"), ct)
+	require.NotNil(t, nextIdx)
 }
 
 func TestNewPKIDocumentEventStringValid(t *testing.T) {

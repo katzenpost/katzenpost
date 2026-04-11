@@ -178,15 +178,24 @@ func (d *Daemon) encryptRead(request *Request) {
 		return
 	}
 
+	// Compute the next message box index
+	nextMessageBoxIndex, err := messageBoxIndex.NextIndex()
+	if err != nil {
+		d.log.Errorf("encryptRead: failed to compute next index: %v", err)
+		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		EncryptReadReply: &thin.EncryptReadReply{
-			QueryID:            request.EncryptRead.QueryID,
-			MessageCiphertext:  courierQuery.Bytes(),
-			NextMessageIndex:   currentMessageIndexBytes,
-			EnvelopeDescriptor: envelopeDescriptorBytes,
-			EnvelopeHash:       envHash,
-			ErrorCode:          thin.ThinClientSuccess,
+			QueryID:             request.EncryptRead.QueryID,
+			MessageCiphertext:   courierQuery.Bytes(),
+			NextMessageIndex:    currentMessageIndexBytes,
+			EnvelopeDescriptor:  envelopeDescriptorBytes,
+			EnvelopeHash:        envHash,
+			NextMessageBoxIndex: nextMessageBoxIndex,
+			ErrorCode:           thin.ThinClientSuccess,
 		},
 	})
 }
@@ -351,14 +360,23 @@ func (d *Daemon) encryptWrite(request *Request) {
 		Envelope:  courierEnvelope,
 	}
 
+	// Compute the next message box index
+	nextMessageBoxIndex, err := messageBoxIndex.NextIndex()
+	if err != nil {
+		d.log.Errorf("encryptWrite: failed to compute next index: %v", err)
+		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		EncryptWriteReply: &thin.EncryptWriteReply{
-			QueryID:            request.EncryptWrite.QueryID,
-			MessageCiphertext:  courierQuery.Bytes(),
-			EnvelopeDescriptor: envelopeDescriptorBytes,
-			EnvelopeHash:       envHash,
-			ErrorCode:          thin.ThinClientSuccess,
+			QueryID:             request.EncryptWrite.QueryID,
+			MessageCiphertext:   courierQuery.Bytes(),
+			EnvelopeDescriptor:  envelopeDescriptorBytes,
+			EnvelopeHash:        envHash,
+			NextMessageBoxIndex: nextMessageBoxIndex,
+			ErrorCode:           thin.ThinClientSuccess,
 		},
 	})
 }
