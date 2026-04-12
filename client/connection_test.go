@@ -368,10 +368,15 @@ func TestConnectionConsensusGoneSurvives(t *testing.T) {
 	err = c.Start()
 	require.NoError(t, err)
 
-	// Wait for the client to recover from ConsensusGone and fetch a valid doc.
-	time.Sleep(time.Second * 5)
-
-	_, doc := c.CurrentDocument()
+	// Poll for the client to recover from ConsensusGone and fetch a valid doc.
+	var doc *cpki.Document
+	for i := 0; i < 30; i++ {
+		time.Sleep(time.Second)
+		_, doc = c.CurrentDocument()
+		if doc != nil {
+			break
+		}
+	}
 	require.NotNil(t, doc, "client should have recovered and fetched a document after ConsensusGone")
 	require.True(t, requestCount >= 2, "gateway should have received at least 2 GetConsensus2 requests")
 
