@@ -1656,3 +1656,110 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 
 	t.Log("SUCCESS: FromMultiPayload multi-call test passed")
 }
+
+// TestCreateCourierEnvelopesFromTombstoneRange tests that tombstones can be
+// delivered via the copy command using CreateCourierEnvelopesFromTombstoneRange:
+// 1. Alice creates a destination channel and a temp copy stream channel
+// 2. Alice calls CreateCourierEnvelopesFromTombstoneRange to create N tombstones
+// 3. Alice writes the copy stream elements to the temp channel
+// 4. Alice sends a Copy command to the courier
+// 5. Bob reads from the destination boxes and verifies all return ErrTombstone
+func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
+	t.Parallel()
+	alice := setupThinClient(t)
+	defer alice.Close()
+	bob := setupThinClient(t)
+	defer bob.Close()
+
+	aliceDoc := validatePKIDocument(t, alice)
+	currentEpoch := aliceDoc.Epoch
+	bobDoc := validatePKIDocumentForEpoch(t, bob, currentEpoch)
+	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+	t.Logf("Using PKI document for epoch %d", currentEpoch)
+
+	// Create destination channel
+	destSeed := make([]byte, 32)
+	_, err := rand.Reader.Read(destSeed)
+	require.NoError(t, err)
+	destWriteCap, destReadCap, destFirstIndex, err := alice.NewKeypair(destSeed)
+	require.NoError(t, err)
+	t.Log("Created destination channel")
+
+	// Create temp copy stream channel
+	tempSeed := make([]byte, 32)
+	_, err = rand.Reader.Read(tempSeed)
+	require.NoError(t, err)
+	tempWriteCap, _, tempFirstIndex, err := alice.NewKeypair(tempSeed)
+	require.NoError(t, err)
+	t.Log("Created temp copy stream channel")
+
+	// Create tombstone envelopes as copy stream elements
+	const numTombstones = 3
+	copyStreamChunks, _, nextDestIndex, err := alice.CreateCourierEnvelopesFromTombstoneRange(
+		destWriteCap, destFirstIndex, numTombstones, true, true, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, copyStreamChunks)
+	require.NotNil(t, nextDestIndex)
+	t.Logf("Created %d copy stream chunks for %d tombstones", len(copyStreamChunks), numTombstones)
+
+	// Write copy stream chunks to the temp channel
+	tempIndex := tempFirstIndex
+	replyIndex := uint8(0)
+	for i, chunk := range copyStreamChunks {
+		ciphertext, envDesc, envHash, nextTempIndex, err := alice.EncryptWrite(chunk, tempWriteCap, tempIndex)
+		require.NoError(t, err)
+		require.NotEmpty(t, ciphertext)
+		require.NotNil(t, nextTempIndex)
+
+		_, err = alice.StartResendingEncryptedMessage(
+			nil, tempWriteCap, nil, &replyIndex,
+			envDesc, ciphertext, envHash)
+		require.NoError(t, err)
+		t.Logf("Wrote copy stream chunk %d/%d to temp channel", i+1, len(copyStreamChunks))
+
+		tempIndex = nextTempIndex
+	}
+
+	t.Log("Waiting 30 seconds for copy stream chunks to propagate...")
+	time.Sleep(30 * time.Second)
+
+	// Send Copy command
+	err = alice.StartResendingCopyCommand(tempWriteCap)
+	require.NoError(t, err)
+	t.Log("Copy command sent")
+
+	// Bob reads from destination boxes and verifies tombstones
+	readIdx := destFirstIndex
+	const maxAttempts = 6
+	const pollInterval = 10 * time.Second
+
+	for i := 0; i < numTombstones; i++ {
+		var tombstoneVerified bool
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			t.Logf("Polling tombstone %d/%d (attempt %d/%d)...", i+1, numTombstones, attempt, maxAttempts)
+			time.Sleep(pollInterval)
+
+			ciphertext, envDesc, envHash, nextReadIdx, err := bob.EncryptRead(destReadCap, readIdx)
+			require.NoError(t, err)
+			require.NotNil(t, nextReadIdx)
+			readIdxBytes, err := readIdx.MarshalBinary()
+			require.NoError(t, err)
+
+			_, err = bob.StartResendingEncryptedMessage(
+				destReadCap, nil, readIdxBytes, &replyIndex,
+				envDesc, ciphertext, envHash)
+			if errors.Is(err, thin.ErrTombstone) {
+				tombstoneVerified = true
+				t.Logf("Bob verified tombstone %d/%d on attempt %d", i+1, numTombstones, attempt)
+				break
+			}
+		}
+		require.True(t, tombstoneVerified, "Tombstone %d not propagated after %d attempts", i+1, maxAttempts)
+
+		nextReadIdx, err := bob.NextMessageBoxIndex(readIdx)
+		require.NoError(t, err)
+		readIdx = nextReadIdx
+	}
+
+	t.Logf("SUCCESS: All %d tombstones delivered via copy command and verified", numTombstones)
+}

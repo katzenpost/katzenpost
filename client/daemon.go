@@ -359,6 +359,8 @@ func (d *Daemon) egressWorker() {
 				d.createCourierEnvelopesFromPayloads(request)
 			case request.SetStreamBuffer != nil:
 				d.setStreamBuffer(request)
+			case request.CreateCourierEnvelopesFromTombstoneRange != nil:
+				d.createCourierEnvelopesFromTombstoneRange(request)
 
 			default:
 				panic("send operation not fully specified")

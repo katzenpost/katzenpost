@@ -86,19 +86,24 @@ dockertest_read_before_write:
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestReadBeforeWrite"
 
+dockertest_tombstone_copy:
+	cd ../docker && make $(distro)_base.stamp
+	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCreateCourierEnvelopesFromTombstoneRange"
+
 dockertest_all_pigeonhole:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h \
-		-run "TestNewPigeonholeAPI|TestCreateCourierEnvelopesFromPayload|TestCopyCommandMultiChannel|TestTombston|TestBoxIDNotFoundError|TestBoxAlreadyExistsError|TestReadBeforeWrite|TestNestedCopyCommands"
+		-run "TestNewPigeonholeAPI|TestCreateCourierEnvelopesFromPayload|TestCreateCourierEnvelopesFromTombstoneRange|TestCopyCommandMultiChannel|TestTombston|TestBoxIDNotFoundError|TestBoxAlreadyExistsError|TestReadBeforeWrite|TestNestedCopyCommands"
 
 dockertest-all:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -parallel 5 -timeout 1h \
-		-run "TestLegacyTests|TestNewPigeonholeAPI|TestCreateCourierEnvelopesFromPayload|TestCopyCommandMultiChannel|TestTombston|TestBoxIDNotFoundError|TestBoxAlreadyExistsError|TestReadBeforeWrite|TestNestedCopyCommands|TestFromPayloadMultiCall|TestFromMultiPayloadMultiCall"
+		-run "TestLegacyTests|TestNewPigeonholeAPI|TestCreateCourierEnvelopesFromPayload|TestCreateCourierEnvelopesFromTombstoneRange|TestCopyCommandMultiChannel|TestTombston|TestBoxIDNotFoundError|TestBoxAlreadyExistsError|TestReadBeforeWrite|TestNestedCopyCommands|TestFromPayloadMultiCall|TestFromMultiPayloadMultiCall"
 
-all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages dockertest_new_pigeonhole_multiple_messages_bulk dockertest_copy_command dockertest_multichannel dockertest_multichannel_efficient dockertest_tombstone_box dockertest_tombstone_range dockertest_box_id_not_found dockertest_box_already_exists dockertest_read_before_write
+all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages dockertest_new_pigeonhole_multiple_messages_bulk dockertest_copy_command dockertest_multichannel dockertest_multichannel_efficient dockertest_tombstone_box dockertest_tombstone_range dockertest_tombstone_copy dockertest_box_id_not_found dockertest_box_already_exists dockertest_read_before_write
 
 warpedclientdaemon:
 	cd ../cmd/kpclientd; go build -ldflags ${ldflags}

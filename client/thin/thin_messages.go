@@ -365,6 +365,44 @@ type CreateCourierEnvelopesFromPayload struct {
 	IsLast bool `cbor:"is_last"`
 }
 
+// CreateCourierEnvelopesFromTombstoneRange creates multiple CourierEnvelopes containing
+// tombstones (empty payload with SignBox signatures) for a range of destination indices.
+// Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
+//
+// This is the tombstone equivalent of CreateCourierEnvelopesFromPayload: instead of
+// chunking and encrypting a payload, it creates one tombstone CourierEnvelope per index
+// in the range [DestStartIndex, DestStartIndex + MaxCount).
+//
+// The Buffer field enables stateless continuation: pass the Buffer from the previous
+// call's reply to avoid wasting space in the last box of each call. On the first call,
+// Buffer should be nil.
+type CreateCourierEnvelopesFromTombstoneRange struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// DestWriteCap is the write capability for the destination channel.
+	DestWriteCap *bacap.WriteCap `cbor:"dest_write_cap"`
+
+	// DestStartIndex is the starting index in the destination channel.
+	DestStartIndex *bacap.MessageBoxIndex `cbor:"dest_start_index"`
+
+	// MaxCount is the number of tombstones to create.
+	MaxCount uint32 `cbor:"max_count"`
+
+	// IsStart indicates whether this is the first call in a multi-call sequence.
+	// When true, the first CopyStreamElement will have the IsStart flag set.
+	IsStart bool `cbor:"is_start"`
+
+	// IsLast indicates whether this is the last call in the sequence.
+	// When true, the final CopyStreamElement will have IsFinal=true.
+	IsLast bool `cbor:"is_last"`
+
+	// Buffer is the residual encoder buffer from a previous call.
+	// Pass nil on the first call.
+	Buffer []byte `cbor:"buffer"`
+}
+
 // DestinationPayload specifies a payload and its destination channel for multi-channel writes.
 type DestinationPayload struct {
 	// Payload is the data to be written to this destination.
@@ -552,6 +590,10 @@ type Response struct {
 
 	// SetStreamBufferReply is sent when the client daemon restores the buffered state for a stream.
 	SetStreamBufferReply *SetStreamBufferReply `cbor:"set_stream_buffer_reply"`
+
+	// CreateCourierEnvelopesFromTombstoneRangeReply is sent when the client daemon successfully
+	// creates tombstone courier envelopes for a range of destination indices.
+	CreateCourierEnvelopesFromTombstoneRangeReply *CreateCourierEnvelopesFromTombstoneRangeReply `cbor:"create_courier_envelopes_from_tombstone_range_reply"`
 }
 
 // Request is the thin client's request message to the client daemon.
@@ -608,4 +650,7 @@ type Request struct {
 	// SetStreamBuffer is used to restore the buffered state for a stream (for crash recovery).
 	SetStreamBuffer *SetStreamBuffer `cbor:"set_stream_buffer"`
 
+	// CreateCourierEnvelopesFromTombstoneRange is used to create tombstone CourierEnvelopes
+	// for a range of destination indices, encoded as copy stream elements.
+	CreateCourierEnvelopesFromTombstoneRange *CreateCourierEnvelopesFromTombstoneRange `cbor:"create_courier_envelopes_from_tombstone_range"`
 }

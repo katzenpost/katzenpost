@@ -909,6 +909,187 @@ func (d *Daemon) sendSetStreamBufferError(request *Request, errorCode uint8) {
 	})
 }
 
+func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	destWriteCap := request.CreateCourierEnvelopesFromTombstoneRange.DestWriteCap
+	destStartIndex := request.CreateCourierEnvelopesFromTombstoneRange.DestStartIndex
+	maxCount := request.CreateCourierEnvelopesFromTombstoneRange.MaxCount
+
+	if destWriteCap == nil {
+		d.log.Error("createCourierEnvelopesFromTombstoneRange: DestWriteCap is nil")
+		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	if destStartIndex == nil {
+		d.log.Error("createCourierEnvelopesFromTombstoneRange: DestStartIndex is nil")
+		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
+	if maxCount == 0 {
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			CreateCourierEnvelopesFromTombstoneRangeReply: &thin.CreateCourierEnvelopesFromTombstoneRangeReply{
+				QueryID:       request.CreateCourierEnvelopesFromTombstoneRange.QueryID,
+				NextDestIndex: destStartIndex,
+				ErrorCode:     thin.ThinClientSuccess,
+			},
+		})
+		return
+	}
+
+	if d.cfg.PigeonholeGeometry == nil {
+		d.log.Error("createCourierEnvelopesFromTombstoneRange: PigeonholeGeometry is nil")
+		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		d.log.Error("createCourierEnvelopesFromTombstoneRange: no PKI document available")
+		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	cur := destStartIndex
+	var courierEnvelopes []*pigeonhole.CourierEnvelope
+
+	for i := uint32(0); i < maxCount; i++ {
+		// Tombstone: sign empty payload with blinded private key
+		boxID, sigraw := cur.SignBox(destWriteCap, constants.PIGEONHOLE_CTX, []byte{})
+		sig := [bacap.SignatureSize]byte{}
+		copy(sig[:], sigraw)
+
+		writeRequest := &pigeonhole.ReplicaWrite{
+			BoxID:      boxID,
+			Signature:  sig,
+			PayloadLen: 0,
+			Payload:    []byte{},
+		}
+
+		msg := &pigeonhole.ReplicaInnerMessage{
+			MessageType: 1, // write
+			WriteMsg:    writeRequest,
+		}
+
+		intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, &boxID)
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: failed to get intermediate replicas: %v", err)
+			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, d.cfg.PigeonholeGeometry)
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: failed to pad inner message: %v", err)
+			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
+			replicaPubKeys, paddedMsg,
+		)
+		mkemPublicKey := mkemPrivateKey.Public()
+		senderPubkey := mkemPublicKey.Bytes()
+
+		courierEnvelope := &pigeonhole.CourierEnvelope{
+			IntermediateReplicas: intermediateReplicas,
+			Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
+			Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+			ReplyIndex:           0,
+			Epoch:                replicaEpoch,
+			SenderPubkeyLen:      uint16(len(senderPubkey)),
+			SenderPubkey:         senderPubkey,
+			CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+			Ciphertext:           mkemCiphertext.Envelope,
+		}
+		courierEnvelopes = append(courierEnvelopes, courierEnvelope)
+
+		nextIndex, err := cur.NextIndex()
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: failed to advance index: %v", err)
+			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+		cur = nextIndex
+	}
+
+	// Encode via CopyStreamEncoder with stateless buffer continuation
+	isStart := request.CreateCourierEnvelopesFromTombstoneRange.IsStart
+	isLast := request.CreateCourierEnvelopesFromTombstoneRange.IsLast
+	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
+
+	// Restore buffer from previous call if provided
+	if len(request.CreateCourierEnvelopesFromTombstoneRange.Buffer) > 0 {
+		encoder.SetBuffer(&pigeonhole.CopyStreamEncoderState{
+			Buffer: request.CreateCourierEnvelopesFromTombstoneRange.Buffer,
+		})
+	}
+
+	if !isStart {
+		encoder.SuppressStart()
+	}
+
+	var elements [][]byte
+	for _, envelope := range courierEnvelopes {
+		newElements, err := encoder.AddEnvelope(envelope)
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: failed to encode envelope: %v", err)
+			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+		elements = append(elements, newElements...)
+	}
+
+	var bufferState []byte
+	if isLast {
+		finalElements := encoder.Flush()
+		if finalElements != nil {
+			elements = append(elements, finalElements...)
+		}
+	} else {
+		// Extract only complete elements, return residual buffer to caller
+		state := encoder.GetBuffer()
+		if state != nil {
+			bufferState = state.Buffer
+		}
+	}
+
+	d.log.Debugf("createCourierEnvelopesFromTombstoneRange: created %d tombstone envelopes, encoded into %d elements (isStart=%v, isLast=%v, bufferLen=%d)",
+		len(courierEnvelopes), len(elements), isStart, isLast, len(bufferState))
+
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		CreateCourierEnvelopesFromTombstoneRangeReply: &thin.CreateCourierEnvelopesFromTombstoneRangeReply{
+			QueryID:       request.CreateCourierEnvelopesFromTombstoneRange.QueryID,
+			Envelopes:     elements,
+			Buffer:        bufferState,
+			NextDestIndex: cur,
+			ErrorCode:     thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendCreateCourierEnvelopesFromTombstoneRangeError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		CreateCourierEnvelopesFromTombstoneRangeReply: &thin.CreateCourierEnvelopesFromTombstoneRangeReply{
+			QueryID:   request.CreateCourierEnvelopesFromTombstoneRange.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
 // nextMessageBoxIndex increments a MessageBoxIndex using the BACAP NextIndex method.
 // This is used when sending multiple messages to different mailboxes using the same capability.
 func (d *Daemon) nextMessageBoxIndex(request *Request) {

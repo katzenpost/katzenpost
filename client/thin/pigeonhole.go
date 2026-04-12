@@ -1493,3 +1493,93 @@ func (c *ThinClient) TombstoneRange(
 		Next:      cur,
 	}, nil
 }
+
+// CreateCourierEnvelopesFromTombstoneRange creates tombstone CourierEnvelopes for a range
+// of destination indices, encoded as copy stream elements ready to be written to a
+// temporary copy stream channel.
+//
+// This combines the tombstone creation logic (SignBox with empty payload) with the
+// courier envelope wrapping and copy stream encoding of CreateCourierEnvelopesFromPayload.
+//
+// The buffer parameter enables stateless continuation across multiple calls without
+// wasting space in the last box. Pass nil on the first call, then pass the returned
+// nextBuffer to the next call.
+//
+// Parameters:
+//   - destWriteCap: Write capability for the destination channel
+//   - destStartIndex: Starting index in the destination channel
+//   - maxCount: Number of tombstones to create
+//   - isStart: Whether this is the first call (sets IsStart flag on first element)
+//   - isLast: Whether this is the last call (sets IsFinal flag on last element)
+//   - buffer: Residual encoder buffer from previous call (nil on first call)
+//
+// Returns:
+//   - [][]byte: Slice of CopyStreamElements ready to write to the copy stream
+//   - []byte: Residual buffer for next call (nil when isLast=true)
+//   - *bacap.MessageBoxIndex: Next destination index
+//   - error: Any error encountered
+func (t *ThinClient) CreateCourierEnvelopesFromTombstoneRange(
+	destWriteCap *bacap.WriteCap,
+	destStartIndex *bacap.MessageBoxIndex,
+	maxCount uint32,
+	isStart bool,
+	isLast bool,
+	buffer []byte,
+) (envelopes [][]byte, nextBuffer []byte, nextDestIndex *bacap.MessageBoxIndex, err error) {
+	if destWriteCap == nil {
+		return nil, nil, nil, errors.New("destWriteCap cannot be nil")
+	}
+	if destStartIndex == nil {
+		return nil, nil, nil, errors.New("destStartIndex cannot be nil")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		CreateCourierEnvelopesFromTombstoneRange: &CreateCourierEnvelopesFromTombstoneRange{
+			QueryID:        queryID,
+			DestWriteCap:   destWriteCap,
+			DestStartIndex: destStartIndex,
+			MaxCount:       maxCount,
+			IsStart:        isStart,
+			IsLast:         isLast,
+			Buffer:         buffer,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err = t.writeMessage(req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, nil, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateCourierEnvelopesFromTombstoneRangeReply:
+			if v.QueryID == nil {
+				t.log.Debugf("CreateCourierEnvelopesFromTombstoneRange: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("CreateCourierEnvelopesFromTombstoneRange: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.Envelopes, v.Buffer, v.NextDestIndex, nil
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+		default:
+		}
+	}
+}

@@ -889,6 +889,12 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
+	case message.CreateCourierEnvelopesFromTombstoneRangeReply != nil:
+		select {
+		case t.eventSink <- message.CreateCourierEnvelopesFromTombstoneRangeReply:
+		case <-t.HaltCh():
+			return false
+		}
 
 	default:
 		t.log.Errorf("bug: received invalid thin client message: %v", message)

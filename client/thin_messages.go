@@ -27,9 +27,10 @@ func IntoThinResponse(r *Response) *thin.Response {
 		NextMessageBoxIndexReply:             r.NextMessageBoxIndexReply,
 
 		// Copy Channel API:
-		CreateCourierEnvelopesFromPayloadReply:  r.CreateCourierEnvelopesFromPayloadReply,
-		CreateCourierEnvelopesFromPayloadsReply: r.CreateCourierEnvelopesFromPayloadsReply,
-		SetStreamBufferReply:                    r.SetStreamBufferReply,
+		CreateCourierEnvelopesFromPayloadReply:          r.CreateCourierEnvelopesFromPayloadReply,
+		CreateCourierEnvelopesFromPayloadsReply:         r.CreateCourierEnvelopesFromPayloadsReply,
+		SetStreamBufferReply:                            r.SetStreamBufferReply,
+		CreateCourierEnvelopesFromTombstoneRangeReply:   r.CreateCourierEnvelopesFromTombstoneRangeReply,
 
 	}
 }
@@ -79,6 +80,7 @@ type Response struct {
 
 	SetStreamBufferReply *thin.SetStreamBufferReply
 
+	CreateCourierEnvelopesFromTombstoneRangeReply *thin.CreateCourierEnvelopesFromTombstoneRangeReply
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
@@ -96,9 +98,10 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		NextMessageBoxIndex:             r.NextMessageBoxIndex,
 
 		// Copy Channel API:
-		CreateCourierEnvelopesFromPayload:  r.CreateCourierEnvelopesFromPayload,
-		CreateCourierEnvelopesFromPayloads: r.CreateCourierEnvelopesFromPayloads,
-		SetStreamBuffer:                    r.SetStreamBuffer,
+		CreateCourierEnvelopesFromPayload:          r.CreateCourierEnvelopesFromPayload,
+		CreateCourierEnvelopesFromPayloads:         r.CreateCourierEnvelopesFromPayloads,
+		SetStreamBuffer:                            r.SetStreamBuffer,
+		CreateCourierEnvelopesFromTombstoneRange:   r.CreateCourierEnvelopesFromTombstoneRange,
 
 		SessionToken: r.SessionToken,
 		SendMessage:  r.SendMessage,
@@ -139,6 +142,8 @@ type Request struct {
 	CreateCourierEnvelopesFromPayloads *thin.CreateCourierEnvelopesFromPayloads
 
 	SetStreamBuffer *thin.SetStreamBuffer
+
+	CreateCourierEnvelopesFromTombstoneRange *thin.CreateCourierEnvelopesFromTombstoneRange
 
 	SessionToken *thin.SessionToken
 
