@@ -281,26 +281,6 @@ func TestCreateCourierEnvelopesFromPayloadsReplyString(t *testing.T) {
 	})
 }
 
-func TestSetStreamBufferReplyString(t *testing.T) {
-	queryID := &[QueryIDLength]byte{}
-
-	t.Run("success", func(t *testing.T) {
-		e := &SetStreamBufferReply{
-			QueryID:   queryID,
-			ErrorCode: ThinClientSuccess,
-		}
-		require.Contains(t, e.String(), "success")
-	})
-
-	t.Run("error", func(t *testing.T) {
-		e := &SetStreamBufferReply{
-			QueryID:   queryID,
-			ErrorCode: ThinClientErrorInvalidRequest,
-		}
-		require.Contains(t, e.String(), "error")
-	})
-}
-
 // Verify all event types implement the Event interface
 func TestEventInterface(t *testing.T) {
 	var _ Event = &ShutdownEvent{}
@@ -320,5 +300,5 @@ func TestEventInterface(t *testing.T) {
 	var _ Event = &NextMessageBoxIndexReply{}
 	var _ Event = &CreateCourierEnvelopesFromPayloadReply{}
 	var _ Event = &CreateCourierEnvelopesFromPayloadsReply{}
-	var _ Event = &SetStreamBufferReply{}
+	var _ Event = &CreateCourierEnvelopesFromTombstoneRangeReply{}
 }

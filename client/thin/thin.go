@@ -101,9 +101,6 @@ const (
 
 	// QueryIDLength is the length of a query ID in bytes.
 	QueryIDLength = 16
-
-	// StreamIDLength is the length of a stream ID in bytes.
-	StreamIDLength = 16
 )
 
 var (
@@ -880,12 +877,6 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 	case message.CreateCourierEnvelopesFromPayloadsReply != nil:
 		select {
 		case t.eventSink <- message.CreateCourierEnvelopesFromPayloadsReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.SetStreamBufferReply != nil:
-		select {
-		case t.eventSink <- message.SetStreamBufferReply:
 		case <-t.HaltCh():
 			return false
 		}

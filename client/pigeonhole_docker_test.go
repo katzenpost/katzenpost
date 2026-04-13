@@ -744,7 +744,6 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 
 	// Step 4: Create copy stream chunks using CreateCourierEnvelopesFromMultiPayload (efficient API)
 	t.Log("=== Step 4: Creating copy stream chunks using efficient multi-destination API ===")
-	streamID := aliceThinClient.NewStreamID()
 
 	// Create destinations slice with both payloads
 	destinations := []thin.DestinationPayload{
@@ -761,7 +760,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 	}
 
 	// Single call packs all envelopes efficiently
-	allChunksResult, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload(streamID, destinations, true)
+	allChunksResult, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload(destinations, true, true, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, allChunksResult.Envelopes, "CreateCourierEnvelopesFromMultiPayload returned empty chunks")
 	t.Logf("Alice: Created %d chunks for both channels (packed efficiently)", len(allChunksResult.Envelopes))
@@ -1548,8 +1547,6 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	tempWriteCap, _, tempFirstIndex, err := aliceThinClient.NewKeypair(tempSeed)
 	require.NoError(t, err)
 
-	streamID := aliceThinClient.NewStreamID()
-
 	// Use pigeonhole geometry to size payloads: each payload is exactly one box payload
 	// so each call writes one destination box per channel.
 	maxPayload := aliceThinClient.GetConfig().PigeonholeGeometry.MaxPlaintextPayloadLength
@@ -1568,21 +1565,21 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	_, err = rand.Reader.Read(payload2b)
 	require.NoError(t, err)
 
-	// First call: two destinations, isLast=false
-	result1, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload(streamID, []thin.DestinationPayload{
+	// First call: two destinations, isStart=true, isLast=false, buffer=nil
+	result1, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload([]thin.DestinationPayload{
 		{Payload: payload1a, WriteCap: chan1WriteCap, StartIndex: chan1FirstIndex},
 		{Payload: payload2a, WriteCap: chan2WriteCap, StartIndex: chan2FirstIndex},
-	}, false)
+	}, true, false, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, result1.Envelopes)
 	require.Len(t, result1.NextDestIndices, 2)
-	t.Logf("Call 1: %d temp elements", len(result1.Envelopes))
+	t.Logf("Call 1: %d temp elements, bufferLen=%d", len(result1.Envelopes), len(result1.Buffer))
 
-	// Second call: same destinations, continue where we left off, isLast=true
-	result2, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload(streamID, []thin.DestinationPayload{
+	// Second call: continue where we left off, pass buffer, isStart=false, isLast=true
+	result2, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload([]thin.DestinationPayload{
 		{Payload: payload1b, WriteCap: chan1WriteCap, StartIndex: result1.NextDestIndices[0]},
 		{Payload: payload2b, WriteCap: chan2WriteCap, StartIndex: result1.NextDestIndices[1]},
-	}, true)
+	}, false, true, result1.Buffer)
 	require.NoError(t, err)
 	require.NotEmpty(t, result2.Envelopes)
 	require.Len(t, result2.NextDestIndices, 2)

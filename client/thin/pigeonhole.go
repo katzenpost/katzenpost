@@ -1120,89 +1120,12 @@ type CreateEnvelopesResult struct {
 	Envelopes [][]byte
 
 	// Buffer contains any data buffered by the encoder that hasn't been output yet.
-	// This can be persisted for crash recovery and restored via SetStreamBuffer.
+	// Pass this to the next call to avoid wasting space in the last box.
 	Buffer []byte
 
 	// NextDestIndices contains the next destination message box index for each
 	// destination, in the same order as the destinations in the request.
 	NextDestIndices []*bacap.MessageBoxIndex
-}
-
-// NewStreamID generates a new cryptographically random stream identifier.
-// Stream IDs are used to correlate multiple CreateCourierEnvelopesFromPayload
-// and CreateCourierEnvelopesFromMultiPayload calls that belong to the same
-// copy stream. Each stream should have a unique ID.
-//
-// Returns:
-//   - *[StreamIDLength]byte: A new random stream ID
-//
-// Panics:
-//   - If the random number generator fails
-func (t *ThinClient) NewStreamID() *[StreamIDLength]byte {
-	id := new([StreamIDLength]byte)
-	_, err := rand.Reader.Read(id[:])
-	if err != nil {
-		panic(err)
-	}
-	return id
-}
-
-// SetStreamBuffer restores the buffered encoder state for a given stream ID.
-// This is useful for crash recovery: after a restart, call this with the buffer
-// that was returned in CreateEnvelopesResult.Buffer before the crash, then
-// continue calling CreateCourierEnvelopesFromMultiPayload as normal.
-func (t *ThinClient) SetStreamBuffer(streamID *[StreamIDLength]byte, buffer []byte) error {
-	if streamID == nil {
-		return errors.New("streamID cannot be nil")
-	}
-
-	queryID := t.NewQueryID()
-	req := &Request{
-		SetStreamBuffer: &SetStreamBuffer{
-			QueryID:  queryID,
-			StreamID: streamID,
-			Buffer:   buffer,
-		},
-	}
-
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
-
-	err := t.writeMessage(req)
-	if err != nil {
-		return err
-	}
-
-	for {
-		var event Event
-		select {
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return errHalting
-		}
-
-		switch v := event.(type) {
-		case *SetStreamBufferReply:
-			if v.QueryID == nil {
-				t.log.Debugf("SetStreamBuffer: Received reply with nil QueryID, ignoring")
-				continue
-			}
-			if !bytes.Equal(v.QueryID[:], queryID[:]) {
-				t.log.Debugf("SetStreamBuffer: Received reply with mismatched QueryID, ignoring")
-				continue
-			}
-			if v.ErrorCode != ThinClientSuccess {
-				return errors.New(ThinClientErrorToString(v.ErrorCode))
-			}
-			return nil
-		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
-		case *NewDocumentEvent:
-			// Ignore PKI document updates
-		default:
-			// Ignore other events
-		}
-	}
 }
 
 // CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
@@ -1294,22 +1217,21 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(payload []byte, destWrite
 // CreateCourierEnvelopesFromPayload multiple times because all envelopes from all
 // destinations are packed together in the same encoder without wasting space.
 //
-// This method causes the client daemon to save state between multiple calls using the
-// same streamID. The streamID should be unique for each copy stream. Each reply includes
-// the current buffer state that can be persisted for crash recovery via SetStreamBuffer.
+// This method is stateless — the buffer parameter enables continuation across multiple
+// calls without daemon-side state. Pass the Buffer from the previous call's result
+// to avoid wasting space in the last box of each call. On the first call, buffer
+// should be nil.
 //
 // Parameters:
-//   - streamID: Unique identifier for the stream (use NewStreamID() for first call)
 //   - destinations: Slice of DestinationPayload specifying payloads and their destination channels
+//   - isStart: Whether this is the first call (sets IsStart flag on first element)
 //   - isLast: Set to true on the final call to flush the encoder
+//   - buffer: Residual encoder buffer from previous call (nil on first call)
 //
 // Returns:
 //   - *CreateEnvelopesResult: Contains envelopes, buffer state, and NextDestIndices
 //   - error: Any error encountered
-func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) (*CreateEnvelopesResult, error) {
-	if streamID == nil {
-		return nil, errors.New("streamID cannot be nil")
-	}
+func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(destinations []DestinationPayload, isStart bool, isLast bool, buffer []byte) (*CreateEnvelopesResult, error) {
 	if len(destinations) == 0 {
 		return nil, errors.New("destinations cannot be empty")
 	}
@@ -1318,9 +1240,10 @@ func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(streamID *[StreamIDL
 	req := &Request{
 		CreateCourierEnvelopesFromPayloads: &CreateCourierEnvelopesFromPayloads{
 			QueryID:      queryID,
-			StreamID:     streamID,
 			Destinations: destinations,
+			IsStart:      isStart,
 			IsLast:       isLast,
+			Buffer:       buffer,
 		},
 	}
 

@@ -29,7 +29,6 @@ func IntoThinResponse(r *Response) *thin.Response {
 		// Copy Channel API:
 		CreateCourierEnvelopesFromPayloadReply:          r.CreateCourierEnvelopesFromPayloadReply,
 		CreateCourierEnvelopesFromPayloadsReply:         r.CreateCourierEnvelopesFromPayloadsReply,
-		SetStreamBufferReply:                            r.SetStreamBufferReply,
 		CreateCourierEnvelopesFromTombstoneRangeReply:   r.CreateCourierEnvelopesFromTombstoneRangeReply,
 
 	}
@@ -78,8 +77,6 @@ type Response struct {
 
 	CreateCourierEnvelopesFromPayloadsReply *thin.CreateCourierEnvelopesFromPayloadsReply
 
-	SetStreamBufferReply *thin.SetStreamBufferReply
-
 	CreateCourierEnvelopesFromTombstoneRangeReply *thin.CreateCourierEnvelopesFromTombstoneRangeReply
 }
 
@@ -100,7 +97,6 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		// Copy Channel API:
 		CreateCourierEnvelopesFromPayload:          r.CreateCourierEnvelopesFromPayload,
 		CreateCourierEnvelopesFromPayloads:         r.CreateCourierEnvelopesFromPayloads,
-		SetStreamBuffer:                            r.SetStreamBuffer,
 		CreateCourierEnvelopesFromTombstoneRange:   r.CreateCourierEnvelopesFromTombstoneRange,
 
 		SessionToken: r.SessionToken,
@@ -140,8 +136,6 @@ type Request struct {
 	CreateCourierEnvelopesFromPayload *thin.CreateCourierEnvelopesFromPayload
 
 	CreateCourierEnvelopesFromPayloads *thin.CreateCourierEnvelopesFromPayloads
-
-	SetStreamBuffer *thin.SetStreamBuffer
 
 	CreateCourierEnvelopesFromTombstoneRange *thin.CreateCourierEnvelopesFromTombstoneRange
 

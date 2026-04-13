@@ -492,20 +492,3 @@ func (e *CreateCourierEnvelopesFromTombstoneRangeReply) String() string {
 	return fmt.Sprintf("CreateCourierEnvelopesFromTombstoneRangeReply: queryID=%x numEnvelopes=%d bufferLen=%d", e.QueryID[:], len(e.Envelopes), len(e.Buffer))
 }
 
-// SetStreamBufferReply is sent in response to a SetStreamBuffer request.
-// It confirms that the buffer state has been restored for the given stream ID.
-type SetStreamBufferReply struct {
-	// QueryID is used for correlating this reply with the SetStreamBuffer request.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// ErrorCode indicates the success or failure of the operation.
-	ErrorCode uint8 `cbor:"error_code"`
-}
-
-// String returns a string representation of the SetStreamBufferReply.
-func (e *SetStreamBufferReply) String() string {
-	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("SetStreamBufferReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
-	}
-	return fmt.Sprintf("SetStreamBufferReply: queryID=%x success", e.QueryID[:])
-}

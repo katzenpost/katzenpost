@@ -696,24 +696,6 @@ func TestDispatchCreateCourierEnvelopesFromPayloadsReply(t *testing.T) {
 	require.Equal(t, []byte("buf"), reply.Buffer)
 }
 
-func TestDispatchSetStreamBufferReply(t *testing.T) {
-	tc := newTestThinClientNoConn(t)
-	queryID := &[QueryIDLength]byte{31, 32, 33}
-	msg := &Response{
-		SetStreamBufferReply: &SetStreamBufferReply{
-			QueryID:   queryID,
-			ErrorCode: ThinClientSuccess,
-		},
-	}
-	ok := tc.dispatchMessage(msg)
-	require.True(t, ok)
-
-	event := <-tc.eventSink
-	reply, isReply := event.(*SetStreamBufferReply)
-	require.True(t, isReply)
-	require.Equal(t, ThinClientSuccess, reply.ErrorCode)
-}
-
 func TestDispatchDefaultInvalidMessage(t *testing.T) {
 	tc := newTestThinClientNoConn(t)
 	msg := &Response{} // all nil fields

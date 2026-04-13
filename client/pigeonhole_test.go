@@ -214,7 +214,6 @@ func (m *mockIncomingConn) toIncomingConn(_ *listener, logBackend *log.Backend) 
 				NextMessageBoxIndexReply:             thinResp.NextMessageBoxIndexReply,
 				CreateCourierEnvelopesFromPayloadReply:  thinResp.CreateCourierEnvelopesFromPayloadReply,
 				CreateCourierEnvelopesFromPayloadsReply: thinResp.CreateCourierEnvelopesFromPayloadsReply,
-				SetStreamBufferReply:                    thinResp.SetStreamBufferReply,
 				StartResendingCopyCommandReply:          thinResp.StartResendingCopyCommandReply,
 				CancelResendingCopyCommandReply:         thinResp.CancelResendingCopyCommandReply,
 			}
@@ -2131,8 +2130,6 @@ func setupDaemonWithMockConn(t *testing.T) (*Daemon, *[AppIDLength]byte, chan *R
 		replyLock:                 new(sync.Mutex),
 		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		copyStreamEncoders:        make(map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder),
-		copyStreamEncodersLock:    new(sync.Mutex),
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -2293,16 +2290,13 @@ func TestCreateCourierEnvelopesFromPayloads_Success(t *testing.T) {
 	sw2, err := bacap.NewStatefulWriter(writeCap2, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 
-	streamID := &[thin.StreamIDLength]byte{}
-	copy(streamID[:], []byte("multi-stream-id0"))
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("multi-query-id00"))
 
 	request := &Request{
 		AppID: testAppID,
 		CreateCourierEnvelopesFromPayloads: &thin.CreateCourierEnvelopesFromPayloads{
-			QueryID:  queryID,
-			StreamID: streamID,
+			QueryID: queryID,
 			Destinations: []thin.DestinationPayload{
 				{
 					Payload:    []byte("payload for channel 1"),
@@ -2315,7 +2309,8 @@ func TestCreateCourierEnvelopesFromPayloads_Success(t *testing.T) {
 					StartIndex: sw2.GetCurrentMessageIndex(),
 				},
 			},
-			IsLast: true,
+			IsStart: true,
+			IsLast:  true,
 		},
 	}
 
@@ -2334,15 +2329,14 @@ func TestCreateCourierEnvelopesFromPayloads_Success(t *testing.T) {
 func TestCreateCourierEnvelopesFromPayloads_EmptyDestinations(t *testing.T) {
 	d, testAppID, responseCh := setupDaemonWithMockConn(t)
 
-	streamID := &[thin.StreamIDLength]byte{}
 	queryID := &[thin.QueryIDLength]byte{}
 
 	request := &Request{
 		AppID: testAppID,
 		CreateCourierEnvelopesFromPayloads: &thin.CreateCourierEnvelopesFromPayloads{
 			QueryID:      queryID,
-			StreamID:     streamID,
 			Destinations: []thin.DestinationPayload{},
+			IsStart:      true,
 			IsLast:       true,
 		},
 	}
@@ -2353,34 +2347,6 @@ func TestCreateCourierEnvelopesFromPayloads_EmptyDestinations(t *testing.T) {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.CreateCourierEnvelopesFromPayloadsReply)
 		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.CreateCourierEnvelopesFromPayloadsReply.ErrorCode)
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for response")
-	}
-}
-
-func TestSetStreamBuffer_Success(t *testing.T) {
-	d, testAppID, responseCh := setupDaemonWithMockConn(t)
-
-	streamID := &[thin.StreamIDLength]byte{}
-	copy(streamID[:], []byte("buffer-stream-00"))
-	queryID := &[thin.QueryIDLength]byte{}
-	copy(queryID[:], []byte("buffer-query-000"))
-
-	request := &Request{
-		AppID: testAppID,
-		SetStreamBuffer: &thin.SetStreamBuffer{
-			QueryID:  queryID,
-			StreamID: streamID,
-			Buffer:   []byte("saved buffer state"),
-		},
-	}
-
-	d.setStreamBuffer(request)
-
-	select {
-	case resp := <-responseCh:
-		require.NotNil(t, resp.SetStreamBufferReply)
-		require.Equal(t, thin.ThinClientSuccess, resp.SetStreamBufferReply.ErrorCode)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for response")
 	}

@@ -25,7 +25,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
@@ -238,7 +237,6 @@ func setupFullClient(t *testing.T) (*Daemon, *Client, *[AppIDLength]byte, chan *
 		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		replyLock:          new(sync.Mutex),
-		copyStreamEncoders:        make(map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder),
 		secureRand:                rand.NewMath(),
 		timerQueue:                NewTimerQueue(func(interface{}) {}),
 		gcSurbIDCh:                make(chan *[sphinxConstants.SURBIDLength]byte, 10),

@@ -644,22 +644,18 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 	// Get the current replica epoch
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
-	// Get or create encoder for this stream
-	streamID := request.CreateCourierEnvelopesFromPayloads.StreamID
-	if streamID == nil {
-		d.log.Errorf("createCourierEnvelopesFromPayloads: StreamID is required")
-		d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInvalidRequest)
-		return
+	// Create a fresh encoder and restore buffer from previous call if provided
+	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
+	if len(request.CreateCourierEnvelopesFromPayloads.Buffer) > 0 {
+		encoder.SetBuffer(&pigeonhole.CopyStreamEncoderState{
+			Buffer: request.CreateCourierEnvelopesFromPayloads.Buffer,
+		})
 	}
 
-	d.copyStreamEncodersLock.Lock()
-	encoder, exists := d.copyStreamEncoders[*streamID]
-	if !exists {
-		// First call for this stream - create new encoder
-		encoder = pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
-		d.copyStreamEncoders[*streamID] = encoder
+	isStart := request.CreateCourierEnvelopesFromPayloads.IsStart
+	if !isStart {
+		encoder.SuppressStart()
 	}
-	d.copyStreamEncodersLock.Unlock()
 
 	// Process all destinations and feed envelopes into the same encoder
 	var elements [][]byte
@@ -798,37 +794,31 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 		nextDestIndices[destIdx] = currentIndex
 	}
 
-	// If this is the last call, flush and remove encoder
+	// Flush or return residual buffer
 	isLast := request.CreateCourierEnvelopesFromPayloads.IsLast
-	var bufferState *pigeonhole.CopyStreamEncoderState
+	var bufferBytes []byte
 	if isLast {
 		finalElements := encoder.Flush()
 		if finalElements != nil {
 			elements = append(elements, finalElements...)
 		}
-		// Remove encoder from map
-		d.copyStreamEncodersLock.Lock()
-		delete(d.copyStreamEncoders, *streamID)
-		d.copyStreamEncodersLock.Unlock()
-		// Buffer is empty after flush
-		bufferState = &pigeonhole.CopyStreamEncoderState{
-			Buffer: nil,
-		}
 	} else {
-		// Get the current buffer state for crash recovery
-		bufferState = encoder.GetBuffer()
+		// Return residual buffer to caller
+		state := encoder.GetBuffer()
+		if state != nil {
+			bufferBytes = state.Buffer
+		}
 	}
 
-	d.log.Debugf("createCourierEnvelopesFromPayloads: created %d CourierEnvelopes from %d destinations, encoded into %d elements (isLast=%v, bufferLen=%d)",
-		totalEnvelopes, len(destinations), len(elements), isLast, len(bufferState.Buffer))
+	d.log.Debugf("createCourierEnvelopesFromPayloads: created %d CourierEnvelopes from %d destinations, encoded into %d elements (isStart=%v, isLast=%v, bufferLen=%d)",
+		totalEnvelopes, len(destinations), len(elements), isStart, isLast, len(bufferBytes))
 
-	// Send success response with buffer state for crash recovery
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadsReply: &thin.CreateCourierEnvelopesFromPayloadsReply{
 			QueryID:         request.CreateCourierEnvelopesFromPayloads.QueryID,
 			Envelopes:       elements,
-			Buffer:          bufferState.Buffer,
+			Buffer:          bufferBytes,
 			NextDestIndices: nextDestIndices,
 			ErrorCode:       thin.ThinClientSuccess,
 		},
@@ -844,66 +834,6 @@ func (d *Daemon) sendCreateCourierEnvelopesFromPayloadsError(request *Request, e
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadsReply: &thin.CreateCourierEnvelopesFromPayloadsReply{
 			QueryID:   request.CreateCourierEnvelopesFromPayloads.QueryID,
-			ErrorCode: errorCode,
-		},
-	})
-}
-
-// setStreamBuffer restores the buffered state for a given stream ID.
-// This is useful for crash recovery: after restart, the thin client calls this
-// with the buffer state that was returned by CreateCourierEnvelopesFromPayload(s)
-// before the crash/shutdown.
-func (d *Daemon) setStreamBuffer(request *Request) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		return
-	}
-
-	streamID := request.SetStreamBuffer.StreamID
-	if streamID == nil {
-		d.log.Errorf("setStreamBuffer: StreamID is required")
-		d.sendSetStreamBufferError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-
-	// Create the state to restore
-	state := &pigeonhole.CopyStreamEncoderState{
-		Buffer: request.SetStreamBuffer.Buffer,
-	}
-
-	d.copyStreamEncodersLock.Lock()
-	encoder, exists := d.copyStreamEncoders[*streamID]
-	if !exists {
-		// Create a new encoder for this stream
-		encoder = pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
-		d.copyStreamEncoders[*streamID] = encoder
-	}
-	// Restore the state
-	encoder.SetBuffer(state)
-	d.copyStreamEncodersLock.Unlock()
-
-	d.log.Debugf("setStreamBuffer: restored buffer for stream %x (bufferLen=%d, newEncoder=%v)",
-		streamID[:], len(state.Buffer), !exists)
-
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		SetStreamBufferReply: &thin.SetStreamBufferReply{
-			QueryID:   request.SetStreamBuffer.QueryID,
-			ErrorCode: thin.ThinClientSuccess,
-		},
-	})
-}
-
-func (d *Daemon) sendSetStreamBufferError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		return
-	}
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		SetStreamBufferReply: &thin.SetStreamBufferReply{
-			QueryID:   request.SetStreamBuffer.QueryID,
 			ErrorCode: errorCode,
 		},
 	})

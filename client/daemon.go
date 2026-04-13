@@ -98,10 +98,6 @@ type Daemon struct {
 	arqResendCh        chan *[sphinxConstants.SURBIDLength]byte
 	arqEnvelopeHashMap map[[32]byte]*[sphinxConstants.SURBIDLength]byte // EnvelopeHash -> SURB ID (for cancellation)
 
-	// Copy stream encoders for multi-call CreateCourierEnvelopesFromPayload
-	copyStreamEncoders     map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder
-	copyStreamEncodersLock *sync.Mutex
-
 	// Cryptographically secure random number generator
 	secureRand *mrand.Rand
 
@@ -123,9 +119,6 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqResendCh:        make(chan *[sphinxConstants.SURBIDLength]byte, 64),
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		// Copy stream encoder management:
-		copyStreamEncoders:     make(map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder),
-		copyStreamEncodersLock: new(sync.Mutex),
 		// Initialize cryptographically secure random number generator
 		secureRand: hpqcRand.NewMath(),
 	}
@@ -357,8 +350,6 @@ func (d *Daemon) egressWorker() {
 				d.createCourierEnvelopesFromPayload(request)
 			case request.CreateCourierEnvelopesFromPayloads != nil:
 				d.createCourierEnvelopesFromPayloads(request)
-			case request.SetStreamBuffer != nil:
-				d.setStreamBuffer(request)
 			case request.CreateCourierEnvelopesFromTombstoneRange != nil:
 				d.createCourierEnvelopesFromTombstoneRange(request)
 

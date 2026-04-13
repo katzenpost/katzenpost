@@ -127,15 +127,7 @@ func TestHashIdentityKey(t *testing.T) {
 	require.NotEqual(t, result, result3)
 }
 
-func TestNewStreamID(t *testing.T) {
-	tc := setupTestThinClient(t)
-	id1 := tc.NewStreamID()
-	id2 := tc.NewStreamID()
-	require.NotNil(t, id1)
-	require.NotNil(t, id2)
-	require.NotEqual(t, id1[:], id2[:])
-	require.Equal(t, StreamIDLength, len(id1))
-}
+
 
 func newTestWriteCap(t *testing.T) *bacap.WriteCap {
 	t.Helper()
@@ -862,24 +854,17 @@ func TestCreateCourierEnvelopesFromPayloadSuccess(t *testing.T) {
 func TestCreateCourierEnvelopesFromMultiPayloadNilArgs(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 
-	_, err := tc.CreateCourierEnvelopesFromMultiPayload(nil, []DestinationPayload{{}}, false)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "streamID cannot be nil")
-
-	streamID := &[StreamIDLength]byte{1}
-	_, err = tc.CreateCourierEnvelopesFromMultiPayload(streamID, nil, false)
+	_, err := tc.CreateCourierEnvelopesFromMultiPayload(nil, true, false, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "destinations cannot be empty")
 
-	_, err = tc.CreateCourierEnvelopesFromMultiPayload(streamID, []DestinationPayload{}, false)
+	_, err = tc.CreateCourierEnvelopesFromMultiPayload([]DestinationPayload{}, true, false, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "destinations cannot be empty")
 }
 
 func TestCreateCourierEnvelopesFromMultiPayloadSuccess(t *testing.T) {
 	tc, server := setupMockDaemon(t)
-
-	streamID := &[StreamIDLength]byte{1, 2, 3}
 
 	go func() {
 		req, err := readRequest(server)
@@ -900,70 +885,14 @@ func TestCreateCourierEnvelopesFromMultiPayloadSuccess(t *testing.T) {
 	}()
 
 	result, err := tc.CreateCourierEnvelopesFromMultiPayload(
-		streamID,
 		[]DestinationPayload{{Payload: []byte("data"), WriteCap: newTestWriteCap(t), StartIndex: newTestMessageBoxIndex(t)}},
-		true,
+		true, true, nil,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Len(t, result.Envelopes, 1)
 	require.Equal(t, []byte("buffer-state"), result.Buffer)
 	require.Len(t, result.NextDestIndices, 1)
-}
-
-func TestSetStreamBufferNilStreamID(t *testing.T) {
-	tc, _ := setupMockDaemon(t)
-	err := tc.SetStreamBuffer(nil, []byte("buf"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "streamID cannot be nil")
-}
-
-func TestSetStreamBufferSuccess(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	streamID := &[StreamIDLength]byte{4, 5, 6}
-
-	go func() {
-		req, err := readRequest(server)
-		if err != nil {
-			return
-		}
-		require.NotNil(t, req.SetStreamBuffer)
-
-		sendResponse(t, server, &Response{
-			SetStreamBufferReply: &SetStreamBufferReply{
-				QueryID:   req.SetStreamBuffer.QueryID,
-				ErrorCode: ThinClientSuccess,
-			},
-		})
-	}()
-
-	err := tc.SetStreamBuffer(streamID, []byte("buffer-data"))
-	require.NoError(t, err)
-}
-
-func TestSetStreamBufferError(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	streamID := &[StreamIDLength]byte{7, 8, 9}
-
-	go func() {
-		req, err := readRequest(server)
-		if err != nil {
-			return
-		}
-
-		sendResponse(t, server, &Response{
-			SetStreamBufferReply: &SetStreamBufferReply{
-				QueryID:   req.SetStreamBuffer.QueryID,
-				ErrorCode: ThinClientErrorInternalError,
-			},
-		})
-	}()
-
-	err := tc.SetStreamBuffer(streamID, []byte("buf"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "Internal error")
 }
 
 func TestGetAllCouriers(t *testing.T) {
@@ -1187,8 +1116,6 @@ func TestCreateCourierEnvelopesFromPayloadError(t *testing.T) {
 func TestCreateCourierEnvelopesFromMultiPayloadError(t *testing.T) {
 	tc, server := setupMockDaemon(t)
 
-	streamID := &[StreamIDLength]byte{10, 11, 12}
-
 	go func() {
 		req, err := readRequest(server)
 		if err != nil {
@@ -1204,9 +1131,8 @@ func TestCreateCourierEnvelopesFromMultiPayloadError(t *testing.T) {
 	}()
 
 	_, err := tc.CreateCourierEnvelopesFromMultiPayload(
-		streamID,
 		[]DestinationPayload{{Payload: []byte("x"), WriteCap: newTestWriteCap(t), StartIndex: newTestMessageBoxIndex(t)}},
-		true,
+		true, true, nil,
 	)
 	require.Error(t, err)
 }

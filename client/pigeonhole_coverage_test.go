@@ -203,45 +203,6 @@ func TestEncryptWritePayloadTooLarge(t *testing.T) {
 	}
 }
 
-func TestSetStreamBufferNilStreamID(t *testing.T) {
-	d, testAppID, responseCh := setupDaemonWithMockConn(t)
-
-	queryID := &[thin.QueryIDLength]byte{}
-	copy(queryID[:], []byte("buffer-nil-sid00"))
-
-	d.setStreamBuffer(&Request{
-		AppID: testAppID,
-		SetStreamBuffer: &thin.SetStreamBuffer{
-			QueryID:  queryID,
-			StreamID: nil,
-		},
-	})
-
-	select {
-	case resp := <-responseCh:
-		require.NotNil(t, resp.SetStreamBufferReply)
-		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.SetStreamBufferReply.ErrorCode)
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout")
-	}
-}
-
-func TestSetStreamBufferNoConnection(t *testing.T) {
-	d, _, _ := setupDaemonWithMockConn(t)
-
-	unknownAppID := &[AppIDLength]byte{}
-	copy(unknownAppID[:], []byte("no-conn-buffer00"))
-
-	// Should not panic
-	d.setStreamBuffer(&Request{
-		AppID: unknownAppID,
-		SetStreamBuffer: &thin.SetStreamBuffer{
-			QueryID:  &[thin.QueryIDLength]byte{},
-			StreamID: &[thin.StreamIDLength]byte{},
-		},
-	})
-}
-
 func TestNextMessageBoxIndexNoConnection(t *testing.T) {
 	d, _, _ := setupDaemonWithMockConn(t)
 
@@ -426,33 +387,6 @@ func TestCreateCourierEnvelopesFromPayloadsNoConnection(t *testing.T) {
 		AppID: unknownAppID,
 		CreateCourierEnvelopesFromPayloads: &thin.CreateCourierEnvelopesFromPayloads{},
 	})
-}
-
-func TestCreateCourierEnvelopesFromPayloadsNilStreamID(t *testing.T) {
-	d, testAppID, responseCh := setupDaemonWithMockConn(t)
-
-	queryID := &[thin.QueryIDLength]byte{}
-	copy(queryID[:], []byte("payloads-nilsid0"))
-
-	d.createCourierEnvelopesFromPayloads(&Request{
-		AppID: testAppID,
-		CreateCourierEnvelopesFromPayloads: &thin.CreateCourierEnvelopesFromPayloads{
-			QueryID: queryID,
-			Destinations: []thin.DestinationPayload{
-				{
-					Payload: []byte("data"),
-				},
-			},
-		},
-	})
-
-	select {
-	case resp := <-responseCh:
-		require.NotNil(t, resp.CreateCourierEnvelopesFromPayloadsReply)
-		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.CreateCourierEnvelopesFromPayloadsReply.ErrorCode)
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout")
-	}
 }
 
 func TestHandlePigeonholeARQReplyNoConnection(t *testing.T) {

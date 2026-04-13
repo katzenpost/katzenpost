@@ -420,42 +420,28 @@ type DestinationPayload struct {
 // CreateCourierEnvelopesFromPayload multiple times because envelopes from different
 // destinations are packed together in the copy stream without wasting space.
 //
-// Multiple calls can be made with the same StreamID to build up a stream incrementally.
-// The first call creates a new encoder (first element gets IsStart=true).
-// The final call should have IsLast=true (last element gets IsFinal=true).
+// This method is stateless — the Buffer field enables continuation across multiple
+// calls without daemon-side state. Pass the Buffer from the previous call's reply
+// to avoid wasting space in the last box of each call. On the first call, Buffer
+// should be nil.
 type CreateCourierEnvelopesFromPayloads struct {
 	// QueryID is used for correlating this thin client request with the
 	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
-	// StreamID identifies the encoder instance for multi-call streams.
-	// All calls for the same stream must use the same StreamID.
-	// The encoder is created on first use and removed after IsLast=true.
-	StreamID *[StreamIDLength]byte `cbor:"stream_id"`
-
 	// Destinations is the list of payloads and their destination channels.
 	Destinations []DestinationPayload `cbor:"destinations"`
 
+	// IsStart indicates whether this is the first call in a multi-call sequence.
+	// When true, the first CopyStreamElement will have the IsStart flag set.
+	IsStart bool `cbor:"is_start"`
+
 	// IsLast indicates whether this is the last set of payloads in the sequence.
-	// When true, the final CopyStreamElement will have IsFinal=true and
-	// the encoder instance will be removed.
+	// When true, the final CopyStreamElement will have IsFinal=true.
 	IsLast bool `cbor:"is_last"`
-}
 
-// SetStreamBuffer restores the buffered state for a given stream ID.
-// This is useful for crash recovery: after restart, call SetStreamBuffer with the
-// buffer state that was returned by CreateCourierEnvelopesFromPayload(s) before the crash/shutdown.
-//
-// Note: This will create a new encoder if one doesn't exist for this StreamID,
-// or replace the buffer contents if one already exists.
-type SetStreamBuffer struct {
-	// QueryID is used for correlating this thin client request with the response.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// StreamID identifies the encoder instance to set the buffer for.
-	StreamID *[StreamIDLength]byte `cbor:"stream_id"`
-
-	// Buffer contains the accumulated serialized envelope data not yet output.
+	// Buffer is the residual encoder buffer from a previous call.
+	// Pass nil on the first call.
 	Buffer []byte `cbor:"buffer"`
 }
 
@@ -588,9 +574,6 @@ type Response struct {
 	// CreateCourierEnvelopesFromPayloadsReply is sent when the client daemon successfully creates courier envelopes from multiple payloads.
 	CreateCourierEnvelopesFromPayloadsReply *CreateCourierEnvelopesFromPayloadsReply `cbor:"create_courier_envelopes_from_multi_payload_reply"`
 
-	// SetStreamBufferReply is sent when the client daemon restores the buffered state for a stream.
-	SetStreamBufferReply *SetStreamBufferReply `cbor:"set_stream_buffer_reply"`
-
 	// CreateCourierEnvelopesFromTombstoneRangeReply is sent when the client daemon successfully
 	// creates tombstone courier envelopes for a range of destination indices.
 	CreateCourierEnvelopesFromTombstoneRangeReply *CreateCourierEnvelopesFromTombstoneRangeReply `cbor:"create_courier_envelopes_from_tombstone_range_reply"`
@@ -646,9 +629,6 @@ type Request struct {
 	// going to different destination channels. This is more space-efficient than calling
 	// CreateCourierEnvelopesFromPayload multiple times.
 	CreateCourierEnvelopesFromPayloads *CreateCourierEnvelopesFromPayloads `cbor:"create_courier_envelopes_from_multi_payload"`
-
-	// SetStreamBuffer is used to restore the buffered state for a stream (for crash recovery).
-	SetStreamBuffer *SetStreamBuffer `cbor:"set_stream_buffer"`
 
 	// CreateCourierEnvelopesFromTombstoneRange is used to create tombstone CourierEnvelopes
 	// for a range of destination indices, encoded as copy stream elements.

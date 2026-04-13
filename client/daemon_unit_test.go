@@ -34,8 +34,6 @@ func TestNewDaemon(t *testing.T) {
 	require.NotNil(t, d.arqSurbIDMap)
 	require.NotNil(t, d.arqResendCh)
 	require.NotNil(t, d.arqEnvelopeHashMap)
-	require.NotNil(t, d.copyStreamEncoders)
-	require.NotNil(t, d.copyStreamEncodersLock)
 	require.NotNil(t, d.secureRand)
 	require.NotNil(t, d.log)
 	require.NotNil(t, d.logbackend)
