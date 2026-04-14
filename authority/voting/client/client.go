@@ -146,7 +146,7 @@ func (cfg *Config) validate() error {
 		if v.IdentityPublicKey == nil {
 			return fmt.Errorf("voting/client: Identity PublicKey is mandatory")
 		}
-		if v.LinkPublicKey == nil {
+		if v.LinkPublicKey.PublicKey == nil {
 			return fmt.Errorf("voting/client: Link PublicKey is mandatory")
 		}
 	}

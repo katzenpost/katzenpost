@@ -137,6 +137,16 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 	return cfg, nil
 }
 
+// KEMPublicKeyPEM wraps kem.PublicKey with PEM-based text marshaling
+// so that BurntSushi/toml can serialize it as a string.
+type KEMPublicKeyPEM struct {
+	kem.PublicKey
+}
+
+func (k KEMPublicKeyPEM) MarshalText() ([]byte, error) {
+	return []byte(kempem.ToPublicPEMString(k.PublicKey)), nil
+}
+
 // Gateway describes all necessary Gateway connection information
 // so that clients can connect to the Gateway and use the mixnet
 // and retrieve cached PKI documents.
@@ -151,7 +161,7 @@ type Gateway struct {
 	IdentityKey sign.PublicKey
 
 	// LinkKey is the node's wire protocol public key.
-	LinkKey kem.PublicKey
+	LinkKey KEMPublicKeyPEM
 
 	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
 	PKISignatureScheme string
@@ -188,10 +198,11 @@ func (p *Gateway) UnmarshalTOML(v interface{}) error {
 	if kemscheme == nil {
 		return errors.New("WireKEMScheme is nil")
 	}
-	p.LinkKey, err = kempem.FromPublicPEMString(data["LinkKey"].(string), kemscheme)
+	linkKey, err := kempem.FromPublicPEMString(data["LinkKey"].(string), kemscheme)
 	if err != nil {
 		return err
 	}
+	p.LinkKey = KEMPublicKeyPEM{linkKey}
 
 	// XXX toml.Decode does not return []string for this field :-(
 	addrs, ok := data["Addresses"].([]interface{})

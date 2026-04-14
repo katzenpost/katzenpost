@@ -287,6 +287,16 @@ func (dCfg *Debug) applyDefaults() {
 	}
 }
 
+// KEMPublicKeyPEM wraps kem.PublicKey with PEM-based text marshaling
+// so that BurntSushi/toml can serialize it as a string.
+type KEMPublicKeyPEM struct {
+	kem.PublicKey
+}
+
+func (k KEMPublicKeyPEM) MarshalText() ([]byte, error) {
+	return []byte(kempem.ToPublicPEMString(k.PublicKey)), nil
+}
+
 // Authority is the authority configuration for a peer.
 type Authority struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
@@ -300,7 +310,7 @@ type Authority struct {
 	PKISignatureScheme string
 
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
-	LinkPublicKey kem.PublicKey
+	LinkPublicKey KEMPublicKeyPEM
 	// WireKEMScheme is the wire protocol KEM scheme to use.
 	WireKEMScheme string
 	// Addresses are the listener addresses specified by a URL, e.g. tcp://1.2.3.4:1234 or quic://1.2.3.4:1234
@@ -364,10 +374,11 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	if s == nil {
 		return fmt.Errorf("scheme `%s` not found", a.WireKEMScheme)
 	}
-	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, s)
+	linkPubKey, err := kempem.FromPublicPEMString(linkPublicKeyString, s)
 	if err != nil {
 		return err
 	}
+	a.LinkPublicKey = KEMPublicKeyPEM{linkPubKey}
 
 	// address
 	addresses := make([]string, 0)
@@ -403,7 +414,7 @@ func (a *Authority) Validate() error {
 		return fmt.Errorf("config: %v: Authority is missing Identity Key", a)
 	}
 
-	if a.LinkPublicKey == nil {
+	if a.LinkPublicKey.PublicKey == nil {
 		return fmt.Errorf("config: %v: Authority is missing Link Key PEM filename", a)
 	}
 
