@@ -143,7 +143,7 @@ func CreateTestConfig(t *testing.T, schemes *TestSchemes, geometry *geo.Geometry
 						Identifier:         "dirauth1",
 						IdentityPublicKey:  authKeys.IdentityPubKey,
 						PKISignatureScheme: schemes.PKI.Name(),
-						LinkPublicKey:      authKeys.LinkPubKey,
+						LinkPublicKey:      authconfig.KEMPublicKeyPEM{PublicKey: authKeys.LinkPubKey},
 						WireKEMScheme:      schemes.Link.Name(),
 						Addresses:          []string{"tcp://127.0.0.1:1234"},
 					},

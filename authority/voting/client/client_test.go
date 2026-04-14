@@ -365,7 +365,7 @@ func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicK
 		Identifier:        fmt.Sprintf("authority%d", peerNum),
 		WireKEMScheme:     testingSchemeName,
 		IdentityPublicKey: identityPublicKey,
-		LinkPublicKey:     linkPublicKey,
+		LinkPublicKey:     config.KEMPublicKeyPEM{PublicKey: linkPublicKey},
 		Addresses:         []string{fmt.Sprintf("tcp://127.0.0.1:%d", peerNum)},
 	}
 	err = authPeer.Validate()

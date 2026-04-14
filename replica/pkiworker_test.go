@@ -73,7 +73,7 @@ func createTestSetup(t *testing.T) *testSetup {
 						Identifier:         "dirauth1",
 						IdentityPublicKey:  idpubkey,
 						PKISignatureScheme: pkiScheme.Name(),
-						LinkPublicKey:      linkpubkey,
+						LinkPublicKey:      authconfig.KEMPublicKeyPEM{PublicKey: linkpubkey},
 						WireKEMScheme:      linkScheme.Name(),
 						Addresses:          []string{testDirAuthAddress},
 					},

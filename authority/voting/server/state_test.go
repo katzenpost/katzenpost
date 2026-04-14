@@ -159,7 +159,7 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 			WireKEMScheme:      testingSchemeName,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  peerKeys[i].idPubKey,
-			LinkPublicKey:      peerKeys[i].linkKey.Public(),
+			LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: peerKeys[i].linkKey.Public()},
 		}
 		if len(aCfg.Server.Addresses) == 0 {
 			panic("wtf")
@@ -545,7 +545,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 			Identifier:         cfg.Server.Identifier,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  idPubKey,
-			LinkPublicKey:      linkPubKey,
+			LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: linkPubKey},
 			Addresses:          cfg.Server.Addresses,
 		}
 		peersMap[hash.Sum256From(idPubKey)] = authorityPeer
@@ -961,7 +961,7 @@ func TestReplicaDescriptorConsensus(t *testing.T) {
 			WireKEMScheme:      testingSchemeName,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  peerKeys[i].idPubKey,
-			LinkPublicKey:      peerKeys[i].linkKey.Public(),
+			LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: peerKeys[i].linkKey.Public()},
 		}
 		authorities = append(authorities, auth)
 	}
@@ -1438,7 +1438,7 @@ func TestConfiguredReplicaIdentityKeys(t *testing.T) {
 			WireKEMScheme:      testingSchemeName,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  peerKeys[i].idPubKey,
-			LinkPublicKey:      peerKeys[i].linkKey.Public(),
+			LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: peerKeys[i].linkKey.Public()},
 		}
 		authorities = append(authorities, auth)
 	}
@@ -1753,7 +1753,7 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 			WireKEMScheme:      testingSchemeName,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  peerKeys[i].idPubKey,
-			LinkPublicKey:      peerKeys[i].linkKey.Public(),
+			LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: peerKeys[i].linkKey.Public()},
 		}
 		authorities = append(authorities, auth)
 	}
@@ -2144,7 +2144,7 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 			WireKEMScheme:      testingSchemeName,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  peerKeys[i].idPubKey,
-			LinkPublicKey:      peerKeys[i].linkKey.Public(),
+			LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: peerKeys[i].linkKey.Public()},
 		}
 		authorities = append(authorities, auth)
 	}
@@ -2629,7 +2629,7 @@ func TestEmptyEnvelopeKeysWithConfiguredReplicas(t *testing.T) {
 			WireKEMScheme:      testingSchemeName,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  peerKeys[i].idPubKey,
-			LinkPublicKey:      peerKeys[i].linkKey.Public(),
+			LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: peerKeys[i].linkKey.Public()},
 		}
 		authorities = append(authorities, auth)
 	}
@@ -2923,7 +2923,7 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 			WireKEMScheme:      testingSchemeName,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  peerKeys[i].idPubKey,
-			LinkPublicKey:      peerKeys[i].linkKey.Public(),
+			LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: peerKeys[i].linkKey.Public()},
 		}
 		authorities = append(authorities, auth)
 	}

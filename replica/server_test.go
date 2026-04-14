@@ -69,7 +69,7 @@ func TestNew(t *testing.T) {
 						Identifier:         "dirauth1",
 						IdentityPublicKey:  idpubkey,
 						PKISignatureScheme: pkiScheme.Name(),
-						LinkPublicKey:      linkpubkey,
+						LinkPublicKey:      authconfig.KEMPublicKeyPEM{PublicKey: linkpubkey},
 						WireKEMScheme:      linkScheme.Name(),
 						Addresses:          []string{"tcp://127.0.0.1:1234"},
 					},
