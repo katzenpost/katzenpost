@@ -22,8 +22,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/circl/kem/kyber/kyber768"
-
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
@@ -31,9 +29,7 @@ import (
 	"github.com/katzenpost/nyquist/pattern"
 	"github.com/katzenpost/nyquist/seec"
 
-	"github.com/katzenpost/hpqc/kem/adapter"
-	kemhybrid "github.com/katzenpost/hpqc/kem/hybrid"
-	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 )
 
@@ -44,11 +40,7 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 
 	protocol := &nyquist.Protocol{
 		Pattern: pattern.PqXX,
-		KEM: kemhybrid.New(
-			"Kyber768-X25519",
-			adapter.FromNIKE(ecdh.Scheme(rand.Reader)),
-			kyber768.Scheme(),
-		),
+		KEM: schemes.ByName("Kyber768-X25519"),
 		Cipher: cipher.ChaChaPoly,
 		Hash:   hash.BLAKE2s,
 	}
