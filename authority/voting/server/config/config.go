@@ -19,7 +19,6 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -630,17 +629,9 @@ type Topology struct {
 // and tries to find a match in the dirauth peers. Returns an error if no
 // match is found. Dirauths must be their own peer.
 func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
-	linkblob1, err := linkPubKey.MarshalText()
-	if err != nil {
-		return err
-	}
 	match := false
 	for i := 0; i < len(cfg.Authorities); i++ {
-		linkblob, err := cfg.Authorities[i].LinkPublicKey.MarshalText()
-		if err != nil {
-			return err
-		}
-		if bytes.Equal(linkblob1, linkblob) {
+		if linkPubKey.Equal(cfg.Authorities[i].LinkPublicKey) {
 			match = true
 		}
 	}
