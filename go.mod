@@ -11,9 +11,8 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20poly1305 v0.0.1
-	github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5
 	github.com/katzenpost/hpqc v0.0.76
-	github.com/katzenpost/nyquist v0.0.11
+	github.com/katzenpost/nyquist v0.0.12
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
 	github.com/linxGnu/grocksdb v1.10.7
 	github.com/prometheus/client_golang v1.23.2
@@ -54,6 +53,7 @@ require (
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/katzenpost/chacha20 v0.0.1 // indirect
+	github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5 // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
@@ -67,7 +67,6 @@ require (
 	github.com/muesli/mango-pflag v0.2.0 // indirect
 	github.com/muesli/roff v0.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/oasisprotocol/curve25519-voi v0.0.0-20230904125328-1f23a7beb09a // indirect
 	github.com/oasisprotocol/deoxysii v0.0.0-20220228165953-2091330c22b7 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
