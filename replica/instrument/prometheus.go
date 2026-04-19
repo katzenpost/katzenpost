@@ -71,6 +71,19 @@ var (
 			Help: "Number of real commands sent to other replicas",
 		},
 	)
+	retryQueueSize = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_retry_queue_size",
+			Help: "Current number of pending replication retries across all peers",
+		},
+	)
+	retryQueueDropped = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_replica_retry_queue_dropped_total",
+			Help: "Number of pending replication retries evicted from the queue",
+		},
+		[]string{"reason"},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -86,6 +99,8 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(outgoingQueueLength)
 		prometheus.MustRegister(outgoingDecoysSent)
 		prometheus.MustRegister(outgoingMessagesSent)
+		prometheus.MustRegister(retryQueueSize)
+		prometheus.MustRegister(retryQueueDropped)
 	})
 
 	if address != "" {
@@ -137,4 +152,15 @@ func OutgoingDecoysSent() {
 // OutgoingMessagesSent increments the counter for real commands sent to other replicas
 func OutgoingMessagesSent() {
 	outgoingMessagesSent.Inc()
+}
+
+// RetryQueueSize sets the gauge for the current retry queue depth.
+func RetryQueueSize(size int) {
+	retryQueueSize.Set(float64(size))
+}
+
+// RetryQueueDropped increments the drop counter with the given reason label
+// ("capacity" or "ttl").
+func RetryQueueDropped(reason string) {
+	retryQueueDropped.With(prometheus.Labels{"reason": reason}).Inc()
 }
