@@ -29,6 +29,8 @@ help:
 
 warped?=true
 no_decoy?=true
+no_client_decoy?=false
+no_courier_replica_decoy?=false
 no_mixdecoy?=true
 no_metrics?=true
 pyroscope?=false
@@ -80,13 +82,23 @@ docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 cache_dir=cache
 
-# no_decoy and no_mixdecoy control enabling dockerized mixnets with or without decoy traffic
+# no_decoy is a master toggle covering clients, couriers, and replicas.
+# no_client_decoy and no_courier_replica_decoy allow selective disabling
+# when no_decoy=false. no_mixdecoy controls mix node decoys independently.
 ifeq ($(no_mixdecoy),true)
   noMixDecoy=--noMixDecoy
 endif
 
 ifeq ($(no_decoy),true)
   noDecoy=--noDecoy
+endif
+
+ifeq ($(no_client_decoy),true)
+  noClientDecoy=--noClientDecoy
+endif
+
+ifeq ($(no_courier_replica_decoy),true)
+  noCourierReplicaDecoy=--noCourierReplicaDecoy
 endif
 
 ifeq ($(no_metrics),true)
@@ -167,7 +179,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeFlag} \
+		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
@@ -183,7 +195,7 @@ config-only: | $(net_name)
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeFlag} \
+		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)

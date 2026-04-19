@@ -113,7 +113,11 @@ performance optimization and security requirements.`,
 	cmd.Flags().StringVar(&cfg.EpochDuration, "epochDuration", "",
 		"set KATZENPOST_EPOCH_DURATION env var in docker-compose services (e.g., 2m)")
 	cmd.Flags().BoolVar(&cfg.NoDecoy, "noDecoy", false,
-		"disable decoy traffic for clients, couriers, and replicas")
+		"disable decoy traffic for clients, couriers, and replicas (master override)")
+	cmd.Flags().BoolVar(&cfg.NoClientDecoy, "noClientDecoy", false,
+		"disable client decoy traffic only")
+	cmd.Flags().BoolVar(&cfg.NoCourierReplicaDecoy, "noCourierReplicaDecoy", false,
+		"disable courier and replica decoy traffic")
 	cmd.Flags().BoolVar(&cfg.NoMixDecoy, "noMixDecoy", true,
 		"disable decoy traffic generation for mix nodes")
 	cmd.Flags().BoolVar(&cfg.NoMetrics, "noMetrics", false,

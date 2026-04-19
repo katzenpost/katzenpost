@@ -87,6 +87,8 @@ type Config struct {
 	PkiSignatureScheme       string
 	EpochDuration            string
 	NoDecoy                  bool
+	NoClientDecoy            bool
+	NoCourierReplicaDecoy    bool
 	NoMixDecoy               bool
 	NoMetrics                bool
 	Pyroscope                bool
@@ -142,8 +144,10 @@ type Katzenpost struct {
 	NodeIdx         int
 	GatewayIdx      int
 	ServiceNodeIdx  int
-	NoMixDecoy        bool
-	NoMetrics         bool
+	NoClientDecoy         bool
+	NoCourierReplicaDecoy bool
+	NoMixDecoy            bool
+	NoMetrics             bool
 	Pyroscope         bool
 	EpochDuration     string
 	DebugConfig       *cConfig.Debug
@@ -315,7 +319,7 @@ func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
 		ConnectTimeout:      config.DefaultConnectTimeout,
 		HandshakeTimeout:    config.DefaultHandshakeTimeout,
 		ReauthInterval:      config.DefaultReauthInterval,
-		DisableDecoyTraffic: s.DebugConfig.DisableDecoyTraffic,
+		DisableDecoyTraffic: s.NoCourierReplicaDecoy,
 	}
 	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
 	s.LastPort++
@@ -347,7 +351,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.ConnectTimeout = config.DefaultConnectTimeout
 	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
 	cfg.ReauthInterval = config.DefaultReauthInterval
-	cfg.DisableDecoyTraffic = s.DebugConfig.DisableDecoyTraffic
+	cfg.DisableDecoyTraffic = s.NoCourierReplicaDecoy
 
 	authorities := make([]*vConfig.Authority, 0, len(s.Authorities))
 	i := 0
@@ -735,11 +739,13 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.BindAddr = cfg.BindAddr
 	s.LogLevel = cfg.LogLevel
 	s.DebugConfig = &cConfig.Debug{
-		DisableDecoyTraffic:         cfg.NoDecoy,
+		DisableDecoyTraffic:         cfg.NoDecoy || cfg.NoClientDecoy,
 		SessionDialTimeout:          cfg.DialTimeout,
 		InitialMaxPKIRetrievalDelay: cfg.MaxPKIDelay,
 		PollingInterval:             cfg.PollingIntvl,
 	}
+	s.NoClientDecoy = cfg.NoDecoy || cfg.NoClientDecoy
+	s.NoCourierReplicaDecoy = cfg.NoDecoy || cfg.NoCourierReplicaDecoy
 	s.NoMixDecoy = cfg.NoMixDecoy
 	s.NoMetrics = cfg.NoMetrics
 	s.Pyroscope = cfg.Pyroscope
