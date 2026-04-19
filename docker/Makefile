@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -9,6 +9,7 @@ help:
 	@echo " client-logs        - view kpclientd daemon logs"
 	@echo " courier-restart    - restart courier plugin via thwack interface"
 	@echo " servicenode-restart - restart servicenode container (heavier)"
+	@echo " replica-restart    - rebuild replica binary and restart all replica containers"
 	@echo " wait               - wait for testnet to have consensus"
 	@echo " watch              - tail -F all logs"
 	@echo " watch-replicas     - monitor all replica logs"
@@ -242,6 +243,14 @@ courier-restart:
 	@echo "Starting courier plugin via thwack management interface..."
 	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock'
 	@echo "Courier service restarted with updated code"
+
+replica-restart:
+	@echo "Cleaning and rebuilding replica binary..."
+	rm -fv $(net_name)/replica.$(distro)
+	make $(make_args) $(net_name)/replica.$(distro)
+	@echo "Restarting replica containers..."
+	@cd $(net_name) && for i in $$(seq 1 $(storageNodes)); do $(docker_compose) restart replica$$i; done
+	@echo "Replica containers restarted with updated binary"
 
 servicenode-restart:
 	@echo "Cleaning and rebuilding courier binary..."
