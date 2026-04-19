@@ -7,6 +7,10 @@ package client
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -24,7 +28,20 @@ const (
 
 var (
 	shutdownCh chan interface{}
+
+	activeClientsMu sync.Mutex
+	activeClients   []*thin.ThinClient
 )
+
+// registerClientForShutdown tracks a thin client so that a SIGINT/SIGTERM
+// signal handler can call Close() on it before the process exits. Without
+// this, killing a hung test with Ctrl-C or `kill` leaves the daemon spinning
+// on ARQ retransmissions for operations the test process will never read.
+func registerClientForShutdown(c *thin.ThinClient) {
+	activeClientsMu.Lock()
+	defer activeClientsMu.Unlock()
+	activeClients = append(activeClients, c)
+}
 
 // setupThinClientWithConfig creates and connects a thin client with the specified configuration
 func setupThinClientWithConfig(t *testing.T, configFile, logLevel string) *thin.ThinClient {
@@ -43,6 +60,7 @@ func setupThinClientWithConfig(t *testing.T, configFile, logLevel string) *thin.
 	require.NoError(t, err)
 	t.Log("thin client connected")
 
+	registerClientForShutdown(client)
 	return client
 }
 
@@ -154,4 +172,23 @@ func repeatSendAndWait(t *testing.T, client *thin.ThinClient, message []byte, no
 
 func init() {
 	shutdownCh = make(chan interface{})
+
+	// Close all registered thin clients on SIGINT/SIGTERM so the daemon
+	// can retire in-flight ARQ operations rather than spin on them after
+	// the test process exits. SIGKILL bypasses this — don't use it.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigCh
+		fmt.Fprintf(os.Stderr, "\ntest received %s, closing active thin clients...\n", sig)
+		close(shutdownCh)
+		activeClientsMu.Lock()
+		clients := make([]*thin.ThinClient, len(activeClients))
+		copy(clients, activeClients)
+		activeClientsMu.Unlock()
+		for _, c := range clients {
+			_ = c.Close()
+		}
+		os.Exit(1)
+	}()
 }
