@@ -156,7 +156,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	// Use the ephemeralPublicKey we already unmarshaled earlier
 	senderpubkey := ephemeralPublicKey
 
-	doc := c.l.server.PKIWorker.PKIDocument()
+	doc := c.l.server.PKIWorker.LastCachedPKIDocument()
 	if doc == nil {
 		c.log.Error("handleReplicaMessage failed: no PKI document available")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0)
@@ -502,7 +502,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 	c.log.Debugf("PROXY_REQUEST: Starting proxy for BoxID: %x", replicaRead.BoxID)
 
 	// Get PKI document
-	doc := c.l.server.PKIWorker.PKIDocument()
+	doc := c.l.server.PKIWorker.LastCachedPKIDocument()
 	if doc == nil {
 		c.log.Error("proxyReadRequest: no PKI document available")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
@@ -650,7 +650,7 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 	c.log.Debugf("proxyWriteRequest: Starting proxy for BoxID: %x", replicaWrite.BoxID)
 
 	// Get PKI document
-	doc := c.l.server.PKIWorker.PKIDocument()
+	doc := c.l.server.PKIWorker.LastCachedPKIDocument()
 	if doc == nil {
 		c.log.Error("proxyWriteRequest: no PKI document available")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)

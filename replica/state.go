@@ -240,7 +240,7 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 
 func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) {
 	s.log.Debugf("state: Getting remote shards for BoxID: %x", boxID)
-	doc := s.server.PKIWorker.PKIDocument()
+	doc := s.server.PKIWorker.LastCachedPKIDocument()
 
 	// Check if PKI document has storage replicas
 	if doc == nil {

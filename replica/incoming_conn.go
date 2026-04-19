@@ -113,21 +113,18 @@ func (c *incomingConn) worker() {
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds, fmt.Sprintf("%d", c.id))
 
-	doc := c.l.server.PKIWorker.PKIDocument()
-	if doc == nil {
-		c.log.Errorf("Failed to get PKI document")
-		sender.Halt()
-		return
+	// LambdaR is a near-constant network tunable, so a one-epoch-stale doc is
+	// fine here. Skip the UpdateRate call entirely if no doc is cached;
+	// the sender will use its previously-configured rate (or stay idle on
+	// first-ever connect) and the periodic resweep will catch up.
+	if doc := c.l.server.PKIWorker.LastCachedPKIDocument(); doc != nil {
+		rate, err := common.LambdaRateToMs(doc.LambdaR)
+		if err != nil {
+			c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
+		} else {
+			sender.UpdateRate(rate, doc.LambdaRMaxDelay)
+		}
 	}
-	// LambdaR is the rate (1/ms) for courier/replica decoy traffic.
-	rate, err := common.LambdaRateToMs(doc.LambdaR)
-	if err != nil {
-		c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
-		sender.Halt()
-		return
-	}
-	maxDelay := doc.LambdaRMaxDelay
-	sender.UpdateRate(rate, maxDelay)
 	sender.UpdateConnectionStatus(true)
 
 	// Channel to signal egress sender to drain and exit

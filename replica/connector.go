@@ -177,7 +177,7 @@ func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
 }
 
 func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
-	doc := co.server.PKIWorker.PKIDocument()
+	doc := co.server.PKIWorker.LastCachedPKIDocument()
 	if doc == nil {
 		co.log.Error("REPLICATION: Failed - no PKI document available")
 		return

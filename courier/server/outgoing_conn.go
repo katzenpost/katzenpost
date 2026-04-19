@@ -316,7 +316,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 	defer w.Close()
 
-	if doc := c.co.Server().PKI.PKIDocument(); doc != nil {
+	if doc := c.co.Server().PKI.LastCachedPKIDocument(); doc != nil {
 		rate, err := kpcommon.LambdaRateToMs(doc.LambdaR)
 		if err != nil {
 			c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)

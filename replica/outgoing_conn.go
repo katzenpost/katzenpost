@@ -361,20 +361,17 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	sender := newOutgoingSender(c.ch, outCh, c.co.Server().cfg.DisableDecoyTraffic, c.co.Server().LogBackend(), cmds, c.dst.Name)
 
-	doc := c.co.Server().PKIWorker.PKIDocument()
-	if doc == nil {
-		c.log.Errorf("Failed to get PKI document")
-		sender.Halt()
-		return
+	// LambdaR is near-constant; tolerate a one-epoch-stale doc. Skip the
+	// UpdateRate call if nothing is cached — the sender will use its prior
+	// rate (or stay idle on first-ever connect) and the resweep will catch up.
+	if doc := c.co.Server().PKIWorker.LastCachedPKIDocument(); doc != nil {
+		rate, err := common.LambdaRateToMs(doc.LambdaR)
+		if err != nil {
+			c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
+		} else {
+			sender.UpdateRate(rate, doc.LambdaRMaxDelay)
+		}
 	}
-	rate, err := common.LambdaRateToMs(doc.LambdaR)
-	if err != nil {
-		c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
-		sender.Halt()
-		return
-	}
-	maxDelay := doc.LambdaRMaxDelay
-	sender.UpdateRate(rate, maxDelay)
 	sender.UpdateConnectionStatus(true)
 
 	// Channel to signal egress goroutine to drain and exit

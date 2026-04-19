@@ -170,7 +170,7 @@ func (co *Connector) spawnNewConns() {
 }
 
 func (co *Connector) updateDecoyRates() {
-	doc := co.server.PKI.PKIDocument()
+	doc := co.server.PKI.LastCachedPKIDocument()
 	if doc == nil {
 		return
 	}
