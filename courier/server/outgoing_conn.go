@@ -23,6 +23,7 @@ import (
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -316,11 +317,12 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	defer w.Close()
 
 	if doc := c.co.Server().PKI.PKIDocument(); doc != nil {
-		rate := uint64(1.0 / doc.LambdaR)
-		if rate == 0 {
-			rate = 1
+		rate, err := kpcommon.LambdaRateToMs(doc.LambdaR)
+		if err != nil {
+			c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
+		} else {
+			c.sender.UpdateRate(rate, doc.LambdaRMaxDelay)
 		}
-		c.sender.UpdateRate(rate, doc.LambdaRMaxDelay)
 	}
 	c.sender.UpdateConnectionStatus(true)
 	defer c.sender.UpdateConnectionStatus(false)

@@ -13,6 +13,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/schemes"
 
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -173,9 +174,10 @@ func (co *Connector) updateDecoyRates() {
 	if doc == nil {
 		return
 	}
-	rate := uint64(1.0 / doc.LambdaR)
-	if rate == 0 {
-		rate = 1
+	rate, err := common.LambdaRateToMs(doc.LambdaR)
+	if err != nil {
+		co.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
+		return
 	}
 	maxDelay := doc.LambdaRMaxDelay
 

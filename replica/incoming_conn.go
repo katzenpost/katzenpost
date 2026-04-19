@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -118,10 +119,12 @@ func (c *incomingConn) worker() {
 		sender.Halt()
 		return
 	}
-	// LambdaR is the inverse of the rate for courier/replica decoy traffic.
-	rate := uint64(1.0 / doc.LambdaR)
-	if rate == 0 {
-		rate = 1
+	// LambdaR is the rate (1/ms) for courier/replica decoy traffic.
+	rate, err := common.LambdaRateToMs(doc.LambdaR)
+	if err != nil {
+		c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
+		sender.Halt()
+		return
 	}
 	maxDelay := doc.LambdaRMaxDelay
 	sender.UpdateRate(rate, maxDelay)

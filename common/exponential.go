@@ -13,6 +13,21 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
+// LambdaRateToMs converts a PKI lambda parameter (the rate of an Exp
+// distribution, in events per millisecond) into the mean delay in
+// milliseconds that ExpDist.UpdateRate expects. math.Ceil avoids the
+// truncation-to-zero hazard of uint64(1.0 / lambda) when lambda > 1.
+func LambdaRateToMs(lambda float64) (uint64, error) {
+	if lambda <= 0 || math.IsNaN(lambda) || math.IsInf(lambda, 0) {
+		return 0, fmt.Errorf("invalid lambda %v", lambda)
+	}
+	ms := math.Ceil(1.0 / lambda)
+	if ms > float64(math.MaxUint64) {
+		return 0, fmt.Errorf("lambda %v produces overflow", lambda)
+	}
+	return uint64(ms), nil
+}
+
 type opConnStatusChanged struct {
 	isConnected bool
 }

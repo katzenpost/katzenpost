@@ -20,6 +20,7 @@ import (
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -366,9 +367,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		sender.Halt()
 		return
 	}
-	rate := uint64(1.0 / doc.LambdaR)
-	if rate == 0 {
-		rate = 1
+	rate, err := common.LambdaRateToMs(doc.LambdaR)
+	if err != nil {
+		c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
+		sender.Halt()
+		return
 	}
 	maxDelay := doc.LambdaRMaxDelay
 	sender.UpdateRate(rate, maxDelay)
