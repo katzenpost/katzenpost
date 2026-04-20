@@ -116,6 +116,13 @@ const (
 	// are baked into the client's MKEM envelope.
 	maxCopyWriteAttempts = 5
 
+	// copyWriteReplyTimeout bounds how long the courier waits for
+	// both intermediate-replica replies after dispatching a Copy
+	// envelope. One unresponsive intermediate cannot pin the Copy
+	// goroutine; if only one reply arrives within this window, it is
+	// treated as the authoritative outcome.
+	copyWriteReplyTimeout = 15 * time.Second
+
 	// copyBackoffBase is the base backoff between attempts for both
 	// read and write retry loops; each attempt doubles up to
 	// copyBackoffCap.
@@ -910,8 +917,9 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 		}
 
 		for _, envelope := range envelopes {
-			if !e.dispatchCopyEnvelope(envelope) {
-				return copyFailedReply(0, envelopesProcessed+1)
+			ok, replicaErr := e.dispatchCopyEnvelope(envelope)
+			if !ok {
+				return copyFailedReply(replicaErr, envelopesProcessed+1)
 			}
 			envelopesProcessed++
 		}
@@ -936,27 +944,103 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 }
 
 // dispatchCopyEnvelope sends one copy-stream CourierEnvelope to its
-// client-chosen intermediate replicas under a bounded retry loop.
-// Returns true on success within maxCopyWriteAttempts, false on
-// exhaustion — callers should abort the Copy. No shard-failover is
-// possible here because the intermediate replicas are MKEM-baked into
-// the envelope.
-func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) bool {
+// client-chosen intermediate replicas, waits for both replies (with a
+// timeout), and classifies the outcome.
+//
+// Return values:
+//
+//   - (true, 0)
+//     at least one intermediate's reply indicates success; with K=2
+//     shard redundancy this means the data reached a shard and the
+//     Copy can continue.
+//
+//   - (false, replicaErrorCode)
+//     both intermediates rejected the write (e.g. BoxAlreadyExists,
+//     InvalidSignature) or the transport layer exhausted its attempt
+//     budget. replicaErrorCode is the best signal the courier has
+//     to propagate to the client. 0 means the failure was transport-
+//     only (no replica reply ever arrived).
+//
+// No shard-level failover is available on the write path because the
+// two intermediate replicas are MKEM-baked into the client's envelope.
+// SendMessage failures get up to maxCopyWriteAttempts tries under
+// copyAttemptBackoff before dispatch is declared terminal.
+func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bool, uint8) {
+	envHash := envelope.EnvelopeHash()
+
 	for attempt := 0; attempt < maxCopyWriteAttempts; attempt++ {
 		if attempt > 0 {
 			time.Sleep(copyAttemptBackoff(attempt - 1))
 		}
-		if err := e.propagateQueryToReplicas(envelope); err == nil {
-			if attempt > 0 {
-				e.log.Debugf("dispatchCopyEnvelope: success on attempt %d", attempt+1)
-			}
-			return true
-		} else {
-			e.log.Warningf("dispatchCopyEnvelope: attempt %d failed: %v", attempt+1, err)
+
+		// Buffer 2 so both intermediates can land without blocking
+		// the HandleReply goroutine.
+		ch := make(chan *commands.ReplicaMessageReply, 2)
+		e.copyCacheLock.Lock()
+		e.copyCache[*envHash] = ch
+		e.copyCacheLock.Unlock()
+
+		sendErr := e.propagateQueryToReplicas(envelope)
+		if sendErr != nil {
+			e.copyCacheLock.Lock()
+			delete(e.copyCache, *envHash)
+			e.copyCacheLock.Unlock()
+			e.log.Warningf("dispatchCopyEnvelope: attempt %d SendMessage failed: %v", attempt+1, sendErr)
+			continue
 		}
+
+		var replies []*commands.ReplicaMessageReply
+		deadline := time.After(copyWriteReplyTimeout)
+		collecting := true
+		for collecting && len(replies) < 2 {
+			select {
+			case r := <-ch:
+				replies = append(replies, r)
+			case <-deadline:
+				collecting = false
+			}
+		}
+
+		e.copyCacheLock.Lock()
+		delete(e.copyCache, *envHash)
+		e.copyCacheLock.Unlock()
+
+		if len(replies) == 0 {
+			e.log.Warningf("dispatchCopyEnvelope: attempt %d timed out with no replies", attempt+1)
+			continue
+		}
+
+		// K=2 redundancy: at least one success means the data is
+		// stored — continue the Copy.
+		bestErr := uint8(0)
+		for _, r := range replies {
+			if r.ErrorCode == pigeonhole.ReplicaSuccess {
+				if attempt > 0 {
+					e.log.Debugf("dispatchCopyEnvelope: success on attempt %d", attempt+1)
+				}
+				return true, 0
+			}
+			// Prefer BoxAlreadyExists as the reportable code — it's
+			// the most diagnostic signal for the client's Copy
+			// failure report.
+			if r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists || bestErr == 0 {
+				bestErr = r.ErrorCode
+			}
+		}
+
+		// Both replies are errors.
+		// BoxAlreadyExists is a terminal outcome — the destination
+		// box was pre-written, retrying won't change that.
+		if bestErr == pigeonhole.ReplicaErrorBoxAlreadyExists {
+			e.log.Warningf("dispatchCopyEnvelope: both intermediates report BoxAlreadyExists, aborting Copy")
+			return false, bestErr
+		}
+
+		e.log.Warningf("dispatchCopyEnvelope: attempt %d: both replies error (best=%d), retrying", attempt+1, bestErr)
 	}
+
 	e.log.Errorf("dispatchCopyEnvelope: exhausted %d attempts, aborting Copy", maxCopyWriteAttempts)
-	return false
+	return false, 0
 }
 
 // readNextBox reads a single box from the shard replicas, decrypts it,
