@@ -678,6 +678,35 @@ func (d *Daemon) arqResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 }
 
+// rotateARQSurbIDLocked rewires an ARQMessage to use newSurbID for its next
+// retransmission, keeping d.arqSurbIDMap and d.arqEnvelopeHashMap in sync.
+// The caller MUST hold d.replyLock.
+//
+// Invariant: after this returns,
+// arqEnvelopeHashMap[arqMessage.EnvelopeHash] == arqMessage.SURBID, and
+// arqSurbIDMap[arqMessage.SURBID] == arqMessage. All ARQ SURB rotations
+// must go through this helper so CancelResendingEncryptedMessage can
+// always find the current ARQMessage by EnvelopeHash.
+func (d *Daemon) rotateARQSurbIDLocked(
+	arqMessage *ARQMessage,
+	newSurbID *[sphinxConstants.SURBIDLength]byte,
+	surbKey []byte,
+	rtt time.Duration,
+) {
+	if arqMessage.SURBID != nil {
+		delete(d.arqSurbIDMap, *arqMessage.SURBID)
+	}
+	arqMessage.SURBID = newSurbID
+	arqMessage.SURBDecryptionKeys = surbKey
+	arqMessage.ReplyETA = rtt
+	arqMessage.SentAt = time.Now()
+	arqMessage.Retransmissions++
+	d.arqSurbIDMap[*newSurbID] = arqMessage
+	if arqMessage.EnvelopeHash != nil {
+		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = newSurbID
+	}
+}
+
 func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	d.replyLock.Lock()
 	message, ok := d.arqSurbIDMap[*surbID]
@@ -717,7 +746,6 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 
 	// Pigeonhole ARQ: retry forever (no MaxRetransmissions check)
 	d.log.Debugf("Pigeonhole ARQ resend (attempt %d) for EnvelopeHash %x", message.Retransmissions+1, message.EnvelopeHash[:])
-	delete(d.arqSurbIDMap, *surbID)
 
 	// Reuse the same courier for retries so the courier's dedup cache stays consistent.
 	// Switching couriers can cause a different courier to see BoxAlreadyExists (for writes)
@@ -743,17 +771,7 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		return
 	}
 
-	message.SURBID = newsurbID
-	message.SURBDecryptionKeys = k
-	message.ReplyETA = rtt
-	message.SentAt = time.Now()
-	message.Retransmissions += 1
-	d.arqSurbIDMap[*newsurbID] = message
-
-	// Update EnvelopeHash map to point to new SURB ID
-	if message.EnvelopeHash != nil {
-		d.arqEnvelopeHashMap[*message.EnvelopeHash] = newsurbID
-	}
+	d.rotateARQSurbIDLocked(message, newsurbID, k, rtt)
 	d.replyLock.Unlock()
 
 	// Check arqTimerQueue is not nil before pushing

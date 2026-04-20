@@ -1473,18 +1473,12 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		}
 
 		d.replyLock.Lock()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		if d.listener.getConnection(arqMessage.AppID) == nil {
 			d.replyLock.Unlock()
 			d.log.Debugf("handlePigeonholeARQReply: connection gone for AppID %x, dropping ARQ for EnvelopeHash %x", arqMessage.AppID[:], arqMessage.EnvelopeHash[:])
 			return
 		}
-		arqMessage.SURBID = newSurbID
-		arqMessage.SURBDecryptionKeys = surbKey
-		arqMessage.Retransmissions++
-		arqMessage.SentAt = time.Now()
-		arqMessage.ReplyETA = rtt
-		d.arqSurbIDMap[*newSurbID] = arqMessage
+		d.rotateARQSurbIDLocked(arqMessage, newSurbID, surbKey, rtt)
 		d.replyLock.Unlock()
 
 		myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
