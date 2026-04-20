@@ -499,6 +499,14 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[hash.HashSize]byte, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
 	e.log.Debugf("handleOldMessage called for envelope hash: %x, requested ReplyIndex: %d", envHash, courierMessage.ReplyIndex)
 
+	// Bound ReplyIndex to the size of EnvelopeReplies. The field is
+	// client-supplied, and anything outside [0, 1] would panic the
+	// courier goroutine on the indexed lookups below.
+	if courierMessage.ReplyIndex > 1 {
+		e.log.Warningf("handleOldMessage: rejecting out-of-range ReplyIndex=%d for envelope hash %x", courierMessage.ReplyIndex, envHash)
+		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorInvalidEnvelope, 0)
+	}
+
 	// Check if cacheEntry is nil before accessing its fields
 	if cacheEntry == nil {
 		e.log.Debugf("Cache entry is nil, no replies available")
