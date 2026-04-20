@@ -74,3 +74,4 @@ jobs:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
             docker/voting_mixnet/*/*.log
+            docker/voting_mixnet/servicenode*/courier/courier.log
