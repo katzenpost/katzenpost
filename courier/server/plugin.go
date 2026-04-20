@@ -42,13 +42,6 @@ type CourierBookKeeping struct {
 	EnvelopeReplies      [2]*commands.ReplicaMessageReply
 }
 
-// PendingReadRequest stores information about a read request waiting for immediate reply
-type PendingReadRequest struct {
-	RequestID uint64
-	SURB      []byte
-	Timeout   time.Time
-}
-
 // CopyCommandState tracks the state of a copy command for idempotency.
 // This allows copy commands to be safely retried via ARQ without duplicating work.
 type CopyCommandState struct {
@@ -74,9 +67,6 @@ type Courier struct {
 
 	copyCacheLock sync.RWMutex
 	copyCache     map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply
-
-	pendingRequestsLock sync.RWMutex
-	pendingRequests     map[[hash.HashSize]byte]*PendingReadRequest
 
 	// Copy command deduplication cache — tracks in-progress and
 	// completed copy commands. The client daemon polls the same
@@ -189,10 +179,9 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 		geo:             s.cfg.SphinxGeometry,
 		envelopeScheme:  scheme,
 		pigeonholeGeo:   pigeonholeGeo,
-		dedupCache:      make(map[[hash.HashSize]byte]*CourierBookKeeping),
-		copyCache:       make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
-		pendingRequests: make(map[[hash.HashSize]byte]*PendingReadRequest),
-		copyDedupCache:  make(map[[hash.HashSize]byte]*CopyCommandState),
+		dedupCache:     make(map[[hash.HashSize]byte]*CourierBookKeeping),
+		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
+		copyDedupCache: make(map[[hash.HashSize]byte]*CopyCommandState),
 	}
 	courier.processCopyCommandFn = courier.processCopyCommand
 	return courier
@@ -370,145 +359,6 @@ func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply: final cache state for %x - Reply[0]: %v, Reply[1]: %v", reply.EnvelopeHash, reply0Available, reply1Available)
 }
 
-// tryImmediateReplyProxy checks if there's a pending read request and immediately proxies the reply
-func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bool {
-	e.log.Debugf("tryImmediateReplyProxy: Checking for pending read request for envelope hash %x", reply.EnvelopeHash)
-
-	e.pendingRequestsLock.Lock()
-	defer e.pendingRequestsLock.Unlock()
-
-	pendingRequest, exists := e.pendingRequests[*reply.EnvelopeHash]
-	if !exists {
-		e.log.Debugf("tryImmediateReplyProxy: No pending read request found for envelope hash %x", reply.EnvelopeHash)
-		return false
-	}
-
-	e.log.Debugf("tryImmediateReplyProxy: Found pending read request for envelope hash %x", reply.EnvelopeHash)
-
-	// Check if the request has timed out
-	if time.Now().After(pendingRequest.Timeout) {
-		e.log.Debugf("Pending read request for envelope hash %x has timed out, removing", reply.EnvelopeHash)
-		delete(e.pendingRequests, *reply.EnvelopeHash)
-		return false
-	}
-
-	// Only send immediate reply if this reply contains actual data (successful read)
-	// ErrorCode 0 = success, and we need actual envelope data
-	if reply.ErrorCode != 0 || len(reply.EnvelopeReply) == 0 {
-		e.log.Debugf("tryImmediateReplyProxy: Reply has no data (ErrorCode=%d, EnvelopeReplyLen=%d), not sending immediate reply",
-			reply.ErrorCode, len(reply.EnvelopeReply))
-		return false
-	}
-
-	// Remove the pending request since we're about to fulfill it with actual data
-	delete(e.pendingRequests, *reply.EnvelopeHash)
-
-	e.log.Debugf("tryImmediateReplyProxy: Sending immediate reply for envelope hash %x", reply.EnvelopeHash)
-
-	// Send the immediate reply
-	go func() {
-		// Find the correct reply index by looking up the replica's position in IntermediateReplicas
-		var replyIndex uint8 = 255 // Default to invalid index
-
-		// Get the cache entry to find the IntermediateReplicas array
-		e.dedupCacheLock.RLock()
-		cacheEntry, exists := e.dedupCache[*reply.EnvelopeHash]
-		e.dedupCacheLock.RUnlock()
-
-		if exists && cacheEntry != nil {
-			// Find the replica's position in the IntermediateReplicas array
-			for i, replicaID := range cacheEntry.IntermediateReplicas {
-				if replicaID == reply.ReplicaID {
-					replyIndex = uint8(i)
-					break
-				}
-			}
-		}
-
-		// If we couldn't find the replica in the cache, fall back to the old logic
-		// This shouldn't happen in normal operation but provides a safety net
-		if replyIndex == 255 {
-			e.log.Warningf("Could not find replica %d in IntermediateReplicas, falling back to default mapping", reply.ReplicaID)
-			if reply.ReplicaID == 0 {
-				replyIndex = 0
-			} else {
-				replyIndex = 1
-			}
-		}
-
-		// Create proper CourierQueryReply with the replica's response
-		// Determine reply type based on whether there's actual payload data
-		var replyType uint8
-		if len(reply.EnvelopeReply) > 0 {
-			replyType = pigeonhole.ReplyTypePayload // Has actual data (including error responses)
-			e.log.Debugf("tryImmediateReplyProxy: setting ReplyType:=ReplyTypePayload because len(reply.EnvelopeReply)==%d",
-				len(reply.EnvelopeReply))
-		} else {
-			replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
-		}
-
-		courierReply := &pigeonhole.CourierQueryReply{
-			ReplyType: 0, // 0 = envelope_reply
-			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-				EnvelopeHash: *reply.EnvelopeHash,
-				ReplyIndex:   replyIndex, // Use the correct reply index, not replica ID
-				ReplyType:    replyType,
-				PayloadLen:   uint32(len(reply.EnvelopeReply)),
-				Payload:      reply.EnvelopeReply,
-				ErrorCode:    pigeonhole.EnvelopeErrorSuccess,
-			},
-		}
-
-		e.log.Errorf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext, replyIndex=%d, ReplyType=%d EnvHash=%v",
-			len(reply.EnvelopeReply), replyIndex, replyType, *reply.EnvelopeHash)
-
-		e.write(&cborplugin.Response{
-			ID:      pendingRequest.RequestID,
-			SURB:    pendingRequest.SURB,
-			Payload: courierReply.Bytes(),
-		})
-	}()
-
-	return true
-}
-
-// storePendingRequest stores a pending request with a timeout
-func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID uint64, surb []byte) {
-	// Set timeout to allow for replica response delays
-	seconds := 20
-	timeout := time.Now().Add(time.Duration(seconds) * time.Second)
-
-	e.pendingRequestsLock.Lock()
-	e.pendingRequests[*envHash] = &PendingReadRequest{
-		RequestID: requestID,
-		SURB:      surb,
-		Timeout:   timeout,
-	}
-	e.pendingRequestsLock.Unlock()
-
-	e.log.Debugf("Stored pending read request for envelope hash %x with %d-second timeout", envHash, seconds)
-
-	// Start a goroutine to clean up expired requests
-	go e.cleanupExpiredRequest(envHash, timeout)
-}
-
-// cleanupExpiredRequest removes a pending request after its timeout expires
-func (e *Courier) cleanupExpiredRequest(envHash *[hash.HashSize]byte, timeout time.Time) {
-	// Wait until the timeout expires
-	time.Sleep(time.Until(timeout))
-
-	e.pendingRequestsLock.Lock()
-
-	// Check if the request is still there and has expired
-	if pendingRequest, exists := e.pendingRequests[*envHash]; exists && time.Now().After(pendingRequest.Timeout) {
-		delete(e.pendingRequests, *envHash)
-		e.pendingRequestsLock.Unlock()
-		e.log.Debugf("Cleaned up expired pending read request for envelope hash %x", envHash)
-		return
-	}
-	e.pendingRequestsLock.Unlock()
-}
-
 func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnvelope) error {
 	e.log.Debugf("handleCourierEnvelope: Starting to handle envelope with intermediate replicas [%d, %d]",
 		courierMessage.IntermediateReplicas[0], courierMessage.IntermediateReplicas[1])
@@ -564,7 +414,7 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 
 	// SUCCESS CASE: Messages were successfully dispatched to replicas
 	// Return immediate ACK reply to confirm receipt and dispatch
-	// The actual response with data will come later via CacheReply/tryImmediateReplyProxy when replicas respond
+	// The actual response with data will come later via CacheReply when replicas respond
 	e.log.Debugf("handleNewMessage: Successfully dispatched to replicas, returning immediate ACK reply (ReplyType=%d)",
 		pigeonhole.ReplyTypeACK)
 	reply := &pigeonhole.CourierQueryReply{
@@ -672,7 +522,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 	switch {
 	case courierQuery.Envelope != nil:
-		reply := e.cacheHandleCourierEnvelope(courierQuery.QueryType, courierQuery.Envelope, request.ID, request.SURB)
+		reply := e.cacheHandleCourierEnvelope(courierQuery.QueryType, courierQuery.Envelope)
 
 		// Only send reply if it's not nil (nil means ARQ should retry)
 		if reply != nil {
@@ -699,7 +549,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	return nil
 }
 
-func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pigeonhole.CourierEnvelope, requestID uint64, surb []byte) *pigeonhole.CourierQueryReply {
+func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
 	envHash := courierMessage.EnvelopeHash()
 
 	e.dedupCacheLock.RLock()
@@ -725,7 +575,6 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 		return e.handleOldMessage(cacheEntry, envHash, courierMessage)
 	case !ok:
 		e.log.Errorf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
-		e.storePendingRequest(envHash, requestID, surb)
 		e.dedupCacheLock.Lock()
 		e.pruneDedupCacheLocked(time.Now(), DedupCacheTTL)
 		currentEpoch := e.getCurrentEpoch()
