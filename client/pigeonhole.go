@@ -1478,6 +1478,8 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 			return
 		}
 
+		oldSurbID := arqMessage.SURBID
+
 		d.replyLock.Lock()
 		if d.listener.getConnection(arqMessage.AppID) == nil {
 			d.replyLock.Unlock()
@@ -1486,6 +1488,10 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		}
 		d.rotateARQSurbIDLocked(arqMessage, newSurbID, surbKey, rtt)
 		d.replyLock.Unlock()
+
+		if oldSurbID != nil {
+			d.arqTimerQueue.Cancel(oldSurbID)
+		}
 
 		myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
 		myRtt = myRtt.Add(RoundTripTimeSlop)
@@ -1934,10 +1940,16 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 				break // fall through to error handling
 			}
 
+			oldSurbID := arqMessage.SURBID
+
 			d.replyLock.Lock()
 			d.rotateARQSurbIDLocked(arqMessage, newSurbID, surbKey, rtt)
 			arqMessage.State = ARQStateWaitingForACK
 			d.replyLock.Unlock()
+
+			if oldSurbID != nil {
+				d.arqTimerQueue.Cancel(oldSurbID)
+			}
 
 			myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
 			myRtt = myRtt.Add(RoundTripTimeSlop)

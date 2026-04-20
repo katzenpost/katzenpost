@@ -64,6 +64,27 @@ func (t *TimerQueue) Len() int {
 	return t.queue.Len()
 }
 
+// Cancel removes the first queued entry whose Value is equal to the supplied
+// value (Go == comparison, which for pointer values is pointer identity), and
+// returns true if an entry was removed. Entries already popped by the worker
+// are not cancellable; callers that need to defend against the
+// popped-but-action-not-yet-run race must handle that at the action callback.
+func (t *TimerQueue) Cancel(value interface{}) bool {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	for i := 0; i < t.queue.Len(); i++ {
+		e := t.queue.PeekIndex(i)
+		if e == nil {
+			break
+		}
+		if e.Value == value {
+			t.queue.DequeueIndex(i)
+			return true
+		}
+	}
+	return false
+}
+
 func (t *TimerQueue) Push(priority uint64, value interface{}) {
 	log.Printf("TimerQueue.Push: priority=%d queueLen=%d pushChLen=%d", priority, t.Len(), len(t.pushCh))
 	select {
