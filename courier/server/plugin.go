@@ -20,6 +20,7 @@ import (
 	"github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/client/constants"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/server/instrument"
@@ -96,6 +97,71 @@ type Courier struct {
 // reconnecting client that missed earlier polls, short enough that the
 // cache stays bounded in memory.
 const CopyDedupCacheTTL = 30 * time.Minute
+
+const (
+	// maxCopyReadTransientAttempts is how many times a single shard
+	// replica is re-queried on a temporary error (per the classifier)
+	// before the read path fails over to the shard peer.
+	maxCopyReadTransientAttempts = 3
+
+	// copyReadReplyTimeout bounds how long the courier waits for a
+	// reply from one shard replica during a Copy read. A stuck replica
+	// cannot pin the background Copy goroutine for longer than this.
+	copyReadReplyTimeout = 10 * time.Second
+
+	// maxCopyWriteAttempts is how many times the courier tries to
+	// dispatch a single copy-stream envelope to its intermediate
+	// replicas before aborting the Copy command. Write-side failover
+	// between shard peers is not available — the intermediate replicas
+	// are baked into the client's MKEM envelope.
+	maxCopyWriteAttempts = 5
+
+	// copyBackoffBase is the base backoff between attempts for both
+	// read and write retry loops; each attempt doubles up to
+	// copyBackoffCap.
+	copyBackoffBase = 500 * time.Millisecond
+	copyBackoffCap  = 5 * time.Second
+)
+
+// copyAttemptBackoff returns the sleep between attempt n and attempt
+// n+1 within the same loop, capped at copyBackoffCap.
+func copyAttemptBackoff(attempt int) time.Duration {
+	shift := attempt
+	if shift > 8 {
+		shift = 8
+	}
+	d := copyBackoffBase * time.Duration(1<<uint(shift))
+	if d > copyBackoffCap {
+		d = copyBackoffCap
+	}
+	return d
+}
+
+// copySucceededReply is the terminal reply for a successful Copy.
+func copySucceededReply() *pigeonhole.CourierQueryReply {
+	return &pigeonhole.CourierQueryReply{
+		ReplyType: 1,
+		CopyCommandReply: &pigeonhole.CopyCommandReply{
+			Status: pigeonhole.CopyStatusSucceeded,
+		},
+	}
+}
+
+// copyFailedReply is the terminal reply for an aborted Copy. replicaErr
+// is the replica ErrorCode that triggered the abort (0 if the failure
+// was purely on the courier side). failedEnvelopeIndex is the 1-based
+// sequential position in the copy stream that could not be completed
+// — successfully_processed_envelopes + 1. 0 if not applicable.
+func copyFailedReply(replicaErr uint8, failedEnvelopeIndex uint64) *pigeonhole.CourierQueryReply {
+	return &pigeonhole.CourierQueryReply{
+		ReplyType: 1,
+		CopyCommandReply: &pigeonhole.CopyCommandReply{
+			Status:              pigeonhole.CopyStatusFailed,
+			ErrorCode:           replicaErr,
+			FailedEnvelopeIndex: failedEnvelopeIndex,
+		},
+	}
+}
 
 // DedupCacheTTL bounds how long a CourierBookKeeping entry stays in
 // dedupCache. Long enough to cover an active ARQ retry cycle for a single
@@ -800,294 +866,270 @@ func inProgressReply() *pigeonhole.CourierQueryReply {
 // processCopyCommand does the actual work of processing a copy command.
 // This is separated from handleCopyCommand to support the deduplication logic.
 func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply {
-	// Deserialize the WriteCap
 	writeCap, err := bacap.NewWriteCapFromBytes(copyCmd.WriteCap)
 	if err != nil {
-		e.log.Errorf("processCopyCommand: Failed to deserialize WriteCap: %v", err)
-		return &pigeonhole.CourierQueryReply{
-			ReplyType: 1, // 1 = copy_command_reply
-			CopyCommandReply: &pigeonhole.CopyCommandReply{
-				Status:    pigeonhole.CopyStatusFailed,
-				ErrorCode: 0,
-			},
-		}
+		e.log.Errorf("processCopyCommand: deserialize WriteCap: %v", err)
+		return copyFailedReply(0, 0)
 	}
-
-	// Derive ReadCap from WriteCap
 	readCap := writeCap.ReadCap()
-
-	// Create StatefulReader for the temporary channel
 	reader, err := bacap.NewStatefulReader(readCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
-		e.log.Errorf("processCopyCommand: Failed to create StatefulReader: %v", err)
-		return &pigeonhole.CourierQueryReply{
-			ReplyType: 1,
-			CopyCommandReply: &pigeonhole.CopyCommandReply{
-				Status:    pigeonhole.CopyStatusFailed,
-				ErrorCode: 0,
-			},
-		}
+		e.log.Errorf("processCopyCommand: NewStatefulReader: %v", err)
+		return copyFailedReply(0, 0)
 	}
 
-	// Process copy stream box-by-box with bounded memory using streaming envelope decoder.
-	// The decoder accumulates chunk data from CopyStreamElements and returns complete
-	// CourierEnvelopes which are sent immediately to replicas.
-	// We continue reading boxes until we encounter an element with IsFinal flag set.
+	// envelopesProcessed is the count of copy-stream envelopes that have
+	// been successfully dispatched to their intermediate replicas. When
+	// a later step fails, the reported FailedEnvelopeIndex is
+	// envelopesProcessed + 1 — the 1-based position of the next
+	// envelope the courier would have handled.
 	var boxIDList [][bacap.BoxIDSize]byte
 	decoder := pigeonhole.NewCopyStreamEnvelopeDecoder(e.pigeonholeGeo)
-	numEnvelopes := 0
+	envelopesProcessed := uint64(0)
 	sawFinal := false
 
 	for !sawFinal {
-		// Get next BoxID
 		boxID, err := reader.NextBoxID()
 		if err != nil {
-			e.log.Errorf("processCopyCommand: Failed to get next BoxID: %v", err)
-			return &pigeonhole.CourierQueryReply{
-				ReplyType: 1,
-				CopyCommandReply: &pigeonhole.CopyCommandReply{
-					ErrorCode: 1,
-				},
-			}
+			e.log.Errorf("processCopyCommand: NextBoxID: %v", err)
+			return copyFailedReply(0, envelopesProcessed+1)
 		}
 		boxIDList = append(boxIDList, *boxID)
 
-		// Read the box from replicas (raw CopyStreamElement bytes) with retry logic
-		const baseReadDelay = 500 * time.Millisecond
-		const maxReadDelay = 30 * time.Second
-		var boxPlaintext []byte
-
-		for readAttempt := 0; ; readAttempt++ {
-			var readErr error
-			boxPlaintext, readErr = e.readNextBox(reader, boxID)
-			if readErr == nil {
-				if readAttempt > 0 {
-					e.log.Debugf("processCopyCommand: Successfully read box %x on attempt %d", boxID[:8], readAttempt+1)
-				}
-				break
-			}
-			// Exponential backoff capped at maxReadDelay
-			delay := baseReadDelay * time.Duration(1<<min(readAttempt, 6))
-			if delay > maxReadDelay {
-				delay = maxReadDelay
-			}
-			e.log.Warningf("processCopyCommand: Failed to read box %x (attempt %d): %v, retrying in %v",
-				boxID[:8], readAttempt+1, readErr, delay)
-			time.Sleep(delay)
+		boxPlaintext, replicaCode, err := e.readNextBox(reader, boxID)
+		if err != nil {
+			e.log.Errorf("processCopyCommand: readNextBox box %x: replicaCode=%d err=%v", boxID[:8], replicaCode, err)
+			return copyFailedReply(replicaCode, envelopesProcessed+1)
 		}
 
-		// Add box data to streaming envelope decoder
 		decoder.AddBoxData(boxPlaintext)
-
-		// Decode any complete envelopes and check for final flag
 		envelopes, isFinal, err := decoder.DecodeEnvelopes()
 		if err != nil {
-			e.log.Errorf("processCopyCommand: Failed to decode envelopes: %v", err)
-			return &pigeonhole.CourierQueryReply{
-				ReplyType: 1,
-				CopyCommandReply: &pigeonhole.CopyCommandReply{
-					ErrorCode: 1,
-				},
-			}
+			e.log.Errorf("processCopyCommand: DecodeEnvelopes: %v", err)
+			return copyFailedReply(0, envelopesProcessed+1)
 		}
 
-		// Process each decoded envelope
 		for _, envelope := range envelopes {
-			// Send envelope immediately to replicas with retry logic
-			const baseDelay = 100 * time.Millisecond
-			const maxDelay = 30 * time.Second
-
-			for attempt := 0; ; attempt++ {
-				if err := e.propagateQueryToReplicas(envelope); err == nil {
-					if attempt > 0 {
-						e.log.Debugf("processCopyCommand: Successfully sent envelope on attempt %d", attempt+1)
-					}
-					break
-				} else {
-					// Exponential backoff capped at maxDelay
-					delay := baseDelay * time.Duration(1<<min(attempt, 8))
-					if delay > maxDelay {
-						delay = maxDelay
-					}
-					e.log.Warningf("processCopyCommand: Failed to send envelope (attempt %d): %v, retrying in %v",
-						attempt+1, err, delay)
-					time.Sleep(delay)
-				}
+			if !e.dispatchCopyEnvelope(envelope) {
+				return copyFailedReply(0, envelopesProcessed+1)
 			}
-			numEnvelopes++
+			envelopesProcessed++
 		}
 
-		// Check if we've seen the final element
 		if isFinal {
-			e.log.Debugf("processCopyCommand: Found final element in box %x", boxID[:])
+			e.log.Debugf("processCopyCommand: saw final element in box %x", boxID[:])
 			sawFinal = true
 		}
 	}
 
-	// Verify all data was consumed
 	if decoder.Remaining() > 0 {
 		e.log.Warningf("processCopyCommand: %d bytes remaining in decoder buffer after processing", decoder.Remaining())
 	}
 
-	// Write tombstones to clean up the temporary channel
+	// Tombstones are best-effort: we've already written the destination
+	// envelopes, so an incomplete temp-stream cleanup is a cache
+	// inefficiency, not a correctness failure.
 	e.writeTombstonesToTempChannel(writeCap, boxIDList)
 
-	e.log.Debugf("processCopyCommand: Successfully processed %d envelopes from %d boxes", numEnvelopes, len(boxIDList))
-
-	// Return success
-	return &pigeonhole.CourierQueryReply{
-		ReplyType: 1, // 1 = copy_command_reply
-		CopyCommandReply: &pigeonhole.CopyCommandReply{
-			Status:    pigeonhole.CopyStatusSucceeded,
-			ErrorCode: 0,
-		},
-	}
+	e.log.Debugf("processCopyCommand: processed %d envelopes from %d boxes", envelopesProcessed, len(boxIDList))
+	return copySucceededReply()
 }
 
-// readNextBox reads a single box from the replicas, decrypts it, and returns the raw payload.
-// The payload is a serialized CopyStreamElement which will be parsed by the envelope decoder.
-func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDSize]byte) ([]byte, error) {
-	// Read the box directly from shard replicas (not intermediate replicas)
-	// This is used by the copy command which needs to read from where data is actually stored
-	replicaReadReply, err := e.readBoxFromShardReplicas(boxID)
+// dispatchCopyEnvelope sends one copy-stream CourierEnvelope to its
+// client-chosen intermediate replicas under a bounded retry loop.
+// Returns true on success within maxCopyWriteAttempts, false on
+// exhaustion — callers should abort the Copy. No shard-failover is
+// possible here because the intermediate replicas are MKEM-baked into
+// the envelope.
+func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) bool {
+	for attempt := 0; attempt < maxCopyWriteAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(copyAttemptBackoff(attempt - 1))
+		}
+		if err := e.propagateQueryToReplicas(envelope); err == nil {
+			if attempt > 0 {
+				e.log.Debugf("dispatchCopyEnvelope: success on attempt %d", attempt+1)
+			}
+			return true
+		} else {
+			e.log.Warningf("dispatchCopyEnvelope: attempt %d failed: %v", attempt+1, err)
+		}
+	}
+	e.log.Errorf("dispatchCopyEnvelope: exhausted %d attempts, aborting Copy", maxCopyWriteAttempts)
+	return false
+}
+
+// readNextBox reads a single box from the shard replicas, decrypts it,
+// and returns the CopyStreamElement bytes plus the replica ErrorCode
+// that caused failure (0 on success). Used by the Copy command to
+// walk the temp stream.
+func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDSize]byte) ([]byte, uint8, error) {
+	replicaReadReply, replicaCode, err := e.readBoxFromShardReplicas(boxID)
 	if err != nil {
-		return nil, err
+		return nil, replicaCode, err
 	}
 
-	// Decrypt the box to get the padded data
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], replicaReadReply.Signature[:])
 	decryptedPadded, err := reader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, sig)
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to decrypt box %x: %v", boxID[:8], err)
-		return nil, err
+		return nil, 0, err
 	}
 
-	// Extract the actual payload from the padded data
 	decryptedPayload, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedPadded)
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to extract payload from padded data: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 
-	// Return the raw payload (a serialized CopyStreamElement)
-	return decryptedPayload, nil
+	return decryptedPayload, 0, nil
 }
 
-// readBoxFromShardReplicas reads a box directly from the shard replicas where the data is stored.
-// Unlike readBoxFromReplicas which uses intermediate replicas for privacy, this method
-// reads directly from the shards for use by the courier's copy command.
-func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole.ReplicaReadReply, error) {
+// readBoxFromShardReplicas reads a temp-stream box directly from its
+// shard replicas, iterating each shard with a bounded number of
+// transient retries before failing over to the shard peer. Returns the
+// last observed replica ErrorCode (for a Failed CopyCommandReply) and
+// a non-nil error if every shard exhausted.
+//
+// Every attempt uses a fresh ephemeral MKEM keypair so its EnvelopeHash
+// is unique in the copyCache reply-demux table.
+func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole.ReplicaReadReply, uint8, error) {
 	e.log.Debugf("readBoxFromShardReplicas: Reading box %x", boxID[:8])
 
-	// Get PKI document
 	doc := e.server.PKI.PKIDocument()
 	if doc == nil {
-		return nil, fmt.Errorf("PKI document is nil")
+		return nil, 0, fmt.Errorf("PKI document is nil")
 	}
 
-	// Get shard replicas for this BoxID (the actual replicas where data is stored)
 	shards, err := replicaCommon.GetShards(boxID, doc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get shards: %w", err)
+		return nil, 0, fmt.Errorf("failed to get shards: %w", err)
 	}
 	if len(shards) == 0 {
-		return nil, fmt.Errorf("no shards available for box")
+		return nil, 0, fmt.Errorf("no shards available for box")
 	}
 
-	// Get the current replica epoch for envelope key lookup
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
-	// Get envelope public keys for the shard replicas
-	replicaPubKeys := make([]nike.PublicKey, len(shards))
-	replicaIDs := make([]uint8, len(shards))
-	for i, shard := range shards {
-		replicaIDs[i] = shard.ReplicaID
+	var lastReplicaCode uint8
+	var lastErr error
+
+	for _, shard := range shards {
 		keyBytes, exists := shard.EnvelopeKeys[replicaEpoch]
-		if !exists {
-			return nil, fmt.Errorf("no envelope key found for shard replica %d at epoch %d", shard.ReplicaID, replicaEpoch)
+		if !exists || len(keyBytes) == 0 {
+			lastErr = fmt.Errorf("no envelope key for shard %d at epoch %d", shard.ReplicaID, replicaEpoch)
+			continue
 		}
-		if len(keyBytes) == 0 {
-			return nil, fmt.Errorf("empty envelope key for shard replica %d at epoch %d", shard.ReplicaID, replicaEpoch)
-		}
-		pubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
+		shardPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
 		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal key for shard replica %d: %w", shard.ReplicaID, err)
+			lastErr = fmt.Errorf("unmarshal shard %d key: %w", shard.ReplicaID, err)
+			continue
 		}
-		replicaPubKeys[i] = pubKey
+
+		failover := false
+		for attempt := 0; attempt < maxCopyReadTransientAttempts && !failover; attempt++ {
+			if attempt > 0 {
+				time.Sleep(copyAttemptBackoff(attempt - 1))
+			}
+			reply, replicaCode, attemptErr := e.tryReadFromShardReplica(boxID, shard, shardPubKey)
+			if attemptErr != nil {
+				// Transport/crypto hiccup — retry same shard under
+				// the transient-attempts budget.
+				lastErr = attemptErr
+				e.log.Debugf("readBoxFromShardReplicas: shard %d attempt %d transport error: %v", shard.ReplicaID, attempt+1, attemptErr)
+				continue
+			}
+			if replicaCode == pigeonhole.ReplicaSuccess {
+				return reply, 0, nil
+			}
+			lastReplicaCode = replicaCode
+			switch classifyReplicaErrorForCopyRead(replicaCode) {
+			case replicaErrorTemporary:
+				e.log.Debugf("readBoxFromShardReplicas: shard %d attempt %d temporary replica error %d", shard.ReplicaID, attempt+1, replicaCode)
+			case replicaErrorPermanent:
+				e.log.Debugf("readBoxFromShardReplicas: shard %d permanent replica error %d, failing over", shard.ReplicaID, replicaCode)
+				failover = true
+			}
+		}
 	}
 
-	// Create ReplicaRead request
-	readMsg := &pigeonhole.ReplicaRead{
-		BoxID: *boxID,
+	if lastErr == nil {
+		if lastReplicaCode != 0 {
+			lastErr = fmt.Errorf("all shard replicas exhausted (last replica code: %d)", lastReplicaCode)
+		} else {
+			lastErr = fmt.Errorf("all shard replicas exhausted")
+		}
 	}
+	return nil, lastReplicaCode, lastErr
+}
+
+// tryReadFromShardReplica performs a single MKEM-encrypted read to one
+// specific shard replica, waits for the reply with a timeout, and
+// returns the parsed ReplicaReadReply plus the replica's ErrorCode
+// (0 on success). A non-nil error signals a transport / crypto /
+// timeout failure — the caller should retry under its transient budget.
+func (e *Courier) tryReadFromShardReplica(
+	boxID *[bacap.BoxIDSize]byte,
+	shard *cpki.ReplicaDescriptor,
+	shardPubKey nike.PublicKey,
+) (*pigeonhole.ReplicaReadReply, uint8, error) {
+	readMsg := &pigeonhole.ReplicaRead{BoxID: *boxID}
 	innerMsg := &pigeonhole.ReplicaInnerMessage{
-		MessageType: 0, // 0 = read
+		MessageType: 0,
 		ReadMsg:     readMsg,
 	}
 
-	// Encrypt using MKEM with shard replica public keys
 	mkemScheme := mkem.NewScheme(e.envelopeScheme)
-	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, innerMsg.Bytes())
-	mkemPublicKey := mkemPrivateKey.Public()
+	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, innerMsg.Bytes())
 
-	// Create ReplicaMessage command
 	query := &commands.ReplicaMessage{
 		Cmds:               e.cmds,
 		PigeonholeGeometry: e.pigeonholeGeo,
 		Scheme:             e.envelopeScheme,
-		SenderEPubKey:      mkemPublicKey.Bytes(),
+		SenderEPubKey:      mkemPrivateKey.Public().Bytes(),
 		DEK:                mkemCiphertext.DEKCiphertexts[0],
 		Ciphertext:         mkemCiphertext.Envelope,
 	}
-
-	// Calculate envelope hash for cache lookup
 	envHash := query.EnvelopeHash()
 
-	// Create channel for reply
+	ch := make(chan *commands.ReplicaMessageReply, 1)
 	e.copyCacheLock.Lock()
-	e.copyCache[*envHash] = make(chan *commands.ReplicaMessageReply, 1)
+	e.copyCache[*envHash] = ch
 	e.copyCacheLock.Unlock()
-
-	// Send directly to the first shard replica (not an intermediate replica)
-	if err := e.server.SendMessage(replicaIDs[0], query); err != nil {
+	defer func() {
 		e.copyCacheLock.Lock()
 		delete(e.copyCache, *envHash)
 		e.copyCacheLock.Unlock()
-		return nil, fmt.Errorf("failed to send message to shard replica: %w", err)
+	}()
+
+	if err := e.server.SendMessage(shard.ReplicaID, query); err != nil {
+		return nil, 0, fmt.Errorf("SendMessage to shard %d: %w", shard.ReplicaID, err)
 	}
 
-	// Wait for reply
-	reply := <-e.copyCache[*envHash]
-
-	// Clean up cache
-	e.copyCacheLock.Lock()
-	delete(e.copyCache, *envHash)
-	e.copyCacheLock.Unlock()
-
-	// Check for errors
-	if reply.ErrorCode != 0 {
-		return nil, fmt.Errorf("shard replica returned error code: %d", reply.ErrorCode)
+	var reply *commands.ReplicaMessageReply
+	select {
+	case reply = <-ch:
+	case <-time.After(copyReadReplyTimeout):
+		return nil, 0, fmt.Errorf("shard %d: reply timeout after %v", shard.ReplicaID, copyReadReplyTimeout)
 	}
 
-	// Decrypt the reply
-	rawPlaintext, err := mkemScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKeys[0], reply.EnvelopeReply)
+	if reply.ErrorCode != pigeonhole.ReplicaSuccess {
+		return nil, reply.ErrorCode, nil
+	}
+
+	raw, err := mkemScheme.DecryptEnvelope(mkemPrivateKey, shardPubKey, reply.EnvelopeReply)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt envelope reply: %w", err)
+		return nil, 0, fmt.Errorf("shard %d: decrypt envelope: %w", shard.ReplicaID, err)
 	}
-
-	// Parse the inner message
-	replyInnerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawPlaintext)
+	replyInner, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(raw)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse inner message: %w", err)
+		return nil, 0, fmt.Errorf("shard %d: parse inner: %w", shard.ReplicaID, err)
 	}
-
-	// Extract ReplicaReadReply
-	if replyInnerMsg.ReadReply == nil {
-		return nil, fmt.Errorf("reply does not contain ReplicaReadReply")
+	if replyInner.ReadReply == nil {
+		return nil, 0, fmt.Errorf("shard %d: reply is not a ReadReply", shard.ReplicaID)
 	}
-
-	return replyInnerMsg.ReadReply, nil
+	return replyInner.ReadReply, 0, nil
 }
 
 // writeTombstonesToTempChannel writes tombstones to clean up the temporary channel
