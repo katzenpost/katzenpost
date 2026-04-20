@@ -16,7 +16,7 @@ import (
 func TestCryptoRandIndexRange(t *testing.T) {
 	for _, n := range []int{1, 2, 3, 5, 7, 16, 64, 255, 256, 1000} {
 		for i := 0; i < 200; i++ {
-			v, err := cryptoRandIndex(n)
+			v, err := CryptoRandIndex(n)
 			require.NoError(t, err, "n=%d iter=%d", n, i)
 			require.GreaterOrEqual(t, v, 0, "n=%d iter=%d value=%d", n, i, v)
 			require.Less(t, v, n, "n=%d iter=%d value=%d", n, i, v)
@@ -28,7 +28,7 @@ func TestCryptoRandIndexRange(t *testing.T) {
 // nonsensical bounds rather than returning arbitrary values.
 func TestCryptoRandIndexRejectsNonPositive(t *testing.T) {
 	for _, n := range []int{0, -1, -100} {
-		_, err := cryptoRandIndex(n)
+		_, err := CryptoRandIndex(n)
 		require.Error(t, err, "n=%d must error", n)
 	}
 }
@@ -55,7 +55,7 @@ func TestCryptoRandIndexConcurrentUsage(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for j := 0; j < perWorker; j++ {
-				v, err := cryptoRandIndex(n)
+				v, err := CryptoRandIndex(n)
 				if err != nil {
 					errors.Add(1)
 					continue
@@ -83,7 +83,7 @@ func TestCryptoRandIndexDistribution(t *testing.T) {
 	)
 	var counts [n]int
 	for i := 0; i < draws; i++ {
-		v, err := cryptoRandIndex(n)
+		v, err := CryptoRandIndex(n)
 		require.NoError(t, err)
 		counts[v]++
 	}

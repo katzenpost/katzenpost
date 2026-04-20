@@ -18,15 +18,15 @@ import (
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
-// cryptoRandIndex returns a uniformly-distributed int in [0, n) using
+// CryptoRandIndex returns a uniformly-distributed int in [0, n) using
 // hpqc's cryptographic Reader. Rejection sampling at the top of the
 // uint64 sample space removes modulo bias, and Reader is stateless
 // per-call so concurrent callers cannot race. This replaces a prior
 // package-global *math/rand.Rand that was documented as not safe for
 // concurrent use.
-func cryptoRandIndex(n int) (int, error) {
+func CryptoRandIndex(n int) (int, error) {
 	if n <= 0 {
-		return 0, fmt.Errorf("cryptoRandIndex: n must be > 0, got %d", n)
+		return 0, fmt.Errorf("CryptoRandIndex: n must be > 0, got %d", n)
 	}
 	un := uint64(n)
 	// r = 2^64 mod un. In uint64 arithmetic, (0 - un) wraps to 2^64 - un,
@@ -110,7 +110,7 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 	// Helper to pick a random ReplicaID from allReplicaIDs, excluding certain IDs
 	pickRandomReplicaID := func(exclude ...uint8) (uint8, error) {
 		for {
-			idx, err := cryptoRandIndex(len(allReplicaIDs))
+			idx, err := CryptoRandIndex(len(allReplicaIDs))
 			if err != nil {
 				return 0, err
 			}

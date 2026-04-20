@@ -14,7 +14,6 @@ import (
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
@@ -513,8 +512,14 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	// select a random shard
-	targetShard := shards[rand.NewMath().Intn(len(shards))]
+	// Select a random shard using hpqc's cryptographic Reader —
+	// unbiased, goroutine-safe, no per-call Rand construction.
+	idx, err := pigeonhole.CryptoRandIndex(len(shards))
+	if err != nil {
+		c.log.Errorf("proxyReadRequest: CryptoRandIndex failed: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
+	targetShard := shards[idx]
 
 	// Get current replica epoch and keypair
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
@@ -661,8 +666,14 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	// Select a random shard
-	targetShard := shards[rand.NewMath().Intn(len(shards))]
+	// Select a random shard using hpqc's cryptographic Reader —
+	// unbiased, goroutine-safe, no per-call Rand construction.
+	idx, err := pigeonhole.CryptoRandIndex(len(shards))
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: CryptoRandIndex failed: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
+	targetShard := shards[idx]
 
 	// Get current replica epoch and keypair
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
