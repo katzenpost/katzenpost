@@ -496,7 +496,20 @@ func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command
 	case *commands.ReplicaDecoy:
 		// Expected response to our decoy
 	case *commands.ReplicaWriteReply:
-		c.log.Debugf("replica outgoingConn: Received ReplicaWriteReply error code: %d", responseCmd.ErrorCode)
+		switch classifyReplicationReply(responseCmd.ErrorCode) {
+		case replicationReplyOK:
+			c.log.Debugf("replica outgoingConn: Received ReplicaWriteReply error code: %d", responseCmd.ErrorCode)
+		case replicationReplyRetry:
+			c.log.Warningf("replica outgoingConn: peer replied with transient error %d, queueing ReplicaWrite for retry",
+				responseCmd.ErrorCode)
+			if write, ok := cmd.(*commands.ReplicaWrite); ok {
+				idHash := hash.Sum256(c.dst.IdentityKey)
+				c.co.QueueForRetry(write, idHash)
+			}
+		case replicationReplyDrop:
+			c.log.Warningf("replica outgoingConn: peer replied with permanent error %d, dropping ReplicaWrite (retry would not help)",
+				responseCmd.ErrorCode)
+		}
 	case *commands.ReplicaMessageReply:
 		c.log.Debugf("replica outgoingConn: Received ReplicaMessageReply error code: %d", responseCmd.ErrorCode)
 		if c.co.Server().ProxyManager() != nil {
