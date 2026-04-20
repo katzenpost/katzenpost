@@ -552,6 +552,18 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
 	envHash := courierMessage.EnvelopeHash()
 
+	// Epoch validation happens before any cache work: an envelope whose
+	// replica epoch is outside the tolerance window cannot decapsulate
+	// at any replica we can reach (see specs/pigeonhole.md "Epoch
+	// tolerance for CourierEnvelope"), so there's nothing productive to
+	// cache and we shouldn't spend a dispatch on it.
+	currentReplicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	if !isEnvelopeEpochAcceptable(courierMessage.Epoch, currentReplicaEpoch) {
+		e.log.Warningf("cacheHandleCourierEnvelope: rejecting envelope %x with epoch %d (current replica epoch %d)",
+			envHash[:8], courierMessage.Epoch, currentReplicaEpoch)
+		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorInvalidEpoch, courierMessage.ReplyIndex)
+	}
+
 	e.dedupCacheLock.RLock()
 	cacheEntry, ok := e.dedupCache[*envHash]
 	e.dedupCacheLock.RUnlock()

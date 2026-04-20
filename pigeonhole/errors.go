@@ -31,6 +31,7 @@ const (
 	EnvelopeErrorInvalidEnvelope  uint8 = 1 // Invalid envelope format
 	EnvelopeErrorCacheCorruption  uint8 = 2 // Cache data corruption detected
 	EnvelopeErrorPropagationError uint8 = 3 // Error propagating request to replicas
+	EnvelopeErrorInvalidEpoch     uint8 = 4 // Envelope's replica epoch is outside the accepted window
 )
 
 // CopyCommandReply status codes. The Copy command is async: the courier
