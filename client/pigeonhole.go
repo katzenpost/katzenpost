@@ -452,8 +452,12 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		return
 	}
 
-	// Get replica epoch once before the loop
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	// Derive the replica epoch from the PKI doc we just used for
+	// replica selection. This keeps the Epoch field stamped on each
+	// CourierEnvelope consistent with the envelope keys the client
+	// encrypted against — wall-clock-based ReplicaNow() could diverge
+	// from doc.Epoch around a mixnet-epoch boundary.
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 
 	// Create a single StatefulWriter for the destination
 	statefulWriter, err := bacap.NewStatefulWriter(destWriteCap, []byte(constants.PIGEONHOLE_CTX))
@@ -641,8 +645,10 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 		return
 	}
 
-	// Get the current replica epoch
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	// Derive the replica epoch from the PKI doc, matching the keys
+	// the client selected for this batch. See the note in
+	// createCourierEnvelopesFromPayload.
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 
 	// Create a fresh encoder and restore buffer from previous call if provided
 	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
@@ -886,7 +892,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 		return
 	}
 
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 	cur := destStartIndex
 	var courierEnvelopes []*pigeonhole.CourierEnvelope
 
