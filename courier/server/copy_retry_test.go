@@ -19,7 +19,8 @@ func TestCopyAttemptBackoffMonotonic(t *testing.T) {
 	require.Equal(t, 1*time.Second, copyAttemptBackoff(1))
 	require.Equal(t, 2*time.Second, copyAttemptBackoff(2))
 	require.Equal(t, 4*time.Second, copyAttemptBackoff(3))
-	require.Equal(t, copyBackoffCap, copyAttemptBackoff(4))
+	require.Equal(t, 8*time.Second, copyAttemptBackoff(4))
+	require.Equal(t, copyBackoffCap, copyAttemptBackoff(5))
 	require.Equal(t, copyBackoffCap, copyAttemptBackoff(8))
 	// Clamp: very large attempt counts do not overflow into an
 	// unreasonable value.
@@ -32,8 +33,9 @@ func TestCopyRetryConstants(t *testing.T) {
 	require.Equal(t, 3, maxCopyReadTransientAttempts)
 	require.Equal(t, 5, maxCopyWriteAttempts)
 	require.Equal(t, 500*time.Millisecond, copyBackoffBase)
-	require.Equal(t, 5*time.Second, copyBackoffCap)
-	require.Equal(t, 10*time.Second, copyReadReplyTimeout)
+	require.Equal(t, 10*time.Second, copyBackoffCap)
+	require.Equal(t, 20*time.Second, copyReadReplyTimeout)
+	require.Equal(t, 30*time.Second, copyWriteReplyTimeout)
 }
 
 // TestCopySucceededReplyShape and TestCopyFailedReplyShape assert the
