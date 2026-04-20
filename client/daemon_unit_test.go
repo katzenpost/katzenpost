@@ -160,15 +160,23 @@ func TestCleanupForAppIDWithARQ(t *testing.T) {
 	otherAppID := &[AppIDLength]byte{}
 	copy(otherAppID[:], []byte("other-app-id-002"))
 
-	// Add ARQ entries for both app IDs
+	// Add ARQ entries for both app IDs, each with a distinct EnvelopeHash
+	// that should track the SURB ID via arqEnvelopeHashMap.
 	surbID1 := [sphinxConstants.SURBIDLength]byte{}
 	copy(surbID1[:], []byte("arq-surb-id-0001"))
 	surbID2 := [sphinxConstants.SURBIDLength]byte{}
 	copy(surbID2[:], []byte("arq-surb-id-0002"))
 
+	envHash1 := &[32]byte{}
+	copy(envHash1[:], []byte("envelope-hash-for-cleaned-app-01!"))
+	envHash2 := &[32]byte{}
+	copy(envHash2[:], []byte("envelope-hash-for-surviving-app!!"))
+
 	d.replyLock.Lock()
-	d.arqSurbIDMap[surbID1] = &ARQMessage{AppID: appID, SURBID: &surbID1}
-	d.arqSurbIDMap[surbID2] = &ARQMessage{AppID: otherAppID, SURBID: &surbID2}
+	d.arqSurbIDMap[surbID1] = &ARQMessage{AppID: appID, SURBID: &surbID1, EnvelopeHash: envHash1}
+	d.arqSurbIDMap[surbID2] = &ARQMessage{AppID: otherAppID, SURBID: &surbID2, EnvelopeHash: envHash2}
+	d.arqEnvelopeHashMap[*envHash1] = &surbID1
+	d.arqEnvelopeHashMap[*envHash2] = &surbID2
 	d.replyLock.Unlock()
 
 	d.cleanupForAppID(appID)
@@ -176,6 +184,11 @@ func TestCleanupForAppIDWithARQ(t *testing.T) {
 	d.replyLock.Lock()
 	require.NotContains(t, d.arqSurbIDMap, surbID1, "ARQ for cleaned app should be removed")
 	require.Contains(t, d.arqSurbIDMap, surbID2, "ARQ for other app should remain")
+
+	// arqEnvelopeHashMap must stay in sync: the cleaned app's envelope
+	// hash is gone, the surviving app's hash remains.
+	require.NotContains(t, d.arqEnvelopeHashMap, *envHash1, "envelope hash for cleaned app should be removed")
+	require.Contains(t, d.arqEnvelopeHashMap, *envHash2, "envelope hash for surviving app should remain")
 	d.replyLock.Unlock()
 }
 
