@@ -803,10 +803,19 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 
 	d.replyLock.Lock()
 	if d.arqSurbIDMap != nil {
+		var envHashesToDrop [][32]byte
 		for surbID, message := range d.arqSurbIDMap {
 			if message.AppID != nil && *message.AppID == *appID {
+				if message.EnvelopeHash != nil {
+					envHashesToDrop = append(envHashesToDrop, *message.EnvelopeHash)
+				}
 				delete(d.arqSurbIDMap, surbID)
 				cleanedARQ++
+			}
+		}
+		if d.arqEnvelopeHashMap != nil {
+			for _, h := range envHashesToDrop {
+				delete(d.arqEnvelopeHashMap, h)
 			}
 		}
 	}
