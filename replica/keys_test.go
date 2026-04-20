@@ -61,13 +61,76 @@ func TestEnvelopeKeys(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, keypair)
 
+	// EnsureKey for past epochs must never fabricate a new keypair:
+	// any ciphertext a client sent for that epoch was encrypted to the
+	// PKI-published public key we no longer (or never did) have, and a
+	// freshly-generated random key cannot decrypt it.
 	keypair, err = keys.EnsureKey(epoch - 20)
 	require.Error(t, err)
 	require.Nil(t, keypair)
 
 	keypair, err = keys.EnsureKey(epoch - 10)
+	require.Error(t, err)
+	require.Nil(t, keypair)
+
+	keypair, err = keys.GetKeypair(epoch)
+	require.NoError(t, err)
+	require.NotNil(t, keypair)
+	keypair.PurgeKeyFiles(dname, replicaScheme, epoch)
+}
+
+// TestEnsureKeyRefusesPastEpochs pins the invariant that EnsureKey, which
+// is used by the PKI publisher to prospectively generate current and
+// upcoming replica-epoch keys, never fabricates keys for past epochs.
+// Fabrication is a bug because the fresh key would not match any
+// previously-published envelope public key.
+func TestEnsureKeyRefusesPastEpochs(t *testing.T) {
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+
+	dname, err := os.MkdirTemp("", "replica.ensurekey-past")
+	require.NoError(t, err)
+	defer os.RemoveAll(dname)
+
+	replicaScheme := nikeschemes.ByName("CTIDH512-X25519")
+	keys := &EnvelopeKeys{
+		log:      logBackend.GetLogger("envelope keys"),
+		datadir:  dname,
+		scheme:   replicaScheme,
+		keysLock: new(sync.RWMutex),
+		keys:     make(map[uint64]*replicaCommon.EnvelopeKey),
+	}
+
+	epoch, _, _ := replicaCommon.ReplicaNow()
+
+	// Past epoch: no file on disk, not in memory — must error.
+	_, err = keys.EnsureKey(epoch - 1)
+	require.Error(t, err, "EnsureKey must refuse to generate a past-epoch key")
+
+	// Past epoch: no file on disk, no resulting file on disk either.
+	privFile, pubFile := (&replicaCommon.EnvelopeKey{}).KeyFileNames(dname, replicaScheme, epoch-1)
+	_, statErr := os.Stat(privFile)
+	require.True(t, os.IsNotExist(statErr), "no private key file must be created for a past epoch")
+	_, statErr = os.Stat(pubFile)
+	require.True(t, os.IsNotExist(statErr), "no public key file must be created for a past epoch")
+
+	// Current and future epochs are legitimate: prospective publishing.
+	keypair, err := keys.EnsureKey(epoch)
 	require.NoError(t, err)
 	require.NotNil(t, keypair)
 
-	keypair.PurgeKeyFiles(dname, replicaScheme, epoch)
+	keypair, err = keys.EnsureKey(epoch + 1)
+	require.NoError(t, err)
+	require.NotNil(t, keypair)
+
+	// An existing past-epoch key in memory (e.g., loaded from disk by a
+	// future startup path, or retained by Prune) is returned unchanged —
+	// EnsureKey must not replace it with a fresh random one.
+	existing := replicaCommon.NewEnvelopeKey(replicaScheme)
+	keys.keysLock.Lock()
+	keys.keys[epoch-1] = existing
+	keys.keysLock.Unlock()
+	got, err := keys.EnsureKey(epoch - 1)
+	require.NoError(t, err)
+	require.Same(t, existing, got, "past-epoch key already in memory must be returned as-is")
 }

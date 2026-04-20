@@ -137,9 +137,13 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	}
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	keypair, err := c.l.server.envelopeKeys.EnsureKey(replicaEpoch)
+	// GetKeypair (not EnsureKey): we must not fabricate a key on the
+	// decryption path. If the key is missing, decryption is simply not
+	// possible for this request, and fabricating would silently swallow
+	// every ciphertext for this epoch.
+	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
 	if err != nil {
-		c.log.Errorf("handleReplicaMessage envelopeKeys.EnsureKey failed: %s", err)
+		c.log.Errorf("handleReplicaMessage envelopeKeys.GetKeypair failed: %s", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0)
 	}
 	requestRaw, err := scheme.Decapsulate(keypair.PrivateKey, ct)

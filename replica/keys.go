@@ -137,12 +137,17 @@ func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*replicaCommon.EnvelopeK
 	return keypair, nil
 }
 
+// EnsureKey returns the keypair for replicaEpoch, generating it on
+// demand for the current or a future replica epoch (the PKI publisher's
+// use case). For any replicaEpoch strictly in the past it returns
+// whatever is already cached in memory, or an error — it never
+// fabricates a fresh random keypair for a past epoch, because such a
+// key cannot decrypt ciphertexts that were encrypted to the previously
+// PKI-published public key for that epoch.
 func (k *EnvelopeKeys) EnsureKey(replicaEpoch uint64) (*replicaCommon.EnvelopeKey, error) {
-	// Check if the requested epoch is too old to generate a key for
-	// Allow keys for a reasonable range of past epochs, but reject very old ones
 	currentEpoch, _, _ := replicaCommon.ReplicaNow()
-	if replicaEpoch < currentEpoch-15 {
-		return nil, errors.New("cannot generate key for epoch that is too old")
+	if replicaEpoch < currentEpoch {
+		return k.GetKeypair(replicaEpoch)
 	}
 
 	keypair, err := k.GetKeypair(replicaEpoch)
