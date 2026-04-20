@@ -35,6 +35,7 @@ import (
 // 3. caching replica replies
 type CourierBookKeeping struct {
 	Epoch                uint64
+	CreatedAt            time.Time
 	QueryType            uint8
 	IntermediateReplicas [2]uint8 // Store the replica IDs that were contacted
 	EnvelopeReplies      [2]*commands.ReplicaMessageReply
@@ -84,6 +85,11 @@ type Courier struct {
 
 // CopyDedupCacheTTL is how long completed copy command results are cached
 const CopyDedupCacheTTL = 5 * time.Minute
+
+// DedupCacheTTL bounds how long a CourierBookKeeping entry stays in
+// dedupCache. Long enough to cover an active ARQ retry cycle for a single
+// envelope, short enough that dedupCache size stays bounded under load.
+const DedupCacheTTL = 5 * time.Minute
 
 // NewCourier returns a new Courier type.
 func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
@@ -247,6 +253,20 @@ func (e *Courier) storeOrReplaceReply(entry *CourierBookKeeping, reply *commands
 	} else {
 		e.log.Debugf("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
 	}
+}
+
+// pruneDedupCacheLocked removes entries whose age (now - CreatedAt) is
+// strictly greater than ttl. Returns the number of entries removed.
+// The caller MUST hold e.dedupCacheLock.Lock().
+func (e *Courier) pruneDedupCacheLocked(now time.Time, ttl time.Duration) int {
+	pruned := 0
+	for key, entry := range e.dedupCache {
+		if now.Sub(entry.CreatedAt) > ttl {
+			delete(e.dedupCache, key)
+			pruned++
+		}
+	}
+	return pruned
 }
 
 // getCurrentEpoch gets the current epoch from PKI document
@@ -614,9 +634,11 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 		e.log.Errorf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
 		e.storePendingRequest(envHash, requestID, surb)
 		e.dedupCacheLock.Lock()
+		e.pruneDedupCacheLocked(time.Now(), DedupCacheTTL)
 		currentEpoch := e.getCurrentEpoch()
 		e.dedupCache[*envHash] = &CourierBookKeeping{
 			Epoch:                currentEpoch,
+			CreatedAt:            time.Now(),
 			QueryType:            queryType,
 			IntermediateReplicas: courierMessage.IntermediateReplicas,
 			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
