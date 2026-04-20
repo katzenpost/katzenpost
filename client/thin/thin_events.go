@@ -349,6 +349,17 @@ type StartResendingCopyCommandReply struct {
 	// ErrorCode indicates the reason for a failure to execute the copy command if any.
 	// Otherwise it is set to zero for success.
 	ErrorCode uint8 `cbor:"error_code"`
+
+	// ReplicaErrorCode is the pigeonhole replica ErrorCode that caused
+	// the Copy command to abort on the courier. Meaningful only when
+	// ErrorCode indicates a Copy failure and the courier identified a
+	// specific replica-side reason (e.g. ReplicaErrorBoxAlreadyExists).
+	ReplicaErrorCode uint8 `cbor:"replica_error_code,omitempty"`
+
+	// FailedEnvelopeIndex is the 1-based sequential position in the
+	// copy stream of the envelope whose write triggered the abort.
+	// 0 if not applicable. Not a BACAP message index.
+	FailedEnvelopeIndex uint64 `cbor:"failed_envelope_index,omitempty"`
 }
 
 // String returns a string representation of the StartResendingCopyCommandReply.

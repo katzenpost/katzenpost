@@ -1498,8 +1498,24 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	}
 }
 
-// handleCopyCommandARQReply handles replies to copy command ARQ messages.
-// Copy commands have a simple protocol: send command, receive single reply with success/error.
+// CopyPollInterval is the delay between courier polls while a Copy
+// command is still InProgress. Small enough that a small Copy finishes
+// a round-trip or two early, large enough that a long Copy doesn't
+// hammer the courier.
+const CopyPollInterval = 5 * time.Second
+
+// handleCopyCommandARQReply handles replies to copy command ARQ
+// messages.
+//
+// The Copy command protocol is async: the courier ACKs receipt with
+// Status=InProgress, processes in the background, and delivers the
+// terminal Status=Succeeded or Status=Failed on a subsequent poll.
+// The daemon polls by re-sending the same Copy command (same WriteCap)
+// with a fresh SURB every CopyPollInterval.
+//
+// Terminal statuses are surfaced to the thin client. InProgress keeps
+// the ARQMessage registered (so Cancel still works) and schedules the
+// next poll.
 func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryReply *pigeonhole.CourierQueryReply, conn *incomingConn) {
 	// Verify this is a copy command reply (ReplyType: 1)
 	if courierQueryReply.ReplyType != 1 || courierQueryReply.CopyCommandReply == nil {
@@ -1513,35 +1529,89 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 	d.log.Debugf("handleCopyCommandARQReply: Received copy command reply, Status=%d, ErrorCode=%d, FailedEnvelopeIndex=%d, WriteCapHash=%x",
 		copyCommandReply.Status, copyCommandReply.ErrorCode, copyCommandReply.FailedEnvelopeIndex, arqMessage.EnvelopeHash[:])
 
-	// Translate the wire-level Status to a thin-client ErrorCode. Under
-	// the current behavior the courier only ever emits Succeeded or
-	// Failed — InProgress polling is a later stage. A Status value we
-	// don't recognise falls through to InternalError.
-	var thinErrorCode uint8
 	switch copyCommandReply.Status {
+	case pigeonhole.CopyStatusInProgress:
+		// Keep the ARQ state alive and schedule the next poll. We do
+		// not notify the thin client yet — it is blocked waiting for a
+		// terminal reply via StartResendingCopyCommand.
+		d.scheduleCopyCommandPoll(arqMessage)
+		return
+
 	case pigeonhole.CopyStatusSucceeded:
-		thinErrorCode = thin.ThinClientSuccess
+		d.replyLock.Lock()
+		delete(d.arqSurbIDMap, *arqMessage.SURBID)
+		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+		d.replyLock.Unlock()
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
+				QueryID:   arqMessage.QueryID,
+				ErrorCode: thin.ThinClientSuccess,
+			},
+		})
+
 	case pigeonhole.CopyStatusFailed:
-		thinErrorCode = thin.ThinClientErrorInternalError
+		d.replyLock.Lock()
+		delete(d.arqSurbIDMap, *arqMessage.SURBID)
+		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+		d.replyLock.Unlock()
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
+				QueryID:             arqMessage.QueryID,
+				ErrorCode:           thin.ThinClientErrorInternalError,
+				ReplicaErrorCode:    copyCommandReply.ErrorCode,
+				FailedEnvelopeIndex: copyCommandReply.FailedEnvelopeIndex,
+			},
+		})
+
 	default:
 		d.log.Warningf("handleCopyCommandARQReply: unexpected Status=%d, treating as failure", copyCommandReply.Status)
-		thinErrorCode = thin.ThinClientErrorInternalError
+		d.replyLock.Lock()
+		delete(d.arqSurbIDMap, *arqMessage.SURBID)
+		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+		d.replyLock.Unlock()
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
+				QueryID:   arqMessage.QueryID,
+				ErrorCode: thin.ThinClientErrorInternalError,
+			},
+		})
+	}
+}
+
+// scheduleCopyCommandPoll keeps the ARQMessage reachable under a fresh
+// placeholder SURBID and pushes a timer entry CopyPollInterval out.
+// When the timer fires, arqDoResend looks up the placeholder, rotates
+// it to a real SURBID, composes a fresh Sphinx packet, and sends —
+// which produces the next Copy poll to the courier.
+//
+// handleReply cleans both ARQ maps when a reply arrives, so without
+// this re-registration the thin client's CancelResendingCopyCommand
+// would silently no-op during the polling window.
+func (d *Daemon) scheduleCopyCommandPoll(arqMessage *ARQMessage) {
+	placeholder := &[sphinxConstants.SURBIDLength]byte{}
+	if _, err := rand.Reader.Read(placeholder[:]); err != nil {
+		d.log.Errorf("scheduleCopyCommandPoll: failed to generate placeholder SURBID: %v", err)
+		return
 	}
 
-	// Remove from ARQ tracking
 	d.replyLock.Lock()
-	delete(d.arqSurbIDMap, *arqMessage.SURBID)
-	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+	arqMessage.SURBID = placeholder
+	d.arqSurbIDMap[*placeholder] = arqMessage
+	if arqMessage.EnvelopeHash != nil {
+		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = placeholder
+	}
 	d.replyLock.Unlock()
 
-	// Send reply to thin client
-	conn.sendResponse(&Response{
-		AppID: arqMessage.AppID,
-		StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
-			QueryID:   arqMessage.QueryID,
-			ErrorCode: thinErrorCode,
-		},
-	})
+	if d.arqTimerQueue == nil {
+		d.log.Debugf("scheduleCopyCommandPoll: arqTimerQueue is nil, skipping poll schedule")
+		return
+	}
+	priority := uint64(time.Now().Add(CopyPollInterval).UnixNano())
+	d.arqTimerQueue.Push(priority, placeholder)
+	d.log.Debugf("scheduleCopyCommandPoll: next Copy poll scheduled in %v for WriteCapHash %x", CopyPollInterval, arqMessage.EnvelopeHash[:])
 }
 
 // validateStartResendingCopyCommandRequest validates the fields of a StartResendingCopyCommand request.
