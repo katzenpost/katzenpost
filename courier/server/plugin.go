@@ -1177,9 +1177,12 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 		mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(usablePubKeys, innerMsg.Bytes())
 		mkemPublicKey := mkemPrivateKey.Public()
 
-		// Send directly to each usable storage replica.
-		for j, replicaID := range usableReplicaIDs {
-			query := &commands.ReplicaMessage{
+		// Build per-replica ReplicaMessages (all share SenderEPubKey +
+		// Envelope, so they produce the same EnvelopeHash; reply demux
+		// in copyCache uses that single key).
+		messages := make([]*commands.ReplicaMessage, len(usableReplicaIDs))
+		for j := range usableReplicaIDs {
+			messages[j] = &commands.ReplicaMessage{
 				Cmds:               e.cmds,
 				PigeonholeGeometry: e.pigeonholeGeo,
 				Scheme:             e.envelopeScheme,
@@ -1187,17 +1190,70 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 				DEK:                mkemCiphertext.DEKCiphertexts[j],
 				Ciphertext:         mkemCiphertext.Envelope,
 			}
-
-			if err := e.server.SendMessage(replicaID, query); err != nil {
-				e.log.Errorf("writeTombstonesToTempChannel: Failed to send tombstone %d to replica %d: %v", i, replicaID, err)
-				continue
-			}
-
-			e.log.Debugf("writeTombstonesToTempChannel: Sent tombstone %d/%d for box %x to replica %d", i+1, len(boxIDs), boxID[:8], replicaID)
+		}
+		envHash := messages[0].EnvelopeHash()
+		if !e.dispatchTombstone(envHash, usableReplicaIDs, messages) {
+			e.log.Warningf("writeTombstonesToTempChannel: exhausted retries for tombstone of box %x (%d usable shards) — box remains in replica storage",
+				boxID[:], len(usableReplicaIDs))
 		}
 	}
 
 	e.log.Debugf("writeTombstonesToTempChannel: Finished writing %d tombstones", len(boxIDs))
+}
+
+// dispatchTombstone sends one tombstone to its shard replicas and
+// waits for at least one ReplicaSuccess reply within
+// copyWriteReplyTimeout, retrying up to maxCopyWriteAttempts with
+// copyAttemptBackoff. Returns true on any confirmed write, false
+// after exhausting all attempts.
+func (e *Courier) dispatchTombstone(
+	envHash *[hash.HashSize]byte,
+	replicaIDs []uint8,
+	messages []*commands.ReplicaMessage,
+) bool {
+	for attempt := 0; attempt < maxCopyWriteAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(copyAttemptBackoff(attempt - 1))
+		}
+
+		ch := make(chan *commands.ReplicaMessageReply, len(replicaIDs))
+		e.copyCacheLock.Lock()
+		e.copyCache[*envHash] = ch
+		e.copyCacheLock.Unlock()
+
+		for j, replicaID := range replicaIDs {
+			if err := e.server.SendMessage(replicaID, messages[j]); err != nil {
+				e.log.Warningf("dispatchTombstone: attempt %d SendMessage to replica %d failed: %v", attempt+1, replicaID, err)
+			}
+		}
+
+		var replies []*commands.ReplicaMessageReply
+		deadline := time.After(copyWriteReplyTimeout)
+		collecting := true
+		for collecting && len(replies) < len(replicaIDs) {
+			select {
+			case r := <-ch:
+				replies = append(replies, r)
+			case <-deadline:
+				collecting = false
+			}
+		}
+
+		e.copyCacheLock.Lock()
+		delete(e.copyCache, *envHash)
+		e.copyCacheLock.Unlock()
+
+		for _, r := range replies {
+			if r.ErrorCode == pigeonhole.ReplicaSuccess {
+				if attempt > 0 {
+					e.log.Debugf("dispatchTombstone: success on attempt %d", attempt+1)
+				}
+				return true
+			}
+		}
+		e.log.Debugf("dispatchTombstone: attempt %d produced %d replies, none successful", attempt+1, len(replies))
+	}
+	return false
 }
 
 // createEnvelopeErrorReply creates a CourierEnvelopeReply with the specified error code
