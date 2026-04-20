@@ -77,14 +77,25 @@ type Courier struct {
 	pendingRequestsLock sync.RWMutex
 	pendingRequests     map[[hash.HashSize]byte]*PendingReadRequest
 
-	// Copy command deduplication cache - tracks in-progress and completed copy commands
-	// to support ARQ retries without duplicating work
+	// Copy command deduplication cache — tracks in-progress and
+	// completed copy commands. The client daemon polls the same
+	// WriteCap to learn the terminal Status; this map is the source of
+	// truth for those polls.
 	copyDedupCacheLock sync.RWMutex
 	copyDedupCache     map[[hash.HashSize]byte]*CopyCommandState
+
+	// processCopyCommandFn is the worker that performs the actual Copy
+	// work in a background goroutine. Defaults to
+	// (*Courier).processCopyCommand in production; tests swap it for a
+	// fake that doesn't need real replica connectivity.
+	processCopyCommandFn func(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply
 }
 
-// CopyDedupCacheTTL is how long completed copy command results are cached
-const CopyDedupCacheTTL = 5 * time.Minute
+// CopyDedupCacheTTL bounds how long a completed Copy command's status
+// stays retrievable by the client via polling. Long enough to cover a
+// reconnecting client that missed earlier polls, short enough that the
+// cache stays bounded in memory.
+const CopyDedupCacheTTL = 30 * time.Minute
 
 // DedupCacheTTL bounds how long a CourierBookKeeping entry stays in
 // dedupCache. Long enough to cover an active ARQ retry cycle for a single
@@ -110,6 +121,7 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 		pendingRequests: make(map[[hash.HashSize]byte]*PendingReadRequest),
 		copyDedupCache:  make(map[[hash.HashSize]byte]*CopyCommandState),
 	}
+	courier.processCopyCommandFn = courier.processCopyCommand
 	return courier
 }
 
@@ -684,57 +696,50 @@ func (e *Courier) cacheEntryHasOnlyErrors(entry *CourierBookKeeping) bool {
 	return hasAny
 }
 
-// handleCopyCommand reads all the boxes in the given BACAP sequence and interprets their
-// plaintext contents as CopyStreamElements containing CourierEnvelopes. Envelopes are processed
-// one at a time and are transformed into 2 ReplicaMessage objects which are then sent to the intermediary
-// replica. It reads boxes until it finds an element with the IsFinal flag set. It then sends
-// all those CourierEnvelopes to the specified intermediate replicas. Lastly it overwrites the
-// initial sequence with tombstones.
+// handleCopyCommand is the dispatch layer for an incoming Copy command.
+// It is non-blocking: the actual work of reading the temp stream,
+// decoding envelopes, dispatching them to replicas, and tombstoning
+// the temp stream runs in a background goroutine.
 //
-// This function is idempotent - duplicate copy commands (e.g., ARQ retries) will either:
-// 1. Wait for an in-progress copy to complete and return the same result
-// 2. Return a cached result if the copy was recently completed
+// The client drives completion by polling with the same WriteCap.
+// Replies carry a Status field:
+//
+//   - InProgress: courier is still working (or just received the
+//     command). Client should keep polling.
+//   - Succeeded:  all copy tasks completed.
+//   - Failed:     processing aborted; CopyCommandReply.ErrorCode and
+//     FailedEnvelopeIndex identify the specific replica error and the
+//     1-based sequential position in the copy stream.
+//
+// Dedup is by blake2b hash of the serialized WriteCap. Terminal
+// results stay in copyDedupCache for CopyDedupCacheTTL so a client
+// that reconnects or polls late still sees the outcome.
 func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply {
 	e.log.Debugf("handleCopyCommand: Processing copy command with WriteCap length %d", copyCmd.WriteCapLen)
 
-	// Compute a hash of the WriteCap to use as the dedup key
 	copyKey := hash.Sum256(copyCmd.WriteCap)
 
-	// Check if this copy command is already in-progress or completed
 	e.copyDedupCacheLock.Lock()
 	state, exists := e.copyDedupCache[copyKey]
 	if exists {
 		if state.InProgress {
-			// Another goroutine is processing this copy command, wait for it
-			e.log.Debugf("handleCopyCommand: Copy command %x already in-progress, waiting", copyKey[:8])
-			doneChan := state.Done
 			e.copyDedupCacheLock.Unlock()
-
-			// Wait for the in-progress copy to complete
-			<-doneChan
-
-			// Return the cached result
-			e.copyDedupCacheLock.RLock()
-			result := e.copyDedupCache[copyKey].Result
-			e.copyDedupCacheLock.RUnlock()
-			e.log.Debugf("handleCopyCommand: Copy command %x completed by another goroutine", copyKey[:8])
-			return result
+			e.log.Debugf("handleCopyCommand: %x still in progress, returning InProgress", copyKey[:8])
+			return inProgressReply()
 		}
-
-		// Copy command already completed, check TTL
+		// Completed: return cached result if within TTL, else drop and
+		// reprocess.
 		if time.Since(state.CompletedAt) < CopyDedupCacheTTL {
-			e.log.Debugf("handleCopyCommand: Returning cached result for copy command %x", copyKey[:8])
 			result := state.Result
 			e.copyDedupCacheLock.Unlock()
+			e.log.Debugf("handleCopyCommand: %x returning cached terminal status", copyKey[:8])
 			return result
 		}
-
-		// TTL expired, remove old entry and process again
-		e.log.Debugf("handleCopyCommand: Cached result for %x expired, reprocessing", copyKey[:8])
+		e.log.Debugf("handleCopyCommand: cached result for %x expired, reprocessing", copyKey[:8])
 		delete(e.copyDedupCache, copyKey)
 	}
 
-	// New copy command, create cache entry to mark as in-progress
+	// New (or TTL-expired) copy: mark InProgress, spawn worker, ACK.
 	state = &CopyCommandState{
 		InProgress: true,
 		Done:       make(chan struct{}),
@@ -742,18 +747,54 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 	e.copyDedupCache[copyKey] = state
 	e.copyDedupCacheLock.Unlock()
 
-	// Process the copy command and cache the result when done
-	result := e.processCopyCommand(copyCmd)
+	go e.runCopyCommand(copyCmd, copyKey, state)
 
-	// Update cache with result
+	return inProgressReply()
+}
+
+// runCopyCommand executes the Copy work in the background and stores
+// the terminal reply in copyDedupCache so later polls can return it.
+// It is the sole writer of the transition from InProgress=true to
+// InProgress=false for a given copyKey.
+func (e *Courier) runCopyCommand(copyCmd *pigeonhole.CopyCommand, copyKey [hash.HashSize]byte, state *CopyCommandState) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log.Errorf("runCopyCommand: panic for %x: %v", copyKey[:8], r)
+			e.copyDedupCacheLock.Lock()
+			state.InProgress = false
+			state.Result = &pigeonhole.CourierQueryReply{
+				ReplyType: 1,
+				CopyCommandReply: &pigeonhole.CopyCommandReply{
+					Status: pigeonhole.CopyStatusFailed,
+				},
+			}
+			state.CompletedAt = time.Now()
+			close(state.Done)
+			e.copyDedupCacheLock.Unlock()
+		}
+	}()
+
+	result := e.processCopyCommandFn(copyCmd)
+
 	e.copyDedupCacheLock.Lock()
 	state.InProgress = false
 	state.Result = result
 	state.CompletedAt = time.Now()
-	close(state.Done) // Signal waiting goroutines
+	close(state.Done)
 	e.copyDedupCacheLock.Unlock()
+	e.log.Debugf("runCopyCommand: %x finished with Status=%d", copyKey[:8], result.CopyCommandReply.Status)
+}
 
-	return result
+// inProgressReply is the empty-ACK-equivalent reply the courier uses to
+// acknowledge receipt of a Copy command (and to answer polls while
+// processing continues).
+func inProgressReply() *pigeonhole.CourierQueryReply {
+	return &pigeonhole.CourierQueryReply{
+		ReplyType: 1,
+		CopyCommandReply: &pigeonhole.CopyCommandReply{
+			Status: pigeonhole.CopyStatusInProgress,
+		},
+	}
 }
 
 // processCopyCommand does the actual work of processing a copy command.
