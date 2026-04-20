@@ -137,19 +137,19 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	}
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	// GetKeypair (not EnsureKey): we must not fabricate a key on the
-	// decryption path. If the key is missing, decryption is simply not
-	// possible for this request, and fabricating would silently swallow
-	// every ciphertext for this epoch.
-	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
+	// Try each envelope keypair in the replica's tolerance window
+	// {current-1, current, current+1}. This matches the courier's
+	// CourierEnvelope.Epoch validation: whatever epoch the courier
+	// decided to forward, we try the corresponding private key here.
+	// Missing keys (e.g. next-epoch key not yet generated) are skipped.
+	requestRaw, keypair, successEpoch, err := tryDecapsulateAcrossEpochWindow(c.l.server.envelopeKeys, scheme, ct, replicaEpoch)
 	if err != nil {
-		c.log.Errorf("handleReplicaMessage envelopeKeys.GetKeypair failed: %s", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0)
+		c.log.Errorf("handleReplicaMessage decapsulation failed across epoch window (current=%d): %s", replicaEpoch, err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0)
 	}
-	requestRaw, err := scheme.Decapsulate(keypair.PrivateKey, ct)
-	if err != nil {
-		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0)
+	if successEpoch != replicaEpoch {
+		c.log.Debugf("handleReplicaMessage decapsulated with non-current epoch key: replica_epoch=%d decap_epoch=%d",
+			replicaEpoch, successEpoch)
 	}
 	msg, err := pigeonhole.ParseReplicaInnerMessage(requestRaw)
 	if err != nil {
