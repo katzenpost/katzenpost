@@ -151,9 +151,22 @@ struct copy_command {
     u8 write_cap[write_cap_len];
 }
 
-// CopyCommandReply - reply for copy command operations
+// CopyCommandReply - reply for copy command operations.
+//
+// The Copy command is async: the courier ACKs receipt with
+// status=in_progress and a client polling with the same WriteCap later
+// observes status=succeeded or status=failed once processing is done.
+//
+// status:                 0=succeeded, 1=in_progress, 2=failed
+// error_code:             replica ErrorCode that triggered the abort
+//                         (only meaningful when status=failed)
+// failed_envelope_index:  1-based position of the copy-stream envelope
+//                         whose write produced the fatal error; 0 if
+//                         not applicable.
 struct copy_command_reply {
+    u8 status;
     u8 error_code;
+    u32 failed_envelope_index;
 }
 
 // CopyStreamElement - wraps a CourierEnvelope chunk with stream position flags.

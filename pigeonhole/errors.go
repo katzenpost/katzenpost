@@ -32,3 +32,14 @@ const (
 	EnvelopeErrorCacheCorruption  uint8 = 2 // Cache data corruption detected
 	EnvelopeErrorPropagationError uint8 = 3 // Error propagating request to replicas
 )
+
+// CopyCommandReply status codes. The Copy command is async: the courier
+// acknowledges receipt immediately with InProgress and processes the
+// work in a background goroutine; the client polls the same Copy
+// command (same WriteCap) until it receives a terminal Succeeded or
+// Failed status.
+const (
+	CopyStatusSucceeded  uint8 = 0 // All destination writes completed.
+	CopyStatusInProgress uint8 = 1 // Courier accepted the command; processing continues.
+	CopyStatusFailed     uint8 = 2 // Processing aborted; see ErrorCode + FailedEnvelopeIndex.
+)

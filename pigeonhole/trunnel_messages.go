@@ -1151,7 +1151,9 @@ func (c *CopyCommand) validate() error {
 }
 
 type CopyCommandReply struct {
-	ErrorCode uint8
+	Status              uint8
+	ErrorCode           uint8
+	FailedEnvelopeIndex uint32
 }
 
 func (c *CopyCommandReply) Parse(data []byte) ([]byte, error) {
@@ -1160,8 +1162,22 @@ func (c *CopyCommandReply) Parse(data []byte) ([]byte, error) {
 		if len(cur) < 1 {
 			return nil, errors.New("data too short")
 		}
+		c.Status = cur[0]
+		cur = cur[1:]
+	}
+	{
+		if len(cur) < 1 {
+			return nil, errors.New("data too short")
+		}
 		c.ErrorCode = cur[0]
 		cur = cur[1:]
+	}
+	{
+		if len(cur) < 4 {
+			return nil, errors.New("data too short")
+		}
+		c.FailedEnvelopeIndex = binary.BigEndian.Uint32(cur)
+		cur = cur[4:]
 	}
 	return cur, nil
 }
@@ -1177,7 +1193,13 @@ func ParseCopyCommandReply(data []byte) (*CopyCommandReply, error) {
 
 func (c *CopyCommandReply) encodeBinary() []byte {
 	var buf []byte
+	buf = append(buf, byte(c.Status))
 	buf = append(buf, byte(c.ErrorCode))
+	{
+		tmp := make([]byte, 4)
+		binary.BigEndian.PutUint32(tmp, c.FailedEnvelopeIndex)
+		buf = append(buf, tmp...)
+	}
 	return buf
 }
 

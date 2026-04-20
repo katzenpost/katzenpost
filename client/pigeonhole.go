@@ -1510,8 +1510,23 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 
 	copyCommandReply := courierQueryReply.CopyCommandReply
 
-	d.log.Debugf("handleCopyCommandARQReply: Received copy command reply, ErrorCode=%d, WriteCapHash=%x",
-		copyCommandReply.ErrorCode, arqMessage.EnvelopeHash[:])
+	d.log.Debugf("handleCopyCommandARQReply: Received copy command reply, Status=%d, ErrorCode=%d, FailedEnvelopeIndex=%d, WriteCapHash=%x",
+		copyCommandReply.Status, copyCommandReply.ErrorCode, copyCommandReply.FailedEnvelopeIndex, arqMessage.EnvelopeHash[:])
+
+	// Translate the wire-level Status to a thin-client ErrorCode. Under
+	// the current behavior the courier only ever emits Succeeded or
+	// Failed — InProgress polling is a later stage. A Status value we
+	// don't recognise falls through to InternalError.
+	var thinErrorCode uint8
+	switch copyCommandReply.Status {
+	case pigeonhole.CopyStatusSucceeded:
+		thinErrorCode = thin.ThinClientSuccess
+	case pigeonhole.CopyStatusFailed:
+		thinErrorCode = thin.ThinClientErrorInternalError
+	default:
+		d.log.Warningf("handleCopyCommandARQReply: unexpected Status=%d, treating as failure", copyCommandReply.Status)
+		thinErrorCode = thin.ThinClientErrorInternalError
+	}
 
 	// Remove from ARQ tracking
 	d.replyLock.Lock()
@@ -1524,7 +1539,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		AppID: arqMessage.AppID,
 		StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
 			QueryID:   arqMessage.QueryID,
-			ErrorCode: copyCommandReply.ErrorCode,
+			ErrorCode: thinErrorCode,
 		},
 	})
 }

@@ -766,7 +766,8 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 		return &pigeonhole.CourierQueryReply{
 			ReplyType: 1, // 1 = copy_command_reply
 			CopyCommandReply: &pigeonhole.CopyCommandReply{
-				ErrorCode: 1, // Error
+				Status:    pigeonhole.CopyStatusFailed,
+				ErrorCode: 0,
 			},
 		}
 	}
@@ -781,7 +782,8 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 		return &pigeonhole.CourierQueryReply{
 			ReplyType: 1,
 			CopyCommandReply: &pigeonhole.CopyCommandReply{
-				ErrorCode: 1,
+				Status:    pigeonhole.CopyStatusFailed,
+				ErrorCode: 0,
 			},
 		}
 	}
@@ -895,7 +897,8 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 1, // 1 = copy_command_reply
 		CopyCommandReply: &pigeonhole.CopyCommandReply{
-			ErrorCode: 0, // Success
+			Status:    pigeonhole.CopyStatusSucceeded,
+			ErrorCode: 0,
 		},
 	}
 }
