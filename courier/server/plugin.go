@@ -97,7 +97,7 @@ const (
 	// copyReadReplyTimeout bounds how long the courier waits for a
 	// reply from one shard replica during a Copy read. A stuck replica
 	// cannot pin the background Copy goroutine for longer than this.
-	copyReadReplyTimeout = 10 * time.Second
+	copyReadReplyTimeout = 20 * time.Second
 
 	// maxCopyWriteAttempts is how many times the courier tries to
 	// dispatch a single copy-stream envelope to its intermediate
@@ -111,13 +111,13 @@ const (
 	// envelope. One unresponsive intermediate cannot pin the Copy
 	// goroutine; if only one reply arrives within this window, it is
 	// treated as the authoritative outcome.
-	copyWriteReplyTimeout = 15 * time.Second
+	copyWriteReplyTimeout = 30 * time.Second
 
 	// copyBackoffBase is the base backoff between attempts for both
 	// read and write retry loops; each attempt doubles up to
 	// copyBackoffCap.
 	copyBackoffBase = 500 * time.Millisecond
-	copyBackoffCap  = 5 * time.Second
+	copyBackoffCap  = 10 * time.Second
 )
 
 // copyAttemptBackoff returns the sleep between attempt n and attempt
