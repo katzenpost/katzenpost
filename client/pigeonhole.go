@@ -1844,14 +1844,8 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 			}
 
 			d.replyLock.Lock()
-			delete(d.arqSurbIDMap, *arqMessage.SURBID)
-			arqMessage.SURBID = newSurbID
-			arqMessage.SURBDecryptionKeys = surbKey
-			arqMessage.Retransmissions++
-			arqMessage.SentAt = time.Now()
-			arqMessage.ReplyETA = rtt
+			d.rotateARQSurbIDLocked(arqMessage, newSurbID, surbKey, rtt)
 			arqMessage.State = ARQStateWaitingForACK
-			d.arqSurbIDMap[*newSurbID] = arqMessage
 			d.replyLock.Unlock()
 
 			myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
