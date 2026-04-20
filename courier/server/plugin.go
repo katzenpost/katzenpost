@@ -1129,21 +1129,30 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 			continue
 		}
 
-		// Get replica IDs and public keys
+		// Collect the shards whose envelope pubkey is usable. With K=2
+		// redundancy a single good key is sufficient — the peer shard
+		// picks the tombstone up via replica-to-replica replication.
+		// If BOTH keys are unusable, skip this box.
 		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-		replicaIDs := [2]uint8{shards[0].ReplicaID, shards[1].ReplicaID}
-		replicaPubKeys := make([]nike.PublicKey, 2)
-		for j, shard := range shards {
+		usableReplicaIDs := make([]uint8, 0, 2)
+		usablePubKeys := make([]nike.PublicKey, 0, 2)
+		for _, shard := range shards {
 			keyBytes, exists := shard.EnvelopeKeys[replicaEpoch]
 			if !exists {
-				e.log.Errorf("writeTombstonesToTempChannel: No envelope key for replica %d at epoch %d", shard.ReplicaID, replicaEpoch)
+				e.log.Warningf("writeTombstonesToTempChannel: No envelope key for replica %d at epoch %d", shard.ReplicaID, replicaEpoch)
 				continue
 			}
-			replicaPubKeys[j], err = e.envelopeScheme.UnmarshalBinaryPublicKey(keyBytes)
+			pk, err := e.envelopeScheme.UnmarshalBinaryPublicKey(keyBytes)
 			if err != nil {
-				e.log.Errorf("writeTombstonesToTempChannel: Failed to unmarshal key for replica %d: %v", shard.ReplicaID, err)
+				e.log.Warningf("writeTombstonesToTempChannel: Failed to unmarshal key for replica %d: %v", shard.ReplicaID, err)
 				continue
 			}
+			usableReplicaIDs = append(usableReplicaIDs, shard.ReplicaID)
+			usablePubKeys = append(usablePubKeys, pk)
+		}
+		if len(usablePubKeys) == 0 {
+			e.log.Errorf("writeTombstonesToTempChannel: no usable shard keys for box %d, skipping", i)
+			continue
 		}
 
 		// Create ReplicaWrite with the tombstone
@@ -1163,13 +1172,13 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 			WriteMsg:    writeMsg,
 		}
 
-		// Encrypt using MKEM for both replicas
+		// Encrypt using MKEM for whichever shard keys we have.
 		mkemScheme := mkem.NewScheme(e.envelopeScheme)
-		mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, innerMsg.Bytes())
+		mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(usablePubKeys, innerMsg.Bytes())
 		mkemPublicKey := mkemPrivateKey.Public()
 
-		// Send directly to each storage replica
-		for j, replicaID := range replicaIDs {
+		// Send directly to each usable storage replica.
+		for j, replicaID := range usableReplicaIDs {
 			query := &commands.ReplicaMessage{
 				Cmds:               e.cmds,
 				PigeonholeGeometry: e.pigeonholeGeo,
@@ -1179,7 +1188,6 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 				Ciphertext:         mkemCiphertext.Envelope,
 			}
 
-			// Send directly to storage replica
 			if err := e.server.SendMessage(replicaID, query); err != nil {
 				e.log.Errorf("writeTombstonesToTempChannel: Failed to send tombstone %d to replica %d: %v", i, replicaID, err)
 				continue
