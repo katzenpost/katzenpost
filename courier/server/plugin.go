@@ -889,11 +889,24 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 			}
 		}
 
-		// Both replies are errors.
-		// BoxAlreadyExists is a terminal outcome — the destination
-		// box was pre-written, retrying won't change that.
+		// Both replies are errors. BoxAlreadyExists is ambiguous:
+		//
+		//   - attempt == 0: the destination box was written before we
+		//     ever sent anything, so the Copy cannot achieve its goal.
+		//     Abort (this is the case TestCopyOntoAlreadyExistingBoxError
+		//     pins).
+		//
+		//   - attempt > 0: our PREVIOUS attempt almost certainly landed
+		//     at the replicas but the reply didn't reach us before
+		//     copyWriteReplyTimeout. The retry then sees our own prior
+		//     write and reports BoxAlreadyExists. Treat as success —
+		//     the target state is achieved.
 		if bestErr == pigeonhole.ReplicaErrorBoxAlreadyExists {
-			e.log.Warningf("dispatchCopyEnvelope: both intermediates report BoxAlreadyExists, aborting Copy")
+			if attempt > 0 {
+				e.log.Debugf("dispatchCopyEnvelope: BoxAlreadyExists on retry attempt %d — prior attempt's write landed, treating as success", attempt+1)
+				return true, 0
+			}
+			e.log.Warningf("dispatchCopyEnvelope: both intermediates report BoxAlreadyExists on first attempt, aborting Copy")
 			return false, bestErr
 		}
 
