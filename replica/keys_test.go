@@ -79,6 +79,44 @@ func TestEnvelopeKeys(t *testing.T) {
 	keypair.PurgeKeyFiles(dname, replicaScheme, epoch)
 }
 
+// TestNewEnvelopeKeysLoadsPreviousEpochFromDisk verifies that startup
+// picks up the previous replica-epoch's key file (if present on disk)
+// into memory, preserving the grace-period decryption cache across a
+// replica restart. Without this, a restart near an epoch boundary
+// would leave ciphertexts encrypted to the prior-epoch public key
+// undecryptable even though the private key is still on disk.
+func TestNewEnvelopeKeysLoadsPreviousEpochFromDisk(t *testing.T) {
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+
+	dname, err := os.MkdirTemp("", "replica.prevepoch-startup")
+	require.NoError(t, err)
+	defer os.RemoveAll(dname)
+
+	replicaScheme := nikeschemes.ByName("CTIDH512-X25519")
+	epoch, _, _ := replicaCommon.ReplicaNow()
+	require.Greater(t, epoch, uint64(0), "need a non-zero epoch for this test")
+
+	// Pre-seed disk with a key file for the previous replica epoch, as
+	// if the replica had been running and then shut down.
+	prevKey := replicaCommon.NewEnvelopeKey(replicaScheme)
+	require.NoError(t, prevKey.WriteKeyFiles(dname, replicaScheme, epoch-1))
+
+	// Start fresh — simulates a replica restart that initialises from the
+	// pre-existing datadir for the current epoch.
+	ek, err := NewEnvelopeKeys(replicaScheme, logBackend.GetLogger("envelope keys"), dname, epoch)
+	require.NoError(t, err)
+	defer ek.Halt()
+
+	// The previous epoch's key must be in memory, so handleReplicaMessage
+	// can still decapsulate ciphertexts encrypted to it during the
+	// grace window right after a boundary.
+	got, err := ek.GetKeypair(epoch - 1)
+	require.NoError(t, err, "previous-epoch key file on disk must be loaded at startup")
+	require.NotNil(t, got)
+	require.Equal(t, prevKey.PublicKey.Bytes(), got.PublicKey.Bytes())
+}
+
 // TestEnsureKeyRefusesPastEpochs pins the invariant that EnsureKey, which
 // is used by the PKI publisher to prospectively generate current and
 // upcoming replica-epoch keys, never fabricates keys for past epochs.

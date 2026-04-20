@@ -50,6 +50,21 @@ func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, ep
 			return nil, err
 		}
 	}
+
+	// Also load the previous replica epoch's key if it is still on
+	// disk. handleReplicaMessage may receive ciphertexts encrypted to
+	// the prior-epoch public key during the grace window right after a
+	// boundary, and without this the key would be on disk but not in
+	// memory (Prune would later discard it before it gets reloaded).
+	// Missing is fine — just skip.
+	if epoch > 0 {
+		prev := epoch - 1
+		if prevKey, err := replicaCommon.EnvelopeKeyFromFiles(datadir, scheme, prev); err == nil {
+			e.keys[prev] = prevKey
+			log.Debugf("Loaded previous-epoch envelope key for epoch %d", prev)
+		}
+	}
+
 	e.Go(e.worker)
 	return e, nil
 }
