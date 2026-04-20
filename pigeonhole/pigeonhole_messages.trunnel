@@ -160,13 +160,17 @@ struct copy_command {
 // status:                 0=succeeded, 1=in_progress, 2=failed
 // error_code:             replica ErrorCode that triggered the abort
 //                         (only meaningful when status=failed)
-// failed_envelope_index:  1-based position of the copy-stream envelope
-//                         whose write produced the fatal error; 0 if
-//                         not applicable.
+// failed_envelope_index:  1-based SEQUENTIAL position in the copy stream
+//                         of the envelope whose write produced the fatal
+//                         error — i.e. successfully_processed_count + 1.
+//                         NOT a BACAP message index (the courier only
+//                         sees opaque ciphertext for each envelope).
+//                         0 if not applicable. u64 to match BACAP's
+//                         Idx64 address space.
 struct copy_command_reply {
     u8 status;
     u8 error_code;
-    u32 failed_envelope_index;
+    u64 failed_envelope_index;
 }
 
 // CopyStreamElement - wraps a CourierEnvelope chunk with stream position flags.

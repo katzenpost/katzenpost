@@ -46,7 +46,7 @@ func TestCopyCommandReplyRoundTrip(t *testing.T) {
 			in: CopyCommandReply{
 				Status:              CopyStatusFailed,
 				ErrorCode:           ReplicaErrorInvalidSignature,
-				FailedEnvelopeIndex: 0x01020304,
+				FailedEnvelopeIndex: 0x0102030405060708, // above uint32 range
 			},
 		},
 	}
@@ -54,12 +54,12 @@ func TestCopyCommandReplyRoundTrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			blob, err := tc.in.MarshalBinary()
 			require.NoError(t, err)
-			require.Len(t, blob, 6, "CopyCommandReply wire size must be 6 bytes")
+			require.Len(t, blob, 10, "CopyCommandReply wire size must be 10 bytes")
 
 			out := &CopyCommandReply{}
 			remaining, err := out.Parse(blob)
 			require.NoError(t, err)
-			require.Len(t, remaining, 0, "Parse should consume exactly the 6 bytes")
+			require.Len(t, remaining, 0, "Parse should consume exactly the 10 bytes")
 			require.Equal(t, tc.in.Status, out.Status)
 			require.Equal(t, tc.in.ErrorCode, out.ErrorCode)
 			require.Equal(t, tc.in.FailedEnvelopeIndex, out.FailedEnvelopeIndex)
