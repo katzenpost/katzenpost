@@ -176,6 +176,12 @@ var (
 	// ErrInvalidTombstoneSignature indicates that a replica claimed a box is
 	// tombstoned but the BACAP signature verification failed.
 	ErrInvalidTombstoneSignature = errors.New("invalid tombstone signature")
+
+	// ErrCopyCommandFailed indicates that the courier reported CopyStatusFailed
+	// for a StartResendingCopyCommand operation. The ancillary ReplicaErrorCode
+	// and FailedEnvelopeIndex fields on StartResendingCopyCommandReply carry
+	// diagnostic detail when present.
+	ErrCopyCommandFailed = errors.New("copy command failed")
 )
 
 // IsExpectedOutcome returns true for error codes that represent completed

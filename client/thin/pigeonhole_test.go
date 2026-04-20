@@ -665,14 +665,15 @@ func TestStartResendingCopyCommandError(t *testing.T) {
 		sendResponse(t, server, &Response{
 			StartResendingCopyCommandReply: &StartResendingCopyCommandReply{
 				QueryID:   req.StartResendingCopyCommand.QueryID,
-				ErrorCode: 7, // ReplicaInternalError
+				ErrorCode: ThinClientErrorCopyCommandFailed,
 			},
 		})
 	}()
 
 	err := tc.StartResendingCopyCommand(newTestWriteCap(t))
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrReplicaInternalError))
+	require.True(t, errors.Is(err, ErrCopyCommandFailed),
+		"ErrorCode=ThinClientErrorCopyCommandFailed must map to ErrCopyCommandFailed via the thin-client-namespace interpreter, not to a replica sentinel")
 }
 
 func TestStartResendingCopyCommandWithCourierNilArgs(t *testing.T) {

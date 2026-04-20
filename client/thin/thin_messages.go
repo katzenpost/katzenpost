@@ -122,6 +122,15 @@ const (
 	// tombstoned but the signature verification failed. This means the tombstone is
 	// forged or corrupted.
 	ThinClientErrorInvalidTombstoneSig uint8 = 25
+
+	// ThinClientErrorCopyCommandFailed indicates that the courier reported
+	// CopyStatusFailed for a StartResendingCopyCommand operation. This is
+	// a thin-client-namespace signal: the daemon sets it when it observes a
+	// terminal CopyStatusFailed reply from the courier, independent of any
+	// replica error code. The ancillary ReplicaErrorCode / FailedEnvelopeIndex
+	// fields on the reply (if present) provide diagnostic detail, but the
+	// sentinel mapping is driven entirely by this code.
+	ThinClientErrorCopyCommandFailed uint8 = 26
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -187,6 +196,8 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "Start resending cancelled"
 	case ThinClientErrorInvalidTombstoneSig:
 		return "Invalid tombstone signature"
+	case ThinClientErrorCopyCommandFailed:
+		return "Copy command failed"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}

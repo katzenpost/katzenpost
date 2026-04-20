@@ -27,11 +27,81 @@ type StartResendingResult struct {
 	CourierQueueID []byte
 }
 
-// errorCodeToSentinel maps error codes to sentinel errors for StartResendingEncryptedMessage.
-// This allows callers to use errors.Is() for specific error handling.
+// thinClientErrorCodeToSentinel maps codes from the THIN-CLIENT error
+// namespace (ThinClientSuccess + ThinClientErrorXxx in thin_messages.go)
+// to sentinel errors. It MUST NOT be called with values that originated
+// in the pigeonhole replica namespace — the two namespaces share integer
+// values (e.g. ReplicaErrorDatabaseFailure = ThinClientErrorInternalError
+// = 4) and collapsing them here is exactly the overloading bug we avoid
+// by keeping the interpreters separate.
 //
-// The daemon sends back pigeonhole replica error codes (1-9) for replica-level errors.
-// For other errors, a generic error is returned with the error code string.
+// Values falling outside the known thin-client codes return a generic
+// error carrying the code's string representation.
+func thinClientErrorCodeToSentinel(errorCode uint8) error {
+	switch errorCode {
+	case ThinClientSuccess:
+		return nil
+	case ThinClientErrorMKEMDecryptionFailed:
+		return ErrMKEMDecryptionFailed
+	case ThinClientErrorBACAPDecryptionFailed:
+		return ErrBACAPDecryptionFailed
+	case ThinClientErrorStartResendingCancelled:
+		return ErrStartResendingCancelled
+	case ThinClientErrorInvalidTombstoneSig:
+		return ErrInvalidTombstoneSignature
+	case ThinClientErrorCopyCommandFailed:
+		return ErrCopyCommandFailed
+	default:
+		return errors.New(ThinClientErrorToString(errorCode))
+	}
+}
+
+// replicaErrorCodeToSentinel maps codes from the PIGEONHOLE REPLICA error
+// namespace (see pigeonhole/errors.go — ReplicaSuccess + ReplicaErrorXxx)
+// to sentinel errors. It MUST NOT be called with values that originated
+// in the thin-client namespace; see thinClientErrorCodeToSentinel for why.
+//
+// Unknown codes return a generic error.
+func replicaErrorCodeToSentinel(errorCode uint8) error {
+	switch errorCode {
+	case 0: // ReplicaSuccess
+		return nil
+	case 1: // ReplicaErrorBoxIDNotFound
+		return ErrBoxIDNotFound
+	case 2: // ReplicaErrorInvalidBoxID
+		return ErrInvalidBoxID
+	case 3: // ReplicaErrorInvalidSignature
+		return ErrInvalidSignature
+	case 4: // ReplicaErrorDatabaseFailure
+		return ErrDatabaseFailure
+	case 5: // ReplicaErrorInvalidPayload
+		return ErrInvalidPayload
+	case 6: // ReplicaErrorStorageFull
+		return ErrStorageFull
+	case 7: // ReplicaErrorInternalError
+		return ErrReplicaInternalError
+	case 8: // ReplicaErrorInvalidEpoch
+		return ErrInvalidEpoch
+	case 9: // ReplicaErrorReplicationFailed
+		return ErrReplicationFailed
+	case 10: // ReplicaErrorBoxAlreadyExists
+		return ErrBoxAlreadyExists
+	case 11: // ReplicaErrorTombstone
+		return ErrTombstone
+	default:
+		return fmt.Errorf("unknown replica error code: %d", errorCode)
+	}
+}
+
+// errorCodeToSentinel is the LEGACY mixed-namespace mapper used by the
+// StartResendingEncryptedMessage family. The ErrorCode field on
+// StartResendingEncryptedMessageReply historically carries values from
+// both the replica namespace (e.g. ReplicaErrorBoxIDNotFound) and the
+// thin-client namespace (e.g. ThinClientErrorStartResendingCancelled),
+// and the integer values collide. A clean split would need the daemon
+// to stop mixing namespaces in that field; until then this mapper serves
+// the mixed field. New code paths MUST use one of the pure interpreters
+// above instead.
 func errorCodeToSentinel(errorCode uint8) error {
 	switch errorCode {
 	case ThinClientSuccess:
@@ -850,7 +920,7 @@ func (t *ThinClient) StartResendingCopyCommand(writeCap *bacap.WriteCap) error {
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return errorCodeToSentinel(v.ErrorCode)
+				return thinClientErrorCodeToSentinel(v.ErrorCode)
 			}
 			t.log.Debugf("StartResendingCopyCommand: Copy command completed successfully")
 			return nil
@@ -940,7 +1010,7 @@ func (t *ThinClient) StartResendingCopyCommandWithCourier(
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return errorCodeToSentinel(v.ErrorCode)
+				return thinClientErrorCodeToSentinel(v.ErrorCode)
 			}
 			t.log.Debugf("StartResendingCopyCommandWithCourier: Copy command completed successfully")
 			return nil

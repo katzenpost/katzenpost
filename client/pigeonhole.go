@@ -1559,7 +1559,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
 				QueryID:             arqMessage.QueryID,
-				ErrorCode:           thin.ThinClientErrorInternalError,
+				ErrorCode:           thin.ThinClientErrorCopyCommandFailed,
 				ReplicaErrorCode:    copyCommandReply.ErrorCode,
 				FailedEnvelopeIndex: copyCommandReply.FailedEnvelopeIndex,
 			},
