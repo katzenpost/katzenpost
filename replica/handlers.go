@@ -413,23 +413,10 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 				ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
 			}
 		}
-		// Convert trunnel type to wire command for state handling
+		// Convert trunnel type to wire command for state handling.
+		// state.handleReplicaWrite performs the check-and-put atomically
+		// under a per-BoxID lock; no pre-check is needed here.
 		wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, nil)
-		// Check if box already exists before attempting write
-		exists, err := c.l.server.state.boxExists(&replicaWrite.BoxID)
-		if err != nil {
-			c.log.Errorf("handleReplicaWrite: failed to check box existence: %v", err)
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,
-			}
-		}
-		if exists {
-			c.log.Debugf("handleReplicaWrite: BoxID %x already exists, rejecting write", replicaWrite.BoxID)
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorBoxAlreadyExists,
-			}
-		}
-
 		err = c.l.server.state.handleReplicaWrite(wireWrite)
 		if err != nil {
 			// Check if this is the "already exists" case - this is expected during replication

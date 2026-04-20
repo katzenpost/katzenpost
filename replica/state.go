@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/linxGnu/grocksdb"
 	"golang.org/x/crypto/blake2b"
@@ -24,6 +25,15 @@ const (
 	errDatabaseClosed = "database is closed"
 )
 
+// boxLock is a per-BoxID mutex with a refCount. refCount is protected by
+// state.locksMu, not by bl.mu: it tracks how many goroutines currently
+// hold or are waiting on this entry so that releaseBoxLock can remove
+// the map entry when the last holder leaves.
+type boxLock struct {
+	mu       sync.Mutex
+	refCount int
+}
+
 var (
 	ErrBoxIDNotFound       = errors.New("Box ID not found")
 	ErrBoxAlreadyExists    = errors.New("BoxID already exists, writes are immutable")
@@ -36,6 +46,49 @@ type state struct {
 	server *Server
 	db     *grocksdb.DB
 	log    *logging.Logger
+
+	// locksMu protects boxLocks and every boxLock's refCount. Held only
+	// briefly during a map lookup / refCount adjustment — not across
+	// database I/O — so it does not serialize the actual write work.
+	locksMu  sync.Mutex
+	boxLocks map[[32]byte]*boxLock
+}
+
+// acquireBoxLock returns a locked per-BoxID mutex. The caller MUST
+// call releaseBoxLock with the returned *boxLock and the same boxID
+// exactly once, whether or not the critical section succeeded.
+//
+// A single top-level mutex (locksMu) covers both the map operation and
+// the refCount bump so that a concurrent releaseBoxLock cannot delete
+// the entry between LoadOrStore-equivalent and refCount++.
+func (s *state) acquireBoxLock(boxID *[32]byte) *boxLock {
+	key := *boxID
+	s.locksMu.Lock()
+	if s.boxLocks == nil {
+		s.boxLocks = make(map[[32]byte]*boxLock)
+	}
+	bl, ok := s.boxLocks[key]
+	if !ok {
+		bl = &boxLock{}
+		s.boxLocks[key] = bl
+	}
+	bl.refCount++
+	s.locksMu.Unlock()
+	bl.mu.Lock()
+	return bl
+}
+
+// releaseBoxLock unlocks the per-BoxID mutex and drops the refCount,
+// removing the map entry when the last holder leaves.
+func (s *state) releaseBoxLock(bl *boxLock, boxID *[32]byte) {
+	bl.mu.Unlock()
+	key := *boxID
+	s.locksMu.Lock()
+	bl.refCount--
+	if bl.refCount == 0 {
+		delete(s.boxLocks, key)
+	}
+	s.locksMu.Unlock()
 }
 
 func newState(s *Server) *state {
@@ -112,25 +165,6 @@ func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pi
 	return box, nil
 }
 
-// boxExists checks if a BoxID already exists in the database.
-// Returns true if the box exists, false otherwise.
-func (s *state) boxExists(boxID *[32]byte) (bool, error) {
-	if s.db == nil {
-		return false, ErrDBClosed
-	}
-
-	ro := grocksdb.NewDefaultReadOptions()
-	defer ro.Destroy()
-	existing, err := s.db.Get(ro, boxID[:])
-	if err != nil {
-		s.log.Errorf("state: Failed to check if BoxID %x exists: %s", boxID, err)
-		return false, err
-	}
-	defer existing.Free()
-
-	return existing.Size() > 0, nil
-}
-
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	s.log.Debugf("state: Starting replica write for BoxID: %x", replicaWrite.BoxID)
 
@@ -139,6 +173,12 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		s.log.Error("state: Database is closed, cannot perform write")
 		return fmt.Errorf(errDatabaseClosed)
 	}
+
+	// Serialize check-and-put for this BoxID so concurrent writers
+	// cannot both pass the existence check and both Put. The lock is
+	// per-BoxID — unrelated writes do not contend.
+	bl := s.acquireBoxLock(replicaWrite.BoxID)
+	defer s.releaseBoxLock(bl, replicaWrite.BoxID)
 
 	// Check if BoxID already exists (writes are immutable, only tombstones can overwrite)
 	ro := grocksdb.NewDefaultReadOptions()
@@ -185,6 +225,13 @@ func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) err
 		s.log.Error("state: Database is closed, cannot perform tombstone write")
 		return fmt.Errorf(errDatabaseClosed)
 	}
+
+	// Take the same per-BoxID lock as handleReplicaWrite so a tombstone
+	// and a concurrent normal write for the same BoxID can't interleave
+	// between the existence check and the Put.
+	boxIDArr := boxID
+	bl := s.acquireBoxLock(&boxIDArr)
+	defer s.releaseBoxLock(bl, &boxIDArr)
 
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
