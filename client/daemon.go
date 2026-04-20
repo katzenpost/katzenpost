@@ -23,6 +23,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/common"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/profiling"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -125,6 +126,9 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 	err := d.initLogging()
 	if err != nil {
 		return nil, err
+	}
+	if err := profiling.Start(d.log); err != nil {
+		return nil, fmt.Errorf("failed to start profiling: %w", err)
 	}
 	return d, nil
 }

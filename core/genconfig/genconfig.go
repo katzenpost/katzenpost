@@ -91,7 +91,8 @@ type Config struct {
 	NoCourierReplicaDecoy    bool
 	NoMixDecoy               bool
 	NoMetrics                bool
-	Pyroscope                bool
+	PyroscopeDirauth         bool
+	PyroscopeKpclientd       bool
 	DialTimeout              int
 	MaxPKIDelay              int
 	PollingIntvl             int
@@ -148,7 +149,8 @@ type Katzenpost struct {
 	NoCourierReplicaDecoy bool
 	NoMixDecoy            bool
 	NoMetrics             bool
-	Pyroscope         bool
+	PyroscopeDirauth   bool
+	PyroscopeKpclientd bool
 	EpochDuration     string
 	DebugConfig       *cConfig.Debug
 	SchedulerSlack    int
@@ -748,7 +750,8 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.NoCourierReplicaDecoy = cfg.NoDecoy || cfg.NoCourierReplicaDecoy
 	s.NoMixDecoy = cfg.NoMixDecoy
 	s.NoMetrics = cfg.NoMetrics
-	s.Pyroscope = cfg.Pyroscope
+	s.PyroscopeDirauth = cfg.PyroscopeDirauth
+	s.PyroscopeKpclientd = cfg.PyroscopeKpclientd
 	s.EpochDuration = cfg.EpochDuration
 	s.SchedulerSlack = cfg.SchedulerSlack
 	s.SchedulerMaxBurst = cfg.SchedulerMaxBurst
@@ -1390,10 +1393,15 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		if s.EpochDuration != "" {
 			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
 		}
-		if s.Pyroscope && strings.HasPrefix(serviceName, "auth") {
+		if s.PyroscopeDirauth && strings.HasPrefix(serviceName, "auth") {
 			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://127.0.0.1:4040")
 			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-dirauth")
 			envVars = append(envVars, fmt.Sprintf("PYROSCOPE_SERVICE_TAG=%s", serviceName))
+		}
+		if s.PyroscopeKpclientd && serviceName == "kpclientd" {
+			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://127.0.0.1:4040")
+			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-kpclientd")
+			envVars = append(envVars, "PYROSCOPE_SERVICE_TAG=kpclientd")
 		}
 		if len(envVars) > 0 {
 			Write(f, `
@@ -1539,7 +1547,7 @@ services:
 `, "grafana", "grafana", "grafana")
 	}
 
-	if s.Pyroscope {
+	if s.PyroscopeDirauth || s.PyroscopeKpclientd {
 		Write(f, `
   pyroscope:
     restart: "no"

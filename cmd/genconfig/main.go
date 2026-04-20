@@ -122,8 +122,10 @@ performance optimization and security requirements.`,
 		"disable decoy traffic generation for mix nodes")
 	cmd.Flags().BoolVar(&cfg.NoMetrics, "noMetrics", false,
 		"disable prometheus and grafana containers in docker-compose")
-	cmd.Flags().BoolVar(&cfg.Pyroscope, "pyroscope", false,
-		"enable pyroscope profiling container and dirauth profiling")
+	cmd.Flags().BoolVar(&cfg.PyroscopeDirauth, "pyroscopeDirauth", false,
+		"enable pyroscope profiling of the directory authorities")
+	cmd.Flags().BoolVar(&cfg.PyroscopeKpclientd, "pyroscopeKpclientd", false,
+		"enable pyroscope profiling of the kpclientd client daemon")
 	cmd.Flags().IntVar(&cfg.DialTimeout, "dialTimeout", 0,
 		"session dial timeout in seconds (0 for default)")
 	cmd.Flags().IntVar(&cfg.MaxPKIDelay, "maxPKIDelay", 0,

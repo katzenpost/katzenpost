@@ -34,7 +34,8 @@ no_client_decoy?=false
 no_courier_replica_decoy?=false
 no_mixdecoy?=true
 no_metrics?=true
-pyroscope?=false
+pyroscope_dirauth?=false
+pyroscope_kpclientd?=false
 epoch_duration?=2m
 mixes=3
 auths=3
@@ -110,9 +111,14 @@ ifneq ($(epoch_duration),)
   epochDurationFlag=--epochDuration $(epoch_duration)
 endif
 
-ifeq ($(pyroscope),true)
-  pyroscope_tags=-tags pyroscope
-  pyroscopeFlag=--pyroscope
+ifeq ($(pyroscope_dirauth),true)
+  pyroscope_dirauth_tags=-tags pyroscope
+  pyroscopeDirauthFlag=--pyroscopeDirauth
+endif
+
+ifeq ($(pyroscope_kpclientd),true)
+  pyroscope_kpclientd_tags=-tags pyroscope
+  pyroscopeKpclientdFlag=--pyroscopeKpclientd
 endif
 
 ifneq ($(schedulerSlack),0)
@@ -180,7 +186,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeFlag} \
+		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
@@ -196,7 +202,7 @@ config-only: | $(net_name)
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeFlag} \
+		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
@@ -362,7 +368,7 @@ $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_di
 		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} && mv echo-plugin /$(net_name)/echo_server.$(distro)'
 
 $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_tags) -trimpath -ldflags ${ldflags} && mv dirauth /$(net_name)/dirauth.$(distro) && \
+		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath -ldflags ${ldflags} && mv dirauth /$(net_name)/dirauth.$(distro) && \
 			cd ../fetch && go build -trimpath -ldflags ${ldflags} && mv fetch /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
@@ -370,7 +376,7 @@ $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 			mv ping /$(net_name)/ping.$(distro)'
 
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build -ldflags ${ldflags} && \
+		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(pyroscope_kpclientd_tags) -ldflags ${ldflags} && \
 			mv kpclientd /$(net_name)/kpclientd.$(distro)'
 
 clean-images: stop
