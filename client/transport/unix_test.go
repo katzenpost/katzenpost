@@ -6,14 +6,27 @@ package transport
 import (
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
+// shortSockDir returns a temporary directory with a short path, suitable
+// for unix sockets on macOS where sockaddr_un.sun_path is capped at 104
+// bytes. t.TempDir embeds the test name and produces paths that can
+// exceed the limit.
+func shortSockDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "ks")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func TestUnixListenerRoundtrip(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := shortSockDir(t)
 	sockPath := filepath.Join(tmpDir, "test.sock")
 
 	cfg := &UnixListenConfig{Address: sockPath}
@@ -48,7 +61,7 @@ func TestUnixListenerRoundtrip(t *testing.T) {
 }
 
 func TestListenConfigListen_Unix(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := shortSockDir(t)
 	sockPath := filepath.Join(tmpDir, "dispatch.sock")
 
 	cfg := &ListenConfig{Unix: &UnixListenConfig{Address: sockPath}}
