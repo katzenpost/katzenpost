@@ -921,6 +921,12 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
+	case message.GetMessageBoxIndexCounterReply != nil:
+		select {
+		case t.eventSink <- message.GetMessageBoxIndexCounterReply:
+		case <-t.HaltCh():
+			return false
+		}
 
 		/**  Copy Channel API **/
 

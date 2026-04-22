@@ -343,6 +343,21 @@ type NextMessageBoxIndex struct {
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
 }
 
+// GetMessageBoxIndexCounter requests the daemon to return the BACAP Idx64
+// counter embedded in a MessageBoxIndex. This lets thin clients order and
+// compare indexes without having to peek at the binary layout themselves
+// (bacap.MessageBoxIndex.MarshalBinary puts Idx64 as the first 8 bytes in
+// little-endian, but that's an implementation detail the thin client
+// should not rely on). The reply type is GetMessageBoxIndexCounterReply.
+type GetMessageBoxIndexCounter struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// MessageBoxIndex is the index whose counter should be returned.
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
+}
+
 // CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
 // The payload is automatically chunked and each chunk is wrapped in a CourierEnvelope.
 // Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
@@ -577,6 +592,10 @@ type Response struct {
 	// NextMessageBoxIndexReply is sent when the client daemon successfully increments a MessageBoxIndex.
 	NextMessageBoxIndexReply *NextMessageBoxIndexReply `cbor:"next_message_box_index_reply"`
 
+	// GetMessageBoxIndexCounterReply is sent in response to a
+	// GetMessageBoxIndexCounter request and carries the BACAP Idx64 value.
+	GetMessageBoxIndexCounterReply *GetMessageBoxIndexCounterReply `cbor:"get_message_box_index_counter_reply"`
+
 	// Copy Channel API:
 
 	// CreateCourierEnvelopesFromPayloadReply is sent when the client daemon successfully creates courier envelopes from a payload.
@@ -632,6 +651,9 @@ type Request struct {
 
 	// NextMessageBoxIndex is used to increment a MessageBoxIndex.
 	NextMessageBoxIndex *NextMessageBoxIndex `cbor:"next_message_box_index"`
+
+	// GetMessageBoxIndexCounter reads the Idx64 counter out of a MessageBoxIndex.
+	GetMessageBoxIndexCounter *GetMessageBoxIndexCounter `cbor:"get_message_box_index_counter"`
 
 	// CreateCourierEnvelopesFromPayload is used to create multiple CourierEnvelopes from a payload of any size.
 	CreateCourierEnvelopesFromPayload *CreateCourierEnvelopesFromPayload `cbor:"create_courier_envelopes_from_payload"`

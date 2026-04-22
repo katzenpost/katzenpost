@@ -409,6 +409,27 @@ func (e *NextMessageBoxIndexReply) String() string {
 	return "NextMessageBoxIndexReply: success"
 }
 
+// GetMessageBoxIndexCounterReply is the reply to a GetMessageBoxIndexCounter request.
+type GetMessageBoxIndexCounterReply struct {
+	// QueryID is used for correlating this reply with the GetMessageBoxIndexCounter request.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Counter is the BACAP Idx64 value read out of the requested MessageBoxIndex.
+	Counter uint64 `cbor:"counter"`
+
+	// ErrorCode indicates the reason for a failure to read the counter if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the GetMessageBoxIndexCounterReply.
+func (e *GetMessageBoxIndexCounterReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("GetMessageBoxIndexCounterReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("GetMessageBoxIndexCounterReply: counter=%d", e.Counter)
+}
+
 // Copy Channel API:
 
 // CreateCourierEnvelopesFromPayloadReply is sent in response to a CreateCourierEnvelopesFromPayload request.

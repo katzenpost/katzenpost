@@ -347,6 +347,8 @@ func (d *Daemon) egressWorker() {
 				d.cancelResendingCopyCommand(request)
 			case request.NextMessageBoxIndex != nil:
 				d.nextMessageBoxIndex(request)
+			case request.GetMessageBoxIndexCounter != nil:
+				d.getMessageBoxIndexCounter(request)
 
 				// Copy Channel API:
 

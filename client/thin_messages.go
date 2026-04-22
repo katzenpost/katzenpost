@@ -25,6 +25,7 @@ func IntoThinResponse(r *Response) *thin.Response {
 		StartResendingCopyCommandReply:       r.StartResendingCopyCommandReply,
 		CancelResendingCopyCommandReply:      r.CancelResendingCopyCommandReply,
 		NextMessageBoxIndexReply:             r.NextMessageBoxIndexReply,
+		GetMessageBoxIndexCounterReply:       r.GetMessageBoxIndexCounterReply,
 
 		// Copy Channel API:
 		CreateCourierEnvelopesFromPayloadReply:          r.CreateCourierEnvelopesFromPayloadReply,
@@ -71,6 +72,8 @@ type Response struct {
 
 	NextMessageBoxIndexReply *thin.NextMessageBoxIndexReply
 
+	GetMessageBoxIndexCounterReply *thin.GetMessageBoxIndexCounterReply
+
 	// Copy Channel API:
 
 	CreateCourierEnvelopesFromPayloadReply *thin.CreateCourierEnvelopesFromPayloadReply
@@ -93,6 +96,7 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		StartResendingCopyCommand:       r.StartResendingCopyCommand,
 		CancelResendingCopyCommand:      r.CancelResendingCopyCommand,
 		NextMessageBoxIndex:             r.NextMessageBoxIndex,
+		GetMessageBoxIndexCounter:       r.GetMessageBoxIndexCounter,
 
 		// Copy Channel API:
 		CreateCourierEnvelopesFromPayload:          r.CreateCourierEnvelopesFromPayload,
@@ -130,6 +134,8 @@ type Request struct {
 	CancelResendingCopyCommand *thin.CancelResendingCopyCommand
 
 	NextMessageBoxIndex *thin.NextMessageBoxIndex
+
+	GetMessageBoxIndexCounter *thin.GetMessageBoxIndexCounter
 
 	// Copy Channel API:
 

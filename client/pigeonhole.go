@@ -1075,6 +1075,47 @@ func (d *Daemon) sendNextMessageBoxIndexError(request *Request, errorCode uint8)
 	})
 }
 
+// getMessageBoxIndexCounter returns the BACAP Idx64 counter embedded in a
+// MessageBoxIndex. Thin clients that store indexes as opaque blobs use
+// this to order and compare them without having to know the binary layout.
+func (d *Daemon) getMessageBoxIndexCounter(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	messageBoxIndex := request.GetMessageBoxIndexCounter.MessageBoxIndex
+	if messageBoxIndex == nil {
+		d.log.Error("getMessageBoxIndexCounter: MessageBoxIndex is nil")
+		d.sendGetMessageBoxIndexCounterError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		GetMessageBoxIndexCounterReply: &thin.GetMessageBoxIndexCounterReply{
+			QueryID:   request.GetMessageBoxIndexCounter.QueryID,
+			Counter:   messageBoxIndex.Idx64,
+			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendGetMessageBoxIndexCounterError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		GetMessageBoxIndexCounterReply: &thin.GetMessageBoxIndexCounterReply{
+			QueryID:   request.GetMessageBoxIndexCounter.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
 // createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
 func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	return createEnvelopeFromMessageWithPadding(msg, doc, isRead, replyIndex, nil)

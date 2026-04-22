@@ -212,6 +212,7 @@ func (m *mockIncomingConn) toIncomingConn(_ *listener, logBackend *log.Backend) 
 				StartResendingEncryptedMessageReply:  thinResp.StartResendingEncryptedMessageReply,
 				CancelResendingEncryptedMessageReply: thinResp.CancelResendingEncryptedMessageReply,
 				NextMessageBoxIndexReply:             thinResp.NextMessageBoxIndexReply,
+				GetMessageBoxIndexCounterReply:       thinResp.GetMessageBoxIndexCounterReply,
 				CreateCourierEnvelopesFromPayloadReply:  thinResp.CreateCourierEnvelopesFromPayloadReply,
 				CreateCourierEnvelopesFromPayloadsReply: thinResp.CreateCourierEnvelopesFromPayloadsReply,
 				StartResendingCopyCommandReply:          thinResp.StartResendingCopyCommandReply,
@@ -2203,6 +2204,70 @@ func TestNextMessageBoxIndex_NilIndex(t *testing.T) {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.NextMessageBoxIndexReply)
 		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.NextMessageBoxIndexReply.ErrorCode)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for response")
+	}
+}
+
+func TestGetMessageBoxIndexCounter_Success(t *testing.T) {
+	d, testAppID, responseCh := setupDaemonWithMockConn(t)
+
+	// Build a real MessageBoxIndex from a StatefulWriter and advance it a
+	// few times so we're not asking about the uninitialized state.
+	writeCap, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	sw, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+	advanced := sw.GetCurrentMessageIndex()
+	for i := 0; i < 3; i++ {
+		advanced, err = advanced.NextIndex()
+		require.NoError(t, err)
+	}
+	want := advanced.Idx64
+
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("getctr-query0000"))
+
+	request := &Request{
+		AppID: testAppID,
+		GetMessageBoxIndexCounter: &thin.GetMessageBoxIndexCounter{
+			QueryID:         queryID,
+			MessageBoxIndex: advanced,
+		},
+	}
+
+	d.getMessageBoxIndexCounter(request)
+
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.GetMessageBoxIndexCounterReply)
+		require.Equal(t, thin.ThinClientSuccess, resp.GetMessageBoxIndexCounterReply.ErrorCode)
+		require.Equal(t, want, resp.GetMessageBoxIndexCounterReply.Counter)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for response")
+	}
+}
+
+func TestGetMessageBoxIndexCounter_NilIndex(t *testing.T) {
+	d, testAppID, responseCh := setupDaemonWithMockConn(t)
+
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("getctr-nil000000"))
+
+	request := &Request{
+		AppID: testAppID,
+		GetMessageBoxIndexCounter: &thin.GetMessageBoxIndexCounter{
+			QueryID:         queryID,
+			MessageBoxIndex: nil,
+		},
+	}
+
+	d.getMessageBoxIndexCounter(request)
+
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.GetMessageBoxIndexCounterReply)
+		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.GetMessageBoxIndexCounterReply.ErrorCode)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for response")
 	}

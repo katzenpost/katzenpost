@@ -1183,6 +1183,68 @@ func (t *ThinClient) NextMessageBoxIndex(messageBoxIndex *bacap.MessageBoxIndex)
 	}
 }
 
+// GetMessageBoxIndexCounter returns the BACAP Idx64 counter embedded in a
+// MessageBoxIndex. Callers can use this to order or compare two indexes
+// without having to know bacap.MessageBoxIndex's binary layout.
+//
+// Parameters:
+//   - messageBoxIndex: the index to inspect
+//
+// Returns:
+//   - uint64: the Idx64 counter
+//   - error: any error encountered
+func (t *ThinClient) GetMessageBoxIndexCounter(messageBoxIndex *bacap.MessageBoxIndex) (uint64, error) {
+	if messageBoxIndex == nil {
+		return 0, errors.New("messageBoxIndex cannot be nil")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		GetMessageBoxIndexCounter: &GetMessageBoxIndexCounter{
+			QueryID:         queryID,
+			MessageBoxIndex: messageBoxIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	if err := t.writeMessage(req); err != nil {
+		return 0, err
+	}
+
+	for {
+		var event Event
+		select {
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return 0, errHalting
+		}
+
+		switch v := event.(type) {
+		case *GetMessageBoxIndexCounterReply:
+			if v.QueryID == nil {
+				t.log.Debugf("GetMessageBoxIndexCounter: reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("GetMessageBoxIndexCounter: reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.Counter, nil
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
 // CreateEnvelopesResult contains the result of creating courier envelopes,
 // including the envelopes, buffer state for crash recovery, and next destination indices.
 type CreateEnvelopesResult struct {
