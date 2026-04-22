@@ -25,6 +25,7 @@ import (
 
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -155,8 +156,9 @@ func setupTestGateway(t *testing.T, gwAddr string, handler func(t *testing.T, wi
 	require.NoError(t, err)
 
 	clientCfg := &config.Config{
-		ListenNetwork:      "tcp",
-		ListenAddress:      "127.0.0.1:0",
+		Listen: &transport.ListenConfig{
+			Tcp: &transport.TcpListenConfig{Address: "127.0.0.1:0"},
+		},
 		PKISignatureScheme: "ed25519",
 		WireKEMScheme:      "x25519",
 		SphinxGeometry:     g,
@@ -436,8 +438,9 @@ func TestConnection(t *testing.T) {
 	require.NoError(t, err)
 
 	clientCfg := &config.Config{
-		ListenNetwork:      "tcp",
-		ListenAddress:      "127.0.0.1:63445",
+		Listen: &transport.ListenConfig{
+			Tcp: &transport.TcpListenConfig{Address: "127.0.0.1:63445"},
+		},
 		PKISignatureScheme: "ed25519",
 		WireKEMScheme:      "x25519",
 		SphinxGeometry:     g,
@@ -911,8 +914,9 @@ func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, hand
 	require.NoError(t, err)
 
 	clientCfg := &config.Config{
-		ListenNetwork:      "tcp",
-		ListenAddress:      "127.0.0.1:0",
+		Listen: &transport.ListenConfig{
+			Tcp: &transport.TcpListenConfig{Address: "127.0.0.1:0"},
+		},
 		PKISignatureScheme: "ed25519",
 		WireKEMScheme:      "x25519",
 		SphinxGeometry:     env.geo,

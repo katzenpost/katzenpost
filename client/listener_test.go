@@ -19,7 +19,7 @@ func TestListenerBasic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Use dynamic port to avoid conflicts
-	cfg.ListenAddress = "127.0.0.1:0"
+	cfg.Listen.Tcp.Address = "127.0.0.1:0"
 
 	client := &Client{
 		cfg: cfg,

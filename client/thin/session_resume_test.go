@@ -12,6 +12,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/client/thin/transport"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -49,8 +50,9 @@ func TestNewThinClientHasInstanceToken(t *testing.T) {
 	cfg := &Config{
 		SphinxGeometry:     sphinxGeo,
 		PigeonholeGeometry: pigeonGeo,
-		Network:            "tcp",
-		Address:             "localhost:0",
+		Dial: &transport.DialConfig{
+			Tcp: &transport.TcpDialConfig{Address: "localhost:0"},
+		},
 	}
 	logging := &struct {
 		File    string

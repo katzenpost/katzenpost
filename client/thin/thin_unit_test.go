@@ -14,6 +14,8 @@ import (
 	"github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/thin/transport"
+	clienttransport "github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -48,16 +50,18 @@ func TestFromConfig(t *testing.T) {
 	cfg := &config.Config{
 		SphinxGeometry:     sphinxGeo,
 		PigeonholeGeometry: pigeonGeo,
-		ListenNetwork:      "tcp",
-		ListenAddress:      "127.0.0.1:12345",
+		Listen: &clienttransport.ListenConfig{
+			Tcp: &clienttransport.TcpListenConfig{Address: "127.0.0.1:12345"},
+		},
 	}
 
 	thinCfg := FromConfig(cfg)
 	require.NotNil(t, thinCfg)
 	require.Equal(t, sphinxGeo, thinCfg.SphinxGeometry)
 	require.Equal(t, pigeonGeo, thinCfg.PigeonholeGeometry)
-	require.Equal(t, "tcp", thinCfg.Network)
-	require.Equal(t, "127.0.0.1:12345", thinCfg.Address)
+	require.NotNil(t, thinCfg.Dial)
+	require.NotNil(t, thinCfg.Dial.Tcp)
+	require.Equal(t, "127.0.0.1:12345", thinCfg.Dial.Tcp.Address)
 }
 
 func TestFromConfigNilSphinxGeometryPanics(t *testing.T) {
@@ -85,8 +89,9 @@ func TestLoadFile(t *testing.T) {
 	cfg, err := LoadFile("testdata/thinclient.toml")
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
-	require.Equal(t, "tcp", cfg.Network)
-	require.Equal(t, "localhost:64331", cfg.Address)
+	require.NotNil(t, cfg.Dial)
+	require.NotNil(t, cfg.Dial.Tcp)
+	require.Equal(t, "localhost:64331", cfg.Dial.Tcp.Address)
 	require.NotNil(t, cfg.SphinxGeometry)
 	require.Equal(t, 2000, cfg.SphinxGeometry.UserForwardPayloadLength)
 }
@@ -112,8 +117,9 @@ func TestNewThinClient(t *testing.T) {
 	cfg := &Config{
 		SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
 		PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
-		Network:            "tcp",
-		Address:            "127.0.0.1:12345",
+		Dial: &transport.DialConfig{
+			Tcp: &transport.TcpDialConfig{Address: "127.0.0.1:12345"},
+		},
 	}
 	logging := &config.Logging{
 		Level: "DEBUG",
@@ -813,7 +819,6 @@ func TestWriteMessagePayloadTooLarge(t *testing.T) {
 	client, _ := net.Pipe()
 	tc := newTestThinClientNoConn(t)
 	tc.conn = client
-	tc.isTCP = true
 
 	// UserForwardPayloadLength is 1000, send 2000 bytes
 	bigPayload := make([]byte, 2000)
@@ -897,7 +902,6 @@ func TestReadUntilDisconnectHaltCh(t *testing.T) {
 
 	tc := newTestThinClientNoConn(t)
 	tc.conn = client
-	tc.isTCP = true
 
 	// Halt immediately so readUntilDisconnect sees HaltCh
 	tc.Halt()
@@ -907,32 +911,6 @@ func TestReadUntilDisconnectHaltCh(t *testing.T) {
 	// (the readMessage will fail with closed pipe, and then HaltCh check catches it)
 	require.Nil(t, disconnectErr)
 	require.False(t, graceful)
-}
-
-func TestNewThinClientIsTCP(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-
-	tests := []struct {
-		network string
-		wantTCP bool
-	}{
-		{"tcp", true},
-		{"tcp4", true},
-		{"tcp6", true},
-		{"TCP", true},
-		{"unix", false},
-	}
-
-	for _, tt := range tests {
-		cfg := &Config{
-			SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-			PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
-			Network:            tt.network,
-			Address:            "localhost:1234",
-		}
-		tc := NewThinClient(cfg, &config.Logging{Level: "DEBUG"})
-		require.Equal(t, tt.wantTCP, tc.isTCP, "network=%s", tt.network)
-	}
 }
 
 func TestSendMessageOffline(t *testing.T) {

@@ -170,7 +170,7 @@ func setupFullClient(t *testing.T) (*Daemon, *Client, *[AppIDLength]byte, chan *
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
 		MaxPlaintextPayloadLength: 1000,
 		NIKEName:                  replicaCommon.NikeScheme.Name(),

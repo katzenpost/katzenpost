@@ -10,9 +10,18 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
+
+// validListen returns a minimal non-empty ListenConfig suitable for
+// exercising validation branches that sit downstream of the Listen check.
+func validListen() *transport.ListenConfig {
+	return &transport.ListenConfig{
+		Tcp: &transport.TcpListenConfig{Address: "127.0.0.1:0"},
+	}
+}
 
 func loadTestConfig(t *testing.T) *Config {
 	t.Helper()
@@ -100,8 +109,18 @@ func TestFixupAndValidate(t *testing.T) {
 		require.Contains(t, err.Error(), "WireKEMScheme")
 	})
 
-	t.Run("missing PinnedGateways", func(t *testing.T) {
+	t.Run("missing Listen", func(t *testing.T) {
 		cfg := &Config{WireKEMScheme: "xwing"}
+		err := cfg.FixupAndValidate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "transport")
+	})
+
+	t.Run("missing PinnedGateways", func(t *testing.T) {
+		cfg := &Config{
+			WireKEMScheme: "xwing",
+			Listen:        validListen(),
+		}
 		err := cfg.FixupAndValidate()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "PinnedGateways")
@@ -110,6 +129,7 @@ func TestFixupAndValidate(t *testing.T) {
 	t.Run("missing SphinxGeometry", func(t *testing.T) {
 		cfg := &Config{
 			WireKEMScheme:  "xwing",
+			Listen:         validListen(),
 			PinnedGateways: &Gateways{},
 		}
 		err := cfg.FixupAndValidate()
@@ -120,6 +140,7 @@ func TestFixupAndValidate(t *testing.T) {
 	t.Run("invalid SphinxGeometry", func(t *testing.T) {
 		cfg := &Config{
 			WireKEMScheme:  "xwing",
+			Listen:         validListen(),
 			PinnedGateways: &Gateways{},
 			SphinxGeometry: &geo.Geometry{}, // empty = invalid
 		}

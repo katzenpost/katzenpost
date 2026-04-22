@@ -34,7 +34,7 @@ func TestDaemonStartStop(t *testing.T) {
 	// Use a dynamic port to avoid conflicts
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("localhost:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("localhost:%d", port)
 
 	d, err := NewDaemon(cfg)
 	require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestDaemonStartsWithoutConsensus(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("localhost:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("localhost:%d", port)
 
 	d, err := NewDaemon(cfg)
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestDaemonStartsWithoutConsensus(t *testing.T) {
 	err = d.Start()
 	require.NoError(t, err, "Daemon.Start() should succeed even without consensus")
 
-	conn, err := net.DialTimeout("tcp", cfg.ListenAddress, time.Second)
+	conn, err := net.DialTimeout("tcp", cfg.Listen.Tcp.Address, time.Second)
 	require.NoError(t, err, "Should be able to connect to listener without consensus")
 	conn.Close()
 
@@ -72,7 +72,7 @@ func TestListenerAcceptsConnectionWithoutPKIDoc(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
-	cfg.ListenAddress = "127.0.0.1:0"
+	cfg.Listen.Tcp.Address = "127.0.0.1:0"
 
 	client := &Client{
 		cfg: cfg,

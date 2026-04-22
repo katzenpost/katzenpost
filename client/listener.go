@@ -4,7 +4,6 @@
 package client
 
 import (
-	"errors"
 	"net"
 	"sync"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/thin"
+	"github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -28,7 +28,7 @@ type listener struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	listener net.Listener
+	listener transport.Listener
 
 	connsLock *sync.RWMutex
 	conns     map[[AppIDLength]byte]*incomingConn // appID -> *incomingConn
@@ -438,34 +438,9 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 
 	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic, logBackend)
 
-	network := client.cfg.ListenNetwork
-	address := client.cfg.ListenAddress
-
-	switch network {
-	case "tcp6":
-		fallthrough
-	case "tcp4":
-		fallthrough
-	case "tcp":
-		tcpAddr, err := net.ResolveTCPAddr(network, address)
-		if err != nil {
-			return nil, err
-		}
-		l.listener, err = net.ListenTCP(network, tcpAddr)
-		if err != nil {
-			return nil, err
-		}
-	case "unix":
-		unixAddr, err := net.ResolveUnixAddr(network, address)
-		if err != nil {
-			return nil, err
-		}
-		l.listener, err = net.ListenUnix(network, unixAddr)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, errors.New("incorrect network type")
+	l.listener, err = client.cfg.Listen.Listen()
+	if err != nil {
+		return nil, err
 	}
 
 	l.Go(l.worker)

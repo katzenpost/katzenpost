@@ -41,9 +41,8 @@ func TestThinTCPSendRecv(t *testing.T) {
 			SphinxGeometry:     defaultSphinxGeometry,
 			PigeonholeGeometry: defaultPigeonholeGeometry,
 		},
-		log:   logBackend.GetLogger("thinclient"),
-		isTCP: true,
-		conn:  client,
+		log:  logBackend.GetLogger("thinclient"),
+		conn: client,
 	}
 
 	id := &[MessageIDLength]byte{}

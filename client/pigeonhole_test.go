@@ -44,7 +44,7 @@ func TestDaemonNewKeypair_Success(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -115,7 +115,7 @@ func TestDaemonNewKeypair_InvalidSeed(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -271,7 +271,7 @@ func TestDaemonEncryptRead_Success(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -365,7 +365,7 @@ func TestDaemonEncryptRead_NilReadCap(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -428,7 +428,7 @@ func TestDaemonEncryptWrite_Success(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	// Add PigeonholeGeometry for write operations
 	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
@@ -530,7 +530,7 @@ func TestDaemonEncryptWrite_NilWriteCap(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -667,7 +667,7 @@ func TestArqDoResendWithNilConnection(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{
 		cfg: cfg,
@@ -733,7 +733,7 @@ func TestArqDoResendWithHighRetryCountAndNilConnection(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{
 		cfg: cfg,
@@ -790,7 +790,7 @@ func TestRaceConditionARQResendAfterDisconnect(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{
 		cfg: cfg,
@@ -890,7 +890,7 @@ func TestAliceSendsBobMessage(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	// Add PigeonholeGeometry for write operations
 	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
@@ -1095,7 +1095,7 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	// Add PigeonholeGeometry for write operations
 	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
@@ -1312,7 +1312,7 @@ func TestARQSuccessWritePayload(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	// Create the Sphinx instance for SURB operations
 	sphinxInstance, err := sphinx.FromGeometry(cfg.SphinxGeometry)
@@ -1594,7 +1594,7 @@ func TestStartResendingEncryptedMessage_ValidationErrors(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -1790,7 +1790,7 @@ func TestCancelResendingEncryptedMessage(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -1985,7 +1985,7 @@ func TestCancelResendingDuringARQRetry(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -2095,7 +2095,7 @@ func setupDaemonWithMockConn(t *testing.T) (*Daemon, *[AppIDLength]byte, chan *R
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
 		MaxPlaintextPayloadLength: 1000,
 		NIKEName:                  replicaCommon.NikeScheme.Name(),

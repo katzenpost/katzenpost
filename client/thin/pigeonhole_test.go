@@ -35,7 +35,6 @@ func setupMockDaemon(t *testing.T) (*ThinClient, net.Conn) {
 		},
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
-		isTCP:       true,
 		conn:        client,
 		eventSink:   make(chan Event, 10),
 		drainAdd:    make(chan chan Event),

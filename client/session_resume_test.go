@@ -25,7 +25,7 @@ func newTestListener(t *testing.T, onDisconnect func(*[AppIDLength]byte)) *liste
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
-	cfg.ListenAddress = "127.0.0.1:0"
+	cfg.Listen.Tcp.Address = "127.0.0.1:0"
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}

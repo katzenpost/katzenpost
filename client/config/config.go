@@ -27,6 +27,7 @@ import (
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 
 	"github.com/katzenpost/katzenpost/client/proxy"
+	"github.com/katzenpost/katzenpost/client/transport"
 )
 
 const (
@@ -288,11 +289,10 @@ type Callbacks struct {
 // Config is the top level client configuration.
 type Config struct {
 
-	// ListenNetwork is the network type that the daemon should listen on for thin client connections.
-	ListenNetwork string
-
-	// ListenAddress is the network address that the daemon should listen on for thin client connections.
-	ListenAddress string
+	// Listen is the subtable-discriminated listen-transport
+	// configuration. Exactly one of its inner subtables (Unix, Tcp,
+	// and in future Ssh / Pigeonhole) must be populated.
+	Listen *transport.ListenConfig
 
 	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
 	PKISignatureScheme string
@@ -352,6 +352,9 @@ func (c *Config) FixupAndValidate() error {
 	kemscheme := schemes.ByName(c.WireKEMScheme)
 	if kemscheme == nil {
 		return errors.New("WireKEMScheme is nil")
+	}
+	if err := c.Listen.Validate(); err != nil {
+		return err
 	}
 	if c.PinnedGateways == nil {
 		return errors.New("config: No PinnedGateways block was present")

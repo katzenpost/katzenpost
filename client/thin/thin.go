@@ -87,6 +87,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/common"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/thin/transport"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -251,8 +252,7 @@ type ThinResponse struct {
 type ThinClient struct {
 	worker.Worker
 
-	cfg   *Config
-	isTCP bool
+	cfg *Config
 
 	log        *logging.Logger
 	logBackend *log.Backend
@@ -298,7 +298,7 @@ type ThinClient struct {
 //
 // Example TOML configuration:
 //
-//	Network = "tcp"
+//	[Dial.Tcp]
 //	Address = "localhost:64331"
 //
 //	[SphinxGeometry]
@@ -321,14 +321,10 @@ type Config struct {
 	// proper payload size validation and channel operation compatibility.
 	PigeonholeGeometry *pigeonholeGeo.Geometry
 
-	// Network specifies the network type for connecting to the client daemon.
-	// Supported values: "tcp", "tcp4", "tcp6", "unix"
-	Network string
-
-	// Address specifies the address to connect to the client daemon.
-	// For TCP: "host:port" (e.g., "localhost:64331")
-	// For Unix: path to socket file (e.g., "/tmp/katzenpost.sock")
-	Address string
+	// Dial is the subtable-discriminated dial-transport configuration.
+	// Exactly one of its inner subtables (Unix, Tcp, and in future Ssh /
+	// Pipe / Pigeonhole) must be populated.
+	Dial *transport.DialConfig
 }
 
 // FromConfig creates a thin client Config from a client daemon config.Config.
@@ -354,12 +350,27 @@ func FromConfig(cfg *config.Config) *Config {
 	if cfg.PigeonholeGeometry == nil {
 		panic("PigeonholeGeometry cannot be nil")
 	}
+	if cfg.Listen == nil {
+		panic("Listen cannot be nil")
+	}
+
+	dial := &transport.DialConfig{}
+	switch {
+	case cfg.Listen.Unix != nil:
+		dial.Unix = &transport.UnixDialConfig{Address: cfg.Listen.Unix.Address}
+	case cfg.Listen.Tcp != nil:
+		dial.Tcp = &transport.TcpDialConfig{
+			Address: cfg.Listen.Tcp.Address,
+			Network: cfg.Listen.Tcp.Network,
+		}
+	default:
+		panic("Listen has no transport configured")
+	}
 
 	return &Config{
 		SphinxGeometry:     cfg.SphinxGeometry,
 		PigeonholeGeometry: cfg.PigeonholeGeometry,
-		Network:            cfg.ListenNetwork,
-		Address:            cfg.ListenAddress,
+		Dial:               dial,
 	}
 }
 
@@ -439,7 +450,6 @@ func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
 		panic(err)
 	}
 	tc := &ThinClient{
-		isTCP:       strings.HasPrefix(strings.ToLower(cfg.Network), "tcp"),
 		cfg:         cfg,
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
@@ -590,19 +600,13 @@ func (t *ThinClient) Close() error {
 //		log.Println("Daemon is offline - limited functionality available")
 //	}
 func (t *ThinClient) Dial() error {
-
-	network := t.cfg.Network
-	address := t.cfg.Address
-
-	switch network {
-	case "tcp6":
-		fallthrough
-	case "tcp4":
-		fallthrough
-	case "tcp":
-		fallthrough
-	case "unix":
-		conn, err := net.Dial(network, address)
+	// Tests may pre-assign t.conn (typically via net.Pipe) to exercise
+	// only the handshake; in that case we skip the transport dial.
+	t.connMu.RLock()
+	hasConn := t.conn != nil
+	t.connMu.RUnlock()
+	if !hasConn {
+		conn, err := t.cfg.Dial.Dial()
 		if err != nil {
 			return err
 		}
@@ -908,8 +912,6 @@ func (t *ThinClient) redial() bool {
 		backoffFactor  = 2
 	)
 
-	network := t.cfg.Network
-	address := t.cfg.Address
 	backoff := initialBackoff
 
 	for {
@@ -926,8 +928,8 @@ func (t *ThinClient) redial() bool {
 		case <-time.After(backoff):
 		}
 
-		t.log.Debugf("Attempting to reconnect to daemon at %s://%s", network, address)
-		conn, err := net.Dial(network, address)
+		t.log.Debugf("Attempting to reconnect to daemon")
+		conn, err := t.cfg.Dial.Dial()
 		if err != nil {
 			t.log.Debugf("Reconnect failed: %v (backoff %v)", err, backoff)
 			backoff = backoff * backoffFactor

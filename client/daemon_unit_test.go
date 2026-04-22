@@ -90,7 +90,7 @@ func TestOnDocument(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("localhost:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("localhost:%d", port)
 
 	d, err := NewDaemon(cfg)
 	require.NoError(t, err)
@@ -218,7 +218,7 @@ func TestDaemonStartStopMultiple(t *testing.T) {
 
 	port, err := getFreePort()
 	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("localhost:%d", port)
+	cfg.Listen.Tcp.Address = fmt.Sprintf("localhost:%d", port)
 
 	d, err := NewDaemon(cfg)
 	require.NoError(t, err)

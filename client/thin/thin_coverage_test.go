@@ -19,6 +19,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/thin/transport"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -307,8 +308,9 @@ func TestDialWithTCPListener(t *testing.T) {
 	tc := NewThinClient(&Config{
 		SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
 		PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
-		Network:            "tcp",
-		Address:            ln.Addr().String(),
+		Dial: &transport.DialConfig{
+			Tcp: &transport.TcpDialConfig{Address: ln.Addr().String()},
+		},
 	}, &config.Logging{Level: "DEBUG"})
 
 	err = tc.Dial()
