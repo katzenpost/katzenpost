@@ -896,6 +896,82 @@ func TestDispatchHaltChFired(t *testing.T) {
 	require.False(t, ok)
 }
 
+// TestNewThinClientDialVariants is the transport-abstraction replacement
+// for the removed TestNewThinClientIsTCP. It asserts that NewThinClient
+// accepts each of the V1 transport-config variants (Unix and the three
+// Tcp network flavours) without panic, preserves the Dial config on the
+// client, and that the Dial config resolves to the expected concrete
+// dialer type.
+func TestNewThinClientDialVariants(t *testing.T) {
+	nikeScheme := schemes.ByName("x25519")
+
+	type wantDialer int
+	const (
+		wantUnix wantDialer = iota
+		wantTcp
+	)
+
+	tests := []struct {
+		name string
+		dial *transport.DialConfig
+		want wantDialer
+	}{
+		{
+			name: "unix",
+			dial: &transport.DialConfig{
+				Unix: &transport.UnixDialConfig{Address: "/tmp/katzenpost.sock"},
+			},
+			want: wantUnix,
+		},
+		{
+			name: "tcp default",
+			dial: &transport.DialConfig{
+				Tcp: &transport.TcpDialConfig{Address: "localhost:1234"},
+			},
+			want: wantTcp,
+		},
+		{
+			name: "tcp4",
+			dial: &transport.DialConfig{
+				Tcp: &transport.TcpDialConfig{Address: "localhost:1234", Network: "tcp4"},
+			},
+			want: wantTcp,
+		},
+		{
+			name: "tcp6",
+			dial: &transport.DialConfig{
+				Tcp: &transport.TcpDialConfig{Address: "[::1]:1234", Network: "tcp6"},
+			},
+			want: wantTcp,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
+				PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
+				Dial:               tt.dial,
+			}
+			tc := NewThinClient(cfg, &config.Logging{Level: "DEBUG"})
+			require.NotNil(t, tc)
+			require.Same(t, tt.dial, tc.GetConfig().Dial,
+				"Dial config should be preserved on the client by reference")
+
+			d, err := tc.GetConfig().Dial.Resolve()
+			require.NoError(t, err, "Dial must resolve to a concrete dialer")
+			switch tt.want {
+			case wantUnix:
+				_, ok := d.(*transport.UnixDialConfig)
+				require.True(t, ok, "expected *transport.UnixDialConfig, got %T", d)
+			case wantTcp:
+				_, ok := d.(*transport.TcpDialConfig)
+				require.True(t, ok, "expected *transport.TcpDialConfig, got %T", d)
+			}
+		})
+	}
+}
+
 func TestReadUntilDisconnectHaltCh(t *testing.T) {
 	client, server := net.Pipe()
 	defer server.Close()
