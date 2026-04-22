@@ -112,6 +112,162 @@ func TestLoadFileInvalidTOML(t *testing.T) {
 	require.Nil(t, cfg)
 }
 
+// canonicalGeometrySections is the SphinxGeometry + PigeonholeGeometry
+// block every strict-rejection test pairs with a varying Dial / extra
+// key. Kept as a constant so each case documents only the one thing
+// it is trying to test.
+const canonicalGeometrySections = `
+[SphinxGeometry]
+  PacketLength = 3082
+  NrHops = 5
+  HeaderLength = 476
+  RoutingInfoLength = 410
+  PerHopRoutingInfoLength = 82
+  SURBLength = 572
+  SphinxPlaintextHeaderLength = 2
+  PayloadTagLength = 32
+  ForwardPayloadLength = 2574
+  UserForwardPayloadLength = 2000
+  NextNodeHopLength = 65
+  SPRPKeyMaterialLength = 64
+  NIKEName = "x25519"
+  KEMName = ""
+
+[PigeonholeGeometry]
+  MaxPlaintextPayloadLength = 1553
+  CourierQueryReadLength = 359
+  CourierQueryWriteLength = 2000
+  CourierQueryReplyReadLength = 1698
+  CourierQueryReplyWriteLength = 50
+  NIKEName = "CTIDH1024-X25519"
+  SignatureSchemeName = "Ed25519"
+`
+
+func writeTempToml(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "thinclient.toml")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0600))
+	return path
+}
+
+// TestLoadFile_RejectsOldFlatFormat verifies that the pre-modular
+// flat layout (`Network = "tcp"` + `Address = "..."` at the top level)
+// is rejected as drift, rather than silently parsed into a half-
+// populated Config that would fail later during mixnet operations.
+func TestLoadFile_RejectsOldFlatFormat(t *testing.T) {
+	body := `
+Network = "tcp"
+Address = "localhost:64331"
+` + canonicalGeometrySections
+
+	cfg, err := LoadFile(writeTempToml(t, body))
+	require.Nil(t, cfg)
+	require.ErrorIs(t, err, ErrInvalidThinConfig)
+	require.Contains(t, err.Error(), "unknown key")
+}
+
+func TestLoadFile_RejectsUnknownTopLevelKey(t *testing.T) {
+	body := `
+LegacyFlag = true
+` + canonicalGeometrySections + `
+[Dial]
+  [Dial.Tcp]
+    Address = "localhost:64331"
+    Network = "tcp"
+`
+	cfg, err := LoadFile(writeTempToml(t, body))
+	require.Nil(t, cfg)
+	require.ErrorIs(t, err, ErrInvalidThinConfig)
+	require.Contains(t, err.Error(), "LegacyFlag")
+}
+
+func TestLoadFile_RejectsMissingPigeonholeGeometry(t *testing.T) {
+	body := `
+[SphinxGeometry]
+  PacketLength = 3082
+  NrHops = 5
+  HeaderLength = 476
+  RoutingInfoLength = 410
+  PerHopRoutingInfoLength = 82
+  SURBLength = 572
+  SphinxPlaintextHeaderLength = 2
+  PayloadTagLength = 32
+  ForwardPayloadLength = 2574
+  UserForwardPayloadLength = 2000
+  NextNodeHopLength = 65
+  SPRPKeyMaterialLength = 64
+  NIKEName = "x25519"
+  KEMName = ""
+
+[Dial]
+  [Dial.Tcp]
+    Address = "localhost:64331"
+    Network = "tcp"
+`
+	cfg, err := LoadFile(writeTempToml(t, body))
+	require.Nil(t, cfg)
+	require.ErrorIs(t, err, ErrInvalidThinConfig)
+	require.Contains(t, err.Error(), "PigeonholeGeometry")
+}
+
+func TestLoadFile_RejectsMissingDial(t *testing.T) {
+	cfg, err := LoadFile(writeTempToml(t, canonicalGeometrySections))
+	require.Nil(t, cfg)
+	require.ErrorIs(t, err, ErrInvalidThinConfig)
+	require.Contains(t, err.Error(), "[Dial]")
+}
+
+func TestLoadFile_RejectsUnknownDialSubtable(t *testing.T) {
+	body := canonicalGeometrySections + `
+[Dial]
+  [Dial.Pipe]
+    Address = "/dev/null"
+`
+	cfg, err := LoadFile(writeTempToml(t, body))
+	require.Nil(t, cfg)
+	require.ErrorIs(t, err, ErrInvalidThinConfig)
+	require.Contains(t, err.Error(), "Dial.Pipe")
+}
+
+func TestLoadFile_RejectsUnknownPigeonholeGeometryKey(t *testing.T) {
+	body := `
+[SphinxGeometry]
+  PacketLength = 3082
+  NrHops = 5
+  HeaderLength = 476
+  RoutingInfoLength = 410
+  PerHopRoutingInfoLength = 82
+  SURBLength = 572
+  SphinxPlaintextHeaderLength = 2
+  PayloadTagLength = 32
+  ForwardPayloadLength = 2574
+  UserForwardPayloadLength = 2000
+  NextNodeHopLength = 65
+  SPRPKeyMaterialLength = 64
+  NIKEName = "x25519"
+  KEMName = ""
+
+[PigeonholeGeometry]
+  MaxPlaintextPayloadLength = 1553
+  CourierQueryReadLength = 359
+  CourierQueryWriteLength = 2000
+  CourierQueryReplyReadLength = 1698
+  CourierQueryReplyWriteLength = 50
+  NIKEName = "CTIDH1024-X25519"
+  SignatureSchemeName = "Ed25519"
+  FutureField = "wat"
+
+[Dial]
+  [Dial.Tcp]
+    Address = "localhost:64331"
+    Network = "tcp"
+`
+	cfg, err := LoadFile(writeTempToml(t, body))
+	require.Nil(t, cfg)
+	require.ErrorIs(t, err, ErrInvalidThinConfig)
+	require.Contains(t, err.Error(), "FutureField")
+}
+
 func TestNewThinClient(t *testing.T) {
 	nikeScheme := schemes.ByName("x25519")
 	cfg := &Config{

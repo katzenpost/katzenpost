@@ -67,6 +67,7 @@
 package thin
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"encoding/binary"
@@ -95,6 +96,12 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
+
+// ErrInvalidThinConfig is returned by LoadFile when the thin-client
+// TOML has structural problems: missing required sections, unknown
+// keys, or a malformed Dial discriminator. Callers can match with
+// errors.Is to distinguish config drift from transient IO errors.
+var ErrInvalidThinConfig = errors.New("thin: invalid config")
 
 const (
 	// MessageIDLength is the length of a message ID in bytes.
@@ -400,12 +407,51 @@ func LoadFile(filename string) (*Config, error) {
 	}
 
 	cfg := new(Config)
-	err = toml.Unmarshal(b, cfg)
+	md, err := toml.NewDecoder(bytes.NewReader(b)).Decode(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %s: %v", ErrInvalidThinConfig, filename, err)
+	}
+
+	// Reject any key the Config struct did not consume. BurntSushi/toml
+	// is lenient by default: a stale [Dial.Tcp] at the top level with
+	// the old flat Network/Address layout would otherwise parse into a
+	// half-populated Config and surface later as a mysterious
+	// runtime failure.
+	if undecoded := md.Undecoded(); len(undecoded) > 0 {
+		keys := make([]string, len(undecoded))
+		for i, k := range undecoded {
+			keys[i] = k.String()
+		}
+		return nil, fmt.Errorf("%w: %s: unknown key(s): %s",
+			ErrInvalidThinConfig, filename, strings.Join(keys, ", "))
+	}
+
+	if err := validateLoadedConfig(cfg); err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrInvalidThinConfig, filename, err)
 	}
 
 	return cfg, nil
+}
+
+// validateLoadedConfig enforces that every required top-level section
+// is present and that the Dial discriminator has exactly one variant
+// populated. Unknown-key rejection is handled by the caller via
+// MetaData.Undecoded — this helper only covers structural invariants
+// the TOML decoder cannot express on its own.
+func validateLoadedConfig(cfg *Config) error {
+	if cfg.SphinxGeometry == nil {
+		return errors.New("missing required section [SphinxGeometry]")
+	}
+	if cfg.PigeonholeGeometry == nil {
+		return errors.New("missing required section [PigeonholeGeometry]")
+	}
+	if cfg.Dial == nil {
+		return errors.New("missing required section [Dial] with one of [Dial.Unix] or [Dial.Tcp]")
+	}
+	if err := cfg.Dial.Validate(); err != nil {
+		return fmt.Errorf("[Dial]: %w", err)
+	}
+	return nil
 }
 
 // NewThinClient creates a new ThinClient instance.
