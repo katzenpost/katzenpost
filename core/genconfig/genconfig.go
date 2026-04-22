@@ -31,6 +31,8 @@ import (
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/thin"
+	thinTransport "github.com/katzenpost/katzenpost/client/thin/transport"
+	clientTransport "github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/common/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -198,6 +200,43 @@ func AddressesFromURLs(addrs []string) map[string][]string {
 	return addresses
 }
 
+// thinDialConfigFor builds a thin.Config Dial subtable from a flat
+// network/address pair. "unix" maps to [Dial.Unix]; "tcp" / "tcp4" /
+// "tcp6" map to [Dial.Tcp] with the explicit Network preserved. Any
+// other value is rejected — callers must be explicit.
+func thinDialConfigFor(network, addr string) (*thinTransport.DialConfig, error) {
+	switch network {
+	case "unix":
+		return &thinTransport.DialConfig{
+			Unix: &thinTransport.UnixDialConfig{Address: addr},
+		}, nil
+	case "tcp", "tcp4", "tcp6":
+		return &thinTransport.DialConfig{
+			Tcp: &thinTransport.TcpDialConfig{Address: addr, Network: network},
+		}, nil
+	default:
+		return nil, fmt.Errorf("genconfig: unknown thin-client dial network %q (expected one of: unix, tcp, tcp4, tcp6)", network)
+	}
+}
+
+// clientListenConfigFor builds a cConfig.Config Listen subtable from a
+// flat network/address pair, following the same discriminator rules as
+// thinDialConfigFor. Unknown network names are rejected.
+func clientListenConfigFor(network, addr string) (*clientTransport.ListenConfig, error) {
+	switch network {
+	case "unix":
+		return &clientTransport.ListenConfig{
+			Unix: &clientTransport.UnixListenConfig{Address: addr},
+		}, nil
+	case "tcp", "tcp4", "tcp6":
+		return &clientTransport.ListenConfig{
+			Tcp: &clientTransport.TcpListenConfig{Address: addr, Network: network},
+		}, nil
+	default:
+		return nil, fmt.Errorf("genconfig: unknown kpclientd listen network %q (expected one of: unix, tcp, tcp4, tcp6)", network)
+	}
+}
+
 // this generates the thin client config and NOT the client daemon config
 func (s *Katzenpost) GenClient2ThinCfg(net, addr string) error {
 	log.Print("genClient2ThinCfg begin")
@@ -206,11 +245,14 @@ func (s *Katzenpost) GenClient2ThinCfg(net, addr string) error {
 
 	cfg.SphinxGeometry = s.SphinxGeometry
 	cfg.PigeonholeGeometry = s.PigeonholeGeometry
-	cfg.Network = net
-	cfg.Address = addr
+	dial, err := thinDialConfigFor(net, addr)
+	if err != nil {
+		return err
+	}
+	cfg.Dial = dial
 
 	log.Print("before save thin config")
-	err := SaveCfg(cfg, s.OutDir)
+	err = SaveCfg(cfg, s.OutDir)
 	if err != nil {
 		log.Printf("save thin config failure %s", err.Error())
 		return err
@@ -228,8 +270,11 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	cfg := new(cConfig.Config)
 
 	// Use TCP by default so that the CI tests pass on all platforms
-	cfg.ListenNetwork = net
-	cfg.ListenAddress = addr
+	listen, err := clientListenConfigFor(net, addr)
+	if err != nil {
+		return err
+	}
+	cfg.Listen = listen
 
 	// Logging section.
 	cfg.Logging = &cConfig.Logging{File: "", Level: DebugLogLevel}
@@ -278,7 +323,7 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	cfg.PinnedGateways = &cConfig.Gateways{
 		Gateways: gateways,
 	}
-	err := SaveCfg(cfg, s.OutDir)
+	err = SaveCfg(cfg, s.OutDir)
 	if err != nil {
 		log.Printf("save client config failure %s", err.Error())
 		return err
