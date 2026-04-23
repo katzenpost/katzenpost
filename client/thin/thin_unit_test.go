@@ -4,6 +4,8 @@
 package thin
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -1257,5 +1259,111 @@ func TestIsConnectedRaceFree(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	close(stop)
 	wg.Wait()
+}
+
+// runBlockingSendMessage wraps BlockingSendMessage in a goroutine that
+// recovers any panic so callers can distinguish "returned error" from
+// "exploded the process." Returns the outcome via the channel.
+type blockingSendResult struct {
+	reply    []byte
+	err      error
+	panicked any
+}
+
+func runBlockingSendMessage(ctx context.Context, tc *ThinClient, payload []byte) <-chan blockingSendResult {
+	ch := make(chan blockingSendResult, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				ch <- blockingSendResult{panicked: r}
+			}
+		}()
+		reply, err := tc.BlockingSendMessage(ctx, payload, &[32]byte{}, []byte("q"))
+		ch <- blockingSendResult{reply: reply, err: err}
+	}()
+	return ch
+}
+
+// TestBlockingSendMessageDisconnectReturnsError pins that receipt of a
+// ConnectionStatusEvent with IsConnected=false while BlockingSendMessage
+// is waiting on its reply does NOT panic the process but returns the
+// errConnectionLost sentinel. Prior behaviour panic()'d.
+func TestBlockingSendMessageDisconnectReturnsError(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() {
+		clientConn.Close()
+		serverConn.Close()
+	})
+
+	tc := newTestThinClientNoConn(t)
+	tc.conn = clientConn
+	tc.isConnected = true
+
+	// Drain whatever SendMessage writes to the pipe.
+	go io.Copy(io.Discard, serverConn)
+	go tc.eventSinkWorker()
+	t.Cleanup(tc.Halt)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resultCh := runBlockingSendMessage(ctx, tc, []byte("hello"))
+
+	// Give the caller a moment to reach its event loop, then feed the
+	// disconnect.
+	time.Sleep(50 * time.Millisecond)
+	tc.eventSink <- &ConnectionStatusEvent{IsConnected: false}
+
+	select {
+	case r := <-resultCh:
+		require.Nil(t, r.panicked, "must not panic on disconnect")
+		require.True(t, errors.Is(r.err, errConnectionLost),
+			"expected errConnectionLost, got %v", r.err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("BlockingSendMessage did not return after disconnect")
+	}
+}
+
+// TestBlockingSendMessageUnknownEventDoesNotPanic pins that an
+// unexpected event type reaching BlockingSendMessage's event loop is
+// ignored rather than panicking with "impossible event type." The
+// method must keep waiting until either the reply arrives, the context
+// deadlines, or HaltCh fires.
+func TestBlockingSendMessageUnknownEventDoesNotPanic(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() {
+		clientConn.Close()
+		serverConn.Close()
+	})
+
+	tc := newTestThinClientNoConn(t)
+	tc.conn = clientConn
+	tc.isConnected = true
+
+	go io.Copy(io.Discard, serverConn)
+	go tc.eventSinkWorker()
+	t.Cleanup(tc.Halt)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	resultCh := runBlockingSendMessage(ctx, tc, []byte("hello"))
+
+	// Feed an event type the switch did not previously handle.
+	// ShutdownEvent is never routed through BlockingSendMessage's
+	// ordinary pathways, so it lands in the default branch.
+	time.Sleep(50 * time.Millisecond)
+	tc.eventSink <- &ShutdownEvent{}
+
+	select {
+	case r := <-resultCh:
+		require.Nil(t, r.panicked, "must not panic on unknown event type")
+		// With no reply forthcoming, the context deadline is the
+		// expected exit.
+		require.True(t, errors.Is(r.err, context.DeadlineExceeded),
+			"expected context deadline, got %v", r.err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("BlockingSendMessage did not return within timeout")
+	}
 }
 

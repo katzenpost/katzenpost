@@ -1675,7 +1675,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 			// Ignore garbage collection events
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				panic(errConnectionLost)
+				return nil, errConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
@@ -1688,7 +1688,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 				continue
 			}
 		default:
-			panic("impossible event type")
+			t.log.Debugf("BlockingSendMessage: ignoring unexpected event %T", v)
 		}
 	}
 	// unreachable
