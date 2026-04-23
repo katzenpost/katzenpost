@@ -556,6 +556,16 @@ func (t *ThinClient) IsConnected() bool {
 	return t.isConnected
 }
 
+// setConnected stores the daemon-to-mixnet connection flag under
+// connMu. Use this from any goroutine that needs to update
+// isConnected — in particular the pigeonhole API event loops that
+// observe ConnectionStatusEvents alongside the main dispatcher.
+func (t *ThinClient) setConnected(v bool) {
+	t.connMu.Lock()
+	t.isConnected = v
+	t.connMu.Unlock()
+}
+
 // Disconnect closes the connection without sending ThinClose.
 // The daemon preserves all state for this client's app ID, allowing
 // the client to reconnect and resume with the same session token.
@@ -675,9 +685,10 @@ func (t *ThinClient) Dial() error {
 	t.connMu.Lock()
 	t.isConnected = message1.ConnectionStatusEvent.IsConnected
 	t.daemonInstanceToken = message1.ConnectionStatusEvent.InstanceToken
+	connected := t.isConnected
 	t.connMu.Unlock()
 
-	if !t.isConnected {
+	if !connected {
 		t.log.Infof("Daemon is not connected to mixnet - entering offline mode (channel operations will work)")
 	} else {
 		t.log.Debugf("Daemon is connected to mixnet - full functionality available")
@@ -1503,7 +1514,7 @@ func (t *ThinClient) NewQueryID() *[QueryIDLength]byte {
 //	err = client.SendMessageWithoutReply([]byte("Hello"), &destNode, destQueue)
 func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
 	// Check if we're in offline mode
-	if !t.isConnected {
+	if !t.IsConnected() {
 		return errors.New("cannot send message in offline mode - daemon not connected to mixnet")
 	}
 
@@ -1570,7 +1581,7 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 	}
 
 	// Check if we're in offline mode
-	if !t.isConnected {
+	if !t.IsConnected() {
 		return errors.New("cannot send message in offline mode - daemon not connected to mixnet")
 	}
 
@@ -1637,7 +1648,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 	}
 
 	// Check if we're in offline mode
-	if !t.isConnected {
+	if !t.IsConnected() {
 		return nil, errors.New("cannot send message in offline mode - daemon not connected to mixnet")
 	}
 

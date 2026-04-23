@@ -225,7 +225,7 @@ func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap 
 			return v.WriteCap, v.ReadCap, v.FirstMessageIndex, nil
 		case *ConnectionStatusEvent:
 			// Update connection state but don't fail operations
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -308,7 +308,7 @@ func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.
 			}
 			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, v.NextMessageBoxIndex, nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -394,7 +394,7 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 			}
 			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, v.NextMessageBoxIndex, nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -556,7 +556,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 			}, nil
 
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -655,7 +655,7 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCa
 			}, nil
 
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -753,7 +753,7 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *baca
 			}, nil
 
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -834,7 +834,7 @@ func (t *ThinClient) CancelResendingEncryptedMessage(envelopeHash *[32]byte) err
 			}
 			return nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -925,7 +925,7 @@ func (t *ThinClient) StartResendingCopyCommand(writeCap *bacap.WriteCap) error {
 			t.log.Debugf("StartResendingCopyCommand: Copy command completed successfully")
 			return nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -1015,7 +1015,7 @@ func (t *ThinClient) StartResendingCopyCommandWithCourier(
 			t.log.Debugf("StartResendingCopyCommandWithCourier: Copy command completed successfully")
 			return nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -1096,7 +1096,7 @@ func (t *ThinClient) CancelResendingCopyCommand(writeCapHash *[32]byte) error {
 			}
 			return nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -1174,7 +1174,7 @@ func (t *ThinClient) NextMessageBoxIndex(messageBoxIndex *bacap.MessageBoxIndex)
 			}
 			return v.NextMessageBoxIndex, nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -1236,7 +1236,7 @@ func (t *ThinClient) GetMessageBoxIndexCounter(messageBoxIndex *bacap.MessageBox
 			}
 			return v.Counter, nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -1335,7 +1335,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(payload []byte, destWrite
 			}
 			return v.Envelopes, v.NextDestIndex, nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -1414,7 +1414,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(destinations []Desti
 				NextDestIndices: v.NextDestIndices,
 			}, nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -1632,7 +1632,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromTombstoneRange(
 			}
 			return v.Envelopes, v.Buffer, v.NextDestIndex, nil
 		case *ConnectionStatusEvent:
-			t.isConnected = v.IsConnected
+			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
 		default:
 		}

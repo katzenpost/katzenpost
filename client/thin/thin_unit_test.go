@@ -4,10 +4,13 @@
 package thin
 
 import (
+	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 
@@ -1177,5 +1180,82 @@ func TestDispatchMessageReplyEventNilMessageID(t *testing.T) {
 	reply, isReply := event.(*MessageReplyEvent)
 	require.True(t, isReply)
 	require.Nil(t, reply.MessageID)
+}
+
+// TestIsConnectedRaceFree pins connMu protection of t.isConnected.
+// dispatchMessage writes the field under the mutex whenever a
+// ConnectionStatusEvent arrives from the daemon; the public send APIs
+// previously read the field bare, and several pigeonhole event loops
+// wrote it bare upon receiving the same event. Either pattern is a
+// data race under -race. This test drives both sides concurrently and
+// requires -race to remain clean. Run with `go test -race`.
+func TestIsConnectedRaceFree(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() {
+		clientConn.Close()
+		serverConn.Close()
+	})
+
+	tc := newTestThinClientNoConn(t)
+	tc.conn = clientConn
+	tc.isConnected = true
+
+	// Drain any data the reader goroutines happen to send; writeMessage
+	// on a pipe would otherwise block.
+	go io.Copy(io.Discard, serverConn)
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Writer: simulates the daemon's connection-status stream arriving
+	// via dispatchMessage, which writes isConnected under connMu.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		flip := true
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			tc.dispatchMessage(&Response{
+				ConnectionStatusEvent: &ConnectionStatusEvent{IsConnected: flip},
+			})
+			// Drain eventSink so dispatchMessage doesn't block on the
+			// next send.
+			select {
+			case <-tc.eventSink:
+			default:
+			}
+			flip = !flip
+		}
+	}()
+
+	// Readers: exercise the public send-API bare-read sites
+	// (SendMessageWithoutReply) and the locked reader IsConnected() in
+	// parallel with the writer.
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				_ = tc.IsConnected()
+				_ = tc.SendMessageWithoutReply([]byte("x"), &[32]byte{}, []byte("q"))
+			}
+		}()
+	}
+
+	// A short window is sufficient for -race to sample an unsynchronised
+	// access if one exists; the detector is not timing-dependent in the
+	// usual sense.
+	time.Sleep(200 * time.Millisecond)
+	close(stop)
+	wg.Wait()
 }
 
