@@ -173,27 +173,29 @@ func (m *mockIncomingConn) toIncomingConn(l *listener, logBackend *log.Backend) 
 	clientConn, serverConn := net.Pipe()
 
 	conn := &incomingConn{
-		listener:       l,
-		log:            logBackend.GetLogger("mock-conn"),
-		conn:           serverConn,
-		appID:          m.appID,
-		sendToClientCh: make(chan *Response, perClientSendBuf),
+		listener: l,
+		log:      logBackend.GetLogger("mock-conn"),
+		conn:     serverConn,
+		appID:    m.appID,
+		sendWake: make(chan struct{}, 1),
+		doneCh:   make(chan struct{}),
 	}
 
-	// Drain sendToClientCh through writeResponse, mirroring the real
-	// per-conn writer goroutine that incomingConn.worker() would spawn.
+	// Drain sendQueue through writeResponse, mirroring the real per-conn
+	// writer goroutine that incomingConn.worker() would spawn.
 	go func() {
 		for {
+			for _, resp := range conn.drainSendQueue() {
+				if err := conn.writeResponse(resp); err != nil {
+					return
+				}
+			}
 			select {
-			case msg, ok := <-conn.sendToClientCh:
-				if !ok {
-					return
-				}
-				if err := conn.writeResponse(msg); err != nil {
-					return
-				}
 			case <-l.HaltCh():
 				return
+			case <-conn.doneCh:
+				return
+			case <-conn.sendWake:
 			}
 		}
 	}()

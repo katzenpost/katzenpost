@@ -67,7 +67,8 @@ func TestHandleSessionTokenNewClient(t *testing.T) {
 	c := &incomingConn{
 		listener:       l,
 		appID:          appID,
-		sendToClientCh: make(chan *Response, 10),
+		sendWake:       make(chan struct{}, 1),
+		doneCh:         make(chan struct{}),
 		log:            l.logBackend.GetLogger("test"),
 	}
 
@@ -85,8 +86,8 @@ func TestHandleSessionTokenNewClient(t *testing.T) {
 	require.Equal(t, appID, registeredAppID)
 
 	// Verify client received SessionTokenReply with resumed=false
-	require.Len(t, c.sendToClientCh, 1)
-	reply := <-c.sendToClientCh
+	require.Len(t, c.sendQueue, 1)
+	reply := c.sendQueue[0]
 	require.NotNil(t, reply.SessionTokenReply)
 	require.False(t, reply.SessionTokenReply.Resumed)
 	require.Equal(t, appID[:], reply.SessionTokenReply.AppID)
@@ -115,7 +116,8 @@ func TestHandleSessionTokenResume(t *testing.T) {
 	c := &incomingConn{
 		listener:       l,
 		appID:          newAppID,
-		sendToClientCh: make(chan *Response, 10),
+		sendWake:       make(chan struct{}, 1),
+		doneCh:         make(chan struct{}),
 		log:            l.logBackend.GetLogger("test"),
 	}
 
@@ -137,8 +139,8 @@ func TestHandleSessionTokenResume(t *testing.T) {
 	require.False(t, hasNew, "new appID should not be in conns")
 
 	// Verify client received SessionTokenReply with resumed=true
-	require.Len(t, c.sendToClientCh, 1)
-	reply := <-c.sendToClientCh
+	require.Len(t, c.sendQueue, 1)
+	reply := c.sendQueue[0]
 	require.NotNil(t, reply.SessionTokenReply)
 	require.True(t, reply.SessionTokenReply.Resumed)
 	require.Equal(t, oldAppID[:], reply.SessionTokenReply.AppID)
@@ -184,7 +186,8 @@ func TestHandleSessionTokenResumeFlushesQueuedReplies(t *testing.T) {
 	c := &incomingConn{
 		listener:       l,
 		appID:          newAppID,
-		sendToClientCh: make(chan *Response, 10),
+		sendWake:       make(chan struct{}, 1),
+		doneCh:         make(chan struct{}),
 		log:            l.logBackend.GetLogger("test"),
 	}
 	l.connsLock.Lock()
@@ -201,17 +204,17 @@ func TestHandleSessionTokenResumeFlushesQueuedReplies(t *testing.T) {
 
 	// Verify queued replies + session token reply were sent
 	// Order: queued reply 1, queued reply 2, session token reply
-	require.Len(t, c.sendToClientCh, 3)
+	require.Len(t, c.sendQueue, 3)
 
-	r1 := <-c.sendToClientCh
+	r1 := c.sendQueue[0]
 	require.NotNil(t, r1.MessageReplyEvent)
 	require.Equal(t, []byte("reply-1"), r1.MessageReplyEvent.Payload)
 
-	r2 := <-c.sendToClientCh
+	r2 := c.sendQueue[1]
 	require.NotNil(t, r2.MessageReplyEvent)
 	require.Equal(t, []byte("reply-2"), r2.MessageReplyEvent.Payload)
 
-	r3 := <-c.sendToClientCh
+	r3 := c.sendQueue[2]
 	require.NotNil(t, r3.SessionTokenReply)
 	require.True(t, r3.SessionTokenReply.Resumed)
 }
@@ -233,7 +236,8 @@ func TestOnClosedConnExplicitClose(t *testing.T) {
 	c := &incomingConn{
 		listener:       l,
 		appID:          appID,
-		sendToClientCh: make(chan *Response, 10),
+		sendWake:       make(chan struct{}, 1),
+		doneCh:         make(chan struct{}),
 		log:            l.logBackend.GetLogger("test"),
 		clientToken:    &token,
 		explicitClose:  true,
@@ -285,7 +289,8 @@ func TestOnClosedConnUnintentionalDisconnect(t *testing.T) {
 	c := &incomingConn{
 		listener:       l,
 		appID:          appID,
-		sendToClientCh: make(chan *Response, 10),
+		sendWake:       make(chan struct{}, 1),
+		doneCh:         make(chan struct{}),
 		log:            l.logBackend.GetLogger("test"),
 		clientToken:    &token,
 		explicitClose:  false, // unintentional disconnect
@@ -336,7 +341,8 @@ func TestGraceTimerExpiry(t *testing.T) {
 	c := &incomingConn{
 		listener:       l,
 		appID:          appID,
-		sendToClientCh: make(chan *Response, 10),
+		sendWake:       make(chan struct{}, 1),
+		doneCh:         make(chan struct{}),
 		log:            l.logBackend.GetLogger("test"),
 		clientToken:    &token,
 		explicitClose:  false,
@@ -390,7 +396,8 @@ func TestGraceTimerCancelledOnResume(t *testing.T) {
 	c := &incomingConn{
 		listener:       l,
 		appID:          appID,
-		sendToClientCh: make(chan *Response, 10),
+		sendWake:       make(chan struct{}, 1),
+		doneCh:         make(chan struct{}),
 		log:            l.logBackend.GetLogger("test"),
 		clientToken:    &token,
 		explicitClose:  false,
@@ -412,7 +419,8 @@ func TestGraceTimerCancelledOnResume(t *testing.T) {
 	c2 := &incomingConn{
 		listener:       l,
 		appID:          newAppID,
-		sendToClientCh: make(chan *Response, 10),
+		sendWake:       make(chan struct{}, 1),
+		doneCh:         make(chan struct{}),
 		log:            l.logBackend.GetLogger("test"),
 	}
 	l.connsLock.Lock()
@@ -446,7 +454,8 @@ func TestOnClosedConnLegacyClient(t *testing.T) {
 	c := &incomingConn{
 		listener:       l,
 		appID:          appID,
-		sendToClientCh: make(chan *Response, 10),
+		sendWake:       make(chan struct{}, 1),
+		doneCh:         make(chan struct{}),
 		log:            l.logBackend.GetLogger("test"),
 		clientToken:    nil, // no token -- legacy client
 		explicitClose:  false,

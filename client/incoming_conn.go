@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
@@ -31,14 +33,18 @@ const (
 	// (see resendQueueFullBackoff) so no retransmit is silently lost.
 	perClientResendBuf = 8
 
-	// perClientSendBuf is the capacity of each thin client's outbound
-	// queue. The per-conn writer goroutine drains it onto the socket.
-	// Generous so the shared ingressWorker/egressWorker never block on
-	// enqueue during normal operation; a full queue is a signal that the
-	// thin client reader has stalled, in which case sendResponse drops
-	// rather than taking the whole daemon down with it.
-	perClientSendBuf = 256
+	// perClientWriteDeadline bounds how long a socket write can block
+	// before the per-conn writer gives up and tears down the conn. Without
+	// this, a wedged thin client would cause the unbounded sendQueue to
+	// grow indefinitely. 60s is generous for any healthy client while
+	// still bounding memory in the pathological case.
+	perClientWriteDeadline = 60 * time.Second
 )
+
+// errConnClosed is returned by sendResponse when the incoming conn has
+// already begun teardown, so the caller knows the response can not be
+// delivered rather than silently queueing onto a dead conn.
+var errConnClosed = errors.New("incomingConn closed")
 
 // incomingConn type is used along with listener type
 type incomingConn struct {
@@ -48,9 +54,8 @@ type incomingConn struct {
 	conn  net.Conn
 	appID *[AppIDLength]byte
 
-	sendToClientCh chan *Response
-	clientToken    *[16]byte
-	explicitClose  bool
+	clientToken   *[16]byte
+	explicitClose bool
 
 	// requestCh is this client's per-connection ingress queue, drained by
 	// the listener's round-robin scheduler. Bursts from one client fill
@@ -62,6 +67,44 @@ type incomingConn struct {
 	// scheduler picks from resendCh before requestCh within a client's
 	// slot so retransmits are not delayed behind fresh user input.
 	resendCh chan *[sphinxConstants.SURBIDLength]byte
+
+	// sendQueue is this client's outbound slice queue. sendResponse
+	// appends under sendQueueMu (never drops); the per-conn writer
+	// goroutine drains a batch under the same mutex and Writes each
+	// response without holding it. The queue is unbounded so shared
+	// workers (ingressWorker / egressWorker) never lose a response just
+	// because one thin client is slow to read — memory growth is
+	// bounded instead by the write deadline on each socket Write: a
+	// wedged client triggers conn teardown well before the queue grows
+	// pathologically.
+	sendQueue   []*Response
+	sendQueueMu sync.Mutex
+
+	// sendWake is a 1-capacity wake channel; sendResponse signals it
+	// after appending so the writer goroutine notices new work.
+	sendWake chan struct{}
+
+	// doneCh is closed exactly once when this conn begins teardown, so
+	// sendResponse can fail fast rather than queueing onto a dead conn
+	// and any goroutine waiting for the writer can unwind.
+	doneCh   chan struct{}
+	doneOnce sync.Once
+}
+
+// closeDone closes doneCh exactly once. Called from the worker's defer
+// path and from the writer goroutine if its socket Write fails.
+func (c *incomingConn) closeDone() {
+	c.doneOnce.Do(func() { close(c.doneCh) })
+}
+
+// isDone reports whether the conn has already begun teardown.
+func (c *incomingConn) isDone() bool {
+	select {
+	case <-c.doneCh:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *incomingConn) recvRequest() (*Request, error) {
@@ -109,30 +152,46 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 	})
 }
 
-// sendResponse enqueues a response for this thin client. The socket write
-// is performed on the per-conn writer goroutine so a slow or wedged reader
-// only blocks its own writer, never the shared ingressWorker or egressWorker.
-//
-// Enqueue is non-blocking: if sendToClientCh is full (perClientSendBuf
-// messages in flight), the response is dropped with a warning rather than
-// stalling the caller. Under correct operation this should be rare;
-// repeated drops indicate a misbehaving thin client.
+// sendResponse enqueues a response for this thin client. Never drops:
+// it appends to the per-conn sendQueue under sendQueueMu and signals
+// the writer goroutine via sendWake. The only error returned is
+// errConnClosed, meaning the conn has already begun teardown and the
+// response cannot be delivered — callers can then treat it as "client
+// gone" rather than mistake it for a buffering decision inside the
+// daemon.
 func (c *incomingConn) sendResponse(r *Response) error {
-	select {
-	case c.sendToClientCh <- r:
-		return nil
-	case <-c.listener.HaltCh():
-		return errors.New("shutting down")
-	default:
-		c.log.Warningf("sendResponse: sendToClientCh full for AppID %x, dropping response", c.appID[:])
-		return errors.New("sendToClientCh full")
+	c.sendQueueMu.Lock()
+	if c.isDone() {
+		c.sendQueueMu.Unlock()
+		return errConnClosed
 	}
+	c.sendQueue = append(c.sendQueue, r)
+	c.sendQueueMu.Unlock()
+
+	select {
+	case c.sendWake <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+// drainSendQueue atomically returns the current batch and empties the
+// queue. The returned slice aliases the old backing array; callers
+// must not mutate it.
+func (c *incomingConn) drainSendQueue() []*Response {
+	c.sendQueueMu.Lock()
+	batch := c.sendQueue
+	c.sendQueue = nil
+	c.sendQueueMu.Unlock()
+	return batch
 }
 
 // writeResponse performs the actual socket write. Called only by the
-// per-conn writer goroutine (drained from sendToClientCh) and by
+// per-conn writer goroutine (drained from sendQueue) and by
 // broadcastShutdownEvent during shutdown, when the writer goroutine may
-// have already exited.
+// have already exited. A write deadline bounds how long a wedged client
+// can pin the writer; on deadline the socket Write returns an error and
+// the caller tears down the conn.
 func (c *incomingConn) writeResponse(r *Response) error {
 	response := IntoThinResponse(r)
 	blob, err := cbor.Marshal(response)
@@ -146,7 +205,12 @@ func (c *incomingConn) writeResponse(r *Response) error {
 	binary.BigEndian.PutUint32(prefix[:], uint32(len(blob)))
 	toSend := append(prefix[:], blob...)
 
+	// SetWriteDeadline may not be supported by every transport (e.g.
+	// net.Pipe in tests); ignore the error and rely on the underlying
+	// Write to fail promptly either way.
+	_ = c.conn.SetWriteDeadline(time.Now().Add(perClientWriteDeadline))
 	count, err := c.conn.Write(toSend)
+	_ = c.conn.SetWriteDeadline(time.Time{})
 	if err != nil {
 		c.log.Errorf("writeResponse: Write: %v", err)
 		return err
@@ -163,9 +227,8 @@ func (c *incomingConn) start() {
 }
 
 func (c *incomingConn) worker() {
-	doneCh := make(chan struct{})
 	defer func() {
-		close(doneCh)
+		c.closeDone()
 		c.log.Debugf("Closing.")
 		c.conn.Close()
 		c.listener.onClosedConn(c) // Remove from the connection list.
@@ -195,18 +258,26 @@ func (c *incomingConn) worker() {
 		}
 	})
 
+	// Writer goroutine: drain batches from sendQueue, Write them to
+	// the socket. A Write failure (including hitting the write
+	// deadline) tears down the conn by closing doneCh, which causes
+	// further sendResponse calls to return errConnClosed rather than
+	// queueing onto a dead writer.
 	c.listener.Go(func() {
+		defer c.closeDone()
 		for {
+			for _, resp := range c.drainSendQueue() {
+				if err := c.writeResponse(resp); err != nil {
+					c.log.Infof("writer exiting after write error: %s", err.Error())
+					return
+				}
+			}
 			select {
 			case <-c.listener.HaltCh():
 				return
-			case <-doneCh:
+			case <-c.doneCh:
 				return
-			case message := <-c.sendToClientCh:
-				err := c.writeResponse(message)
-				if err != nil {
-					c.log.Infof("received error sending client a message: %s", err.Error())
-				}
+			case <-c.sendWake:
 			}
 		}
 	})
@@ -261,12 +332,13 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 	}
 
 	c := &incomingConn{
-		listener:       l,
-		conn:           conn,
-		appID:          appid,
-		sendToClientCh: make(chan *Response, perClientSendBuf),
-		requestCh:      make(chan *Request, perClientRequestBuf),
-		resendCh:       make(chan *[sphinxConstants.SURBIDLength]byte, perClientResendBuf),
+		listener:  l,
+		conn:      conn,
+		appID:     appid,
+		requestCh: make(chan *Request, perClientRequestBuf),
+		resendCh:  make(chan *[sphinxConstants.SURBIDLength]byte, perClientResendBuf),
+		sendWake:  make(chan struct{}, 1),
+		doneCh:    make(chan struct{}),
 	}
 
 	c.log = l.logBackend.GetLogger("client/incomingConn")
