@@ -105,7 +105,12 @@ type Daemon struct {
 }
 
 func NewDaemon(cfg *config.Config) (*Daemon, error) {
-	egressSize := 2
+	// egressSize is the buffer between the Poisson sender and egressWorker.
+	// A larger buffer smooths over short hiccups where a mixnet dispatch
+	// (Sphinx compose + wire write) runs longer than one Poisson interval,
+	// so the sender does not briefly stall and lose pacing under bursts
+	// from many clients.
+	egressSize := 64
 	ingressSize := 200
 	d := &Daemon{
 		cfg:                cfg,
