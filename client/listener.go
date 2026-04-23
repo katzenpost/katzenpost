@@ -337,9 +337,16 @@ func (l *listener) unregisterConn(appID [AppIDLength]byte) {
 // busy client cannot re-win its own slot on consecutive calls. Returns nil
 // when no connected client has a ready request — the sender falls back to
 // a loop decoy in that case.
+//
+// Only an RLock is required: the scheduler is the sole RLock-tier writer
+// of rrCursor (only one sender goroutine exists), and registerConn /
+// unregisterConn / handleSessionToken take the full write lock, which
+// excludes this path. Switching from Lock to RLock lets concurrent
+// RLock readers — e.g. getConnection from the ingressWorker's reply path
+// and PKI broadcast iterations — run without waiting on every Poisson tick.
 func (l *listener) PickNextRequest() *Request {
-	l.connsLock.Lock()
-	defer l.connsLock.Unlock()
+	l.connsLock.RLock()
+	defer l.connsLock.RUnlock()
 	n := len(l.connOrder)
 	if n == 0 {
 		return nil
