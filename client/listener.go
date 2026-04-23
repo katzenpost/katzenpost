@@ -268,34 +268,29 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 	l.decoySender.UpdateConnectionStatus(status == nil)
 
 	l.connsLock.RLock()
-	conns := l.conns
-
-	for key, _ := range conns {
-		l.conns[key].updateConnectionStatus(status)
+	for _, c := range l.conns {
+		c.updateConnectionStatus(status)
 	}
 	l.connsLock.RUnlock()
 }
 
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
-	// send doc to all thin clients
 	docBlob, err := cbor.Marshal(doc)
 	if err != nil {
 		l.log.Errorf("cbor marshal failed: %s", err.Error())
 		return
 	}
 
+	// A single conn in teardown (errConnClosed) must not abort the
+	// broadcast to the other clients; log and continue.
 	l.connsLock.RLock()
-	conns := l.conns
-	for key, _ := range conns {
-		err = l.conns[key].sendPKIDoc(docBlob)
-		if err != nil {
-			l.log.Errorf("sendPKIDoc failure: %s", err)
-			return
+	for _, c := range l.conns {
+		if err := c.sendPKIDoc(docBlob); err != nil {
+			l.log.Warningf("sendPKIDoc to AppID %x failed: %s", c.appID[:], err)
 		}
 	}
 	l.connsLock.RUnlock()
 
-	// update our send rates from PKI doc
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
 }
 
