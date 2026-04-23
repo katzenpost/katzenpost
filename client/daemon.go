@@ -436,30 +436,33 @@ func (d *Daemon) ingressWorker() {
 }
 
 func (d *Daemon) handleReply(reply *sphinxReply) {
-	isReply := false
-	isARQReply := false
-	isDecoy := false
-	desc := replyDescriptor{}
-	arqMessage := &ARQMessage{}
-
+	// Single lookup-and-delete under one Lock: each SURB ID is a key in
+	// exactly one of the three maps, so we classify and remove the
+	// entry in one critical section instead of re-acquiring.
 	d.replyLock.Lock()
-	myReplyDescriptor, isReply := d.replies[*reply.surbID]
-	myDecoyDescriptor, isDecoy := d.decoys[*reply.surbID]
-	arqMessage, isARQReply = d.arqSurbIDMap[*reply.surbID]
+	var (
+		desc       replyDescriptor
+		arqMessage *ARQMessage
+		isReply    bool
+		isDecoy    bool
+		isARQReply bool
+	)
+	if desc, isReply = d.replies[*reply.surbID]; isReply {
+		delete(d.replies, *reply.surbID)
+	} else if desc, isDecoy = d.decoys[*reply.surbID]; isDecoy {
+		delete(d.decoys, *reply.surbID)
+	} else if arqMessage, isARQReply = d.arqSurbIDMap[*reply.surbID]; isARQReply {
+		delete(d.arqSurbIDMap, *reply.surbID)
+		if arqMessage.EnvelopeHash != nil {
+			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+		}
+	}
 	d.replyLock.Unlock()
 
-	switch {
-	case isReply:
-		desc = myReplyDescriptor
-		d.replyLock.Lock()
-		delete(d.replies, *reply.surbID)
-		d.replyLock.Unlock()
-	case isDecoy:
-		desc = myDecoyDescriptor
-		d.replyLock.Lock()
-		delete(d.decoys, *reply.surbID)
-		d.replyLock.Unlock()
-	case isARQReply:
+	if isARQReply {
+		// Drop the stale timer entry if it is still at the head of the
+		// queue; a later Peek/Pop is just wasted work when we already
+		// know the SURB has been acked.
 		peeked := d.arqTimerQueue.Peek()
 		if peeked != nil {
 			peekSurbId := peeked.Value.(*[sphinxConstants.SURBIDLength]byte)
@@ -467,16 +470,10 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 				d.arqTimerQueue.Pop()
 			}
 		}
-		d.replyLock.Lock()
-		delete(d.arqSurbIDMap, *reply.surbID)
-		if arqMessage.EnvelopeHash != nil {
-			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		}
-		d.replyLock.Unlock()
-
 		d.handlePigeonholeARQReply(arqMessage, reply)
 		return
-	default:
+	}
+	if !isReply && !isDecoy {
 		return
 	}
 
