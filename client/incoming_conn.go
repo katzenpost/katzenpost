@@ -203,21 +203,25 @@ func (c *incomingConn) writeResponse(r *Response) error {
 	const blobPrefixLen = 4
 	prefix := [blobPrefixLen]byte{}
 	binary.BigEndian.PutUint32(prefix[:], uint32(len(blob)))
-	toSend := append(prefix[:], blob...)
+	total := int64(blobPrefixLen + len(blob))
 
 	// SetWriteDeadline may not be supported by every transport (e.g.
 	// net.Pipe in tests); ignore the error and rely on the underlying
 	// Write to fail promptly either way.
 	_ = c.conn.SetWriteDeadline(time.Now().Add(perClientWriteDeadline))
-	count, err := c.conn.Write(toSend)
+	// net.Buffers.WriteTo coalesces into a single writev syscall on
+	// transports that support it (tcp, unix); otherwise it emits two
+	// Writes. Either way we avoid the append+copy of prefix+blob.
+	bufs := net.Buffers{prefix[:], blob}
+	n, err := bufs.WriteTo(c.conn)
 	_ = c.conn.SetWriteDeadline(time.Time{})
 	if err != nil {
 		c.log.Errorf("writeResponse: Write: %v", err)
 		return err
 	}
-	if count != len(toSend) {
-		c.log.Errorf("writeResponse: Write: truncated write (%d/%d)", count, len(toSend))
-		return fmt.Errorf("writeResponse error: only wrote %d bytes whereas buffer is size %d", count, len(toSend))
+	if n != total {
+		c.log.Errorf("writeResponse: Write: truncated write (%d/%d)", n, total)
+		return fmt.Errorf("writeResponse error: only wrote %d bytes whereas buffer is size %d", n, total)
 	}
 	return nil
 }
