@@ -201,9 +201,7 @@ func setupFullClient(t *testing.T) (*Daemon, *Client, *[AppIDLength]byte, chan *
 	conn.gateway = gatewayHash
 	conn.gatewayLock.Unlock()
 	conn.queueID = []byte("testqueue")
-	conn.isConnectedLock.Lock()
-	conn.isConnected = true
-	conn.isConnectedLock.Unlock()
+	conn.isConnected.Store(true)
 	client.conn = conn
 
 	// Drain packets from sendCh

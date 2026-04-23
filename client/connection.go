@@ -107,15 +107,13 @@ type connection struct {
 
 	retryDelay int64 // used as atomic time.Duration
 
-	isConnectedLock sync.RWMutex
-	isConnected     bool
+	isConnected atomic.Bool
 
 	gatewayLock sync.RWMutex
 	gateway     *[32]byte
 	queueID     []byte
 
-	isShutdownLock sync.RWMutex
-	isShutdown     bool
+	isShutdown atomic.Bool
 }
 
 // getGateway safely returns the current gateway hash
@@ -277,10 +275,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 
 		if c.client.cfg.Callbacks != nil {
 			if c.client.cfg.Callbacks.OnConnFn != nil {
-				c.isShutdownLock.RLock()
-				isShutdown := c.isShutdown
-				c.isShutdownLock.RUnlock()
-				if !isShutdown {
+				if !c.isShutdown.Load() {
 					c.client.cfg.Callbacks.OnConnFn(connErr)
 				}
 			}
@@ -785,23 +780,15 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *connection) onConnStatusChange(err error) {
-	c.isShutdownLock.RLock()
-	isShutdown := c.isShutdown
-	c.isShutdownLock.RUnlock()
-
-	if isShutdown {
+	if c.isShutdown.Load() {
 		return
 	}
 
 	if err == nil {
-		c.isConnectedLock.Lock()
-		c.isConnected = true
-		c.isConnectedLock.Unlock()
+		c.isConnected.Store(true)
 	} else {
 		c.log.Info("onConnStatusChange %s", err.Error())
-		c.isConnectedLock.Lock()
-		c.isConnected = false
-		c.isConnectedLock.Unlock()
+		c.isConnected.Store(false)
 		// Force drain the channels used to poke the loop.
 		select {
 		case ctx := <-c.sendCh:
@@ -827,20 +814,12 @@ func (c *connection) onConnStatusChange(err error) {
 // sendPacket blocks until the packet is sent
 // on the wire.
 func (c *connection) sendPacket(pkt []byte) error {
-	c.isConnectedLock.RLock()
-	if !c.isConnected {
-		c.isConnectedLock.RUnlock()
+	if !c.isConnected.Load() {
 		return ErrNotConnected
 	}
-	c.isConnectedLock.RUnlock()
-
-	// Check if we're shutting down before sending
-	c.isShutdownLock.RLock()
-	if c.isShutdown {
-		c.isShutdownLock.RUnlock()
+	if c.isShutdown.Load() {
 		return ErrShutdown
 	}
-	c.isShutdownLock.RUnlock()
 
 	errCh := make(chan error)
 	select {
@@ -863,12 +842,9 @@ func (c *connection) sendPacket(pkt []byte) error {
 }
 
 func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
-	c.isConnectedLock.RLock()
-	if !c.isConnected {
-		c.isConnectedLock.RUnlock()
+	if !c.isConnected.Load() {
 		return nil, ErrNotConnected
 	}
-	c.isConnectedLock.RUnlock()
 
 	errCh := make(chan error)
 	replyCh := make(chan interface{})
@@ -924,9 +900,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 }
 
 func (c *connection) Shutdown() {
-	c.isShutdownLock.Lock()
-	c.isShutdown = true
-	c.isShutdownLock.Unlock()
+	c.isShutdown.Store(true)
 
 	c.Halt()
 	close(c.fetchCh)
