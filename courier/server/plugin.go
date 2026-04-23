@@ -866,14 +866,9 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 		delete(e.copyCache, *envHash)
 		e.copyCacheLock.Unlock()
 
-		if len(replies) == 0 {
-			e.log.Warningf("dispatchCopyEnvelope: attempt %d timed out with no replies", attempt+1)
-			continue
-		}
-
-		// K=2 redundancy: at least one success means the data is
-		// stored — continue the Copy.
-		bestErr := uint8(0)
+		// K=2 redundancy: any Success reply means the data is
+		// stored at a shard; we can short-circuit regardless of how
+		// many replies we have.
 		for _, r := range replies {
 			if r.ErrorCode == pigeonhole.ReplicaSuccess {
 				if attempt > 0 {
@@ -881,15 +876,31 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 				}
 				return true, 0
 			}
-			// Prefer BoxAlreadyExists as the reportable code — it's
-			// the most diagnostic signal for the client's Copy
-			// failure report.
+		}
+
+		// Below this point no reply is Success. Any terminal
+		// conclusion ("destination pre-exists", "invalid signature",
+		// etc.) requires hearing from BOTH intermediates — a single
+		// non-Success reply with the peer still in flight is
+		// indistinguishable from the normal K=2 case where one
+		// intermediate wrote first (Success) and the other saw the
+		// peer's write (BoxAlreadyExists) but whose reply hasn't
+		// landed yet. Treat shortfalls as transient and retry.
+		if len(replies) < 2 {
+			e.log.Warningf("dispatchCopyEnvelope: attempt %d got %d/2 replies before deadline, retrying", attempt+1, len(replies))
+			continue
+		}
+
+		// Both replies are non-Success errors. Pick the most
+		// diagnostic code for the client's Copy failure report.
+		bestErr := uint8(0)
+		for _, r := range replies {
 			if r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists || bestErr == 0 {
 				bestErr = r.ErrorCode
 			}
 		}
 
-		// Both replies are errors. BoxAlreadyExists is ambiguous:
+		// BoxAlreadyExists from both intermediates is ambiguous:
 		//
 		//   - attempt == 0: the destination box was written before we
 		//     ever sent anything, so the Copy cannot achieve its goal.
