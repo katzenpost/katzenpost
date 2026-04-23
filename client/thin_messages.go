@@ -4,6 +4,7 @@ package client
 
 import (
 	"github.com/katzenpost/katzenpost/client/thin"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 func IntoThinResponse(r *Response) *thin.Response {
@@ -158,4 +159,10 @@ type Request struct {
 	// Legacy API
 
 	SendMessage *thin.SendMessage
+
+	// ResendARQ carries a SURB ID that the ARQ timer wants to retransmit.
+	// Emitted by the listener's scheduler (never from a thin client), so
+	// resends travel through the same fair, Poisson-gated path as fresh
+	// sends. egressWorker routes it to arqDoResend.
+	ResendARQ *[sphinxConstants.SURBIDLength]byte
 }

@@ -7,101 +7,62 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/katzenpost/core/log"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
-func newTestDaemon(bufSize int) *Daemon {
+// TestEnqueueResendNeverLoses verifies that a flood of ARQ timer fires
+// never loses a retry. With per-client resend queues, enqueueResend drops
+// to the backing arqTimerQueue when the per-client queue is full — the
+// timer re-fires later — so every SURB ID that the ARQ timer sees is
+// eventually delivered to the client's resendCh or re-armed on the timer.
+func TestEnqueueResendNeverLoses(t *testing.T) {
+	l := newSchedulerListener()
+	const resendBuf = 2
+	a := newTestIncomingConn(0x0A, 8, resendBuf)
+	l.testRegister(a)
+
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	d := &Daemon{
-		arqResendCh: make(chan *[sphinxConstants.SURBIDLength]byte, bufSize),
-		log:         logging.MustGetLogger("test"),
+		logbackend:   logBackend,
+		log:          logBackend.GetLogger("test"),
+		listener:     l,
+		replyLock:    new(sync.Mutex),
+		arqSurbIDMap: make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 	}
-	return d
-}
 
-// TestARQResendNeverDrops verifies the correct behavior: all resends
-// must be delivered, none dropped, regardless of concurrency.
-// Uses a small buffer (2) to prove resends block instead of dropping.
-func TestARQResendNeverDrops(t *testing.T) {
-	d := newTestDaemon(2)
+	var rearmed atomic.Int32
+	d.arqTimerQueue = NewTimerQueue(func(interface{}) {
+		rearmed.Add(1)
+	})
 
-	numResends := 100
-	var received atomic.Int32
-
-	// Drain the channel in a goroutine
-	done := make(chan struct{})
-	go func() {
-		for range d.arqResendCh {
-			received.Add(1)
-			if int(received.Load()) == numResends {
-				close(done)
-				return
-			}
-		}
-	}()
-
-	// Fire 100 concurrent resends — all must arrive
-	var wg sync.WaitGroup
+	const numResends = 100
 	for i := 0; i < numResends; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			surbID := new([sphinxConstants.SURBIDLength]byte)
-			surbID[0] = byte(id)
-			d.arqResend(surbID)
-		}(i)
+		var surbID [sphinxConstants.SURBIDLength]byte
+		surbID[0] = byte(i)
+		surbID[1] = byte(i >> 8)
+		d.replyLock.Lock()
+		d.arqSurbIDMap[surbID] = &ARQMessage{AppID: a.appID, SURBID: &surbID}
+		d.replyLock.Unlock()
 	}
 
-	wg.Wait()
-
-	// Wait for all to be drained, with timeout
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatalf("Timed out: sent %d resends, only %d received", numResends, received.Load())
+	// Fire enqueueResend for every SURB ID we registered. The first
+	// resendBuf land in the client's resendCh; the rest are re-armed on
+	// arqTimerQueue so they'll retry after the backoff.
+	for k := range d.arqSurbIDMap {
+		surbID := k
+		d.enqueueResend(&surbID)
 	}
 
-	require.Equal(t, numResends, int(received.Load()), "All resends must be delivered, none dropped")
+	// resendCh is saturated.
+	require.Len(t, a.resendCh, resendBuf)
+	// Every remaining attempt must be queued for retry on the timer —
+	// nothing silently dropped. With the TimerQueue worker unstarted, the
+	// re-armed items sit in pushCh rather than the internal heap.
+	require.Len(t, d.arqTimerQueue.pushCh, numResends-resendBuf,
+		"all resends that could not enter resendCh must be re-armed, none dropped")
 }
-
-// TestARQResendHalts verifies that arqResend returns promptly when Halt is called,
-// even if the channel is full.
-func TestARQResendHalts(t *testing.T) {
-	d := newTestDaemon(1)
-
-	// Fill the buffer
-	surbID1 := new([sphinxConstants.SURBIDLength]byte)
-	d.arqResendCh <- surbID1
-
-	// Now the channel is full. arqResend should block until halt.
-	done := make(chan struct{})
-	go func() {
-		surbID2 := new([sphinxConstants.SURBIDLength]byte)
-		surbID2[0] = 1
-		d.arqResend(surbID2)
-		close(done)
-	}()
-
-	// Should not complete yet
-	select {
-	case <-done:
-		t.Fatal("arqResend returned before halt was called")
-	case <-time.After(100 * time.Millisecond):
-	}
-
-	// Halt should unblock it
-	d.Halt()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("arqResend did not return after Halt")
-	}
-}
-
-// Ensure Daemon embeds worker.Worker for HaltCh support
-var _ interface{ HaltCh() <-chan interface{} } = &Daemon{}

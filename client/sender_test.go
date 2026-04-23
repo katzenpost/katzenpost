@@ -15,14 +15,25 @@ func TestSender(t *testing.T) {
 		messageOrLoopMaxDelay: 1000,
 	}
 
-	in := make(chan *Request)
+	in := make(chan *Request, 10)
 	out := make(chan *Request)
 	logBackend, err := log.New("", "debug", false)
 	if err != nil {
 		t.FailNow()
 	}
 
-	s := newSender(in, out, false, logBackend)
+	// A simple pickNext that drains a channel, simulating the listener's
+	// scheduler for this end-to-end timer-driven test.
+	pickNext := func() *Request {
+		select {
+		case r := <-in:
+			return r
+		default:
+			return nil
+		}
+	}
+
+	s := newSender(pickNext, out, false, logBackend)
 	defer s.Halt()
 
 	s.UpdateConnectionStatus(true)
@@ -30,9 +41,7 @@ func TestSender(t *testing.T) {
 
 	n := 10
 	for i := 0; i < n; i++ {
-		go func() {
-			in <- &Request{}
-		}()
+		in <- &Request{}
 	}
 
 	for i := 0; i < n; i++ {

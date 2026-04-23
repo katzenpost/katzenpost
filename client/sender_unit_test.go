@@ -12,12 +12,12 @@ import (
 )
 
 func TestSenderUpdateRatesInvalid(t *testing.T) {
-	in := make(chan *Request)
 	out := make(chan *Request)
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	s := newSender(in, out, false, logBackend)
+	pickNext := func() *Request { return nil }
+	s := newSender(pickNext, out, false, logBackend)
 	defer s.Halt()
 
 	// Zero rate should not panic, just log warning

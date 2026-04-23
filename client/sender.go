@@ -16,8 +16,13 @@ type sender struct {
 
 	log *logging.Logger
 
-	in  chan *Request
-	out chan *Request
+	// pickNext is called once per Poisson tick to select the next request
+	// to send. Returning nil means "no client has queued work" and the
+	// sender falls back to a loop decoy (unless decoys are disabled).
+	// Provided by the listener's round-robin scheduler in production;
+	// stubbed in tests.
+	pickNext func() *Request
+	out      chan *Request
 
 	sendMessageOrLoop *common.ExpDist
 
@@ -28,10 +33,10 @@ type sender struct {
 // methods UpdateConnectionStatus and UpdateRates are called.
 // The worker only works when we have a connection and when we have
 // a rate set.
-func newSender(in chan *Request, out chan *Request, disableDecoys bool, logBackend *log.Backend) *sender {
+func newSender(pickNext func() *Request, out chan *Request, disableDecoys bool, logBackend *log.Backend) *sender {
 	s := &sender{
 		log:               logBackend.GetLogger("client/sender"),
-		in:                in,
+		pickNext:          pickNext,
 		out:               out,
 		sendMessageOrLoop: common.NewExpDist(),
 		disableDecoys:     disableDecoys,
@@ -51,25 +56,27 @@ func (s *sender) worker() {
 	for {
 		select {
 		case <-s.sendMessageOrLoop.OutCh():
-			var toSend *Request
-			select {
-			case toSend = <-s.in:
-			case <-s.HaltCh():
-				return
-			default:
-				if s.disableDecoys {
-					continue
-				}
-				toSend = newLoopDecoy()
-			}
-			select {
-			case s.out <- toSend:
-			case <-s.HaltCh():
-				return
-			}
+			s.pickAndSend()
 		case <-s.HaltCh():
 			return
 		}
+	}
+}
+
+// pickAndSend fills one Poisson send slot. Extracted so tests can drive the
+// scheduler-plus-decoy path without firing a real exponential-distribution
+// timer.
+func (s *sender) pickAndSend() {
+	toSend := s.pickNext()
+	if toSend == nil {
+		if s.disableDecoys {
+			return
+		}
+		toSend = newLoopDecoy()
+	}
+	select {
+	case s.out <- toSend:
+	case <-s.HaltCh():
 	}
 }
 

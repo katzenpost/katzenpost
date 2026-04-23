@@ -32,7 +32,6 @@ func TestNewDaemon(t *testing.T) {
 	require.NotNil(t, d.decoys)
 	require.NotNil(t, d.replyLock)
 	require.NotNil(t, d.arqSurbIDMap)
-	require.NotNil(t, d.arqResendCh)
 	require.NotNil(t, d.arqEnvelopeHashMap)
 	require.NotNil(t, d.secureRand)
 	require.NotNil(t, d.log)

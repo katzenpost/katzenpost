@@ -16,6 +16,20 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/thin"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+)
+
+const (
+	// perClientRequestBuf is the capacity of each thin client's ingress
+	// queue. When full, that client's reader goroutine blocks on its own
+	// queue — back-pressure stays isolated instead of spilling into a
+	// shared buffer where it would stall other clients.
+	perClientRequestBuf = 16
+
+	// perClientResendBuf is the capacity of each thin client's ARQ resend
+	// queue. If full, enqueueResend re-arms the retry on arqTimerQueue
+	// (see resendQueueFullBackoff) so no retransmit is silently lost.
+	perClientResendBuf = 8
 )
 
 // incomingConn type is used along with listener type
@@ -29,6 +43,17 @@ type incomingConn struct {
 	sendToClientCh chan *Response
 	clientToken    *[16]byte
 	explicitClose  bool
+
+	// requestCh is this client's per-connection ingress queue, drained by
+	// the listener's round-robin scheduler. Bursts from one client fill
+	// that client's own queue and apply back-pressure to its own reader,
+	// without contending with other clients' requests.
+	requestCh chan *Request
+
+	// resendCh carries ARQ resend SURB IDs targeted at this client. The
+	// scheduler picks from resendCh before requestCh within a client's
+	// slot so retransmits are not delayed behind fresh user input.
+	resendCh chan *[sphinxConstants.SURBIDLength]byte
 }
 
 func (c *incomingConn) recvRequest() (*Request, error) {
@@ -188,7 +213,7 @@ func (c *incomingConn) worker() {
 			}
 			c.log.Infof("Received Request from peer application.")
 			select {
-			case c.listener.ingressCh <- rawReq:
+			case c.requestCh <- rawReq:
 			case <-c.listener.HaltCh():
 				return
 			}
@@ -210,6 +235,8 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 		conn:           conn,
 		appID:          appid,
 		sendToClientCh: make(chan *Response, 2),
+		requestCh:      make(chan *Request, perClientRequestBuf),
+		resendCh:       make(chan *[sphinxConstants.SURBIDLength]byte, perClientResendBuf),
 	}
 
 	c.log = l.logBackend.GetLogger("client/incomingConn")

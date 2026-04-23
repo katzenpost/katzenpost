@@ -33,7 +33,13 @@ type listener struct {
 	connsLock *sync.RWMutex
 	conns     map[[AppIDLength]byte]*incomingConn // appID -> *incomingConn
 
-	ingressCh   chan *Request
+	// connOrder is the round-robin rotation order for the scheduler. It
+	// mirrors the set of keys in conns; maintained under connsLock so the
+	// scheduler can iterate deterministically. rrCursor advances through
+	// this slice on every PickNextRequest call, hit or miss.
+	connOrder [][AppIDLength]byte
+	rrCursor  int
+
 	decoySender *sender
 
 	connectionStatusMutex sync.Mutex
@@ -154,7 +160,7 @@ func (l *listener) onNewConn(conn net.Conn) {
 	}()
 
 	l.connsLock.Lock()
-	l.conns[*c.appID] = c
+	l.registerConn(c)
 	l.connsLock.Unlock()
 
 	status := l.getConnectionStatus()
@@ -164,9 +170,7 @@ func (l *listener) onNewConn(conn net.Conn) {
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
-	l.connsLock.Lock()
-	delete(l.conns, *c.appID)
-	l.connsLock.Unlock()
+	l.unregisterConn(*c.appID)
 
 	if c.explicitClose {
 		// ThinClose received: destroy all state immediately
@@ -289,6 +293,86 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
 }
 
+// registerConn adds an incomingConn to the scheduler's rotation. The caller
+// must hold connsLock.
+func (l *listener) registerConn(c *incomingConn) {
+	l.conns[*c.appID] = c
+	l.connOrder = append(l.connOrder, *c.appID)
+}
+
+// unregisterConn removes an incomingConn from the scheduler's rotation,
+// adjusting rrCursor so it keeps pointing at a live client. Callers close
+// the conn's channels after this returns; holding connsLock for the delete
+// guarantees the scheduler will not see a partially-dismantled conn.
+func (l *listener) unregisterConn(appID [AppIDLength]byte) {
+	l.connsLock.Lock()
+	defer l.connsLock.Unlock()
+	delete(l.conns, appID)
+	for i, id := range l.connOrder {
+		if id != appID {
+			continue
+		}
+		l.connOrder = append(l.connOrder[:i], l.connOrder[i+1:]...)
+		if l.rrCursor > i {
+			l.rrCursor--
+		}
+		break
+	}
+	if n := len(l.connOrder); n == 0 {
+		l.rrCursor = 0
+	} else if l.rrCursor >= n {
+		l.rrCursor %= n
+	}
+}
+
+// PickNextRequest returns the next *Request to send, chosen by round-robin
+// across connected thin clients. Each call advances the cursor past the
+// visited client (whether a request was available or not) so a persistently
+// busy client cannot re-win its own slot on consecutive calls. Returns nil
+// when no connected client has a ready request — the sender falls back to
+// a loop decoy in that case.
+func (l *listener) PickNextRequest() *Request {
+	l.connsLock.Lock()
+	defer l.connsLock.Unlock()
+	n := len(l.connOrder)
+	if n == 0 {
+		return nil
+	}
+	for i := 0; i < n; i++ {
+		idx := (l.rrCursor + i) % n
+		c, ok := l.conns[l.connOrder[idx]]
+		if !ok {
+			continue
+		}
+		// Resends take priority over fresh requests within this client's
+		// slot: they are already-promised work that the ARQ timer has
+		// decided needs another attempt.
+		select {
+		case surbID, ok := <-c.resendCh:
+			if !ok {
+				// Closed channel: client is tearing down. The conn should
+				// already be out of the map by the time its channels
+				// close, but guard anyway.
+				break
+			}
+			l.rrCursor = (idx + 1) % n
+			return &Request{AppID: c.appID, ResendARQ: surbID}
+		default:
+		}
+		select {
+		case req, ok := <-c.requestCh:
+			if !ok {
+				break
+			}
+			l.rrCursor = (idx + 1) % n
+			return req
+		default:
+		}
+	}
+	l.rrCursor = (l.rrCursor + 1) % n
+	return nil
+}
+
 func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 	l.connsLock.RLock()
 	conn, ok := l.conns[*appID]
@@ -327,6 +411,12 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 		delete(l.conns, oldAppID)
 		c.appID = existingAppID
 		l.conns[*existingAppID] = c
+		for i, id := range l.connOrder {
+			if id == oldAppID {
+				l.connOrder[i] = *existingAppID
+				break
+			}
+		}
 		l.connsLock.Unlock()
 
 		// Cancel any pending cleanup timer and flush queued replies
@@ -413,13 +503,11 @@ func (l *listener) broadcastShutdownEvent() {
 
 // New creates a new listener.
 func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend, onAppDisconnectFn func(*[AppIDLength]byte)) (*listener, error) {
-	ingressSize := 200
 	l := &listener{
 		client:               client,
 		logBackend:           logBackend,
 		conns:                make(map[[AppIDLength]byte]*incomingConn),
 		connsLock:            new(sync.RWMutex),
-		ingressCh:            make(chan *Request, ingressSize),
 		updatePKIDocCh:       make(chan *cpki.Document, 2),
 		updateStatusCh:       make(chan error, 2),
 		onAppDisconnectFn:    onAppDisconnectFn,
@@ -436,7 +524,7 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 		return nil, err
 	}
 
-	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic, logBackend)
+	l.decoySender = newSender(l.PickNextRequest, egressCh, client.cfg.Debug.DisableDecoyTraffic, logBackend)
 
 	l.listener, err = client.cfg.Listen.Listen()
 	if err != nil {

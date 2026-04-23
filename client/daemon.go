@@ -96,7 +96,6 @@ type Daemon struct {
 
 	arqTimerQueue      *TimerQueue
 	arqSurbIDMap       map[[sphinxConstants.SURBIDLength]byte]*ARQMessage
-	arqResendCh        chan *[sphinxConstants.SURBIDLength]byte
 	arqEnvelopeHashMap map[[32]byte]*[sphinxConstants.SURBIDLength]byte // EnvelopeHash -> SURB ID (for cancellation)
 
 	// Cryptographically secure random number generator
@@ -118,7 +117,6 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		gcReplyCh:          make(chan *gcReply),
 		replyLock:          new(sync.Mutex),
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqResendCh:        make(chan *[sphinxConstants.SURBIDLength]byte, 64),
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		// Initialize cryptographically secure random number generator
 		secureRand: hpqcRand.NewMath(),
@@ -260,15 +258,10 @@ func (d *Daemon) Start() error {
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
-		go func() {
-			select {
-			case <-d.HaltCh():
-				return
-			case d.arqResendCh <- surbID:
-			case <-time.After(20 * time.Second):
-				d.log.Debugf("ARQ resend timeout for SURB ID %x", surbID[:])
-			}
-		}()
+		// Route to the owning client's per-connection resend queue. The
+		// scheduler drains it on a Poisson tick along with fresh sends,
+		// so retransmits participate in the same round-robin fairness.
+		d.enqueueResend(surbID)
 	})
 	d.arqTimerQueue.Start()
 	d.gcTimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
@@ -320,49 +313,57 @@ func (d *Daemon) egressWorker() {
 		select {
 		case <-d.HaltCh():
 			return
-		case surbID := <-d.arqResendCh:
-			d.arqDoResend(surbID)
 		case request := <-d.egressCh:
-			switch {
-			case request.SendLoopDecoy != nil:
-				d.sendLoopDecoy(request)
-			case request.SendMessage != nil:
-				d.send(request)
-
-				// New Pigeonhole API (stateless):
-
-			case request.NewKeypair != nil:
-				d.newKeypair(request)
-			case request.EncryptRead != nil:
-				d.encryptRead(request)
-			case request.EncryptWrite != nil:
-				d.encryptWrite(request)
-			case request.StartResendingEncryptedMessage != nil:
-				d.startResendingEncryptedMessage(request)
-			case request.CancelResendingEncryptedMessage != nil:
-				d.cancelResendingEncryptedMessage(request)
-			case request.StartResendingCopyCommand != nil:
-				d.startResendingCopyCommand(request)
-			case request.CancelResendingCopyCommand != nil:
-				d.cancelResendingCopyCommand(request)
-			case request.NextMessageBoxIndex != nil:
-				d.nextMessageBoxIndex(request)
-			case request.GetMessageBoxIndexCounter != nil:
-				d.getMessageBoxIndexCounter(request)
-
-				// Copy Channel API:
-
-			case request.CreateCourierEnvelopesFromPayload != nil:
-				d.createCourierEnvelopesFromPayload(request)
-			case request.CreateCourierEnvelopesFromPayloads != nil:
-				d.createCourierEnvelopesFromPayloads(request)
-			case request.CreateCourierEnvelopesFromTombstoneRange != nil:
-				d.createCourierEnvelopesFromTombstoneRange(request)
-
-			default:
-				panic("send operation not fully specified")
-			}
+			d.dispatch(request)
 		}
+	}
+}
+
+// dispatch routes a scheduler-selected *Request to its handler. ARQ
+// retransmits flow through the same scheduler path as fresh sends, so a
+// resend case sits alongside the other request variants instead of arriving
+// on a separate channel that bypasses the Poisson gate.
+func (d *Daemon) dispatch(request *Request) {
+	switch {
+	case request.ResendARQ != nil:
+		d.arqDoResend(request.ResendARQ)
+	case request.SendLoopDecoy != nil:
+		d.sendLoopDecoy(request)
+	case request.SendMessage != nil:
+		d.send(request)
+
+		// New Pigeonhole API (stateless):
+
+	case request.NewKeypair != nil:
+		d.newKeypair(request)
+	case request.EncryptRead != nil:
+		d.encryptRead(request)
+	case request.EncryptWrite != nil:
+		d.encryptWrite(request)
+	case request.StartResendingEncryptedMessage != nil:
+		d.startResendingEncryptedMessage(request)
+	case request.CancelResendingEncryptedMessage != nil:
+		d.cancelResendingEncryptedMessage(request)
+	case request.StartResendingCopyCommand != nil:
+		d.startResendingCopyCommand(request)
+	case request.CancelResendingCopyCommand != nil:
+		d.cancelResendingCopyCommand(request)
+	case request.NextMessageBoxIndex != nil:
+		d.nextMessageBoxIndex(request)
+	case request.GetMessageBoxIndexCounter != nil:
+		d.getMessageBoxIndexCounter(request)
+
+		// Copy Channel API:
+
+	case request.CreateCourierEnvelopesFromPayload != nil:
+		d.createCourierEnvelopesFromPayload(request)
+	case request.CreateCourierEnvelopesFromPayloads != nil:
+		d.createCourierEnvelopesFromPayloads(request)
+	case request.CreateCourierEnvelopesFromTombstoneRange != nil:
+		d.createCourierEnvelopesFromTombstoneRange(request)
+
+	default:
+		panic("send operation not fully specified")
 	}
 }
 
@@ -676,11 +677,48 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 }
 
 
-func (d *Daemon) arqResend(surbID *[sphinxConstants.SURBIDLength]byte) {
-	select {
-	case <-d.HaltCh():
+
+// resendQueueFullBackoff is how long enqueueResend waits before re-arming
+// the ARQ timer when a client's resendCh is full. Must be short enough to
+// preserve responsiveness and long enough that the scheduler has a chance
+// to drain the queue on a Poisson tick before we retry.
+const resendQueueFullBackoff = 100 * time.Millisecond
+
+// enqueueResend hands a pending ARQ retransmit off to the scheduler by
+// routing it to the resend queue of the client that owns the message. The
+// scheduler picks it up on a Poisson tick along with new sends, so
+// retransmits now share fairly with other clients' traffic.
+//
+// If the client's resendCh is full, the attempt is re-armed on the ARQ
+// timer after a short backoff — never dropped silently, because arqDoResend
+// is what re-Pushes the timer on success, and a dropped fire would lose the
+// retry forever. If the client is disconnected the enqueue is a no-op;
+// cleanupForAppID removes the stale map entry.
+func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
+	d.replyLock.Lock()
+	message, ok := d.arqSurbIDMap[*surbID]
+	d.replyLock.Unlock()
+	if !ok {
+		d.log.Debugf("enqueueResend: SURB ID %x not in arqSurbIDMap, dropping", surbID[:])
 		return
-	case d.arqResendCh <- surbID:
+	}
+	if d.listener == nil {
+		d.log.Debugf("enqueueResend: listener nil, dropping SURB ID %x", surbID[:])
+		return
+	}
+	conn := d.listener.getConnection(message.AppID)
+	if conn == nil {
+		d.log.Debugf("enqueueResend: no live connection for AppID %x, dropping SURB ID %x", message.AppID[:], surbID[:])
+		return
+	}
+	select {
+	case conn.resendCh <- surbID:
+	default:
+		retryAt := time.Now().Add(resendQueueFullBackoff)
+		d.log.Debugf("enqueueResend: resendCh full for AppID %x, re-arming SURB ID %x at %v", message.AppID[:], surbID[:], retryAt)
+		if d.arqTimerQueue != nil {
+			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
+		}
 	}
 }
 
