@@ -33,30 +33,34 @@ func TestSendLoopDecoyNoPKIDoc(t *testing.T) {
 	d.sendLoopDecoy(request)
 }
 
-func TestEgressWorkerAllRequestTypes(t *testing.T) {
-	d, _, testAppID, responseCh, _ := setupFullClient(t)
+func TestEgressWorkerSendLoopDecoy(t *testing.T) {
+	d, _, testAppID, _, _ := setupFullClient(t)
 
 	d.egressCh = make(chan *Request, 10)
 	go d.egressWorker()
 	t.Cleanup(func() { d.Halt() })
 
-	// Test SendLoopDecoy through egressWorker
+	// SendLoopDecoy is the only mixnet-bound variant this test can exercise
+	// without standing up a real mixnet. Local-only variants
+	// (EncryptRead/EncryptWrite/NextMessageBoxIndex and friends) bypass
+	// the Poisson-gated egressWorker entirely; see TestDispatchLocalRouting.
 	d.egressCh <- &Request{
 		AppID:         testAppID,
 		SendLoopDecoy: &SendLoopDecoy{},
 	}
+}
 
-	// Test EncryptRead through egressWorker
+func TestDispatchLocalRouting(t *testing.T) {
+	d, _, testAppID, responseCh, _ := setupFullClient(t)
+
 	readQueryID := &[thin.QueryIDLength]byte{}
-	copy(readQueryID[:], []byte("egress-read-0000"))
-	d.egressCh <- &Request{
+	copy(readQueryID[:], []byte("local-read-00000"))
+	d.dispatchLocal(&Request{
 		AppID: testAppID,
 		EncryptRead: &thin.EncryptRead{
 			QueryID: readQueryID,
-			// nil ReadCap will trigger error response
 		},
-	}
-
+	})
 	select {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.EncryptReadReply)
@@ -65,17 +69,14 @@ func TestEgressWorkerAllRequestTypes(t *testing.T) {
 		t.Fatal("timeout waiting for EncryptRead error response")
 	}
 
-	// Test EncryptWrite through egressWorker
 	writeQueryID := &[thin.QueryIDLength]byte{}
-	copy(writeQueryID[:], []byte("egress-write0000"))
-	d.egressCh <- &Request{
+	copy(writeQueryID[:], []byte("local-write00000"))
+	d.dispatchLocal(&Request{
 		AppID: testAppID,
 		EncryptWrite: &thin.EncryptWrite{
 			QueryID: writeQueryID,
-			// nil WriteCap will trigger error response
 		},
-	}
-
+	})
 	select {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.EncryptWriteReply)
@@ -84,17 +85,14 @@ func TestEgressWorkerAllRequestTypes(t *testing.T) {
 		t.Fatal("timeout waiting for EncryptWrite error response")
 	}
 
-	// Test NextMessageBoxIndex through egressWorker
 	nmbQueryID := &[thin.QueryIDLength]byte{}
-	copy(nmbQueryID[:], []byte("egress-nextmb000"))
-	d.egressCh <- &Request{
+	copy(nmbQueryID[:], []byte("local-nextmb0000"))
+	d.dispatchLocal(&Request{
 		AppID: testAppID,
 		NextMessageBoxIndex: &thin.NextMessageBoxIndex{
 			QueryID: nmbQueryID,
-			// nil MessageBoxIndex will trigger error response
 		},
-	}
-
+	})
 	select {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.NextMessageBoxIndexReply)

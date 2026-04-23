@@ -40,6 +40,12 @@ type listener struct {
 	connOrder [][AppIDLength]byte
 	rrCursor  int
 
+	// localDispatch, if set, is invoked by incoming_conn readers for
+	// requests that need no mixnet I/O. Wired up by the daemon after
+	// construction; tests that stand up a listener without a daemon leave
+	// it nil, in which case the reader falls back to the scheduled path.
+	localDispatch func(*Request)
+
 	decoySender *sender
 
 	connectionStatusMutex sync.Mutex
@@ -371,6 +377,14 @@ func (l *listener) PickNextRequest() *Request {
 	}
 	l.rrCursor = (l.rrCursor + 1) % n
 	return nil
+}
+
+// SetLocalDispatch installs the handler invoked by incoming_conn readers
+// for requests that do no mixnet I/O. Must be called before any thin
+// clients connect. Safe to leave unset in tests that never exercise the
+// real reader loop.
+func (l *listener) SetLocalDispatch(fn func(*Request)) {
+	l.localDispatch = fn
 }
 
 func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {

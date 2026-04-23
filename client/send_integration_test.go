@@ -792,37 +792,33 @@ func TestCancelResendingCopyCommand_FullPipeline(t *testing.T) {
 	require.True(t, gotStartCancelled)
 }
 
-func TestEgressWorkerDispatches(t *testing.T) {
+func TestDispatchLocalNewKeypair(t *testing.T) {
 	d, _, testAppID, responseCh, _ := setupFullClient(t)
 
-	// Start egressWorker
-	d.egressCh = make(chan *Request, 10)
-	go d.egressWorker()
-	t.Cleanup(func() { d.Halt() })
-
-	// Send a NewKeypair request through egressCh
 	seed := make([]byte, 32)
 	_, err := rand.Reader.Read(seed)
 	require.NoError(t, err)
 
 	queryID := &[thin.QueryIDLength]byte{}
-	copy(queryID[:], []byte("egress-keypair00"))
+	copy(queryID[:], []byte("local-keypair000"))
 
-	d.egressCh <- &Request{
+	// NewKeypair is a local-only request and is now dispatched directly
+	// by incoming_conn readers via Daemon.dispatchLocal — not through the
+	// Poisson-gated egressWorker.
+	d.dispatchLocal(&Request{
 		AppID: testAppID,
 		NewKeypair: &thin.NewKeypair{
 			QueryID: queryID,
 			Seed:    seed,
 		},
-	}
+	})
 
-	// Should get a keypair reply
 	select {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.NewKeypairReply)
 		require.Equal(t, thin.ThinClientSuccess, resp.NewKeypairReply.ErrorCode)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for egressWorker response")
+		t.Fatal("timeout waiting for dispatchLocal response")
 	}
 }
 

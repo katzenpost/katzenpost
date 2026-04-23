@@ -232,6 +232,7 @@ func (d *Daemon) Start() error {
 	if err != nil {
 		return err
 	}
+	d.listener.SetLocalDispatch(d.dispatchLocal)
 
 	d.cfg.Callbacks = &config.Callbacks{}
 	d.cfg.Callbacks.OnACKFn = d.proxyReplies
@@ -314,16 +315,63 @@ func (d *Daemon) egressWorker() {
 		case <-d.HaltCh():
 			return
 		case request := <-d.egressCh:
-			d.dispatch(request)
+			d.dispatchMixnet(request)
 		}
 	}
 }
 
-// dispatch routes a scheduler-selected *Request to its handler. ARQ
-// retransmits flow through the same scheduler path as fresh sends, so a
-// resend case sits alongside the other request variants instead of arriving
-// on a separate channel that bypasses the Poisson gate.
-func (d *Daemon) dispatch(request *Request) {
+// isLocalRequest reports whether a Request is served entirely by local
+// crypto or state mutation and issues no Sphinx send. Local requests run
+// inline on the thin client's reader goroutine so they are not throttled by
+// the Poisson gate, which exists only to pace mixnet egress.
+func isLocalRequest(r *Request) bool {
+	return r.NewKeypair != nil ||
+		r.EncryptRead != nil ||
+		r.EncryptWrite != nil ||
+		r.CancelResendingEncryptedMessage != nil ||
+		r.CancelResendingCopyCommand != nil ||
+		r.NextMessageBoxIndex != nil ||
+		r.GetMessageBoxIndexCounter != nil ||
+		r.CreateCourierEnvelopesFromPayload != nil ||
+		r.CreateCourierEnvelopesFromPayloads != nil ||
+		r.CreateCourierEnvelopesFromTombstoneRange != nil
+}
+
+// dispatchLocal runs handlers that do no mixnet I/O. Invoked inline from
+// the thin client's reader goroutine so key generation, envelope prep, box
+// index arithmetic, and ARQ cancellation proceed without waiting on the
+// Poisson gate.
+func (d *Daemon) dispatchLocal(request *Request) {
+	switch {
+	case request.NewKeypair != nil:
+		d.newKeypair(request)
+	case request.EncryptRead != nil:
+		d.encryptRead(request)
+	case request.EncryptWrite != nil:
+		d.encryptWrite(request)
+	case request.CancelResendingEncryptedMessage != nil:
+		d.cancelResendingEncryptedMessage(request)
+	case request.CancelResendingCopyCommand != nil:
+		d.cancelResendingCopyCommand(request)
+	case request.NextMessageBoxIndex != nil:
+		d.nextMessageBoxIndex(request)
+	case request.GetMessageBoxIndexCounter != nil:
+		d.getMessageBoxIndexCounter(request)
+	case request.CreateCourierEnvelopesFromPayload != nil:
+		d.createCourierEnvelopesFromPayload(request)
+	case request.CreateCourierEnvelopesFromPayloads != nil:
+		d.createCourierEnvelopesFromPayloads(request)
+	case request.CreateCourierEnvelopesFromTombstoneRange != nil:
+		d.createCourierEnvelopesFromTombstoneRange(request)
+	default:
+		panic("dispatchLocal: request is not a local-only variant")
+	}
+}
+
+// dispatchMixnet runs handlers that issue a Sphinx send. Invoked by the
+// egressWorker on each Poisson tick, so these remain fairly rate-limited
+// across all connected clients.
+func (d *Daemon) dispatchMixnet(request *Request) {
 	switch {
 	case request.ResendARQ != nil:
 		d.arqDoResend(request.ResendARQ)
@@ -331,39 +379,12 @@ func (d *Daemon) dispatch(request *Request) {
 		d.sendLoopDecoy(request)
 	case request.SendMessage != nil:
 		d.send(request)
-
-		// New Pigeonhole API (stateless):
-
-	case request.NewKeypair != nil:
-		d.newKeypair(request)
-	case request.EncryptRead != nil:
-		d.encryptRead(request)
-	case request.EncryptWrite != nil:
-		d.encryptWrite(request)
 	case request.StartResendingEncryptedMessage != nil:
 		d.startResendingEncryptedMessage(request)
-	case request.CancelResendingEncryptedMessage != nil:
-		d.cancelResendingEncryptedMessage(request)
 	case request.StartResendingCopyCommand != nil:
 		d.startResendingCopyCommand(request)
-	case request.CancelResendingCopyCommand != nil:
-		d.cancelResendingCopyCommand(request)
-	case request.NextMessageBoxIndex != nil:
-		d.nextMessageBoxIndex(request)
-	case request.GetMessageBoxIndexCounter != nil:
-		d.getMessageBoxIndexCounter(request)
-
-		// Copy Channel API:
-
-	case request.CreateCourierEnvelopesFromPayload != nil:
-		d.createCourierEnvelopesFromPayload(request)
-	case request.CreateCourierEnvelopesFromPayloads != nil:
-		d.createCourierEnvelopesFromPayloads(request)
-	case request.CreateCourierEnvelopesFromTombstoneRange != nil:
-		d.createCourierEnvelopesFromTombstoneRange(request)
-
 	default:
-		panic("send operation not fully specified")
+		panic("dispatchMixnet: request is not a mixnet-bound variant")
 	}
 }
 

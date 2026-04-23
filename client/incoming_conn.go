@@ -212,6 +212,16 @@ func (c *incomingConn) worker() {
 				continue
 			}
 			c.log.Infof("Received Request from peer application.")
+			if isLocalRequest(rawReq) && c.listener.localDispatch != nil {
+				// Local-only operations (key generation, envelope prep,
+				// box-index arithmetic, ARQ cancellation) do no mixnet
+				// I/O and so should not consume a Poisson send slot.
+				// Running inline on this reader goroutine also
+				// guarantees per-client ordering with any subsequent
+				// mixnet-bound request from the same thin client.
+				c.listener.localDispatch(rawReq)
+				continue
+			}
 			select {
 			case c.requestCh <- rawReq:
 			case <-c.listener.HaltCh():

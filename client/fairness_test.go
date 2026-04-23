@@ -326,12 +326,12 @@ func TestSender_PickAndSend_DropsTickWhenDecoysDisabled(t *testing.T) {
 	require.Len(t, out, 0, "with decoys disabled and no real work, the tick should be dropped")
 }
 
-// TestDispatch_ResendARQInvokesArqDoResend verifies that the egress
+// TestDispatchMixnet_ResendARQInvokesArqDoResend verifies that the egress
 // dispatch routes a Request carrying a ResendARQ field into arqDoResend.
 // We observe the routing via arqDoResend's "listener nil" cleanup branch:
 // it deletes the arqSurbIDMap entry, which is a side effect we can assert
 // without running the full Sphinx compose/send path.
-func TestDispatch_ResendARQInvokesArqDoResend(t *testing.T) {
+func TestDispatchMixnet_ResendARQInvokesArqDoResend(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 	d := &Daemon{
@@ -352,11 +352,11 @@ func TestDispatch_ResendARQInvokesArqDoResend(t *testing.T) {
 	d.arqSurbIDMap[surbID] = &ARQMessage{AppID: appID, SURBID: &surbID}
 	d.replyLock.Unlock()
 
-	d.dispatch(&Request{AppID: appID, ResendARQ: &surbID})
+	d.dispatchMixnet(&Request{AppID: appID, ResendARQ: &surbID})
 
 	d.replyLock.Lock()
 	_, stillPresent := d.arqSurbIDMap[surbID]
 	d.replyLock.Unlock()
 	require.False(t, stillPresent,
-		"dispatch(ResendARQ) must reach arqDoResend; its listener-nil cleanup should remove the entry")
+		"dispatchMixnet(ResendARQ) must reach arqDoResend; its listener-nil cleanup should remove the entry")
 }
