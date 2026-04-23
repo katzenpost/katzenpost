@@ -114,6 +114,7 @@ func setupClientAndTargets(t *testing.T) (*thin.ThinClient, []*cpki.MixDescripto
 func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte) ([]byte, error) {
 	surbID := client.NewSURBID()
 	eventSink := client.EventSink()
+	defer client.StopEventSink(eventSink)
 	err := client.SendMessage(surbID, message, nodeID, queueID)
 	if err != nil {
 		return nil, fmt.Errorf("SendMessage: %w", err)
