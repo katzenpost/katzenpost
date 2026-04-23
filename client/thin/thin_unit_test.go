@@ -1367,3 +1367,62 @@ func TestBlockingSendMessageUnknownEventDoesNotPanic(t *testing.T) {
 	}
 }
 
+// TestEventSinkNoEviction pins that a subscriber whose consumption
+// lags behind the producer is NOT evicted from the drains map — no
+// events are silently dropped. This matches the "never lose events"
+// contract the Rust and Python thin clients both uphold (via
+// unbounded queues and direct callback invocation respectively).
+//
+// Prior Go behaviour: a drain that didn't accept within 100ms was
+// removed from the drains map with only a Warning log; subsequent
+// events were discarded for that subscriber. Post-fix: the fan-out
+// blocks until the subscriber accepts (or HaltCh fires), matching
+// the other two thin clients' semantics.
+func TestEventSinkNoEviction(t *testing.T) {
+	tc := newTestThinClientNoConn(t)
+	go tc.eventSinkWorker()
+	t.Cleanup(tc.Halt)
+
+	drain := tc.EventSink()
+
+	// Let drainAdd land in the map before pushing events.
+	time.Sleep(20 * time.Millisecond)
+
+	const n = 5
+	pushed := make(chan struct{})
+	go func() {
+		for i := 0; i < n; i++ {
+			select {
+			case tc.eventSink <- &ConnectionStatusEvent{IsConnected: i%2 == 0}:
+			case <-tc.HaltCh():
+				return
+			}
+		}
+		close(pushed)
+	}()
+
+	// Deliberately idle well past the old 100ms eviction threshold.
+	// Under the prior behaviour, the worker would evict the drain
+	// during this sleep and the remaining n-1 events would be
+	// discarded, so the receive loop below would only ever see one.
+	time.Sleep(250 * time.Millisecond)
+
+	received := 0
+	deadline := time.After(3 * time.Second)
+	for received < n {
+		select {
+		case <-drain:
+			received++
+		case <-deadline:
+			t.Fatalf("received %d/%d events — subscriber appears to have been evicted", received, n)
+		}
+	}
+
+	select {
+	case <-pushed:
+	case <-time.After(time.Second):
+		t.Fatal("pusher did not complete")
+	}
+	require.Equal(t, n, received)
+}
+

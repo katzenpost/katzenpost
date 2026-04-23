@@ -1177,9 +1177,14 @@ func (t *ThinClient) worker() {
 //   - Channel operation results
 //   - Error notifications
 //
-// The returned channel is buffered with capacity 1 to prevent blocking the
-// event distribution system. Applications should process events promptly to
-// avoid missing events.
+// The returned channel is buffered with capacity 1. Events are never
+// silently dropped: the fan-out worker blocks until the subscriber
+// accepts each event, matching the "no loss" contract the Rust and
+// Python thin clients uphold. Consequently an application that
+// stops consuming from its sink will stall the entire fan-out
+// (including events destined for other subscribers); applications
+// must drain promptly or call StopEventSink() to release their
+// subscription.
 //
 // Important: Always call StopEventSink() when done with the channel to prevent
 // resource leaks and ensure proper cleanup.
@@ -1256,22 +1261,21 @@ func (t *ThinClient) eventSinkWorker() {
 		case drain := <-t.drainRemove:
 			delete(drains, drain)
 		case event := <-t.eventSink:
-			bad := make([]chan Event, 0)
+			// Deliver to every subscriber, blocking as long as
+			// necessary. The Rust and Python thin clients both
+			// uphold a "no silent loss" contract for the events
+			// they surface; prior Go behaviour evicted a drain
+			// that didn't accept within 100ms, diverging from
+			// the other implementations. A stuck subscriber now
+			// stalls the fan-out (and, like Python's callback
+			// model, the reader pipeline behind it) — HaltCh
+			// remains the escape hatch so Close() still works.
 			for drain := range drains {
 				select {
 				case <-t.HaltCh():
 					return
 				case drain <- event:
-					// Successfully sent event
-				case <-time.After(100 * time.Millisecond):
-					// Channel blocked for too long
-					t.log.Warning("Removing unresponsive channel from eventSink drains")
-					bad = append(bad, drain)
 				}
-			}
-			// remove blocked drains
-			for _, drain := range bad {
-				delete(drains, drain)
 			}
 		}
 	}
