@@ -1387,7 +1387,8 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 			Payload:           arqMessage.Payload,
 		}, newSurbID)
 		if err != nil {
-			d.log.Errorf("handlePigeonholeARQReply: failed to compose packet: %s", err)
+			d.log.Errorf("handlePigeonholeARQReply: failed to compose packet, rescheduling: %s", err)
+			d.rescheduleARQAfterComposeFailure(arqMessage)
 			return
 		}
 
@@ -1781,8 +1782,9 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 				Payload:           arqMessage.Payload,
 			}, newSurbID)
 			if err != nil {
-				d.log.Errorf("handlePayloadReply: failed to compose packet for retry: %s", err)
-				break // fall through to error handling
+				d.log.Errorf("handlePayloadReply: failed to compose packet for retry, rescheduling: %s", err)
+				d.rescheduleARQAfterComposeFailure(arqMessage)
+				return
 			}
 
 			oldSurbID := arqMessage.SURBID

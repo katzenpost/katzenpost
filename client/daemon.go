@@ -705,6 +705,52 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 // to drain the queue on a Poisson tick before we retry.
 const resendQueueFullBackoff = 100 * time.Millisecond
 
+// arqComposeRetryBackoff is how long an ARQ retry site waits before
+// retrying after ComposeSphinxPacketForQuery fails. Compose failures are
+// typically transient — a missing or stale PKI document, or a path-
+// selection loop exhausted at an epoch boundary — and usually clear once
+// the PKI worker fetches the next document. Short enough to keep the
+// client responsive; long enough not to hammer the PKI path.
+const arqComposeRetryBackoff = 1 * time.Second
+
+// rescheduleARQAfterComposeFailure keeps an ARQMessage reachable after
+// ComposeSphinxPacketForQuery has failed, so the retry does not wedge
+// the thin client's request forever. It rotates the message to a fresh
+// placeholder SURBID, ensures both arqSurbIDMap and (if present)
+// arqEnvelopeHashMap are keyed on that placeholder, and pushes a
+// timer entry arqComposeRetryBackoff out. When the timer fires,
+// arqDoResend runs and tries the compose again.
+//
+// Call sites: arqDoResend (where the prior SURBID fired and the entry
+// is still under that key), and the SendNewSURB / retry-on-BoxIDNotFound
+// branches in pigeonhole.go (where handleReply has already deleted the
+// prior entry). The helper handles both: the delete-old step is a
+// no-op when the old key is already gone.
+func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
+	placeholder := &[sphinxConstants.SURBIDLength]byte{}
+	if _, err := rand.Read(placeholder[:]); err != nil {
+		d.log.Errorf("rescheduleARQAfterComposeFailure: rand.Read: %v", err)
+		return
+	}
+
+	d.replyLock.Lock()
+	if arqMessage.SURBID != nil {
+		delete(d.arqSurbIDMap, *arqMessage.SURBID)
+	}
+	arqMessage.SURBID = placeholder
+	d.arqSurbIDMap[*placeholder] = arqMessage
+	if arqMessage.EnvelopeHash != nil {
+		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = placeholder
+	}
+	d.replyLock.Unlock()
+
+	if d.arqTimerQueue == nil {
+		return
+	}
+	retryAt := time.Now().Add(arqComposeRetryBackoff)
+	d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), placeholder)
+}
+
 // enqueueResend hands a pending ARQ retransmit off to the scheduler by
 // routing it to the resend queue of the client that owns the message. The
 // scheduler picks it up on a Poisson tick along with new sends, so
@@ -831,8 +877,9 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		Payload:           message.Payload,
 	}, newsurbID)
 	if err != nil {
-		d.log.Errorf("ARQ resend: failed to compose packet: %s", err.Error())
+		d.log.Errorf("ARQ resend: failed to compose packet, rescheduling: %s", err.Error())
 		d.replyLock.Unlock()
+		d.rescheduleARQAfterComposeFailure(message)
 		return
 	}
 
