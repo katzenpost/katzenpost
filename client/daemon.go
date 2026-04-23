@@ -451,10 +451,14 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	} else if desc, isDecoy = d.decoys[*reply.surbID]; isDecoy {
 		delete(d.decoys, *reply.surbID)
 	} else if arqMessage, isARQReply = d.arqSurbIDMap[*reply.surbID]; isARQReply {
-		delete(d.arqSurbIDMap, *reply.surbID)
-		if arqMessage.EnvelopeHash != nil {
-			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		}
+		// Deliberately NOT deleting arqSurbIDMap / arqEnvelopeHashMap here.
+		// The downstream handler (handlePigeonholeARQReply and its callees)
+		// is responsible for either rotating the entries to a fresh SURBID
+		// (on ACK-before-payload and Copy InProgress) or deleting both on
+		// terminal outcomes. Keeping the entries live across the reply
+		// hand-off closes the cancel-during-rotation gap: a concurrent
+		// CancelResendingCopyCommand / CancelResendingEncryptedMessage can
+		// now always find the arqMessage by its WriteCapHash / EnvelopeHash.
 	}
 	d.replyLock.Unlock()
 
@@ -787,6 +791,21 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
 		}
 	}
+}
+
+// dropARQMessage deletes both map entries for arqMessage under replyLock.
+// Used by handler early-bail paths that cannot rotate or retry — e.g.
+// a malformed reply — to prevent map-entry leaks now that handleReply
+// no longer pre-deletes on receipt of an ARQ reply.
+func (d *Daemon) dropARQMessage(arqMessage *ARQMessage) {
+	d.replyLock.Lock()
+	if arqMessage.SURBID != nil {
+		delete(d.arqSurbIDMap, *arqMessage.SURBID)
+	}
+	if arqMessage.EnvelopeHash != nil {
+		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+	}
+	d.replyLock.Unlock()
 }
 
 // rotateARQSurbIDLocked rewires an ARQMessage to use newSurbID for its next

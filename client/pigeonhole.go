@@ -1281,6 +1281,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, arqMessage.SURBDecryptionKeys)
 	if err != nil {
 		d.log.Errorf("handlePigeonholeARQReply: SURB payload decryption error: %s", err)
+		d.dropARQMessage(arqMessage)
 		return
 	}
 
@@ -1288,6 +1289,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(surbPayload)
 	if err != nil {
 		d.log.Errorf("handlePigeonholeARQReply: failed to parse CourierQueryReply: %s", err)
+		d.dropARQMessage(arqMessage)
 		return
 	}
 
@@ -1301,12 +1303,14 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		// Handle envelope reply (type 0) - fall through to existing logic
 	default:
 		d.log.Errorf("handlePigeonholeARQReply: unknown ARQ message type %d", arqMessage.MessageType)
+		d.dropARQMessage(arqMessage)
 		return
 	}
 
 	// Handle envelope reply (type 0)
 	if courierQueryReply.ReplyType != 0 || courierQueryReply.EnvelopeReply == nil {
 		d.log.Errorf("handlePigeonholeARQReply: unexpected reply type %d for envelope operation", courierQueryReply.ReplyType)
+		d.dropARQMessage(arqMessage)
 		return
 	}
 
@@ -1350,6 +1354,9 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	case ARQActionComplete:
 		d.log.Debugf("handlePigeonholeARQReply: Write ACK received, returning success (single round-trip)")
 		d.replyLock.Lock()
+		if arqMessage.SURBID != nil {
+			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+		}
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
 
@@ -1395,6 +1402,19 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		oldSurbID := arqMessage.SURBID
 
 		d.replyLock.Lock()
+		// Abort if a concurrent cancel has already cleared this
+		// arqMessage. Rotating here would silently un-cancel the
+		// operation.
+		if oldSurbID == nil {
+			d.replyLock.Unlock()
+			d.log.Debugf("handlePigeonholeARQReply: arqMessage has nil SURBID, aborting rotation")
+			return
+		}
+		if existing, ok := d.arqSurbIDMap[*oldSurbID]; !ok || existing != arqMessage {
+			d.replyLock.Unlock()
+			d.log.Debugf("handlePigeonholeARQReply: arqMessage no longer tracked (cancelled), aborting rotation for EnvelopeHash %x", arqMessage.EnvelopeHash[:])
+			return
+		}
 		if d.listener.getConnection(arqMessage.AppID) == nil {
 			d.replyLock.Unlock()
 			d.log.Debugf("handlePigeonholeARQReply: connection gone for AppID %x, dropping ARQ for EnvelopeHash %x", arqMessage.AppID[:], arqMessage.EnvelopeHash[:])
@@ -1524,6 +1544,21 @@ func (d *Daemon) scheduleCopyCommandPoll(arqMessage *ARQMessage) {
 	}
 
 	d.replyLock.Lock()
+	// Abort if a concurrent cancel has already removed the arqMessage
+	// from the maps. Re-registering here would silently un-cancel the
+	// operation.
+	oldSurbID := arqMessage.SURBID
+	if oldSurbID == nil {
+		d.replyLock.Unlock()
+		d.log.Debugf("scheduleCopyCommandPoll: arqMessage has nil SURBID, aborting")
+		return
+	}
+	if existing, ok := d.arqSurbIDMap[*oldSurbID]; !ok || existing != arqMessage {
+		d.replyLock.Unlock()
+		d.log.Debugf("scheduleCopyCommandPoll: arqMessage no longer tracked (cancelled), aborting")
+		return
+	}
+	delete(d.arqSurbIDMap, *oldSurbID)
 	arqMessage.SURBID = placeholder
 	d.arqSurbIDMap[*placeholder] = arqMessage
 	if arqMessage.EnvelopeHash != nil {
@@ -1790,6 +1825,18 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 			oldSurbID := arqMessage.SURBID
 
 			d.replyLock.Lock()
+			// Abort if a concurrent cancel has already cleared this
+			// arqMessage.
+			if oldSurbID == nil {
+				d.replyLock.Unlock()
+				d.log.Debugf("handlePayloadReply: arqMessage has nil SURBID, aborting retry")
+				return
+			}
+			if existing, ok := d.arqSurbIDMap[*oldSurbID]; !ok || existing != arqMessage {
+				d.replyLock.Unlock()
+				d.log.Debugf("handlePayloadReply: arqMessage no longer tracked (cancelled), aborting retry for EnvelopeHash %x", arqMessage.EnvelopeHash[:])
+				return
+			}
 			d.rotateARQSurbIDLocked(arqMessage, newSurbID, surbKey, rtt)
 			arqMessage.State = ARQStateWaitingForACK
 			d.replyLock.Unlock()

@@ -16,12 +16,16 @@ import (
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
-// TestScheduleCopyCommandPollReRegistersForCancellation pins the core
-// invariant the daemon's InProgress polling must maintain: the
-// ARQMessage stays reachable by its EnvelopeHash between receiving an
-// InProgress reply and the next scheduled poll send, so
-// CancelResendingCopyCommand can still find and drop the operation.
-func TestScheduleCopyCommandPollReRegistersForCancellation(t *testing.T) {
+// TestScheduleCopyCommandPollRotationKeepsEnvelopeHashLive pins the
+// rotation invariant after the cancel-race fix: when a Copy
+// InProgress reply reaches scheduleCopyCommandPoll, the ARQMessage is
+// still tracked in both maps (handleReply no longer pre-deletes), and
+// the schedule performs an atomic rotation — remove the old SURBID
+// entry, install the new placeholder in both maps, update
+// arqMessage.SURBID. The EnvelopeHash thus stays reachable across the
+// rotation so CancelResendingCopyCommand can always find and drop the
+// operation.
+func TestScheduleCopyCommandPollRotationKeepsEnvelopeHashLive(t *testing.T) {
 	d := &Daemon{
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
@@ -45,25 +49,29 @@ func TestScheduleCopyCommandPollReRegistersForCancellation(t *testing.T) {
 		Payload:      []byte("copy-command-payload"),
 	}
 
-	// Simulate handleReply's cleanup: both maps emptied before the
-	// Copy-reply dispatcher runs. scheduleCopyCommandPoll must restore
-	// a hash→surbID mapping so Cancel still works.
+	// Post-handleReply state: the arqMessage is still tracked under
+	// its current SURBID (handleReply no longer pre-deletes).
+	d.replyLock.Lock()
+	d.arqSurbIDMap[*oldSurbID] = arqMessage
+	d.arqEnvelopeHashMap[*envHash] = oldSurbID
+	d.replyLock.Unlock()
+
 	d.scheduleCopyCommandPoll(arqMessage)
 
-	// After scheduling, EnvelopeHash must resolve to a placeholder
-	// SURB ID that in turn resolves to the same ARQMessage.
 	d.replyLock.Lock()
+	defer d.replyLock.Unlock()
+
+	_, oldStillPresent := d.arqSurbIDMap[*oldSurbID]
+	require.False(t, oldStillPresent, "old SURBID entry must be rotated out")
+
 	placeholder, ok := d.arqEnvelopeHashMap[*envHash]
-	require.True(t, ok, "envelope hash must be re-registered")
-	require.NotEqual(t, *oldSurbID, *placeholder, "placeholder must differ from pre-cleanup SURBID")
+	require.True(t, ok, "envelope hash must remain registered across rotation")
+	require.NotEqual(t, *oldSurbID, *placeholder, "placeholder must differ from old SURBID")
 
 	msg, ok := d.arqSurbIDMap[*placeholder]
 	require.True(t, ok, "placeholder SURBID must be in arqSurbIDMap")
 	require.Same(t, arqMessage, msg)
-	d.replyLock.Unlock()
 
-	// The ARQMessage's SURBID field should also be updated to the
-	// placeholder so a subsequent arqDoResend finds the correct entry.
 	require.Equal(t, placeholder, arqMessage.SURBID)
 }
 
