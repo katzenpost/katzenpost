@@ -1175,13 +1175,74 @@ func validateStartResendingRequest(req *thin.StartResendingEncryptedMessage) err
 	return nil
 }
 
-func (d *Daemon) startResendingEncryptedMessage(request *Request) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		return
+// arqSend mints a SURB ID, composes the Sphinx packet for the ARQMessage's
+// payload, populates the message's SURB fields, stores it in the ARQ maps
+// keyed by envHashKey, schedules the retry timer, and sends the packet.
+// The caller must pre-populate AppID, QueryID, EnvelopeHash,
+// DestinationIdHash, RecipientQueueID, Payload, State, MessageType (if
+// non-default), and any query-specific fields. SURBID, SURBDecryptionKeys,
+// SentAt, ReplyETA, and Retransmissions are overwritten here.
+//
+// An error return indicates that nothing was stored or scheduled; the
+// caller should respond with an InternalError code. A SendPacket failure
+// after the ARQ is stored is logged but not returned: the ARQ timer will
+// retransmit on its next fire.
+func (d *Daemon) arqSend(message *ARQMessage, envHashKey [32]byte) error {
+	surbID := &[sphinxConstants.SURBIDLength]byte{}
+	if _, err := rand.Reader.Read(surbID[:]); err != nil {
+		return fmt.Errorf("failed to generate SURB ID: %w", err)
 	}
 
+	pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+		DestinationIdHash: message.DestinationIdHash,
+		RecipientQueueID:  message.RecipientQueueID,
+		Payload:           message.Payload,
+	}, surbID)
+	if err != nil {
+		return fmt.Errorf("failed to compose packet: %w", err)
+	}
+
+	message.SURBID = surbID
+	message.SURBDecryptionKeys = surbKey
+	message.SentAt = time.Now()
+	message.ReplyETA = rtt
+	message.Retransmissions = 0
+
+	d.replyLock.Lock()
+	d.arqSurbIDMap[*surbID] = message
+	d.arqEnvelopeHashMap[envHashKey] = surbID
+	d.replyLock.Unlock()
+
+	priority := uint64(message.SentAt.Add(rtt).Add(RoundTripTimeSlop).UnixNano())
+	d.arqTimerQueue.Push(priority, surbID)
+
+	if err := d.client.SendPacket(pkt); err != nil {
+		d.log.Warningf("arqSend: initial SendPacket failed, ARQ timer will retry: %s", err)
+	}
+	return nil
+}
+
+// logBoxIDForRequest derives the box ID from the request's ReadCap/WriteCap
+// and MessageBoxIndex and emits a debug line. Pure diagnostic; never fails.
+func (d *Daemon) logBoxIDForRequest(req *thin.StartResendingEncryptedMessage, isRead bool) {
+	boxIDHex := "<unknown>"
+	idx64Str := "<unknown>"
+	if len(req.MessageBoxIndex) > 0 {
+		if mbi, err := bacap.NewEmptyMessageBoxIndexFromBytes(req.MessageBoxIndex); err == nil {
+			idx64Str = fmt.Sprintf("%d", mbi.Idx64)
+			switch {
+			case isRead && req.ReadCap != nil:
+				boxIDHex = fmt.Sprintf("%x", req.ReadCap.DeriveBoxID(mbi).Bytes())
+			case !isRead && req.WriteCap != nil:
+				boxIDHex = fmt.Sprintf("%x", req.WriteCap.DeriveBoxID(mbi).Bytes())
+			}
+		}
+	}
+	d.log.Debugf("startResendingEncryptedMessage: isRead=%v, Idx64=%s, boxID=%s, NoRetryOnBoxIDNotFound=%v, NoIdempotentBoxAlreadyExists=%v, EnvelopeHash=%x",
+		isRead, idx64Str, boxIDHex, req.NoRetryOnBoxIDNotFound, req.NoIdempotentBoxAlreadyExists, req.EnvelopeHash[:])
+}
+
+func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	req := request.StartResendingEncryptedMessage
 	if err := validateStartResendingRequest(req); err != nil {
 		d.log.Errorf("startResendingEncryptedMessage: %v", err)
@@ -1190,33 +1251,14 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	}
 
 	isRead := req.ReadCap != nil
+	d.logBoxIDForRequest(req, isRead)
 
-	// Log the box ID (blinded ed25519 public key) for debugging
-	var boxIDHex string = "<unknown>"
-	var idx64Str string = "<unknown>"
-	if len(req.MessageBoxIndex) > 0 {
-		if mbi, err := bacap.NewEmptyMessageBoxIndexFromBytes(req.MessageBoxIndex); err == nil {
-			idx64Str = fmt.Sprintf("%d", mbi.Idx64)
-			if isRead && req.ReadCap != nil {
-				boxID := req.ReadCap.DeriveBoxID(mbi)
-				boxIDHex = fmt.Sprintf("%x", boxID.Bytes())
-			} else if !isRead && req.WriteCap != nil {
-				boxID := req.WriteCap.DeriveBoxID(mbi)
-				boxIDHex = fmt.Sprintf("%x", boxID.Bytes())
-			}
-		}
-	}
-	d.log.Debugf("startResendingEncryptedMessage: isRead=%v, Idx64=%s, boxID=%s, NoRetryOnBoxIDNotFound=%v, NoIdempotentBoxAlreadyExists=%v, EnvelopeHash=%x",
-		isRead, idx64Str, boxIDHex, req.NoRetryOnBoxIDNotFound, req.NoIdempotentBoxAlreadyExists, req.EnvelopeHash[:])
-
-	// Get a random Courier
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		d.log.Errorf("startResendingEncryptedMessage: no PKI document available")
 		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-
 	destIdHash, recipientQueueID, err := GetRandomCourier(doc)
 	if err != nil {
 		d.log.Errorf("startResendingEncryptedMessage: failed to get courier: %s", err)
@@ -1224,28 +1266,6 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		return
 	}
 
-	// Create a new SURB ID for this send
-	surbID := &[sphinxConstants.SURBIDLength]byte{}
-	_, err = rand.Reader.Read(surbID[:])
-	if err != nil {
-		d.log.Errorf("startResendingEncryptedMessage: failed to generate SURB ID: %s", err)
-		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	// Compose the packet
-	pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
-		DestinationIdHash: destIdHash,
-		RecipientQueueID:  recipientQueueID,
-		Payload:           req.MessageCiphertext,
-	}, surbID)
-	if err != nil {
-		d.log.Errorf("startResendingEncryptedMessage: failed to compose packet: %s", err)
-		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	// Create the ARQ message with initial state WaitingForACK
 	message := &ARQMessage{
 		AppID:                        request.AppID,
 		QueryID:                      req.QueryID,
@@ -1253,11 +1273,6 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		DestinationIdHash:            destIdHash,
 		RecipientQueueID:             recipientQueueID,
 		Payload:                      req.MessageCiphertext,
-		SURBID:                       surbID,
-		SURBDecryptionKeys:           surbKey,
-		Retransmissions:              0,
-		SentAt:                       time.Now(),
-		ReplyETA:                     rtt,
 		EnvelopeDescriptor:           req.EnvelopeDescriptor,
 		IsRead:                       isRead,
 		State:                        ARQStateWaitingForACK,
@@ -1267,23 +1282,9 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		NoIdempotentBoxAlreadyExists: req.NoIdempotentBoxAlreadyExists,
 	}
 
-	// Store in ARQ maps
-	d.replyLock.Lock()
-	d.arqSurbIDMap[*surbID] = message
-	d.arqEnvelopeHashMap[*req.EnvelopeHash] = surbID
-	d.replyLock.Unlock()
-
-	// Schedule retry
-	myRtt := message.SentAt.Add(message.ReplyETA)
-	myRtt = myRtt.Add(RoundTripTimeSlop)
-	priority := uint64(myRtt.UnixNano())
-	d.arqTimerQueue.Push(priority, surbID)
-
-	// Send the packet
-	err = d.client.SendPacket(pkt)
-	if err != nil {
-		d.log.Errorf("startResendingEncryptedMessage: failed to send packet: %s", err)
-		// Don't return error - the ARQ will retry
+	if err := d.arqSend(message, *req.EnvelopeHash); err != nil {
+		d.log.Errorf("startResendingEncryptedMessage: %s", err)
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
 	}
 }
 
@@ -1659,15 +1660,25 @@ func validateCancelResendingCopyCommandRequest(req *thin.CancelResendingCopyComm
 	return nil
 }
 
-// startResendingCopyCommand starts resending a copy command via the ARQ mechanism.
-// It will retry forever until cancelled or successful.
-func (d *Daemon) startResendingCopyCommand(request *Request) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		return
+// resolveCourier picks a courier for a copy-command send: the one the
+// client specified if provided, else a random one from the current PKI
+// document. A nil PKI document or a lookup failure produces an error
+// that the caller should surface as InternalError.
+func (d *Daemon) resolveCourier(specifiedHash *[32]byte, specifiedQueueID []byte) (*[32]byte, []byte, error) {
+	if specifiedHash != nil && len(specifiedQueueID) > 0 {
+		d.log.Debugf("resolveCourier: using specified courier %x", specifiedHash[:8])
+		return specifiedHash, specifiedQueueID, nil
 	}
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		return nil, nil, fmt.Errorf("no PKI document available")
+	}
+	return GetRandomCourier(doc)
+}
 
+// startResendingCopyCommand starts resending a copy command via the ARQ
+// mechanism. It retries forever until cancelled or successful.
+func (d *Daemon) startResendingCopyCommand(request *Request) {
 	req := request.StartResendingCopyCommand
 	if err := validateStartResendingCopyCommandRequest(req); err != nil {
 		d.log.Errorf("startResendingCopyCommand: %v", err)
@@ -1675,123 +1686,51 @@ func (d *Daemon) startResendingCopyCommand(request *Request) {
 		return
 	}
 
-	// Serialize WriteCap
 	writeCapBytes, err := req.WriteCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("startResendingCopyCommand: failed to serialize WriteCap: %s", err)
 		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-
-	// Create CopyCommand
-	copyCommand := &pigeonhole.CopyCommand{
-		WriteCapLen: uint32(len(writeCapBytes)),
-		WriteCap:    writeCapBytes,
-	}
-
-	// Create CourierQuery with QueryType=1 (copy command)
-	courierQuery := &pigeonhole.CourierQuery{
-		QueryType:   1, // CopyCommand
-		CopyCommand: copyCommand,
-	}
-
-	// Serialize to payload
-	payload, err := courierQuery.MarshalBinary()
+	payload, err := (&pigeonhole.CourierQuery{
+		QueryType: 1, // CopyCommand
+		CopyCommand: &pigeonhole.CopyCommand{
+			WriteCapLen: uint32(len(writeCapBytes)),
+			WriteCap:    writeCapBytes,
+		},
+	}).MarshalBinary()
 	if err != nil {
 		d.log.Errorf("startResendingCopyCommand: failed to serialize CourierQuery: %s", err)
 		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-
-	// Compute hash of WriteCap for deduplication/cancellation key
 	writeCapHash := hash.Sum256(writeCapBytes)
 
-	// Get courier - use specified courier if provided, otherwise random
-	var destIdHash *[32]byte
-	var recipientQueueID []byte
-
-	if req.CourierIdentityHash != nil && len(req.CourierQueueID) > 0 {
-		// Use the specified courier
-		destIdHash = req.CourierIdentityHash
-		recipientQueueID = req.CourierQueueID
-		d.log.Debugf("startResendingCopyCommand: using specified courier %x", destIdHash[:8])
-	} else {
-		// Get a random Courier
-		_, doc := d.client.CurrentDocument()
-		if doc == nil {
-			d.log.Errorf("startResendingCopyCommand: no PKI document available")
-			d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
-			return
-		}
-
-		var err error
-		destIdHash, recipientQueueID, err = GetRandomCourier(doc)
-		if err != nil {
-			d.log.Errorf("startResendingCopyCommand: failed to get courier: %s", err)
-			d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
-			return
-		}
-	}
-
-	// Create a new SURB ID for this send
-	surbID := &[sphinxConstants.SURBIDLength]byte{}
-	_, err = rand.Reader.Read(surbID[:])
+	destIdHash, recipientQueueID, err := d.resolveCourier(req.CourierIdentityHash, req.CourierQueueID)
 	if err != nil {
-		d.log.Errorf("startResendingCopyCommand: failed to generate SURB ID: %s", err)
+		d.log.Errorf("startResendingCopyCommand: %s", err)
 		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
-	// Compose the packet
-	pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+	message := &ARQMessage{
+		MessageType:       ARQMessageTypeCopyCommand,
+		AppID:             request.AppID,
+		QueryID:           req.QueryID,
+		EnvelopeHash:      &writeCapHash, // Use WriteCap hash as envelope hash for dedup
 		DestinationIdHash: destIdHash,
 		RecipientQueueID:  recipientQueueID,
 		Payload:           payload,
-	}, surbID)
-	if err != nil {
-		d.log.Errorf("startResendingCopyCommand: failed to compose packet: %s", err)
+		State:             ARQStateWaitingForACK, // Only one state for copy commands
+	}
+
+	if err := d.arqSend(message, writeCapHash); err != nil {
+		d.log.Errorf("startResendingCopyCommand: %s", err)
 		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-
-	// Create the ARQ message for copy command
-	message := &ARQMessage{
-		MessageType:        ARQMessageTypeCopyCommand,
-		AppID:              request.AppID,
-		QueryID:            req.QueryID,
-		EnvelopeHash:       &writeCapHash, // Use WriteCap hash as envelope hash for dedup
-		DestinationIdHash:  destIdHash,
-		RecipientQueueID:   recipientQueueID,
-		Payload:            payload,
-		SURBID:             surbID,
-		SURBDecryptionKeys: surbKey,
-		Retransmissions:    0,
-		SentAt:             time.Now(),
-		ReplyETA:           rtt,
-		State:              ARQStateWaitingForACK, // Only one state for copy commands
-	}
-
-	// Store in ARQ maps
-	d.replyLock.Lock()
-	d.arqSurbIDMap[*surbID] = message
-	d.arqEnvelopeHashMap[writeCapHash] = surbID
-	d.replyLock.Unlock()
-
-	// Schedule retry
-	myRtt := message.SentAt.Add(message.ReplyETA)
-	myRtt = myRtt.Add(RoundTripTimeSlop)
-	priority := uint64(myRtt.UnixNano())
-	d.arqTimerQueue.Push(priority, surbID)
-
 	d.log.Debugf("startResendingCopyCommand: Sending copy command, QueryID=%x, WriteCapHash=%x",
 		req.QueryID[:], writeCapHash[:])
-
-	// Send the packet
-	err = d.client.SendPacket(pkt)
-	if err != nil {
-		d.log.Errorf("startResendingCopyCommand: failed to send packet: %s", err)
-		// Don't return error - the ARQ will retry
-	}
 }
 
 func (d *Daemon) sendStartResendingCopyCommandError(request *Request, errorCode uint8) {
