@@ -18,6 +18,15 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
+// maxPathSelectionAttempts bounds how many times ComposeSphinxPacket and
+// ComposeSphinxPacketForQuery will re-roll path selection when selection
+// straddles an epoch boundary or returns a path whose total delay exceeds
+// 2 × epochtime.Period. Without this cap a pathological PKI document
+// could spin either loop at full CPU per outbound packet until shutdown.
+// 32 is well clear of the handful of retries a healthy epoch rollover
+// typically needs, while remaining a small, diagnosable ceiling.
+const maxPathSelectionAttempts = 32
+
 // validateSendMessageRequest validates the fields needed to compose a Sphinx packet.
 func validateSendMessageRequest(destinationIdHash *[32]byte, recipientQueueID []byte, payload []byte, maxPayloadLen int) error {
 	if destinationIdHash == nil {
@@ -61,7 +70,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 	payload := make([]byte, c.geo.UserForwardPayloadLength)
 	copy(payload, requestPayload)
 
-	for {
+	for attempt := 0; attempt < maxPathSelectionAttempts; attempt++ {
 		// Check if we're shutting down to avoid races
 		select {
 		case <-c.HaltCh():
@@ -137,6 +146,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 			}
 		}
 	}
+	return nil, nil, 0, fmt.Errorf("ComposeSphinxPacket: path selection exceeded %d attempts", maxPathSelectionAttempts)
 }
 
 // SendCiphertext sends the ciphertext b to the recipient/provider, with a
@@ -249,7 +259,7 @@ func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, sur
 		return nil, nil, 0, fmt.Errorf("ComposeSphinxPacketForQuery Payload field too large: %v > %v", len(request.Payload), c.geo.UserForwardPayloadLength)
 	}
 
-	for {
+	for attempt := 0; attempt < maxPathSelectionAttempts; attempt++ {
 		// Check if we're shutting down to avoid races
 		select {
 		case <-c.HaltCh():
@@ -316,6 +326,7 @@ func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, sur
 			return pkt, k, then.Sub(now), err
 		}
 	}
+	return nil, nil, 0, fmt.Errorf("ComposeSphinxPacketForQuery: path selection exceeded %d attempts", maxPathSelectionAttempts)
 }
 
 // SendChannelQuery
