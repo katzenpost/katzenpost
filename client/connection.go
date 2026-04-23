@@ -693,7 +693,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			seq++
 		case *commands.Consensus:
-			panic("received Consensus when we are supposed to receive Consensus2")
+			c.log.Errorf("Received legacy Consensus command; expected Consensus2.")
+			wireErr = newProtocolError("received legacy Consensus command; expected Consensus2")
+			return
 		case *commands.Consensus2:
 			if consensusCtx != nil {
 				// Check for error responses from the gateway.
@@ -709,7 +711,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 					}
 					err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
 					if err != nil {
-						panic(err)
+						c.log.Errorf("Dechunker.Consume failed: %v", err)
+						wireErr = newProtocolError("malformed Consensus2 chunk: %v", err)
+						return
 					}
 					if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
 						if len(dechunker.Output) == 0 {
