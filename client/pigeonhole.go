@@ -60,12 +60,20 @@ func (d *Daemon) newKeypair(request *Request) {
 	})
 }
 
-func (d *Daemon) sendNewKeypairError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
+// sendError delivers an error Response to the thin client identified by
+// appID. Returns silently if the client has already disconnected — there
+// is nobody to notify, and the client's ARQ bookkeeping is cleaned up via
+// cleanupForAppID.
+func (d *Daemon) sendError(appID *[AppIDLength]byte, response *Response) {
+	conn := d.listener.getConnection(appID)
 	if conn == nil {
 		return
 	}
-	conn.sendResponse(&Response{
+	conn.sendResponse(response)
+}
+
+func (d *Daemon) sendNewKeypairError(request *Request, errorCode uint8) {
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		NewKeypairReply: &thin.NewKeypairReply{
 			QueryID:   request.NewKeypair.QueryID,
@@ -183,11 +191,7 @@ func (d *Daemon) encryptRead(request *Request) {
 }
 
 func (d *Daemon) sendEncryptReadError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		EncryptReadReply: &thin.EncryptReadReply{
 			QueryID:   request.EncryptRead.QueryID,
@@ -364,11 +368,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 }
 
 func (d *Daemon) sendEncryptWriteError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		EncryptWriteReply: &thin.EncryptWriteReply{
 			QueryID:   request.EncryptWrite.QueryID,
@@ -597,11 +597,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 }
 
 func (d *Daemon) sendCreateCourierEnvelopesFromPayloadError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadReply: &thin.CreateCourierEnvelopesFromPayloadReply{
 			QueryID:   request.CreateCourierEnvelopesFromPayload.QueryID,
@@ -832,11 +828,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 }
 
 func (d *Daemon) sendCreateCourierEnvelopesFromPayloadsError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadsReply: &thin.CreateCourierEnvelopesFromPayloadsReply{
 			QueryID:   request.CreateCourierEnvelopesFromPayloads.QueryID,
@@ -1013,11 +1005,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 }
 
 func (d *Daemon) sendCreateCourierEnvelopesFromTombstoneRangeError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromTombstoneRangeReply: &thin.CreateCourierEnvelopesFromTombstoneRangeReply{
 			QueryID:   request.CreateCourierEnvelopesFromTombstoneRange.QueryID,
@@ -1062,11 +1050,7 @@ func (d *Daemon) nextMessageBoxIndex(request *Request) {
 }
 
 func (d *Daemon) sendNextMessageBoxIndexError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		NextMessageBoxIndexReply: &thin.NextMessageBoxIndexReply{
 			QueryID:   request.NextMessageBoxIndex.QueryID,
@@ -1103,11 +1087,7 @@ func (d *Daemon) getMessageBoxIndexCounter(request *Request) {
 }
 
 func (d *Daemon) sendGetMessageBoxIndexCounterError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		GetMessageBoxIndexCounterReply: &thin.GetMessageBoxIndexCounterReply{
 			QueryID:   request.GetMessageBoxIndexCounter.QueryID,
@@ -1308,12 +1288,7 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 }
 
 func (d *Daemon) sendStartResendingEncryptedMessageError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
 			QueryID:   request.StartResendingEncryptedMessage.QueryID,
@@ -1379,12 +1354,7 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 }
 
 func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		CancelResendingEncryptedMessageReply: &thin.CancelResendingEncryptedMessageReply{
 			QueryID:   request.CancelResendingEncryptedMessage.QueryID,
@@ -1825,12 +1795,7 @@ func (d *Daemon) startResendingCopyCommand(request *Request) {
 }
 
 func (d *Daemon) sendStartResendingCopyCommandError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
 			QueryID:   request.StartResendingCopyCommand.QueryID,
@@ -1891,12 +1856,7 @@ func (d *Daemon) cancelResendingCopyCommand(request *Request) {
 }
 
 func (d *Daemon) sendCancelResendingCopyCommandError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
+	d.sendError(request.AppID, &Response{
 		AppID: request.AppID,
 		CancelResendingCopyCommandReply: &thin.CancelResendingCopyCommandReply{
 			QueryID:   request.CancelResendingCopyCommand.QueryID,
