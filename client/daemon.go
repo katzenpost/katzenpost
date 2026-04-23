@@ -538,9 +538,6 @@ func tryDecryptMKEMWithReplicas(
 
 
 func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
-	mkemPrivateKeyBytes, _ := privateKey.MarshalBinary()
-	fmt.Printf("BOB DECRYPTS WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
-
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		d.log.Errorf("no pki doc found")
