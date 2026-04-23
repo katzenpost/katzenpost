@@ -112,14 +112,21 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 	// from many clients.
 	egressSize := 64
 	ingressSize := 200
+	// gcBufSize is the buffer for the TimerQueue callback drops used to
+	// reclaim reply descriptors and announce message-id garbage collection.
+	// The callbacks push with a 15–20s timeout; an unbuffered channel
+	// pressed the TimerQueue worker to block whenever the ingressWorker
+	// was busy, so under parallel load gc lagged or dropped. Buffered
+	// generously — these are short records and the memory cost is trivial.
+	gcBufSize := 256
 	d := &Daemon{
 		cfg:                cfg,
 		egressCh:           make(chan *Request, egressSize),
 		ingressCh:          make(chan *sphinxReply, ingressSize),
 		replies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:             make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		gcSurbIDCh:         make(chan *[sphinxConstants.SURBIDLength]byte),
-		gcReplyCh:          make(chan *gcReply),
+		gcSurbIDCh:         make(chan *[sphinxConstants.SURBIDLength]byte, gcBufSize),
+		gcReplyCh:          make(chan *gcReply, gcBufSize),
 		replyLock:          new(sync.Mutex),
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
