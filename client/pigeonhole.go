@@ -1221,6 +1221,12 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 	}
 	d.replyLock.Unlock()
 
+	// Cancel the pending retry so it does not fire and hit a
+	// missing-arqSurbIDMap log later.
+	if arqMessage != nil && arqMessage.SURBID != nil && d.arqTimerQueue != nil {
+		d.arqTimerQueue.Cancel(arqMessage.SURBID)
+	}
+
 	if !ok {
 		d.log.Debugf("cancelResendingEncryptedMessage: EnvelopeHash %x not found", req.EnvelopeHash[:])
 		// Still send success - the message may have already completed
@@ -1663,6 +1669,10 @@ func (d *Daemon) cancelResendingCopyCommand(request *Request) {
 		delete(d.arqEnvelopeHashMap, *req.WriteCapHash)
 	}
 	d.replyLock.Unlock()
+
+	if arqMessage != nil && arqMessage.SURBID != nil && d.arqTimerQueue != nil {
+		d.arqTimerQueue.Cancel(arqMessage.SURBID)
+	}
 
 	if !ok {
 		d.log.Debugf("cancelResendingCopyCommand: WriteCapHash %x not found", req.WriteCapHash[:])

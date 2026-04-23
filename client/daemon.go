@@ -4,7 +4,6 @@
 package client
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -460,16 +459,11 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	d.replyLock.Unlock()
 
 	if isARQReply {
-		// Drop the stale timer entry if it is still at the head of the
-		// queue; a later Peek/Pop is just wasted work when we already
-		// know the SURB has been acked.
-		peeked := d.arqTimerQueue.Peek()
-		if peeked != nil {
-			peekSurbId := peeked.Value.(*[sphinxConstants.SURBIDLength]byte)
-			if hmac.Equal(arqMessage.SURBID[:], peekSurbId[:]) {
-				d.arqTimerQueue.Pop()
-			}
-		}
+		// The reply acks this SURB; cancel the pending retry so it
+		// does not fire later, walk arqSurbIDMap to find nothing, and
+		// log a warning. Cancel removes the entry regardless of its
+		// position in the queue.
+		d.arqTimerQueue.Cancel(arqMessage.SURBID)
 		d.handlePigeonholeARQReply(arqMessage, reply)
 		return
 	}
@@ -872,6 +866,13 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 	cleanedReplies := 0
 	cleanedDecoys := 0
 
+	// Collect the ARQ SURBID pointers we tear down under the map lock,
+	// then cancel their timer entries afterwards. arqTimerQueue.Cancel
+	// compares via Go == against the exact pointer that was pushed, so
+	// we use ARQMessage.SURBID (the one the Push site used) rather
+	// than the map key's address.
+	var arqSurbIDsToCancel []*[sphinxConstants.SURBIDLength]byte
+
 	d.replyLock.Lock()
 	if d.arqSurbIDMap != nil {
 		var envHashesToDrop [][32]byte
@@ -879,6 +880,9 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 			if message.AppID != nil && *message.AppID == *appID {
 				if message.EnvelopeHash != nil {
 					envHashesToDrop = append(envHashesToDrop, *message.EnvelopeHash)
+				}
+				if message.SURBID != nil {
+					arqSurbIDsToCancel = append(arqSurbIDsToCancel, message.SURBID)
 				}
 				delete(d.arqSurbIDMap, surbID)
 				cleanedARQ++
@@ -907,6 +911,12 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 		}
 	}
 	d.replyLock.Unlock()
+
+	if d.arqTimerQueue != nil {
+		for _, surbID := range arqSurbIDsToCancel {
+			d.arqTimerQueue.Cancel(surbID)
+		}
+	}
 
 	if cleanedARQ == 0 && cleanedReplies == 0 && cleanedDecoys == 0 {
 		d.log.Debugf("cleanupForAppID: no state found for App ID %x", appID[:])
