@@ -438,10 +438,8 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 		if session, ok := l.disconnectedSessions[*existingAppID]; ok {
 			session.CleanupTimer.Stop()
 			for _, reply := range session.QueuedReplies {
-				select {
-				case c.sendToClientCh <- reply:
-				default:
-					l.log.Warningf("Dropped queued reply during session resume (channel full)")
+				if err := c.sendResponse(reply); err != nil {
+					l.log.Warningf("Dropped queued reply during session resume: %v", err)
 				}
 			}
 			delete(l.disconnectedSessions, *existingAppID)
@@ -452,15 +450,12 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 		c.clientToken = &token
 		l.log.Infof("Session resumed for token %x -> AppID %x", st.ClientInstanceToken[:4], existingAppID[:4])
 
-		select {
-		case c.sendToClientCh <- &Response{
+		c.sendResponse(&Response{
 			SessionTokenReply: &thin.SessionTokenReply{
 				AppID:   existingAppID[:],
 				Resumed: true,
 			},
-		}:
-		case <-l.HaltCh():
-		}
+		})
 		return
 	}
 
@@ -470,15 +465,12 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 	l.clientTokens[st.ClientInstanceToken] = c.appID
 	l.log.Infof("Session registered for token %x -> AppID %x", st.ClientInstanceToken[:4], c.appID[:4])
 
-	select {
-	case c.sendToClientCh <- &Response{
+	c.sendResponse(&Response{
 		SessionTokenReply: &thin.SessionTokenReply{
 			AppID:   c.appID[:],
 			Resumed: false,
 		},
-	}:
-	case <-l.HaltCh():
-	}
+	})
 }
 
 // queueReplyForDisconnected buffers a reply for a disconnected session.
@@ -500,13 +492,14 @@ func (l *listener) queueReplyForDisconnected(appID *[AppIDLength]byte, reply *Re
 }
 
 // broadcastShutdownEvent sends a ShutdownEvent to all connected thin clients.
-// This uses direct socket writes rather than the channel-based sendToClientCh,
-// because during shutdown the writer goroutine may have already exited.
+// This uses writeResponse (direct socket write) rather than the channel-
+// based sendResponse, because during shutdown the writer goroutine may
+// have already exited and any queued response would never reach the socket.
 func (l *listener) broadcastShutdownEvent() {
 	l.connsLock.RLock()
 	defer l.connsLock.RUnlock()
 	for _, c := range l.conns {
-		err := c.sendResponse(&Response{
+		err := c.writeResponse(&Response{
 			ShutdownEvent: &thin.ShutdownEvent{},
 		})
 		if err != nil {

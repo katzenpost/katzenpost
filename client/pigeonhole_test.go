@@ -168,15 +168,35 @@ type mockIncomingConn struct {
 	responseCh chan *Response
 }
 
-func (m *mockIncomingConn) toIncomingConn(_ *listener, logBackend *log.Backend) *incomingConn {
+func (m *mockIncomingConn) toIncomingConn(l *listener, logBackend *log.Backend) *incomingConn {
 	// Create a real incomingConn using net.Pipe
 	clientConn, serverConn := net.Pipe()
 
 	conn := &incomingConn{
-		log:   logBackend.GetLogger("mock-conn"),
-		conn:  serverConn,
-		appID: m.appID,
+		listener:       l,
+		log:            logBackend.GetLogger("mock-conn"),
+		conn:           serverConn,
+		appID:          m.appID,
+		sendToClientCh: make(chan *Response, perClientSendBuf),
 	}
+
+	// Drain sendToClientCh through writeResponse, mirroring the real
+	// per-conn writer goroutine that incomingConn.worker() would spawn.
+	go func() {
+		for {
+			select {
+			case msg, ok := <-conn.sendToClientCh:
+				if !ok {
+					return
+				}
+				if err := conn.writeResponse(msg); err != nil {
+					return
+				}
+			case <-l.HaltCh():
+				return
+			}
+		}
+	}()
 
 	// Start a goroutine to read responses and forward them
 	go func() {

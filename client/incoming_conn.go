@@ -30,6 +30,14 @@ const (
 	// queue. If full, enqueueResend re-arms the retry on arqTimerQueue
 	// (see resendQueueFullBackoff) so no retransmit is silently lost.
 	perClientResendBuf = 8
+
+	// perClientSendBuf is the capacity of each thin client's outbound
+	// queue. The per-conn writer goroutine drains it onto the socket.
+	// Generous so the shared ingressWorker/egressWorker never block on
+	// enqueue during normal operation; a full queue is a signal that the
+	// thin client reader has stalled, in which case sendResponse drops
+	// rather than taking the whole daemon down with it.
+	perClientSendBuf = 256
 )
 
 // incomingConn type is used along with listener type
@@ -84,56 +92,68 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 }
 
 func (c *incomingConn) sendPKIDoc(doc []byte) error {
-	message := &Response{
+	return c.sendResponse(&Response{
 		NewPKIDocumentEvent: &thin.NewPKIDocumentEvent{
 			Payload: doc,
 		},
-	}
-	select {
-	case c.sendToClientCh <- message:
-	case <-c.listener.HaltCh():
-		return errors.New("shutting down")
-	}
-	return nil
+	})
 }
 
 func (c *incomingConn) updateConnectionStatus(status error) {
-	message := &Response{
+	c.sendResponse(&Response{
 		ConnectionStatusEvent: &thin.ConnectionStatusEvent{
 			IsConnected:   status == nil,
 			Err:           nil,
 			InstanceToken: c.listener.instanceToken,
 		},
-	}
+	})
+}
+
+// sendResponse enqueues a response for this thin client. The socket write
+// is performed on the per-conn writer goroutine so a slow or wedged reader
+// only blocks its own writer, never the shared ingressWorker or egressWorker.
+//
+// Enqueue is non-blocking: if sendToClientCh is full (perClientSendBuf
+// messages in flight), the response is dropped with a warning rather than
+// stalling the caller. Under correct operation this should be rare;
+// repeated drops indicate a misbehaving thin client.
+func (c *incomingConn) sendResponse(r *Response) error {
 	select {
-	case c.sendToClientCh <- message:
+	case c.sendToClientCh <- r:
+		return nil
 	case <-c.listener.HaltCh():
-		return
+		return errors.New("shutting down")
+	default:
+		c.log.Warningf("sendResponse: sendToClientCh full for AppID %x, dropping response", c.appID[:])
+		return errors.New("sendToClientCh full")
 	}
 }
 
-func (c *incomingConn) sendResponse(r *Response) error {
+// writeResponse performs the actual socket write. Called only by the
+// per-conn writer goroutine (drained from sendToClientCh) and by
+// broadcastShutdownEvent during shutdown, when the writer goroutine may
+// have already exited.
+func (c *incomingConn) writeResponse(r *Response) error {
 	response := IntoThinResponse(r)
 	blob, err := cbor.Marshal(response)
 	if err != nil {
-		c.log.Errorf("sendResponse: cbor.Marshal: %v", err)
+		c.log.Errorf("writeResponse: cbor.Marshal: %v", err)
 		return err
 	}
 
-	var toSend []byte
 	const blobPrefixLen = 4
 	prefix := [blobPrefixLen]byte{}
 	binary.BigEndian.PutUint32(prefix[:], uint32(len(blob)))
-	toSend = append(prefix[:], blob...)
+	toSend := append(prefix[:], blob...)
 
 	count, err := c.conn.Write(toSend)
 	if err != nil {
-		c.log.Errorf("sendResponse: Write: %v", err)
+		c.log.Errorf("writeResponse: Write: %v", err)
 		return err
 	}
 	if count != len(toSend) {
-		c.log.Errorf("sendResponse: Write: truncated write (%d/%d", count, len(toSend))
-		return fmt.Errorf("sendResponse error: only wrote %d bytes whereas buffer is size %d", count, len(toSend))
+		c.log.Errorf("writeResponse: Write: truncated write (%d/%d)", count, len(toSend))
+		return fmt.Errorf("writeResponse error: only wrote %d bytes whereas buffer is size %d", count, len(toSend))
 	}
 	return nil
 }
@@ -183,7 +203,7 @@ func (c *incomingConn) worker() {
 			case <-doneCh:
 				return
 			case message := <-c.sendToClientCh:
-				err := c.sendResponse(message)
+				err := c.writeResponse(message)
 				if err != nil {
 					c.log.Infof("received error sending client a message: %s", err.Error())
 				}
@@ -244,7 +264,7 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 		listener:       l,
 		conn:           conn,
 		appID:          appid,
-		sendToClientCh: make(chan *Response, 2),
+		sendToClientCh: make(chan *Response, perClientSendBuf),
 		requestCh:      make(chan *Request, perClientRequestBuf),
 		resendCh:       make(chan *[sphinxConstants.SURBIDLength]byte, perClientResendBuf),
 	}
