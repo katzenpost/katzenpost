@@ -472,6 +472,43 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 //	}
 //	fmt.Printf("Received: %s\n", result.Plaintext)
 func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, false)
+}
+
+// StartResendingEncryptedMessageNoRetry is like StartResendingEncryptedMessage but disables
+// automatic retries on BoxIDNotFound errors. Use this when you want immediate error feedback
+// rather than waiting for potential replication lag to resolve.
+// The CancelResendingEncryptedMessage method can cancel operations started with either method.
+func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, true, false)
+}
+
+// StartResendingEncryptedMessageReturnBoxExists is like StartResendingEncryptedMessage but returns
+// BoxAlreadyExists errors instead of treating them as idempotent success. Use this when you want
+// to detect whether a write was actually performed or if the box already existed.
+// The CancelResendingEncryptedMessage method can cancel operations started with this method.
+func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, true)
+}
+
+// startResendingEncryptedMessageImpl is the shared implementation behind
+// the three StartResendingEncryptedMessage* public methods. The two
+// boolean knobs select the variant: noRetryOnBoxIDNotFound disables
+// daemon-side retry of BoxIDNotFound (so the caller learns of missing
+// boxes immediately), and noIdempotentBoxAlreadyExists forces the
+// daemon to fetch and return the replica's BoxAlreadyExists code
+// rather than swallowing it as idempotent success.
+func (t *ThinClient) startResendingEncryptedMessageImpl(
+	readCap *bacap.ReadCap,
+	writeCap *bacap.WriteCap,
+	messageBoxIndex []byte,
+	replyIndex *uint8,
+	envelopeDescriptor []byte,
+	messageCiphertext []byte,
+	envelopeHash *[32]byte,
+	noRetryOnBoxIDNotFound bool,
+	noIdempotentBoxAlreadyExists bool,
+) (*StartResendingResult, error) {
 	if envelopeHash == nil {
 		return nil, errors.New("envelopeHash cannot be nil")
 	}
@@ -480,22 +517,24 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 
 	// Send request - the daemon will handle the FSM for ACK and payload
 	if replyIndex != nil {
-		t.log.Debugf("StartResendingEncryptedMessage: Sending request (isRead=%v, replyIndex=%d)", isRead, *replyIndex)
+		t.log.Debugf("StartResendingEncryptedMessage: Sending request (isRead=%v, replyIndex=%d, noRetry=%v, returnBoxExists=%v)", isRead, *replyIndex, noRetryOnBoxIDNotFound, noIdempotentBoxAlreadyExists)
 	} else {
-		t.log.Debugf("StartResendingEncryptedMessage: Sending request (isRead=%v, replyIndex=nil)", isRead)
+		t.log.Debugf("StartResendingEncryptedMessage: Sending request (isRead=%v, replyIndex=nil, noRetry=%v, returnBoxExists=%v)", isRead, noRetryOnBoxIDNotFound, noIdempotentBoxAlreadyExists)
 	}
 
 	queryID := t.NewQueryID()
 	req := &Request{
 		StartResendingEncryptedMessage: &StartResendingEncryptedMessage{
-			QueryID:            queryID,
-			ReadCap:            readCap,
-			WriteCap:           writeCap,
-			MessageBoxIndex:    messageBoxIndex,
-			ReplyIndex:         replyIndex,
-			EnvelopeDescriptor: envelopeDescriptor,
-			MessageCiphertext:  messageCiphertext,
-			EnvelopeHash:       envelopeHash,
+			QueryID:                      queryID,
+			ReadCap:                      readCap,
+			WriteCap:                     writeCap,
+			MessageBoxIndex:              messageBoxIndex,
+			ReplyIndex:                   replyIndex,
+			EnvelopeDescriptor:           envelopeDescriptor,
+			MessageCiphertext:            messageCiphertext,
+			EnvelopeHash:                 envelopeHash,
+			NoRetryOnBoxIDNotFound:       noRetryOnBoxIDNotFound,
+			NoIdempotentBoxAlreadyExists: noIdempotentBoxAlreadyExists,
 		},
 	}
 
@@ -511,9 +550,10 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 	}
 
 	// Wait for reply from daemon — blocks forever until success, error, or Close()
-	// For writes: daemon sends reply after receiving ACK
-	// For reads: daemon sends reply after receiving payload (after ACK)
-	// The daemon may also send error responses (e.g., BoxIDNotFound) which will cause this to exit
+	// For writes: daemon sends reply after receiving ACK (or payload, if
+	// noIdempotentBoxAlreadyExists is set — two round-trips in that case).
+	// For reads: daemon sends reply after receiving payload (after ACK).
+	// The daemon may also send error responses (e.g., BoxIDNotFound) which will cause this to exit.
 	for {
 		var event Event
 		select {
@@ -533,218 +573,18 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 				continue
 			}
 
-			// Check for any error (including BoxIDNotFound, internal errors, etc.)
-			// Map error codes to sentinel errors for better error handling
+			// Check for any error (including BoxIDNotFound, BoxAlreadyExists, internal errors, etc.)
+			// Map error codes to sentinel errors for better error handling.
 			if v.ErrorCode != ThinClientSuccess {
 				err := errorCodeToSentinel(v.ErrorCode)
 				t.log.Debugf("StartResendingEncryptedMessage: Received error response: %v", err)
 				return nil, err
 			}
 
-			// Success case
-			// For write operations, this is the ACK reply
-			// For read operations, this is the payload reply
 			if !isRead {
 				t.log.Debugf("StartResendingEncryptedMessage: Write operation complete")
 			} else {
 				t.log.Debugf("StartResendingEncryptedMessage: Read operation complete, payload length=%d", len(v.Plaintext))
-			}
-			return &StartResendingResult{
-				Plaintext:           v.Plaintext,
-				CourierIdentityHash: v.CourierIdentityHash,
-				CourierQueueID:      v.CourierQueueID,
-			}, nil
-
-		case *ConnectionStatusEvent:
-			t.setConnected(v.IsConnected)
-		case *NewDocumentEvent:
-			// Ignore PKI document updates
-		default:
-			// Ignore other events
-		}
-	}
-}
-
-// StartResendingEncryptedMessageNoRetry is like StartResendingEncryptedMessage but disables
-// automatic retries on BoxIDNotFound errors. Use this when you want immediate error feedback
-// rather than waiting for potential replication lag to resolve.
-// The CancelResendingEncryptedMessage method can cancel operations started with either method.
-func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	if envelopeHash == nil {
-		return nil, errors.New("envelopeHash cannot be nil")
-	}
-
-	isRead := readCap != nil
-
-	// Send request - the daemon will handle the FSM for ACK and payload
-	if replyIndex != nil {
-		t.log.Debugf("StartResendingEncryptedMessageNoRetry: Sending request (isRead=%v, replyIndex=%d)", isRead, *replyIndex)
-	} else {
-		t.log.Debugf("StartResendingEncryptedMessageNoRetry: Sending request (isRead=%v, replyIndex=nil)", isRead)
-	}
-
-	queryID := t.NewQueryID()
-	req := &Request{
-		StartResendingEncryptedMessage: &StartResendingEncryptedMessage{
-			QueryID:                queryID,
-			ReadCap:                readCap,
-			WriteCap:               writeCap,
-			MessageBoxIndex:        messageBoxIndex,
-			ReplyIndex:             replyIndex,
-			EnvelopeDescriptor:     envelopeDescriptor,
-			MessageCiphertext:      messageCiphertext,
-			EnvelopeHash:           envelopeHash,
-			NoRetryOnBoxIDNotFound: true,
-		},
-	}
-
-	// Track in-flight request for replay on reconnect to new daemon instance
-	t.inFlightResends.Store(*envelopeHash, req)
-	defer t.inFlightResends.Delete(*envelopeHash)
-
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
-
-	if err := t.writeMessage(req); err != nil {
-		return nil, err
-	}
-
-	// Wait for reply from daemon
-	// For writes: daemon sends reply after receiving ACK
-	// For reads: daemon sends reply after receiving payload (after ACK)
-	// The daemon may also send error responses (e.g., BoxIDNotFound) which will cause this to exit
-	for {
-		var event Event
-		select {
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return nil, errHalting
-		}
-
-		switch v := event.(type) {
-		case *StartResendingEncryptedMessageReply:
-			if v.QueryID == nil {
-				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Received reply with nil QueryID, ignoring")
-				continue
-			}
-			if !bytes.Equal(v.QueryID[:], queryID[:]) {
-				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Received reply with mismatched QueryID, ignoring")
-				continue
-			}
-
-			// Check for any error (including BoxIDNotFound, internal errors, etc.)
-			// Map error codes to sentinel errors for better error handling
-			if v.ErrorCode != ThinClientSuccess {
-				err := errorCodeToSentinel(v.ErrorCode)
-				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Received error response: %v", err)
-				return nil, err
-			}
-
-			// Success case
-			// For write operations, this is the ACK reply
-			// For read operations, this is the payload reply
-			if !isRead {
-				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Write operation complete")
-			} else {
-				t.log.Debugf("StartResendingEncryptedMessageNoRetry: Read operation complete, payload length=%d", len(v.Plaintext))
-			}
-			return &StartResendingResult{
-				Plaintext:           v.Plaintext,
-				CourierIdentityHash: v.CourierIdentityHash,
-				CourierQueueID:      v.CourierQueueID,
-			}, nil
-
-		case *ConnectionStatusEvent:
-			t.setConnected(v.IsConnected)
-		case *NewDocumentEvent:
-			// Ignore PKI document updates
-		default:
-			// Ignore other events
-		}
-	}
-}
-
-// StartResendingEncryptedMessageReturnBoxExists is like StartResendingEncryptedMessage but returns
-// BoxAlreadyExists errors instead of treating them as idempotent success. Use this when you want
-// to detect whether a write was actually performed or if the box already existed.
-// The CancelResendingEncryptedMessage method can cancel operations started with this method.
-func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	if envelopeHash == nil {
-		return nil, errors.New("envelopeHash cannot be nil")
-	}
-
-	isRead := readCap != nil
-
-	// Send request - the daemon will handle the FSM for ACK and payload
-	if replyIndex != nil {
-		t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Sending request (isRead=%v, replyIndex=%d)", isRead, *replyIndex)
-	} else {
-		t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Sending request (isRead=%v, replyIndex=nil)", isRead)
-	}
-
-	queryID := t.NewQueryID()
-	req := &Request{
-		StartResendingEncryptedMessage: &StartResendingEncryptedMessage{
-			QueryID:                      queryID,
-			ReadCap:                      readCap,
-			WriteCap:                     writeCap,
-			MessageBoxIndex:              messageBoxIndex,
-			ReplyIndex:                   replyIndex,
-			EnvelopeDescriptor:           envelopeDescriptor,
-			MessageCiphertext:            messageCiphertext,
-			EnvelopeHash:                 envelopeHash,
-			NoIdempotentBoxAlreadyExists: true,
-		},
-	}
-
-	// Track in-flight request for replay on reconnect to new daemon instance
-	t.inFlightResends.Store(*envelopeHash, req)
-	defer t.inFlightResends.Delete(*envelopeHash)
-
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
-
-	if err := t.writeMessage(req); err != nil {
-		return nil, err
-	}
-
-	// Wait for reply from daemon
-	// For writes: daemon sends reply after receiving payload (containing success or error)
-	// For reads: daemon sends reply after receiving payload (after ACK)
-	for {
-		var event Event
-		select {
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return nil, errHalting
-		}
-
-		switch v := event.(type) {
-		case *StartResendingEncryptedMessageReply:
-			if v.QueryID == nil {
-				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Received reply with nil QueryID, ignoring")
-				continue
-			}
-			if !bytes.Equal(v.QueryID[:], queryID[:]) {
-				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Received reply with mismatched QueryID, ignoring")
-				continue
-			}
-
-			// Check for any error (including BoxAlreadyExists, BoxIDNotFound, internal errors, etc.)
-			// Map error codes to sentinel errors for better error handling
-			if v.ErrorCode != ThinClientSuccess {
-				err := errorCodeToSentinel(v.ErrorCode)
-				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Received error response: %v", err)
-				return nil, err
-			}
-
-			// Success case
-			// For write operations, this is the payload reply
-			// For read operations, this is the payload reply
-			if !isRead {
-				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Write operation complete")
-			} else {
-				t.log.Debugf("StartResendingEncryptedMessageReturnBoxExists: Read operation complete, payload length=%d", len(v.Plaintext))
 			}
 			return &StartResendingResult{
 				Plaintext:           v.Plaintext,
