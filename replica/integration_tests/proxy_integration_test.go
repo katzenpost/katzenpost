@@ -110,8 +110,12 @@ func TestProxyIntegration(t *testing.T) {
 	require.NotNil(t, writeReply)
 	t.Logf("PROXY_TEST: Write completed to correct shards")
 
-	// Wait for write to complete
-	time.Sleep(5 * time.Second)
+	// Wait for write to propagate to the shards. injectCourierEnvelope
+	// returns on the courier's immediate ACK, BEFORE the shards have
+	// durably stored the write. The subsequent proxy read adds another
+	// hop and must not race replication. CI observed a 5s wait racing
+	// the replication — harden the margin.
+	time.Sleep(15 * time.Second)
 
 	// --- STEP 2: Bob reads via NON-shard replicas (forcing proxy behavior) ---
 	// Find two replicas that are NOT the correct shards
