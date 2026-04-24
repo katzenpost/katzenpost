@@ -142,3 +142,58 @@ func TestHandleReplicaWriteImmutableUnderConcurrency(t *testing.T) {
 	require.Equal(t, int32(goroutines-1), alreadyExistsCount.Load(),
 		"every other concurrent write must be rejected with ErrBoxAlreadyExists")
 }
+
+// TestHandleReplicaWriteIdempotentForMatchingData pins the replica's
+// idempotence for byte-identical retries. The courier's K=2 write path
+// re-sends the same envelope on retry, and previously the second arrival
+// would surface as ErrBoxAlreadyExists — observationally identical to a
+// genuine destination-pre-existed conflict. Returning success when the
+// stored Box matches the incoming write removes that ambiguity.
+func TestHandleReplicaWriteIdempotentForMatchingData(t *testing.T) {
+	st := setupImmutabilityTestState(t)
+
+	var boxID [bacap.BoxIDSize]byte
+	_, err := rand.Reader.Read(boxID[:])
+	require.NoError(t, err)
+
+	var sig [bacap.SignatureSize]byte
+	_, err = rand.Reader.Read(sig[:])
+	require.NoError(t, err)
+
+	payload := []byte("retried-write-payload")
+
+	cmd := &commands.ReplicaWrite{
+		BoxID:     &boxID,
+		Signature: &sig,
+		Payload:   payload,
+	}
+
+	require.NoError(t, st.handleReplicaWrite(cmd), "first write must succeed")
+	require.NoError(t, st.handleReplicaWrite(cmd),
+		"retried write of byte-identical data must be idempotent, not ErrBoxAlreadyExists")
+
+	// A retry that flips a single byte of payload must still be rejected:
+	// the immutability invariant only relaxes for byte-identical writes.
+	mutatedPayload := append([]byte{}, payload...)
+	mutatedPayload[0] ^= 0xff
+	mutatedCmd := &commands.ReplicaWrite{
+		BoxID:     &boxID,
+		Signature: &sig,
+		Payload:   mutatedPayload,
+	}
+	err = st.handleReplicaWrite(mutatedCmd)
+	require.ErrorIs(t, err, ErrBoxAlreadyExists,
+		"differing payload to the same BoxID must still be rejected")
+
+	// A retry that flips a single byte of signature must also be rejected.
+	mutatedSig := sig
+	mutatedSig[0] ^= 0xff
+	mutatedCmd = &commands.ReplicaWrite{
+		BoxID:     &boxID,
+		Signature: &mutatedSig,
+		Payload:   payload,
+	}
+	err = st.handleReplicaWrite(mutatedCmd)
+	require.ErrorIs(t, err, ErrBoxAlreadyExists,
+		"differing signature to the same BoxID must still be rejected")
+}

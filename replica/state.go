@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -189,8 +190,23 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		return fmt.Errorf("failed to check existing entry: %w", err)
 	}
 	if existing.Size() > 0 {
+		// A retried write of byte-identical data is idempotent: the
+		// stored Box already represents the caller's intent, so report
+		// success rather than ErrBoxAlreadyExists. Without this, the
+		// courier's K=2 write path cannot tell "destination pre-existed
+		// with conflicting data" apart from "our prior write landed but
+		// the reply was lost" — both surface as BoxAlreadyExists at the
+		// state layer. The replication layer already assumes this
+		// idempotence (see replica/replication_reply.go).
+		storedBox, perr := pigeonhole.BoxFromBytes(existing.Data())
 		existing.Free()
-		s.log.Debugf("state: BoxID %x already exists, rejecting write (writes are immutable)", replicaWrite.BoxID)
+		if perr == nil &&
+			bytes.Equal(storedBox.Payload, replicaWrite.Payload) &&
+			storedBox.Signature == *replicaWrite.Signature {
+			s.log.Debugf("state: BoxID %x idempotent write (matching payload+signature)", replicaWrite.BoxID)
+			return nil
+		}
+		s.log.Debugf("state: BoxID %x already exists with differing data, rejecting write", replicaWrite.BoxID)
 		return ErrBoxAlreadyExists
 	}
 	existing.Free()
