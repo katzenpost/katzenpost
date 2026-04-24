@@ -141,11 +141,12 @@ func TestDispatchCopyEnvelopeBothReplicasBoxAlreadyExistsAborts(t *testing.T) {
 		"courier must surface BoxAlreadyExists to the Copy command")
 }
 
-// TestDispatchCopyEnvelopeOneSuccessCountsAsSuccess covers the
-// replication-race case: two intermediates may proxy to the same shard
-// — the first wins the write and the second sees BoxAlreadyExists.
-// The copy envelope has been persisted by at least one path, so
-// dispatch should report success and let the Copy continue.
+// TestDispatchCopyEnvelopeOneSuccessCountsAsSuccess pins the defensive
+// "any Success short-circuits" semantic. With the replica's idempotent
+// matching-data path in place this 1-Success/1-BoxAlreadyExists shape
+// is no longer expected from the wire — both intermediates should
+// agree — but the dispatch logic must still treat any single Success
+// as overall success.
 func TestDispatchCopyEnvelopeOneSuccessCountsAsSuccess(t *testing.T) {
 	courier := createTestCourier(t)
 	conn := newFakeConnector()
@@ -165,16 +166,13 @@ func TestDispatchCopyEnvelopeOneSuccessCountsAsSuccess(t *testing.T) {
 	require.Equal(t, uint8(0), code)
 }
 
-// TestDispatchCopyEnvelopeBoxAlreadyExistsOnRetryIsSuccess pins the
-// retry-idempotency invariant: if attempt 0 times out without replies
-// and attempt 1 sees BoxAlreadyExists from both intermediates, that
-// means attempt 0's writes actually landed at the replicas and only
-// the replies were lost. The dispatch must treat this as success, not
-// as the "destination pre-existed" failure.
-//
-// Regression for a flaky integration-test failure in
-// TestCreateCourierEnvelopesFromPayload under CI load.
-func TestDispatchCopyEnvelopeBoxAlreadyExistsOnRetryIsSuccess(t *testing.T) {
+// TestDispatchCopyEnvelopeSingleBoxAlreadyExistsAborts pins that a
+// single non-Success reply is treated as terminal, with no waiting for
+// the second intermediate. The replica's idempotent matching-data path
+// guarantees that a retried write of byte-identical data returns
+// Success — so a BoxAlreadyExists reply unambiguously indicates a
+// genuine destination conflict. Retrying would not change the verdict.
+func TestDispatchCopyEnvelopeSingleBoxAlreadyExistsAborts(t *testing.T) {
 	courier := createTestCourier(t)
 	conn := newFakeConnector()
 	courier.server.connector = conn
@@ -192,129 +190,28 @@ func TestDispatchCopyEnvelopeBoxAlreadyExistsOnRetryIsSuccess(t *testing.T) {
 		resultCh <- result{ok, code}
 	}()
 
-	// Attempt 0: wait for both SendMessage calls, then DON'T feed
-	// any replies. dispatchCopyEnvelope will block until
-	// copyWriteReplyTimeout elapses (15s) and then retry.
+	// Wait for both SendMessage calls, then feed ONLY ONE reply —
+	// BoxAlreadyExists from one intermediate. The other intermediate's
+	// reply is "still in flight" past the deadline.
 	for i := 0; i < 2; i++ {
 		select {
 		case <-conn.sendCalledCh:
 		case <-time.After(3 * time.Second):
-			t.Fatalf("attempt 0: SendMessage call %d not observed in time", i+1)
+			t.Fatalf("SendMessage call %d not observed in time", i+1)
 		}
 	}
-
-	// Attempt 1: after the timeout + backoff, the courier re-sends.
-	// This time we feed BoxAlreadyExists replies from both
-	// intermediates, simulating "our prior attempt's writes actually
-	// landed but the replies got lost."
-	for i := 0; i < 2; i++ {
-		select {
-		case <-conn.sendCalledCh:
-		case <-time.After(copyWriteReplyTimeout + copyBackoffBase*2 + 3*time.Second):
-			t.Fatalf("attempt 1: SendMessage call %d not observed in time", i+1)
-		}
-	}
-
 	courier.HandleReply(&commands.ReplicaMessageReply{
 		EnvelopeHash: envHash,
 		ReplicaID:    1,
-		ErrorCode:    pigeonhole.ReplicaErrorBoxAlreadyExists,
-	})
-	courier.HandleReply(&commands.ReplicaMessageReply{
-		EnvelopeHash: envHash,
-		ReplicaID:    2,
 		ErrorCode:    pigeonhole.ReplicaErrorBoxAlreadyExists,
 	})
 
 	select {
 	case r := <-resultCh:
-		require.True(t, r.ok, "BoxAlreadyExists on attempt>0 must count as success (our prior write landed)")
-		require.Equal(t, uint8(0), r.code)
+		require.False(t, r.ok, "single BoxAlreadyExists must abort the dispatch")
+		require.Equal(t, pigeonhole.ReplicaErrorBoxAlreadyExists, r.code)
 	case <-time.After(copyWriteReplyTimeout + 5*time.Second):
-		t.Fatal("dispatchCopyEnvelope did not return in time")
-	}
-}
-
-// TestDispatchCopyEnvelopeSingleBoxAlreadyExistsReplyIsTransient is the
-// regression for the CI flake in TestCreateCourierEnvelopesFromPayload.
-//
-// K=2 normal operation: both intermediates proxy to the same shard for
-// a given box. One of them writes first (Success); the other sees the
-// peer's write and replies BoxAlreadyExists. When the Success reply is
-// delayed past copyWriteReplyTimeout and only the BoxAlreadyExists
-// reply lands in time, the courier MUST treat the shortfall as
-// transient and retry — not conclude "both intermediates report
-// BoxAlreadyExists" from a single reply and abort the Copy.
-//
-// This test shapes that exact scenario and relies on attempt 1's
-// BoxAlreadyExists-from-both behaving as the "our prior write landed"
-// success already pinned by TestDispatchCopyEnvelopeBoxAlreadyExistsOnRetryIsSuccess.
-func TestDispatchCopyEnvelopeSingleBoxAlreadyExistsReplyIsTransient(t *testing.T) {
-	courier := createTestCourier(t)
-	conn := newFakeConnector()
-	courier.server.connector = conn
-
-	envelope := buildTestCourierEnvelope()
-	envHash := envelope.EnvelopeHash()
-
-	type result struct {
-		ok   bool
-		code uint8
-	}
-	resultCh := make(chan result, 1)
-	go func() {
-		ok, code := courier.dispatchCopyEnvelope(envelope)
-		resultCh <- result{ok, code}
-	}()
-
-	// Attempt 0: wait for both SendMessage calls, then feed ONLY ONE
-	// reply — BoxAlreadyExists. The peer's Success reply is "still in
-	// flight" past the deadline. Pre-fix, the courier terminated this
-	// attempt with CopyStatusFailed; post-fix, it must retry.
-	for i := 0; i < 2; i++ {
-		select {
-		case <-conn.sendCalledCh:
-		case <-time.After(3 * time.Second):
-			t.Fatalf("attempt 0: SendMessage call %d not observed in time", i+1)
-		}
-	}
-	courier.HandleReply(&commands.ReplicaMessageReply{
-		EnvelopeHash: envHash,
-		ReplicaID:    1,
-		ErrorCode:    pigeonhole.ReplicaErrorBoxAlreadyExists,
-	})
-
-	// Attempt 1: after the deadline + backoff, the courier must
-	// re-dispatch. Observing both SendMessage calls here is the
-	// behavioral proof that "1 reply + BoxAlreadyExists" was treated as
-	// transient, not terminal.
-	for i := 0; i < 2; i++ {
-		select {
-		case <-conn.sendCalledCh:
-		case <-time.After(copyWriteReplyTimeout + copyBackoffBase*2 + 3*time.Second):
-			t.Fatalf("attempt 1: SendMessage call %d not observed in time — courier aborted instead of retrying", i+1)
-		}
-	}
-
-	// Feed the full K=2 response on attempt 1: both BoxAlreadyExists.
-	// attempt>0 treats this as "our prior write landed" → success.
-	courier.HandleReply(&commands.ReplicaMessageReply{
-		EnvelopeHash: envHash,
-		ReplicaID:    1,
-		ErrorCode:    pigeonhole.ReplicaErrorBoxAlreadyExists,
-	})
-	courier.HandleReply(&commands.ReplicaMessageReply{
-		EnvelopeHash: envHash,
-		ReplicaID:    2,
-		ErrorCode:    pigeonhole.ReplicaErrorBoxAlreadyExists,
-	})
-
-	select {
-	case r := <-resultCh:
-		require.True(t, r.ok, "single-reply BoxAlreadyExists must not terminate the dispatch")
-		require.Equal(t, uint8(0), r.code)
-	case <-time.After(copyWriteReplyTimeout + 5*time.Second):
-		t.Fatal("dispatchCopyEnvelope did not return in time")
+		t.Fatal("dispatchCopyEnvelope did not return in time — courier waited for second reply instead of aborting")
 	}
 }
 

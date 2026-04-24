@@ -805,7 +805,7 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 }
 
 // dispatchCopyEnvelope sends one copy-stream CourierEnvelope to its
-// client-chosen intermediate replicas, waits for both replies (with a
+// client-chosen intermediate replicas, waits for replies (with a
 // timeout), and classifies the outcome.
 //
 // Return values:
@@ -816,16 +816,20 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 //     Copy can continue.
 //
 //   - (false, replicaErrorCode)
-//     both intermediates rejected the write (e.g. BoxAlreadyExists,
+//     a reply rejected the write (e.g. BoxAlreadyExists,
 //     InvalidSignature) or the transport layer exhausted its attempt
 //     budget. replicaErrorCode is the best signal the courier has
 //     to propagate to the client. 0 means the failure was transport-
 //     only (no replica reply ever arrived).
 //
-// No shard-level failover is available on the write path because the
-// two intermediate replicas are MKEM-baked into the client's envelope.
-// SendMessage failures get up to maxCopyWriteAttempts tries under
-// copyAttemptBackoff before dispatch is declared terminal.
+// The replica state layer treats byte-identical retries as idempotent
+// success (see replica/state.go), so a non-Success reply reflects a
+// genuine conflict — retrying will not change the verdict and the
+// dispatch aborts on the first one. Retries are reserved for
+// transport-level failures: SendMessage errors and "no replies before
+// the deadline." No shard-level failover is available on the write
+// path because the two intermediate replicas are MKEM-baked into the
+// client's envelope.
 func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bool, uint8) {
 	envHash := envelope.EnvelopeHash()
 
@@ -867,8 +871,7 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 		e.copyCacheLock.Unlock()
 
 		// K=2 redundancy: any Success reply means the data is
-		// stored at a shard; we can short-circuit regardless of how
-		// many replies we have.
+		// stored at a shard.
 		for _, r := range replies {
 			if r.ErrorCode == pigeonhole.ReplicaSuccess {
 				if attempt > 0 {
@@ -878,50 +881,23 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 			}
 		}
 
-		// Below this point no reply is Success. Any terminal
-		// conclusion ("destination pre-exists", "invalid signature",
-		// etc.) requires hearing from BOTH intermediates — a single
-		// non-Success reply with the peer still in flight is
-		// indistinguishable from the normal K=2 case where one
-		// intermediate wrote first (Success) and the other saw the
-		// peer's write (BoxAlreadyExists) but whose reply hasn't
-		// landed yet. Treat shortfalls as transient and retry.
-		if len(replies) < 2 {
-			e.log.Warningf("dispatchCopyEnvelope: attempt %d got %d/2 replies before deadline, retrying", attempt+1, len(replies))
-			continue
-		}
-
-		// Both replies are non-Success errors. Pick the most
-		// diagnostic code for the client's Copy failure report.
-		bestErr := uint8(0)
-		for _, r := range replies {
-			if r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists || bestErr == 0 {
-				bestErr = r.ErrorCode
+		// Any non-Success reply is terminal. Prefer BoxAlreadyExists
+		// as the reportable code — it's the most diagnostic signal
+		// for the client's Copy failure report.
+		if len(replies) > 0 {
+			bestErr := replies[0].ErrorCode
+			for _, r := range replies {
+				if r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
+					bestErr = r.ErrorCode
+					break
+				}
 			}
-		}
-
-		// BoxAlreadyExists from both intermediates is ambiguous:
-		//
-		//   - attempt == 0: the destination box was written before we
-		//     ever sent anything, so the Copy cannot achieve its goal.
-		//     Abort (this is the case TestCopyOntoAlreadyExistingBoxError
-		//     pins).
-		//
-		//   - attempt > 0: our PREVIOUS attempt almost certainly landed
-		//     at the replicas but the reply didn't reach us before
-		//     copyWriteReplyTimeout. The retry then sees our own prior
-		//     write and reports BoxAlreadyExists. Treat as success —
-		//     the target state is achieved.
-		if bestErr == pigeonhole.ReplicaErrorBoxAlreadyExists {
-			if attempt > 0 {
-				e.log.Debugf("dispatchCopyEnvelope: BoxAlreadyExists on retry attempt %d — prior attempt's write landed, treating as success", attempt+1)
-				return true, 0
-			}
-			e.log.Warningf("dispatchCopyEnvelope: both intermediates report BoxAlreadyExists on first attempt, aborting Copy")
+			e.log.Warningf("dispatchCopyEnvelope: replica error %d, aborting Copy", bestErr)
 			return false, bestErr
 		}
 
-		e.log.Warningf("dispatchCopyEnvelope: attempt %d: both replies error (best=%d), retrying", attempt+1, bestErr)
+		// No replies before the deadline — transport failure. Retry.
+		e.log.Warningf("dispatchCopyEnvelope: attempt %d got no replies before deadline, retrying", attempt+1)
 	}
 
 	e.log.Errorf("dispatchCopyEnvelope: exhausted %d attempts, aborting Copy", maxCopyWriteAttempts)
