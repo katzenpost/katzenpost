@@ -1595,6 +1595,56 @@ func (s *state) pruneDocuments() {
 			delete(s.myconsensus, e)
 		}
 	}
+
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		return prunePersistedEpochs(tx, cmpEpoch)
+	}); err != nil {
+		s.log.Warningf("pruneDocuments: failed to prune persistence.db: %v", err)
+	}
+}
+
+// prunePersistedEpochs deletes per-epoch sub-buckets and document entries
+// strictly older than cmpEpoch from the persistence store. Without this the
+// descriptors, replica_descriptors, and documents buckets accumulate state
+// for every epoch the dirauth has ever served, growing without bound.
+func prunePersistedEpochs(tx *bolt.Tx, cmpEpoch uint64) error {
+	for _, name := range []string{descriptorsBucket, replicaDescriptorsBucket} {
+		bkt := tx.Bucket([]byte(name))
+		if bkt == nil {
+			continue
+		}
+		for _, k := range staleEpochKeys(bkt, cmpEpoch) {
+			if err := bkt.DeleteBucket(k); err != nil {
+				return fmt.Errorf("delete stale %s sub-bucket: %w", name, err)
+			}
+		}
+	}
+	docsBkt := tx.Bucket([]byte(documentsBucket))
+	if docsBkt == nil {
+		return nil
+	}
+	for _, k := range staleEpochKeys(docsBkt, cmpEpoch) {
+		if err := docsBkt.Delete(k); err != nil {
+			return fmt.Errorf("delete stale %s entry: %w", documentsBucket, err)
+		}
+	}
+	return nil
+}
+
+func staleEpochKeys(bkt *bolt.Bucket, cmpEpoch uint64) [][]byte {
+	var stale [][]byte
+	c := bkt.Cursor()
+	for k, _ := c.First(); k != nil; k, _ = c.Next() {
+		if len(k) != 8 {
+			continue
+		}
+		if binary.BigEndian.Uint64(k) < cmpEpoch {
+			cp := make([]byte, len(k))
+			copy(cp, k)
+			stale = append(stale, cp)
+		}
+	}
+	return stale
 }
 
 func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool {
