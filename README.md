@@ -37,19 +37,8 @@ specification documents for the new protocols:
 [Pigeonhole Protocol Specification](https://katzenpost.network/docs/specs/pigeonhole/)
 [Group Chat Protocol Specification](https://katzenpost.network/docs/specs/group_chat.html)
 
-Within this repo there are some old deprecated APIs which are associated with the "old client":
-
-* client
-* minclient
-* stream
-* map
-* cmd/http-proxy-client
-* cmd/http-proxy-server
-* cmd/katzencat
-* cmd/katzencopy
-* cmd/map
-
-**PLEASE TAKE CARE TO AVOID USING THESE DEPRECATED SECTIONS OF OUR CODEBASE!**
+Please also see the Katzenqt repo for the messaging client application:
+https://github.com/katzenpost/katzenqt
 
 
 # Building Katzenpost
@@ -59,8 +48,17 @@ Within this repo there are some old deprecated APIs which are associated with th
 The root Makefile provides several build targets for different components:
 
 ### Standard Components
+
+Most Katzenpost components require Go and basic build tools.
 To build all standard server and client components (excluding replica), use:
 
+**Debian/Ubuntu users** should first install build essentials:
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential
+```
+
+and then build:
 ```bash
 cd katzenpost
 make all
@@ -71,17 +69,15 @@ This builds all executables in the `cmd/` directory:
 - **dirauth** - Directory authority node
 - **genconfig** - Configuration file generator
 - **ping** - Network connectivity testing tool
-- **courier** - Message courier service
+- **courier** - Pigeonhole protocol Message courier service
+- **replica** - Pigeonhole protocol storage replica
 - **echo-plugin** - Echo service plugin
-- **fetch** - Data fetching utility
+- **fetch** -  Utility for fetching the PKI doc
 - **genkeypair** - Cryptographic key pair generator
 - **gensphinx** - Sphinx packet generator
 - **http-proxy-client** - HTTP proxy client
 - **http-proxy-server** - HTTP proxy server
-- **katzencat** - Katzenpost netcat-like utility
-- **katzencopy** - File transfer utility
 - **kpclientd** - Katzenpost client daemon
-- **map** - Network mapping utility
 - **sphinx** - Sphinx cryptographic packet tool
 
 ### Individual Components
@@ -95,17 +91,21 @@ make genconfig   # Build just the config generator
 ```
 
 ### Replica Component (Special Requirements)
-The replica component requires RocksDB dependencies and has its own target:
+
+**⚠️ The replica component requires RocksDB and cannot be built with standard `go build` commands.**
+
+RocksDB is a C++ library that must be compiled and installed system-wide before building the replica. Due to CGO linking requirements, the replica build requires specific compiler flags and environment variables. This is why we provide dedicated Makefile targets:
 
 ```bash
-make replica
+make install-replica-deps  # Install RocksDB and dependencies (requires sudo)
+make replica               # Build the replica executable
+make test-replica          # Run replica unit tests
+make bench-replica         # Run replica benchmarks
 ```
 
-This will:
-1. Install RocksDB dependencies (cmake, build tools, gflags, RocksDB v10.2.1)
-2. Build the replica executable
+The `make replica` target will automatically run `install-replica-deps` if RocksDB is not found.
 
-**Note:** The replica target requires sudo privileges to install system dependencies.
+**Note:** These targets require sudo privileges to install system dependencies and take several minutes to compile RocksDB from source.
 
 ### Cleaning Built Binaries
 To remove all built executables:
@@ -114,34 +114,15 @@ To remove all built executables:
 make clean
 ```
 
-## Dependencies
 
-### Standard Components
-Most Katzenpost components only require Go and standard system libraries.
-
-### Replica Component Dependencies
-The replica component requires RocksDB, which has additional system dependencies:
-
-- **System packages**: cmake, build-essential, libsnappy-dev, libzstd-dev, liblz4-dev, libz-dev
-- **gflags**: Built from source (https://github.com/gflags/gflags.git)
-- **RocksDB v10.2.1**: Built from source (https://github.com/facebook/rocksdb.git)
-
-The `make replica` target automatically handles installing these dependencies, but requires sudo privileges. If you prefer to install dependencies manually, you can use:
-
-```bash
-make install-replica-deps  # Install RocksDB dependencies only
-```
-
-# Client:
-
-New Katzenpost mixnet clients are forthcoming.
-
-
-# Server Side Usage/Configuration
+# Developers Corner
 
 Our docker configuration is the most comprehensive and up to date
-place to learn about how to configure a Katzenpost mix network. Run
-the makefile in the docker directory to get a usage menu:
+place to learn about how to configure a Katzenpost mix network. It's
+also very useful for developers working on Katzenpost whether there's
+a task like adding a new core features or a new mixnet service plugin.
+
+Run the makefile in the docker directory to get a usage menu:
 
 ```bash
 $ cd katzenpost/docker; make 
@@ -172,17 +153,19 @@ These make targets allow you to control the test network:
 **You can run a docker mixnet locally and then inspect the configuration files
 to learn how to configure a Katzenpost mixnet.**
 
+* [Using the Katzenpost Docker test mix network](https://katzenpost.network/docs/admin_guide/docker.html)
+
+
+# Documentation
 
 Documentation is a work in progress:
 
 * [Katzenpost Mixnet Documentation](https://katzenpost.network/docs/)
 
-* [Using the Katzenpost Docker test mix network](https://katzenpost.network/docs/admin_guide/docker.html)
-
 * [Mixnet Admin guide](https://katzenpost.network/docs/admin_guide/)
 
 
-# Expert's Corner
+# Researcher's Corner
 
 Katzenpost is an unverified decryption mix network that uses a continuous time
 mixing strategy with client selected exponential delays and a stratified routing topology. 
@@ -192,6 +175,8 @@ We have some resources for experts:
 * [Mixnet Threat Model Document](https://katzenpost.network/research/Threat_Model_Doc.pdf)
 
 * [Mixnet Literature Review](https://katzenpost.network/research/Literature_overview__website_version.pdf)
+
+* Our research paper, thus far self-published: [Echomix: a Strong Anonymity System with Messaging](https://arxiv.org/abs/2501.02933)
 
 
 ## Cryptographic Agility

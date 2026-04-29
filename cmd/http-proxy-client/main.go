@@ -30,77 +30,80 @@ import (
 
 	"github.com/carlmjohnson/versioninfo"
 	cbor "github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/hash"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/quic/proxy/common"
 )
 
 var (
-	cfgFile  = flag.String("cfg", "proxy.toml", "config file")
+	cfgFile  = flag.String("cfg", "proxy.toml", "thin client config file")
 	epName   = flag.String("ep", "http", "endpoint name")
 	logLevel = flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	port     = flag.Int("port", 8080, "listener address")
 	retry    = flag.Int("retry", -1, "limit number of reconnection attempts")
 	delay    = flag.Int("delay", 30, "time to wait between connection attempts (seconds)>")
-	cfg      *config.Config
 )
 
-// getSession waits until pki.Document is available and returns a *client.Session
-func getSession(cfgFile string) (*client.Session, error) {
-	var err error
-	cfg, err = config.LoadFile(cfgFile)
-	if err != nil {
-		return nil, err
-	}
-	cc, err := client.New(cfg)
+// getThinClient connects to the client2 daemon and returns a ThinClient
+func getThinClient(cfgFile string) (*thin.ThinClient, error) {
+	cfg, err := thin.LoadFile(cfgFile)
 	if err != nil {
 		return nil, err
 	}
 
-	var session *client.Session
+	logging := &config.Logging{
+		Level: *logLevel,
+	}
+	client := thin.NewThinClient(cfg, logging)
+
 	retries := 0
-	for session == nil {
-		session, err = cc.NewTOFUSession(context.Background())
+	for {
+		err = client.Dial()
 		switch err {
 		case nil:
-		case pki.ErrNoDocument:
-			_, _, till := epochtime.Now()
-			<-time.After(till)
+			return client, nil
 		default:
 			<-time.After(time.Duration(*delay) * time.Second)
 			if retries == *retry {
-				return nil, errors.New("Failed to connect within retry limit")
+				return nil, errors.New("failed to connect within retry limit")
 			}
 		}
-		retries += 1
+		retries++
 	}
-	session.WaitForDocument(context.Background())
-	return session, nil
 }
 
 type kttp struct {
-	session *client.Session
-	log     *logging.Logger
+	client *thin.ThinClient
+	log    *logging.Logger
 }
 
 func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	d, err := k.session.GetService(*epName)
+	d, err := k.client.GetService(*epName)
 	if err != nil {
+		k.log.Errorf("Err getting service: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	// serialize the http request
 	buf, err := httputil.DumpRequest(r, true)
+	if err != nil {
+		k.log.Errorf("Err dumping request: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
 	// send the http request
-	response, err := k.session.BlockingSendUnreliableMessage(d.Name, d.Provider, buf)
+	destNode := hash.Sum256(d.MixDescriptor.IdentityKey)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	response, err := k.client.BlockingSendMessage(ctx, buf, &destNode, d.RecipientQueueID)
 	if err != nil {
 		// send http error response
+		k.log.Errorf("Err sending message: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -131,25 +134,21 @@ func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		k.log.Errorf("Err proxying: %v", err)
 	}
-	return
 }
 
 func main() {
 	flag.Parse()
-	s, err := getSession(*cfgFile)
+	client, err := getThinClient(*cfgFile)
 	if err != nil {
 		panic(err)
 	}
-	// Log to stdout
-	logBackend, err := log.New("", *logLevel, false)
-	if err != nil {
-		panic(err)
-	}
-	clientLog := logBackend.GetLogger("http_proxy")
+	defer client.Close()
+
+	clientLog := client.GetLogger("http_proxy")
 	clientLog.Noticef("Katzenpost http-proxy-client version: %s", versioninfo.Short())
 	clientLog.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
 	addr := fmt.Sprintf(":%d", *port)
-	handler := &kttp{session: s, log: clientLog}
+	handler := &kttp{client: client, log: clientLog}
 	http.ListenAndServe(addr, handler)
 }

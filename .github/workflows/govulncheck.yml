@@ -1,0 +1,36 @@
+name: govulncheck
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install RocksDB dependencies
+        run: make install-replica-deps
+      - name: Run govulncheck
+        # Ignoring GO-2024-2605 and GO-2024-2606: pgx v3 SQL injection vulns
+        # We are not migrating to pgx v4/v5 at this time
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest -format json ./... > vulns.json || true
+          # Check if there are any vulns other than the ignored pgx ones
+          # Only look for vuln IDs in "osv" fields (actual vulnerabilities, not SBOM versions)
+          ignored="GO-2024-2605 GO-2024-2606"
+          found=$(grep '"osv":' vulns.json | grep -oE 'GO-[0-9]{4}-[0-9]+' | sort -u || true)
+          for vuln in $found; do
+            if ! echo "$ignored" | grep -qw "$vuln"; then
+              echo "Found unignored vulnerability: $vuln"
+              cat vulns.json
+              exit 1
+            fi
+          done
+          echo "No unignored vulnerabilities found"
+

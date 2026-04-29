@@ -141,9 +141,8 @@ func (l *listener) onNewConn(conn net.Conn) {
 
 	status := l.getConnectionStatus()
 	c.updateConnectionStatus(status)
-	if docBlob != nil {
-		c.sendPKIDoc(docBlob)
-	}
+	// Always send PKI doc event, even if empty - thin client expects it
+	c.sendPKIDoc(docBlob)
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {

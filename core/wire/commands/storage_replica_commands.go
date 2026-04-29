@@ -162,6 +162,11 @@ func (c *ReplicaDecoy) String() string { return "ReplicaDecoy" }
 func (c *ReplicaDecoy) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(replicaDecoy)
+
+	// optional traffic padding
+	if c.Cmds == nil {
+		return out
+	}
 	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
@@ -170,7 +175,9 @@ func (c *ReplicaDecoy) Length() int {
 }
 
 func replicaDecoyFromBytes(b []byte, cmds *Commands) (Command, error) {
-	return new(ReplicaDecoy), nil
+	r := new(ReplicaDecoy)
+	r.Cmds = cmds
+	return r, nil
 }
 
 // ReplicaMessage used over wire protocol from couriers to replicas,

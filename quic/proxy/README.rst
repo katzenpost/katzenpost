@@ -80,7 +80,7 @@ To start the client using the generated testnet configuration:
 
 ::
 
-   ./client/client -ep http -cfg ../../docker/voting_mixnet/client/client.toml
+   ./client/client -ep http -cfg ../../docker/voting_mixnet/client2/client.toml
 
 Note that you can specify a different listening port (than 8080) with the -port flag.
 The client will connect to the mixnet and start exchanging decoy messages (cover traffic).

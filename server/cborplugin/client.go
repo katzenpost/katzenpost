@@ -37,6 +37,10 @@ import (
 )
 
 // Request is the struct type used in service query requests to plugins.
+// This struct is backwards compatible - it contains the original fields
+// at the top level, plus optional new fields for parameter requests.
+// Old plugins will ignore the new fields (cbor omitempty).
+// New plugins can check IsParametersRequest to handle parameter queries.
 type Request struct {
 	// RequestAt is the time when the Request corresponding to this Response was received
 	RequestAt time.Time
@@ -48,6 +52,10 @@ type Request struct {
 	Payload []byte
 	// SURB is the routing header used to return the Response to the requesting client
 	SURB []byte
+
+	// IsParametersRequest signals this is a request for plugin parameters,
+	// not a regular service request. Old plugins ignore this field.
+	IsParametersRequest bool `cbor:",omitempty"`
 }
 
 // Marshal serializes Request
@@ -69,7 +77,11 @@ func (r *RequestFactory) Build() Command {
 	return new(Request)
 }
 
-// Response is the response received after sending a Request to the plugin
+// Response is the response received after sending a Request to the plugin.
+// This struct is backwards compatible - it contains the original fields
+// at the top level, plus optional new fields for parameter responses.
+// Old plugins send responses without the new fields.
+// New plugins can set IsParametersResponse and Params for dynamic parameters.
 type Response struct {
 	// RequestAt is the time when the Request corresponding to this Response was received
 	RequestAt time.Time
@@ -81,6 +93,13 @@ type Response struct {
 	Payload []byte
 	// SURB is the routing header used to return the Response to the requesting client
 	SURB []byte
+
+	// IsParametersResponse signals this is a response containing plugin parameters,
+	// not a regular service response. Old plugins never set this field.
+	IsParametersResponse bool `cbor:",omitempty"`
+	// Params contains dynamic parameters from the plugin when IsParametersResponse is true.
+	// This is used for plugin-advertised data in the mix descriptor.
+	Params map[string]interface{} `cbor:",omitempty"`
 }
 
 // Marshal serializes Response
@@ -100,6 +119,12 @@ type ResponseFactory struct {
 // Build returns a Response
 func (r *ResponseFactory) Build() Command {
 	return new(Response)
+}
+
+// IsRegularResponse returns true if this is a regular service response
+// (not a parameters response). Used to distinguish response types.
+func (r *Response) IsRegularResponse() bool {
+	return !r.IsParametersResponse
 }
 
 // Parameters is an optional mapping that plugins can publish, these get
@@ -253,4 +278,23 @@ func (c *Client) ReadChan() chan Command {
 
 func (c *Client) WriteChan() chan Command {
 	return c.socket.WriteChan()
+}
+
+// NewParametersRequest creates a Request that asks the plugin for its dynamic parameters.
+// Old plugins will ignore the IsParametersRequest field and may return an empty or
+// error response. New plugins should check IsParametersRequest and respond with
+// a Response where IsParametersResponse=true and Params is populated.
+func NewParametersRequest() *Request {
+	return &Request{
+		IsParametersRequest: true,
+	}
+}
+
+// NewParametersResponse creates a Response containing dynamic plugin parameters.
+// This is used by new plugins to advertise dynamic data to the mix descriptor.
+func NewParametersResponse(params map[string]interface{}) *Response {
+	return &Response{
+		IsParametersResponse: true,
+		Params:               params,
+	}
 }
