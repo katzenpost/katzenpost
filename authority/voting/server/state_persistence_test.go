@@ -24,6 +24,69 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
+func TestPrunePersistedEpochs(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "persistence.db")
+	db, err := bolt.Open(dbPath, 0600, nil)
+	require.NoError(t, err)
+	defer db.Close()
+
+	const (
+		oldest    = uint64(100)
+		boundary  = uint64(102)
+		cmpEpoch  = uint64(103)
+		fresh     = uint64(105)
+		nonEpoch  = "not-an-epoch-key"
+	)
+	epochs := []uint64{oldest, boundary, cmpEpoch, 104, fresh}
+
+	require.NoError(t, db.Update(func(tx *bolt.Tx) error {
+		descsBkt, err := tx.CreateBucketIfNotExists([]byte(descriptorsBucket))
+		require.NoError(t, err)
+		replicaBkt, err := tx.CreateBucketIfNotExists([]byte(replicaDescriptorsBucket))
+		require.NoError(t, err)
+		docsBkt, err := tx.CreateBucketIfNotExists([]byte(documentsBucket))
+		require.NoError(t, err)
+
+		for _, e := range epochs {
+			eb := epochToBytes(e)
+			_, err := descsBkt.CreateBucket(eb)
+			require.NoError(t, err)
+			_, err = replicaBkt.CreateBucket(eb)
+			require.NoError(t, err)
+			require.NoError(t, docsBkt.Put(eb, []byte("doc")))
+		}
+		// A short, non-epoch key in the documents bucket should be left alone
+		// since it is not an 8-byte big-endian epoch.
+		return docsBkt.Put([]byte(nonEpoch), []byte("preserve"))
+	}))
+
+	require.NoError(t, db.Update(func(tx *bolt.Tx) error {
+		return prunePersistedEpochs(tx, cmpEpoch)
+	}))
+
+	require.NoError(t, db.View(func(tx *bolt.Tx) error {
+		descsBkt := tx.Bucket([]byte(descriptorsBucket))
+		replicaBkt := tx.Bucket([]byte(replicaDescriptorsBucket))
+		docsBkt := tx.Bucket([]byte(documentsBucket))
+
+		for _, e := range epochs {
+			eb := epochToBytes(e)
+			expectKept := e >= cmpEpoch
+			require.Equal(t, expectKept, descsBkt.Bucket(eb) != nil, "descriptors epoch %d", e)
+			require.Equal(t, expectKept, replicaBkt.Bucket(eb) != nil, "replica_descriptors epoch %d", e)
+			require.Equal(t, expectKept, docsBkt.Get(eb) != nil, "documents epoch %d", e)
+		}
+		require.Equal(t, []byte("preserve"), docsBkt.Get([]byte(nonEpoch)))
+		return nil
+	}))
+
+	// Idempotent: a second pass with the same threshold removes nothing more
+	// and does not error.
+	require.NoError(t, db.Update(func(tx *bolt.Tx) error {
+		return prunePersistedEpochs(tx, cmpEpoch)
+	}))
+}
+
 func TestPersistenceVersionHandling(t *testing.T) {
 	currentVersion := versioninfo.Short()
 
