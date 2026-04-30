@@ -685,7 +685,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			seq++
 		case *commands.Consensus:
-			panic("received Consensus when we are supposed to receive Consensus2")
+			c.log.Errorf("Received legacy Consensus from gateway when Consensus2 is expected; closing connection.")
+			wireErr = newProtocolError("peer sent legacy Consensus instead of Consensus2")
+			return
 		case *commands.Consensus2:
 			if consensusCtx != nil {
 				if dechunker.ChunkNum == 0 {
@@ -694,7 +696,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 				err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
 				if err != nil {
-					panic(err)
+					// A chunk-stream error (e.g. EOF when the
+					// connection closes mid-fetch, or a chunk
+					// numbering inconsistency) must not bring
+					// the daemon down. Close the connection and
+					// let the supervisor reconnect.
+					c.log.Errorf("Consensus2 dechunker error: %v; closing connection.", err)
+					wireErr = newProtocolError("consensus dechunker error: " + err.Error())
+					return
 				}
 				if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
 					if len(dechunker.Output) == 0 {
