@@ -949,6 +949,11 @@ func TestGetPKIDocumentForEpochParallelRace(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(doc)
 	require.Equal(epoch, doc.Epoch)
-	require.Less(elapsed, 5*time.Second, "fetch was not racing peers in parallel")
+	// Threshold sized for slow CI runners. The post-quantum handshake
+	// alone has been observed at over five seconds on shared macOS
+	// runners. A sequential walk would block for the full 30s context
+	// budget on the first slow peer, so 20s comfortably distinguishes
+	// the two without being flaky on the slow path.
+	require.Less(elapsed, 20*time.Second, "fetch was not racing peers in parallel")
 	t.Logf("parallel fetch completed in %v with %d/%d peers slow", elapsed, len(slowAddrs), numPeers)
 }
