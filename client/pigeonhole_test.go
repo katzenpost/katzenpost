@@ -921,7 +921,12 @@ func TestAliceSendsBobMessage(t *testing.T) {
 		NIKEName:                  replicaCommon.NikeScheme.Name(),
 	}
 
-	client := &Client{cfg: cfg}
+	// A mock PKIClient is supplied so that, should the synchronous
+	// WaitForCurrentDocument -> updateDocument fallback ever be
+	// reached (for example at an epoch boundary where the cached
+	// epoch no longer matches the lookup epoch), the test produces
+	// a deterministic outcome rather than a nil-pointer panic.
+	client := &Client{cfg: cfg, PKIClient: &mockPKIClient{}}
 	rates := &Rates{}
 	egressCh := make(chan *Request, 10)
 
