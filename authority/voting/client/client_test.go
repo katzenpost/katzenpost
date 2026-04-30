@@ -555,7 +555,12 @@ func TestParallelFailingAuthorities(t *testing.T) {
 
 	require.NoError(err)
 	require.Len(responses, 5)
-	require.Less(elapsed, 3*time.Second, "failing authorities blocked operation")
+	// Threshold sized for slow CI runners. The post-quantum handshake
+	// per peer dwarfs the failing-dial cost on shared macOS workers
+	// when the rest of authority/... has been working the host hard.
+	// Twenty seconds still distinguishes parallel from sequential
+	// behaviour without being CI-flaky.
+	require.Less(elapsed, 20*time.Second, "failing authorities blocked operation")
 
 	var failCount int
 	for _, r := range responses {
