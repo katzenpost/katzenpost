@@ -275,6 +275,9 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 		return nil, nil, fmt.Errorf("client/pki: GetConsensus failed: %v", resp.ErrorCode)
 	}
 
+	if p.c.PKIClient == nil {
+		return nil, nil, errors.New("client/pki: PKIClient not initialized")
+	}
 	d, err = p.c.PKIClient.Deserialize(resp.Payload)
 	if err != nil {
 		p.log.Errorf("Failed to deserialize consensus received from Gateway: %v", err)
