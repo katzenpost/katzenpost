@@ -872,3 +872,83 @@ func TestAuthenticationErrorDebugFormat(t *testing.T) {
 	debugOutput := wire.GetDebugError(err)
 	require.Equal(debugStr, debugOutput)
 }
+
+// TestGetPKIDocumentForEpochParallelRace verifies that GetPKIDocumentForEpoch
+// races the configured authorities in parallel: when most authorities are
+// blocked at the dial stage but at least one is responsive, the call returns
+// promptly using the fast peer rather than waiting on the slow ones. This
+// regression-guards the bug where a sequential walk of authorities allowed a
+// single down or slow dirauth to delay the entire fetch (and, by extension,
+// dirauth bootstrap after a consensus failure).
+func TestGetPKIDocumentForEpochParallelRace(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+	dialer := newMockDialer(logBackend)
+	peers := []*config.Authority{}
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	const numPeers = 5
+	const fastIdx = numPeers - 1
+
+	var wg sync.WaitGroup
+	slowAddrs := make(map[string]bool)
+	for i := 0; i < numPeers; i++ {
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(50000 + i)
+		require.NoError(err)
+		peers = append(peers, peer)
+		wg.Add(1)
+		u, _ := url.Parse(peer.Addresses[0])
+		if i != fastIdx {
+			slowAddrs[u.Host] = true
+		}
+		go dialer.mockServer(u.Host, linkPrivKey, idPrivKey, idPubKey, &wg, mygeo)
+	}
+	wg.Wait()
+
+	// Wrap the mockDialer's dial so the "slow" peers block until the
+	// context expires. The fast peer dials through immediately. In a
+	// parallel implementation, the fast peer wins the race; in a
+	// sequential implementation, the slow peers picked first would
+	// stall the entire call.
+	slowDialer := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if slowAddrs[address] {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return dialer.dial(ctx, network, address)
+	}
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		Authorities:         peers,
+		DialContextFn:       slowDialer,
+		Geo:                 mygeo,
+		DialTimeoutSec:      60,
+		HandshakeTimeoutSec: 60,
+		ResponseTimeoutSec:  60,
+		RetryMaxAttempts:    0,
+	}
+	require.NoError(cfg.validate())
+
+	client, err := New(cfg)
+	require.NoError(err)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	epoch, _, _ := epochtime.Now()
+
+	start := time.Now()
+	doc, _, err := client.GetPKIDocumentForEpoch(ctx, epoch)
+	elapsed := time.Since(start)
+
+	require.NoError(err)
+	require.NotNil(doc)
+	require.Equal(epoch, doc.Epoch)
+	require.Less(elapsed, 5*time.Second, "fetch was not racing peers in parallel")
+	t.Logf("parallel fetch completed in %v with %d/%d peers slow", elapsed, len(slowAddrs), numPeers)
+}

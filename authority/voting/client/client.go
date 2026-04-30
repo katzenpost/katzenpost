@@ -504,7 +504,23 @@ func (c *Client) PostReplica(ctx context.Context, epoch uint64, signingPrivateKe
 	return fmt.Errorf("PostReplica(%d) errors: %v", epoch, errs)
 }
 
+// fetchResult carries the outcome of a single authority's consensus fetch
+// when racing peers in parallel.
+type fetchResult struct {
+	peer   string
+	doc    *pki.Document
+	rawDoc []byte
+	sigs   int
+	err    error
+}
+
 // GetPKIDocumentForEpoch returns the PKI document for the provided epoch.
+//
+// The configured authorities are contacted in parallel. The first peer to
+// return a valid, threshold-signed, well-formed document for the requested
+// epoch wins and the remaining in-flight fetches are cancelled. A single
+// unreachable or slow authority cannot delay progress when at least one peer
+// is responsive.
 func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	// Generate a random keypair to use for the link authentication.
 	_, linkKey, err := c.cfg.KEMScheme.GenerateKeyPair()
@@ -512,47 +528,32 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 		return nil, nil, err
 	}
 
-	r := rand.NewMath()
-	idxs := r.Perm(len(c.cfg.Authorities))
+	raceCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	for _, idx := range idxs {
-		auth := c.cfg.Authorities[idx]
-		resp, err := c.pool.fetchConsensus(auth, ctx, linkKey, epoch)
-		if err != nil {
-			c.log.Errorf("Get: %s: %v", auth.Identifier, err)
+	results := make(chan fetchResult, len(c.cfg.Authorities))
+	var w worker.Worker
+	for _, auth := range c.cfg.Authorities {
+		auth := auth
+		w.Go(func() {
+			results <- c.fetchAndValidate(raceCtx, auth, linkKey, epoch)
+		})
+	}
+	go func() {
+		w.Wait()
+		close(results)
+	}()
+
+	for res := range results {
+		if res.err != nil {
+			c.log.Errorf("Get: %s: %v", res.peer, res.err)
 			continue
 		}
-
-		r, ok := resp.(*commands.Consensus)
-		if !ok {
-			continue
-		}
-
-		if r.ErrorCode != commands.ConsensusOk {
-			continue
-		}
-
-		_, good, _, err := cert.VerifyThreshold(c.verifiers, c.threshold, r.Payload)
-		if err != nil {
-			c.log.Errorf("Get: %s: signature verification failed: %v", auth.Identifier, err)
-			continue
-		}
-
-		doc, err := pki.ParseDocument(r.Payload)
-		if err != nil {
-			continue
-		}
-
-		if err = pki.IsDocumentWellFormed(doc, c.verifiers); err != nil {
-			continue
-		}
-
-		if doc.Epoch != epoch {
-			continue
-		}
-
-		c.log.Noticef("Get: retrieved valid consensus from %s for epoch %d (%d sigs)", auth.Identifier, epoch, len(good))
-		return doc, r.Payload, nil
+		c.log.Noticef("Get: retrieved valid consensus from %s for epoch %d (%d sigs)", res.peer, epoch, res.sigs)
+		// The deferred cancel terminates the remaining in-flight
+		// fetches. They write into the buffered channel and exit; the
+		// drain goroutine then closes it.
+		return res.doc, res.rawDoc, nil
 	}
 
 	e, _, _ := epochtime.Now()
@@ -560,6 +561,50 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 		return nil, nil, pki.ErrDocumentGone
 	}
 	return nil, nil, pki.ErrNoDocument
+}
+
+// fetchAndValidate retrieves a consensus from a single authority and applies
+// the full set of validation checks. The returned fetchResult carries either
+// a validated document or the reason this peer was rejected.
+func (c *Client) fetchAndValidate(ctx context.Context, auth *config.Authority, linkKey kem.PrivateKey, epoch uint64) fetchResult {
+	res := fetchResult{peer: auth.Identifier}
+
+	resp, err := c.pool.fetchConsensus(auth, ctx, linkKey, epoch)
+	if err != nil {
+		res.err = err
+		return res
+	}
+	r, ok := resp.(*commands.Consensus)
+	if !ok {
+		res.err = fmt.Errorf("unexpected response type %T", resp)
+		return res
+	}
+	if r.ErrorCode != commands.ConsensusOk {
+		res.err = fmt.Errorf("consensus error code %d", r.ErrorCode)
+		return res
+	}
+	_, good, _, err := cert.VerifyThreshold(c.verifiers, c.threshold, r.Payload)
+	if err != nil {
+		res.err = fmt.Errorf("signature verification failed: %v", err)
+		return res
+	}
+	doc, err := pki.ParseDocument(r.Payload)
+	if err != nil {
+		res.err = fmt.Errorf("parse failed: %v", err)
+		return res
+	}
+	if err = pki.IsDocumentWellFormed(doc, c.verifiers); err != nil {
+		res.err = fmt.Errorf("malformed document: %v", err)
+		return res
+	}
+	if doc.Epoch != epoch {
+		res.err = fmt.Errorf("epoch mismatch: doc=%d want=%d", doc.Epoch, epoch)
+		return res
+	}
+	res.doc = doc
+	res.rawDoc = r.Payload
+	res.sigs = len(good)
+	return res
 }
 
 // Deserialize returns PKI document given the raw bytes.
