@@ -420,7 +420,25 @@ type wireAuthenticator struct {
 	isAuthority         bool
 }
 
+// wireAuthenticatorSlowThreshold is the budget above which a single
+// IsPeerValid call is considered suspicious. The crypto and map
+// lookups in this method should complete in well under a millisecond;
+// anything slower is evidence of contention or scheduler starvation
+// and is worth flagging.
+const wireAuthenticatorSlowThreshold = 50 * time.Millisecond
+
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
+	start := time.Now()
+	defer func() {
+		if elapsed := time.Since(start); elapsed > wireAuthenticatorSlowThreshold {
+			peer := a.peerName
+			if peer == "" {
+				peer = "<unidentified>"
+			}
+			a.s.log.Warningf("wireAuthenticator: IsPeerValid slow: peer=%s elapsed=%v", peer, elapsed)
+		}
+	}()
+
 	switch len(creds.AdditionalData) {
 	case 0:
 		a.isClient = true
