@@ -19,6 +19,7 @@ package server
 import (
 	"crypto/hmac"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -265,6 +266,14 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	}
 
 	desc := signedUpload.ReplicaDescriptor
+	if desc == nil {
+		s.log.Noticef(
+			"Peer %s: Rejecting nil uploaded replica descriptor epoch %d",
+			strconv.QuoteToASCII(peerID),
+			cmd.Epoch,
+		)
+		return resp
+	}
 
 	// Ensure that the descriptor is signed by the peer that is posting.
 	identityKeyHash := hash.Sum256(desc.IdentityKey)
@@ -295,6 +304,17 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 		return resp
 	}
 
+	if err := pki.IsReplicaDescriptorWellFormed(desc, cmd.Epoch); err != nil {
+		s.log.Noticef(
+			"Peer %s: Rejecting malformed uploaded replica descriptor for node %s epoch %d: %s",
+			strconv.QuoteToASCII(peerID),
+			strconv.QuoteToASCII(desc.Name),
+			cmd.Epoch,
+			strconv.QuoteToASCII(err.Error()),
+		)
+		return resp
+	}
+
 	// Hand the replica descriptor off to the state worker.  As long as this returns
 	// a nil, the authority "accepts" the replica descriptor.
 	err = s.state.onReplicaDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
@@ -308,7 +328,12 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	}
 
 	// Return a successful response.
-	s.log.Debugf("Peer %s: Accepted replica descriptor for epoch %v", peerID, cmd.Epoch)
+	s.log.Noticef(
+		"Peer %s: Accepted uploaded replica descriptor for node %s epoch %d",
+		strconv.QuoteToASCII(peerID),
+		strconv.QuoteToASCII(desc.Name),
+		cmd.Epoch,
+	)
 	resp.ErrorCode = commands.DescriptorOk
 	return resp
 }
@@ -337,74 +362,98 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	}
 
 	// Validate and deserialize the SignedUpload.
-	s.log.Debugf("onPostDescriptor: Deserializing SignedUpload from peer %s", peerID)
+	s.log.Debugf("onPostDescriptor: Deserializing SignedUpload from peer %s", strconv.QuoteToASCII(peerID))
 	signedUpload := new(pki.SignedUpload)
 	err := signedUpload.Unmarshal(cmd.Payload)
 	if err != nil {
-		s.log.Errorf("onPostDescriptor: DESERIALIZATION FAILED from peer %s: invalid descriptor: %v", peerID, err)
+		s.log.Errorf("onPostDescriptor: DESERIALIZATION FAILED from peer %s: invalid descriptor: %s", strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
 		return resp
 	}
-	s.log.Debugf("onPostDescriptor: Successfully deserialized SignedUpload from peer %s", peerID)
+	s.log.Debugf("onPostDescriptor: Successfully deserialized SignedUpload from peer %s", strconv.QuoteToASCII(peerID))
 
 	desc := signedUpload.MixDescriptor
-	s.log.Debugf("onPostDescriptor: Processing descriptor for node %s from peer %s", desc.Name, peerID)
+	if desc == nil {
+		s.log.Noticef(
+			"onPostDescriptor: Rejecting nil uploaded descriptor from peer %s epoch %d",
+			strconv.QuoteToASCII(peerID),
+			cmd.Epoch,
+		)
+		return resp
+	}
+	s.log.Debugf("onPostDescriptor: Processing descriptor from peer %s", strconv.QuoteToASCII(peerID))
 
 	// Ensure that the descriptor is signed by the peer that is posting.
-	s.log.Debugf("onPostDescriptor: Verifying identity key hash for node %s from peer %s", desc.Name, peerID)
+	s.log.Debugf("onPostDescriptor: Verifying identity key hash from peer %s", strconv.QuoteToASCII(peerID))
 	identityKeyHash := hash.Sum256(desc.IdentityKey)
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
-		s.log.Errorf("onPostDescriptor: IDENTITY KEY MISMATCH for node %s from peer %s: identity key hash %x != link key %x", desc.Name, peerID, hash.Sum256(desc.IdentityKey), pubKeyHash)
+		s.log.Errorf("onPostDescriptor: IDENTITY KEY MISMATCH from peer %s: identity key hash %x != link key %x", strconv.QuoteToASCII(peerID), hash.Sum256(desc.IdentityKey), pubKeyHash)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
-	s.log.Debugf("onPostDescriptor: Identity key hash verification passed for node %s from peer %s", desc.Name, peerID)
+	s.log.Debugf("onPostDescriptor: Identity key hash verification passed from peer %s", strconv.QuoteToASCII(peerID))
 
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
 
-	s.log.Debugf("onPostDescriptor: Unmarshaling identity public key for node %s from peer %s", desc.Name, peerID)
+	s.log.Debugf("onPostDescriptor: Unmarshaling identity public key from peer %s", strconv.QuoteToASCII(peerID))
 	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
 	if err != nil {
-		s.log.Errorf("onPostDescriptor: IDENTITY KEY UNMARSHAL FAILED for node %s from peer %s: %v", desc.Name, peerID, err)
+		s.log.Errorf("onPostDescriptor: IDENTITY KEY UNMARSHAL FAILED from peer %s: %s", strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
-	s.log.Debugf("onPostDescriptor: Successfully unmarshaled identity public key for node %s from peer %s", desc.Name, peerID)
+	s.log.Debugf("onPostDescriptor: Successfully unmarshaled identity public key from peer %s", strconv.QuoteToASCII(peerID))
 
-	s.log.Debugf("onPostDescriptor: Verifying SignedUpload signature for node %s from peer %s", desc.Name, peerID)
+	s.log.Debugf("onPostDescriptor: Verifying SignedUpload signature from peer %s", strconv.QuoteToASCII(peerID))
 	if !signedUpload.Verify(descIdPubKey) {
-		s.log.Errorf("onPostDescriptor: SIGNATURE VERIFICATION FAILED for node %s from peer %s: SignedUpload has invalid signature", desc.Name, peerID)
+		s.log.Errorf("onPostDescriptor: SIGNATURE VERIFICATION FAILED from peer %s: SignedUpload has invalid signature", strconv.QuoteToASCII(peerID))
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
-	s.log.Debugf("onPostDescriptor: SignedUpload signature verification passed for node %s from peer %s", desc.Name, peerID)
+	s.log.Debugf("onPostDescriptor: SignedUpload signature verification passed for node %s from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
 
 	// Ensure that the descriptor is from an allowed peer.
-	s.log.Debugf("onPostDescriptor: Checking authorization for node %s from peer %s", desc.Name, peerID)
+	s.log.Debugf("onPostDescriptor: Checking authorization for node %s from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
 	if !s.state.isDescriptorAuthorized(desc) {
-		s.log.Errorf("onPostDescriptor: AUTHORIZATION FAILED for node %s from peer %s: identity key hash %x not authorized", desc.Name, peerID, hash.Sum256(desc.IdentityKey))
+		s.log.Errorf("onPostDescriptor: AUTHORIZATION FAILED for node %s from peer %s: identity key hash %x not authorized", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), hash.Sum256(desc.IdentityKey))
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
-	s.log.Debugf("onPostDescriptor: Authorization check passed for node %s from peer %s", desc.Name, peerID)
+	s.log.Debugf("onPostDescriptor: Authorization check passed for node %s from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
 
 	// TODO(david): Use the packet loss statistics to make decisions about how to generate the consensus document.
 
+	if err := pki.IsDescriptorWellFormed(desc, cmd.Epoch); err != nil {
+		s.log.Noticef(
+			"onPostDescriptor: Rejecting malformed uploaded descriptor for node %s epoch %d from peer %s: %s",
+			strconv.QuoteToASCII(desc.Name),
+			cmd.Epoch,
+			strconv.QuoteToASCII(peerID),
+			strconv.QuoteToASCII(err.Error()),
+		)
+		return resp
+	}
+
 	// Hand the descriptor off to the state worker.  As long as this returns
 	// a nil, the authority "accepts" the descriptor.
-	s.log.Debugf("onPostDescriptor: Submitting descriptor for node %s (epoch %d) to state worker from peer %s", desc.Name, cmd.Epoch, peerID)
+	s.log.Debugf("onPostDescriptor: Submitting descriptor for node %s epoch %d to state worker from peer %s", strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(peerID))
 	err = s.state.onDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
 	if err != nil {
 		// This is either a internal server error or the peer is trying to
 		// retroactively modify their descriptor.  This should disambituate
 		// the condition, but the latter is more likely.
-		s.log.Errorf("onPostDescriptor: DESCRIPTOR UPLOAD FAILED for node %s from peer %s: probably a conflict: %v", desc.Name, peerID, err)
+		s.log.Errorf("onPostDescriptor: DESCRIPTOR UPLOAD FAILED for node %s from peer %s: probably a conflict: %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
 		resp.ErrorCode = commands.DescriptorConflict
 		return resp
 	}
-	s.log.Debugf("onPostDescriptor: Successfully submitted descriptor for node %s to state worker from peer %s", desc.Name, peerID)
+	s.log.Debugf("onPostDescriptor: Successfully submitted descriptor for node %s to state worker from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
 
 	// Return a successful response.
-	s.log.Noticef("onPostDescriptor: SUCCESS! Accepted descriptor for node %s (epoch %d) from peer %s", desc.Name, cmd.Epoch, peerID)
+	s.log.Noticef(
+		"onPostDescriptor: SUCCESS! Accepted uploaded descriptor for node %s epoch %d from peer %s",
+		strconv.QuoteToASCII(desc.Name),
+		cmd.Epoch,
+		strconv.QuoteToASCII(peerID),
+	)
 	resp.ErrorCode = commands.DescriptorOk
 	return resp
 }
