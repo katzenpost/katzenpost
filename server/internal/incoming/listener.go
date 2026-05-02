@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -232,32 +233,45 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 		closeAllCh: make(chan interface{}),
 	}
 
+	listenStart := time.Now()
+
 	// parse the Address line as a URL
 	u, err := url.Parse(addr)
-	if err == nil {
-		switch u.Scheme {
-		case "tcp", "tcp4", "tcp6":
-			l.l, err = net.Listen(u.Scheme, u.Host)
-			if err != nil {
-				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
-				return nil, err
-			}
-		case "quic":
-			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
-			if err != nil {
-				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
-				return nil, err
-			}
-			// Wrap quic.Listener with common.QuicListener
-			// so it implements like net.Listener for a
-			// single QUIC Stream
-			l.l = &common.QuicListener{Listener: ql}
-		case "onion":
-		default:
-			return nil, fmt.Errorf("Unsupported listener scheme '%v': %v", addr, err)
-		}
+	if err != nil {
+		l.log.Errorf("Invalid listener address %q: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration.", addr, err)
+		return nil, err
 	}
 
+	switch u.Scheme {
+	case "tcp", "tcp4", "tcp6":
+		l.log.Noticef("Starting listener on: %q", addr)
+		l.l, err = net.Listen(u.Scheme, u.Host)
+		if err != nil {
+			l.log.Errorf("Failed to start listener %q after %v: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration, and check that the address is assigned and the port is available.", addr, time.Since(listenStart), err)
+			return nil, err
+		}
+	case "quic":
+		l.log.Noticef("Starting listener on: %q", addr)
+		ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+		if err != nil {
+			l.log.Errorf("Failed to start listener %q after %v: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration, and check that the address is assigned and the port is available.", addr, time.Since(listenStart), err)
+			return nil, err
+		}
+		// Wrap quic.Listener with common.QuicListener
+		// so it implements like net.Listener for a
+		// single QUIC Stream
+		l.l = &common.QuicListener{Listener: ql}
+	case "onion":
+		err = fmt.Errorf("unsupported listener scheme %q in address %q", u.Scheme, addr)
+		l.log.Errorf("%v. Please fix Server.Addresses or Server.BindAddresses in the server configuration.", err)
+		return nil, err
+	default:
+		err = fmt.Errorf("unsupported listener scheme %q in address %q", u.Scheme, addr)
+		l.log.Errorf("%v. Please fix Server.Addresses or Server.BindAddresses in the server configuration.", err)
+		return nil, err
+	}
+
+	l.log.Noticef("Started listener on: %v after %v", l.l.Addr(), time.Since(listenStart))
 	l.Go(l.worker)
 	return l, nil
 }
