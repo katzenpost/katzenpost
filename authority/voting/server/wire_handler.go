@@ -86,15 +86,37 @@ func (s *Server) onConn(conn net.Conn) {
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
 	if err = wireConn.Initialize(conn); err != nil {
-		// Try to identify the peer from the handshake error
+		// Try to identify the peer from the handshake error.
 		peerID := rAddr.String()
 		if he, ok := wire.GetHandshakeError(err); ok && he.PeerCredentials != nil {
 			if name := s.state.PeerName(he.PeerCredentials.AdditionalData); name != "" {
 				peerID = name
 			}
 		}
-		s.log.Errorf("Peer %s: Failed session handshake: %v", peerID, err)
-		// Log detailed debug info (contains IPs, keys) at debug level only
+
+		if wire.IsNoHandshakeBytesError(err) {
+			s.log.Debugf(
+				"Peer %s: TCP connection closed before Noise handshake bytes local=%v remote=%v after %v timeout=%v: %v",
+				peerID,
+				conn.LocalAddr(),
+				conn.RemoteAddr(),
+				time.Since(handshakeStart),
+				handshakeTimeout,
+				err,
+			)
+			return
+		}
+
+		s.log.Errorf(
+			"Peer %s: Failed session handshake local=%v remote=%v after %v timeout=%v: %v",
+			peerID,
+			conn.LocalAddr(),
+			conn.RemoteAddr(),
+			time.Since(handshakeStart),
+			handshakeTimeout,
+			err,
+		)
+		// Log detailed debug info (contains IPs, keys) at debug level only.
 		s.log.Debugf("Peer %s: handshake failure details:\n%s", peerID, wire.GetDebugError(err))
 		return
 	}

@@ -223,6 +223,18 @@ func (c *incomingConn) worker() {
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
 	if err = c.w.Initialize(c.c); err != nil {
+		if wire.IsNoHandshakeBytesError(err) {
+			c.log.Debugf(
+				"TCP connection closed before Noise handshake bytes local=%v remote=%v after %v timeout=%v: %v",
+				c.c.LocalAddr(),
+				c.c.RemoteAddr(),
+				time.Since(handshakeStart),
+				timeoutMs,
+				err,
+			)
+			return
+		}
+
 		c.log.Errorf(
 			"Handshake failed local=%v remote=%v after %v timeout=%v: %v",
 			c.c.LocalAddr(),
