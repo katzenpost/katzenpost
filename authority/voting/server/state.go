@@ -29,6 +29,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -555,21 +556,24 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
-	// Do not sign an empty consensus
+
+	// Do not sign an empty or otherwise malformed consensus.
 	if err := pki.IsDocumentWellFormed(consensusOfOne, s.getVerifiers()); err != nil {
 		s.log.Noticef(
-			"getMyConsensus: refusing to sign malformed consensus for epoch %d: mixes=%d replicas=%d threshold=%d err=%v",
+			"getMyConsensus: refusing to sign malformed consensus for epoch %d: mixes=%d replicas=%d threshold=%d err=%s",
 			epoch,
 			len(mixes),
 			len(replicas),
 			s.threshold,
-			err,
+			strconv.QuoteToASCII(err.Error()),
 		)
 		return nil, fmt.Errorf(
 			"refusing to sign malformed consensus for epoch %d: %w",
-			epoch, err,
+			epoch,
+			err,
 		)
 	}
+
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
 		return nil, err
@@ -676,6 +680,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 
 	// Build the Document.
 	doc := &pki.Document{
+		Version:            pki.DocumentVersion,
 		Epoch:              s.votingEpoch,
 		GenesisEpoch:       s.genesisEpoch,
 		SendRatePerMinute:  params.SendRatePerMinute,

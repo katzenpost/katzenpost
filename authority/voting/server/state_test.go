@@ -59,6 +59,22 @@ var sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
 	5,
 )
 
+func TestMalformedConsensusWithEmptyTopologyIsRejected(t *testing.T) {
+	doc := &pki.Document{
+		Version:           pki.DocumentVersion,
+		Epoch:             1,
+		GenesisEpoch:      1,
+		Topology:          nil,
+		GatewayNodes:      nil,
+		ServiceNodes:      nil,
+		SharedRandomValue: make([]byte, pki.SharedRandomValueLength),
+	}
+
+	err := pki.IsDocumentWellFormed(doc, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Document contains no Topology")
+}
+
 // testVoteWithAuthorities is a parameterized test function that tests voting
 // with different numbers of directory authorities
 func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsensus int) {
