@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/carlmjohnson/versioninfo"
 	"gitlab.com/yawning/aez.git"
@@ -230,6 +231,9 @@ func (s *Server) halt() {
 // New returns a new Server instance parameterized with the specified
 // configuration.
 func New(cfg *config.Config) (*Server, error) {
+	startupStart := time.Now()
+	stepStart := startupStart
+
 	s := &Server{
 		cfg:        cfg,
 		fatalErrCh: make(chan error),
@@ -244,11 +248,20 @@ func New(cfg *config.Config) (*Server, error) {
 	if err := s.initLogging(); err != nil {
 		return nil, err
 	}
+	logStartupStep := func(step string) {
+		now := time.Now()
+		s.log.Debugf("server startup: %s completed in %v total=%v", step, now.Sub(stepStart), now.Sub(startupStart))
+		stepStart = now
+	}
+	logStartupStep("data directory and logging")
+
 	instrument.StartPrometheusListener(goo)
+	logStartupStep("prometheus listener")
 
 	if err := profiling.Start(s.log); err != nil {
 		return nil, fmt.Errorf("failed to start profiling: %w", err)
 	}
+	logStartupStep("profiling")
 
 	s.log.Noticef("Katzenpost server version: %s", versioninfo.Short())
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
@@ -262,6 +275,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
 	s.log.Noticef("Sphinx Geometry: %s", cfg.SphinxGeometry.Display())
+	logStartupStep("version and hardware checks")
 
 	// Initialize the server identity and link keys.
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
@@ -298,6 +312,8 @@ func New(cfg *config.Config) (*Server, error) {
 
 	idPubKeyHash := hash.Sum256From(s.identityPublicKey)
 	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
+	logStartupStep("identity key initialization")
+
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 	scheme := schemes.ByName(cfg.Server.WireKEM)
@@ -344,6 +360,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	linkPubKeyHash := hash.Sum256(blob)
 	s.log.Noticef("Server link public key hash is: %x", linkPubKeyHash[:])
+	logStartupStep("link key initialization")
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
@@ -354,6 +371,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}
+	logStartupStep("mix keys")
 
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
 	isOk := false
@@ -375,6 +393,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warningf("Shutting down due to error: %v", err)
 		s.Shutdown()
 	}()
+	logStartupStep("fatal error watcher")
 
 	// Initialize the management interface if enabled.
 	//
@@ -407,12 +426,14 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil
 		})
 	}
+	logStartupStep("management interface")
 
 	// Initialize the PKI interface.
 	if s.pki, err = pki.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize PKI client: %v", err)
 		return nil, err
 	}
+	logStartupStep("PKI client")
 
 	// Initialize the gateway backend.
 	if s.cfg.Server.IsGatewayNode {
@@ -421,6 +442,7 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	}
+	logStartupStep("gateway backend")
 
 	// Initialize the provider backend.
 	if s.cfg.Server.IsServiceNode {
@@ -429,12 +451,14 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	}
+	logStartupStep("service node backend")
 
 	// Initialize and start the the scheduler.
 	if s.scheduler, err = scheduler.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize scheduler: %v", err)
 		return nil, err
 	}
+	logStartupStep("scheduler")
 
 	// Initialize and start the Sphinx workers.
 	s.inboundPackets = make(chan interface{}, InboundPacketsChannelSize)
@@ -443,14 +467,18 @@ func New(cfg *config.Config) (*Server, error) {
 		w := cryptoworker.New(goo, s.inboundPackets, i)
 		s.cryptoWorkers = append(s.cryptoWorkers, w)
 	}
+	logStartupStep("sphinx workers")
 
 	// Initialize the outgoing connection manager, decoy source/sink, and then
 	// start the PKI worker.
 	s.connector = outgoing.New(goo)
+	logStartupStep("outgoing connector")
+
 	if s.decoy, err = decoy.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize decoy source/sink: %v", err)
 		return nil, err
 	}
+	logStartupStep("decoy source/sink")
 
 	var addresses []string
 	if len(s.cfg.Server.BindAddresses) > 0 {
@@ -459,21 +487,28 @@ func New(cfg *config.Config) (*Server, error) {
 	} else {
 		addresses = s.cfg.Server.Addresses
 	}
+	logStartupStep("listener address selection")
+
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(addresses))
 	for i, addr := range addresses {
+		listenerStart := time.Now()
 		l, err := incoming.New(goo, s.inboundPackets, i, addr)
 		if err != nil {
-			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
+			s.log.Errorf("Failed to spawn listener on address: %v after %v (%v).", addr, time.Since(listenerStart), err)
 			return nil, err
 		}
+		s.log.Debugf("server startup: listener %d for %q completed in %v", i, addr, time.Since(listenerStart))
 		s.listeners = append(s.listeners, l)
 	}
+	logStartupStep("listeners")
 
 	s.pki.StartWorker()
+	logStartupStep("PKI worker start")
 
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
+	logStartupStep("periodic timer")
 
 	// Start listening on the management interface if enabled, now that every
 	// subsystem that wants to register commands has had the opportunity to do
@@ -481,6 +516,9 @@ func New(cfg *config.Config) (*Server, error) {
 	if s.management != nil {
 		s.management.Start()
 	}
+	logStartupStep("management interface start")
+
+	s.log.Debugf("server startup: completed in %v", time.Since(startupStart))
 
 	isOk = true
 	return s, nil
