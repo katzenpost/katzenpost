@@ -818,9 +818,9 @@ func makeDescAddrMap(addrs []string) (map[string][]string, error) {
 			}
 			for _, ip := range ips {
 				if ip.To4() != nil {
-					m[cpki.TransportTCPv4] = append(m[cpki.TransportTCPv4], "tcp://"+ip.String()+":"+u.Port())
+					m[cpki.TransportTCPv4] = append(m[cpki.TransportTCPv4], "tcp://"+net.JoinHostPort(ip.String(), u.Port()))
 				} else if ip.To16() != nil {
-					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp://"+ip.String()+":"+u.Port())
+					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp://"+net.JoinHostPort(ip.String(), u.Port()))
 				}
 			}
 		default:
