@@ -173,6 +173,7 @@ func newConnector(cfg *Config) *connector {
 func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
 	var conn net.Conn
 	var err error
+	var connectedURL string
 
 	peerInfo := func() string {
 		return fmt.Sprintf("peer %s (%s)", peer.Identifier, strings.Join(peer.Addresses, ","))
@@ -206,6 +207,7 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 		conn, err = common.DialURL(u, ictx, dialFn)
 		defer cancelFn()
 		if err == nil {
+			connectedURL = peer.Addresses[idx]
 			break
 		}
 		lastErr = fmt.Errorf("%s: failed to connect to %s: %v", peerInfo(), peer.Addresses[idx], err)
@@ -256,6 +258,15 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
 	if err = s.Initialize(conn); err != nil {
+		handshakeElapsed := time.Since(handshakeStart)
+		localAddr := "<nil>"
+		if conn.LocalAddr() != nil {
+			localAddr = conn.LocalAddr().String()
+		}
+		remoteAddr := "<nil>"
+		if conn.RemoteAddr() != nil {
+			remoteAddr = conn.RemoteAddr().String()
+		}
 		conn.Close()
 		// Add peer name context to the error if it's a HandshakeError
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -263,7 +274,16 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 		}
 		// Log detailed debug info (contains IPs, keys, peer name) at debug level only
 		p.log.Debugf("%s: handshake failure details:\n%s", peerInfo(), wire.GetDebugError(err))
-		return nil, err
+		return nil, fmt.Errorf(
+			"%s: handshake failed via %s local=%s remote=%s after %v timeout=%v: %w",
+			peerInfo(),
+			connectedURL,
+			localAddr,
+			remoteAddr,
+			handshakeElapsed,
+			handshakeTimeout,
+			err,
+		)
 	}
 	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), time.Since(handshakeStart))
 

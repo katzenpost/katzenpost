@@ -672,7 +672,7 @@ func TestHandshakeDebugErrorOnEOF(t *testing.T) {
 		DialTimeoutSec:      5,
 		HandshakeTimeoutSec: 5,
 		ResponseTimeoutSec:  5,
-		RetryMaxAttempts:    0, // No retries
+		RetryMaxAttempts:    1,
 	}
 	require.NoError(cfg.validate())
 	conn := newConnector(cfg)
@@ -680,22 +680,21 @@ func TestHandshakeDebugErrorOnEOF(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, linkKey, _ := testingScheme.GenerateKeyPair()
-	responses, err := conn.allPeersRoundTrip(ctx, linkKey, nil, &commands.GetConsensus{Epoch: 1})
+	_, linkKey, err := testingScheme.GenerateKeyPair()
 	require.NoError(err)
-	require.Len(responses, 1)
 
-	// The response should have an error from the handshake failure
-	resp := responses[0]
-	require.NotNil(resp.Error, "expected handshake error")
+	_, err = conn.initSession(ctx, linkKey, nil, peer)
+	require.Error(err)
 
-	// Get the debug error output
-	debugOutput := wire.GetDebugError(resp.Error)
+	debugOutput := wire.GetDebugError(err)
 	t.Logf("Debug error output:\n%s", debugOutput)
 
-	// Verify the error contains expected debug information
-	// The error should be wrapped and contain handshake state info
-	require.Contains(resp.Error.Error(), "handshake failed", "error should mention handshake")
+	errStr := err.Error()
+	require.Contains(errStr, "handshake failed", "error should mention handshake")
+	require.Contains(errStr, "handshake failed via", "error should include selected authority URL")
+	require.Contains(errStr, "local=", "error should include local socket address")
+	require.Contains(errStr, "remote=", "error should include remote socket address")
+	require.Contains(errStr, "timeout=", "error should include handshake timeout")
 }
 
 // hangingDialer creates connections where the server never responds
