@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -489,23 +490,55 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		nodeType = "service"
 	}
 
-	p.log.Noticef("🔄 DESCRIPTOR UPLOAD: Attempting to upload %s node descriptor '%s' for epoch %d", nodeType, desc.Name, doPublishEpoch)
+	if err := cpki.IsDescriptorWellFormed(desc, doPublishEpoch); err != nil {
+		p.log.Noticef(
+			"DESCRIPTOR UPLOAD: Refusing to send malformed %s node descriptor %s for epoch %d: %s",
+			nodeType,
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+			strconv.QuoteToASCII(err.Error()),
+		)
+		return fmt.Errorf("refusing to send malformed descriptor for epoch %d: %w", doPublishEpoch, err)
+	}
+
+	p.log.Noticef(
+		"🔄 DESCRIPTOR UPLOAD: Attempting to upload %s node descriptor %s for epoch %d",
+		nodeType,
+		strconv.QuoteToASCII(desc.Name),
+		doPublishEpoch,
+	)
 	p.log.Noticef("🔄 DESCRIPTOR UPLOAD: Node details - IsGateway: %v, IsService: %v", desc.IsGatewayNode, desc.IsServiceNode)
 
 	err = p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc, p.glue.Decoy().GetStats(doPublishEpoch))
 	switch err {
 	case nil:
-		p.log.Noticef("✅ DESCRIPTOR UPLOAD: Successfully posted %s node descriptor '%s' for epoch %d", nodeType, desc.Name, doPublishEpoch)
+		p.log.Noticef(
+			"✅ DESCRIPTOR UPLOAD: Successfully posted %s node descriptor %s for epoch %d",
+			nodeType,
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+		)
 		p.lastPublishedEpoch = doPublishEpoch
 	case cpki.ErrInvalidPostEpoch:
 		// Treat this class (conflict/late descriptor) as a permanent rejection
 		// and suppress further uploads.
-		p.log.Errorf("❌ DESCRIPTOR UPLOAD: Authority rejected %s node '%s' upload for epoch %d (Conflict/Late)", nodeType, desc.Name, doPublishEpoch)
+		p.log.Errorf(
+			"❌ DESCRIPTOR UPLOAD: Authority rejected %s node %s upload for epoch %d (Conflict/Late)",
+			nodeType,
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+		)
 		p.lastPublishedEpoch = doPublishEpoch
 	default:
 		// XXX: the voting authority implementation does not return any of the above error types...
 		// and the mix will continue to fail to submit the same descriptor repeatedly.
-		p.log.Errorf("❌ DESCRIPTOR UPLOAD: Failed to upload %s node '%s' descriptor for epoch %d: %v", nodeType, desc.Name, doPublishEpoch, err)
+		p.log.Errorf(
+			"❌ DESCRIPTOR UPLOAD: Failed to upload %s node %s descriptor for epoch %d: %s",
+			nodeType,
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+			strconv.QuoteToASCII(err.Error()),
+		)
 		p.log.Errorf("❌ DESCRIPTOR UPLOAD: This means the %s node will not appear in the consensus", nodeType)
 		p.lastPublishedEpoch = doPublishEpoch
 	}
