@@ -702,7 +702,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 					// the daemon down. Close the connection and
 					// let the supervisor reconnect.
 					c.log.Errorf("Consensus2 dechunker error: %v; closing connection.", err)
-					wireErr = newProtocolError("consensus dechunker error: " + err.Error())
+					wireErr = newProtocolError("consensus dechunker error: %v", err)
 					return
 				}
 				if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
