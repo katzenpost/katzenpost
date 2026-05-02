@@ -557,6 +557,14 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
 	// Do not sign an empty consensus
 	if err := pki.IsDocumentWellFormed(consensusOfOne, s.getVerifiers()); err != nil {
+		s.log.Noticef(
+			"getMyConsensus: refusing to sign malformed consensus for epoch %d: mixes=%d replicas=%d threshold=%d err=%v",
+			epoch,
+			len(mixes),
+			len(replicas),
+			s.threshold,
+			err,
+		)
 		return nil, fmt.Errorf(
 			"refusing to sign malformed consensus for epoch %d: %w",
 			epoch, err,
