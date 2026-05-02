@@ -242,20 +242,9 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			return fmt.Errorf("Descriptor contains empty Address list for transport '%v'", transport)
 		}
 
-		// Validate all addresses belonging to the TCP variants.
 		for _, v := range addrs {
-			u, err := url.Parse(v)
-			if err != nil {
+			if err := isDescriptorAddressWellFormed(transport, v, d.IsGatewayNode, true); err != nil {
 				return err
-			}
-			switch u.Scheme {
-			case TransportWS, TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC:
-			case TransportOnion: // Unknown transports are only supported between the client and gateway.
-				if !d.IsGatewayNode {
-					return fmt.Errorf("Non-gateway published Transport '%v'", transport)
-				}
-			default:
-				return fmt.Errorf("Unsupported listener scheme '%v': %v", v, u.Scheme)
 			}
 		}
 	}
@@ -271,6 +260,31 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			return fmt.Errorf("Descriptor contains invalid Kaetzchen block: %v", err)
 		}
 	}
+	return nil
+}
+
+func isDescriptorAddressWellFormed(transport, addr string, isGatewayNode bool, allowOnion bool) error {
+	u, err := url.Parse(addr)
+	if err != nil {
+		return err
+	}
+
+	switch u.Scheme {
+	case TransportWS, TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC:
+		if _, _, err := net.SplitHostPort(u.Host); err != nil {
+			return fmt.Errorf("invalid descriptor address %q for transport %q: %w", addr, transport, err)
+		}
+	case TransportOnion:
+		if !allowOnion {
+			return errors.New("Onion Transport not yet supported in pigeonhole storage replica")
+		}
+		if !isGatewayNode {
+			return fmt.Errorf("Non-gateway published Transport '%v'", transport)
+		}
+	default:
+		return fmt.Errorf("Unsupported listener scheme '%v': %v", addr, u.Scheme)
+	}
+
 	return nil
 }
 
@@ -408,19 +422,9 @@ func IsReplicaDescriptorWellFormed(d *ReplicaDescriptor, epoch uint64) error {
 		if len(addrs) == 0 {
 			return fmt.Errorf("ReplicaDescriptor contains empty Address list for transport '%v'", transport)
 		}
-
-		// Validate all addresses belonging to the TCP variants.
 		for _, v := range addrs {
-			u, err := url.Parse(v)
-			if err != nil {
+			if err := isDescriptorAddressWellFormed(transport, v, false, false); err != nil {
 				return err
-			}
-			switch u.Scheme {
-			case TransportWS, TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC:
-			case TransportOnion: // Unknown transports are only supported between the client and gateway.
-				return errors.New("Onion Transport not yet supported in pigeonhole storage replica")
-			default:
-				return fmt.Errorf("Unsupported listener scheme '%v': %v", v, u.Scheme)
 			}
 		}
 	}
