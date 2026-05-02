@@ -244,10 +244,22 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
 	if err := session.Initialize(c.c); err != nil {
-		c.log.Errorf("Handshake failed: %v", err)
+		c.log.Errorf(
+			"Handshake failed local=%v remote=%v after %v timeout=%v: %v",
+			c.c.LocalAddr(),
+			c.c.RemoteAddr(),
+			time.Since(handshakeStart),
+			timeoutMs,
+			err,
+		)
 		return nil, err
 	}
-	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
+	c.log.Debugf(
+		"Handshake completed local=%v remote=%v in %v",
+		c.c.LocalAddr(),
+		c.c.RemoteAddr(),
+		time.Since(handshakeStart),
+	)
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 	creds, err := session.PeerCredentials()

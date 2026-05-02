@@ -223,12 +223,24 @@ func (c *incomingConn) worker() {
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
 	if err = c.w.Initialize(c.c); err != nil {
-		c.log.Errorf("Handshake failed: %v", err)
+		c.log.Errorf(
+			"Handshake failed local=%v remote=%v after %v timeout=%v: %v",
+			c.c.LocalAddr(),
+			c.c.RemoteAddr(),
+			time.Since(handshakeStart),
+			timeoutMs,
+			err,
+		)
 		// Log detailed debug info (contains IPs, keys) at debug level only
 		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
-	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
+	c.log.Debugf(
+		"Handshake completed local=%v remote=%v in %v",
+		c.c.LocalAddr(),
+		c.c.RemoteAddr(),
+		time.Since(handshakeStart),
+	)
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 
