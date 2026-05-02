@@ -93,7 +93,7 @@ func TestServerStartShutdown(t *testing.T) {
 			WireKEM:            testingSchemeName,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			Identifier:         "testserver",
-			Addresses:          []string{"tcp://127.0.0.1:1234"},
+			Addresses:          []string{"tcp://127.0.0.1:0"},
 			DataDir:            datadir,
 			IsGatewayNode:      false,
 		},
@@ -145,6 +145,7 @@ func TestServerStartShutdown(t *testing.T) {
 	assert.NoError(err)
 
 	s, err := New(&cfg)
-	assert.NoError(err)
-	s.Shutdown()
+	require.NoError(t, err)
+	require.NotNil(t, s)
+	defer s.Shutdown()
 }
