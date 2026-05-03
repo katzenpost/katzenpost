@@ -6,6 +6,9 @@ package replica
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -14,7 +17,10 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
-const NumPKIDocsToFetch = 3
+const (
+	NumPKIDocsToFetch      = 3
+	descriptorUploadSafety = 10 * time.Second
+)
 
 // PKIDocument returns the PKI document for the current epoch
 func (p *PKIWorker) PKIDocument() *cpki.Document {
@@ -94,7 +100,6 @@ func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled 
 
 		// take note of the service nodes and storage replicas
 		p.updateReplicas(result.Doc)
-
 		p.StoreDocument(result.Epoch, result.Doc, result.RawDoc)
 		didUpdate = true
 	}
@@ -132,24 +137,58 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return nil
 	}
 
-	epoch, elapsed, _ := epochtime.Now()
-	doPublishEpoch := uint64(0)
-	if p.lastPublishedEpoch > epoch {
-		p.GetLogger().Debugf("publishDescriptorIfNeeded: not needed (published: %d current: %d)", p.lastPublishedEpoch, epoch)
+	currentEpoch, elapsed, till := epochtime.Now()
+
+	uploadDeadline := PublishDeadline - descriptorUploadSafety
+	if uploadDeadline < 0 {
+		uploadDeadline = PublishDeadline
+	}
+
+	doPublishEpoch := currentEpoch + 1
+	if elapsed >= uploadDeadline {
+		p.GetLogger().Noticef(
+			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: upload window closed; waiting for next epoch",
+			doPublishEpoch,
+			currentEpoch,
+			elapsed,
+			PublishDeadline,
+			descriptorUploadSafety,
+			till,
+		)
 		return nil
 	}
-	if p.lastPublishedEpoch == 0 {
-		doPublishEpoch = epoch
-		// Check the deadline for the next publication time:
-	} else if elapsed < PublishDeadline {
-		p.GetLogger().Debugf("Within the publication time for epoch: %v", epoch+1)
-		doPublishEpoch = epoch
-		if p.lastPublishedEpoch == epoch {
-			doPublishEpoch = epoch + 1
-		}
-	} else {
-		doPublishEpoch = epoch + 1
+
+	if p.lastPublishedEpoch >= doPublishEpoch {
+		p.GetLogger().Debugf("publishDescriptorIfNeeded: not needed (published: %d target: %d current: %d)", p.lastPublishedEpoch, doPublishEpoch, currentEpoch)
+		return nil
 	}
+
+	budget := uploadDeadline - elapsed
+	if budget <= 0 {
+		p.GetLogger().Noticef(
+			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: no upload budget remains",
+			doPublishEpoch,
+			currentEpoch,
+			elapsed,
+			PublishDeadline,
+			descriptorUploadSafety,
+			till,
+		)
+		return nil
+	}
+
+	p.GetLogger().Noticef(
+		"REPLICA DESCRIPTOR UPLOAD: selected upload epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v budget=%v reason=current upload window open",
+		doPublishEpoch,
+		currentEpoch,
+		elapsed,
+		PublishDeadline,
+		descriptorUploadSafety,
+		budget,
+	)
+
+	uploadCtx, cancel := context.WithTimeout(pkiCtx, budget)
+	defer cancel()
 
 	// Note: Why, yes I *could* cache the descriptor and save a trivial amount
 	// of time and CPU, but this is invoked infrequently enough that it's
@@ -160,6 +199,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	idkeyblob, err := p.server.identityPublicKey.MarshalBinary()
 	if err != nil {
 		return err
@@ -173,6 +213,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	key2, err := p.server.envelopeKeys.EnsureKey(replicaEpoch + 1)
 	if err != nil {
 		return err
@@ -190,22 +231,53 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		EnvelopeKeys: envelopeKeys,
 	}
 
+	if err := cpki.IsReplicaDescriptorWellFormed(desc, doPublishEpoch); err != nil {
+		p.GetLogger().Noticef(
+			"REPLICA DESCRIPTOR UPLOAD: refusing to send malformed replica descriptor %s for epoch %d: %s",
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+			strconv.QuoteToASCII(err.Error()),
+		)
+		return fmt.Errorf("refusing to send malformed replica descriptor for epoch %d: %w", doPublishEpoch, err)
+	}
+
 	// Post the descriptor to all the authorities.
-	p.GetLogger().Debug("publishing replica descriptor")
-	err = p.impl.PostReplica(pkiCtx, doPublishEpoch, p.server.identityPrivateKey, p.server.identityPublicKey, desc)
-	switch err {
-	case nil:
-		p.GetLogger().Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
+	p.GetLogger().Noticef(
+		"REPLICA DESCRIPTOR UPLOAD: attempting to upload replica descriptor %s for epoch %d",
+		strconv.QuoteToASCII(desc.Name),
+		doPublishEpoch,
+	)
+
+	err = p.impl.PostReplica(uploadCtx, doPublishEpoch, p.server.identityPrivateKey, p.server.identityPublicKey, desc)
+	switch {
+	case err == nil:
+		p.GetLogger().Noticef(
+			"REPLICA DESCRIPTOR UPLOAD: successfully posted replica descriptor %s for epoch %d",
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+		)
 		p.lastPublishedEpoch = doPublishEpoch
-	case cpki.ErrInvalidPostEpoch:
+
+	case errors.Is(err, cpki.ErrInvalidPostEpoch):
 		// Treat this class (conflict/late descriptor) as a permanent rejection
 		// and suppress further uploads.
-		p.GetLogger().Warningf("Authority rejected upload for epoch: %v (Conflict/Late)", doPublishEpoch)
+		p.GetLogger().Warningf(
+			"REPLICA DESCRIPTOR UPLOAD: authority permanently rejected replica descriptor %s upload for epoch %d; advancing past this epoch: %s",
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+			strconv.QuoteToASCII(err.Error()),
+		)
 		p.lastPublishedEpoch = doPublishEpoch
+
 	default:
 		// the voting authority implementation does not return any of the above error types...
 		// and the storage replica will continue to fail to submit the same descriptor repeatedly.
-		p.lastPublishedEpoch = doPublishEpoch
+		p.GetLogger().Warningf(
+			"REPLICA DESCRIPTOR UPLOAD: failed to upload replica descriptor %s for epoch %d: %s",
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+			strconv.QuoteToASCII(err.Error()),
+		)
 	}
 
 	return err
