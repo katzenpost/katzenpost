@@ -1,5 +1,5 @@
 
-.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx replica install-replica-deps
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server kpclientd map sphinx replica install-replica-deps
 
 .PHONY: update-go-deps
 update-go-deps:
@@ -12,7 +12,7 @@ ifneq (,$(wildcard vendor))
 	go mod vendor
 endif
 
-all: server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx
+all: server dirauth genconfig ping courier replica echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server kpclientd sphinx
 
 server:
 	cd cmd/server; go build
@@ -53,35 +53,46 @@ kpclientd:
 sphinx:
 	cd cmd/sphinx; go build
 
+ROCKSDB_VERSION = 10.10.1
+
 install-replica-deps:
 	@set -e; \
-	echo "Checking for RocksDB..."; \
-	if ! pkg-config --exists rocksdb; then \
-		echo "RocksDB missing"; \
+	echo "Checking for RocksDB $(ROCKSDB_VERSION)..."; \
+	installed_ver="$$(pkg-config --modversion rocksdb 2>/dev/null || echo none)"; \
+	if [ "$$installed_ver" = "$(ROCKSDB_VERSION)" ]; then \
+		echo "RocksDB $(ROCKSDB_VERSION) already installed"; \
+	else \
+		if [ "$$installed_ver" != "none" ]; then \
+			echo "RocksDB $$installed_ver found, need $(ROCKSDB_VERSION) — removing old version..."; \
+			sudo rm -f /usr/local/lib/librocksdb.*; \
+			sudo rm -rf /usr/local/include/rocksdb; \
+			sudo rm -f /usr/local/lib/pkgconfig/rocksdb.pc; \
+			sudo ldconfig; \
+		else \
+			echo "RocksDB not found"; \
+		fi; \
 		echo "Installing build dependencies..."; \
 		sudo apt-get install -y \
 			cmake build-essential pkg-config gcc-14 g++-14 \
 			libsnappy-dev libzstd-dev liblz4-dev \
 			zlib1g-dev libbz2-dev liburing-dev libgflags-dev; \
-		echo "Building RocksDB from source..."; \
+		echo "Building RocksDB $(ROCKSDB_VERSION) from source..."; \
 		tmpdir="$$(mktemp -d)"; \
 		cd "$$tmpdir"; \
-		git clone https://github.com/facebook/rocksdb.git; \
+		git clone --depth 1 --branch v$(ROCKSDB_VERSION) https://github.com/facebook/rocksdb.git; \
 		cd rocksdb; \
-		git checkout v10.2.1; \
 		env CC=gcc-14 CXX=g++-14 make shared_lib -j$$(nproc); \
-		echo "Installing RocksDB..."; \
+		echo "Installing RocksDB $(ROCKSDB_VERSION)..."; \
 		sudo make install; \
 		sudo ldconfig; \
-		echo "RocksDB installed successfully!"; \
-	else \
-		echo "Using existing RocksDB installation"; \
+		rm -rf "$$tmpdir"; \
+		echo "RocksDB $(ROCKSDB_VERSION) installed successfully!"; \
 	fi
 
 # Build replica (requires RocksDB dependencies)
 # this may require gcc-14
 replica: install-replica-deps
-	cd cmd/replica; CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath
+	cd cmd/replica; CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath -ldflags "-X github.com/carlmjohnson/versioninfo.Revision=$$(git rev-parse --short HEAD)"
 
 
 clean:
@@ -89,8 +100,8 @@ clean:
 		cmd/courier/courier cmd/echo-plugin/echo-plugin cmd/fetch/fetch \
 		cmd/genkeypair/genkeypair cmd/gensphinx/gensphinx \
 		cmd/http-proxy-client/http-proxy-client cmd/http-proxy-server/http-proxy-server \
-		cmd/katzencat/katzencat cmd/katzencopy/katzencopy cmd/kpclientd/kpclientd \
-		cmd/map/map cmd/sphinx/sphinx cmd/replica/replica
+		cmd/kpclientd/kpclientd \
+		cmd/sphinx/sphinx cmd/replica/replica cmd/copycat/copycat
 
 sphincsplus:
 	cd sphincsplus/ref && go test -v -race -timeout 0 ./...
@@ -106,8 +117,6 @@ test-unit: test-config
 	cd authority && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Running client unit tests..."
 	cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-	@echo "Running client2 unit tests..."
-	cd client2 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Running core unit tests..."
 	cd core && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Running NIKE Sphinx unit tests..."
@@ -117,10 +126,7 @@ test-unit: test-config
 	@echo "Running courier unit tests..."
 	cd courier && GORACE=history_size=7 go test -coverprofile=coverage.out -v -failfast -timeout 30m ./...
 
-	@echo "Running map unit tests..."
-	cd map && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-	@echo "Running stream unit tests..."
-	cd stream && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
 	@echo "All unit tests completed successfully!"
 
 # Run replica unit tests (requires RocksDB dependencies)
@@ -142,12 +148,12 @@ bench-sphinx:
 	@echo ""
 	@echo "Sphinx benchmarks completed!"
 
-# Run all wire handshake benchmarks (client2, courier, mix server, dirauth, replica)
+# Run all wire handshake benchmarks (client, courier, mix server, dirauth, replica)
 bench-handshake:
 	@echo "Running all wire handshake benchmarks..."
 	@echo ""
 	@echo "=== Client2 Handshake Benchmarks ==="
-	go test -v -run=^$$ -bench=. -benchtime=3x ./client2/
+	go test -v -run=^$$ -bench=. -benchtime=3x ./client/
 	@echo ""
 	@echo "=== Dirauth Client Handshake Benchmarks ==="
 	go test -v -run=^$$ -bench=. -benchtime=3x ./authority/voting/client/
@@ -183,4 +189,4 @@ act-clean:
 	@echo "Cleanup complete."
 
 act: act-clean
-	act --bind --container-options "-v /etc/ssl/certs:/etc/ssl/certs:ro -v /usr/share/ca-certificates:/usr/share/ca-certificates:ro -v /run/user/$(shell id -u)/podman/podman.sock:/var/run/docker.sock" -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -j test_e2e_client2
+	act --bind --container-options "-v /etc/ssl/certs:/etc/ssl/certs:ro -v /usr/share/ca-certificates:/usr/share/ca-certificates:ro -v /run/user/$(shell id -u)/podman/podman.sock:/var/run/docker.sock" -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -j test_e2e_client

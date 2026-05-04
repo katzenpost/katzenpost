@@ -143,7 +143,7 @@ func CreateTestConfig(t *testing.T, schemes *TestSchemes, geometry *geo.Geometry
 						Identifier:         "dirauth1",
 						IdentityPublicKey:  authKeys.IdentityPubKey,
 						PKISignatureScheme: schemes.PKI.Name(),
-						LinkPublicKey:      authKeys.LinkPubKey,
+						LinkPublicKey:      authconfig.KEMPublicKeyPEM{PublicKey: authKeys.LinkPubKey},
 						WireKEMScheme:      schemes.Link.Name(),
 						Addresses:          []string{"tcp://127.0.0.1:1234"},
 					},
@@ -160,8 +160,10 @@ func CreateTestConfig(t *testing.T, schemes *TestSchemes, geometry *geo.Geometry
 		WireKEMScheme:      schemes.Link.Name(),
 		PKISignatureScheme: schemes.PKI.Name(),
 		ReplicaNIKEScheme:  schemes.Replica.Name(),
-		SphinxGeometry:     geometry,
-		Addresses:          addresses,
+		SphinxGeometry:      geometry,
+		Addresses:           addresses,
+		ProxyWorkerCount:    8,
+		ProxyRequestTimeout: 300,
 	}
 }
 
@@ -172,12 +174,14 @@ func CreateTestServer(t *testing.T, cfg *config.Config, keys *TestKeys, logBacke
 		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
 
+	cfg.SetDefaultTimeouts()
 	s := &Server{
 		identityPublicKey:  keys.IdentityPubKey,
 		identityPrivateKey: keys.IdentityPrivKey,
 		linkKey:            keys.LinkPrivKey,
 		cfg:                cfg,
 		PKIWorker:          pkiWorker,
+		proxySema:          make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 
 	if logBackend != nil {
@@ -197,6 +201,7 @@ func GenerateTestReplica(t *testing.T, schemes *TestSchemes, index int) *pki.Rep
 	// Create replica descriptor
 	replica := &pki.ReplicaDescriptor{
 		Name:        fmt.Sprintf(testReplicaNameFormat, index),
+		ReplicaID:   uint8(index),
 		IdentityKey: keys.IdentityKeyBlob,
 		LinkKey:     keys.LinkKeyBlob,
 		Addresses:   map[string][]string{"tcp": {fmt.Sprintf("tcp://127.0.0.1:%d", 19000+index)}},
@@ -213,10 +218,26 @@ func GenerateTestReplica(t *testing.T, schemes *TestSchemes, index int) *pki.Rep
 // CreateTestPKIDocument creates a test PKI document
 func CreateTestPKIDocument(t *testing.T, replicas []*pki.ReplicaDescriptor, serviceNodes []*pki.MixDescriptor) *pki.Document {
 	epoch, _, _ := epochtime.Now()
+
+	// Build ConfiguredReplicaIDs from the replica descriptors
+	configuredReplicaIDs := make([]uint8, len(replicas))
+	for i, desc := range replicas {
+		configuredReplicaIDs[i] = desc.ReplicaID
+	}
+
+	// Build ConfiguredReplicaIdentityKeys from the replica descriptors
+	configuredReplicaKeys := make([][]byte, len(replicas))
+	for i, desc := range replicas {
+		configuredReplicaKeys[i] = make([]byte, len(desc.IdentityKey))
+		copy(configuredReplicaKeys[i], desc.IdentityKey)
+	}
+
 	return &pki.Document{
-		Epoch:           epoch,
-		StorageReplicas: replicas,
-		ServiceNodes:    serviceNodes,
+		Epoch:                         epoch,
+		StorageReplicas:               replicas,
+		ConfiguredReplicaIDs:          configuredReplicaIDs,
+		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
+		ServiceNodes:                  serviceNodes,
 	}
 }
 
@@ -271,4 +292,13 @@ func (m *mockConnector) DispatchReplication(cmd *commands.ReplicaWrite) {
 
 func (m *mockConnector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	// Mock implementation: no-op for testing purposes
+}
+
+func (m *mockConnector) QueueForRetry(cmd commands.Command, idHash [32]byte) {
+	// Mock implementation: no-op for testing purposes
+}
+
+func (m *mockConnector) ConnectionCount() int {
+	// Mock implementation: return 0 for testing purposes
+	return 0
 }

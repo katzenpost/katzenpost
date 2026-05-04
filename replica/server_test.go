@@ -25,10 +25,13 @@ import (
 )
 
 func TestInitDataDir(t *testing.T) {
+	cfg := &config.Config{
+		DataDir: t.TempDir(),
+	}
+	cfg.SetDefaultTimeouts()
 	s := &Server{
-		cfg: &config.Config{
-			DataDir: t.TempDir(),
-		},
+		cfg:       cfg,
+		proxySema: make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 	err := s.initDataDir()
 	require.Error(t, err)
@@ -66,7 +69,7 @@ func TestNew(t *testing.T) {
 						Identifier:         "dirauth1",
 						IdentityPublicKey:  idpubkey,
 						PKISignatureScheme: pkiScheme.Name(),
-						LinkPublicKey:      linkpubkey,
+						LinkPublicKey:      authconfig.KEMPublicKeyPEM{PublicKey: linkpubkey},
 						WireKEMScheme:      linkScheme.Name(),
 						Addresses:          []string{"tcp://127.0.0.1:1234"},
 					},
@@ -126,10 +129,12 @@ func TestGetRemoteShards(t *testing.T) {
 		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
 
+	cfg.SetDefaultTimeouts()
 	s := &Server{
 		identityPublicKey: keys.IdentityPubKey,
 		cfg:               cfg,
 		PKIWorker:         pkiWorker,
+		proxySema:         make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 	s.PKIWorker.server = s
 	s.connector = newMockConnector(s)

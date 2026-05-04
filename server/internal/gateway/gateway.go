@@ -4,7 +4,6 @@
 package gateway
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,27 +12,17 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/hpqc/hash"
-	kempem "github.com/katzenpost/hpqc/kem/pem"
-	"github.com/katzenpost/hpqc/kem/schemes"
-
-	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
-	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"github.com/katzenpost/katzenpost/server/internal/sqldb"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/spool/boltspool"
-	"github.com/katzenpost/katzenpost/server/userdb"
-	"github.com/katzenpost/katzenpost/server/userdb/boltuserdb"
-	"github.com/katzenpost/katzenpost/server/userdb/externuserdb"
 )
 
 const InboundPacketsChannelSize = 1000
@@ -45,26 +34,17 @@ type gateway struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch     chan interface{}
-	sqlDB  *sqldb.SQLDB
-	userDB userdb.UserDB
-	spool  spool.Spool
+	ch    chan interface{}
+	spool spool.Spool
 }
 
 func (p *gateway) Halt() {
 	p.Worker.Halt()
 
 	close(p.ch)
-	if p.userDB != nil {
-		p.userDB.Close()
-		p.userDB = nil
-	}
 	if p.spool != nil {
 		p.spool.Close()
 		p.spool = nil
-	}
-	if p.sqlDB != nil {
-		p.sqlDB.Close()
 	}
 }
 
@@ -72,67 +52,24 @@ func (p *gateway) Spool() spool.Spool {
 	return p.spool
 }
 
-func (p *gateway) UserDB() userdb.UserDB {
-	return p.userDB
-}
-
 func (p *gateway) AuthenticateClient(c *wire.PeerCredentials) bool {
-	isValid := p.userDB.IsValid(c.AdditionalData, c.PublicKey)
-	if !isValid {
-		blob, err := c.PublicKey.MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
-
-		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			// This looks like a mix node identity hash - try to look up the name
-			var nodeName string
-			if doc, err := p.glue.PKI().CurrentDocument(); err == nil && doc != nil {
-				var adHash [32]byte
-				copy(adHash[:], c.AdditionalData)
-				if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
-					nodeName = node.Name
-				}
-			}
-			if nodeName != "" {
-				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for mix node '%s' (link_key_hash=%x)", nodeName, hash.Sum256(blob))
-			} else {
-				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for unknown peer (identity_hash=%x not in current PKI, link_key_hash=%x)", c.AdditionalData, hash.Sum256(blob))
-			}
-			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer Credentials: identity_hash=%x, link_key=%s",
-				c.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
-		} else {
-			// This is a client - try to get a human-readable username from AdditionalData
-			username := ""
-			if len(c.AdditionalData) > 0 && len(c.AdditionalData) < 256 {
-				if isPrintableASCII(c.AdditionalData) {
-					username = string(c.AdditionalData)
-				}
-			}
-			if username != "" {
-				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for client '%s' (link_key_hash=%x)", username, hash.Sum256(blob))
-			} else {
-				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for client (user_id=%x, link_key_hash=%x)", c.AdditionalData, hash.Sum256(blob))
-			}
-			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer Credentials: user_id=%x, link_key=%s",
-				c.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
-		}
-	}
-	return isValid
-}
-
-// isPrintableASCII checks if all bytes in the slice are printable ASCII characters
-func isPrintableASCII(data []byte) bool {
-	for _, b := range data {
-		if b < 32 || b > 126 {
-			return false
-		}
-	}
+	// Any peer that completes the wire protocol handshake is accepted.
 	return true
 }
 
 func (p *gateway) OnPacket(pkt *packet.Packet) {
-	p.ch <- pkt
+	select {
+	case <-p.HaltCh():
+		p.log.Debugf("Terminating gracefully.")
+		return
+	default:
+	}
+	select {
+	case p.ch <- pkt:
+	case <-p.HaltCh():
+		p.log.Debugf("Terminating gracefully.")
+		return
+	}
 }
 
 func (p *gateway) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
@@ -157,7 +94,7 @@ func (g *gateway) gcEphemeralClients() {
 		g.log.Errorf("wtf: %s", err)
 		return
 	}
-	err = g.Spool().VacuumExpired(g.UserDB(), connectedClients)
+	err = g.Spool().VacuumExpired(connectedClients)
 	if err != nil {
 		g.log.Errorf("wtf: %s", err)
 		return
@@ -209,14 +146,6 @@ func (p *gateway) worker() {
 
 		// Post-process the recipient.
 		recipient := pkt.Recipient.ID[:]
-
-		// Ensure the packet is for a valid recipient.
-		if !p.userDB.Exists(recipient) {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
-			instrument.PacketsDropped()
-			pkt.Dispose()
-			continue
-		}
 
 		// Process the packet based on type.
 		if pkt.IsSURBReply() {
@@ -346,53 +275,13 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 	}()
 
 	var err error
-	if cfg.Gateway.SQLDB != nil {
-		if cfg.Gateway.UserDB.Backend == config.BackendSQL || cfg.Gateway.SpoolDB.Backend == config.BackendSQL {
-			p.sqlDB, err = sqldb.New(glue)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			p.log.Warningf("SQL database configured but not used for the User or Spool databases.")
-		}
-	}
-
-	switch cfg.Gateway.UserDB.Backend {
-	case config.BackendBolt:
-		p.userDB, err = boltuserdb.New(cfg.Gateway.UserDB.Bolt.UserDB, schemes.ByName(cfg.Server.WireKEM), boltuserdb.WithTrustOnFirstUse())
-	case config.BackendExtern:
-		p.userDB, err = externuserdb.New(cfg.Gateway.UserDB.Extern.GatewayURL, schemes.ByName(cfg.Server.WireKEM))
-	case config.BackendSQL:
-		if p.sqlDB != nil {
-			p.userDB, err = p.sqlDB.UserDB()
-		} else {
-			err = errors.New("gateway: SQL UserDB backend with no SQL database")
-		}
-	default:
-		return nil, fmt.Errorf("gateway: Unknown UserDB backend: %v", cfg.Gateway.UserDB.Backend)
-	}
-	if err != nil {
-		return nil, err
-	}
-
 	switch cfg.Gateway.SpoolDB.Backend {
 	case config.BackendBolt:
 		p.spool, err = boltspool.New(cfg.Gateway.SpoolDB.Bolt.SpoolDB)
-	case config.BackendSQL:
-		if p.sqlDB != nil {
-			p.spool = p.sqlDB.Spool()
-		} else {
-			err = errors.New("gateway: SQL SpoolDB backend with no SQL database")
-		}
 	default:
 		err = fmt.Errorf("gateway: Unknown SpoolDB backend: %v", cfg.Gateway.SpoolDB.Backend)
 	}
 	if err != nil {
-		return nil, err
-	}
-
-	// Purge spools that belong to users that no longer exist in the user db.
-	if err = p.spool.Vacuum(p.userDB); err != nil {
 		return nil, err
 	}
 

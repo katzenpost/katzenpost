@@ -33,8 +33,8 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/quic/proxy/common"
 )
 
@@ -47,7 +47,7 @@ var (
 	delay    = flag.Int("delay", 30, "time to wait between connection attempts (seconds)>")
 )
 
-// getThinClient connects to the client2 daemon and returns a ThinClient
+// getThinClient connects to the client daemon and returns a ThinClient
 func getThinClient(cfgFile string) (*thin.ThinClient, error) {
 	cfg, err := thin.LoadFile(cfgFile)
 	if err != nil {

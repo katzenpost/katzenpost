@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"path/filepath"
 
@@ -16,9 +17,12 @@ import (
 
 const (
 	defaultAddress                = ":3266"
-	defaultReplicationQueueLength = 100        // Default queue length for replication operations
 	defaultOutgoingQueueSize      = 64         // Default queue size for outgoing connections
+	defaultIncomingQueueSize      = 1000       // Default queue size for incoming connection sender
 	defaultKeepAliveInterval      = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
+	defaultMaxConcurrentReplications = 4       // Default max concurrent replication operations
+	defaultProxyRequestTimeout    = 300        // Default proxy request timeout in seconds (5 minutes)
+	defaultProxyWorkerCount       = 8          // Default number of proxy request worker goroutines
 )
 
 // Type aliases for common configuration structures
@@ -29,7 +33,7 @@ type (
 )
 
 type Config struct {
-	// PKI is the Katzenpost directory authority client configuration.
+	// PKI is the Katzenpost directory authority authority client configuration.
 	PKI *PKI
 
 	// Logging is the logging configuration.
@@ -40,6 +44,10 @@ type Config struct {
 
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
+
+	// ReplicaID is the static uint8 identifier for this replica.
+	// This must match the ReplicaID configured in all dirauths for this replica.
+	ReplicaID uint8
 
 	// WireKEMScheme is the wire protocol KEM scheme to use.
 	WireKEMScheme string
@@ -73,16 +81,36 @@ type Config struct {
 	// reauthenticated in milliseconds.
 	ReauthInterval int
 
-	// ReplicationQueueLength specifies the maximum number of items that can be
-	// queued for replication operations.
-	ReplicationQueueLength int
-
 	// OutgoingQueueSize specifies the maximum number of commands that can be
 	// queued for outgoing connections.
 	OutgoingQueueSize int
 
+	// IncomingQueueSize specifies the buffer size for the incoming connection
+	// sender queue. This must be large enough to absorb response bursts
+	// between sender ticks without blocking command processing.
+	IncomingQueueSize int
+
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
+
+	// MaxConcurrentReplications specifies the maximum number of concurrent
+	// replication operations. Higher values allow more concurrent replication
+	// to shard members under high write load.
+	MaxConcurrentReplications int
+
+	// ProxyRequestTimeout specifies the timeout in seconds for proxy requests
+	// to other replicas. This must be long enough for the request to traverse
+	// the replica-to-replica connection under decoy traffic load.
+	ProxyRequestTimeout int
+
+	// ProxyWorkerCount specifies the number of goroutines that handle proxy
+	// requests concurrently. This prevents proxy requests from blocking the
+	// incoming connection command loop.
+	ProxyWorkerCount int
+
+	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
+	// If empty, no metrics listener is started.
+	MetricsAddress string
 
 	// DisableDecoyTraffic disables sending decoy traffic.
 	DisableDecoyTraffic bool
@@ -93,7 +121,7 @@ type Config struct {
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
-	c.setDefaultTimeouts()
+	c.SetDefaultTimeouts()
 
 	if err := c.validateRequiredFields(); err != nil {
 		return err
@@ -111,11 +139,17 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 		return err
 	}
 
+	if c.MetricsAddress != "" {
+		if _, err := netip.ParseAddrPort(c.MetricsAddress); err != nil {
+			return fmt.Errorf("config: MetricsAddress '%v' is invalid: %v", c.MetricsAddress, err)
+		}
+	}
+
 	return c.setupLoggingDefaults()
 }
 
-// setDefaultTimeouts sets default values for timeout configurations
-func (c *Config) setDefaultTimeouts() {
+// SetDefaultTimeouts sets default values for timeout configurations
+func (c *Config) SetDefaultTimeouts() {
 	if c.ReauthInterval <= 0 {
 		c.ReauthInterval = config.DefaultReauthInterval
 	}
@@ -125,14 +159,23 @@ func (c *Config) setDefaultTimeouts() {
 	if c.ConnectTimeout <= 0 {
 		c.ConnectTimeout = config.DefaultConnectTimeout
 	}
-	if c.ReplicationQueueLength <= 0 {
-		c.ReplicationQueueLength = defaultReplicationQueueLength
-	}
 	if c.OutgoingQueueSize <= 0 {
 		c.OutgoingQueueSize = defaultOutgoingQueueSize
 	}
+	if c.IncomingQueueSize <= 0 {
+		c.IncomingQueueSize = defaultIncomingQueueSize
+	}
 	if c.KeepAliveInterval <= 0 {
 		c.KeepAliveInterval = defaultKeepAliveInterval
+	}
+	if c.MaxConcurrentReplications <= 0 {
+		c.MaxConcurrentReplications = defaultMaxConcurrentReplications
+	}
+	if c.ProxyRequestTimeout <= 0 {
+		c.ProxyRequestTimeout = defaultProxyRequestTimeout
+	}
+	if c.ProxyWorkerCount <= 0 {
+		c.ProxyWorkerCount = defaultProxyWorkerCount
 	}
 }
 

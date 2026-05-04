@@ -19,6 +19,9 @@ coverage-html:
 dirauth: clean
 	cd ../cmd/dirauth && go build -trimpath -ldflags ${ldflags}
 
+dirauth-pyroscope: clean
+	cd ../cmd/dirauth && go build -tags pyroscope -trimpath -ldflags ${ldflags}
+
 fetch: clean
 	cd ../cmd/fetch && go build -trimpath -ldflags ${ldflags}
 

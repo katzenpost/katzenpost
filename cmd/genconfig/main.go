@@ -110,10 +110,22 @@ performance optimization and security requirements.`,
 		"user forward payload length in bytes for Sphinx packets")
 
 	// Traffic and timing flags
-	cmd.Flags().BoolVar(&cfg.NoDecoy, "noDecoy", true,
-		"disable decoy traffic generation for clients")
+	cmd.Flags().StringVar(&cfg.EpochDuration, "epochDuration", "",
+		"set KATZENPOST_EPOCH_DURATION env var in docker-compose services (e.g., 2m)")
+	cmd.Flags().BoolVar(&cfg.NoDecoy, "noDecoy", false,
+		"disable decoy traffic for clients, couriers, and replicas (master override)")
+	cmd.Flags().BoolVar(&cfg.NoClientDecoy, "noClientDecoy", false,
+		"disable client decoy traffic only")
+	cmd.Flags().BoolVar(&cfg.NoCourierReplicaDecoy, "noCourierReplicaDecoy", false,
+		"disable courier and replica decoy traffic")
 	cmd.Flags().BoolVar(&cfg.NoMixDecoy, "noMixDecoy", true,
 		"disable decoy traffic generation for mix nodes")
+	cmd.Flags().BoolVar(&cfg.NoMetrics, "noMetrics", false,
+		"disable prometheus and grafana containers in docker-compose")
+	cmd.Flags().BoolVar(&cfg.PyroscopeDirauth, "pyroscopeDirauth", false,
+		"enable pyroscope profiling of the directory authorities")
+	cmd.Flags().BoolVar(&cfg.PyroscopeKpclientd, "pyroscopeKpclientd", false,
+		"enable pyroscope profiling of the kpclientd client daemon")
 	cmd.Flags().IntVar(&cfg.DialTimeout, "dialTimeout", 0,
 		"session dial timeout in seconds (0 for default)")
 	cmd.Flags().IntVar(&cfg.MaxPKIDelay, "maxPKIDelay", 0,
@@ -146,6 +158,22 @@ performance optimization and security requirements.`,
 		"maximum delay for lambdaM in milliseconds")
 	cmd.Flags().Uint64Var(&cfg.LGMax, "lambdaGMax", 100,
 		"maximum delay for gateway lambda in milliseconds")
+	cmd.Flags().Float64Var(&cfg.LR, "lambdaR", 0.0005,
+		"inverse of mean courier/replica decoy send rate")
+	cmd.Flags().Uint64Var(&cfg.LRMax, "lambdaRMax", 1000,
+		"maximum delay for lambdaR in milliseconds")
+
+	// Mix node scheduler tuning flags
+	cmd.Flags().IntVar(&cfg.SchedulerSlack, "schedulerSlack", 0,
+		"max allowed scheduler slack in milliseconds (0 for default 150ms)")
+	cmd.Flags().IntVar(&cfg.SchedulerMaxBurst, "schedulerMaxBurst", 0,
+		"max packets dispatched per scheduler wakeup (0 for default 16)")
+	cmd.Flags().IntVar(&cfg.SendSlack, "sendSlack", 0,
+		"max allowed send queue slack in milliseconds (0 for default 50ms)")
+	cmd.Flags().IntVar(&cfg.UnwrapDelay, "unwrapDelay", 0,
+		"max allowed unwrap queue delay in milliseconds (0 for default 250ms)")
+	cmd.Flags().IntVar(&cfg.NumSphinxWorkers, "numSphinxWorkers", 0,
+		"number of Sphinx crypto workers per mix node (0 for default 2)")
 
 	// Logging flags
 	cmd.Flags().StringVar(&cfg.LogLevel, "logLevel", genconfig.DebugLogLevel,

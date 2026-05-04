@@ -35,7 +35,7 @@ const (
 	noOp       commandID = 0
 	disconnect commandID = 1
 
-	// client2 commands
+	// client commands
 	sendRetrievePacket      commandID = 3
 	sendRetrievePacketReply commandID = 4
 

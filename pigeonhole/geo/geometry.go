@@ -369,6 +369,24 @@ func (g *Geometry) calculateCourierQueryReplyWriteLength() int {
 	return errorLenFieldSize + courierEnvelopeReplySize
 }
 
+// ReplicaInnerMessageWriteSize returns the serialized size of a ReplicaInnerMessage
+// containing a full write (the largest inbound inner message type).
+// Used to pad reads and tombstones to the same size as writes before MKEM encryption.
+func (g *Geometry) ReplicaInnerMessageWriteSize() int {
+	bacapCiphertextSize := g.CalculateBoxCiphertextLength()
+	replicaWriteSize := replicaWriteFixedOverhead() + bacapCiphertextSize
+	return messageTypeSize + replicaWriteSize
+}
+
+// ReplicaReplyInnerMessageReadSize returns the serialized size of a
+// ReplicaMessageReplyInnerMessage containing a full read reply (the largest reply type).
+// Used to pad write replies and tombstone read replies to the same size before MKEM encryption.
+func (g *Geometry) ReplicaReplyInnerMessageReadSize() int {
+	bacapCiphertextSize := g.CalculateBoxCiphertextLength()
+	replicaReadReplySize := errorCodeFieldSize + bacap.BoxIDSize + bacap.SignatureSize + payloadLenFieldSize + bacapCiphertextSize
+	return messageTypeSize + replicaReadReplySize
+}
+
 // CalculateBoxCiphertextLength calculates the ciphertext size for a Box.
 func (g *Geometry) CalculateBoxCiphertextLength() int {
 	return g.MaxPlaintextPayloadLength + lengthPrefixSize + bacapEncryptionOverhead

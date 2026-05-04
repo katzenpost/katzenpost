@@ -5,12 +5,52 @@ package pigeonhole
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/hash"
+
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
+
+// ErrPadDataExceedsTarget is returned when data is larger than the target padding size.
+var ErrPadDataExceedsTarget = errors.New("data exceeds target size")
+
+// ErrNilGeometry is returned when a nil geometry is passed to a padding function.
+var ErrNilGeometry = errors.New("pigeonhole geometry is nil")
+
+// PadToSize pads data with trailing zeros to reach targetSize.
+// Returns the data unchanged if already the target size.
+func PadToSize(data []byte, targetSize int) ([]byte, error) {
+	if len(data) > targetSize {
+		return nil, fmt.Errorf("%w: %d > %d", ErrPadDataExceedsTarget, len(data), targetSize)
+	}
+	if len(data) == targetSize {
+		return data, nil
+	}
+	return append(data, make([]byte, targetSize-len(data))...), nil
+}
+
+// PadInnerMessageForEncryption serializes a ReplicaInnerMessage and pads it
+// to the write size so that tombstones are indistinguishable from normal writes.
+func PadInnerMessageForEncryption(msg *ReplicaInnerMessage, geo *pgeo.Geometry) ([]byte, error) {
+	if geo == nil {
+		return nil, ErrNilGeometry
+	}
+	return PadToSize(msg.Bytes(), geo.ReplicaInnerMessageWriteSize())
+}
+
+// PadReplyInnerMessageForEncryption serializes a ReplicaMessageReplyInnerMessage
+// and pads it to the read reply size so that tombstone read replies are
+// indistinguishable from normal read replies.
+func PadReplyInnerMessageForEncryption(msg *ReplicaMessageReplyInnerMessage, geo *pgeo.Geometry) ([]byte, error) {
+	if geo == nil {
+		return nil, ErrNilGeometry
+	}
+	return PadToSize(msg.Bytes(), geo.ReplicaReplyInnerMessageReadSize())
+}
 
 // Helper functions for backward compatibility with the old methods.go file
 
@@ -34,10 +74,6 @@ func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
 	return hashOut
 }
 
-// CreatePaddedPayload creates a padded payload with a 4-byte length prefix.
-// This implements the pigeonhole protocol's 4-byte length prefix padding scheme
-// inside box payload plaintext. The geometry object tracks overhead across
-// nested layers of encapsulation/encoding/encryption.
 func CreatePaddedPayload(message []byte, targetSize int) ([]byte, error) {
 	// 4-byte length prefix + message data
 	const lengthPrefixSize = 4
@@ -57,7 +93,6 @@ func CreatePaddedPayload(message []byte, targetSize int) ([]byte, error) {
 	copy(paddedPayload[4:4+len(message)], message)
 
 	// The rest is zero padding (already initialized to zero by make())
-
 	return paddedPayload, nil
 }
 

@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/common/config"
@@ -62,6 +63,10 @@ type Config struct {
 	// for an outgoing connection before blocking.
 	MaxQueueSize int
 
+	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
+	// If empty, no metrics listener is started.
+	MetricsAddress string
+
 	// DisableDecoyTraffic disables sending decoy traffic.
 	DisableDecoyTraffic bool
 }
@@ -97,6 +102,11 @@ func (c *Config) FixupAndValidate() error {
 	}
 	if c.MaxQueueSize <= 0 {
 		c.MaxQueueSize = DefaultMaxQueueSize
+	}
+	if c.MetricsAddress != "" {
+		if _, err := netip.ParseAddrPort(c.MetricsAddress); err != nil {
+			return fmt.Errorf("config: MetricsAddress '%v' is invalid: %v", c.MetricsAddress, err)
+		}
 	}
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 // senderRequest represents a command to send to a peer
@@ -46,6 +47,7 @@ type sender struct {
 	out              chan *senderRequest
 	sendQueryOrDecoy *common.ExpDist
 	disableDecoys    bool
+	peerName         string
 
 	commands *commands.Commands
 }
@@ -54,7 +56,7 @@ type sender struct {
 // methods UpdateConnectionStatus and UpdateRates are called.
 // The worker only works when we have a connection and when we have
 // a rate set.
-func newSender(in chan *senderRequest, out chan *senderRequest, disableDecoys bool, logBackend *log.Backend, commands *commands.Commands) *sender {
+func newSender(in chan *senderRequest, out chan *senderRequest, disableDecoys bool, logBackend *log.Backend, commands *commands.Commands, peerName string) *sender {
 	s := &sender{
 		log:              logBackend.GetLogger("replica/sender"),
 		in:               in,
@@ -62,6 +64,7 @@ func newSender(in chan *senderRequest, out chan *senderRequest, disableDecoys bo
 		sendQueryOrDecoy: common.NewExpDist(),
 		disableDecoys:    disableDecoys,
 		commands:         commands,
+		peerName:         peerName,
 	}
 	s.Go(s.worker)
 	return s
@@ -84,12 +87,13 @@ func (s *sender) worker() {
 			var toSend *senderRequest
 			select {
 			case toSend = <-s.in:
-				// Real response available - send it
+				instrument.IncomingMessagesSent()
 			case <-s.HaltCh():
 				return
 			default:
 				// No real response - send decoy if enabled
 				if s.disableDecoys {
+					instrument.IncomingQueueLength(s.peerName, len(s.in))
 					continue
 				}
 				toSend = &senderRequest{
@@ -97,7 +101,9 @@ func (s *sender) worker() {
 						Cmds: s.commands,
 					},
 				}
+				instrument.IncomingDecoysSent()
 			}
+			instrument.IncomingQueueLength(s.peerName, len(s.in))
 			if toSend != nil {
 				select {
 				case s.out <- toSend:
@@ -114,6 +120,89 @@ func (s *sender) UpdateConnectionStatus(isConnected bool) {
 }
 
 func (s *sender) UpdateRate(rate, maxDelay uint64) error {
+	if rate <= 0 {
+		return fmt.Errorf("invalid rate: %v", rate)
+	}
+	s.sendQueryOrDecoy.UpdateRate(rate, maxDelay)
+	return nil
+}
+
+// outgoingSender is a sender for outgoing replica-to-replica connections.
+// It works like the incoming sender but operates on commands.Command
+// rather than senderRequest. On each ExpDist tick it sends a real command
+// from the queue if available, otherwise a decoy.
+type outgoingSender struct {
+	worker.Worker
+
+	log              *logging.Logger
+	in               chan commands.Command
+	out              chan commands.Command
+	sendQueryOrDecoy *common.ExpDist
+	disableDecoys    bool
+	peerName         string
+
+	commands *commands.Commands
+}
+
+func newOutgoingSender(in chan commands.Command, out chan commands.Command, disableDecoys bool, logBackend *log.Backend, cmds *commands.Commands, peerName string) *outgoingSender {
+	s := &outgoingSender{
+		log:              logBackend.GetLogger("replica/outgoing_sender"),
+		in:               in,
+		out:              out,
+		sendQueryOrDecoy: common.NewExpDist(),
+		disableDecoys:    disableDecoys,
+		commands:         cmds,
+		peerName:         peerName,
+	}
+	s.Go(s.worker)
+	return s
+}
+
+func (s *outgoingSender) halt() {
+	s.log.Debug("outgoing sender stopping ExpDist worker")
+	s.sendQueryOrDecoy.Halt()
+}
+
+func (s *outgoingSender) worker() {
+	defer s.halt()
+	for {
+		select {
+		case <-s.HaltCh():
+			return
+		case <-s.sendQueryOrDecoy.OutCh():
+			var toSend commands.Command
+			select {
+			case toSend = <-s.in:
+				instrument.OutgoingMessagesSent()
+			case <-s.HaltCh():
+				return
+			default:
+				if s.disableDecoys {
+					instrument.OutgoingQueueLength(s.peerName, len(s.in))
+					continue
+				}
+				toSend = &commands.ReplicaDecoy{
+					Cmds: s.commands,
+				}
+				instrument.OutgoingDecoysSent()
+			}
+			instrument.OutgoingQueueLength(s.peerName, len(s.in))
+			if toSend != nil {
+				select {
+				case s.out <- toSend:
+				case <-s.HaltCh():
+					return
+				}
+			}
+		}
+	}
+}
+
+func (s *outgoingSender) UpdateConnectionStatus(isConnected bool) {
+	s.sendQueryOrDecoy.UpdateConnectionStatus(isConnected)
+}
+
+func (s *outgoingSender) UpdateRate(rate, maxDelay uint64) error {
 	if rate <= 0 {
 		return fmt.Errorf("invalid rate: %v", rate)
 	}

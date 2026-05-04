@@ -47,7 +47,7 @@ const (
 	defaultNumServiceWorkers   = 3
 	defaultNumKaetzchenWorkers = 3
 	defaultUnwrapDelay         = 250 // 250 ms.
-	defaultSchedulerSlack      = 150 // 150 ms.
+	defaultSchedulerSlack      = 450 // 450 ms.
 	defaultSchedulerMaxBurst   = 16
 	defaultSendSlack           = 50        // 50 ms.
 	defaultDecoySlack          = 15 * 1000 // 15 sec.
@@ -57,20 +57,11 @@ const (
 	defaultGatewayDelay        = 500       // 500 ms.
 	defaultServiceDelay        = 500       // 500 ms.
 	defaultKaetzchenDelay      = 750       // 750 ms.
-	defaultUserDB              = "users.db"
-	defaultSpoolDB             = "spool.db"
-	defaultManagementSocket    = "management_sock"
-
-	backendPgx = "pgx"
-
-	// BackendSQL is a SQL based backend.
-	BackendSQL = "sql"
+	defaultSpoolDB = "spool.db"
+	defaultManagementSocket = "management_sock"
 
 	// BackendBolt is a BoltDB based backend.
 	BackendBolt = "bolt"
-
-	// BackendExtern is a External (RESTful http) backend.
-	BackendExtern = "extern"
 )
 
 var defaultLogging = Logging{
@@ -353,67 +344,8 @@ type Gateway struct {
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
 	AltAddresses map[string][]string
 
-	// SQLDB is the SQL database backend configuration.
-	SQLDB *SQLDB
-
-	// UserDB is the userdb backend configuration.
-	UserDB *UserDB
-
 	// SpoolDB is the user message spool configuration.
 	SpoolDB *SpoolDB
-}
-
-// SQLDB is the SQL database backend configuration.
-type SQLDB struct {
-	// Backend is the active database backend (driver).
-	//
-	//  - pgx: Postgresql.
-	Backend string
-
-	// DataSourceName is the SQL data source name or URI.  The format
-	// of this parameter is dependent on the database driver being used.
-	//
-	//  - pgx: https://godoc.org/github.com/jackc/pgx#ParseConnectionString
-	DataSourceName string
-}
-
-func (sCfg *SQLDB) validate() error {
-	switch sCfg.Backend {
-	case backendPgx:
-	default:
-		return fmt.Errorf("config: SQLDB: Backend '%v' is invalid", sCfg.Backend)
-	}
-	if sCfg.DataSourceName == "" {
-		return fmt.Errorf("config: SQLDB: DataSourceName '%v' is invalid", sCfg.DataSourceName)
-	}
-	return nil
-}
-
-// UserDB is the userdb backend configuration.
-type UserDB struct {
-	// Backend is the active userdb backend.  If left empty, the BoltUserDB
-	// backend will be used (`bolt`).
-	Backend string
-
-	// BoltDB backed userdb (`bolt`).
-	Bolt *BoltUserDB
-
-	// Externally defined (RESTful http) userdb (`extern`).
-	Extern *ExternUserDB
-}
-
-// BoltUserDB is the BoltDB implementation of userdb.
-type BoltUserDB struct {
-	// UserDB is the path to the user database.  If left empty it will use
-	// `users.db` under the DataDir.
-	UserDB string
-}
-
-// ExternUserDB is the external http user authentication.
-type ExternUserDB struct {
-	// GatewayURL is the base url used for the external provider authentication API.
-	// It should be in the form `http://localhost:8080/`
-	GatewayURL string
 }
 
 // SpoolDB is the user message spool configuration.
@@ -529,23 +461,6 @@ func (kCfg *CBORPluginKaetzchen) validate() error {
 }
 
 func (pCfg *Gateway) applyDefaults(sCfg *Server) {
-	if pCfg.UserDB == nil {
-		pCfg.UserDB = &UserDB{}
-	}
-	if pCfg.UserDB.Backend == "" {
-		pCfg.UserDB.Backend = BackendBolt
-	}
-	switch pCfg.UserDB.Backend {
-	case BackendBolt:
-		if pCfg.UserDB.Bolt == nil {
-			pCfg.UserDB.Bolt = &BoltUserDB{}
-		}
-		if pCfg.UserDB.Bolt.UserDB == "" {
-			pCfg.UserDB.Bolt.UserDB = filepath.Join(sCfg.DataDir, defaultUserDB)
-		}
-	default:
-	}
-
 	if pCfg.SpoolDB == nil {
 		pCfg.SpoolDB = &SpoolDB{}
 	}
@@ -588,54 +503,10 @@ func (pCfg *ServiceNode) validate() error {
 }
 
 func (pCfg *Gateway) validate() error {
-	internalTransports := make(map[string]bool)
-	for _, v := range pki.InternalTransports {
-		internalTransports[strings.ToLower(string(v))] = true
-	}
-
-	if pCfg.SQLDB != nil {
-		if err := pCfg.SQLDB.validate(); err != nil {
-			return err
-		}
-	}
-
-	switch pCfg.UserDB.Backend {
-	case BackendBolt:
-		if !filepath.IsAbs(pCfg.UserDB.Bolt.UserDB) {
-			return fmt.Errorf("config: Provider: UserDB '%v' is not an absolute path", pCfg.UserDB.Bolt.UserDB)
-		}
-	case BackendExtern:
-		if pCfg.UserDB.Extern == nil {
-			return fmt.Errorf("config: Provider: Extern section should be defined")
-		}
-		if pCfg.UserDB.Extern.GatewayURL == "" {
-			return fmt.Errorf("config: Provider: ProviderURL should be defined for Extern")
-		}
-		providerURL, err := url.Parse(pCfg.UserDB.Extern.GatewayURL)
-		if err != nil {
-			return fmt.Errorf("config: Provider: ProviderURL should be a valid url: %v", err)
-		}
-		switch providerURL.Scheme {
-		case "http", "https":
-		default:
-			return fmt.Errorf("config: Provider: ProviderURL should be of http schema")
-		}
-	case BackendSQL:
-		if pCfg.SQLDB == nil {
-			return fmt.Errorf("config: Provider: UserDB configured for an SQL backend without a SQLDB block")
-		}
-	default:
-		return fmt.Errorf("config: Provider: Invalid UserDB Backend: '%v'", pCfg.UserDB.Backend)
-	}
-
 	switch pCfg.SpoolDB.Backend {
 	case BackendBolt:
 		if !filepath.IsAbs(pCfg.SpoolDB.Bolt.SpoolDB) {
 			return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB.Bolt.SpoolDB)
-		}
-	case BackendSQL:
-		if pCfg.SQLDB == nil {
-			return fmt.Errorf("config: Provider: SpoolDB configured for an SQL backend without a SQLDB block")
 		}
 	default:
 		return fmt.Errorf("config: Provider: Invalid SpoolDB Backend: '%v'", pCfg.SpoolDB.Backend)

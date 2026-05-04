@@ -156,6 +156,36 @@ to learn how to configure a Katzenpost mixnet.**
 * [Using the Katzenpost Docker test mix network](https://katzenpost.network/docs/admin_guide/docker.html)
 
 
+## Regenerating the pigeonhole wire message types
+
+The pigeonhole wire types in `pigeonhole/pigeonhole_messages.trunnel`
+are compiled to Go via our fork of
+[trunnel](https://github.com/mmcloughlin/trunnel). `go generate` runs
+a build driver that shells out to a `trunnel` binary, so the binary
+needs to be on your `$PATH` before you can regenerate anything.
+
+Install the Katzenpost trunnel fork (requires Go 1.17+):
+
+```bash
+go install github.com/katzenpost/trunnel/cmd/trunnel@latest
+```
+
+Make sure `$GOPATH/bin` (or `$GOBIN`) is on your `$PATH`; a quick
+`which trunnel` confirms the install landed where the build driver
+looks first. Then regenerate:
+
+```bash
+cd pigeonhole
+go generate ./...
+```
+
+This rewrites `pigeonhole/trunnel_messages.go` from the schema. **Do
+not hand-edit `trunnel_messages.go`** — edit the `.trunnel` schema and
+regenerate. If you change the schema, also update any padding
+assumptions in `pigeonhole/geo/geometry.go` and run the padding
+tests in `pigeonhole/`.
+
+
 # Documentation
 
 Documentation is a work in progress:

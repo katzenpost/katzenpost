@@ -1,0 +1,54 @@
+name: Build alpine base image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker/Dockerfile.alpine-base'
+      - '.github/workflows/alpine-base-image.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: katzenpost/alpine-base
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract RocksDB version from Dockerfile
+        id: versions
+        run: |
+          rocksdb_ver=$(grep 'ARG ROCKSDB_VERSION=' docker/Dockerfile.alpine-base | cut -d= -f2)
+          go_ver=$(grep 'ARG GO_VERSION=' docker/Dockerfile.alpine-base | cut -d= -f2)
+          echo "rocksdb=${rocksdb_ver}" >> "$GITHUB_OUTPUT"
+          echo "go=${go_ver}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: docker
+          file: docker/Dockerfile.alpine-base
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rocksdb-${{ steps.versions.outputs.rocksdb }}-go${{ steps.versions.outputs.go }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -7,6 +7,9 @@ help:
 	@echo " stop               - stop the testnet"
 	@echo " client-restart     - restart just the kpclientd daemon"
 	@echo " client-logs        - view kpclientd daemon logs"
+	@echo " courier-restart    - restart courier plugin via thwack interface"
+	@echo " servicenode-restart - restart servicenode container (heavier)"
+	@echo " replica-restart    - rebuild replica binary and restart all replica containers"
 	@echo " wait               - wait for testnet to have consensus"
 	@echo " watch              - tail -F all logs"
 	@echo " watch-replicas     - monitor all replica logs"
@@ -26,12 +29,19 @@ help:
 	@echo
 
 warped?=true
-no_decoy?=false
+no_decoy?=true
+no_client_decoy?=false
+no_courier_replica_decoy?=false
 no_mixdecoy?=true
+no_metrics?=true
+pyroscope_dirauth?=false
+pyroscope_kpclientd?=false
+epoch_duration?=2m
 mixes=3
 auths=3
 gateways=1
-serviceNodes=1
+serviceNodes=3
+storageNodes=5
 
 # Parameters
 sr=0
@@ -46,8 +56,17 @@ lDMax=3000
 lM=0.0005
 lMMax=100
 lGMax=1000
+lR=0.002
+lRMax=1000
 
 UserForwardPayloadLength=2000
+
+# Mix node scheduler tuning (0 = use defaults)
+schedulerSlack=0
+schedulerMaxBurst=0
+sendSlack=0
+unwrapDelay=0
+numSphinxWorkers=0
 
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
@@ -65,7 +84,9 @@ docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 cache_dir=cache
 
-# no_decoy and no_mixdecoy control enabling dockerized mixnets with or without decoy traffic
+# no_decoy is a master toggle covering clients, couriers, and replicas.
+# no_client_decoy and no_courier_replica_decoy allow selective disabling
+# when no_decoy=false. no_mixdecoy controls mix node decoys independently.
 ifeq ($(no_mixdecoy),true)
   noMixDecoy=--noMixDecoy
 endif
@@ -74,18 +95,65 @@ ifeq ($(no_decoy),true)
   noDecoy=--noDecoy
 endif
 
+ifeq ($(no_client_decoy),true)
+  noClientDecoy=--noClientDecoy
+endif
+
+ifeq ($(no_courier_replica_decoy),true)
+  noCourierReplicaDecoy=--noCourierReplicaDecoy
+endif
+
+ifeq ($(no_metrics),true)
+  noMetricsFlag=--noMetrics
+endif
+
+ifneq ($(epoch_duration),)
+  epochDurationFlag=--epochDuration $(epoch_duration)
+endif
+
+ifeq ($(pyroscope_dirauth),true)
+  pyroscope_dirauth_tags=-tags pyroscope
+  pyroscopeDirauthFlag=--pyroscopeDirauth
+endif
+
+ifeq ($(pyroscope_kpclientd),true)
+  pyroscope_kpclientd_tags=-tags pyroscope
+  pyroscopeKpclientdFlag=--pyroscopeKpclientd
+endif
+
+ifneq ($(schedulerSlack),0)
+  schedulerSlackFlag=--schedulerSlack $(schedulerSlack)
+endif
+
+ifneq ($(schedulerMaxBurst),0)
+  schedulerMaxBurstFlag=--schedulerMaxBurst $(schedulerMaxBurst)
+endif
+
+ifneq ($(sendSlack),0)
+  sendSlackFlag=--sendSlack $(sendSlack)
+endif
+
+ifneq ($(unwrapDelay),0)
+  unwrapDelayFlag=--unwrapDelay $(unwrapDelay)
+endif
+
+ifneq ($(numSphinxWorkers),0)
+  numSphinxWorkersFlag=--numSphinxWorkers $(numSphinxWorkers)
+endif
+
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=DEBUG
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
-ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+gitcommit=$(shell git rev-parse --short HEAD)
+ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/replica.GitCommit=${gitcommit}"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache -e GOPATH=/go
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
@@ -112,28 +180,34 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
 		$(sh) -c 'cd cmd/genconfig && go build && cd ../../docker \
 		&& ../cmd/genconfig/genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
-		--serviceNodes ${serviceNodes} \
+		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
+		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noDecoy} \
+		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
+		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
+		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
 
 # Generate configuration files only (without docker containers)
-# This is useful for tests that depend on config files existing (e.g., client2/testdata symlinks)
+# This is useful for tests that depend on config files existing (e.g., client/testdata symlinks)
 config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
 	cd ../cmd/genconfig && go build && ./genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
-		--serviceNodes ${serviceNodes} \
+		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
+		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noDecoy} \
+		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
+		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
+		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 	@echo "Configuration files generated in ./$(net_name)/"
-	@echo "Tests can now use the symlinked configs (e.g., client2/testdata/client.toml -> ../../docker/$(net_name)/client2/client.toml)"
+	@echo "Tests can now use the symlinked configs (e.g., client/testdata/client.toml -> ../../docker/$(net_name)/client/client.toml)"
 
 $(net_name)/running.stamp:
 	make $(make_args) start
@@ -162,6 +236,36 @@ client-logs:
 	@echo "Tailing kpclientd daemon logs (Ctrl+C to exit)..."
 	cd $(net_name) && $(docker_compose) logs -f --tail 20 kpclientd
 
+client-logs-snapshot:
+	cd $(net_name) && $(docker_compose) logs --tail 200 kpclientd
+
+courier-restart:
+	@echo "Stopping courier plugin via thwack management interface..."
+	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock' || true
+	@sleep 1
+	@echo "Cleaning and rebuilding courier binary..."
+	rm -fv $(net_name)/courier.$(distro)
+	make $(make_args) $(net_name)/courier.$(distro)
+	@echo "Starting courier plugin via thwack management interface..."
+	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock'
+	@echo "Courier service restarted with updated code"
+
+replica-restart:
+	@echo "Cleaning and rebuilding replica binary..."
+	rm -fv $(net_name)/replica.$(distro)
+	make $(make_args) $(net_name)/replica.$(distro)
+	@echo "Restarting replica containers..."
+	@cd $(net_name) && for i in $$(seq 1 $(storageNodes)); do $(docker_compose) restart replica$$i; done
+	@echo "Replica containers restarted with updated binary"
+
+servicenode-restart:
+	@echo "Cleaning and rebuilding courier binary..."
+	rm -fv $(net_name)/courier.$(distro)
+	make $(make_args) $(net_name)/courier.$(distro)
+	@echo "Restarting servicenode1 container..."
+	cd $(net_name) && $(docker_compose) restart servicenode1
+	@echo "Servicenode restarted with updated courier binary"
+
 watch:
 	tail -F $(net_name)/*/*.log
 
@@ -179,12 +283,12 @@ watch-mixes:
 	tail -F $(net_name)/mix*/katzenpost.log
 
 watch-courier:
-	@echo "Monitoring courier service log (Ctrl+C to exit)..."
-	tail -F $(net_name)/servicenode1/courier/courier.log
+	@echo "Monitoring all courier service logs (Ctrl+C to exit)..."
+	tail -F $(net_name)/servicenode*/courier/courier.log
 
 watch-servicenode:
-	@echo "Monitoring service node log (Ctrl+C to exit)..."
-	tail -F $(net_name)/servicenode1/katzenpost.log
+	@echo "Monitoring all service node logs (Ctrl+C to exit)..."
+	tail -F $(net_name)/servicenode*/katzenpost.log
 
 watch-gateway:
 	@echo "Monitoring gateway log (Ctrl+C to exit)..."
@@ -196,8 +300,8 @@ watch-all-separate:
 	@(tail -F $(net_name)/replica*/katzenpost.log | sed 's/^/[REPLICA] /' &) ; \
 	(tail -F $(net_name)/auth*/katzenpost.log | sed 's/^/[AUTH] /' &) ; \
 	(tail -F $(net_name)/mix*/katzenpost.log | sed 's/^/[MIX] /' &) ; \
-	(tail -F $(net_name)/servicenode1/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
-	(tail -F $(net_name)/servicenode1/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
+	(tail -F $(net_name)/servicenode*/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
+	(tail -F $(net_name)/servicenode*/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
 	(tail -F $(net_name)/gateway1/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
 	wait
 
@@ -220,7 +324,7 @@ show-latest-vote:
 
 wait: $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-	/$(net_name)/fetch.$(distro) -f /$(net_name)/client2/thinclient.toml
+	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient.toml
 
 debian_base.stamp:
 	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c "echo -e 'deb https://deb.debian.org/debian bullseye main\ndeb https://deb.debian.org/debian bullseye-updates main\ndeb https://deb.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list && cat /etc/apt/sources.list && apt update && apt upgrade -y && apt install -y pv && adduser katzenpost --gecos '' --disabled-password && apt update && apt upgrade -y"
@@ -228,16 +332,13 @@ debian_base.stamp:
 	$(docker) rm katzenpost_debian_base
 	touch $@
 
+alpine_base_image?=ghcr.io/katzenpost/alpine-base:latest
+
 alpine_base.stamp:
-	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/alpine:20250108 sh -c '\
-		adduser katzenpost --gecos "" --disabled-password && \
-		apk update && apk upgrade && \
-		apk add gcc musl-dev make pv rocksdb-dev g++ curl && \
-		curl -fsSL https://go.dev/dl/go1.26.0.linux-amd64.tar.gz | tar -C /usr/local -xzf - && \
-		ln -s /usr/local/go/bin/go /usr/bin/go && \
-		ln -s /usr/local/go/bin/gofmt /usr/bin/gofmt' \
-	&& $(docker) commit katzenpost_alpine_base katzenpost-alpine_base \
-	&& $(docker) rm katzenpost_alpine_base
+	$(docker) pull $(alpine_base_image) \
+	|| $(docker) build -t $(alpine_base_image) -f Dockerfile.alpine-base . \
+	&& ($(docker) push $(alpine_base_image) || true)
+	$(docker) tag $(alpine_base_image) katzenpost-alpine_base
 	touch $@
 
 go-mod-tidy: $(distro)_base.stamp | $(net_name) $(cache_dir)
@@ -267,7 +368,7 @@ $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_di
 		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} && mv echo-plugin /$(net_name)/echo_server.$(distro)'
 
 $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/dirauth && go build -trimpath -ldflags ${ldflags} && mv dirauth /$(net_name)/dirauth.$(distro) && \
+		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath -ldflags ${ldflags} && mv dirauth /$(net_name)/dirauth.$(distro) && \
 			cd ../fetch && go build -trimpath -ldflags ${ldflags} && mv fetch /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
@@ -275,7 +376,7 @@ $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 			mv ping /$(net_name)/ping.$(distro)'
 
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build -ldflags ${ldflags} && \
+		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(pyroscope_kpclientd_tags) -ldflags ${ldflags} && \
 			mv kpclientd /$(net_name)/kpclientd.$(distro)'
 
 clean-images: stop
@@ -296,6 +397,10 @@ clean-bin: stop
 	rm -vf ./$(net_name)/*.$(distro)
 
 clean-local: clean-bin
+	# Clean up replica data files (preserve .toml configs)
+	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
+	# Clean up courier data files (preserve .toml configs)
+	rm -rfv $(net_name)/servicenode*/courier/*.log $(net_name)/servicenode*/courier/*.db $(net_name)/servicenode*/courier/link.*.pem
 	git clean -f -x $(net_name)
 	git status .
 
@@ -309,7 +414,7 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) --thin -c /go/katzenpost/client2/testdata/thinclient.toml -s echo --print-diff -n 10
+        /$(net_name)/ping.$(distro) --thin -c /go/katzenpost/client/testdata/thinclient.toml -s echo --print-diff -n 10
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
@@ -29,7 +30,11 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
+
+// GitCommit is the git commit hash, set at build time via -ldflags
+var GitCommit = "unknown"
 
 // ErrGenerateOnly is the error returned when the server initialization
 // terminates due to the `GenerateOnly` debug config option.
@@ -49,6 +54,8 @@ type GenericConnector interface {
 	ForceUpdate()
 	DispatchCommand(cmd commands.Command, idHash *[32]byte)
 	DispatchReplication(cmd *commands.ReplicaWrite)
+	QueueForRetry(cmd commands.Command, idHash [32]byte)
+	ConnectionCount() int
 }
 
 type Server struct {
@@ -69,6 +76,9 @@ type Server struct {
 
 	// Proxy request manager for handling async proxy requests
 	proxyManager *ProxyRequestManager
+
+	// proxySema limits the number of concurrent proxy request goroutines
+	proxySema chan struct{}
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -126,6 +136,7 @@ func (s *Server) initLogging() error {
 	if err == nil {
 		s.log = s.logBackend.GetLogger("replica")
 		s.log.Noticef("Katzenpost replica version: %s", versioninfo.Short())
+		s.log.Noticef("Katzenpost replica git revision: %s", GitCommit)
 		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err
@@ -154,7 +165,6 @@ func (s *Server) halt() {
 		s.connector.Halt()
 	}
 
-	// Shutdown the proxy manager to clean up pending requests
 	if s.proxyManager != nil {
 		s.proxyManager.Shutdown()
 	}
@@ -230,8 +240,13 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 		return nil, err
 	}
 
-	// Initialize proxy request manager
-	s.proxyManager = NewProxyRequestManager(s.log)
+	// Ensure config defaults are set (tests may skip FixupAndValidate).
+	s.cfg.SetDefaultTimeouts()
+
+	// Initialize proxy request manager and concurrency limiter.
+	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
+	s.proxySema = make(chan struct{}, s.cfg.ProxyWorkerCount)
+	s.log.Noticef("Proxy request concurrency limit: %d, timeout: %ds", s.cfg.ProxyWorkerCount, s.cfg.ProxyRequestTimeout)
 
 	if s.cfg.GenerateOnly {
 		return nil, ErrGenerateOnly
@@ -248,6 +263,13 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	if err := s.startServices(pkiClient); err != nil {
 		return nil, err
 	}
+
+	if cfg.MetricsAddress != "" {
+		s.log.Noticef("Starting prometheus metrics listener on %s", cfg.MetricsAddress)
+	} else {
+		s.log.Notice("Prometheus metrics listener disabled (MetricsAddress not set)")
+	}
+	instrument.StartPrometheusListener(cfg.MetricsAddress)
 
 	isOk = true
 
@@ -422,4 +444,20 @@ func (s *Server) startServices(pkiClient pki.Client) error {
 	s.connector = newConnector(s)
 
 	return nil
+}
+
+// ConnectionCount returns the number of active outgoing connections to other replicas.
+// This is useful for testing to verify inter-replica connections are established.
+func (s *Server) ConnectionCount() int {
+	if s.connector == nil {
+		return 0
+	}
+	return s.connector.ConnectionCount()
+}
+
+// ForceConnectorUpdate triggers the connector to rescan PKI and spawn new connections.
+func (s *Server) ForceConnectorUpdate() {
+	if s.connector != nil {
+		s.connector.ForceUpdate()
+	}
 }

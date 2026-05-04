@@ -109,6 +109,7 @@ func TestIncomingConn(t *testing.T) {
 		identityPublicKey: pk,
 		cfg:               cfg,
 		PKIWorker:         pkiWorker,
+		proxySema:         make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 
 	linkpubkey, linkprivkey, err := linkScheme.GenerateKeyPair()
@@ -184,7 +185,8 @@ func TestIncomingConn(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(ids), 0)
 
-	replyCommand, ok := inConn.onReplicaCommand(new(commands.NoOp))
+	dummyCh := make(chan *senderRequest, 10)
+	replyCommand, ok := inConn.onReplicaCommand(new(commands.NoOp), dummyCh)
 	require.True(t, ok)
 	require.Nil(t, replyCommand)
 

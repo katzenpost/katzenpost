@@ -4,9 +4,11 @@
 package replica
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/linxGnu/grocksdb"
 	"golang.org/x/crypto/blake2b"
@@ -24,8 +26,18 @@ const (
 	errDatabaseClosed = "database is closed"
 )
 
+// boxLock is a per-BoxID mutex with a refCount. refCount is protected by
+// state.locksMu, not by bl.mu: it tracks how many goroutines currently
+// hold or are waiting on this entry so that releaseBoxLock can remove
+// the map entry when the last holder leaves.
+type boxLock struct {
+	mu       sync.Mutex
+	refCount int
+}
+
 var (
 	ErrBoxIDNotFound       = errors.New("Box ID not found")
+	ErrBoxAlreadyExists    = errors.New("BoxID already exists, writes are immutable")
 	ErrFailedDBRead        = errors.New("Failed to read from database")
 	ErrFailedToDeserialize = errors.New("Failed to deserialize data from DB")
 	ErrDBClosed            = errors.New("DB is closed")
@@ -35,6 +47,49 @@ type state struct {
 	server *Server
 	db     *grocksdb.DB
 	log    *logging.Logger
+
+	// locksMu protects boxLocks and every boxLock's refCount. Held only
+	// briefly during a map lookup / refCount adjustment — not across
+	// database I/O — so it does not serialize the actual write work.
+	locksMu  sync.Mutex
+	boxLocks map[[32]byte]*boxLock
+}
+
+// acquireBoxLock returns a locked per-BoxID mutex. The caller MUST
+// call releaseBoxLock with the returned *boxLock and the same boxID
+// exactly once, whether or not the critical section succeeded.
+//
+// A single top-level mutex (locksMu) covers both the map operation and
+// the refCount bump so that a concurrent releaseBoxLock cannot delete
+// the entry between LoadOrStore-equivalent and refCount++.
+func (s *state) acquireBoxLock(boxID *[32]byte) *boxLock {
+	key := *boxID
+	s.locksMu.Lock()
+	if s.boxLocks == nil {
+		s.boxLocks = make(map[[32]byte]*boxLock)
+	}
+	bl, ok := s.boxLocks[key]
+	if !ok {
+		bl = &boxLock{}
+		s.boxLocks[key] = bl
+	}
+	bl.refCount++
+	s.locksMu.Unlock()
+	bl.mu.Lock()
+	return bl
+}
+
+// releaseBoxLock unlocks the per-BoxID mutex and drops the refCount,
+// removing the map entry when the last holder leaves.
+func (s *state) releaseBoxLock(bl *boxLock, boxID *[32]byte) {
+	bl.mu.Unlock()
+	key := *boxID
+	s.locksMu.Lock()
+	bl.refCount--
+	if bl.refCount == 0 {
+		delete(s.boxLocks, key)
+	}
+	s.locksMu.Unlock()
 }
 
 func newState(s *Server) *state {
@@ -120,6 +175,42 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		return fmt.Errorf(errDatabaseClosed)
 	}
 
+	// Serialize check-and-put for this BoxID so concurrent writers
+	// cannot both pass the existence check and both Put. The lock is
+	// per-BoxID — unrelated writes do not contend.
+	bl := s.acquireBoxLock(replicaWrite.BoxID)
+	defer s.releaseBoxLock(bl, replicaWrite.BoxID)
+
+	// Check if BoxID already exists (writes are immutable, only tombstones can overwrite)
+	ro := grocksdb.NewDefaultReadOptions()
+	defer ro.Destroy()
+	existing, err := s.db.Get(ro, replicaWrite.BoxID[:])
+	if err != nil {
+		s.log.Errorf("state: Failed to check existing entry for BoxID %x: %s", replicaWrite.BoxID, err)
+		return fmt.Errorf("failed to check existing entry: %w", err)
+	}
+	if existing.Size() > 0 {
+		// A retried write of byte-identical data is idempotent: the
+		// stored Box already represents the caller's intent, so report
+		// success rather than ErrBoxAlreadyExists. Without this, the
+		// courier's K=2 write path cannot tell "destination pre-existed
+		// with conflicting data" apart from "our prior write landed but
+		// the reply was lost" — both surface as BoxAlreadyExists at the
+		// state layer. The replication layer already assumes this
+		// idempotence (see replica/replication_reply.go).
+		storedBox, perr := pigeonhole.BoxFromBytes(existing.Data())
+		existing.Free()
+		if perr == nil &&
+			bytes.Equal(storedBox.Payload, replicaWrite.Payload) &&
+			storedBox.Signature == *replicaWrite.Signature {
+			s.log.Debugf("state: BoxID %x idempotent write (matching payload+signature)", replicaWrite.BoxID)
+			return nil
+		}
+		s.log.Debugf("state: BoxID %x already exists with differing data, rejecting write", replicaWrite.BoxID)
+		return ErrBoxAlreadyExists
+	}
+	existing.Free()
+
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
 	box := &pigeonhole.Box{
@@ -130,12 +221,53 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	copy(box.BoxID[:], replicaWrite.BoxID[:])
 	copy(box.Signature[:], replicaWrite.Signature[:])
 	s.log.Debugf("state: Attempting to write %d bytes to database", len(box.Bytes()))
-	err := s.db.Put(wo, box.BoxID[:], box.Bytes())
+	err = s.db.Put(wo, box.BoxID[:], box.Bytes())
 	if err != nil {
 		s.log.Errorf("state: Failed to write to database: %s", err)
 		return err
 	}
 	s.log.Debug("state: Successfully handled replica write")
+	return nil
+}
+
+// handleReplicaTombstone stores a tombstone (empty payload with signature) in the database.
+// Tombstones are BACAP messages with empty payloads that overwrite previously stored messages.
+// This allows readers to verify the tombstone was intentionally created by the writer.
+func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) error {
+	s.log.Debugf("state: Processing tombstone for BoxID: %x", boxID)
+
+	// Check if database is still open
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform tombstone write")
+		return fmt.Errorf(errDatabaseClosed)
+	}
+
+	// Take the same per-BoxID lock as handleReplicaWrite so a tombstone
+	// and a concurrent normal write for the same BoxID can't interleave
+	// between the existence check and the Put.
+	boxIDArr := boxID
+	bl := s.acquireBoxLock(&boxIDArr)
+	defer s.releaseBoxLock(bl, &boxIDArr)
+
+	wo := grocksdb.NewDefaultWriteOptions()
+	defer wo.Destroy()
+
+	// Store the tombstone as a Box with empty payload
+	box := &pigeonhole.Box{
+		PayloadLen: 0,
+		Payload:    nil,
+	}
+	copy(box.BoxID[:], boxID[:])
+	copy(box.Signature[:], signature[:])
+
+	s.log.Debugf("state: Writing tombstone to database for BoxID: %x", boxID)
+	err := s.db.Put(wo, box.BoxID[:], box.Bytes())
+	if err != nil {
+		s.log.Errorf("state: Failed to write tombstone for BoxID %x to database: %s", boxID, err)
+		return err
+	}
+
+	s.log.Debugf("state: Successfully stored tombstone for BoxID: %x", boxID)
 	return nil
 }
 
@@ -171,7 +303,7 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 
 func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) {
 	s.log.Debugf("state: Getting remote shards for BoxID: %x", boxID)
-	doc := s.server.PKIWorker.PKIDocument()
+	doc := s.server.PKIWorker.LastCachedPKIDocument()
 
 	// Check if PKI document has storage replicas
 	if doc == nil {

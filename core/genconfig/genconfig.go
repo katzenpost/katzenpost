@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 
@@ -28,8 +29,10 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	cConfig "github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/client2/thin"
+	cConfig "github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/thin"
+	thinTransport "github.com/katzenpost/katzenpost/client/thin/transport"
+	clientTransport "github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/common/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -57,7 +60,6 @@ const (
 	LinkPrivateKeyFile     = "link.private.pem"
 	CourierService         = "courier"
 	ClientIdentifier       = "client"
-	Client2Identifier      = "client2"
 	DebugLogLevel          = "DEBUG"
 	AuthNodeFormat         = "auth%d"
 	WritingLogFormat       = "writing %s"
@@ -85,8 +87,14 @@ type Config struct {
 	Nike                     string
 	UserForwardPayloadLength int
 	PkiSignatureScheme       string
+	EpochDuration            string
 	NoDecoy                  bool
+	NoClientDecoy            bool
+	NoCourierReplicaDecoy    bool
 	NoMixDecoy               bool
+	NoMetrics                bool
+	PyroscopeDirauth         bool
+	PyroscopeKpclientd       bool
 	DialTimeout              int
 	MaxPKIDelay              int
 	PollingIntvl             int
@@ -102,6 +110,13 @@ type Config struct {
 	LM                       float64
 	LMMax                    uint64
 	LGMax                    uint64
+	LR                       float64
+	LRMax                    uint64
+	SchedulerSlack           int
+	SchedulerMaxBurst        int
+	SendSlack                int
+	UnwrapDelay              int
+	NumSphinxWorkers         int
 }
 
 type Katzenpost struct {
@@ -122,6 +137,7 @@ type Katzenpost struct {
 
 	NodeConfigs        []*sConfig.Config
 	ReplicaNodeConfigs []*rConfig.Config
+	CourierConfigs     []*courierConfig.Config
 
 	BasePort        uint16
 	LastPort        uint16
@@ -131,8 +147,19 @@ type Katzenpost struct {
 	NodeIdx         int
 	GatewayIdx      int
 	ServiceNodeIdx  int
-	NoMixDecoy      bool
-	DebugConfig     *cConfig.Debug
+	NoClientDecoy         bool
+	NoCourierReplicaDecoy bool
+	NoMixDecoy            bool
+	NoMetrics             bool
+	PyroscopeDirauth   bool
+	PyroscopeKpclientd bool
+	EpochDuration     string
+	DebugConfig       *cConfig.Debug
+	SchedulerSlack    int
+	SchedulerMaxBurst int
+	SendSlack         int
+	UnwrapDelay       int
+	NumSphinxWorkers  int
 }
 
 type AuthById []*vConfig.Authority
@@ -146,6 +173,12 @@ type NodeById []*vConfig.Node
 func (a NodeById) Len() int           { return len(a) }
 func (a NodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
+
+type StorageReplicaNodeById []*vConfig.StorageReplicaNode
+
+func (a StorageReplicaNodeById) Len() int           { return len(a) }
+func (a StorageReplicaNodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a StorageReplicaNodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
 
 func AddressesFromURLs(addrs []string) map[string][]string {
 	addresses := make(map[string][]string)
@@ -167,19 +200,59 @@ func AddressesFromURLs(addrs []string) map[string][]string {
 	return addresses
 }
 
-// this generates the thin client config and NOT the client2 daemon config
+// thinDialConfigFor builds a thin.Config Dial subtable from a flat
+// network/address pair. "unix" maps to [Dial.Unix]; "tcp" / "tcp4" /
+// "tcp6" map to [Dial.Tcp] with the explicit Network preserved. Any
+// other value is rejected — callers must be explicit.
+func thinDialConfigFor(network, addr string) (*thinTransport.DialConfig, error) {
+	switch network {
+	case "unix":
+		return &thinTransport.DialConfig{
+			Unix: &thinTransport.UnixDialConfig{Address: addr},
+		}, nil
+	case "tcp", "tcp4", "tcp6":
+		return &thinTransport.DialConfig{
+			Tcp: &thinTransport.TcpDialConfig{Address: addr, Network: network},
+		}, nil
+	default:
+		return nil, fmt.Errorf("genconfig: unknown thin-client dial network %q (expected one of: unix, tcp, tcp4, tcp6)", network)
+	}
+}
+
+// clientListenConfigFor builds a cConfig.Config Listen subtable from a
+// flat network/address pair, following the same discriminator rules as
+// thinDialConfigFor. Unknown network names are rejected.
+func clientListenConfigFor(network, addr string) (*clientTransport.ListenConfig, error) {
+	switch network {
+	case "unix":
+		return &clientTransport.ListenConfig{
+			Unix: &clientTransport.UnixListenConfig{Address: addr},
+		}, nil
+	case "tcp", "tcp4", "tcp6":
+		return &clientTransport.ListenConfig{
+			Tcp: &clientTransport.TcpListenConfig{Address: addr, Network: network},
+		}, nil
+	default:
+		return nil, fmt.Errorf("genconfig: unknown kpclientd listen network %q (expected one of: unix, tcp, tcp4, tcp6)", network)
+	}
+}
+
+// this generates the thin client config and NOT the client daemon config
 func (s *Katzenpost) GenClient2ThinCfg(net, addr string) error {
 	log.Print("genClient2ThinCfg begin")
-	os.MkdirAll(filepath.Join(s.OutDir, "client2"), 0700)
+	os.MkdirAll(filepath.Join(s.OutDir, "client"), 0700)
 	cfg := new(thin.Config)
 
 	cfg.SphinxGeometry = s.SphinxGeometry
 	cfg.PigeonholeGeometry = s.PigeonholeGeometry
-	cfg.Network = net
-	cfg.Address = addr
+	dial, err := thinDialConfigFor(net, addr)
+	if err != nil {
+		return err
+	}
+	cfg.Dial = dial
 
 	log.Print("before save thin config")
-	err := SaveCfg(cfg, s.OutDir)
+	err = SaveCfg(cfg, s.OutDir)
 	if err != nil {
 		log.Printf("save thin config failure %s", err.Error())
 		return err
@@ -191,14 +264,17 @@ func (s *Katzenpost) GenClient2ThinCfg(net, addr string) error {
 
 func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	log.Print("genClient2Cfg begin")
-	os.MkdirAll(filepath.Join(s.OutDir, "client2"), 0700)
+	os.MkdirAll(filepath.Join(s.OutDir, "client"), 0700)
 	os.MkdirAll(filepath.Join(s.OutDir, "thinclient"), 0700)
 
 	cfg := new(cConfig.Config)
 
 	// Use TCP by default so that the CI tests pass on all platforms
-	cfg.ListenNetwork = net
-	cfg.ListenAddress = addr
+	listen, err := clientListenConfigFor(net, addr)
+	if err != nil {
+		return err
+	}
+	cfg.Listen = listen
 
 	// Logging section.
 	cfg.Logging = &cConfig.Logging{File: "", Level: DebugLogLevel}
@@ -236,7 +312,7 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 			WireKEMScheme:      s.WireKEMScheme,
 			Name:               s.NodeConfigs[i].Server.Identifier,
 			IdentityKey:        idPubKey,
-			LinkKey:            linkPubKey,
+			LinkKey:            cConfig.KEMPublicKeyPEM{linkPubKey},
 			Addresses:          s.NodeConfigs[i].Server.Addresses,
 		}
 		gateways = append(gateways, gateway)
@@ -247,9 +323,9 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	cfg.PinnedGateways = &cConfig.Gateways{
 		Gateways: gateways,
 	}
-	err := SaveCfg(cfg, s.OutDir)
+	err = SaveCfg(cfg, s.OutDir)
 	if err != nil {
-		log.Printf("save client2 config failure %s", err.Error())
+		log.Printf("save client config failure %s", err.Error())
 		return err
 	}
 	return nil
@@ -279,18 +355,22 @@ func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
 	}
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
-	return &courierConfig.Config{
-		PKI:              pki,
-		Logging:          &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
-		WireKEMScheme:    s.WireKEMScheme,
-		PKIScheme:        s.PkiSignatureScheme.Name(),
-		EnvelopeScheme:   s.ReplicaNIKEScheme.Name(),
-		DataDir:          datadir,
-		SphinxGeometry:   s.SphinxGeometry,
-		ConnectTimeout:   config.DefaultConnectTimeout,
-		HandshakeTimeout: config.DefaultHandshakeTimeout,
-		ReauthInterval:   config.DefaultReauthInterval,
+	cfg := &courierConfig.Config{
+		PKI:                 pki,
+		Logging:             &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
+		WireKEMScheme:       s.WireKEMScheme,
+		PKIScheme:           s.PkiSignatureScheme.Name(),
+		EnvelopeScheme:      s.ReplicaNIKEScheme.Name(),
+		DataDir:             datadir,
+		SphinxGeometry:      s.SphinxGeometry,
+		ConnectTimeout:      config.DefaultConnectTimeout,
+		HandshakeTimeout:    config.DefaultHandshakeTimeout,
+		ReauthInterval:      config.DefaultReauthInterval,
+		DisableDecoyTraffic: s.NoCourierReplicaDecoy,
 	}
+	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
+	s.LastPort++
+	return cfg
 }
 
 func (s *Katzenpost) GenReplicaNodeConfig() error {
@@ -299,12 +379,16 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg := new(rConfig.Config)
 
 	cfg.Identifier = fmt.Sprintf("replica%d", s.ReplicaNodeIdx+1)
+	cfg.ReplicaID = uint8(s.ReplicaNodeIdx)
 	cfg.SphinxGeometry = s.SphinxGeometry
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.ReplicaNIKEScheme = s.ReplicaNIKEScheme.Name()
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
 
 	cfg.Addresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastReplicaPort)}
+	s.LastReplicaPort++
+
+	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastReplicaPort)
 	s.LastReplicaPort++
 
 	cfg.DataDir = filepath.Join(s.BaseDir, cfg.Identifier)
@@ -314,6 +398,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.ConnectTimeout = config.DefaultConnectTimeout
 	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
 	cfg.ReauthInterval = config.DefaultReauthInterval
+	cfg.DisableDecoyTraffic = s.NoCourierReplicaDecoy
 
 	authorities := make([]*vConfig.Authority, 0, len(s.Authorities))
 	i := 0
@@ -387,6 +472,21 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
 	cfg.Debug.SendDecoyTraffic = !s.NoMixDecoy
+	if s.SchedulerSlack > 0 {
+		cfg.Debug.SchedulerSlack = s.SchedulerSlack
+	}
+	if s.SchedulerMaxBurst > 0 {
+		cfg.Debug.SchedulerMaxBurst = s.SchedulerMaxBurst
+	}
+	if s.SendSlack > 0 {
+		cfg.Debug.SendSlack = s.SendSlack
+	}
+	if s.UnwrapDelay > 0 {
+		cfg.Debug.UnwrapDelay = s.UnwrapDelay
+	}
+	if s.NumSphinxWorkers > 0 {
+		cfg.Debug.NumSphinxWorkers = s.NumSphinxWorkers
+	}
 
 	// PKI section.
 	if isVoting {
@@ -422,6 +522,7 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 		internalCourierDatadir := filepath.Join(s.BaseDir, cfg.Server.Identifier, CourierService)
 		courierCfg := s.GenCourierConfig(internalCourierDatadir)
+		s.CourierConfigs = append(s.CourierConfigs, courierCfg)
 
 		linkPubKey := CfgLinkKey(courierCfg, courierDataDir, courierCfg.WireKEMScheme)
 		linkBlob := kempem.ToPublicPEMString(linkPubKey)
@@ -522,7 +623,7 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		authority := &vConfig.Authority{
 			Identifier:         fmt.Sprintf(AuthNodeFormat, i),
 			IdentityPublicKey:  idKey,
-			LinkPublicKey:      linkKey,
+			LinkPublicKey:      vConfig.KEMPublicKeyPEM{linkKey},
 			WireKEMScheme:      wirekem,
 			PKISignatureScheme: s.PkiSignatureScheme.Name(),
 			Addresses:          cfg.Server.Addresses,
@@ -543,12 +644,13 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	return nil
 }
 
-func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
-	replicas := []*vConfig.Node{}
+func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.StorageReplicaNode, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
+	replicas := []*vConfig.StorageReplicaNode{}
 	for _, replicaCfg := range s.ReplicaNodeConfigs {
-		node := &vConfig.Node{
+		node := &vConfig.StorageReplicaNode{
 			Identifier:           replicaCfg.Identifier,
 			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, IdentityPublicKeyFile),
+			ReplicaID:            replicaCfg.ReplicaID,
 		}
 		replicas = append(replicas, node)
 	}
@@ -570,7 +672,7 @@ func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 		}
 	}
 
-	sort.Sort(NodeById(replicas))
+	sort.Sort(StorageReplicaNodeById(replicas))
 	sort.Sort(NodeById(mixes))
 	sort.Sort(NodeById(gateways))
 	sort.Sort(NodeById(serviceNodes))
@@ -599,6 +701,8 @@ func RunGenConfig(cfg Config) error {
 		LambdaM:           cfg.LM,
 		LambdaMMaxDelay:   cfg.LMMax,
 		LambdaGMaxDelay:   cfg.LGMax,
+		LambdaR:           cfg.LR,
+		LambdaRMaxDelay:   cfg.LRMax,
 	}
 
 	// Initialize katzenpost struct
@@ -682,12 +786,23 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.BindAddr = cfg.BindAddr
 	s.LogLevel = cfg.LogLevel
 	s.DebugConfig = &cConfig.Debug{
-		DisableDecoyTraffic:         cfg.NoDecoy,
+		DisableDecoyTraffic:         cfg.NoDecoy || cfg.NoClientDecoy,
 		SessionDialTimeout:          cfg.DialTimeout,
 		InitialMaxPKIRetrievalDelay: cfg.MaxPKIDelay,
 		PollingInterval:             cfg.PollingIntvl,
 	}
+	s.NoClientDecoy = cfg.NoDecoy || cfg.NoClientDecoy
+	s.NoCourierReplicaDecoy = cfg.NoDecoy || cfg.NoCourierReplicaDecoy
 	s.NoMixDecoy = cfg.NoMixDecoy
+	s.NoMetrics = cfg.NoMetrics
+	s.PyroscopeDirauth = cfg.PyroscopeDirauth
+	s.PyroscopeKpclientd = cfg.PyroscopeKpclientd
+	s.EpochDuration = cfg.EpochDuration
+	s.SchedulerSlack = cfg.SchedulerSlack
+	s.SchedulerMaxBurst = cfg.SchedulerMaxBurst
+	s.SendSlack = cfg.SendSlack
+	s.UnwrapDelay = cfg.UnwrapDelay
+	s.NumSphinxWorkers = cfg.NumSphinxWorkers
 
 	return s
 }
@@ -730,7 +845,7 @@ func SetupGeometry(s *Katzenpost, cfg *Config) error {
 
 	s.ReplicaNIKEScheme = replicaCommon.NikeScheme
 
-	// Generate pigeonhole geometry once for use in both client2 and thin client configs
+	// Generate pigeonhole geometry once for use in both client and thin client configs
 	var err error
 	s.PigeonholeGeometry, err = pigeonholeGeo.NewGeometryFromSphinx(s.SphinxGeometry, s.ReplicaNIKEScheme)
 	if err != nil {
@@ -844,12 +959,12 @@ func GenerateClientConfigurations(s *Katzenpost) error {
 
 	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonAddress)
 	if err != nil {
-		return fmt.Errorf("failed to generate client2 config: %v", err)
+		return fmt.Errorf("failed to generate client config: %v", err)
 	}
 
 	err = s.GenClient2ThinCfg(clientDaemonNetwork, clientDaemonAddress)
 	if err != nil {
-		return fmt.Errorf("failed to generate client2 thin config: %v", err)
+		return fmt.Errorf("failed to generate client thin config: %v", err)
 	}
 
 	return nil
@@ -862,9 +977,16 @@ func GenerateOutputFiles(s *Katzenpost, cfg *Config) error {
 		return fmt.Errorf("failed to generate docker-compose: %v", err)
 	}
 
-	err = s.GenPrometheus()
-	if err != nil {
-		return fmt.Errorf("failed to generate prometheus config: %v", err)
+	if !s.NoMetrics {
+		err = s.GenPrometheus()
+		if err != nil {
+			return fmt.Errorf("failed to generate prometheus config: %v", err)
+		}
+
+		err = s.GenGrafana()
+		if err != nil {
+			return fmt.Errorf("failed to generate grafana config: %v", err)
+		}
 	}
 
 	return nil
@@ -873,9 +995,9 @@ func GenerateOutputFiles(s *Katzenpost, cfg *Config) error {
 func Identifier(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
-		return Client2Identifier
+		return ClientIdentifier
 	case *thin.Config:
-		return Client2Identifier
+		return ClientIdentifier
 	case *vConfig.Config:
 		return cfg.(*vConfig.Config).Server.Identifier
 	case *sConfig.Config:
@@ -1014,16 +1136,282 @@ func (s *Katzenpost) GenPrometheus() error {
 
 	Write(f, `
 scrape_configs:
-- job_name: katzenpost
-  scrape_interval: 1s
-  static_configs:
-  - targets:
 `)
 
-	for _, cfg := range s.NodeConfigs {
-		Write(f, `    - %s
-`, cfg.Server.MetricsAddress)
+	for _, cfg := range s.ReplicaNodeConfigs {
+		Write(f, `- job_name: %s
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['%s']
+`, cfg.Identifier, cfg.MetricsAddress)
 	}
+	for i, cfg := range s.CourierConfigs {
+		Write(f, `- job_name: courier%d
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['%s']
+`, i+1, cfg.MetricsAddress)
+	}
+	for _, cfg := range s.NodeConfigs {
+		Write(f, `- job_name: %s
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['%s']
+`, cfg.Server.Identifier, cfg.Server.MetricsAddress)
+	}
+	return nil
+}
+
+func (s *Katzenpost) GenGrafana() error {
+	grafanaDir := filepath.Join(s.OutDir, "grafana")
+	dsDir := filepath.Join(grafanaDir, "provisioning", "datasources")
+	dbProvDir := filepath.Join(grafanaDir, "provisioning", "dashboards")
+	dbDir := filepath.Join(grafanaDir, "dashboards")
+	os.MkdirAll(dsDir, 0755)
+	os.MkdirAll(dbProvDir, 0755)
+	os.MkdirAll(dbDir, 0755)
+
+	// Datasource config
+	dsFile := filepath.Join(dsDir, "prometheus.yml")
+	log.Printf(WritingLogFormat, dsFile)
+	ds, err := os.Create(dsFile)
+	if err != nil {
+		return err
+	}
+	defer ds.Close()
+	Write(ds, `apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:9090
+    isDefault: true
+    editable: false
+`)
+
+	// Dashboard provisioning config
+	dbProvFile := filepath.Join(dbProvDir, "dashboards.yml")
+	log.Printf(WritingLogFormat, dbProvFile)
+	dbProv, err := os.Create(dbProvFile)
+	if err != nil {
+		return err
+	}
+	defer dbProv.Close()
+	Write(dbProv, `apiVersion: 1
+providers:
+  - name: Default
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+`)
+
+	// Dashboard JSON
+	dbFile := filepath.Join(dbDir, "katzenpost.json")
+	log.Printf(WritingLogFormat, dbFile)
+	db, err := os.Create(dbFile)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	Write(db, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Katzenpost Courier & Replica",
+  "uid": "katzenpost-decoy",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Courier: Decoys Sent (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_courier_decoys_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "Courier: Messages Sent (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_courier_messages_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "Courier: Messages Received (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "rate(katzenpost_courier_messages_received_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "Courier: Queue Length",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "katzenpost_courier_queue_length", "refId": "A", "legendFormat": "{{job}} - {{replica}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "Replica: Incoming Decoys Received (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_replica_incoming_decoys_received_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "Replica: Incoming Decoys Sent (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_replica_incoming_decoys_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 7,
+      "title": "Replica: Messages Sent (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_replica_incoming_messages_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 8,
+      "title": "Replica: Replication Dispatched (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_replica_replication_dispatched_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 9,
+      "title": "Replica: Incoming Queue Length",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "targets": [{"expr": "katzenpost_replica_incoming_queue_length", "refId": "A", "legendFormat": "{{job}} - {{peer}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 10,
+      "title": "Replica: Outgoing Queue Length",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "targets": [{"expr": "katzenpost_replica_outgoing_queue_length", "refId": "A", "legendFormat": "{{job}} - {{peer}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 11,
+      "title": "Replica: Replication Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_replica_replication_latency_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_replica_replication_latency_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_replica_replication_latency_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    }
+  ]
+}
+`)
+
+	// Packet loss dashboard
+	plFile := filepath.Join(dbDir, "mix-packet-loss.json")
+	log.Printf(WritingLogFormat, plFile)
+	pl, err := os.Create(plFile)
+	if err != nil {
+		return err
+	}
+	defer pl.Close()
+	Write(pl, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Mix Network Packet Loss",
+  "uid": "katzenpost-packet-loss",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Packets Dropped (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_dropped_packets_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "Deadline Blown Drops (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_dropped_deadline_blown_packets_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "Invalid + Replayed Packets (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "rate(katzenpost_dropped_invalid_packets_total[1m])", "refId": "A", "legendFormat": "{{job}} invalid"},
+        {"expr": "rate(katzenpost_replayed_packets_total[1m])", "refId": "B", "legendFormat": "{{job}} replayed"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "Outgoing Packets Dropped (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "rate(katzenpost_dropped_outgoing_packets_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "Mix Queue Size",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_mix_queue_size_sum[1m]) / rate(katzenpost_mix_queue_size_count[1m])", "refId": "A", "legendFormat": "{{job}} avg"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "Ingress Queue Size",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_ingress_queue_size_sum[1m]) / rate(katzenpost_ingress_queue_size_count[1m])", "refId": "A", "legendFormat": "{{job}} avg"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    }
+  ]
+}
+`)
 	return nil
 }
 
@@ -1044,6 +1432,32 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		log.Fatal(err)
 	}
 
+	// helper to write environment block
+	writeEnv := func(serviceName string) {
+		var envVars []string
+		if s.EpochDuration != "" {
+			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
+		}
+		if s.PyroscopeDirauth && strings.HasPrefix(serviceName, "auth") {
+			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://127.0.0.1:4040")
+			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-dirauth")
+			envVars = append(envVars, fmt.Sprintf("PYROSCOPE_SERVICE_TAG=%s", serviceName))
+		}
+		if s.PyroscopeKpclientd && serviceName == "kpclientd" {
+			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://127.0.0.1:4040")
+			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-kpclientd")
+			envVars = append(envVars, "PYROSCOPE_SERVICE_TAG=kpclientd")
+		}
+		if len(envVars) > 0 {
+			Write(f, `
+    environment:`)
+			for _, v := range envVars {
+				Write(f, `
+      - %s`, v)
+			}
+		}
+	}
+
 	Write(f, `
 services:
 `)
@@ -1055,9 +1469,10 @@ services:
     volumes:
       - ./:%s
     command: %s/server%s -f %s/%s/katzenpost.toml
-    network_mode: host
-
-    depends_on:`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+    network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		writeEnv(p.Identifier)
+		Write(f, `
+    depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			Write(f, `
       - %s`, authCfg.Server.Identifier)
@@ -1072,9 +1487,10 @@ services:
     volumes:
       - ./:%s
     command: %s/server%s -f %s/%s/katzenpost.toml
-    network_mode: host
-
-    depends_on:`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+    network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		writeEnv(p.Identifier)
+		Write(f, `
+    depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			Write(f, `
       - %s`, authCfg.Server.Identifier)
@@ -1093,8 +1509,10 @@ services:
     volumes:
       - ./:%s
     command: %s/server%s -f %s/mix%d/katzenpost.toml
-    network_mode: host
-    depends_on:`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
+    network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
+		writeEnv(fmt.Sprintf("mix%d", i+1))
+		Write(f, `
+    depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			// is this depends_on stuff actually necessary?
 			// there was a bit more of it before this function was regenerating docker-compose.yaml...
@@ -1116,8 +1534,10 @@ services:
     volumes:
       - ./:%s
     command: %s/replica%s -f %s/replica%d/replica.toml
-    network_mode: host
-    depends_on:`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
+    network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
+		writeEnv(fmt.Sprintf("replica%d", i+1))
+		Write(f, `
+    depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			// is this depends_on stuff actually necessary?
 			// there was a bit more of it before this function was regenerating docker-compose.yaml...
@@ -1134,19 +1554,53 @@ services:
     volumes:
       - ./:%s
     command: %s/dirauth%s -f %s/%s/authority.toml
-    network_mode: host
-`, authCfg.Server.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, authCfg.Server.Identifier)
+    network_mode: host`, authCfg.Server.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, authCfg.Server.Identifier)
+		writeEnv(authCfg.Server.Identifier)
+		Write(f, `
+`)
 	}
 
-	Write(f, `
+	if !s.NoMetrics {
+		Write(f, `
   %s:
     restart: "no"
     image: %s
+    pull_policy: if_not_present
     volumes:
       - ./:%s
     command: --config.file="%s/prometheus.yml"
     network_mode: host
 `, "metrics", "docker.io/prom/prometheus", s.BaseDir, s.BaseDir)
+
+		Write(f, `
+  grafana:
+    restart: "no"
+    image: docker.io/grafana/grafana:latest
+    pull_policy: if_not_present
+    volumes:
+      - ./%s/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./%s/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./%s/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_FEATURE_TOGGLES_DISABLE=kubernetesDashboards
+    network_mode: host
+    depends_on:
+      - metrics
+`, "grafana", "grafana", "grafana")
+	}
+
+	if s.PyroscopeDirauth || s.PyroscopeKpclientd {
+		Write(f, `
+  pyroscope:
+    restart: "no"
+    image: docker.io/grafana/pyroscope:latest
+    pull_policy: if_not_present
+    network_mode: host
+`)
+	}
 
 	Write(f, `
   kpclientd:
@@ -1154,8 +1608,10 @@ services:
     image: %s
     volumes:
       - ./:%s
-    command: %s/kpclientd%s -c %s/client2/client.toml
-    network_mode: host
-`, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir)
+    command: %s/kpclientd%s -c %s/client/client.toml
+    network_mode: host`, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir)
+	writeEnv("kpclientd")
+	Write(f, `
+`)
 	return nil
 }

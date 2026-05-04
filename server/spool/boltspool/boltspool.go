@@ -24,7 +24,6 @@ import (
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/server/spool"
-	"github.com/katzenpost/katzenpost/server/userdb"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -56,7 +55,7 @@ func (s *boltSpool) StoreSURBReply(u []byte, id *[sConstants.SURBIDLength]byte, 
 }
 
 func (s *boltSpool) doStore(u []byte, id *[sConstants.SURBIDLength]byte, msg []byte) error {
-	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
+	if len(u) == 0 || len(u) > sConstants.RecipientIDLength {
 		return fmt.Errorf("spool: invalid username: `%v`", u)
 	}
 
@@ -193,7 +192,7 @@ func (s *boltSpool) Remove(u []byte) error {
 	})
 }
 
-func (s *boltSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[sConstants.RecipientIDLength]byte]interface{}) error {
+func (s *boltSpool) VacuumExpired(ignoreIdentities map[[sConstants.RecipientIDLength]byte]interface{}) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		uBkt := tx.Bucket([]byte(usersBucket))
 		usersCursor := uBkt.Cursor()
@@ -203,32 +202,8 @@ func (s *boltSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[sCons
 			if _, ok := ignoreIdentities[key]; ok {
 				continue
 			}
-			err := udb.Remove(identity)
+			err := uBkt.DeleteBucket(identity)
 			if err != nil {
-				return err
-			}
-			err = uBkt.DeleteBucket(identity)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-func (s *boltSpool) Vacuum(udb userdb.UserDB) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
-		// Grab the `users` bucket.
-		uBkt := tx.Bucket([]byte(usersBucket))
-
-		cur := uBkt.Cursor()
-		for u, _ := cur.First(); u != nil; u, _ = cur.Next() {
-			// Note: If the provided UserDB doesn't do something intelligent
-			// like cache the valid users, this will really suck.
-			if udb.Exists(u) {
-				continue
-			}
-			if err := uBkt.DeleteBucket(u); err != nil {
 				return err
 			}
 		}

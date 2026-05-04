@@ -151,7 +151,35 @@ struct copy_command {
     u8 write_cap[write_cap_len];
 }
 
-// CopyCommandReply - reply for copy command operations
+// CopyCommandReply - reply for copy command operations.
+//
+// The Copy command is async: the courier ACKs receipt with
+// status=in_progress and a client polling with the same WriteCap later
+// observes status=succeeded or status=failed once processing is done.
+//
+// status:                 0=succeeded, 1=in_progress, 2=failed
+// error_code:             replica ErrorCode that triggered the abort
+//                         (only meaningful when status=failed)
+// failed_envelope_index:  1-based SEQUENTIAL position in the copy stream
+//                         of the envelope whose write produced the fatal
+//                         error — i.e. successfully_processed_count + 1.
+//                         NOT a BACAP message index (the courier only
+//                         sees opaque ciphertext for each envelope).
+//                         0 if not applicable. u64 to match BACAP's
+//                         Idx64 address space.
 struct copy_command_reply {
+    u8 status;
     u8 error_code;
+    u64 failed_envelope_index;
+}
+
+// CopyStreamElement - wraps a CourierEnvelope chunk with stream position flags.
+// Overhead: 1 byte (flags) + 4 bytes (envelope_len) = 5 bytes
+struct copy_stream_element {
+    // Flags: bit 0 = isStart, bit 1 = isFinal
+    u8 flags;
+
+    // The CourierEnvelope serialized bytes
+    u32 envelope_len;
+    u8 envelope_data[envelope_len];
 }

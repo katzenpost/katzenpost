@@ -46,38 +46,11 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/spool"
-	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 var testingSchemeName = "x25519"
 var testingScheme = schemes.ByName(testingSchemeName)
 var testSignatureScheme = signSchemes.ByName("Ed25519")
-
-type mockUserDB struct {
-	provider *mockProvider
-}
-
-func (u *mockUserDB) Exists([]byte) bool {
-	return true
-}
-
-func (u *mockUserDB) IsValid([]byte, kem.PublicKey) bool { return true }
-
-func (u *mockUserDB) Add([]byte, kem.PublicKey, bool) error { return nil }
-
-func (u *mockUserDB) SetIdentity([]byte, kem.PublicKey) error { return nil }
-
-func (u *mockUserDB) Link([]byte) (kem.PublicKey, error) {
-	return nil, nil
-}
-
-func (u *mockUserDB) Identity([]byte) (kem.PublicKey, error) {
-	return u.provider.userKey, nil
-}
-
-func (u *mockUserDB) Remove([]byte) error { return nil }
-
-func (u *mockUserDB) Close() {}
 
 type mockSpool struct{}
 
@@ -93,11 +66,9 @@ func (s *mockSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 func (s *mockSpool) Remove(u []byte) error { return nil }
 
-func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[32]byte]interface{}) error {
+func (s *mockSpool) VacuumExpired(ignoreIdentities map[[32]byte]interface{}) error {
 	return nil
 }
-
-func (s *mockSpool) Vacuum(udb userdb.UserDB) error { return nil }
 
 func (s *mockSpool) Close() {}
 
@@ -107,12 +78,6 @@ type mockProvider struct {
 }
 
 func (p *mockProvider) Halt() {}
-
-func (p *mockProvider) UserDB() userdb.UserDB {
-	return &mockUserDB{
-		provider: p,
-	}
-}
 
 func (p *mockProvider) Spool() spool.Spool {
 	return &mockSpool{}

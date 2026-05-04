@@ -18,11 +18,14 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
-	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/common"
 )
 
@@ -40,11 +43,11 @@ func newRootCommand() *cobra.Command {
 		Use:   "fetch",
 		Short: "Fetch network documents from Katzenpost directory authorities",
 		Long: `Fetch and display network topology documents from Katzenpost directory
-authorities. This tool connects to the client2 daemon to retrieve the
+authorities. This tool connects to the client daemon to retrieve the
 current network consensus document containing mix node information.
 
 Core functionality:
-• Connects to client2 daemon using thin client configuration
+• Connects to client daemon using thin client configuration
 • Retrieves current network consensus documents
 • Displays network topology and mix node information
 • Retries until PKI document becomes available
@@ -86,12 +89,21 @@ func runFetch(cfg Config) error {
 		Level: cfg.LogLevel,
 	}
 	client := thin.NewThinClient(thinCfg, logging)
+
+	// Ensure thin_close is sent even on Ctrl-C
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		client.Close()
+		os.Exit(0)
+	}()
 	defer client.Close()
 
 	// Connect to the daemon
 	err = client.Dial()
 	if err != nil {
-		return fmt.Errorf("failed to connect to client2 daemon: %v", err)
+		return fmt.Errorf("failed to connect to client daemon: %v", err)
 	}
 
 	// Check if we already have a PKI document
@@ -105,12 +117,15 @@ func runFetch(cfg Config) error {
 	eventSink := client.EventSink()
 	defer client.StopEventSink(eventSink)
 
-	for event := range eventSink {
-		if docEvent, ok := event.(*thin.NewDocumentEvent); ok {
-			fmt.Printf("%v", docEvent.Document)
-			return nil
+	for {
+		select {
+		case event := <-eventSink:
+			if docEvent, ok := event.(*thin.NewDocumentEvent); ok {
+				fmt.Printf("%v", docEvent.Document)
+				return nil
+			}
+		case <-client.HaltCh():
+			return fmt.Errorf("connection closed before receiving PKI document")
 		}
 	}
-
-	return fmt.Errorf("connection closed before receiving PKI document")
 }

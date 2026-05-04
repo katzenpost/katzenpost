@@ -129,7 +129,7 @@ func BenchmarkPKIClientHandshakeConcurrency(b *testing.B) {
 	peer := &config.Authority{
 		Identifier:         "bench-dirauth",
 		IdentityPublicKey:  serverIdPubKey,
-		LinkPublicKey:      serverLinkPubKey,
+		LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: serverLinkPubKey},
 		PKISignatureScheme: benchSignScheme.Name(),
 		WireKEMScheme:      benchKEMScheme.Name(),
 		Addresses:          []string{fmt.Sprintf("tcp://%s", listener.Addr().String())},
@@ -326,7 +326,7 @@ func BenchmarkMultipleDirauthHandshake(b *testing.B) {
 		peers[i] = &config.Authority{
 			Identifier:         fmt.Sprintf("dirauth-%d", i),
 			IdentityPublicKey:  idPubKey,
-			LinkPublicKey:      linkPubKey,
+			LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: linkPubKey},
 			PKISignatureScheme: benchSignScheme.Name(),
 			WireKEMScheme:      benchKEMScheme.Name(),
 			Addresses:          []string{fmt.Sprintf("tcp://%s", listener.Addr().String())},

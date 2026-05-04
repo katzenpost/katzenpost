@@ -50,6 +50,21 @@ func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, ep
 			return nil, err
 		}
 	}
+
+	// Also load the previous replica epoch's key if it is still on
+	// disk. handleReplicaMessage may receive ciphertexts encrypted to
+	// the prior-epoch public key during the grace window right after a
+	// boundary, and without this the key would be on disk but not in
+	// memory (Prune would later discard it before it gets reloaded).
+	// Missing is fine — just skip.
+	if epoch > 0 {
+		prev := epoch - 1
+		if prevKey, err := replicaCommon.EnvelopeKeyFromFiles(datadir, scheme, prev); err == nil {
+			e.keys[prev] = prevKey
+			log.Debugf("Loaded previous-epoch envelope key for epoch %d", prev)
+		}
+	}
+
 	e.Go(e.worker)
 	return e, nil
 }
@@ -137,12 +152,17 @@ func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*replicaCommon.EnvelopeK
 	return keypair, nil
 }
 
+// EnsureKey returns the keypair for replicaEpoch, generating it on
+// demand for the current or a future replica epoch (the PKI publisher's
+// use case). For any replicaEpoch strictly in the past it returns
+// whatever is already cached in memory, or an error — it never
+// fabricates a fresh random keypair for a past epoch, because such a
+// key cannot decrypt ciphertexts that were encrypted to the previously
+// PKI-published public key for that epoch.
 func (k *EnvelopeKeys) EnsureKey(replicaEpoch uint64) (*replicaCommon.EnvelopeKey, error) {
-	// Check if the requested epoch is too old to generate a key for
-	// Allow keys for a reasonable range of past epochs, but reject very old ones
 	currentEpoch, _, _ := replicaCommon.ReplicaNow()
-	if replicaEpoch < currentEpoch-15 {
-		return nil, errors.New("cannot generate key for epoch that is too old")
+	if replicaEpoch < currentEpoch {
+		return k.GetKeypair(replicaEpoch)
 	}
 
 	keypair, err := k.GetKeypair(replicaEpoch)

@@ -2,11 +2,16 @@ name: docker mixnet integration tests
 on: [pull_request]
 jobs:
 
-  test_e2e_client2:
+  test_e2e_client:
+    permissions:
+      contents: read
+      packages: write
     env:
       warped: true
-      no_mixdecoy: false
-      no_decoy: false
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
     strategy:
       matrix:
         go-version: [1.26.x]
@@ -15,17 +20,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
 
       - name: Install CA certificates
         if: ${{ env.ACT }}
@@ -43,6 +37,9 @@ jobs:
         run: |
           systemctl --user start podman.socket || true
 
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Build and start the mixnet
         run: |
           cd docker && make start wait
@@ -50,32 +47,21 @@ jobs:
       - name: Sleep for a few seconds to allow the mixnet to fully start
         run: sleep 5
 
-      - name: run old client core end to end tests
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest-legacy && cat coverage.part >> ../coverage.out
+      - name: run all docker integration tests in parallel
+        run: cd client && make dockertest-all
 
-      - name: run client Pigeonhole Channel end to end tests
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_basics && cat coverage.part >> ../coverage.out
-        continue-on-error: true
+      - name: Dump kpclientd logs on failure
+        if: failure()
+        run: |
+          cd docker && make client-logs-snapshot
 
-      - name: run client Pigeonhole close channel test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_close && cat coverage.part >> ../coverage.out
-        continue-on-error: true
-
-      - name: run client Pigeonhole resume write channel test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_resume_write_channel && cat coverage.part >> ../coverage.out
-        continue-on-error: true
-
-      - name: run client Pigeonhole resume write channel query test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_resume_write_channel_query && cat coverage.part >> ../coverage.out
-        continue-on-error: true
-
-      - name: run client Pigeonhole resume read channel test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_resume_read_channel && cat coverage.part >> ../coverage.out
-        continue-on-error: true
-
-      - name: run client Pigeonhole resume read channel query test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_resume_read_channel_query && cat coverage.part >> ../coverage.out
-        continue-on-error: true
+      - name: Dump replica logs on failure
+        if: failure()
+        run: |
+          cd docker && ls -la voting_mixnet/replica1/ && \
+          for r in voting_mixnet/replica*/; do echo "=== $r ===" && cat "${r}katzenpost.log" 2>&1 | tail -20 || echo "no log file"; done && \
+          cd voting_mixnet && podman compose ps -a 2>&1 | head -30 && \
+          podman compose logs --tail 30 replica1 replica2 replica3 replica4 replica5 2>&1 | tail -100
 
       - name: Stop the mixnet
         run: |
@@ -88,3 +74,4 @@ jobs:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
             docker/voting_mixnet/*/*.log
+            docker/voting_mixnet/servicenode*/courier/courier.log

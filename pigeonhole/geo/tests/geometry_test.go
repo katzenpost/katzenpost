@@ -15,7 +15,7 @@ import (
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
-	"github.com/katzenpost/katzenpost/client2/constants"
+	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholegeo "github.com/katzenpost/katzenpost/pigeonhole/geo"

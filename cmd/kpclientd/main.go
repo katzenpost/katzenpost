@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/katzenpost/katzenpost/client2"
-	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/common"
 )
 
@@ -81,7 +81,7 @@ func runClientDaemon(cfg Config) error {
 		return fmt.Errorf("failed to load config file: %v", err)
 	}
 
-	d, err := client2.NewDaemon(clientCfg)
+	d, err := client.NewDaemon(clientCfg)
 	if err != nil {
 		return fmt.Errorf("failed to create daemon: %v", err)
 	}

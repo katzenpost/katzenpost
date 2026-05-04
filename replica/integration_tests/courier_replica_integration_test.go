@@ -4,7 +4,6 @@
 package replica
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -29,7 +28,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	dirauthConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/client2/constants"
+	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -70,7 +69,7 @@ type shardingResult struct {
 	ReplicaPubKeys []nike.PublicKey
 }
 
-// getShardingInfo performs the common sharding logic and returns replica indices and public keys
+// getShardingInfo performs the common sharding logic and returns replica IDs and public keys
 func getShardingInfo(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte) *shardingResult {
 	currentEpoch, _, _ := epochtime.Now()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
@@ -81,23 +80,15 @@ func getShardingInfo(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize
 	require.NoError(t, err)
 	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
 
-	// Find the indices of the sharded replicas in the StorageReplicas slice
+	// Use the static ReplicaID from each descriptor, not the array index
 	var replicaIndices [2]uint8
 	var replicaPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
 
 	for i, shardedReplica := range shardedReplicas {
-		// Find the index of this replica in the StorageReplicas slice
-		replicaIndex := -1
-		for j, storageReplica := range doc.StorageReplicas {
-			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
-				replicaIndex = j
-				break
-			}
-		}
-		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
-
-		replicaIndices[i] = uint8(replicaIndex)
-		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
+		// Use the static ReplicaID field from the descriptor
+		// This is what the courier and replicas use to identify each other
+		replicaIndices[i] = shardedReplica.ReplicaID
+		replicaPubKey := shardedReplica.EnvelopeKeys[replicaEpoch]
 		replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
 		require.NoError(t, err)
 	}
@@ -315,11 +306,12 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 
 	courier := createCourierServer(t, courierCfg, sharedMockPKIClient)
 
-	// Force all replicas to fetch PKI documents first
+	// Force all replicas to fetch PKI documents and establish connections to peers
 	for i, replica := range replicas {
 		t.Logf("Forcing PKI fetch for replica %d during setup", i)
 		err = replica.PKIWorker.ForceFetchPKI()
 		require.NoError(t, err)
+		replica.ForceConnectorUpdate()
 	}
 
 	// Force courier to fetch PKI documents, then update connector
@@ -379,18 +371,21 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 // is synthetic and does not connect to any real directory authorities.
 func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaID int, sphinxGeo *geo.Geometry, portBase int) *config.Config {
 	return &config.Config{
-		DisableDecoyTraffic: true,
-		DataDir:             dataDir,
-		Identifier:          fmt.Sprintf(testReplicaNameFormat, replicaID),
-		WireKEMScheme:       linkScheme.Name(),
-		PKISignatureScheme:  pkiScheme.Name(),
-		ReplicaNIKEScheme:   replicaCommon.NikeScheme.Name(),
-		SphinxGeometry:      sphinxGeo,
-		Addresses:           []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
-		GenerateOnly:        false,
-		ConnectTimeout:      60000,  // 60 seconds
-		HandshakeTimeout:    30000,  // 30 seconds
-		ReauthInterval:      300000, // 5 minutes
+		DisableDecoyTraffic:    true,
+		DataDir:                dataDir,
+		Identifier:             fmt.Sprintf(testReplicaNameFormat, replicaID),
+		WireKEMScheme:          linkScheme.Name(),
+		PKISignatureScheme:     pkiScheme.Name(),
+		ReplicaNIKEScheme:      replicaCommon.NikeScheme.Name(),
+		SphinxGeometry:         sphinxGeo,
+		Addresses:              []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
+		GenerateOnly:           false,
+		ConnectTimeout:         60000,  // 60 seconds
+		HandshakeTimeout:       30000,  // 30 seconds
+		ReauthInterval:         300000, // 5 minutes
+		MaxConcurrentReplications: 4,
+		ProxyWorkerCount:       8,      // Concurrency limit for proxy request goroutines
+		ProxyRequestTimeout:    300,    // 5 minutes
 		Logging: &config.Logging{
 			Disable: false,
 			Level:   "DEBUG",
@@ -402,7 +397,7 @@ func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 						Identifier:         "auth1",
 						IdentityPublicKey:  nil,
 						PKISignatureScheme: "Ed25519",
-						LinkPublicKey:      nil,
+						LinkPublicKey:      dirauthConfig.KEMPublicKeyPEM{},
 						WireKEMScheme:      "Xwing",
 					},
 				},
@@ -449,14 +444,16 @@ func generateReplicaKeys(t *testing.T, dataDir, pkiSignatureSchemeName, wireKEMS
 
 func createCourierConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxGeo *geo.Geometry) *courierConfig.Config {
 	return &courierConfig.Config{
-		DataDir:          dataDir,
-		WireKEMScheme:    linkScheme.Name(),
-		PKIScheme:        pkiScheme.Name(),
-		EnvelopeScheme:   replicaCommon.NikeScheme.Name(),
-		SphinxGeometry:   sphinxGeo,
-		ConnectTimeout:   60000,
-		HandshakeTimeout: 30000,
-		ReauthInterval:   300000, // 5 minutes to prevent connection churn during test
+		DataDir:             dataDir,
+		WireKEMScheme:       linkScheme.Name(),
+		PKIScheme:           pkiScheme.Name(),
+		EnvelopeScheme:      replicaCommon.NikeScheme.Name(),
+		SphinxGeometry:      sphinxGeo,
+		ConnectTimeout:      60000,
+		HandshakeTimeout:    30000,
+		ReauthInterval:      300000, // 5 minutes to prevent connection churn during test
+		DisableDecoyTraffic: true,
+		MaxQueueSize:        courierConfig.DefaultMaxQueueSize,
 
 		Logging: &courierConfig.Logging{
 			Disable: false,
@@ -469,7 +466,7 @@ func createCourierConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 						Identifier:         "auth1",
 						IdentityPublicKey:  nil,
 						PKISignatureScheme: "Ed25519",
-						LinkPublicKey:      nil,
+						LinkPublicKey:      dirauthConfig.KEMPublicKeyPEM{},
 						WireKEMScheme:      "Xwing",
 						Addresses:          []string{""},
 					},
@@ -548,6 +545,7 @@ func makeReplicaDescriptor(t *testing.T,
 
 	desc := &pki.ReplicaDescriptor{
 		Name:        fmt.Sprintf(testReplicaNameFormat, replicaID),
+		ReplicaID:   uint8(replicaID),
 		IdentityKey: identityPubKeyBytes,
 		LinkKey:     linkPubKeyBytes,
 		Addresses: map[string][]string{
@@ -585,20 +583,37 @@ func createMockPKIClient(t *testing.T, sphinxGeo *geo.Geometry, serviceDesc *pki
 }
 
 func generateTestPKIDocument(t *testing.T, epoch uint64, serviceDesc *pki.MixDescriptor, replicaDescriptors []*pki.ReplicaDescriptor, sphinxGeo *geo.Geometry) *pki.Document {
+	// Build ConfiguredReplicaIDs from the replica descriptors
+	configuredReplicaIDs := make([]uint8, len(replicaDescriptors))
+	for i, desc := range replicaDescriptors {
+		configuredReplicaIDs[i] = desc.ReplicaID
+	}
+
+	// Build ConfiguredReplicaIdentityKeys from the replica descriptors
+	configuredReplicaKeys := make([][]byte, len(replicaDescriptors))
+	for i, desc := range replicaDescriptors {
+		configuredReplicaKeys[i] = make([]byte, len(desc.IdentityKey))
+		copy(configuredReplicaKeys[i], desc.IdentityKey)
+	}
+
 	return &pki.Document{
-		Epoch:              epoch,
-		SendRatePerMinute:  100,
-		LambdaP:            0.002,
-		LambdaPMaxDelay:    10000,
-		LambdaL:            0.1,
-		LambdaD:            0.1,
-		LambdaM:            0.1,
-		StorageReplicas:    replicaDescriptors,
-		Topology:           make([][]*pki.MixDescriptor, 0),
-		GatewayNodes:       make([]*pki.MixDescriptor, 0),
-		ServiceNodes:       []*pki.MixDescriptor{serviceDesc},
-		SharedRandomValue:  make([]byte, 32),
-		SphinxGeometryHash: sphinxGeo.Hash(),
+		Epoch:                         epoch,
+		SendRatePerMinute:             100,
+		LambdaP:                       0.002,
+		LambdaPMaxDelay:               10000,
+		LambdaL:                       0.1,
+		LambdaD:                       0.1,
+		LambdaM:                       0.1,
+		LambdaR:                       0.002,
+		LambdaRMaxDelay:               10000,
+		StorageReplicas:               replicaDescriptors,
+		ConfiguredReplicaIDs:          configuredReplicaIDs,
+		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
+		Topology:                      make([][]*pki.MixDescriptor, 0),
+		GatewayNodes:                  make([]*pki.MixDescriptor, 0),
+		ServiceNodes:                  []*pki.MixDescriptor{serviceDesc},
+		SharedRandomValue:             make([]byte, 32),
+		SphinxGeometryHash:            sphinxGeo.Hash(),
 	}
 }
 
@@ -642,18 +657,22 @@ func (c *mockPKIClient) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64
 
 			// Create a copy of the template document with the requested epoch
 			doc = &pki.Document{
-				Epoch:              epoch,
-				SendRatePerMinute:  templateDoc.SendRatePerMinute,
-				LambdaP:            templateDoc.LambdaP,
-				LambdaL:            templateDoc.LambdaL,
-				LambdaD:            templateDoc.LambdaD,
-				LambdaM:            templateDoc.LambdaM,
-				StorageReplicas:    templateDoc.StorageReplicas,
-				Topology:           templateDoc.Topology,
-				GatewayNodes:       templateDoc.GatewayNodes,
-				ServiceNodes:       templateDoc.ServiceNodes,
-				SharedRandomValue:  templateDoc.SharedRandomValue,
-				SphinxGeometryHash: templateDoc.SphinxGeometryHash,
+				Epoch:                         epoch,
+				SendRatePerMinute:             templateDoc.SendRatePerMinute,
+				LambdaP:                       templateDoc.LambdaP,
+				LambdaL:                       templateDoc.LambdaL,
+				LambdaD:                       templateDoc.LambdaD,
+				LambdaM:                       templateDoc.LambdaM,
+				LambdaR:                       templateDoc.LambdaR,
+				LambdaRMaxDelay:               templateDoc.LambdaRMaxDelay,
+				StorageReplicas:               templateDoc.StorageReplicas,
+				ConfiguredReplicaIDs:          templateDoc.ConfiguredReplicaIDs,
+				ConfiguredReplicaIdentityKeys: templateDoc.ConfiguredReplicaIdentityKeys,
+				Topology:                      templateDoc.Topology,
+				GatewayNodes:                  templateDoc.GatewayNodes,
+				ServiceNodes:                  templateDoc.ServiceNodes,
+				SharedRandomValue:             templateDoc.SharedRandomValue,
+				SphinxGeometryHash:            templateDoc.SphinxGeometryHash,
 			}
 
 			// Memoize the generated document for future requests
@@ -730,26 +749,24 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 		WriteMsg:    &writeRequest,
 	}
 
-	currentEpoch, _, _ := epochtime.Now()
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	replicaPubKey1 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[0].EnvelopeKeys[replicaEpoch]
-	replicaPubKey2 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[1].EnvelopeKeys[replicaEpoch]
+	// Use proper sharding to determine which replicas should store this BoxID
+	sharding := getShardingInfo(t, env, &boxID)
 
-	replicaPubKeys := make([]nike.PublicKey, 2)
-	replicaPubKeys[0], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey1)
-	require.NoError(t, err)
-	replicaPubKeys[1], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey2)
-	require.NoError(t, err)
+	for _, replicaIndex := range sharding.ReplicaIndices {
+		t.Logf("BoxID %x will be written to replica %d", boxID[:8], replicaIndex)
+	}
+
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
 	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
+		sharding.ReplicaPubKeys, msg.Bytes(),
 	)
 	mkemPublicKey := mkemPrivateKey.Public()
 
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	return &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
+		IntermediateReplicas: sharding.ReplicaIndices,
 		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
 		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
 		ReplyIndex:           0,
@@ -777,7 +794,7 @@ func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.Stat
 // waitForCourierPKI waits for the courier to have a PKI document
 func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 	maxWait := 60 * time.Second // Increased for mixnet timing
-	checkInterval := 100 * time.Millisecond
+	checkInterval := 1 * time.Second
 	start := time.Now()
 
 	for time.Since(start) < maxWait {
@@ -794,7 +811,7 @@ func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 // waitForReplicasPKI waits for all replicas to have PKI documents
 func waitForReplicasPKI(t *testing.T, env *testEnvironment) {
 	maxWait := 60 * time.Second // Increased for mixnet timing
-	checkInterval := 100 * time.Millisecond
+	checkInterval := 1 * time.Second
 	start := time.Now()
 
 	for time.Since(start) < maxWait {
@@ -832,6 +849,9 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	// require.Equal(t, uint8(0), courierWriteReply1.ErrorCode) // ErrorCode doesn't exist on CourierEnvelopeReply
 	require.Equal(t, uint8(0), courierWriteReply1.ReplyIndex)
 	require.True(t, len(courierWriteReply1.Payload) == 0) // Payload should be empty for write operations
+
+	// Wait for write to propagate to replicas before reading
+	time.Sleep(5 * time.Second)
 
 	bobReadRequest1, bobPrivateKey1 := composeReadRequest(t, env, bobStatefulReader)
 
@@ -912,6 +932,11 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 
 		t.Logf("Successfully wrote box %d", i+1)
 	}
+
+	// Wait for writes to propagate to replicas before reading.
+	// On slow CI runners, proxy connections between replicas may take
+	// longer to establish and process writes.
+	time.Sleep(10 * time.Second)
 
 	// Now read back the sequence of boxes
 	t.Logf("Reading back sequence of %d boxes", len(messages))
@@ -1030,7 +1055,7 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 // until we get a non-nil payload, indicating the replica response has been received
 func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeonhole.CourierEnvelope) *pigeonhole.CourierEnvelopeReply {
 	maxWait := 120 * time.Second // Increased to accommodate mixnet timing with constant time traffic
-	checkInterval := 100 * time.Millisecond
+	checkInterval := 1 * time.Second
 	start := time.Now()
 
 	for time.Since(start) < maxWait {
@@ -1052,4 +1077,83 @@ func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeon
 	copy(hash, envelopeBytes[:8])
 	t.Fatalf("Timeout waiting for courier response for envelope hash %x", hash)
 	return nil // This will never be reached due to t.Fatalf, but needed for compilation
+}
+
+// TestReplicaReplyPaddingIndistinguishable proves that replica replies for reads
+// and writes produce identical EnvelopeReply sizes after MKEM encryption.
+// This ensures an observer of courier-replica traffic cannot distinguish
+// read requests from write requests by reply size.
+func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
+	testEnv := setupTestEnvironment(t)
+	defer testEnv.cleanup()
+	time.Sleep(2 * time.Second)
+
+	waitForCourierPKI(t, testEnv)
+	waitForReplicasPKI(t, testEnv)
+
+	// 1. Write a box and then read it back to get a real MKEM-encrypted read reply
+	aliceWriter, bobReader := aliceAndBobKeyExchangeKeys(t, testEnv)
+	writeEnvelope := aliceComposesNextMessage(t, []byte("padding test payload"), testEnv, aliceWriter)
+	writeReply := injectCourierEnvelope(t, testEnv, writeEnvelope)
+	require.NotNil(t, writeReply)
+	t.Logf("Write ACK received (payload len: %d)", len(writeReply.Payload))
+
+	// Wait for write to propagate to replicas
+	time.Sleep(5 * time.Second)
+
+	// Read back the written box
+	readEnvelope, _ := composeReadRequest(t, testEnv, bobReader)
+	readReply := injectCourierEnvelope(t, testEnv, readEnvelope)
+	if len(readReply.Payload) == 0 {
+		readReply = waitForReplicaResponse(t, testEnv, readEnvelope)
+	}
+	readReplyLen := len(readReply.Payload)
+	t.Logf("Read reply EnvelopeReply length: %d", readReplyLen)
+	require.True(t, readReplyLen > 0, "read reply should have MKEM-encrypted payload")
+
+	// 2. Construct a realistic write reply and verify it produces the same
+	// MKEM envelope size as the read reply. Both paths in the replica use
+	// PadReplyInnerMessageForEncryption which pads to ReplicaReplyInnerMessageReadSize.
+	writeReplyInner := &pigeonhole.ReplicaMessageReplyInnerMessage{
+		MessageType: 1,
+		WriteReply:  &pigeonhole.ReplicaWriteReply{ErrorCode: 0},
+	}
+	bacapCiphertextLen := testEnv.geometry.CalculateBoxCiphertextLength()
+	readReplyInner := &pigeonhole.ReplicaMessageReplyInnerMessage{
+		MessageType: 0,
+		ReadReply: &pigeonhole.ReplicaReadReply{
+			ErrorCode:  0,
+			BoxID:      [32]uint8{1},
+			Signature:  [64]uint8{2},
+			PayloadLen: uint32(bacapCiphertextLen),
+			Payload:    make([]uint8, bacapCiphertextLen),
+		},
+	}
+
+	writePadded, err := pigeonhole.PadReplyInnerMessageForEncryption(writeReplyInner, testEnv.geometry)
+	require.NoError(t, err)
+	readPadded, err := pigeonhole.PadReplyInnerMessageForEncryption(readReplyInner, testEnv.geometry)
+	require.NoError(t, err)
+
+	// Padded sizes must be identical (both padded to ReplicaReplyInnerMessageReadSize)
+	require.Equal(t, len(readPadded), len(writePadded),
+		"padded read and write reply inner messages must be identical size")
+	t.Logf("Padded inner message size: %d bytes", len(readPadded))
+
+	// MKEM-encrypt both and verify ciphertext sizes are identical
+	_, replicaPriv, err := replicaCommon.NikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	clientPub, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	readEnvReply := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
+	writeEnvReply := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+
+	require.Equal(t, len(readEnvReply.Envelope), len(writeEnvReply.Envelope),
+		"MKEM-encrypted read and write replies must have identical EnvelopeReply size")
+	t.Logf("MKEM EnvelopeReply size: %d bytes (identical for read and write)", len(readEnvReply.Envelope))
+
+	// Also verify the MKEM envelope size matches what the courier actually returned for the read
+	require.Equal(t, readReplyLen, len(readEnvReply.Envelope),
+		"courier read reply size should match computed MKEM envelope size")
 }

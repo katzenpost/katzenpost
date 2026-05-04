@@ -48,10 +48,11 @@ func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme,
 
 	return &pki.ReplicaDescriptor{
 		Name:         "fake replica name",
+		ReplicaID:    0,
 		IdentityKey:  idkey,
 		LinkKey:      linkkey,
 		EnvelopeKeys: make(map[uint64][]byte),
-		Addresses:    map[string][]string{"tcp": []string{"tcp://127.0.0.1:12345"}},
+		Addresses:    map[string][]string{"tcp": {"tcp://127.0.0.1:12345"}},
 	}
 }
 
@@ -83,6 +84,7 @@ func TestState(t *testing.T) {
 			Level:   "DEBUG",
 		},
 	}
+	cfg.SetDefaultTimeouts()
 
 	pkiWorker := &PKIWorker{
 		replicas:   replicaCommon.NewReplicaMap(),
@@ -93,6 +95,7 @@ func TestState(t *testing.T) {
 		identityPublicKey: pk,
 		cfg:               cfg,
 		PKIWorker:         pkiWorker,
+		proxySema:         make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 
 	s.connector = new(mockConnector)

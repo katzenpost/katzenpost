@@ -143,6 +143,27 @@ func (w *WorkerBase) EntryForEpoch(epoch uint64) *Document {
 	return nil
 }
 
+// LastCachedPKIDocument returns the cached document for the most recent epoch,
+// or nil if no document has ever been fetched. Prefer PKIDocument() when the
+// caller requires strict current-epoch semantics (e.g. fresh sharding
+// decisions that must match what peers see). Use this when the field of
+// interest is near-constant and one-epoch staleness is benign, such as
+// LambdaR, replica link keys, or storage-replica membership.
+func (w *WorkerBase) LastCachedPKIDocument() *Document {
+	w.lock.RLock()
+	defer w.lock.RUnlock()
+
+	var latest uint64
+	var doc *Document
+	for epoch, d := range w.docs {
+		if doc == nil || epoch > latest {
+			latest = epoch
+			doc = d
+		}
+	}
+	return doc
+}
+
 // UpdateTimer updates the timer for the next PKI worker wake-up
 func (w *WorkerBase) UpdateTimer(timer *time.Timer) {
 	now, elapsed, till := epochtime.Now()

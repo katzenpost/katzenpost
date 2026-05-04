@@ -75,11 +75,13 @@ type ReplicaWrite struct {
 func (c *ReplicaWrite) String() string { return "ReplicaWrite" }
 
 func (c *ReplicaWrite) ToBytes() []byte {
-	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + len(c.Payload)
-
-	if c.Payload == nil {
-		panic("ReplicaWrite.Payload ")
+	// Handle tombstones (nil or empty payload)
+	payloadLen := 0
+	if c.Payload != nil {
+		payloadLen = len(c.Payload)
 	}
+	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + payloadLen
+
 	out := make([]byte, cmdOverhead, cmdOverhead+cmdLen)
 	out[0] = byte(replicaWrite)
 	out[1] = 0
@@ -87,7 +89,9 @@ func (c *ReplicaWrite) ToBytes() []byte {
 
 	out = append(out, c.BoxID[:]...)
 	out = append(out, c.Signature[:]...)
-	out = append(out, c.Payload...)
+	if c.Payload != nil {
+		out = append(out, c.Payload...)
+	}
 
 	// optional traffic padding
 	if c.Cmds == nil {
@@ -97,7 +101,13 @@ func (c *ReplicaWrite) ToBytes() []byte {
 }
 
 func (c *ReplicaWrite) Length() int {
-	var payloadSize = c.PigeonholeGeometry.CalculateBoxCiphertextLength()
+	var payloadSize int
+	if c.PigeonholeGeometry != nil {
+		payloadSize = c.PigeonholeGeometry.CalculateBoxCiphertextLength()
+	} else if c.Payload != nil {
+		payloadSize = len(c.Payload)
+	}
+	// payloadSize is 0 for tombstones (nil geometry and nil payload)
 	return cmdOverhead + bacap.BoxIDSize + bacap.SignatureSize + payloadSize
 }
 
@@ -284,9 +294,6 @@ type ReplicaMessageReply struct {
 	// ReplicaID identifies the replica replying.
 	ReplicaID uint8
 
-	// IsRead indicates whether the request was a read operation.
-	IsRead bool
-
 	// EnvelopeReply contains the mkem ciphertext reply.
 	EnvelopeReply []byte
 }
@@ -294,18 +301,13 @@ type ReplicaMessageReply struct {
 func (c *ReplicaMessageReply) String() string { return "ReplicaMessageReply" }
 
 func (c *ReplicaMessageReply) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+1+32+1+1+len(c.EnvelopeReply))
+	out := make([]byte, cmdOverhead, cmdOverhead+1+32+1+len(c.EnvelopeReply))
 	out[0] = byte(replicaMessageReply)
-	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+1+1+len(c.EnvelopeReply)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+1+len(c.EnvelopeReply)))
 
 	out = append(out, c.ErrorCode)
 	out = append(out, c.EnvelopeHash[:]...)
 	out = append(out, c.ReplicaID)
-	if c.IsRead {
-		out = append(out, 1)
-	} else {
-		out = append(out, 0)
-	}
 	out = append(out, c.EnvelopeReply...)
 
 	// optional traffic padding
@@ -324,15 +326,14 @@ func replicaMessageReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	copy(r.EnvelopeHash[:], b[1:1+32])
 
 	r.ReplicaID = b[1+32]
-	r.IsRead = b[1+32+1] == 1
 
-	r.EnvelopeReply = make([]byte, len(b[1+32+1+1:]))
-	copy(r.EnvelopeReply, b[1+32+1+1:])
+	r.EnvelopeReply = make([]byte, len(b[1+32+1:]))
+	copy(r.EnvelopeReply, b[1+32+1:])
 
 	return r, nil
 }
 
 // Length calculates the largest possible length of a ReplicaMessageReply.
 func (c *ReplicaMessageReply) Length() int {
-	return cmdOverhead + 1 + 32 + 1 + 1 + c.PigeonholeGeometry.CalculateEnvelopeReplySizeRead()
+	return cmdOverhead + 1 + 32 + 1 + c.PigeonholeGeometry.CalculateEnvelopeReplySizeRead()
 }

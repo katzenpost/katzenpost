@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -31,6 +32,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 var incomingConnID uint64
@@ -105,27 +107,24 @@ func (c *incomingConn) worker() {
 
 	// Constant time message output whether or not decoy traffic
 	// is enabled.
-	inCh := make(chan *senderRequest, 100)
-	outCh := make(chan *senderRequest, 100)
+	inCh := make(chan *senderRequest, c.l.server.cfg.IncomingQueueSize)
+	outCh := make(chan *senderRequest, c.l.server.cfg.IncomingQueueSize)
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
-	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds)
+	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds, fmt.Sprintf("%d", c.id))
 
-	doc := c.l.server.PKIWorker.PKIDocument()
-	if doc == nil {
-		c.log.Errorf("Failed to get PKI document")
-		sender.Halt()
-		return
+	// LambdaR is a near-constant network tunable, so a one-epoch-stale doc is
+	// fine here. Skip the UpdateRate call entirely if no doc is cached;
+	// the sender will use its previously-configured rate (or stay idle on
+	// first-ever connect) and the periodic resweep will catch up.
+	if doc := c.l.server.PKIWorker.LastCachedPKIDocument(); doc != nil {
+		rate, err := common.LambdaRateToMs(doc.LambdaR)
+		if err != nil {
+			c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
+		} else {
+			sender.UpdateRate(rate, doc.LambdaRMaxDelay)
+		}
 	}
-	// XXX FIXME(David): add a new lamda parameter to our pki doc format, lambdaR.
-	// for now use lambdaP
-	// LambdaP is the inverse of the rate, so rate = 1/LambdaP
-	rate := uint64(1.0 / doc.LambdaP)
-	if rate == 0 {
-		rate = 1 // Minimum rate of 1 message per time unit
-	}
-	maxDelay := doc.LambdaPMaxDelay
-	sender.UpdateRate(rate, maxDelay)
 	sender.UpdateConnectionStatus(true)
 
 	// Channel to signal egress sender to drain and exit
@@ -177,21 +176,19 @@ func (c *incomingConn) egressSender(session *wire.Session, outCh chan *senderReq
 
 // sendResponse sends a response command if one is provided
 func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) {
-	if resp != nil {
-		cmd := resp.command()
-		if cmd == nil {
-			c.log.Debugf("Failed to send response: nil command")
-			return
-		}
-		c.log.Debugf("Sending response command: %T", cmd)
-		if err := session.SendCommand(cmd); err != nil {
-			// Only log as debug since this is expected when connections close
-			c.log.Debugf("Failed to send response: %v", err)
-		} else {
-			c.log.Debugf("Successfully sent response command: %T", cmd)
-		}
-	} else {
-		c.log.Debugf("No response to send (resp is nil)")
+	if resp == nil {
+		return
+	}
+	cmd := resp.command()
+	if cmd == nil {
+		c.log.Debugf("Failed to send response: nil command")
+		return
+	}
+	_, isDecoy := cmd.(*commands.ReplicaDecoy)
+	if err := session.SendCommand(cmd); err != nil {
+		c.log.Debugf("Failed to send response: %v", err)
+	} else if !isDecoy {
+		c.log.Debugf("Sent response: %T", cmd)
 	}
 }
 
@@ -294,18 +291,27 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 		}
 
 		// Handle all of the storage replica commands.
-		resp, allGood := c.onReplicaCommand(rawCmd)
+		resp, allGood := c.onReplicaCommand(rawCmd, inCh)
 		if !allGood {
 			c.log.Debugf("Got a disconnect or we failed to handle replica command: %v", rawCmd)
 			return
 		}
 
 		if resp != nil {
-			c.log.Debugf("Sending response to inCh: %T", resp)
-			inCh <- resp
-			c.log.Debugf("Successfully sent response to inCh")
-		} else {
-			c.log.Debugf("No response to send (resp is nil)")
+			if resp.ReplicaDecoy == nil {
+				c.log.Debugf("Sending response to inCh: %T", resp)
+			}
+			select {
+			case <-c.l.closeAllCh:
+				return
+			default:
+			}
+			select {
+			case inCh <- resp:
+				instrument.IncomingQueueLength(fmt.Sprintf("%d", c.id), len(inCh))
+			case <-c.l.closeAllCh:
+				return
+			}
 		}
 	}
 }
@@ -409,7 +415,6 @@ func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
 			continue
 		}
 		if c.validateCourierKey(desc, creds.PublicKey) {
-			c.log.Debugf("replica/incoming: authenticateCourier(): Authenticated courier connection for '%s'", desc.Name)
 			return true
 		}
 	}
@@ -467,7 +472,6 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	c.log.Debugf("replica/incoming: authenticateReplica(): Authenticated replica connection for '%s'", replicaDesc.Name)
 	return true
 }
 

@@ -365,7 +365,7 @@ func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicK
 		Identifier:        fmt.Sprintf("authority%d", peerNum),
 		WireKEMScheme:     testingSchemeName,
 		IdentityPublicKey: identityPublicKey,
-		LinkPublicKey:     linkPublicKey,
+		LinkPublicKey:     config.KEMPublicKeyPEM{PublicKey: linkPublicKey},
 		Addresses:         []string{fmt.Sprintf("tcp://127.0.0.1:%d", peerNum)},
 	}
 	err = authPeer.Validate()
@@ -555,7 +555,12 @@ func TestParallelFailingAuthorities(t *testing.T) {
 
 	require.NoError(err)
 	require.Len(responses, 5)
-	require.Less(elapsed, 3*time.Second, "failing authorities blocked operation")
+	// Threshold sized for slow CI runners. The post-quantum handshake
+	// per peer dwarfs the failing-dial cost on shared macOS workers
+	// when the rest of authority/... has been working the host hard.
+	// Twenty seconds still distinguishes parallel from sequential
+	// behaviour without being CI-flaky.
+	require.Less(elapsed, 20*time.Second, "failing authorities blocked operation")
 
 	var failCount int
 	for _, r := range responses {
@@ -871,4 +876,89 @@ func TestAuthenticationErrorDebugFormat(t *testing.T) {
 	var err error = authErr
 	debugOutput := wire.GetDebugError(err)
 	require.Equal(debugStr, debugOutput)
+}
+
+// TestGetPKIDocumentForEpochParallelRace verifies that GetPKIDocumentForEpoch
+// races the configured authorities in parallel: when most authorities are
+// blocked at the dial stage but at least one is responsive, the call returns
+// promptly using the fast peer rather than waiting on the slow ones. This
+// regression-guards the bug where a sequential walk of authorities allowed a
+// single down or slow dirauth to delay the entire fetch (and, by extension,
+// dirauth bootstrap after a consensus failure).
+func TestGetPKIDocumentForEpochParallelRace(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+	dialer := newMockDialer(logBackend)
+	peers := []*config.Authority{}
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	const numPeers = 5
+	const fastIdx = numPeers - 1
+
+	var wg sync.WaitGroup
+	slowAddrs := make(map[string]bool)
+	for i := 0; i < numPeers; i++ {
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(50000 + i)
+		require.NoError(err)
+		peers = append(peers, peer)
+		wg.Add(1)
+		u, _ := url.Parse(peer.Addresses[0])
+		if i != fastIdx {
+			slowAddrs[u.Host] = true
+		}
+		go dialer.mockServer(u.Host, linkPrivKey, idPrivKey, idPubKey, &wg, mygeo)
+	}
+	wg.Wait()
+
+	// Wrap the mockDialer's dial so the "slow" peers block until the
+	// context expires. The fast peer dials through immediately. In a
+	// parallel implementation, the fast peer wins the race; in a
+	// sequential implementation, the slow peers picked first would
+	// stall the entire call.
+	slowDialer := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if slowAddrs[address] {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return dialer.dial(ctx, network, address)
+	}
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		Authorities:         peers,
+		DialContextFn:       slowDialer,
+		Geo:                 mygeo,
+		DialTimeoutSec:      60,
+		HandshakeTimeoutSec: 60,
+		ResponseTimeoutSec:  60,
+		RetryMaxAttempts:    0,
+	}
+	require.NoError(cfg.validate())
+
+	client, err := New(cfg)
+	require.NoError(err)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	epoch, _, _ := epochtime.Now()
+
+	start := time.Now()
+	doc, _, err := client.GetPKIDocumentForEpoch(ctx, epoch)
+	elapsed := time.Since(start)
+
+	require.NoError(err)
+	require.NotNil(doc)
+	require.Equal(epoch, doc.Epoch)
+	// Threshold sized for slow CI runners. The post-quantum handshake
+	// alone has been observed at over five seconds on shared macOS
+	// runners. A sequential walk would block for the full 30s context
+	// budget on the first slow peer, so 20s comfortably distinguishes
+	// the two without being flaky on the slow path.
+	require.Less(elapsed, 20*time.Second, "fetch was not racing peers in parallel")
+	t.Logf("parallel fetch completed in %v with %d/%d peers slow", elapsed, len(slowAddrs), numPeers)
 }

@@ -1,5 +1,6 @@
 DataDir = "/voting_mixnet/replica1"
 Identifier = "replica1"
+ReplicaID = 0
 WireKEMScheme = "xwing"
 PKISignatureScheme = "Ed25519"
 ReplicaNIKEScheme = "CTIDH1024-X25519"
@@ -7,7 +8,6 @@ Addresses = ["tcp://127.0.0.1:33000"]
 ConnectTimeout = 60000
 HandshakeTimeout = 30000
 ReauthInterval = 300000
-ReplicationQueueLength = 100
 GenerateOnly = false
 
 [PKI]

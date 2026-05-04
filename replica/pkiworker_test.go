@@ -73,7 +73,7 @@ func createTestSetup(t *testing.T) *testSetup {
 						Identifier:         "dirauth1",
 						IdentityPublicKey:  idpubkey,
 						PKISignatureScheme: pkiScheme.Name(),
-						LinkPublicKey:      linkpubkey,
+						LinkPublicKey:      authconfig.KEMPublicKeyPEM{PublicKey: linkpubkey},
 						WireKEMScheme:      linkScheme.Name(),
 						Addresses:          []string{testDirAuthAddress},
 					},
@@ -90,8 +90,10 @@ func createTestSetup(t *testing.T) *testSetup {
 		WireKEMScheme:      linkScheme.Name(),
 		PKISignatureScheme: pkiScheme.Name(),
 		ReplicaNIKEScheme:  replicaScheme.Name(),
-		SphinxGeometry:     geometry,
-		Addresses:          []string{testReplicaAddress},
+		SphinxGeometry:      geometry,
+		Addresses:           []string{testReplicaAddress},
+		ProxyWorkerCount:    8,
+		ProxyRequestTimeout: 300,
 	}
 
 	server, err := New(cfg)
@@ -124,7 +126,8 @@ func TestReplicaMap(t *testing.T) {
 	r := replicaCommon.NewReplicaMap()
 	newMap := make(map[[32]byte]*pki.ReplicaDescriptor)
 	replica := &pki.ReplicaDescriptor{
-		Name: "replica1",
+		Name:      "replica1",
+		ReplicaID: 0,
 	}
 	id := [32]byte{}
 	_, err := rand.Reader.Read(id[:])
@@ -231,6 +234,7 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 
 	replicaDesc := &pki.ReplicaDescriptor{
 		Name:        "replica1",
+		ReplicaID:   0,
 		Epoch:       epoch,
 		IdentityKey: setup.idpubkeyblob,
 		LinkKey:     setup.libpubkeyblob,

@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"crypto/hmac"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 type Connector struct {
@@ -30,7 +32,7 @@ type Connector struct {
 	conns         map[[constants.NodeIDLength]byte]*outgoingConn
 	forceUpdateCh chan interface{}
 
-	replicationCh chan *commands.ReplicaWrite
+	replicationSem chan struct{}
 
 	// Retry queue for commands that couldn't be dispatched due to missing connections
 	retryQueue   []retryCommand
@@ -42,11 +44,27 @@ type Connector struct {
 
 // retryCommand holds a command that needs to be retried when connections become available
 type retryCommand struct {
-	cmd      commands.Command
-	idHash   [32]byte
-	attempts int
-	lastTry  time.Time
+	cmd       commands.Command
+	idHash    [32]byte
+	// ident is a per-cmd fingerprint used for dedup. Zero and hasIdent=false
+	// for command types with no natural identity — those are never deduped.
+	ident     [32]byte
+	hasIdent  bool
+	attempts  int
+	firstSeen time.Time
+	lastTry   time.Time
 }
+
+// Retry queue bounds. Exposed as vars (not const) so tests can shrink them.
+var (
+	// maxRetryQueuePerPeer caps the number of pending retries to a single peer.
+	// Prevents one offline peer from crowding out retries destined for others.
+	// When exceeded, the oldest entry for that peer is evicted (FIFO).
+	maxRetryQueuePerPeer = 2000
+	// retryTTL is how long a pending retry may live before it is pruned.
+	// Longer outages should be healed by Rebalance, not this queue.
+	retryTTL = 3 * epochtime.Period
+)
 
 func (co *Connector) Halt() {
 	co.Worker.Halt()
@@ -71,12 +89,17 @@ func (co *Connector) Server() *Server {
 	return co.server
 }
 
-func getBoxID(cmd commands.Command) *[32]byte {
-	switch myCmd := cmd.(type) {
+// cmdIdentity returns a 32-byte fingerprint identifying the logical command,
+// used as a dedup key in the retry queue. Returns ok=false for command types
+// that have no natural identity — those are appended without dedup.
+func cmdIdentity(cmd commands.Command) ([32]byte, bool) {
+	switch c := cmd.(type) {
 	case *commands.ReplicaWrite:
-		return myCmd.BoxID
+		return *c.BoxID, true
+	case *commands.ReplicaMessage:
+		return *c.EnvelopeHash(), true
 	default:
-		panic("invalid command")
+		return [32]byte{}, false
 	}
 }
 
@@ -96,44 +119,83 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 		c.dispatchCommand(cmd)
 	} else {
 		// No connection - add to retry queue instead of dropping
-		co.log.Warningf("No connection for destination %x, queueing command for retry: %v", idHash[:8], getBoxID(cmd))
-		co.queueForRetry(cmd, *idHash)
+		co.log.Warningf("No connection for destination %x, queueing %T for retry", idHash[:8], cmd)
+		co.QueueForRetry(cmd, *idHash)
 	}
 }
 
-// queueForRetry adds a command to the retry queue when no connection is available
-func (co *Connector) queueForRetry(cmd commands.Command, idHash [32]byte) {
-	const maxRetryAttempts = 5
-
+// QueueForRetry adds a command to the retry queue when no connection is available.
+// Dedup is by (destination replica, BoxID): re-queuing the same write collapses
+// and bumps attempts; writes for different boxes to the same peer accumulate as
+// distinct entries. Evicts expired entries and, if at capacity, the oldest entry.
+func (co *Connector) QueueForRetry(cmd commands.Command, idHash [32]byte) {
 	co.retryQueueMu.Lock()
 	defer co.retryQueueMu.Unlock()
 
-	// Check if we already have this command in the retry queue
-	for i, retryCmd := range co.retryQueue {
-		if retryCmd.idHash == idHash {
-			// Update existing entry
+	co.pruneRetryQueueLocked()
+
+	ident, hasIdent := cmdIdentity(cmd)
+
+	peerCount := 0
+	for i, rc := range co.retryQueue {
+		if rc.idHash != idHash {
+			continue
+		}
+		peerCount++
+		if hasIdent && rc.hasIdent && rc.ident == ident {
 			co.retryQueue[i].cmd = cmd
 			co.retryQueue[i].lastTry = time.Now()
-			if co.retryQueue[i].attempts < maxRetryAttempts {
-				co.retryQueue[i].attempts++
-				co.log.Debugf("Updated retry queue entry for %x, attempt %d/%d", idHash[:8], co.retryQueue[i].attempts, maxRetryAttempts)
-			} else {
-				co.log.Errorf("Max retry attempts (%d) reached for destination %x, dropping command: %v", maxRetryAttempts, idHash[:8], getBoxID(cmd))
-				// Remove from retry queue
-				co.retryQueue = append(co.retryQueue[:i], co.retryQueue[i+1:]...)
-			}
+			co.retryQueue[i].attempts++
+			co.log.Debugf("Updated retry queue entry for peer %x ident %x, attempt %d", idHash[:8], ident[:8], co.retryQueue[i].attempts)
+			instrument.RetryQueueSize(len(co.retryQueue))
 			return
 		}
 	}
 
-	// Add new entry to retry queue
-	retryCmd := retryCommand{
-		cmd:      cmd,
-		idHash:   idHash,
-		attempts: 1,
-		lastTry:  time.Now(),
+	if peerCount >= maxRetryQueuePerPeer {
+		// Evict the oldest entry for this peer (leaves other peers' entries alone).
+		for i, rc := range co.retryQueue {
+			if rc.idHash == idHash {
+				co.log.Warningf("Retry queue at per-peer capacity (%d) for peer %x; evicting oldest entry (ident %x)", maxRetryQueuePerPeer, idHash[:8], rc.ident[:8])
+				co.retryQueue = append(co.retryQueue[:i], co.retryQueue[i+1:]...)
+				instrument.RetryQueueDropped("capacity")
+				break
+			}
+		}
 	}
-	co.retryQueue = append(co.retryQueue, retryCmd)
+
+	now := time.Now()
+	co.retryQueue = append(co.retryQueue, retryCommand{
+		cmd:       cmd,
+		idHash:    idHash,
+		ident:     ident,
+		hasIdent:  hasIdent,
+		attempts:  1,
+		firstSeen: now,
+		lastTry:   now,
+	})
+	instrument.RetryQueueSize(len(co.retryQueue))
+}
+
+// pruneRetryQueueLocked drops entries older than retryTTL. Must hold retryQueueMu.
+func (co *Connector) pruneRetryQueueLocked() {
+	if len(co.retryQueue) == 0 {
+		return
+	}
+	now := time.Now()
+	j := 0
+	for i, rc := range co.retryQueue {
+		if now.Sub(rc.firstSeen) > retryTTL {
+			co.log.Warningf("Dropping expired retry: peer %x ident %x age %s attempts %d", rc.idHash[:8], rc.ident[:8], now.Sub(rc.firstSeen), rc.attempts)
+			instrument.RetryQueueDropped("ttl")
+			continue
+		}
+		if i != j {
+			co.retryQueue[j] = rc
+		}
+		j++
+	}
+	co.retryQueue = co.retryQueue[:j]
 }
 
 // processRetryQueue attempts to dispatch queued commands when connections become available
@@ -141,7 +203,10 @@ func (co *Connector) processRetryQueue() {
 	co.retryQueueMu.Lock()
 	defer co.retryQueueMu.Unlock()
 
+	co.pruneRetryQueueLocked()
+
 	if len(co.retryQueue) == 0 {
+		instrument.RetryQueueSize(0)
 		return
 	}
 
@@ -158,21 +223,33 @@ func (co *Connector) processRetryQueue() {
 
 		if ok {
 			// Connection available - dispatch the command
-			co.log.Debugf("Retrying command for %x after %d attempts", retryCmd.idHash[:8], retryCmd.attempts)
+			co.log.Debugf("Retrying %T for peer %x ident %x after %d attempts", retryCmd.cmd, retryCmd.idHash[:8], retryCmd.ident[:8], retryCmd.attempts)
 			c.dispatchCommand(retryCmd.cmd)
 
 			// Remove from retry queue
 			co.retryQueue = append(co.retryQueue[:i], co.retryQueue[i+1:]...)
 		}
 	}
+	instrument.RetryQueueSize(len(co.retryQueue))
 }
 
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
-	co.replicationCh <- cmd
+	co.Go(func() {
+		start := time.Now()
+		// Acquire semaphore slot (or bail on shutdown)
+		select {
+		case <-co.HaltCh():
+			return
+		case co.replicationSem <- struct{}{}:
+		}
+		defer func() { <-co.replicationSem }()
+		co.doReplication(cmd)
+		instrument.ReplicationLatency(time.Since(start).Seconds())
+	})
 }
 
 func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
-	doc := co.server.PKIWorker.PKIDocument()
+	doc := co.server.PKIWorker.LastCachedPKIDocument()
 	if doc == nil {
 		co.log.Error("REPLICATION: Failed - no PKI document available")
 		return
@@ -182,28 +259,38 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	myIdBytes, err := co.server.identityPublicKey.MarshalBinary()
 	if err != nil {
 		co.log.Errorf("REPLICATION: Failed to marshal identity key: %v", err)
-	} else {
-		myIdHash := blake2b.Sum256(myIdBytes)
-		co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
+		return
 	}
+	myIdHash := blake2b.Sum256(myIdBytes)
+	co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
 
-	descs, err := replicaCommon.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
+	// Get ALL shards for this BoxID (not just remote ones)
+	// This ensures we replicate to both shard replicas
+	allShards, err := replicaCommon.GetShards(cmd.BoxID, doc)
 	if err != nil {
-		co.log.Errorf("REPLICATION: Failed - GetRemoteShards err: %v", err)
+		co.log.Errorf("REPLICATION: Failed - GetShards err: %v", err)
 		panic(err)
 	}
 
-	if len(descs) == 0 {
-		co.log.Infof("REPLICATION: No remote shards needed for BoxID %x", cmd.BoxID)
+	if len(allShards) == 0 {
+		co.log.Warningf("REPLICATION: No shards available for BoxID %x", cmd.BoxID)
 		return
 	}
 
 	// Track replication success/failure
 	successCount := 0
-	totalTargets := len(descs)
+	totalTargets := 0
 
-	for _, desc := range descs {
+	for _, desc := range allShards {
 		idHash := blake2b.Sum256(desc.IdentityKey)
+
+		// Skip self - we already wrote locally
+		if hmac.Equal(idHash[:], myIdHash[:]) {
+			co.log.Debugf("REPLICATION: Skipping self for BoxID %x", cmd.BoxID)
+			continue
+		}
+
+		totalTargets++
 
 		// Check if connection exists before dispatching
 		co.RLock()
@@ -215,6 +302,12 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 		}
 
 		co.DispatchCommand(cmd, &idHash)
+		instrument.ReplicationDispatched()
+	}
+
+	if totalTargets == 0 {
+		co.log.Infof("REPLICATION: No remote shards needed for BoxID %x (we are the only shard)", cmd.BoxID)
+		return
 	}
 
 	if successCount == totalTargets {
@@ -224,41 +317,35 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	}
 }
 
-func (co *Connector) replicationWorker() {
-	co.log.Infof("REPLICATION: Starting replication worker")
-	for {
-		select {
-		case <-co.HaltCh():
-			co.log.Infof("REPLICATION: Worker terminating gracefully")
-			return
-		case writeCmd := <-co.replicationCh:
-			co.log.Infof("REPLICATION: Worker received write command for BoxID: %x", writeCmd.BoxID)
-			co.doReplication(writeCmd)
-		}
-	}
-}
-
 func (co *Connector) worker() {
+	// Create a dedicated logger for this goroutine (go-logging requires one logger per goroutine)
+	log := co.server.LogBackend().GetLogger("replica connectorWorker")
+
 	var (
-		initialSpawnDelay = epochtime.Period / 64
-		resweepInterval   = epochtime.Period / 8
+		resweepInterval = epochtime.Period / 8
 	)
 
-	co.log.Debug("Starting connector worker")
-	timer := time.NewTimer(initialSpawnDelay)
+	log.Debug("Starting connector worker")
+
+	// Try to spawn connections immediately on startup rather than waiting.
+	// This helps replicas connect to each other more promptly when the PKI
+	// document is already available.
+	co.spawnNewConns()
+	co.processRetryQueue()
+
+	timer := time.NewTimer(resweepInterval)
 	defer timer.Stop()
 
 	for {
 		timerFired := false
 		select {
 		case <-co.HaltCh():
-			co.log.Debugf("Connector worker terminating gracefully.")
+			log.Debugf("Connector worker terminating gracefully.")
 			return
 		case <-co.forceUpdateCh:
-			co.log.Debug("Forced connection update triggered")
+			log.Debug("Forced connection update triggered")
 		case <-timer.C:
 			timerFired = true
-			co.log.Debug("Periodic connection update triggered")
 		}
 		if !timerFired && !timer.Stop() {
 			<-timer.C
@@ -311,6 +398,13 @@ func (co *Connector) CloseAllCh() chan interface{} {
 	return co.closeAllCh
 }
 
+// ConnectionCount returns the number of active outgoing connections.
+func (co *Connector) ConnectionCount() int {
+	co.RLock()
+	defer co.RUnlock()
+	return len(co.conns)
+}
+
 func (co *Connector) onNewConn(c *outgoingConn) {
 	nodeID := hash.Sum256(c.dst.IdentityKey)
 
@@ -351,12 +445,11 @@ func newConnector(server *Server) *Connector {
 		server:        server,
 		log:           server.LogBackend().GetLogger("replica Connector"),
 		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
-		replicationCh: make(chan *commands.ReplicaWrite, server.cfg.ReplicationQueueLength),
-		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
+		replicationSem: make(chan struct{}, server.cfg.MaxConcurrentReplications),
+		forceUpdateCh:  make(chan interface{}, 1), // See forceUpdate().
 		closeAllCh:    make(chan interface{}),
 	}
 
 	co.Go(co.worker)
-	co.Go(co.replicationWorker)
 	return co
 }

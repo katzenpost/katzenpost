@@ -13,7 +13,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-var cleanupInterval = 30 * time.Second
+var defaultCleanupInterval = 30 * time.Second
 
 // ProxyRequest represents a pending proxy request
 type ProxyRequest struct {
@@ -29,6 +29,7 @@ type ProxyRequestManager struct {
 	sync.RWMutex
 	pendingRequests map[[32]byte]*ProxyRequest
 	log             *logging.Logger
+	requestTimeout  time.Duration
 
 	// Cleanup goroutine management
 	ctx       context.Context
@@ -37,12 +38,17 @@ type ProxyRequestManager struct {
 }
 
 // NewProxyRequestManager creates a new proxy request manager
-func NewProxyRequestManager(log *logging.Logger) *ProxyRequestManager {
+func NewProxyRequestManager(log *logging.Logger, requestTimeout time.Duration) *ProxyRequestManager {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	if requestTimeout <= 0 {
+		requestTimeout = defaultCleanupInterval
+	}
 
 	p := &ProxyRequestManager{
 		pendingRequests: make(map[[32]byte]*ProxyRequest),
 		log:             log,
+		requestTimeout:  requestTimeout,
 		ctx:             ctx,
 		cancel:          cancel,
 	}
@@ -121,7 +127,7 @@ func (p *ProxyRequestManager) periodicCleanup() {
 			p.log.Debug("Proxy request manager cleanup goroutine shutting down")
 			return
 		case <-ticker.C:
-			p.CleanupExpiredRequests(cleanupInterval)
+			p.CleanupExpiredRequests(p.requestTimeout)
 		}
 	}
 }

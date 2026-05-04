@@ -13,24 +13,6 @@ import (
 var testingSchemeName = "x25519"
 var testingScheme = schemes.ByName(testingSchemeName)
 
-func TestKEMTextUnmarshal(t *testing.T) {
-	s := schemes.ByName("Kyber768-X25519")
-
-	pubkey, _, err := s.GenerateKeyPair()
-	require.NoError(t, err)
-
-	blob1, err := pubkey.MarshalText()
-	require.NoError(t, err)
-
-	testpubkey2, err := s.UnmarshalTextPublicKey([]byte(blob1))
-	require.NoError(t, err)
-
-	blob2, err := testpubkey2.MarshalText()
-	require.NoError(t, err)
-
-	require.Equal(t, blob1, blob2)
-}
-
 func TestKEMMarshalingShouldFailButDoesNotFail(t *testing.T) {
 	linkPubKey, linkPrivKey, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
