@@ -131,7 +131,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	}
 	ct := &mkem.Ciphertext{
 		EphemeralPublicKey: ephemeralPublicKey,
-		DEKCiphertexts:     []*[mkem.DEKSize]byte{replicaMessage.DEK},
+		DEKCiphertexts:     [][]byte{replicaMessage.DEK[:]},
 		Envelope:           replicaMessage.Ciphertext,
 	}
 
@@ -563,7 +563,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		PigeonholeGeometry: nil,
 		Scheme:             nikeScheme,
 		SenderEPubKey:      envelope.EphemeralPublicKey.Bytes(),
-		DEK:                envelope.DEKCiphertexts[0],
+		DEK:                (*[mkem.DEKSize]byte)(envelope.DEKCiphertexts[0]),
 		Ciphertext:         envelope.Envelope,
 	}
 
@@ -718,7 +718,7 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		PigeonholeGeometry: nil,
 		Scheme:             nikeScheme,
 		SenderEPubKey:      envelope.EphemeralPublicKey.Bytes(),
-		DEK:                envelope.DEKCiphertexts[0],
+		DEK:                (*[mkem.DEKSize]byte)(envelope.DEKCiphertexts[0]),
 		Ciphertext:         envelope.Envelope,
 	}
 

@@ -11,7 +11,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20poly1305 v0.0.1
-	github.com/katzenpost/hpqc v0.0.76
+	github.com/katzenpost/hpqc v0.0.78
 	github.com/katzenpost/nyquist v0.0.12
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
 	github.com/linxGnu/grocksdb v1.10.7
@@ -48,9 +48,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
-	github.com/go-faster/xor v1.0.0 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.9 // indirect
-	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/katzenpost/chacha20 v0.0.1 // indirect
 	github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5 // indirect

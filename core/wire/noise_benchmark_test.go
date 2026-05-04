@@ -15,8 +15,6 @@ import (
 	"github.com/katzenpost/nyquist/pattern"
 	"github.com/katzenpost/nyquist/seec"
 
-	"github.com/katzenpost/hpqc/kem/adapter"
-	kemhybrid "github.com/katzenpost/hpqc/kem/hybrid"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
@@ -32,13 +30,9 @@ func BenchmarkPQNoise(b *testing.B) {
 
 	protocol := &nyquist.Protocol{
 		Pattern: pattern.PqXX,
-		KEM: kemhybrid.New(
-			"Kyber768-X25519",
-			adapter.FromNIKE(ecdh.Scheme(rand.Reader)),
-			schemes.ByName("Kyber768"),
-		),
-		Cipher: cipher.ChaChaPoly,
-		Hash:   hash.BLAKE2s,
+		KEM:     schemes.ByName("Kyber768-X25519"),
+		Cipher:  cipher.ChaChaPoly,
+		Hash:    hash.BLAKE2s,
 	}
 
 	_, clientStatic := nyquistkem.GenerateKeypair(protocol.KEM, seecGenRand)

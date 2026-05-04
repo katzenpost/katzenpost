@@ -767,8 +767,8 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: sharding.ReplicaIndices,
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
 		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
@@ -1040,8 +1040,8 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: sharding.ReplicaIndices,
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
 		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),

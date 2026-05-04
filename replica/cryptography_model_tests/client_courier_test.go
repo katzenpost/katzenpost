@@ -146,7 +146,7 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 	}
 	ct := &mkem.Ciphertext{
 		EphemeralPublicKey: ephemeralPublicKey,
-		DEKCiphertexts:     []*[mkem.DEKSize]byte{replicaMessage.DEK},
+		DEKCiphertexts:     [][]byte{replicaMessage.DEK[:]},
 		Envelope:           replicaMessage.Ciphertext,
 	}
 
@@ -322,8 +322,8 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 	senderPubkey := mkemPublicKey.Bytes()
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		SenderPubkeyLen:      uint16(len(senderPubkey)),
 		SenderPubkey:         senderPubkey,
@@ -376,8 +376,8 @@ func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *pigeonhole.Co
 	senderPubkey := mkemPublicKey.Bytes()
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		SenderPubkeyLen:      uint16(len(senderPubkey)),
 		SenderPubkey:         senderPubkey,

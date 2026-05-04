@@ -68,7 +68,7 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForCurrent(t *testing.T) {
 	_, ct := mscheme.Encapsulate([]nike.PublicKey{kp.PublicKey}, payload)
 	decapCt := &mkem.Ciphertext{
 		EphemeralPublicKey: ct.EphemeralPublicKey,
-		DEKCiphertexts:     []*[mkem.DEKSize]byte{ct.DEKCiphertexts[0]},
+		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
 		Envelope:           ct.Envelope,
 	}
 
@@ -97,7 +97,7 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForPrevious(t *testing.T) {
 	_, ct := mscheme.Encapsulate([]nike.PublicKey{prevKp.PublicKey}, payload)
 	decapCt := &mkem.Ciphertext{
 		EphemeralPublicKey: ct.EphemeralPublicKey,
-		DEKCiphertexts:     []*[mkem.DEKSize]byte{ct.DEKCiphertexts[0]},
+		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
 		Envelope:           ct.Envelope,
 	}
 
@@ -124,7 +124,7 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForNext(t *testing.T) {
 	_, ct := mscheme.Encapsulate([]nike.PublicKey{nextKp.PublicKey}, payload)
 	decapCt := &mkem.Ciphertext{
 		EphemeralPublicKey: ct.EphemeralPublicKey,
-		DEKCiphertexts:     []*[mkem.DEKSize]byte{ct.DEKCiphertexts[0]},
+		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
 		Envelope:           ct.Envelope,
 	}
 
@@ -154,7 +154,7 @@ func TestTryDecapsulateAcrossEpochWindowRejectsOutOfWindow(t *testing.T) {
 	_, ct := mscheme.Encapsulate([]nike.PublicKey{oldKp.PublicKey}, payload)
 	decapCt := &mkem.Ciphertext{
 		EphemeralPublicKey: ct.EphemeralPublicKey,
-		DEKCiphertexts:     []*[mkem.DEKSize]byte{ct.DEKCiphertexts[0]},
+		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
 		Envelope:           ct.Envelope,
 	}
 
