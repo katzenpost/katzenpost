@@ -20,6 +20,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	authconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -158,6 +159,7 @@ func (m *mockReplicaPKIClient) posts() ([]uint64, []*pki.ReplicaDescriptor) {
 
 	epochs := append([]uint64(nil), m.postEpochs...)
 	descriptors := append([]*pki.ReplicaDescriptor(nil), m.descriptors...)
+
 	return epochs, descriptors
 }
 
@@ -464,7 +466,6 @@ func TestPruneDocuments(t *testing.T) {
 	rawOldDoc, err := oldDoc.MarshalCertificate()
 	require.NoError(t, err)
 	pkiWorker.StoreDocument(epoch, oldDoc, rawOldDoc)
-
 	pkiWorker.PruneDocuments()
 
 	// Verify the old document was pruned
@@ -550,7 +551,7 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	require.NotNil(t, nextDocRetrieved)
 }
 
-func TestReplicaPublishDescriptorUsesNextEpochUploadWindow(t *testing.T) {
+func TestReplicaPublishDescriptorUsesCurrentEpochUploadWindow(t *testing.T) {
 	mockClient := &mockReplicaPKIClient{}
 	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
 	defer cleanup()
@@ -569,9 +570,34 @@ func TestReplicaPublishDescriptorUsesNextEpochUploadWindow(t *testing.T) {
 
 	require.Len(t, epochs, 1)
 	require.Len(t, descriptors, 1)
+	require.Equal(t, currentEpoch, epochs[0])
 	require.Equal(t, epochs[0], descriptors[0].Epoch)
 	require.Equal(t, epochs[0], pkiWorker.lastPublishedEpoch)
-	require.GreaterOrEqual(t, epochs[0], currentEpoch+1)
+}
+
+func TestReplicaPublishDescriptorUsesNextEpochAfterCurrentEpochPublished(t *testing.T) {
+	mockClient := &mockReplicaPKIClient{}
+	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
+	defer cleanup()
+
+	currentEpoch, _, _ := epochtime.Now()
+	pkiWorker.lastPublishedEpoch = currentEpoch
+
+	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+	require.NoError(t, err)
+
+	epochs, descriptors := mockClient.posts()
+	if len(epochs) == 0 {
+		require.Empty(t, descriptors)
+		require.Equal(t, currentEpoch, pkiWorker.lastPublishedEpoch)
+		return
+	}
+
+	require.Len(t, epochs, 1)
+	require.Len(t, descriptors, 1)
+	require.Equal(t, currentEpoch+1, epochs[0])
+	require.Equal(t, epochs[0], descriptors[0].Epoch)
+	require.Equal(t, epochs[0], pkiWorker.lastPublishedEpoch)
 }
 
 func TestReplicaPublishDescriptorSkipsAfterSuccessfulPublish(t *testing.T) {
@@ -614,8 +640,8 @@ func TestReplicaPublishDescriptorDoesNotSuppressTransientFailure(t *testing.T) {
 	require.Error(t, err)
 	require.Len(t, epochs, 1)
 	require.Len(t, descriptors, 1)
+	require.Equal(t, currentEpoch, epochs[0])
 	require.Equal(t, epochs[0], descriptors[0].Epoch)
-	require.GreaterOrEqual(t, epochs[0], currentEpoch+1)
 	require.Equal(t, uint64(0), pkiWorker.lastPublishedEpoch)
 }
 
@@ -642,8 +668,8 @@ func TestReplicaPublishDescriptorSuppressesPermanentInvalidEpoch(t *testing.T) {
 	require.ErrorIs(t, err, pki.ErrInvalidPostEpoch)
 	require.Len(t, epochs, 1)
 	require.Len(t, descriptors, 1)
+	require.Equal(t, currentEpoch, epochs[0])
 	require.Equal(t, epochs[0], descriptors[0].Epoch)
-	require.GreaterOrEqual(t, epochs[0], currentEpoch+1)
 	require.Equal(t, epochs[0], pkiWorker.lastPublishedEpoch)
 }
 
