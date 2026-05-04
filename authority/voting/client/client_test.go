@@ -1019,3 +1019,194 @@ func TestPostReplicaDescriptorStatusCarriesDescriptorStatusCode(t *testing.T) {
 
 	require.Equal(t, uint8(commands.DescriptorOk), status.ErrorCode)
 }
+
+func (d *mockDialer) mockPostReplicaServer(
+	address string,
+	linkPrivateKey kem.PrivateKey,
+	identityPrivateKey sign.PrivateKey,
+	identityPublicKey sign.PublicKey,
+	wg *sync.WaitGroup,
+	mygeo *geo.Geometry,
+	errorCode uint8,
+) {
+	d.Lock()
+	d.log.Debugf("mockPostReplicaServer(%s)", address)
+	clientConn, serverConn := net.Pipe()
+	d.netMap[address] = &conn{
+		serverConn:    serverConn,
+		clientConn:    clientConn,
+		dialCh:        make(chan interface{}, 0),
+		signingKey:    identityPrivateKey,
+		signingPubKey: identityPublicKey,
+	}
+	d.Unlock()
+
+	wg.Done()
+	d.waitUntilDialed(address)
+
+	identityHash := hash.Sum256From(identityPublicKey)
+	cfg := &wire.SessionConfig{
+		KEMScheme:         testingScheme,
+		Geometry:          mygeo,
+		Authenticator:     d,
+		AdditionalData:    identityHash[:],
+		AuthenticationKey: linkPrivateKey,
+		RandomReader:      rand.Reader,
+	}
+	session, err := wire.NewPKISession(cfg, false)
+	if err != nil {
+		d.log.Errorf("mockPostReplicaServer NewPKISession failure: %s", err)
+		return
+	}
+	defer session.Close()
+
+	d.Lock()
+	err = session.Initialize(d.netMap[address].serverConn)
+	d.Unlock()
+	if err != nil {
+		d.log.Errorf("mockPostReplicaServer session Initialize failure: %s", err)
+		return
+	}
+
+	cmd, err := session.RecvCommand()
+	if err != nil {
+		d.log.Errorf("mockPostReplicaServer session RecvCommand failure: %s", err)
+		return
+	}
+
+	switch cmd.(type) {
+	case *commands.PostReplicaDescriptor:
+		reply := &commands.PostReplicaDescriptorStatus{
+			ErrorCode: errorCode,
+		}
+		if err := session.SendCommand(reply); err != nil {
+			d.log.Errorf("mockPostReplicaServer SendCommand failure: %s", err)
+			return
+		}
+	default:
+		d.log.Errorf("mockPostReplicaServer unexpected command: %T", cmd)
+		return
+	}
+}
+
+func generateReplicaDescriptorForPostReplicaTest(
+	t *testing.T,
+	epoch uint64,
+	identityPublicKey sign.PublicKey,
+) *pki.ReplicaDescriptor {
+	t.Helper()
+
+	identityKeyBlob, err := identityPublicKey.MarshalBinary()
+	require.NoError(t, err)
+
+	linkPublicKey, _, err := testingScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	linkKeyBlob, err := linkPublicKey.MarshalBinary()
+	require.NoError(t, err)
+
+	envelopeKey0 := make([]byte, 32)
+	_, err = rand.Reader.Read(envelopeKey0)
+	require.NoError(t, err)
+
+	envelopeKey1 := make([]byte, 32)
+	_, err = rand.Reader.Read(envelopeKey1)
+	require.NoError(t, err)
+
+	return &pki.ReplicaDescriptor{
+		Name:        "replica-test",
+		Epoch:       epoch,
+		IdentityKey: identityKeyBlob,
+		LinkKey:     linkKeyBlob,
+		Addresses: map[string][]string{
+			pki.TransportTCP: []string{"tcp://127.0.0.1:65000"},
+		},
+		EnvelopeKeys: map[uint64][]byte{
+			epoch:     envelopeKey0,
+			epoch + 1: envelopeKey1,
+		},
+	}
+}
+
+func TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	dialer := newMockDialer(logBackend)
+	peers := []*config.Authority{}
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	var wg sync.WaitGroup
+	failingAddrs := make(map[string]bool)
+
+	for i := 0; i < 5; i++ {
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(65000 + i)
+		require.NoError(err)
+
+		peers = append(peers, peer)
+
+		u, err := url.Parse(peer.Addresses[0])
+		require.NoError(err)
+
+		if i >= 3 {
+			failingAddrs[u.Host] = true
+			continue
+		}
+
+		wg.Add(1)
+		go dialer.mockPostReplicaServer(
+			u.Host,
+			linkPrivKey,
+			idPrivKey,
+			idPubKey,
+			&wg,
+			mygeo,
+			uint8(commands.DescriptorOk),
+		)
+	}
+
+	wg.Wait()
+
+	dialFn := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if failingAddrs[address] {
+			return nil, fmt.Errorf("simulated failure to %s", address)
+		}
+		return dialer.dial(ctx, network, address)
+	}
+
+	_, clientLinkKey, err := testingScheme.GenerateKeyPair()
+	require.NoError(err)
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		LinkKey:             clientLinkKey,
+		Authorities:         peers,
+		DialContextFn:       dialFn,
+		Geo:                 mygeo,
+		DialTimeoutSec:      5,
+		HandshakeTimeoutSec: 5,
+		ResponseTimeoutSec:  5,
+		RetryMaxAttempts:    0,
+	}
+	require.NoError(cfg.validate())
+
+	client, err := New(cfg)
+	require.NoError(err)
+
+	replicaIdentityPublicKey, replicaIdentityPrivateKey, err := testSignatureScheme.GenerateKey()
+	require.NoError(err)
+
+	epoch, _, _ := epochtime.Now()
+	desc := generateReplicaDescriptorForPostReplicaTest(t, epoch, replicaIdentityPublicKey)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = client.PostReplica(ctx, epoch, replicaIdentityPrivateKey, replicaIdentityPublicKey, desc)
+	require.NoError(err)
+}
