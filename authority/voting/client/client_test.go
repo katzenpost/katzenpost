@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1020,17 +1021,18 @@ func TestPostReplicaDescriptorStatusCarriesDescriptorStatusCode(t *testing.T) {
 	require.Equal(t, uint8(commands.DescriptorOk), status.ErrorCode)
 }
 
-func (d *mockDialer) mockPostReplicaServer(
+func (d *mockDialer) mockPostServer(
 	address string,
 	linkPrivateKey kem.PrivateKey,
 	identityPrivateKey sign.PrivateKey,
 	identityPublicKey sign.PublicKey,
 	wg *sync.WaitGroup,
 	mygeo *geo.Geometry,
-	errorCode uint8,
+	expectedCommand commands.Command,
+	reply commands.Command,
 ) {
 	d.Lock()
-	d.log.Debugf("mockPostReplicaServer(%s)", address)
+	d.log.Debugf("mockPostServer(%s)", address)
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
 		serverConn:    serverConn,
@@ -1055,7 +1057,7 @@ func (d *mockDialer) mockPostReplicaServer(
 	}
 	session, err := wire.NewPKISession(cfg, false)
 	if err != nil {
-		d.log.Errorf("mockPostReplicaServer NewPKISession failure: %s", err)
+		d.log.Errorf("mockPostServer NewPKISession failure: %s", err)
 		return
 	}
 	defer session.Close()
@@ -1064,27 +1066,23 @@ func (d *mockDialer) mockPostReplicaServer(
 	err = session.Initialize(d.netMap[address].serverConn)
 	d.Unlock()
 	if err != nil {
-		d.log.Errorf("mockPostReplicaServer session Initialize failure: %s", err)
+		d.log.Errorf("mockPostServer session Initialize failure: %s", err)
 		return
 	}
 
 	cmd, err := session.RecvCommand()
 	if err != nil {
-		d.log.Errorf("mockPostReplicaServer session RecvCommand failure: %s", err)
+		d.log.Errorf("mockPostServer session RecvCommand failure: %s", err)
 		return
 	}
 
-	switch cmd.(type) {
-	case *commands.PostReplicaDescriptor:
-		reply := &commands.PostReplicaDescriptorStatus{
-			ErrorCode: errorCode,
-		}
-		if err := session.SendCommand(reply); err != nil {
-			d.log.Errorf("mockPostReplicaServer SendCommand failure: %s", err)
-			return
-		}
-	default:
-		d.log.Errorf("mockPostReplicaServer unexpected command: %T", cmd)
+	if reflect.TypeOf(cmd) != reflect.TypeOf(expectedCommand) {
+		d.log.Errorf("mockPostServer unexpected command: got %T, expected %T", cmd, expectedCommand)
+		return
+	}
+
+	if err := session.SendCommand(reply); err != nil {
+		d.log.Errorf("mockPostServer SendCommand failure: %s", err)
 		return
 	}
 }
@@ -1158,14 +1156,17 @@ func TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 		}
 
 		wg.Add(1)
-		go dialer.mockPostReplicaServer(
+		go dialer.mockPostServer(
 			u.Host,
 			linkPrivKey,
 			idPrivKey,
 			idPubKey,
 			&wg,
 			mygeo,
-			uint8(commands.DescriptorOk),
+			&commands.PostReplicaDescriptor{},
+			&commands.PostReplicaDescriptorStatus{
+				ErrorCode: uint8(commands.DescriptorOk),
+			},
 		)
 	}
 
@@ -1208,5 +1209,128 @@ func TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 	defer cancel()
 
 	err = client.PostReplica(ctx, epoch, replicaIdentityPrivateKey, replicaIdentityPublicKey, desc)
+	require.NoError(err)
+}
+
+func generateMixDescriptorForPostTest(
+	t *testing.T,
+	epoch uint64,
+	basePort int,
+) (*pki.MixDescriptor, sign.PrivateKey, sign.PublicKey) {
+	t.Helper()
+
+	identityPublicKey, identityPrivateKey, err := testSignatureScheme.GenerateKey()
+	require.NoError(t, err)
+
+	mixKeys, err := generateMixKeys(epoch)
+	require.NoError(t, err)
+
+	linkPublicKey, _, err := testingScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	linkKeyBlob, err := linkPublicKey.MarshalBinary()
+	require.NoError(t, err)
+
+	identityKeyBlob, err := identityPublicKey.MarshalBinary()
+	require.NoError(t, err)
+
+	desc := &pki.MixDescriptor{
+		Name:        "mix-post-test",
+		Epoch:       epoch,
+		IdentityKey: identityKeyBlob,
+		LinkKey:     linkKeyBlob,
+		MixKeys:     mixKeys,
+		Addresses: map[string][]string{
+			"tcp4": []string{fmt.Sprintf("tcp4://127.0.0.1:%d", basePort)},
+		},
+		Kaetzchen:     nil,
+		IsGatewayNode: false,
+		IsServiceNode: false,
+		LoadWeight:    0,
+	}
+
+	return desc, identityPrivateKey, identityPublicKey
+}
+
+func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	dialer := newMockDialer(logBackend)
+	peers := []*config.Authority{}
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	var wg sync.WaitGroup
+	failingAddrs := make(map[string]bool)
+
+	for i := 0; i < 5; i++ {
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(66000 + i)
+		require.NoError(err)
+
+		peers = append(peers, peer)
+
+		u, err := url.Parse(peer.Addresses[0])
+		require.NoError(err)
+
+		if i >= 3 {
+			failingAddrs[u.Host] = true
+			continue
+		}
+
+		wg.Add(1)
+		go dialer.mockPostServer(
+			u.Host,
+			linkPrivKey,
+			idPrivKey,
+			idPubKey,
+			&wg,
+			mygeo,
+			&commands.PostDescriptor{},
+			&commands.PostDescriptorStatus{
+				ErrorCode: uint8(commands.DescriptorOk),
+			},
+		)
+	}
+
+	wg.Wait()
+
+	dialFn := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if failingAddrs[address] {
+			return nil, fmt.Errorf("simulated failure to %s", address)
+		}
+		return dialer.dial(ctx, network, address)
+	}
+
+	_, clientLinkKey, err := testingScheme.GenerateKeyPair()
+	require.NoError(err)
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		LinkKey:             clientLinkKey,
+		Authorities:         peers,
+		DialContextFn:       dialFn,
+		Geo:                 mygeo,
+		DialTimeoutSec:      5,
+		HandshakeTimeoutSec: 5,
+		ResponseTimeoutSec:  5,
+		RetryMaxAttempts:    0,
+	}
+	require.NoError(cfg.validate())
+
+	client, err := New(cfg)
+	require.NoError(err)
+
+	epoch, _, _ := epochtime.Now()
+	desc, signingPrivateKey, signingPublicKey := generateMixDescriptorForPostTest(t, epoch, 66000)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = client.Post(ctx, epoch, signingPrivateKey, signingPublicKey, desc, nil)
 	require.NoError(err)
 }
