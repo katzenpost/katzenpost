@@ -1005,3 +1005,17 @@ func TestGetPKIDocumentForEpochParallelRace(t *testing.T) {
 	require.Less(elapsed, 5*time.Second, "fetch was not racing peers in parallel")
 	t.Logf("parallel fetch completed in %v with %d/%d peers slow", elapsed, len(slowAddrs), numPeers)
 }
+
+func TestPostReplicaDescriptorStatusCarriesDescriptorStatusCode(t *testing.T) {
+	t.Parallel()
+
+	replicaStatus := &commands.PostReplicaDescriptorStatus{
+		ErrorCode: commands.DescriptorOk,
+	}
+
+	status := &commands.PostDescriptorStatus{
+		ErrorCode: replicaStatus.ErrorCode,
+	}
+
+	require.Equal(t, uint8(commands.DescriptorOk), status.ErrorCode)
+}

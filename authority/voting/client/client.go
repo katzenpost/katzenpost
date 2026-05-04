@@ -531,14 +531,21 @@ func (p *connector) postAuthorityOnce(
 
 	status, ok := resp.(*commands.PostDescriptorStatus)
 	if !ok {
-		elapsed := time.Since(start)
-		err := fmt.Errorf("unexpected reply: %T", resp)
-		return postAttemptResult{
-			peer:    peer,
-			round:   round,
-			kind:    postAttemptSemantic,
-			err:     err,
-			elapsed: elapsed,
+		replicaStatus, replicaOK := resp.(*commands.PostReplicaDescriptorStatus)
+		if !replicaOK {
+			elapsed := time.Since(start)
+			err := fmt.Errorf("unexpected reply: %T", resp)
+			return postAttemptResult{
+				peer:    peer,
+				round:   round,
+				kind:    postAttemptSemantic,
+				err:     err,
+				elapsed: elapsed,
+			}
+		}
+
+		status = &commands.PostDescriptorStatus{
+			ErrorCode: replicaStatus.ErrorCode,
 		}
 	}
 
