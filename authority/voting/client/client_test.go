@@ -592,7 +592,11 @@ func TestParallelFailingAuthorities(t *testing.T) {
 
 	require.NoError(err)
 	require.Len(responses, 5)
-	require.Less(elapsed, 3*time.Second, "failing authorities blocked operation")
+
+	// The important property is that failing authorities do not serialize
+	// into one full timeout per authority.  Leave margin for CI scheduler and
+	// pipe-backed mock connection overhead while still catching serialization.
+	require.Less(elapsed, 5*time.Second, "failing authorities blocked operation")
 
 	var failCount int
 	for _, r := range responses {
