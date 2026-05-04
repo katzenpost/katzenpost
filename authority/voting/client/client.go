@@ -1028,19 +1028,15 @@ func (c *Client) PostReplica(
 	if err := pki.IsReplicaDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
-
 	signedUpload := &pki.SignedReplicaUpload{ReplicaDescriptor: d}
-
 	blob, err := signedUpload.Marshal()
 	if err != nil {
 		return err
 	}
-
 	signedUpload.Signature = &cert.Signature{
 		PublicKeySum256: hash.Sum256From(signingPublicKey),
 		Payload:         signingPrivateKey.Scheme().Sign(signingPrivateKey, blob, nil),
 	}
-
 	signed, err := signedUpload.Marshal()
 	if err != nil {
 		return err
@@ -1050,7 +1046,6 @@ func (c *Client) PostReplica(
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-
 	peerResponses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
 	if err != nil {
 		return err
@@ -1063,9 +1058,9 @@ func (c *Client) PostReplica(
 			continue
 		}
 
-		r, ok := peerResp.Response.(*commands.PostDescriptorStatus)
+		r, ok := peerResp.Response.(*commands.PostReplicaDescriptorStatus)
 		if !ok {
-			errs = append(errs, fmt.Errorf("%s: unexpected reply", peerResp.Peer.Identifier))
+			errs = append(errs, fmt.Errorf("%s: unexpected reply: %T", peerResp.Peer.Identifier, peerResp.Response))
 			continue
 		}
 
@@ -1073,11 +1068,9 @@ func (c *Client) PostReplica(
 			errs = append(errs, fmt.Errorf("%s: %s", peerResp.Peer.Identifier, commands.DescriptorErrorToString(r.ErrorCode)))
 		}
 	}
-
 	if len(errs) == 0 {
 		return nil
 	}
-
 	return fmt.Errorf("PostReplica(%d) errors: %v", epoch, errs)
 }
 
