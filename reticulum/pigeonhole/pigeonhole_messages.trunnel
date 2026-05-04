@@ -1,0 +1,74 @@
+// SPDX-FileCopyrightText: © 2025 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
+// Trunnel schema for the rnsClient ↔ rnsCourier wire over Reticulum.
+//
+// Minimal addition to the existing Pigeonhole protocol. Only the
+// optimized courier envelope is defined here. All other Pigeonhole
+// types — courier_envelope_reply, copy_command, copy_command_reply,
+// copy_stream_element, replica_inner_message, replica_read,
+// replica_write, replica_message_reply_inner_message,
+// replica_read_reply, replica_write_reply — are reused unchanged
+// from katzenpost/pigeonhole/pigeonhole_messages.trunnel via the
+// existing katzenpost/pigeonhole Go package, because the wire to
+// replicas is binary-compatible.
+//
+// All messages on this wire ride INSIDE a classical Noise NK1 session
+// (Noise_NK1_(X25519+CTIDH1024)_ChaChaPoly_BLAKE2s) between the mesh
+// client and the courier. Different message types are distinguished
+// at the Reticulum Channel layer (typed MessageBase subclasses);
+// this file describes only the cached_courier_envelope body.
+//
+// The optimization this struct exists to support: the client's mKEM
+// ephemeral hybrid pubkey (160 B for CTIDH1024+X25519) is cached at
+// the courier under a deterministic cache_id derived from the
+// pubkey itself. Per-query envelopes carry just the cache_id; the
+// courier substitutes the cached pubkey before reconstructing a
+// binary-compatible mixnet-side courier_envelope and fanning out to
+// the named intermediate replicas via the existing courier↔replica
+// wire.
+
+const MKEM_DEK_SIZE = 60;     // ChaCha20-Poly1305 wrap of a 32 B msgKey
+const CACHE_ID_SIZE = 16;     // blake2b-256(sender_pubkey)[:16]
+
+// CachedCourierEnvelope: Reticulum-side variant of the mixnet's
+// courier_envelope, optimized to omit the bulky mKEM ephemeral pubkey
+// when the courier already has it cached.
+//
+// Field set is identical to the mixnet courier_envelope save for two
+// additions / changes:
+//
+//   - cache_id: 16 B identifier of the cached mKEM ephemeral pubkey
+//     at the courier. Deterministic: cache_id =
+//     blake2b-256(sender_pubkey)[:16], so client and courier compute
+//     it independently.
+//
+//   - sender_pubkey: OPTIONAL. The first envelope from a fresh client
+//     primes the cache by including the full pubkey (sender_pubkey_len
+//     = 160 for CTIDH1024+X25519). Subsequent envelopes pass
+//     sender_pubkey_len = 0 to indicate "use the cached pubkey
+//     selected by cache_id". A cache miss at the courier results in
+//     a CourierEnvelopeReply with reply_type = CacheMiss; the client
+//     re-primes by sending another envelope with the pubkey inline.
+//
+// All other fields are present so the courier can reconstruct a
+// byte-identical mixnet-side courier_envelope by simply substituting
+// the cached pubkey, without translating any other field.
+struct cached_courier_envelope {
+    u8 cache_id[CACHE_ID_SIZE];
+
+    u8 intermediate_replicas[2];
+    u8 dek1[MKEM_DEK_SIZE];
+    u8 dek2[MKEM_DEK_SIZE];
+    u8 reply_index;
+    u64 epoch;
+
+    // Optional mKEM ephemeral hybrid pubkey.
+    //   sender_pubkey_len = 0: use cached pubkey at courier under cache_id
+    //   sender_pubkey_len > 0: prime / re-prime the cache with sender_pubkey
+    u16 sender_pubkey_len;
+    u8 sender_pubkey[sender_pubkey_len];
+
+    u32 ciphertext_len;
+    u8 ciphertext[ciphertext_len];
+}
