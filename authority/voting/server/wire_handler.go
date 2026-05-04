@@ -558,6 +558,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 			cmd.Epoch,
 			strconv.QuoteToASCII(err.Error()),
 		)
+		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
 

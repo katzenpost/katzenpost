@@ -190,16 +190,42 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		uploadDeadline = PublishDeadline
 	}
 
-	doPublishEpoch := currentEpoch + 1
-	if elapsed >= uploadDeadline {
+	var doPublishEpoch uint64
+	uploadReason := ""
+
+	switch {
+	case p.lastPublishedEpoch > currentEpoch:
+		p.GetLogger().Debugf(
+			"REPLICA DESCRIPTOR UPLOAD: not needed; already published future target epoch published=%d current_epoch=%d; PKI document fetch will continue",
+			p.lastPublishedEpoch,
+			currentEpoch,
+		)
+		return nil
+
+	case elapsed >= uploadDeadline:
 		p.GetLogger().Noticef(
-			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: upload window closed; skipping descriptor upload only; PKI document fetch will continue",
-			doPublishEpoch,
+			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: upload window closed; skipping descriptor upload only; PKI document fetch will continue",
 			currentEpoch,
 			elapsed,
 			PublishDeadline,
 			descriptorUploadSafety,
 			till,
+		)
+		return nil
+
+	case p.lastPublishedEpoch == 0 || p.lastPublishedEpoch < currentEpoch:
+		doPublishEpoch = currentEpoch
+		uploadReason = "current upload window open and current epoch not yet published"
+
+	case p.lastPublishedEpoch == currentEpoch:
+		doPublishEpoch = currentEpoch + 1
+		uploadReason = "current epoch already published; prepublishing next epoch while upload window remains open"
+
+	default:
+		p.GetLogger().Debugf(
+			"REPLICA DESCRIPTOR UPLOAD: not needed; published=%d current_epoch=%d; PKI document fetch will continue",
+			p.lastPublishedEpoch,
+			currentEpoch,
 		)
 		return nil
 	}
@@ -229,13 +255,14 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	p.GetLogger().Noticef(
-		"REPLICA DESCRIPTOR UPLOAD: selected upload epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v budget=%v reason=current upload window open",
+		"REPLICA DESCRIPTOR UPLOAD: selected upload epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v budget=%v reason=%s",
 		doPublishEpoch,
 		currentEpoch,
 		elapsed,
 		PublishDeadline,
 		descriptorUploadSafety,
 		budget,
+		strconv.QuoteToASCII(uploadReason),
 	)
 
 	uploadCtx, cancel := context.WithTimeout(pkiCtx, budget)
