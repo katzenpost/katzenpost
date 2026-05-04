@@ -53,17 +53,35 @@ func (p *PKIWorker) worker() {
 			return
 		}
 
+		now, elapsed, till := epochtime.Now()
+		p.GetLogger().Debugf(
+			"REPLICA PKI WORKER: wake epoch=%d elapsed=%v remaining=%v; checking descriptor upload before PKI document fetch",
+			now,
+			elapsed,
+			till,
+		)
+
 		// Check to see if we need to publish the descriptor
+		//
+		// Descriptor upload is best-effort for the selected publication epoch.
+		// A closed upload window, transient upload failure, or permanent upload
+		// rejection must not suppress PKI document fetches for the current epoch.
 		err := p.publishDescriptorIfNeeded(pkiCtx)
 		if isCanceled() {
 			p.GetLogger().Debug("Canceled mid-post")
 			return
 		}
 		if err != nil {
-			p.GetLogger().Warningf("Failed to post to PKI: %v", err)
+			p.GetLogger().Warningf("REPLICA DESCRIPTOR UPLOAD: failed to post to PKI; continuing with PKI document fetch: %v", err)
 		}
 
+		p.GetLogger().Debug("REPLICA PKI WORKER: descriptor upload check complete; fetching PKI documents if needed")
+
 		// Fetch and process PKI documents
+		//
+		// Fetching continues even when descriptor upload was skipped or failed.
+		// This keeps connector/authentication state fresh for late starts after
+		// the descriptor upload window has closed.
 		didUpdate := p.fetchAndProcessDocuments(pkiCtx, isCanceled)
 		if isCanceled() {
 			return
@@ -83,12 +101,22 @@ func (p *PKIWorker) worker() {
 func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled func() bool) bool {
 	results := p.FetchDocuments(pkiCtx, isCanceled)
 	if len(results) == 0 {
+		p.GetLogger().Debug("REPLICA PKI FETCH: no PKI documents needed this cycle")
 		return false
 	}
 
 	var didUpdate bool
+	var stored, skipped, failed int
+
 	for _, result := range results {
-		if result.Skipped || result.Error != nil {
+		if result.Skipped {
+			skipped++
+			p.GetLogger().Debugf("REPLICA PKI FETCH: skipped epoch=%d: %v", result.Epoch, result.Error)
+			continue
+		}
+		if result.Error != nil {
+			failed++
+			p.GetLogger().Debugf("REPLICA PKI FETCH: failed epoch=%d: %v", result.Epoch, result.Error)
 			continue
 		}
 
@@ -101,8 +129,26 @@ func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled 
 		// take note of the service nodes and storage replicas
 		p.updateReplicas(result.Doc)
 		p.StoreDocument(result.Epoch, result.Doc, result.RawDoc)
+		stored++
 		didUpdate = true
 	}
+
+	p.GetLogger().Debugf(
+		"REPLICA PKI FETCH: cycle complete results=%d stored=%d skipped=%d failed=%d did_update=%v",
+		len(results),
+		stored,
+		skipped,
+		failed,
+		didUpdate,
+	)
+
+	if didUpdate {
+		p.GetLogger().Noticef(
+			"REPLICA PKI FETCH: stored %d PKI document(s); connector/authentication state will be refreshed",
+			stored,
+		)
+	}
+
 	return didUpdate
 }
 
@@ -147,7 +193,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	doPublishEpoch := currentEpoch + 1
 	if elapsed >= uploadDeadline {
 		p.GetLogger().Noticef(
-			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: upload window closed; waiting for next epoch",
+			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: upload window closed; skipping descriptor upload only; PKI document fetch will continue",
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
@@ -159,14 +205,19 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	if p.lastPublishedEpoch >= doPublishEpoch {
-		p.GetLogger().Debugf("publishDescriptorIfNeeded: not needed (published: %d target: %d current: %d)", p.lastPublishedEpoch, doPublishEpoch, currentEpoch)
+		p.GetLogger().Debugf(
+			"REPLICA DESCRIPTOR UPLOAD: not needed; already published target epoch published=%d target=%d current_epoch=%d; PKI document fetch will continue",
+			p.lastPublishedEpoch,
+			doPublishEpoch,
+			currentEpoch,
+		)
 		return nil
 	}
 
 	budget := uploadDeadline - elapsed
 	if budget <= 0 {
 		p.GetLogger().Noticef(
-			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: no upload budget remains",
+			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: no upload budget remains; skipping descriptor upload only; PKI document fetch will continue",
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
@@ -273,7 +324,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		// the voting authority implementation does not return any of the above error types...
 		// and the storage replica will continue to fail to submit the same descriptor repeatedly.
 		p.GetLogger().Warningf(
-			"REPLICA DESCRIPTOR UPLOAD: failed to upload replica descriptor %s for epoch %d: %s",
+			"REPLICA DESCRIPTOR UPLOAD: failed to upload replica descriptor %s for epoch %d; PKI document fetch will continue: %s",
 			strconv.QuoteToASCII(desc.Name),
 			doPublishEpoch,
 			strconv.QuoteToASCII(err.Error()),
