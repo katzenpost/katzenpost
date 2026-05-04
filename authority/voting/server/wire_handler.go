@@ -483,7 +483,6 @@ func (s *Server) onGetConsensus(peerID string, cmd *commands.GetConsensus) comma
 func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplicaDescriptor, pubKeyHash []byte) commands.Command {
 	phase, timeRemaining := s.state.PhaseInfo()
 	s.log.Debugf("onPostReplicaDescriptor: Received from peer %s for epoch %d (phase: %s, time remaining: %v)", peerID, cmd.Epoch, phase, timeRemaining)
-
 	resp := &commands.PostReplicaDescriptorStatus{
 		ErrorCode: commands.DescriptorInvalid,
 	}
@@ -498,6 +497,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	default:
 		// The peer is publishing for an epoch that's invalid.
 		s.log.Errorf("Peer %s: Invalid descriptor epoch '%v'", peerID, cmd.Epoch)
+		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
 
@@ -506,6 +506,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	err := signedUpload.Unmarshal(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("Peer %s: Invalid descriptor: %v", peerID, err)
+		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
 
@@ -516,6 +517,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 			strconv.QuoteToASCII(peerID),
 			cmd.Epoch,
 		)
+		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
 
@@ -585,7 +587,6 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, pubKeyHash []byte) commands.Command {
 	phase, timeRemaining := s.state.PhaseInfo()
 	s.log.Debugf("onPostDescriptor: Received descriptor from peer %s for epoch %d (phase: %s, time remaining: %v)", peerID, cmd.Epoch, phase, timeRemaining)
-
 	resp := &commands.PostDescriptorStatus{
 		ErrorCode: commands.DescriptorInvalid,
 	}
@@ -602,6 +603,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	default:
 		// The peer is publishing for an epoch that's invalid.
 		s.log.Errorf("onPostDescriptor: EPOCH VALIDATION FAILED from peer %s: invalid descriptor epoch %d (current: %d, acceptable: %d-%d)", peerID, cmd.Epoch, now, now-1, now+1)
+		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
 
@@ -611,6 +613,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	err := signedUpload.Unmarshal(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("onPostDescriptor: DESERIALIZATION FAILED from peer %s: invalid descriptor: %s", strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
 	s.log.Debugf("onPostDescriptor: Successfully deserialized SignedUpload from peer %s", strconv.QuoteToASCII(peerID))
@@ -622,8 +625,10 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 			strconv.QuoteToASCII(peerID),
 			cmd.Epoch,
 		)
+		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
+
 	s.log.Debugf("onPostDescriptor: Processing descriptor from peer %s", strconv.QuoteToASCII(peerID))
 
 	// Ensure that the descriptor is signed by the peer that is posting.
@@ -673,6 +678,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 			strconv.QuoteToASCII(peerID),
 			strconv.QuoteToASCII(err.Error()),
 		)
+		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
 
