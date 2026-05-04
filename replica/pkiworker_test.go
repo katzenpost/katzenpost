@@ -51,6 +51,12 @@ type testSetup struct {
 
 // createTestSetup creates common test setup with keys, config, and server
 func createTestSetup(t *testing.T) *testSetup {
+	return createTestSetupWithPKIClient(t, nil)
+}
+
+func createTestSetupWithPKIClient(t *testing.T, pkiClient pki.Client) *testSetup {
+	t.Helper()
+
 	pkiScheme := signschemes.ByName(testPKIScheme)
 	idpubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
@@ -60,11 +66,9 @@ func createTestSetup(t *testing.T) *testSetup {
 	require.NoError(t, err)
 
 	replicaScheme := nikeschemes.ByName("x25519")
-
 	nrHops := 5
 	payloadSize := 5000
 	sphinxScheme := nikeschemes.ByName("x25519")
-
 	geometry := geo.GeometryFromUserForwardPayloadLength(sphinxScheme, payloadSize, true, nrHops)
 
 	cfg := &config.Config{
@@ -96,7 +100,12 @@ func createTestSetup(t *testing.T) *testSetup {
 		Addresses:          []string{testReplicaAddress},
 	}
 
-	server, err := New(cfg)
+	var server *Server
+	if pkiClient == nil {
+		server, err = New(cfg)
+	} else {
+		server, err = NewWithPKI(cfg, pkiClient)
+	}
 	require.NoError(t, err)
 
 	idpubkeyblob, err := idpubkey.MarshalBinary()
@@ -120,6 +129,15 @@ func createTestSetup(t *testing.T) *testSetup {
 		libpubkeyblob: libpubkeyblob,
 		id:            id,
 	}
+}
+
+func createManualPKITestSetup(t *testing.T, pkiClient pki.Client) *testSetup {
+	t.Helper()
+
+	setup := createTestSetupWithPKIClient(t, pkiClient)
+	setup.server.PKIWorker.Halt()
+
+	return setup
 }
 
 type mockReplicaPKIClient struct {
@@ -192,6 +210,7 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	advertMap := make(map[string]map[string]interface{})
 	advertMap["courier"] = make(map[string]interface{})
 	advertMap["courier"]["linkPublicKey"] = libpubkeypem
+
 	kaetzchen := make(map[string]map[string]interface{})
 	kaetzchen["courier"] = make(map[string]interface{})
 
@@ -249,8 +268,8 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 
 	ad := make([]byte, sConstants.NodeIDLength)
 	copy(ad, setup.id[:])
-
 	epoch, _, _ := epochtime.Now()
+
 	pkiWorker := setup.server.PKIWorker
 
 	// Create and store initial document
@@ -306,7 +325,6 @@ func TestDocumentsToFetch(t *testing.T) {
 	}
 
 	epochs := p.DocumentsToFetch()
-
 	// The number of epochs to fetch should be between 3 and 4 depending on timing
 	// When till < nextFetchTill (near end of epoch), we fetch for next epoch (4 docs)
 	// Otherwise, we fetch for current epoch (3 docs)
@@ -323,7 +341,6 @@ func TestDocumentsToFetch(t *testing.T) {
 	}
 
 	epochs2 := p.DocumentsToFetch()
-
 	// After storing one document, we should have one fewer to fetch
 	expectedCount2 := initialCount - 1
 	require.Equal(t, expectedCount2, len(epochs2))
@@ -341,11 +358,13 @@ func TestGetFailedFetch(t *testing.T) {
 
 	myepoch := epochs[0] - 10
 	p.SetFailedFetch(myepoch, errors.New("wtf"))
+
 	ok, err = p.GetFailedFetch(myepoch)
 	require.Error(t, err)
 	require.True(t, ok)
 
 	p.PruneFailures()
+
 	ok, err = p.GetFailedFetch(myepoch)
 	require.NoError(t, err)
 	require.False(t, ok)
@@ -357,9 +376,9 @@ func TestPruneDocuments(t *testing.T) {
 
 	ad := make([]byte, sConstants.NodeIDLength)
 	copy(ad, setup.id[:])
-
 	now, _, _ := epochtime.Now()
 	epoch := now - 10
+
 	pkiWorker := setup.server.PKIWorker
 
 	// Store an old document that should be pruned
@@ -397,6 +416,7 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	advertMap := make(map[string]map[string]interface{})
 	advertMap["courier"] = make(map[string]interface{})
 	advertMap["courier"]["linkPublicKey"] = libpubkeypem
+
 	kaetzchen := make(map[string]map[string]interface{})
 	kaetzchen["courier"] = make(map[string]interface{})
 
@@ -464,13 +484,11 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 }
 
 func TestReplicaPublishDescriptorUsesNextEpochUploadWindow(t *testing.T) {
-	setup := createTestSetup(t)
+	mockClient := &mockReplicaPKIClient{}
+	setup := createManualPKITestSetup(t, mockClient)
 	defer setup.server.Shutdown()
 
-	mockClient := &mockReplicaPKIClient{}
 	pkiWorker := setup.server.PKIWorker
-	pkiWorker.impl = mockClient
-	pkiWorker.lastPublishedEpoch = 0
 
 	currentEpoch, _, _ := epochtime.Now()
 
@@ -492,12 +510,11 @@ func TestReplicaPublishDescriptorUsesNextEpochUploadWindow(t *testing.T) {
 }
 
 func TestReplicaPublishDescriptorSkipsAfterSuccessfulPublish(t *testing.T) {
-	setup := createTestSetup(t)
+	mockClient := &mockReplicaPKIClient{}
+	setup := createManualPKITestSetup(t, mockClient)
 	defer setup.server.Shutdown()
 
-	mockClient := &mockReplicaPKIClient{}
 	pkiWorker := setup.server.PKIWorker
-	pkiWorker.impl = mockClient
 
 	currentEpoch, _, _ := epochtime.Now()
 	pkiWorker.lastPublishedEpoch = currentEpoch + 1
@@ -512,16 +529,13 @@ func TestReplicaPublishDescriptorSkipsAfterSuccessfulPublish(t *testing.T) {
 }
 
 func TestReplicaPublishDescriptorDoesNotSuppressTransientFailure(t *testing.T) {
-	setup := createTestSetup(t)
-	defer setup.server.Shutdown()
-
 	mockClient := &mockReplicaPKIClient{
 		postErr: errors.New("temporary transport failure"),
 	}
+	setup := createManualPKITestSetup(t, mockClient)
+	defer setup.server.Shutdown()
 
 	pkiWorker := setup.server.PKIWorker
-	pkiWorker.impl = mockClient
-	pkiWorker.lastPublishedEpoch = 0
 
 	currentEpoch, _, _ := epochtime.Now()
 
@@ -544,16 +558,13 @@ func TestReplicaPublishDescriptorDoesNotSuppressTransientFailure(t *testing.T) {
 }
 
 func TestReplicaPublishDescriptorSuppressesPermanentInvalidEpoch(t *testing.T) {
-	setup := createTestSetup(t)
-	defer setup.server.Shutdown()
-
 	mockClient := &mockReplicaPKIClient{
 		postErr: pki.ErrInvalidPostEpoch,
 	}
+	setup := createManualPKITestSetup(t, mockClient)
+	defer setup.server.Shutdown()
 
 	pkiWorker := setup.server.PKIWorker
-	pkiWorker.impl = mockClient
-	pkiWorker.lastPublishedEpoch = 0
 
 	currentEpoch, _, _ := epochtime.Now()
 
@@ -576,13 +587,11 @@ func TestReplicaPublishDescriptorSuppressesPermanentInvalidEpoch(t *testing.T) {
 }
 
 func TestReplicaPublishDescriptorUsesBoundedUploadContext(t *testing.T) {
-	setup := createTestSetup(t)
+	mockClient := &mockReplicaPKIClient{}
+	setup := createManualPKITestSetup(t, mockClient)
 	defer setup.server.Shutdown()
 
-	mockClient := &mockReplicaPKIClient{}
 	pkiWorker := setup.server.PKIWorker
-	pkiWorker.impl = mockClient
-	pkiWorker.lastPublishedEpoch = 0
 
 	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
 	require.NoError(t, err)
