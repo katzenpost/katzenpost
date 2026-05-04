@@ -241,32 +241,62 @@ func (c *incomingConn) initializeSession() (*wire.Session, error) {
 // performHandshakeAndAuth handles the handshake and authentication process
 func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.PeerCredentials, error) {
 	timeoutMs := time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond
+
+	localAddr := "<unknown>"
+	if c.c.LocalAddr() != nil {
+		localAddr = c.c.LocalAddr().String()
+	}
+
+	remoteAddr := "<unknown>"
+	if c.c.RemoteAddr() != nil {
+		remoteAddr = c.c.RemoteAddr().String()
+	}
+
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
 	if err := session.Initialize(c.c); err != nil {
+		handshakeElapsed := time.Since(handshakeStart)
+
+		if wire.IsNoHandshakeBytesError(err) {
+			c.log.Debugf(
+				"TCP connection closed before Noise handshake bytes local=%s remote=%s after=%v timeout=%v: %v",
+				localAddr,
+				remoteAddr,
+				handshakeElapsed,
+				timeoutMs,
+				err,
+			)
+			return nil, err
+		}
+
 		c.log.Errorf(
-			"Handshake failed local=%v remote=%v after %v timeout=%v: %v",
-			c.c.LocalAddr(),
-			c.c.RemoteAddr(),
-			time.Since(handshakeStart),
+			"Handshake failed local=%s remote=%s after=%v timeout=%v: %v",
+			localAddr,
+			remoteAddr,
+			handshakeElapsed,
 			timeoutMs,
 			err,
 		)
+		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return nil, err
 	}
+
 	c.log.Debugf(
-		"Handshake completed local=%v remote=%v in %v",
-		c.c.LocalAddr(),
-		c.c.RemoteAddr(),
+		"Handshake completed local=%s remote=%s in %v",
+		localAddr,
+		remoteAddr,
 		time.Since(handshakeStart),
 	)
+
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
+
 	creds, err := session.PeerCredentials()
 	if err != nil {
-		c.log.Debugf("Session failure: %s", err)
+		c.log.Debugf("Session failure local=%s remote=%s: %s", localAddr, remoteAddr, err)
 		return nil, err
 	}
+
 	return creds, nil
 }
 
