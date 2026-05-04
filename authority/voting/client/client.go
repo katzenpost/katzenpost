@@ -1035,6 +1035,7 @@ func (c *Client) PostReplica(
 	if err := pki.IsReplicaDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
+
 	signedUpload := &pki.SignedReplicaUpload{ReplicaDescriptor: d}
 	blob, err := signedUpload.Marshal()
 	if err != nil {
@@ -1053,32 +1054,53 @@ func (c *Client) PostReplica(
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-	peerResponses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
-	if err != nil {
-		return err
-	}
 
-	errs := []error{}
-	for _, peerResp := range peerResponses {
-		if peerResp.Error != nil {
-			errs = append(errs, peerResp.Error)
-			continue
-		}
+	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd)
+	threshold := (len(c.cfg.Authorities) / 2) + 1
 
-		r, ok := peerResp.Response.(*commands.PostReplicaDescriptorStatus)
-		if !ok {
-			errs = append(errs, fmt.Errorf("%s: unexpected reply: %T", peerResp.Peer.Identifier, peerResp.Response))
-			continue
+	if summary.successes >= threshold {
+		if len(summary.errs) > 0 {
+			c.log.Warningf(
+				"PostReplica(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+				epoch,
+				summary.successes,
+				threshold,
+				summary.conflicts,
+				threshold,
+				summary.transportErrors,
+				summary.semanticErrors,
+				summary.errs,
+			)
 		}
-
-		if !descriptorStatusIsOK(r.ErrorCode) {
-			errs = append(errs, fmt.Errorf("%s: %s", peerResp.Peer.Identifier, commands.DescriptorErrorToString(r.ErrorCode)))
-		}
-	}
-	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("PostReplica(%d) errors: %v", epoch, errs)
+
+	if summary.conflicts >= threshold {
+		c.log.Warningf(
+			"PostReplica(%d): conflict quorum for replica descriptor upload: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+			epoch,
+			summary.successes,
+			threshold,
+			summary.conflicts,
+			threshold,
+			summary.transportErrors,
+			summary.semanticErrors,
+			summary.errs,
+		)
+		return pki.ErrInvalidPostEpoch
+	}
+
+	return fmt.Errorf(
+		"PostReplica(%d) failed: %d/%d successes, %d/%d conflicts, transport_errors=%d semantic_errors=%d, errors: %v",
+		epoch,
+		summary.successes,
+		threshold,
+		summary.conflicts,
+		threshold,
+		summary.transportErrors,
+		summary.semanticErrors,
+		summary.errs,
+	)
 }
 
 // fetchResult carries the outcome of a single authority's consensus fetch
