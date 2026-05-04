@@ -1033,7 +1033,7 @@ func (e *Courier) tryReadFromShardReplica(
 		PigeonholeGeometry: e.pigeonholeGeo,
 		Scheme:             e.envelopeScheme,
 		SenderEPubKey:      mkemPrivateKey.Public().Bytes(),
-		DEK:                mkemCiphertext.DEKCiphertexts[0],
+		DEK:                (*[mkem.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[0]),
 		Ciphertext:         mkemCiphertext.Envelope,
 	}
 	envHash := query.EnvelopeHash()
@@ -1187,7 +1187,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 				PigeonholeGeometry: e.pigeonholeGeo,
 				Scheme:             e.envelopeScheme,
 				SenderEPubKey:      mkemPublicKey.Bytes(),
-				DEK:                mkemCiphertext.DEKCiphertexts[j],
+				DEK:                (*[mkem.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[j]),
 				Ciphertext:         mkemCiphertext.Envelope,
 			}
 		}

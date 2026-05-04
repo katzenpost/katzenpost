@@ -252,8 +252,8 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		// Create CourierEnvelope like integration tests
 		envelope := &pigeonhole.CourierEnvelope{
 			IntermediateReplicas: [2]uint8{0, 1},
-			Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-			Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+			Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+			Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 			ReplyIndex:           0,
 			Epoch:                1, // Use test epoch
 			SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
@@ -402,8 +402,8 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 
 		envelope := &pigeonhole.CourierEnvelope{
 			IntermediateReplicas: [2]uint8{0, 1},
-			Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-			Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+			Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+			Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 			ReplyIndex:           0,
 			Epoch:                1,
 			SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
@@ -1017,8 +1017,8 @@ func TestGeometryLengthPrefixBug(t *testing.T) {
 	// Create CourierEnvelope
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1},
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                1,
 		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),

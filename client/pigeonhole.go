@@ -9,6 +9,7 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 
@@ -450,8 +451,8 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 	senderPubkey := mkemPrivateKey.Public().Bytes()
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
 		SenderPubkeyLen:      uint16(len(senderPubkey)),

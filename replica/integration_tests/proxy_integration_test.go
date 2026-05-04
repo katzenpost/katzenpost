@@ -11,8 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -95,8 +97,8 @@ func TestProxyIntegration(t *testing.T) {
 
 	writeEnvelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: sharding.ReplicaIndices,
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
 		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
@@ -169,8 +171,8 @@ func TestProxyIntegration(t *testing.T) {
 
 	proxyReadEnvelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: bobIntermediaryIndices, // Non-shard replicas - will proxy!
-		Dek1:                 *bobMkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *bobMkemCiphertext.DEKCiphertexts[1],
+		Dek1:                 [mkem.DEKSize]byte(bobMkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mkem.DEKSize]byte(bobMkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
 		SenderPubkeyLen:      uint16(len(bobSenderPubkeyBytes)),
