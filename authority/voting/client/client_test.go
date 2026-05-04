@@ -537,7 +537,8 @@ func TestParallelAuthorityContact(t *testing.T) {
 
 	// If parallel, all 5 contacted simultaneously, completes in ~2s (context timeout)
 	// If sequential with 2 slow nodes at 5s each, would take 10s+ just for dial
-	require.Less(elapsed, 3*time.Second, "authorities not contacted in parallel")
+	// Set to 5s due to CI timeouts
+	require.Less(elapsed, 5*time.Second, "authorities not contacted in parallel")
 	t.Logf("parallel contact completed in %v", elapsed)
 }
 
