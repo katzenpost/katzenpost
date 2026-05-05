@@ -502,9 +502,13 @@ func TestParallelAuthorityContact(t *testing.T) {
 	conn.allPeersRoundTrip(ctx, linkKey, nil, &commands.GetConsensus{Epoch: 1})
 	elapsed := time.Since(start)
 
-	// If parallel, all 5 contacted simultaneously, completes in ~2s (context timeout)
-	// If sequential with 2 slow nodes at 5s each, would take 10s+ just for dial
-	require.Less(elapsed, 3*time.Second, "authorities not contacted in parallel")
+	// If parallel, all 5 contacted simultaneously, bounded by the slowest
+	// handshake. On a fast runner this is roughly the 2s context timeout;
+	// on slow CI (Windows, shared macOS) the post-quantum XWING handshake
+	// alone has been observed at over 3s, so the budget is sized to absorb
+	// that. If sequential with 2 slow nodes at 5s each, the wall clock
+	// would exceed 10s, so 8s remains comfortably discriminating.
+	require.Less(elapsed, 8*time.Second, "authorities not contacted in parallel")
 	t.Logf("parallel contact completed in %v", elapsed)
 }
 

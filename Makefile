@@ -53,7 +53,7 @@ kpclientd:
 sphinx:
 	cd cmd/sphinx; go build
 
-ROCKSDB_VERSION = 10.10.1
+ROCKSDB_VERSION = 10.2.1
 
 install-replica-deps:
 	@set -e; \
@@ -83,7 +83,7 @@ install-replica-deps:
 		cd rocksdb; \
 		env CC=gcc-14 CXX=g++-14 make shared_lib -j$$(nproc); \
 		echo "Installing RocksDB $(ROCKSDB_VERSION)..."; \
-		sudo make install; \
+		sudo env CC=gcc-14 CXX=g++-14 make install-shared; \
 		sudo ldconfig; \
 		rm -rf "$$tmpdir"; \
 		echo "RocksDB $(ROCKSDB_VERSION) installed successfully!"; \

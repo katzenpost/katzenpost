@@ -14,7 +14,7 @@ require (
 	github.com/katzenpost/hpqc v0.0.78
 	github.com/katzenpost/nyquist v0.0.12
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
-	github.com/linxGnu/grocksdb v1.10.7
+	github.com/linxGnu/grocksdb v1.10.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/quic-go/quic-go v0.59.0
 	github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053
