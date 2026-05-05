@@ -53,7 +53,7 @@ kpclientd:
 sphinx:
 	cd cmd/sphinx; go build
 
-ROCKSDB_VERSION = 10.10.1
+ROCKSDB_VERSION = 10.2.1
 
 install-replica-deps:
 	@set -e; \
