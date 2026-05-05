@@ -83,7 +83,7 @@ install-replica-deps:
 		cd rocksdb; \
 		env CC=gcc-14 CXX=g++-14 make shared_lib -j$$(nproc); \
 		echo "Installing RocksDB $(ROCKSDB_VERSION)..."; \
-		sudo make install; \
+		sudo env CC=gcc-14 CXX=g++-14 make install-shared; \
 		sudo ldconfig; \
 		rm -rf "$$tmpdir"; \
 		echo "RocksDB $(ROCKSDB_VERSION) installed successfully!"; \
