@@ -1,7 +1,7 @@
-FROM docker.io/alpine:edge
+FROM docker.io/alpine:3.21
 
-ARG ROCKSDB_VERSION=10.9.1
-ARG GO_VERSION=1.26.0
+ARG ROCKSDB_VERSION=10.2.1
+ARG GO_VERSION=1.26.2
 
 RUN adduser katzenpost --gecos "" --disabled-password
 

@@ -332,7 +332,7 @@ debian_base.stamp:
 	$(docker) rm katzenpost_debian_base
 	touch $@
 
-alpine_base_image?=ghcr.io/katzenpost/alpine-base:latest
+alpine_base_image?=ghcr.io/katzenpost/alpine-base:rocksdb-10.2.1
 
 alpine_base.stamp:
 	$(docker) pull $(alpine_base_image) \
