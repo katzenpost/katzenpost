@@ -555,7 +555,12 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	require.NotNil(t, nextDocRetrieved)
 }
 
-func TestReplicaPublishDescriptorUsesCurrentEpochUploadWindow(t *testing.T) {
+func TestReplicaPublishDescriptorTargetsNextEpoch(t *testing.T) {
+	// The dirauth's voting cycle for doc[N] runs during epoch N-1, so a
+	// replica publishing during epoch X must claim Epoch = X+1 to be
+	// included in the document the dirauths are about to sign. A
+	// fresh-start replica with lastPublishedEpoch == 0 should therefore
+	// target currentEpoch+1, never currentEpoch.
 	mockClient := &mockReplicaPKIClient{}
 	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
 	defer cleanup()
@@ -574,7 +579,7 @@ func TestReplicaPublishDescriptorUsesCurrentEpochUploadWindow(t *testing.T) {
 
 	require.Len(t, epochs, 1)
 	require.Len(t, descriptors, 1)
-	require.Equal(t, currentEpoch, epochs[0])
+	require.Equal(t, currentEpoch+1, epochs[0])
 	require.Equal(t, epochs[0], descriptors[0].Epoch)
 	require.Equal(t, epochs[0], pkiWorker.lastPublishedEpoch)
 }
