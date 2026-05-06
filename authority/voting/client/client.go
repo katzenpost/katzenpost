@@ -1127,19 +1127,36 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 		return nil, nil, err
 	}
 
+	// raceCtx is the cancellation root for the per-authority fetchers.
+	// The deferred cancel fires on every return path (success on first
+	// valid result, or fall-through after every peer was rejected) and
+	// signals the remaining in-flight fetchers to abort.
 	raceCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// Three goroutine populations cooperate here:
+	//
+	//   1. N fetcher goroutines (one per authority) each write exactly
+	//      one fetchResult into the buffered results channel and exit.
+	//   2. One drain goroutine waits for all fetchers to exit and then
+	//      closes the channel.
+	//   3. The main goroutine (this function) reads from the channel.
+	//
+	// The channel is buffered to len(c.cfg.Authorities) so that every
+	// fetcher can write its result without blocking even after we have
+	// already returned from the main goroutine on an earlier peer's
+	// success. The buffer guarantees that the late writers never wedge
+	// against an unread channel; raceCtx cancellation hurries them
+	// along, but the buffer is what lets them exit cleanly.
 	results := make(chan fetchResult, len(c.cfg.Authorities))
-	var w worker.Worker
+	var fetchers worker.Worker // tracks the per-authority fetchers
 	for _, auth := range c.cfg.Authorities {
-		auth := auth
-		w.Go(func() {
+		fetchers.Go(func() {
 			results <- c.fetchAndValidate(raceCtx, auth, linkKey, epoch)
 		})
 	}
 	go func() {
-		w.Wait()
+		fetchers.Wait()
 		close(results)
 	}()
 
@@ -1149,9 +1166,18 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 			continue
 		}
 		c.log.Noticef("Get: retrieved valid consensus from %s for epoch %d (%d sigs)", res.peer, epoch, res.sigs)
-		// The deferred cancel terminates the remaining in-flight
-		// fetches. They write into the buffered channel and exit; the
-		// drain goroutine then closes it.
+		// One peer's response is sufficient: fetchAndValidate has
+		// already verified the document via cert.VerifyThreshold,
+		// which proves that threshold-many dirauths signed the
+		// consensus. We do not need responses from threshold-many
+		// peers; any one peer's signed document carries the threshold
+		// inside it.
+		//
+		// Returning here triggers the deferred cancel above, which
+		// terminates the remaining in-flight fetchers. They write
+		// their final result into the buffered channel and exit; the
+		// drain goroutine sees the wait-group go to zero and closes
+		// the channel.
 		return res.doc, res.rawDoc, nil
 	}
 
