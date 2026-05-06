@@ -44,8 +44,10 @@ const (
 	SharedRandomLength      = 40
 	SharedRandomValueLength = 32
 
-	// DocumentVersion identifies the document format version
-	DocumentVersion = "v0"
+	// DocumentVersion identifies the document format version.
+	// v1 introduces LambdaR/LambdaRMaxDelay, ConfiguredReplicaIdentityKeys,
+	// and ReplicaEnvelopeKeys, which are not present in v0 documents.
+	DocumentVersion = "v1"
 )
 
 var (

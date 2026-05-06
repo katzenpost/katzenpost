@@ -688,8 +688,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			seq++
 		case *commands.Consensus:
-			c.log.Errorf("Received legacy Consensus command; expected Consensus2.")
-			wireErr = newProtocolError("received legacy Consensus command; expected Consensus2")
+			c.log.Errorf("Received legacy Consensus from gateway when Consensus2 is expected; closing connection.")
+			wireErr = newProtocolError("peer sent legacy Consensus instead of Consensus2")
 			return
 		case *commands.Consensus2:
 			if consensusCtx != nil {
@@ -706,14 +706,20 @@ func (c *connection) onWireConn(w *wire.Session) {
 					}
 					err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
 					if err != nil {
-						c.log.Errorf("Dechunker.Consume failed: %v", err)
-						wireErr = newProtocolError("malformed Consensus2 chunk: %v", err)
+						// A chunk-stream error (e.g. EOF when the
+						// connection closes mid-fetch, or a chunk
+						// numbering inconsistency) must not bring
+						// the daemon down. Close the connection and
+						// let the supervisor reconnect.
+						c.log.Errorf("Consensus2 dechunker error: %v; closing connection.", err)
+						wireErr = newProtocolError("consensus dechunker error: %v", err)
 						return
 					}
 					if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
 						if len(dechunker.Output) == 0 {
-							c.log.Debugf("Dechunker output is empty after decompression")
-							wireErr = newProtocolError("empty consensus payload")
+							// Handle empty dechunker output gracefully during shutdown
+							c.log.Debugf("Dechunker output is empty, likely due to shutdown")
+							wireErr = newProtocolError("empty consensus response during shutdown")
 							return
 						}
 

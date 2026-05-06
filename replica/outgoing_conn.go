@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2017  Yawning Angel.
+// SPDX-FileCopyrightText: Copyright (C) 2017 Yawning Angel.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package replica
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,14 +52,13 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !c.validateIdentityHash(creds) {
 		return false
 	}
-
 	if !c.validateLinkKey(creds) {
 		return false
 	}
-
 	if !c.validateReplicaInPKI(creds) {
 		return false
 	}
+	c.log.Debug("OutgoingConn: Authentication successful")
 	return true
 }
 
@@ -172,7 +172,7 @@ func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx c
 		case <-time.After(c.retryDelay):
 			// Back off incrementally on reconnects.
 			//
-			// This maybe should be tracked per address, but whatever.  I
+			// This maybe should be tracked per address, but whatever. I
 			// remember when IPng was supposed to take over the world in
 			// the 90s, and it still hasn't happened yet.
 			c.retryDelay += retryIncrement
@@ -217,6 +217,7 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 		}
 	}
 	c.log.Debugf("%v connection established.", u.Scheme)
+
 	start := time.Now()
 
 	// Handle the new connection.
@@ -245,10 +246,12 @@ func (c *outgoingConn) initializeConnection() (context.Context, context.CancelFu
 	// So, use the context stuff via a bunch of shitty hacks to make up for the
 	// fact that the server doesn't use context everywhere instead.
 	dialCtx, cancelFn := context.WithCancel(context.Background())
+
 	dialer := net.Dialer{
 		KeepAlive: time.Duration(c.co.Server().cfg.KeepAliveInterval) * time.Millisecond,
 		Timeout:   time.Duration(c.co.Server().cfg.ConnectTimeout) * time.Millisecond,
 	}
+
 	go func() {
 		// Bolt a bunch of channels to the dial canceler, such that closing
 		// either channel results in the dial context being canceled.
@@ -275,7 +278,7 @@ func (c *outgoingConn) initializeConnection() (context.Context, context.CancelFu
 // validatePKIAndUpdateCredentials checks PKI validity and updates credentials if needed
 func (c *outgoingConn) validatePKIAndUpdateCredentials(dialCheckCreds *wire.PeerCredentials) bool {
 	// Check to see if the connection should be made in the first
-	// place by seeing if the connection is in the PKI.  Without
+	// place by seeing if the connection is in the PKI. Without
 	// something like this, stale connections can get stuck in the
 	// dialing state since the Connector relies on outgoingConnection
 	// objects to remove themselves from the connection table.
@@ -293,7 +296,6 @@ func (c *outgoingConn) validatePKIAndUpdateCredentials(dialCheckCreds *wire.Peer
 			panic(err)
 		}
 		isValid := hmac.Equal(replicaDesc.LinkKey, keyblob)
-
 		if isValid {
 			// The list of addresses could have changed, so update
 			// the cached pointer with the current descriptor
@@ -346,11 +348,46 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	conn.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
 	if err = w.Initialize(conn); err != nil {
-		c.log.Errorf("Handshake failed: %v", err)
+		handshakeElapsed := time.Since(handshakeStart)
+
+		localAddr := ""
+		if conn.LocalAddr() != nil {
+			localAddr = conn.LocalAddr().String()
+		}
+
+		remoteAddr := ""
+		if conn.RemoteAddr() != nil {
+			remoteAddr = conn.RemoteAddr().String()
+		}
+
+		peerIdentityHash := hash.Sum256(c.dst.IdentityKey)
+
+		var descriptorAddrs []string
+		for _, transport := range cpki.ClientTransports {
+			descriptorAddrs = append(descriptorAddrs, c.dst.Addresses[transport]...)
+		}
+
+		if he, ok := wire.GetHandshakeError(err); ok {
+			he.WithPeerName(c.dst.Name)
+		}
+
+		c.log.Errorf(
+			"Handshake failed peer=%s identity_hash=%x descriptor_addrs=%s local=%s remote=%s after=%v timeout=%v: %v",
+			c.dst.Name,
+			peerIdentityHash[:],
+			strings.Join(descriptorAddrs, ","),
+			localAddr,
+			remoteAddr,
+			handshakeElapsed,
+			timeoutMs,
+			err,
+		)
+		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
 	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
 	conn.SetDeadline(time.Time{})
+
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 
 	// Set up the outgoing sender for fixed-throughput traffic.

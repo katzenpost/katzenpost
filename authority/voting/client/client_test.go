@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -38,7 +39,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
-
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -86,16 +86,17 @@ func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
 
 func generateNodes(isServiceNode, isGateway bool, num int, epoch uint64) ([]*pki.MixDescriptor, error) {
 	mixes := []*pki.MixDescriptor{}
-
 	for i := 0; i < num; i++ {
 		mixIdentityPublicKey, _, err := testSignatureScheme.GenerateKey()
 		if err != nil {
 			return nil, err
 		}
+
 		mixKeys, err := generateMixKeys(epoch)
 		if err != nil {
 			return nil, err
 		}
+
 		var name string
 		if isGateway {
 			name = fmt.Sprintf("NSA_Spy_Satelite_Provider%d", i)
@@ -143,10 +144,12 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 	if err != nil {
 		return nil, err
 	}
+
 	serviceNodes, err := generateNodes(true, false, numProviders, epoch)
 	if err != nil {
 		return nil, err
 	}
+
 	gateways, err := generateNodes(false, true, numProviders, epoch)
 	if err != nil {
 		return nil, err
@@ -163,8 +166,8 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 	}
 
 	topology := generateRandomTopology(mixes, 3)
-
 	sharedRandomCommit := make(map[[pki.PublicKeyHashSize]byte][]byte)
+
 	doc := &pki.Document{
 		Version:            pki.DocumentVersion,
 		Epoch:              epoch,
@@ -179,6 +182,7 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 		SharedRandomCommit: sharedRandomCommit,
 		SharedRandomValue:  make([]byte, pki.SharedRandomValueLength),
 	}
+
 	return doc, nil
 }
 
@@ -203,9 +207,11 @@ func multiSignTestDocument(signingKeys []sign.PrivateKey, signingPubKeys []sign.
 	if err != nil {
 		return nil, err
 	}
+
 	for i := 1; i < len(signingKeys); i++ {
 		signed, err = cert.SignMulti(signingKeys[i], signingPubKeys[i], signed)
 	}
+
 	return signed, nil
 }
 
@@ -213,14 +219,17 @@ func generateDoc(epoch uint64, signingKeys []sign.PrivateKey, signingPubKeys []s
 	// XXX
 	numMixes := len(signingKeys) - 2
 	numProviders := 2
+
 	doc, err := generateMixnet(numMixes, numProviders, epoch)
 	if err != nil {
 		return nil, err
 	}
+
 	signed, err := multiSignTestDocument(signingKeys, signingPubKeys, doc)
 	if err != nil {
 		return nil, err
 	}
+
 	return []byte(signed), nil
 }
 
@@ -242,9 +251,7 @@ func newMockDialer(logBackend *log.Backend) *mockDialer {
 	d := new(mockDialer)
 	d.Lock()
 	defer d.Unlock()
-
 	d.netMap = make(map[string]*conn)
-
 	d.log = logBackend.GetLogger("mockDialer: ")
 	return d
 }
@@ -255,6 +262,7 @@ func (d *mockDialer) dial(ctx context.Context, network string, address string) (
 		close(d.netMap[address].dialCh)
 		d.Unlock()
 	}()
+
 	d.log.Debug("MOCK DIAL %s", address)
 	d.Lock()
 	defer d.Unlock()
@@ -273,11 +281,16 @@ func (d *mockDialer) waitUntilDialed(address string) {
 	<-dc
 }
 
-func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, identityPrivateKey sign.PrivateKey,
-	identityPublicKey sign.PublicKey, wg *sync.WaitGroup, mygeo *geo.Geometry) {
+func (d *mockDialer) mockServer(
+	address string,
+	linkPrivateKey kem.PrivateKey,
+	identityPrivateKey sign.PrivateKey,
+	identityPublicKey sign.PublicKey,
+	wg *sync.WaitGroup,
+	mygeo *geo.Geometry,
+) {
 	d.Lock()
 	d.log.Debugf("mockServer(%s)", address)
-
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
 		serverConn:    serverConn,
@@ -287,9 +300,10 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 		signingPubKey: identityPublicKey,
 	}
 	d.Unlock()
-	wg.Done()
 
+	wg.Done()
 	d.waitUntilDialed(address)
+
 	identityHash := hash.Sum256From(identityPublicKey)
 	cfg := &wire.SessionConfig{
 		KEMScheme:         testingScheme,
@@ -299,12 +313,14 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 		AuthenticationKey: linkPrivateKey,
 		RandomReader:      rand.Reader,
 	}
+
 	session, err := wire.NewPKISession(cfg, false)
 	if err != nil {
 		d.log.Errorf("mockServer NewPKISession failure: %s", err)
 		return
 	}
 	defer session.Close()
+
 	d.Lock()
 	err = session.Initialize(d.netMap[address].serverConn)
 	d.Unlock()
@@ -312,11 +328,13 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 		d.log.Errorf("mockServer session Initialize failure: %s", err)
 		return
 	}
+
 	cmd, err := session.RecvCommand()
 	if err != nil {
 		d.log.Errorf("mockServer session RecvCommand failure: %s", err)
 		return
 	}
+
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
 		signingKeys := []sign.PrivateKey{}
@@ -325,15 +343,18 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 			signingKeys = append(signingKeys, v.signingKey)
 			signingPubKeys = append(signingPubKeys, v.signingPubKey)
 		}
+
 		rawDoc, err := generateDoc(c.Epoch, signingKeys, signingPubKeys)
 		if err != nil {
 			d.log.Errorf("mockServer session generateDoc failure: %s", err)
 			return
 		}
+
 		reply := &commands.Consensus{
 			ErrorCode: commands.ConsensusOk,
 			Payload:   rawDoc,
 		}
+
 		err = session.SendCommand(reply)
 		if err != nil {
 			d.log.Errorf("SendCommand failure: %s", err)
@@ -365,13 +386,15 @@ func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicK
 		Identifier:        fmt.Sprintf("authority%d", peerNum),
 		WireKEMScheme:     testingSchemeName,
 		IdentityPublicKey: identityPublicKey,
-		LinkPublicKey:     config.KEMPublicKeyPEM{PublicKey: linkPublicKey},
+		LinkPublicKey:     config.LinkPublicKey{PublicKey: linkPublicKey},
 		Addresses:         []string{fmt.Sprintf("tcp://127.0.0.1:%d", peerNum)},
 	}
+
 	err = authPeer.Validate()
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+
 	return authPeer, identityPrivateKey, identityPublicKey, linkPrivateKey, nil
 }
 
@@ -381,6 +404,7 @@ func TestClient(t *testing.T) {
 
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)
+
 	dialer := newMockDialer(logBackend)
 	peers := []*config.Authority{}
 
@@ -392,11 +416,13 @@ func TestClient(t *testing.T) {
 		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err)
 		peers = append(peers, peer)
+
 		wg.Add(1)
 		u, _ := url.Parse(peer.Addresses[0])
 		go dialer.mockServer(u.Host, linkPrivKey, idPrivKey, idPubKey, &wg, mygeo)
 	}
 	wg.Wait()
+
 	cfg := &Config{
 		KEMScheme:     testingScheme,
 		LogBackend:    logBackend,
@@ -404,10 +430,13 @@ func TestClient(t *testing.T) {
 		DialContextFn: dialer.dial,
 		Geo:           mygeo,
 	}
+
 	client, err := New(cfg)
 	require.NoError(err)
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*100)
 	defer cancel()
+
 	epoch, _, _ := epochtime.Now()
 	doc, rawDoc, err := client.GetPKIDocumentForEpoch(ctx, epoch)
 	require.NoError(err)
@@ -444,6 +473,7 @@ func (d *delayDialer) dial(ctx context.Context, network, address string) (net.Co
 	if fail {
 		return nil, fmt.Errorf("simulated failure to %s", address)
 	}
+
 	if delay > 0 {
 		select {
 		case <-time.After(delay):
@@ -451,6 +481,7 @@ func (d *delayDialer) dial(ctx context.Context, network, address string) (net.Co
 			return nil, ctx.Err()
 		}
 	}
+
 	c, _ := net.Pipe()
 	return c, nil
 }
@@ -465,11 +496,13 @@ func TestParallelAuthorityContact(t *testing.T) {
 
 	dialer := newDelayDialer()
 	var peers []*config.Authority
+
 	// 3 fast + 2 slow (would block if sequential)
 	for i := 0; i < 5; i++ {
 		peer, _, _, _, err := generatePeer(10000 + i)
 		require.NoError(err)
 		peers = append(peers, peer)
+
 		u, _ := url.Parse(peer.Addresses[0])
 		if i >= 3 {
 			dialer.delays[u.Host] = 5 * time.Second // slow but within context timeout
@@ -491,6 +524,7 @@ func TestParallelAuthorityContact(t *testing.T) {
 		RetryMaxAttempts:    1, // No retries - fail fast
 	}
 	require.NoError(cfg.validate())
+
 	conn := newConnector(cfg)
 
 	// Context shorter than slow delay - parallel will timeout fast, sequential would block
@@ -522,10 +556,12 @@ func TestParallelFailingAuthorities(t *testing.T) {
 
 	dialer := newDelayDialer()
 	var peers []*config.Authority
+
 	for i := 0; i < 5; i++ {
 		peer, _, _, _, err := generatePeer(20000 + i)
 		require.NoError(err)
 		peers = append(peers, peer)
+
 		u, _ := url.Parse(peer.Addresses[0])
 		if i >= 3 {
 			dialer.failures[u.Host] = true // 2 will fail immediately at dial
@@ -547,6 +583,7 @@ func TestParallelFailingAuthorities(t *testing.T) {
 		RetryMaxAttempts:    1, // No retries - fail fast
 	}
 	require.NoError(cfg.validate())
+
 	conn := newConnector(cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -586,10 +623,12 @@ func TestParallelContextCancellation(t *testing.T) {
 
 	dialer := newDelayDialer()
 	var peers []*config.Authority
+
 	for i := 0; i < 5; i++ {
 		peer, _, _, _, err := generatePeer(30000 + i)
 		require.NoError(err)
 		peers = append(peers, peer)
+
 		u, _ := url.Parse(peer.Addresses[0])
 		dialer.delays[u.Host] = 30 * time.Second // all very slow
 	}
@@ -609,6 +648,7 @@ func TestParallelContextCancellation(t *testing.T) {
 		RetryMaxAttempts:    1, // No retries
 	}
 	require.NoError(cfg.validate())
+
 	conn := newConnector(cfg)
 
 	// Very short context - should cancel quickly
@@ -636,8 +676,8 @@ func TestRetryDefaults(t *testing.T) {
 		KEMScheme:  testingScheme,
 		LogBackend: logBackend,
 	}
-	require.NoError(cfg.validate())
 
+	require.NoError(cfg.validate())
 	require.Equal(retry.DefaultMaxAttempts, cfg.RetryMaxAttempts)
 	require.Equal(retry.DefaultBaseDelay, cfg.RetryBaseDelay)
 	require.Equal(retry.DefaultMaxDelay, cfg.RetryMaxDelay)
@@ -652,8 +692,10 @@ type immediateCloseDialer struct {
 func (d *immediateCloseDialer) dial(ctx context.Context, network, address string) (net.Conn, error) {
 	atomic.AddInt32(&d.dialCount, 1)
 	client, server := net.Pipe()
+
 	// Close the server side immediately to cause EOF on client read
 	server.Close()
+
 	return client, nil
 }
 
@@ -681,30 +723,30 @@ func TestHandshakeDebugErrorOnEOF(t *testing.T) {
 		DialTimeoutSec:      5,
 		HandshakeTimeoutSec: 5,
 		ResponseTimeoutSec:  5,
-		RetryMaxAttempts:    0, // No retries
+		RetryMaxAttempts:    1,
 	}
 	require.NoError(cfg.validate())
+
 	conn := newConnector(cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, linkKey, _ := testingScheme.GenerateKeyPair()
-	responses, err := conn.allPeersRoundTrip(ctx, linkKey, nil, &commands.GetConsensus{Epoch: 1})
+	_, linkKey, err := testingScheme.GenerateKeyPair()
 	require.NoError(err)
-	require.Len(responses, 1)
 
-	// The response should have an error from the handshake failure
-	resp := responses[0]
-	require.NotNil(resp.Error, "expected handshake error")
+	_, err = conn.initSession(ctx, linkKey, nil, peer, time.Duration(cfg.HandshakeTimeoutSec)*time.Second)
+	require.Error(err)
 
-	// Get the debug error output
-	debugOutput := wire.GetDebugError(resp.Error)
+	debugOutput := wire.GetDebugError(err)
 	t.Logf("Debug error output:\n%s", debugOutput)
 
-	// Verify the error contains expected debug information
-	// The error should be wrapped and contain handshake state info
-	require.Contains(resp.Error.Error(), "handshake failed", "error should mention handshake")
+	errStr := err.Error()
+	require.Contains(errStr, "handshake failed", "error should mention handshake")
+	require.Contains(errStr, "handshake failed via", "error should include selected authority URL")
+	require.Contains(errStr, "local=", "error should include local socket address")
+	require.Contains(errStr, "remote=", "error should include remote socket address")
+	require.Contains(errStr, "timeout=", "error should include handshake timeout")
 }
 
 // hangingDialer creates connections where the server never responds
@@ -715,9 +757,11 @@ type hangingDialer struct {
 
 func (d *hangingDialer) dial(ctx context.Context, network, address string) (net.Conn, error) {
 	client, server := net.Pipe()
+
 	d.mu.Lock()
 	d.conns = append(d.conns, &server)
 	d.mu.Unlock()
+
 	// Server never responds - handshake will timeout or get EOF
 	return client, nil
 }
@@ -725,6 +769,7 @@ func (d *hangingDialer) dial(ctx context.Context, network, address string) (net.
 func (d *hangingDialer) closeAll() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
 	for _, c := range d.conns {
 		(*c).Close()
 	}
@@ -763,10 +808,11 @@ func TestHandshakeDebugErrorContainsStateInfo(t *testing.T) {
 		RetryMaxAttempts:    1, // Only 1 attempt (no retries)
 	}
 	require.NoError(cfg.validate())
+
 	conn := newConnector(cfg)
 
 	// Use a longer context so we don't get context deadline exceeded
-	// but the handshake timeout will still trigger
+	// but the handshake timeout will still trigger.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -779,7 +825,7 @@ func TestHandshakeDebugErrorContainsStateInfo(t *testing.T) {
 	require.NotNil(resp.Error, "expected handshake timeout/EOF error")
 
 	// The error is wrapped by the connector, but should still contain the
-	// HandshakeError's detailed Error() output with state info
+	// HandshakeError's detailed Error() output with state info.
 	errStr := resp.Error.Error()
 	t.Logf("Error string: %s", errStr)
 
@@ -797,13 +843,16 @@ type wrongVersionDialer struct{}
 
 func (d *wrongVersionDialer) dial(ctx context.Context, network, address string) (net.Conn, error) {
 	client, server := net.Pipe()
+
 	go func() {
 		// Send garbage that doesn't match expected protocol version
 		server.Write([]byte{0x99, 0x99, 0x99})
+
 		// Keep connection open briefly so client can read
 		time.Sleep(100 * time.Millisecond)
 		server.Close()
 	}()
+
 	return client, nil
 }
 
@@ -965,4 +1014,332 @@ func TestGetPKIDocumentForEpochParallelRace(t *testing.T) {
 	// the two without being flaky on the slow path.
 	require.Less(elapsed, 20*time.Second, "fetch was not racing peers in parallel")
 	t.Logf("parallel fetch completed in %v with %d/%d peers slow", elapsed, len(slowAddrs), numPeers)
+}
+
+func TestPostReplicaDescriptorStatusCarriesDescriptorStatusCode(t *testing.T) {
+	t.Parallel()
+
+	replicaStatus := &commands.PostReplicaDescriptorStatus{
+		ErrorCode: commands.DescriptorOk,
+	}
+
+	status := &commands.PostDescriptorStatus{
+		ErrorCode: replicaStatus.ErrorCode,
+	}
+
+	require.Equal(t, uint8(commands.DescriptorOk), status.ErrorCode)
+}
+
+func (d *mockDialer) mockPostServer(
+	address string,
+	linkPrivateKey kem.PrivateKey,
+	identityPrivateKey sign.PrivateKey,
+	identityPublicKey sign.PublicKey,
+	wg *sync.WaitGroup,
+	mygeo *geo.Geometry,
+	expectedCommand commands.Command,
+	reply commands.Command,
+) {
+	d.Lock()
+	d.log.Debugf("mockPostServer(%s)", address)
+	clientConn, serverConn := net.Pipe()
+	d.netMap[address] = &conn{
+		serverConn:    serverConn,
+		clientConn:    clientConn,
+		dialCh:        make(chan interface{}, 0),
+		signingKey:    identityPrivateKey,
+		signingPubKey: identityPublicKey,
+	}
+	d.Unlock()
+
+	wg.Done()
+	d.waitUntilDialed(address)
+
+	identityHash := hash.Sum256From(identityPublicKey)
+	cfg := &wire.SessionConfig{
+		KEMScheme:         testingScheme,
+		Geometry:          mygeo,
+		Authenticator:     d,
+		AdditionalData:    identityHash[:],
+		AuthenticationKey: linkPrivateKey,
+		RandomReader:      rand.Reader,
+	}
+	session, err := wire.NewPKISession(cfg, false)
+	if err != nil {
+		d.log.Errorf("mockPostServer NewPKISession failure: %s", err)
+		return
+	}
+	defer session.Close()
+
+	d.Lock()
+	err = session.Initialize(d.netMap[address].serverConn)
+	d.Unlock()
+	if err != nil {
+		d.log.Errorf("mockPostServer session Initialize failure: %s", err)
+		return
+	}
+
+	cmd, err := session.RecvCommand()
+	if err != nil {
+		d.log.Errorf("mockPostServer session RecvCommand failure: %s", err)
+		return
+	}
+
+	if reflect.TypeOf(cmd) != reflect.TypeOf(expectedCommand) {
+		d.log.Errorf("mockPostServer unexpected command: got %T, expected %T", cmd, expectedCommand)
+		return
+	}
+
+	if err := session.SendCommand(reply); err != nil {
+		d.log.Errorf("mockPostServer SendCommand failure: %s", err)
+		return
+	}
+}
+
+func generateReplicaDescriptorForPostReplicaTest(
+	t *testing.T,
+	epoch uint64,
+	identityPublicKey sign.PublicKey,
+) *pki.ReplicaDescriptor {
+	t.Helper()
+
+	identityKeyBlob, err := identityPublicKey.MarshalBinary()
+	require.NoError(t, err)
+
+	linkPublicKey, _, err := testingScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	linkKeyBlob, err := linkPublicKey.MarshalBinary()
+	require.NoError(t, err)
+
+	envelopeKey0 := make([]byte, 32)
+	_, err = rand.Reader.Read(envelopeKey0)
+	require.NoError(t, err)
+
+	envelopeKey1 := make([]byte, 32)
+	_, err = rand.Reader.Read(envelopeKey1)
+	require.NoError(t, err)
+
+	return &pki.ReplicaDescriptor{
+		Name:        "replica-test",
+		Epoch:       epoch,
+		IdentityKey: identityKeyBlob,
+		LinkKey:     linkKeyBlob,
+		Addresses: map[string][]string{
+			pki.TransportTCP: []string{"tcp://127.0.0.1:65000"},
+		},
+		EnvelopeKeys: map[uint64][]byte{
+			epoch:     envelopeKey0,
+			epoch + 1: envelopeKey1,
+		},
+	}
+}
+
+func TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	dialer := newMockDialer(logBackend)
+	peers := []*config.Authority{}
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	var wg sync.WaitGroup
+	failingAddrs := make(map[string]bool)
+
+	for i := 0; i < 5; i++ {
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(65000 + i)
+		require.NoError(err)
+
+		peers = append(peers, peer)
+
+		u, err := url.Parse(peer.Addresses[0])
+		require.NoError(err)
+
+		if i >= 3 {
+			failingAddrs[u.Host] = true
+			continue
+		}
+
+		wg.Add(1)
+		go dialer.mockPostServer(
+			u.Host,
+			linkPrivKey,
+			idPrivKey,
+			idPubKey,
+			&wg,
+			mygeo,
+			&commands.PostReplicaDescriptor{},
+			&commands.PostReplicaDescriptorStatus{
+				ErrorCode: uint8(commands.DescriptorOk),
+			},
+		)
+	}
+
+	wg.Wait()
+
+	dialFn := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if failingAddrs[address] {
+			return nil, fmt.Errorf("simulated failure to %s", address)
+		}
+		return dialer.dial(ctx, network, address)
+	}
+
+	_, clientLinkKey, err := testingScheme.GenerateKeyPair()
+	require.NoError(err)
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		LinkKey:             clientLinkKey,
+		Authorities:         peers,
+		DialContextFn:       dialFn,
+		Geo:                 mygeo,
+		DialTimeoutSec:      5,
+		HandshakeTimeoutSec: 5,
+		ResponseTimeoutSec:  5,
+		RetryMaxAttempts:    0,
+	}
+	require.NoError(cfg.validate())
+
+	client, err := New(cfg)
+	require.NoError(err)
+
+	replicaIdentityPublicKey, replicaIdentityPrivateKey, err := testSignatureScheme.GenerateKey()
+	require.NoError(err)
+
+	epoch, _, _ := epochtime.Now()
+	desc := generateReplicaDescriptorForPostReplicaTest(t, epoch, replicaIdentityPublicKey)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = client.PostReplica(ctx, epoch, replicaIdentityPrivateKey, replicaIdentityPublicKey, desc)
+	require.NoError(err)
+}
+
+func generateMixDescriptorForPostTest(
+	t *testing.T,
+	epoch uint64,
+	basePort int,
+) (*pki.MixDescriptor, sign.PrivateKey, sign.PublicKey) {
+	t.Helper()
+
+	identityPublicKey, identityPrivateKey, err := testSignatureScheme.GenerateKey()
+	require.NoError(t, err)
+
+	mixKeys, err := generateMixKeys(epoch)
+	require.NoError(t, err)
+
+	linkPublicKey, _, err := testingScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	linkKeyBlob, err := linkPublicKey.MarshalBinary()
+	require.NoError(t, err)
+
+	identityKeyBlob, err := identityPublicKey.MarshalBinary()
+	require.NoError(t, err)
+
+	desc := &pki.MixDescriptor{
+		Name:        "mix-post-test",
+		Epoch:       epoch,
+		IdentityKey: identityKeyBlob,
+		LinkKey:     linkKeyBlob,
+		MixKeys:     mixKeys,
+		Addresses: map[string][]string{
+			"tcp4": []string{fmt.Sprintf("tcp4://127.0.0.1:%d", basePort)},
+		},
+		Kaetzchen:     nil,
+		IsGatewayNode: false,
+		IsServiceNode: false,
+		LoadWeight:    0,
+	}
+
+	return desc, identityPrivateKey, identityPublicKey
+}
+
+func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	dialer := newMockDialer(logBackend)
+	peers := []*config.Authority{}
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	var wg sync.WaitGroup
+	failingAddrs := make(map[string]bool)
+
+	for i := 0; i < 5; i++ {
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(66000 + i)
+		require.NoError(err)
+
+		peers = append(peers, peer)
+
+		u, err := url.Parse(peer.Addresses[0])
+		require.NoError(err)
+
+		if i >= 3 {
+			failingAddrs[u.Host] = true
+			continue
+		}
+
+		wg.Add(1)
+		go dialer.mockPostServer(
+			u.Host,
+			linkPrivKey,
+			idPrivKey,
+			idPubKey,
+			&wg,
+			mygeo,
+			&commands.PostDescriptor{},
+			&commands.PostDescriptorStatus{
+				ErrorCode: uint8(commands.DescriptorOk),
+			},
+		)
+	}
+
+	wg.Wait()
+
+	dialFn := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if failingAddrs[address] {
+			return nil, fmt.Errorf("simulated failure to %s", address)
+		}
+		return dialer.dial(ctx, network, address)
+	}
+
+	_, clientLinkKey, err := testingScheme.GenerateKeyPair()
+	require.NoError(err)
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		LinkKey:             clientLinkKey,
+		Authorities:         peers,
+		DialContextFn:       dialFn,
+		Geo:                 mygeo,
+		DialTimeoutSec:      5,
+		HandshakeTimeoutSec: 5,
+		ResponseTimeoutSec:  5,
+		RetryMaxAttempts:    0,
+	}
+	require.NoError(cfg.validate())
+
+	client, err := New(cfg)
+	require.NoError(err)
+
+	epoch, _, _ := epochtime.Now()
+	desc, signingPrivateKey, signingPublicKey := generateMixDescriptorForPostTest(t, epoch, 66000)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = client.Post(ctx, epoch, signingPrivateKey, signingPublicKey, desc, nil)
+	require.NoError(err)
 }

@@ -24,6 +24,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -56,7 +57,7 @@ type outgoingConn struct {
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
-	// with.  This is enforced even if mix authentication is disabled.
+	// with. This is enforced even if mix authentication is disabled.
 
 	// Helper function to get peer name
 	getPeerName := func() string {
@@ -77,8 +78,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		c.log.Warningf("courier/outgoing: IsPeerValid(): Expected identity hash: %x", idHash[:])
 		c.log.Warningf("courier/outgoing: IsPeerValid(): Received identity hash: %x", creds.AdditionalData)
 		c.log.Warningf("courier/outgoing: IsPeerValid(): Expected identity key (raw): %x", c.dst.IdentityKey)
-		c.log.Warningf("courier/outgoing: IsPeerValid(): Received link key: %s",
-			strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("courier/outgoing: IsPeerValid(): Received link key: %s", strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
@@ -89,8 +89,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		peerName := getPeerName()
 		c.log.Warningf("courier/outgoing: IsPeerValid(): Link key mismatch for peer '%s'", peerName)
 		c.log.Warningf("courier/outgoing: IsPeerValid(): Expected link key (raw): %x", c.dst.LinkKey)
-		c.log.Warningf("courier/outgoing: IsPeerValid(): Received link key: %s",
-			strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("courier/outgoing: IsPeerValid(): Received link key: %s", strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
 		c.log.Warningf("courier/outgoing: IsPeerValid(): Identity hash: %x", creds.AdditionalData)
 		return false
 	}
@@ -103,8 +102,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !isValid {
 		peerName := getPeerName()
 		c.log.Warningf("courier/outgoing: IsPeerValid(): Failed to authenticate peer '%s' via latest PKI doc", peerName)
-		c.log.Warningf("courier/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-			peerName, creds.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("courier/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s", peerName, creds.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
 	}
 	return isValid
 }
@@ -149,6 +147,7 @@ type workerContext struct {
 // initializeWorker sets up the dial context, dialer, and credentials for the worker
 func (c *outgoingConn) initializeWorker() (*workerContext, *net.Dialer, *wire.PeerCredentials) {
 	dialCtx, cancelFn := context.WithCancel(context.Background())
+
 	dialer := &net.Dialer{
 		KeepAlive: KeepAliveInterval,
 		Timeout:   time.Duration(c.co.Server().cfg.ConnectTimeout) * time.Millisecond,
@@ -169,6 +168,7 @@ func (c *outgoingConn) initializeWorker() (*workerContext, *net.Dialer, *wire.Pe
 	if err != nil {
 		panic(err)
 	}
+
 	dialCheckCreds := &wire.PeerCredentials{
 		AdditionalData: identityHash[:],
 		PublicKey:      linkPubKey,
@@ -300,6 +300,7 @@ func (c *outgoingConn) dialAddress(dialCtx *workerContext, dialer *net.Dialer, a
 			return nil, false
 		}
 	}
+
 	c.log.Debugf("%v connection established.", u.Scheme)
 	return conn, false
 }
@@ -347,6 +348,7 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 		AuthenticationKey: c.co.Server().linkPrivKey,
 		RandomReader:      rand.Reader,
 	}
+
 	envelopeScheme := nikeSchemes.ByName(c.cfg.EnvelopeScheme)
 	isInitiator := true
 	w, err := wire.NewStorageReplicaSession(cfg, envelopeScheme, isInitiator)
@@ -360,13 +362,47 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 	conn.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
 	if err = w.Initialize(conn); err != nil {
-		c.log.Errorf("Handshake failed: %v", err)
+		handshakeElapsed := time.Since(handshakeStart)
+
+		localAddr := ""
+		if conn.LocalAddr() != nil {
+			localAddr = conn.LocalAddr().String()
+		}
+
+		remoteAddr := ""
+		if conn.RemoteAddr() != nil {
+			remoteAddr = conn.RemoteAddr().String()
+		}
+
+		peerIdentityHash := hash.Sum256(c.dst.IdentityKey)
+
+		var descriptorAddrs []string
+		for _, transport := range cpki.ClientTransports {
+			descriptorAddrs = append(descriptorAddrs, c.dst.Addresses[transport]...)
+		}
+
+		if he, ok := wire.GetHandshakeError(err); ok {
+			he.WithPeerName(c.dst.Name)
+		}
+
+		c.log.Errorf(
+			"Handshake failed peer=%s identity_hash=%x descriptor_addrs=%s local=%s remote=%s after=%v timeout=%v: %v",
+			c.dst.Name,
+			peerIdentityHash[:],
+			strings.Join(descriptorAddrs, ","),
+			localAddr,
+			remoteAddr,
+			handshakeElapsed,
+			timeoutMs,
+			err,
+		)
+
+		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return nil, err
 	}
 	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
-
 	return w, nil
 }
 
@@ -385,8 +421,7 @@ func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
 				}
 				return
 			}
-
-
+			c.log.Debugf("Received command from replica: %T", rawCmd)
 			select {
 			case <-c.HaltCh():
 				return
@@ -401,6 +436,7 @@ func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
 func (c *outgoingConn) startCommandSender(w *wire.Session) (chan commands.Command, chan error) {
 	cmdCh := make(chan commands.Command)
 	cmdCloseCh := make(chan error)
+
 	go func() {
 		defer close(cmdCloseCh)
 		for {
@@ -408,12 +444,14 @@ func (c *outgoingConn) startCommandSender(w *wire.Session) (chan commands.Comman
 			if !ok {
 				return
 			}
+
 			if err := w.SendCommand(cmd); err != nil {
 				c.log.Debugf("SendCommand failed: %v", err)
 				return
 			}
 		}
 	}()
+
 	return cmdCh, cmdCloseCh
 }
 
@@ -494,6 +532,7 @@ func (c *outgoingConn) handleOutgoingCommand(cmd commands.Command, cmdCh chan co
 
 // processIncomingReply processes replies from the peer
 func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Command {
+	c.log.Debugf("Processing reply from receiveCmdCh: %T", replyCmd)
 	switch cmdOrErr := replyCmd.(type) {
 	case commands.Command:
 		return cmdOrErr
@@ -501,11 +540,13 @@ func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Comma
 		c.log.Errorf("Received wire protocol RecvCommand error: %s", cmdOrErr)
 		return nil
 	}
+
 	return nil
 }
 
 // handleCommand processes received commands from the storage replicas
 func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
+	c.log.Debugf("Handling response command: %T", rawCmd)
 	switch replycmd := rawCmd.(type) {
 	case *commands.NoOp:
 	case *commands.Disconnect:
@@ -518,11 +559,11 @@ func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
 		c.log.Errorf("BUG, Received unexpected command from replica peer: %s", rawCmd)
 		return false
 	}
+
 	return true
 }
 
 func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *config.Config, courier *Courier) *outgoingConn {
-
 	linkScheme := kemSchemes.ByName(cfg.WireKEMScheme)
 	idScheme := signSchemes.ByName(cfg.PKIScheme)
 	envelopeScheme := nikeSchemes.ByName(cfg.EnvelopeScheme)

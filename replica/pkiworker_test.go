@@ -1,8 +1,10 @@
 package replica
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -24,6 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -58,7 +61,6 @@ func createTestSetup(t *testing.T) *testSetup {
 	require.NoError(t, err)
 
 	replicaScheme := nikeschemes.ByName("x25519")
-
 	nrHops := 5
 	payloadSize := 5000
 	sphinxScheme := nikeschemes.ByName("x25519")
@@ -73,7 +75,7 @@ func createTestSetup(t *testing.T) *testSetup {
 						Identifier:         "dirauth1",
 						IdentityPublicKey:  idpubkey,
 						PKISignatureScheme: pkiScheme.Name(),
-						LinkPublicKey:      authconfig.KEMPublicKeyPEM{PublicKey: linkpubkey},
+						LinkPublicKey:      authconfig.LinkPublicKey{PublicKey: linkpubkey},
 						WireKEMScheme:      linkScheme.Name(),
 						Addresses:          []string{testDirAuthAddress},
 					},
@@ -122,6 +124,131 @@ func createTestSetup(t *testing.T) *testSetup {
 	}
 }
 
+type mockReplicaPKIClient struct {
+	mu          sync.Mutex
+	postErr     error
+	postEpochs  []uint64
+	descriptors []*pki.ReplicaDescriptor
+	ctxErrs     []error
+}
+
+func (m *mockReplicaPKIClient) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
+	return nil, nil, pki.ErrNoDocument
+}
+
+func (m *mockReplicaPKIClient) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor, loopstats *loops.LoopStats) error {
+	return nil
+}
+
+func (m *mockReplicaPKIClient) PostReplica(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.ReplicaDescriptor) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.postEpochs = append(m.postEpochs, epoch)
+	m.descriptors = append(m.descriptors, d)
+	m.ctxErrs = append(m.ctxErrs, ctx.Err())
+
+	return m.postErr
+}
+
+func (m *mockReplicaPKIClient) Deserialize(raw []byte) (*pki.Document, error) {
+	return pki.ParseDocument(raw)
+}
+
+func (m *mockReplicaPKIClient) posts() ([]uint64, []*pki.ReplicaDescriptor) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	epochs := append([]uint64(nil), m.postEpochs...)
+	descriptors := append([]*pki.ReplicaDescriptor(nil), m.descriptors...)
+
+	return epochs, descriptors
+}
+
+func createPublishDescriptorTestWorker(t *testing.T, pkiClient pki.Client) (*PKIWorker, func()) {
+	pkiScheme := signschemes.ByName(testPKIScheme)
+	idpubkey, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	linkScheme := kemschemes.ByName("Xwing")
+	linkpubkey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	replicaScheme := nikeschemes.ByName("x25519")
+	nrHops := 5
+	payloadSize := 5000
+	sphinxScheme := nikeschemes.ByName("x25519")
+
+	geometry := geo.GeometryFromUserForwardPayloadLength(sphinxScheme, payloadSize, true, nrHops)
+
+	cfg := &config.Config{
+		PKI: &config.PKI{
+			Voting: &config.Voting{
+				Authorities: []*authconfig.Authority{
+					&authconfig.Authority{
+						Identifier:         "dirauth1",
+						IdentityPublicKey:  idpubkey,
+						PKISignatureScheme: pkiScheme.Name(),
+						LinkPublicKey:      authconfig.LinkPublicKey{PublicKey: linkpubkey},
+						WireKEMScheme:      linkScheme.Name(),
+						Addresses:          []string{testDirAuthAddress},
+					},
+				},
+			},
+		},
+		Logging: &config.Logging{
+			Disable: false,
+			File:    "",
+			Level:   "DEBUG",
+		},
+		DataDir:            filepath.Join(t.TempDir(), "datadir"),
+		Identifier:         "replica1",
+		WireKEMScheme:      linkScheme.Name(),
+		PKISignatureScheme: pkiScheme.Name(),
+		ReplicaNIKEScheme:  replicaScheme.Name(),
+		SphinxGeometry:     geometry,
+		Addresses:          []string{testReplicaAddress},
+	}
+
+	server := &Server{
+		cfg:        cfg,
+		fatalErrCh: make(chan error),
+		haltedCh:   make(chan interface{}),
+	}
+
+	require.NoError(t, server.initDataDir())
+	require.NoError(t, server.initLogging())
+
+	server.state = newState(server)
+	server.state.initDB()
+
+	require.NoError(t, server.initIdentityKeys())
+	require.NoError(t, server.initLinkKeys())
+	require.NoError(t, server.initEnvelopeKeys())
+
+	pkiWorker := &PKIWorker{
+		server:     server,
+		WorkerBase: pki.NewWorkerBase(pkiClient, server.logBackend.GetLogger("replica pkiWorker")),
+		replicas:   replicaCommon.NewReplicaMap(),
+		impl:       pkiClient,
+		descAddrMap: map[string][]string{
+			"tcp": []string{testReplicaAddress},
+		},
+	}
+	server.PKIWorker = pkiWorker
+
+	cleanup := func() {
+		if server.envelopeKeys != nil {
+			server.envelopeKeys.Halt()
+		}
+		if server.state != nil {
+			server.state.Close()
+		}
+	}
+
+	return pkiWorker, cleanup
+}
+
 func TestReplicaMap(t *testing.T) {
 	r := replicaCommon.NewReplicaMap()
 	newMap := make(map[[32]byte]*pki.ReplicaDescriptor)
@@ -129,9 +256,11 @@ func TestReplicaMap(t *testing.T) {
 		Name:      "replica1",
 		ReplicaID: 0,
 	}
+
 	id := [32]byte{}
 	_, err := rand.Reader.Read(id[:])
 	require.NoError(t, err)
+
 	newMap[id] = replica
 	r.Replace(newMap)
 
@@ -171,6 +300,7 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 
 	rawDoc, err := doc.MarshalCertificate()
 	require.NoError(t, err)
+
 	setup.server.PKIWorker.StoreDocument(epoch, doc, rawDoc)
 
 	// Test that the PKI document is properly stored
@@ -193,6 +323,7 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 
 	rawUpdatedDoc, err := updatedDoc.MarshalCertificate()
 	require.NoError(t, err)
+
 	setup.server.PKIWorker.StoreDocument(epoch, updatedDoc, rawUpdatedDoc)
 
 	// Test that the document was updated
@@ -286,13 +417,13 @@ func TestDocumentsToFetch(t *testing.T) {
 	// After storing one document, we should have one fewer to fetch
 	expectedCount2 := initialCount - 1
 	require.Equal(t, expectedCount2, len(epochs2))
-
 }
 
 func TestGetFailedFetch(t *testing.T) {
 	p := &PKIWorker{
 		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
+
 	epochs := p.DocumentsToFetch()
 	ok, err := p.GetFailedFetch(epochs[0])
 	require.NoError(t, err)
@@ -339,7 +470,6 @@ func TestPruneDocuments(t *testing.T) {
 	rawOldDoc, err := oldDoc.MarshalCertificate()
 	require.NoError(t, err)
 	pkiWorker.StoreDocument(epoch, oldDoc, rawOldDoc)
-
 	pkiWorker.PruneDocuments()
 
 	// Verify the old document was pruned
@@ -354,6 +484,7 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	libpubkeypem := kempem.ToPublicPEMString(setup.linkpubkey)
 
 	epoch, _, _ := epochtime.Now()
+
 	advertMap := make(map[string]map[string]interface{})
 	advertMap["courier"] = make(map[string]interface{})
 	advertMap["courier"]["linkPublicKey"] = libpubkeypem
@@ -409,6 +540,7 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	// Test that both epoch documents are available
 	doc = pkiWorker.documentForEpoch(epoch)
 	require.NotNil(t, doc)
+
 	nextDocRetrieved := pkiWorker.documentForEpoch(epoch + 1)
 	require.NotNil(t, nextDocRetrieved)
 
@@ -418,6 +550,154 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	// Test that only next epoch document is available
 	doc = pkiWorker.documentForEpoch(epoch)
 	require.Nil(t, doc)
+
 	nextDocRetrieved = pkiWorker.documentForEpoch(epoch + 1)
 	require.NotNil(t, nextDocRetrieved)
+}
+
+func TestReplicaPublishDescriptorTargetsNextEpoch(t *testing.T) {
+	// The dirauth's voting cycle for doc[N] runs during epoch N-1, so a
+	// replica publishing during epoch X must claim Epoch = X+1 to be
+	// included in the document the dirauths are about to sign. A
+	// fresh-start replica with lastPublishedEpoch == 0 should therefore
+	// target currentEpoch+1, never currentEpoch.
+	mockClient := &mockReplicaPKIClient{}
+	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
+	defer cleanup()
+
+	currentEpoch, _, _ := epochtime.Now()
+
+	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+	require.NoError(t, err)
+
+	epochs, descriptors := mockClient.posts()
+	if len(epochs) == 0 {
+		require.Empty(t, descriptors)
+		require.Equal(t, uint64(0), pkiWorker.lastPublishedEpoch)
+		return
+	}
+
+	require.Len(t, epochs, 1)
+	require.Len(t, descriptors, 1)
+	require.Equal(t, currentEpoch+1, epochs[0])
+	require.Equal(t, epochs[0], descriptors[0].Epoch)
+	require.Equal(t, epochs[0], pkiWorker.lastPublishedEpoch)
+}
+
+func TestReplicaPublishDescriptorUsesNextEpochAfterCurrentEpochPublished(t *testing.T) {
+	mockClient := &mockReplicaPKIClient{}
+	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
+	defer cleanup()
+
+	currentEpoch, _, _ := epochtime.Now()
+	pkiWorker.lastPublishedEpoch = currentEpoch
+
+	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+	require.NoError(t, err)
+
+	epochs, descriptors := mockClient.posts()
+	if len(epochs) == 0 {
+		require.Empty(t, descriptors)
+		require.Equal(t, currentEpoch, pkiWorker.lastPublishedEpoch)
+		return
+	}
+
+	require.Len(t, epochs, 1)
+	require.Len(t, descriptors, 1)
+	require.Equal(t, currentEpoch+1, epochs[0])
+	require.Equal(t, epochs[0], descriptors[0].Epoch)
+	require.Equal(t, epochs[0], pkiWorker.lastPublishedEpoch)
+}
+
+func TestReplicaPublishDescriptorSkipsAfterSuccessfulPublish(t *testing.T) {
+	mockClient := &mockReplicaPKIClient{}
+	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
+	defer cleanup()
+
+	currentEpoch, _, _ := epochtime.Now()
+	pkiWorker.lastPublishedEpoch = currentEpoch + 1
+
+	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+	require.NoError(t, err)
+
+	epochs, descriptors := mockClient.posts()
+	require.Empty(t, epochs)
+	require.Empty(t, descriptors)
+	require.Equal(t, currentEpoch+1, pkiWorker.lastPublishedEpoch)
+}
+
+func TestReplicaPublishDescriptorDoesNotSuppressTransientFailure(t *testing.T) {
+	mockClient := &mockReplicaPKIClient{
+		postErr: errors.New("temporary transport failure"),
+	}
+
+	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
+	defer cleanup()
+
+	currentEpoch, _, _ := epochtime.Now()
+
+	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+
+	epochs, descriptors := mockClient.posts()
+	if len(epochs) == 0 {
+		require.NoError(t, err)
+		require.Empty(t, descriptors)
+		require.Equal(t, uint64(0), pkiWorker.lastPublishedEpoch)
+		return
+	}
+
+	require.Error(t, err)
+	require.Len(t, epochs, 1)
+	require.Len(t, descriptors, 1)
+	require.Equal(t, currentEpoch+1, epochs[0])
+	require.Equal(t, epochs[0], descriptors[0].Epoch)
+	require.Equal(t, uint64(0), pkiWorker.lastPublishedEpoch)
+}
+
+func TestReplicaPublishDescriptorSuppressesPermanentInvalidEpoch(t *testing.T) {
+	mockClient := &mockReplicaPKIClient{
+		postErr: pki.ErrInvalidPostEpoch,
+	}
+
+	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
+	defer cleanup()
+
+	currentEpoch, _, _ := epochtime.Now()
+
+	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+
+	epochs, descriptors := mockClient.posts()
+	if len(epochs) == 0 {
+		require.NoError(t, err)
+		require.Empty(t, descriptors)
+		require.Equal(t, uint64(0), pkiWorker.lastPublishedEpoch)
+		return
+	}
+
+	require.ErrorIs(t, err, pki.ErrInvalidPostEpoch)
+	require.Len(t, epochs, 1)
+	require.Len(t, descriptors, 1)
+	require.Equal(t, currentEpoch+1, epochs[0])
+	require.Equal(t, epochs[0], descriptors[0].Epoch)
+	require.Equal(t, epochs[0], pkiWorker.lastPublishedEpoch)
+}
+
+func TestReplicaPublishDescriptorUsesBoundedUploadContext(t *testing.T) {
+	mockClient := &mockReplicaPKIClient{}
+	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
+	defer cleanup()
+
+	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+	require.NoError(t, err)
+
+	epochs, _ := mockClient.posts()
+	if len(epochs) == 0 {
+		return
+	}
+
+	mockClient.mu.Lock()
+	defer mockClient.mu.Unlock()
+
+	require.Len(t, mockClient.ctxErrs, 1)
+	require.NoError(t, mockClient.ctxErrs[0])
 }

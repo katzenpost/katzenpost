@@ -13,12 +13,13 @@ import (
 // TRAFFIC PADDED START
 
 type GetConsensus2 struct {
-	Cmds *Commands
-
+	Cmds  *Commands
 	Epoch uint64
 }
 
-func (c *GetConsensus2) String() string { return "GetConsensus2" }
+func (c *GetConsensus2) String() string {
+	return "GetConsensus2"
+}
 
 // ToBytes serializes the GetConsensus and returns the resulting byte slice.
 func (c *GetConsensus2) ToBytes() []byte {
@@ -45,21 +46,23 @@ func getConsensus2FromBytes(b []byte, cmds *Commands) (Command, error) {
 
 // Consensus2 is used to send a PKI document in compressed binary chunks.
 type Consensus2 struct {
-	Cmds *Commands
-
+	Cmds       *Commands
 	ErrorCode  uint8
 	ChunkNum   uint32
 	ChunkTotal uint32
 	Payload    []byte
 }
 
-func (c *Consensus2) String() string { return "Consensus2" }
+func (c *Consensus2) String() string {
+	return "Consensus2"
+}
 
 // ToBytes serializes the Consensus and returns the resulting byte slice.
 func (c *Consensus2) ToBytes() []byte {
 	consensusLength := uint32(consensus2BaseLength + len(c.Payload))
 	out := make([]byte, cmdOverhead+consensus2BaseLength)
-	out[0] = byte(consensus2) // out[1] is reserved
+	out[0] = byte(consensus2)
+	// out[1] is reserved
 	binary.BigEndian.PutUint32(out[2:6], consensusLength)
 	out[6] = c.ErrorCode
 	binary.BigEndian.PutUint32(out[7:11], c.ChunkNum)
@@ -81,12 +84,10 @@ func consensus2FromBytes(b []byte) (Command, error) {
 	if len(b) < consensusBaseLength {
 		return nil, errInvalidCommand
 	}
-
 	r := new(Consensus2)
 	r.ErrorCode = b[0]
 	r.ChunkNum = binary.BigEndian.Uint32(b[1:5])
 	r.ChunkTotal = binary.BigEndian.Uint32(b[5:9])
-
 	if payloadLength := len(b) - consensus2BaseLength; payloadLength > 0 {
 		r.Payload = make([]byte, 0, payloadLength)
 		r.Payload = append(r.Payload, b[consensus2BaseLength:]...)
@@ -101,14 +102,15 @@ type PostReplicaDescriptorStatus struct {
 	ErrorCode uint8
 }
 
-func (c *PostReplicaDescriptorStatus) String() string { return "PostReplicaDescriptorStatus" }
+func (c *PostReplicaDescriptorStatus) String() string {
+	return "PostReplicaDescriptorStatus"
+}
 
 func postReplicaDescriptorStatusFromBytes(b []byte) (Command, error) {
 	if len(b) != postDescriptorStatusLength {
 		return nil, errInvalidCommand
 	}
-
-	r := new(PostDescriptorStatus)
+	r := new(PostReplicaDescriptorStatus)
 	r.ErrorCode = b[0]
 	return r, nil
 }
@@ -133,7 +135,9 @@ type PostReplicaDescriptor struct {
 	Payload []byte
 }
 
-func (c *PostReplicaDescriptor) String() string { return "PostReplicaDescriptor" }
+func (c *PostReplicaDescriptor) String() string {
+	return "PostReplicaDescriptor"
+}
 
 // ToBytes serializes the PostReplicaDescriptor and returns the resulting byte slice.
 func (c *PostReplicaDescriptor) ToBytes() []byte {
@@ -153,7 +157,6 @@ func postReplicaDescriptorFromBytes(b []byte) (Command, error) {
 	if len(b) < postDescriptorLength {
 		return nil, errInvalidCommand
 	}
-
 	r := new(PostReplicaDescriptor)
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
 	r.Payload = make([]byte, 0, len(b)-postDescriptorLength)
@@ -164,12 +167,15 @@ func postReplicaDescriptorFromBytes(b []byte) (Command, error) {
 func voteOverhead(scheme sign.Scheme) int {
 	return 8 + scheme.PublicKeySize()
 }
+
 func revealOverhead(scheme sign.Scheme) int {
 	return 8 + scheme.PublicKeySize()
 }
+
 func certOverhead(scheme sign.Scheme) int {
 	return 8 + scheme.PublicKeySize()
 }
+
 func sigOverhead(scheme sign.Scheme) int {
 	return 8 + scheme.PublicKeySize()
 }
@@ -181,7 +187,9 @@ type GetConsensus struct {
 	MixnetTransmission bool // if GetConsensus is sent over the mixnet, if true we need to pad the message
 }
 
-func (c *GetConsensus) String() string { return "GetConsensus" }
+func (c *GetConsensus) String() string {
+	return "GetConsensus"
+}
 
 // ToBytes serializes the GetConsensus and returns the resulting byte slice.
 func (c *GetConsensus) ToBytes() []byte {
@@ -204,7 +212,6 @@ func getConsensusFromBytes(b []byte, cmds *Commands) (Command, error) {
 	if len(b) != getConsensusLength {
 		return nil, errInvalidCommand
 	}
-
 	r := new(GetConsensus)
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
 	r.Cmds = cmds
@@ -213,13 +220,14 @@ func getConsensusFromBytes(b []byte, cmds *Commands) (Command, error) {
 
 // GetVote is a de-serialized get_vote command.
 type GetVote struct {
-	Cmds *Commands
-
+	Cmds      *Commands
 	Epoch     uint64
 	PublicKey sign.PublicKey
 }
 
-func (c *GetVote) String() string { return "GetVote" }
+func (c *GetVote) String() string {
+	return "GetVote"
+}
 
 // ToBytes serializes the GetVote and returns the resulting slice.
 func (v *GetVote) ToBytes() []byte {
@@ -259,13 +267,16 @@ type Consensus struct {
 	Payload   []byte
 }
 
-func (c *Consensus) String() string { return "Consensus" }
+func (c *Consensus) String() string {
+	return "Consensus"
+}
 
 // ToBytes serializes the Consensus and returns the resulting byte slice.
 func (c *Consensus) ToBytes() []byte {
 	consensusLength := uint32(consensusBaseLength + len(c.Payload))
 	out := make([]byte, cmdOverhead+consensusBaseLength, cmdOverhead+consensusLength)
-	out[0] = byte(consensus) // out[1] is reserved
+	out[0] = byte(consensus)
+	// out[1] is reserved
 	binary.BigEndian.PutUint32(out[2:6], consensusLength)
 	out[6] = c.ErrorCode
 	out = append(out, c.Payload...)
@@ -280,7 +291,6 @@ func consensusFromBytes(b []byte) (Command, error) {
 	if len(b) < consensusBaseLength {
 		return nil, errInvalidCommand
 	}
-
 	r := new(Consensus)
 	r.ErrorCode = b[0]
 	if payloadLength := len(b) - consensusBaseLength; payloadLength > 0 {
@@ -296,7 +306,9 @@ type PostDescriptor struct {
 	Payload []byte
 }
 
-func (c *PostDescriptor) String() string { return "PostDescriptor" }
+func (c *PostDescriptor) String() string {
+	return "PostDescriptor"
+}
 
 // ToBytes serializes the PostDescriptor and returns the resulting byte slice.
 func (c *PostDescriptor) ToBytes() []byte {
@@ -316,7 +328,6 @@ func postDescriptorFromBytes(b []byte) (Command, error) {
 	if len(b) < postDescriptorLength {
 		return nil, errInvalidCommand
 	}
-
 	r := new(PostDescriptor)
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
 	r.Payload = make([]byte, 0, len(b)-postDescriptorLength)
@@ -329,13 +340,14 @@ type PostDescriptorStatus struct {
 	ErrorCode uint8
 }
 
-func (c *PostDescriptorStatus) String() string { return "PostDescriptorStatus" }
+func (c *PostDescriptorStatus) String() string {
+	return "PostDescriptorStatus"
+}
 
 func postDescriptorStatusFromBytes(b []byte) (Command, error) {
 	if len(b) != postDescriptorStatusLength {
 		return nil, errInvalidCommand
 	}
-
 	r := new(PostDescriptorStatus)
 	r.ErrorCode = b[0]
 	return r, nil
@@ -362,9 +374,11 @@ type Reveal struct {
 	Payload   []byte
 }
 
-func (c *Reveal) String() string { return "Reveal" }
+func (c *Reveal) String() string {
+	return "Reveal"
+}
 
-// ToBytes serializes the Reveal and returns the resulting byte slice.
+// ToBytes serializes the RevealStatus and returns the resulting byte slice.
 func (r *Reveal) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+revealOverhead(r.PublicKey.Scheme()))
 	out[0] = byte(reveal)
@@ -388,7 +402,6 @@ func revealFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
 	if len(b) < revealOverhead(scheme) {
 		return nil, errors.New(" wtf: errInvalidCommand")
 	}
-
 	r := new(Reveal)
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
 	var err error
@@ -406,13 +419,14 @@ type RevealStatus struct {
 	ErrorCode uint8
 }
 
-func (c *RevealStatus) String() string { return "RevealStatus" }
+func (c *RevealStatus) String() string {
+	return "RevealStatus"
+}
 
 func revealStatusFromBytes(b []byte) (Command, error) {
 	if len(b) != revealStatusLength {
 		return nil, errors.New(" wtf: errInvalidCommand")
 	}
-
 	r := new(RevealStatus)
 	r.ErrorCode = b[0]
 	return r, nil
@@ -438,7 +452,9 @@ type Vote struct {
 	Payload   []byte
 }
 
-func (c *Vote) String() string { return "Vote" }
+func (c *Vote) String() string {
+	return "Vote"
+}
 
 func voteFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
 	r := new(Vote)
@@ -480,7 +496,9 @@ type VoteStatus struct {
 	ErrorCode uint8
 }
 
-func (c *VoteStatus) String() string { return "VoteStatus" }
+func (c *VoteStatus) String() string {
+	return "VoteStatus"
+}
 
 // ToBytes serializes the VoteStatus and returns the resulting slice.
 func (c *VoteStatus) ToBytes() []byte {
@@ -499,7 +517,6 @@ func voteStatusFromBytes(b []byte) (Command, error) {
 	if len(b) != voteStatusLength {
 		return nil, errInvalidCommand
 	}
-
 	r := new(VoteStatus)
 	r.ErrorCode = b[0]
 	return r, nil
@@ -512,7 +529,9 @@ type Cert struct {
 	Payload   []byte
 }
 
-func (c *Cert) String() string { return "Cert" }
+func (c *Cert) String() string {
+	return "Cert"
+}
 
 func certFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
 	r := new(Cert)
@@ -554,7 +573,9 @@ type CertStatus struct {
 	ErrorCode uint8
 }
 
-func (c *CertStatus) String() string { return "CertStatus" }
+func (c *CertStatus) String() string {
+	return "CertStatus"
+}
 
 // ToBytes serializes the CertStatus and returns the resulting slice.
 func (c *CertStatus) ToBytes() []byte {
@@ -573,7 +594,6 @@ func certStatusFromBytes(b []byte) (Command, error) {
 	if len(b) != certStatusLength {
 		return nil, errInvalidCommand
 	}
-
 	r := new(CertStatus)
 	r.ErrorCode = b[0]
 	return r, nil
@@ -586,7 +606,9 @@ type Sig struct {
 	Payload   []byte
 }
 
-func (c *Sig) String() string { return "Sig" }
+func (c *Sig) String() string {
+	return "Sig"
+}
 
 func sigFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
 	r := new(Sig)
@@ -628,7 +650,9 @@ type SigStatus struct {
 	ErrorCode uint8
 }
 
-func (c *SigStatus) String() string { return "SigStatus" }
+func (c *SigStatus) String() string {
+	return "SigStatus"
+}
 
 // ToBytes serializes the Status and returns the resulting slice.
 func (c *SigStatus) ToBytes() []byte {
@@ -647,7 +671,6 @@ func sigStatusFromBytes(b []byte) (Command, error) {
 	if len(b) != sigStatusLength {
 		return nil, errInvalidCommand
 	}
-
 	r := new(SigStatus)
 	r.ErrorCode = b[0]
 	return r, nil

@@ -287,13 +287,13 @@ func (dCfg *Debug) applyDefaults() {
 	}
 }
 
-// KEMPublicKeyPEM wraps kem.PublicKey with PEM-based text marshaling
+// LinkPublicKey wraps kem.PublicKey with PEM-based text marshaling
 // so that BurntSushi/toml can serialize it as a string.
-type KEMPublicKeyPEM struct {
+type LinkPublicKey struct {
 	kem.PublicKey
 }
 
-func (k KEMPublicKeyPEM) MarshalText() ([]byte, error) {
+func (k LinkPublicKey) MarshalText() ([]byte, error) {
 	return []byte(kempem.ToPublicPEMString(k.PublicKey)), nil
 }
 
@@ -310,7 +310,7 @@ type Authority struct {
 	PKISignatureScheme string
 
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
-	LinkPublicKey KEMPublicKeyPEM
+	LinkPublicKey LinkPublicKey
 	// WireKEMScheme is the wire protocol KEM scheme to use.
 	WireKEMScheme string
 	// Addresses are the listener addresses specified by a URL, e.g. tcp://1.2.3.4:1234 or quic://1.2.3.4:1234
@@ -378,7 +378,7 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	if err != nil {
 		return err
 	}
-	a.LinkPublicKey = KEMPublicKeyPEM{linkPubKey}
+	a.LinkPublicKey = LinkPublicKey{PublicKey: linkPubKey}
 
 	// address
 	addresses := make([]string, 0)

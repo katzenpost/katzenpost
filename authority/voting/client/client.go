@@ -52,7 +52,7 @@ import (
 
 var defaultDialer = &net.Dialer{}
 
-// authorityAuthenticator implements the PeerAuthenticator interface
+// authorityAuthenticator implements the PeerAuthenticator interface.
 type authorityAuthenticator struct {
 	IdentityPublicKey sign.PublicKey
 	LinkPublicKey     kem.PublicKey
@@ -78,7 +78,7 @@ type Config struct {
 	// KEMScheme indicates the KEM scheme used for the LinkKey/wire protocol.
 	KEMScheme kem.Scheme
 
-	// PKISignatureScheme specifies the cryptographic signature scheme
+	// PKISignatureScheme specifies the cryptographic signature scheme.
 	PKISignatureScheme sign.Scheme
 
 	// LinkKey is the link key for the client's wire connections.
@@ -97,12 +97,12 @@ type Config struct {
 	// Geo is the geometry used for the Sphinx packet construction.
 	Geo *geo.Geometry
 
-	// Network timeouts (seconds)
+	// Network timeouts, in seconds.
 	DialTimeoutSec      int
 	HandshakeTimeoutSec int
 	ResponseTimeoutSec  int
 
-	// Retry configuration
+	// Retry configuration.
 	RetryMaxAttempts int
 	RetryBaseDelay   time.Duration
 	RetryMaxDelay    time.Duration
@@ -119,7 +119,6 @@ func (cfg *Config) validate() error {
 	if cfg.ResponseTimeoutSec == 0 {
 		cfg.ResponseTimeoutSec = 90
 	}
-
 	if cfg.RetryMaxAttempts <= 0 {
 		cfg.RetryMaxAttempts = retry.DefaultMaxAttempts
 	}
@@ -132,11 +131,9 @@ func (cfg *Config) validate() error {
 	if cfg.RetryJitter <= 0 {
 		cfg.RetryJitter = retry.DefaultJitter
 	}
-
 	if cfg.LogBackend == nil {
 		return fmt.Errorf("voting/client: LogBackend is mandatory")
 	}
-
 	for _, v := range cfg.Authorities {
 		for _, a := range v.Addresses {
 			if len(a) == 0 {
@@ -170,9 +167,16 @@ func newConnector(cfg *Config) *connector {
 	}
 }
 
-func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
+func (p *connector) initSession(
+	ctx context.Context,
+	linkKey kem.PrivateKey,
+	signingKey sign.PublicKey,
+	peer *config.Authority,
+	timeoutOverride time.Duration,
+) (*connection, error) {
 	var conn net.Conn
 	var err error
+	var connectedURL string
 
 	peerInfo := func() string {
 		return fmt.Sprintf("peer %s (%s)", peer.Identifier, strings.Join(peer.Addresses, ","))
@@ -182,8 +186,13 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	handshakeTimeout := time.Duration(p.cfg.HandshakeTimeoutSec) * time.Second
 	responseTimeout := time.Duration(p.cfg.ResponseTimeoutSec) * time.Second
 
-	p.log.Debugf("Client timeouts: dial=%v, handshake=%v, response=%v",
-		dialTimeout, handshakeTimeout, responseTimeout)
+	if timeoutOverride > 0 {
+		dialTimeout = timeoutOverride
+		handshakeTimeout = timeoutOverride
+		responseTimeout = timeoutOverride
+	}
+
+	p.log.Debugf("Client timeouts: dial=%v, handshake=%v, response=%v", dialTimeout, handshakeTimeout, responseTimeout)
 
 	dialFn := p.cfg.DialContextFn
 	if dialFn == nil {
@@ -204,10 +213,13 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 
 		ictx, cancelFn := context.WithCancel(ctx)
 		conn, err = common.DialURL(u, ictx, dialFn)
-		defer cancelFn()
+		cancelFn()
+
 		if err == nil {
+			connectedURL = peer.Addresses[idx]
 			break
 		}
+
 		lastErr = fmt.Errorf("%s: failed to connect to %s: %v", peerInfo(), peer.Addresses[idx], err)
 		if i == len(peer.Addresses)-1 {
 			return nil, fmt.Errorf("%s: all connection attempts failed: %v", peerInfo(), lastErr)
@@ -248,31 +260,63 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 		AuthenticationKey:  linkKey,
 		RandomReader:       rand.Reader,
 	}
+
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
+		if conn != nil {
+			conn.Close()
+		}
 		return nil, fmt.Errorf("%s: failed to create PKI session: %v", peerInfo(), err)
 	}
 
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
 	if err = s.Initialize(conn); err != nil {
+		handshakeElapsed := time.Since(handshakeStart)
+
+		localAddr := ""
+		if conn.LocalAddr() != nil {
+			localAddr = conn.LocalAddr().String()
+		}
+		remoteAddr := ""
+		if conn.RemoteAddr() != nil {
+			remoteAddr = conn.RemoteAddr().String()
+		}
+
 		conn.Close()
-		// Add peer name context to the error if it's a HandshakeError
+
 		if he, ok := wire.GetHandshakeError(err); ok {
 			he.WithPeerName(peer.Identifier)
 		}
-		// Log detailed debug info (contains IPs, keys, peer name) at debug level only
-		p.log.Debugf("%s: handshake failure details:\n%s", peerInfo(), wire.GetDebugError(err))
-		return nil, err
-	}
-	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), time.Since(handshakeStart))
 
+		// Log detailed debug info, including IP addresses and key material, at
+		// debug level only.
+		p.log.Debugf("%s: handshake failure details:\n%s", peerInfo(), wire.GetDebugError(err))
+
+		return nil, fmt.Errorf(
+			"%s: handshake failed via %s local=%s remote=%s after %v timeout=%v: %w",
+			peerInfo(),
+			connectedURL,
+			localAddr,
+			remoteAddr,
+			handshakeElapsed,
+			handshakeTimeout,
+			err,
+		)
+	}
+
+	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), time.Since(handshakeStart))
 	conn.SetDeadline(time.Now().Add(responseTimeout))
 
 	return &connection{conn: conn, session: s}, nil
 }
 
-func (p *connector) initSessionWithRetry(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
+func (p *connector) initSessionWithRetry(
+	ctx context.Context,
+	linkKey kem.PrivateKey,
+	signingKey sign.PublicKey,
+	peer *config.Authority,
+) (*connection, error) {
 	var lastErr error
 	for attempt := 0; attempt <= p.cfg.RetryMaxAttempts; attempt++ {
 		if attempt > 0 {
@@ -284,19 +328,23 @@ func (p *connector) initSessionWithRetry(ctx context.Context, linkKey kem.Privat
 				return nil, ctx.Err()
 			}
 		}
-		conn, err := p.initSession(ctx, linkKey, signingKey, peer)
+
+		conn, err := p.initSession(ctx, linkKey, signingKey, peer, 0)
 		if err == nil {
 			if attempt > 0 {
 				p.log.Noticef("authority %s: connected after %d retries", peer.Identifier, attempt)
 			}
 			return conn, nil
 		}
+
 		lastErr = err
 		if !retry.IsTransientError(err) {
 			return nil, err
 		}
+
 		p.log.Warningf("authority %s: attempt %d failed: %v", peer.Identifier, attempt+1, err)
 	}
+
 	return nil, lastErr
 }
 
@@ -315,7 +363,12 @@ type PeerResponse struct {
 	Error    error
 }
 
-func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]PeerResponse, error) {
+func (p *connector) allPeersRoundTrip(
+	ctx context.Context,
+	linkKey kem.PrivateKey,
+	signingKey sign.PublicKey,
+	cmd commands.Command,
+) ([]PeerResponse, error) {
 	p.log.Debugf("allPeersRoundTrip: contacting %d authorities in parallel", len(p.cfg.Authorities))
 
 	responseCh := make(chan PeerResponse, len(p.cfg.Authorities))
@@ -326,6 +379,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKe
 		w.Go(func() {
 			ictx, cancelFn := context.WithCancel(ctx)
 			defer cancelFn()
+
 			conn, err := p.initSessionWithRetry(ictx, linkKey, signingKey, peer)
 			if err != nil {
 				p.log.Errorf("allPeersRoundTrip: %s: %v", peer.Identifier, err)
@@ -340,6 +394,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKe
 				responseCh <- PeerResponse{Peer: peer, Error: err}
 				return
 			}
+
 			responseCh <- PeerResponse{Peer: peer, Response: resp}
 		})
 	}
@@ -351,14 +406,500 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKe
 	for resp := range responseCh {
 		peerResponses = append(peerResponses, resp)
 	}
-
 	if len(peerResponses) == 0 {
 		return nil, errors.New("allPeersRoundTrip: got zero responses")
 	}
+
 	return peerResponses, nil
 }
 
-func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, linkKey kem.PrivateKey, epoch uint64) (commands.Command, error) {
+type postAttemptKind int
+
+const (
+	postAttemptTransport postAttemptKind = iota
+	postAttemptAccepted
+	postAttemptConflict
+	postAttemptSemantic
+)
+
+type postAttemptResult struct {
+	peer       *config.Authority
+	round      int
+	kind       postAttemptKind
+	errorCode  uint8
+	err        error
+	elapsed    time.Duration
+	statusText string
+}
+
+type postPeerState struct {
+	peer     *config.Authority
+	accepted bool
+	conflict bool
+	lastErr  error
+}
+
+type postSummary struct {
+	successes       int
+	conflicts       int
+	transportErrors int
+	semanticErrors  int
+	errs            []error
+}
+
+func postInitialTimeout(round int) time.Duration {
+	// Start at 10% of the legacy one-minute handshake timeout, then approach
+	// the old maximum on later best-effort completion rounds.
+	switch {
+	case round <= 0:
+		return 6 * time.Second
+	case round == 1:
+		return 12 * time.Second
+	case round == 2:
+		return 24 * time.Second
+	case round == 3:
+		return 48 * time.Second
+	default:
+		return 60 * time.Second
+	}
+}
+
+func descriptorStatusText(code uint8) string {
+	return commands.DescriptorErrorToString(code)
+}
+
+func descriptorStatusIsOK(code uint8) bool {
+	return code == commands.DescriptorOk || strings.EqualFold(descriptorStatusText(code), "Ok")
+}
+
+func descriptorStatusIsConflict(code uint8) bool {
+	return strings.EqualFold(descriptorStatusText(code), "Conflict")
+}
+
+func (p *connector) postAuthorityOnce(
+	ctx context.Context,
+	linkKey kem.PrivateKey,
+	signingKey sign.PublicKey,
+	cmd commands.Command,
+	peer *config.Authority,
+	round int,
+	timeout time.Duration,
+) postAttemptResult {
+	start := time.Now()
+
+	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	conn, err := p.initSession(attemptCtx, linkKey, signingKey, peer, timeout)
+	if err != nil {
+		elapsed := time.Since(start)
+		p.log.Warningf(
+			"post authority %s: attempt failed after %v timeout=%v: %v",
+			peer.Identifier,
+			elapsed,
+			timeout,
+			err,
+		)
+		return postAttemptResult{
+			peer:    peer,
+			round:   round,
+			kind:    postAttemptTransport,
+			err:     err,
+			elapsed: elapsed,
+		}
+	}
+	defer conn.conn.Close()
+
+	resp, err := p.roundTrip(conn.session, cmd)
+	if err != nil {
+		elapsed := time.Since(start)
+		p.log.Warningf(
+			"post authority %s: round trip failed after %v timeout=%v: %v",
+			peer.Identifier,
+			elapsed,
+			timeout,
+			err,
+		)
+		return postAttemptResult{
+			peer:    peer,
+			round:   round,
+			kind:    postAttemptTransport,
+			err:     err,
+			elapsed: elapsed,
+		}
+	}
+
+	status, ok := resp.(*commands.PostDescriptorStatus)
+	if !ok {
+		replicaStatus, replicaOK := resp.(*commands.PostReplicaDescriptorStatus)
+		if !replicaOK {
+			elapsed := time.Since(start)
+			err := fmt.Errorf("unexpected reply: %T", resp)
+			return postAttemptResult{
+				peer:    peer,
+				round:   round,
+				kind:    postAttemptSemantic,
+				err:     err,
+				elapsed: elapsed,
+			}
+		}
+
+		status = &commands.PostDescriptorStatus{
+			ErrorCode: replicaStatus.ErrorCode,
+		}
+	}
+
+	elapsed := time.Since(start)
+	statusText := descriptorStatusText(status.ErrorCode)
+
+	switch {
+	case descriptorStatusIsOK(status.ErrorCode):
+		return postAttemptResult{
+			peer:       peer,
+			round:      round,
+			kind:       postAttemptAccepted,
+			errorCode:  status.ErrorCode,
+			elapsed:    elapsed,
+			statusText: statusText,
+		}
+	case descriptorStatusIsConflict(status.ErrorCode):
+		return postAttemptResult{
+			peer:       peer,
+			round:      round,
+			kind:       postAttemptConflict,
+			errorCode:  status.ErrorCode,
+			err:        fmt.Errorf("%s", statusText),
+			elapsed:    elapsed,
+			statusText: statusText,
+		}
+	default:
+		return postAttemptResult{
+			peer:       peer,
+			round:      round,
+			kind:       postAttemptSemantic,
+			errorCode:  status.ErrorCode,
+			err:        fmt.Errorf("%s", statusText),
+			elapsed:    elapsed,
+			statusText: statusText,
+		}
+	}
+}
+
+func (p *connector) runPostRound(
+	ctx context.Context,
+	linkKey kem.PrivateKey,
+	signingKey sign.PublicKey,
+	cmd commands.Command,
+	peers []*config.Authority,
+	round int,
+	timeout time.Duration,
+) []postAttemptResult {
+	resultsCh := make(chan postAttemptResult, len(peers))
+	var w worker.Worker
+
+	for _, peer := range peers {
+		peer := peer
+		w.Go(func() {
+			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, peer, round, timeout)
+		})
+	}
+
+	w.Wait()
+	close(resultsCh)
+
+	results := make([]postAttemptResult, 0, len(peers))
+	for result := range resultsCh {
+		results = append(results, result)
+	}
+
+	return results
+}
+
+func updatePostSummary(states map[string]*postPeerState) postSummary {
+	summary := postSummary{}
+
+	for _, state := range states {
+		switch {
+		case state.accepted:
+			summary.successes++
+		case state.conflict:
+			summary.conflicts++
+			if state.lastErr != nil {
+				summary.errs = append(summary.errs, fmt.Errorf("%s: %v", state.peer.Identifier, state.lastErr))
+			}
+		case state.lastErr != nil:
+			msg := state.lastErr.Error()
+			if strings.Contains(msg, "unexpected reply") ||
+				strings.EqualFold(msg, "Ok") ||
+				strings.Contains(msg, "Descriptor") {
+				summary.semanticErrors++
+			} else {
+				summary.transportErrors++
+			}
+			summary.errs = append(summary.errs, fmt.Errorf("%s: %v", state.peer.Identifier, state.lastErr))
+		}
+	}
+
+	return summary
+}
+
+func peersNeedingCompletion(states map[string]*postPeerState) []*config.Authority {
+	peers := []*config.Authority{}
+
+	for _, state := range states {
+		if state.accepted {
+			continue
+		}
+		if state.conflict {
+			continue
+		}
+		peers = append(peers, state.peer)
+	}
+
+	return peers
+}
+
+func ctxStillOpen(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	default:
+		return true
+	}
+}
+
+func remainingContextBudget(ctx context.Context) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return 0
+	}
+	return time.Until(deadline)
+}
+
+func clampTimeoutToContext(ctx context.Context, timeout time.Duration) time.Duration {
+	remaining := remainingContextBudget(ctx)
+	if remaining <= 0 {
+		return timeout
+	}
+	if remaining < timeout {
+		return remaining
+	}
+	return timeout
+}
+
+func logPostAttemptResult(
+	log *logging.Logger,
+	epoch uint64,
+	threshold int,
+	roundLabel string,
+	result postAttemptResult,
+	summary postSummary,
+	pending int,
+) {
+	switch result.kind {
+	case postAttemptAccepted:
+		log.Noticef(
+			"Post(%d): %s accepted by %s after %v successes=%d/%d conflicts=%d pending=%d",
+			epoch,
+			roundLabel,
+			result.peer.Identifier,
+			result.elapsed,
+			summary.successes,
+			threshold,
+			summary.conflicts,
+			pending,
+		)
+	case postAttemptConflict:
+		log.Warningf(
+			"Post(%d): %s conflict from %s after %v successes=%d/%d conflicts=%d/%d pending=%d",
+			epoch,
+			roundLabel,
+			result.peer.Identifier,
+			result.elapsed,
+			summary.successes,
+			threshold,
+			summary.conflicts,
+			threshold,
+			pending,
+		)
+	case postAttemptSemantic:
+		log.Warningf(
+			"Post(%d): %s semantic failure from %s after %v: %v pending=%d",
+			epoch,
+			roundLabel,
+			result.peer.Identifier,
+			result.elapsed,
+			result.err,
+			pending,
+		)
+	case postAttemptTransport:
+		log.Warningf(
+			"Post(%d): %s transport failed for %s after %v: %v pending=%d",
+			epoch,
+			roundLabel,
+			result.peer.Identifier,
+			result.elapsed,
+			result.err,
+			pending,
+		)
+	}
+}
+
+func (p *connector) postDescriptorWithCompletionRounds(
+	ctx context.Context,
+	epoch uint64,
+	linkKey kem.PrivateKey,
+	signingKey sign.PublicKey,
+	cmd commands.Command,
+) postSummary {
+	threshold := (len(p.cfg.Authorities) / 2) + 1
+	states := make(map[string]*postPeerState, len(p.cfg.Authorities))
+
+	for _, peer := range p.cfg.Authorities {
+		states[peer.Identifier] = &postPeerState{peer: peer}
+	}
+
+	p.log.Noticef(
+		"Post(%d): descriptor fanout starting authorities=%d threshold=%d",
+		epoch,
+		len(p.cfg.Authorities),
+		threshold,
+	)
+
+	round := 0
+	quorumReachedLogged := false
+
+	for ctxStillOpen(ctx) {
+		targets := peersNeedingCompletion(states)
+		if len(targets) == 0 {
+			summary := updatePostSummary(states)
+			p.log.Noticef(
+				"Post(%d): all non-conflict authorities completed successes=%d/%d conflicts=%d/%d",
+				epoch,
+				summary.successes,
+				threshold,
+				summary.conflicts,
+				threshold,
+			)
+			return summary
+		}
+
+		timeout := clampTimeoutToContext(ctx, postInitialTimeout(round))
+		if timeout <= 0 {
+			break
+		}
+
+		roundLabel := "first-attempt"
+		if round > 0 {
+			roundLabel = fmt.Sprintf("completion-round-%d", round)
+		}
+
+		if round > 0 {
+			p.log.Noticef(
+				"Post(%d): %s retrying incomplete authorities count=%d timeout=%v remaining_budget=%v",
+				epoch,
+				roundLabel,
+				len(targets),
+				timeout,
+				remainingContextBudget(ctx),
+			)
+		}
+
+		results := p.runPostRound(ctx, linkKey, signingKey, cmd, targets, round, timeout)
+
+		for _, result := range results {
+			state := states[result.peer.Identifier]
+			if state == nil {
+				continue
+			}
+
+			switch result.kind {
+			case postAttemptAccepted:
+				state.accepted = true
+				state.lastErr = nil
+			case postAttemptConflict:
+				state.conflict = true
+				state.lastErr = result.err
+			case postAttemptSemantic, postAttemptTransport:
+				state.lastErr = result.err
+			}
+
+			summary := updatePostSummary(states)
+			pending := len(peersNeedingCompletion(states))
+			logPostAttemptResult(p.log, epoch, threshold, roundLabel, result, summary, pending)
+
+			if summary.conflicts >= threshold {
+				p.log.Warningf(
+					"Post(%d): conflict quorum reached successes=%d/%d conflicts=%d/%d; suppressing further attempts for this epoch",
+					epoch,
+					summary.successes,
+					threshold,
+					summary.conflicts,
+					threshold,
+				)
+				return summary
+			}
+
+			if summary.successes >= threshold && !quorumReachedLogged {
+				quorumReachedLogged = true
+				p.log.Noticef(
+					"Post(%d): quorum reached successes=%d/%d; continuing best-effort completion rounds while upload window remains open",
+					epoch,
+					summary.successes,
+					threshold,
+				)
+			}
+		}
+
+		summary := updatePostSummary(states)
+		if summary.successes < threshold {
+			pending := len(peersNeedingCompletion(states))
+			if summary.successes+pending < threshold {
+				p.log.Warningf(
+					"Post(%d): quorum impossible successes=%d/%d conflicts=%d/%d pending=%d",
+					epoch,
+					summary.successes,
+					threshold,
+					summary.conflicts,
+					threshold,
+					pending,
+				)
+				return summary
+			}
+		}
+
+		round++
+
+		// If the caller did not provide a deadline, do not spin forever. The
+		// server PKI worker should provide an upload-window context deadline;
+		// this fallback preserves safety for tests and unusual callers.
+		if _, ok := ctx.Deadline(); !ok && round > 3 {
+			p.log.Warningf("Post(%d): no context deadline; stopping completion rounds after %d rounds", epoch, round)
+			break
+		}
+	}
+
+	summary := updatePostSummary(states)
+	p.log.Noticef(
+		"Post(%d): descriptor fanout complete successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
+		epoch,
+		summary.successes,
+		threshold,
+		summary.conflicts,
+		threshold,
+		summary.transportErrors,
+		summary.semanticErrors,
+	)
+
+	return summary
+}
+
+func (p *connector) fetchConsensus(
+	auth *config.Authority,
+	ctx context.Context,
+	linkKey kem.PrivateKey,
+	epoch uint64,
+) (commands.Command, error) {
 	if len(p.cfg.Authorities) == 0 {
 		return nil, errors.New("zero Authorities specified")
 	}
@@ -398,7 +939,14 @@ type Client struct {
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
-func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor, loopstats *loops.LoopStats) error {
+func (c *Client) Post(
+	ctx context.Context,
+	epoch uint64,
+	signingPrivateKey sign.PrivateKey,
+	signingPublicKey sign.PublicKey,
+	d *pki.MixDescriptor,
+	loopstats *loops.LoopStats,
+) error {
 	if err := pki.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
@@ -407,58 +955,83 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 		MixDescriptor: d,
 		LoopStats:     loopstats,
 	}
+
 	blob, err := signedUpload.Marshal()
 	if err != nil {
 		return err
 	}
+
 	signedUpload.Signature = &cert.Signature{
 		PublicKeySum256: hash.Sum256From(signingPublicKey),
 		Payload:         signingPrivateKey.Scheme().Sign(signingPrivateKey, blob, nil),
 	}
+
 	signed, err := signedUpload.Marshal()
 	if err != nil {
 		return err
 	}
 
-	cmd := &commands.PostDescriptor{Epoch: epoch, Payload: []byte(signed)}
-	peerResponses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
-	if err != nil {
-		return err
+	cmd := &commands.PostDescriptor{
+		Epoch:   epoch,
+		Payload: []byte(signed),
 	}
 
-	errs := []error{}
-	successCount := 0
+	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd)
+	threshold := (len(c.cfg.Authorities) / 2) + 1
 
-	for _, peerResp := range peerResponses {
-		if peerResp.Error != nil {
-			errs = append(errs, fmt.Errorf("%s: %v", peerResp.Peer.Identifier, peerResp.Error))
-			continue
+	if summary.successes >= threshold {
+		if len(summary.errs) > 0 {
+			c.log.Warningf(
+				"Post(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+				epoch,
+				summary.successes,
+				threshold,
+				summary.conflicts,
+				threshold,
+				summary.transportErrors,
+				summary.semanticErrors,
+				summary.errs,
+			)
 		}
-
-		r, ok := peerResp.Response.(*commands.PostDescriptorStatus)
-		if !ok {
-			errs = append(errs, fmt.Errorf("%s: unexpected reply: %T", peerResp.Peer.Identifier, peerResp.Response))
-			continue
-		}
-
-		switch r.ErrorCode {
-		case commands.DescriptorOk:
-			successCount++
-		default:
-			errs = append(errs, fmt.Errorf("%s: %s", peerResp.Peer.Identifier, commands.DescriptorErrorToString(r.ErrorCode)))
-		}
-	}
-
-	threshold := (len(peerResponses) / 2) + 1
-	if successCount >= threshold {
 		return nil
 	}
 
-	return fmt.Errorf("Post(%d) failed: %d/%d successes, errors: %v", epoch, successCount, threshold, errs)
+	if summary.conflicts >= threshold {
+		c.log.Warningf(
+			"Post(%d): conflict quorum for descriptor upload: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+			epoch,
+			summary.successes,
+			threshold,
+			summary.conflicts,
+			threshold,
+			summary.transportErrors,
+			summary.semanticErrors,
+			summary.errs,
+		)
+		return pki.ErrInvalidPostEpoch
+	}
+
+	return fmt.Errorf(
+		"Post(%d) failed: %d/%d successes, %d/%d conflicts, transport_errors=%d semantic_errors=%d, errors: %v",
+		epoch,
+		summary.successes,
+		threshold,
+		summary.conflicts,
+		threshold,
+		summary.transportErrors,
+		summary.semanticErrors,
+		summary.errs,
+	)
 }
 
 // PostReplica posts the replica descriptor.
-func (c *Client) PostReplica(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.ReplicaDescriptor) error {
+func (c *Client) PostReplica(
+	ctx context.Context,
+	epoch uint64,
+	signingPrivateKey sign.PrivateKey,
+	signingPublicKey sign.PublicKey,
+	d *pki.ReplicaDescriptor,
+) error {
 	if err := pki.IsReplicaDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
@@ -477,31 +1050,57 @@ func (c *Client) PostReplica(ctx context.Context, epoch uint64, signingPrivateKe
 		return err
 	}
 
-	cmd := &commands.PostReplicaDescriptor{Epoch: epoch, Payload: []byte(signed)}
-	peerResponses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
-	if err != nil {
-		return err
+	cmd := &commands.PostReplicaDescriptor{
+		Epoch:   epoch,
+		Payload: []byte(signed),
 	}
 
-	errs := []error{}
-	for _, peerResp := range peerResponses {
-		if peerResp.Error != nil {
-			errs = append(errs, peerResp.Error)
-			continue
+	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd)
+	threshold := (len(c.cfg.Authorities) / 2) + 1
+
+	if summary.successes >= threshold {
+		if len(summary.errs) > 0 {
+			c.log.Warningf(
+				"PostReplica(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+				epoch,
+				summary.successes,
+				threshold,
+				summary.conflicts,
+				threshold,
+				summary.transportErrors,
+				summary.semanticErrors,
+				summary.errs,
+			)
 		}
-		r, ok := peerResp.Response.(*commands.PostDescriptorStatus)
-		if !ok {
-			errs = append(errs, fmt.Errorf("%s: unexpected reply", peerResp.Peer.Identifier))
-			continue
-		}
-		if r.ErrorCode != commands.DescriptorOk {
-			errs = append(errs, fmt.Errorf("%s: %s", peerResp.Peer.Identifier, commands.DescriptorErrorToString(r.ErrorCode)))
-		}
-	}
-	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("PostReplica(%d) errors: %v", epoch, errs)
+
+	if summary.conflicts >= threshold {
+		c.log.Warningf(
+			"PostReplica(%d): conflict quorum for replica descriptor upload: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+			epoch,
+			summary.successes,
+			threshold,
+			summary.conflicts,
+			threshold,
+			summary.transportErrors,
+			summary.semanticErrors,
+			summary.errs,
+		)
+		return pki.ErrInvalidPostEpoch
+	}
+
+	return fmt.Errorf(
+		"PostReplica(%d) failed: %d/%d successes, %d/%d conflicts, transport_errors=%d semantic_errors=%d, errors: %v",
+		epoch,
+		summary.successes,
+		threshold,
+		summary.conflicts,
+		threshold,
+		summary.transportErrors,
+		summary.semanticErrors,
+		summary.errs,
+	)
 }
 
 // fetchResult carries the outcome of a single authority's consensus fetch
@@ -528,19 +1127,36 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 		return nil, nil, err
 	}
 
+	// raceCtx is the cancellation root for the per-authority fetchers.
+	// The deferred cancel fires on every return path (success on first
+	// valid result, or fall-through after every peer was rejected) and
+	// signals the remaining in-flight fetchers to abort.
 	raceCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// Three goroutine populations cooperate here:
+	//
+	//   1. N fetcher goroutines (one per authority) each write exactly
+	//      one fetchResult into the buffered results channel and exit.
+	//   2. One drain goroutine waits for all fetchers to exit and then
+	//      closes the channel.
+	//   3. The main goroutine (this function) reads from the channel.
+	//
+	// The channel is buffered to len(c.cfg.Authorities) so that every
+	// fetcher can write its result without blocking even after we have
+	// already returned from the main goroutine on an earlier peer's
+	// success. The buffer guarantees that the late writers never wedge
+	// against an unread channel; raceCtx cancellation hurries them
+	// along, but the buffer is what lets them exit cleanly.
 	results := make(chan fetchResult, len(c.cfg.Authorities))
-	var w worker.Worker
+	var fetchers worker.Worker // tracks the per-authority fetchers
 	for _, auth := range c.cfg.Authorities {
-		auth := auth
-		w.Go(func() {
+		fetchers.Go(func() {
 			results <- c.fetchAndValidate(raceCtx, auth, linkKey, epoch)
 		})
 	}
 	go func() {
-		w.Wait()
+		fetchers.Wait()
 		close(results)
 	}()
 
@@ -550,9 +1166,18 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 			continue
 		}
 		c.log.Noticef("Get: retrieved valid consensus from %s for epoch %d (%d sigs)", res.peer, epoch, res.sigs)
-		// The deferred cancel terminates the remaining in-flight
-		// fetches. They write into the buffered channel and exit; the
-		// drain goroutine then closes it.
+		// One peer's response is sufficient: fetchAndValidate has
+		// already verified the document via cert.VerifyThreshold,
+		// which proves that threshold-many dirauths signed the
+		// consensus. We do not need responses from threshold-many
+		// peers; any one peer's signed document carries the threshold
+		// inside it.
+		//
+		// Returning here triggers the deferred cancel above, which
+		// terminates the remaining in-flight fetchers. They write
+		// their final result into the buffered channel and exit; the
+		// drain goroutine sees the wait-group go to zero and closes
+		// the channel.
 		return res.doc, res.rawDoc, nil
 	}
 
@@ -560,6 +1185,7 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 	if epoch <= e {
 		return nil, nil, pki.ErrDocumentGone
 	}
+
 	return nil, nil, pki.ErrNoDocument
 }
 
@@ -613,6 +1239,7 @@ func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return pki.ParseDocument(raw)
 }
 
@@ -621,15 +1248,18 @@ func New(cfg *Config) (pki.Client, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
+
 	c := &Client{
 		cfg:  cfg,
 		log:  cfg.LogBackend.GetLogger("pki/voting/Client"),
 		pool: newConnector(cfg),
 	}
+
 	c.verifiers = make([]sign.PublicKey, 0, len(cfg.Authorities))
 	for _, auth := range cfg.Authorities {
 		c.verifiers = append(c.verifiers, auth.IdentityPublicKey)
 	}
 	c.threshold = len(c.verifiers)/2 + 1
+
 	return c, nil
 }

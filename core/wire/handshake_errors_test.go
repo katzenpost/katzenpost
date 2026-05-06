@@ -280,3 +280,71 @@ func TestHandshakeErrorWrapping_AuthFailure(t *testing.T) {
 	t.Logf("Debug output:\n%s", debugStr)
 	require.Contains(debugStr, "AUTHENTICATION", "Debug should have authentication header")
 }
+
+func TestIsNoHandshakeBytesErrorMatchesResponderEOFBeforeMessage1(t *testing.T) {
+	err := NewHandshakeError(
+		HandshakeStateMsg1Receive,
+		"failed to receive message 1",
+		io.EOF,
+	)
+
+	require.True(t, IsNoHandshakeBytesError(err))
+}
+
+func TestIsNoHandshakeBytesErrorRejectsOtherErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "nil",
+			err:  nil,
+		},
+		{
+			name: "plain EOF",
+			err:  io.EOF,
+		},
+		{
+			name: "initiator finalization EOF",
+			err: func() error {
+				he := NewHandshakeError(
+					HandshakeStateFinalization,
+					"failed to receive NoOp during finalization",
+					io.EOF,
+				)
+				he.IsInitiator = true
+				return he
+			}(),
+		},
+		{
+			name: "responder message 1 unexpected EOF",
+			err: NewHandshakeError(
+				HandshakeStateMsg1Receive,
+				"failed to receive message 1",
+				io.ErrUnexpectedEOF,
+			),
+		},
+		{
+			name: "responder message 2 EOF",
+			err: NewHandshakeError(
+				HandshakeStateMsg2Receive,
+				"failed to receive message 2",
+				io.EOF,
+			),
+		},
+		{
+			name: "same state but different message",
+			err: NewHandshakeError(
+				HandshakeStateMsg1Receive,
+				"failed to parse message 1",
+				io.EOF,
+			),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.False(t, IsNoHandshakeBytesError(test.err))
+		})
+	}
+}

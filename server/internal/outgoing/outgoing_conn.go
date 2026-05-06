@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -306,7 +307,41 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	conn.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
 	if err = w.Initialize(conn); err != nil {
-		c.log.Errorf("Handshake failed: %v", err)
+		handshakeElapsed := time.Since(handshakeStart)
+
+		localAddr := ""
+		if conn.LocalAddr() != nil {
+			localAddr = conn.LocalAddr().String()
+		}
+
+		remoteAddr := ""
+		if conn.RemoteAddr() != nil {
+			remoteAddr = conn.RemoteAddr().String()
+		}
+
+		peerIdentityHash := hash.Sum256(c.dst.IdentityKey)
+
+		var descriptorAddrs []string
+		for _, transport := range cpki.InternalTransports {
+			descriptorAddrs = append(descriptorAddrs, c.dst.Addresses[transport]...)
+		}
+
+		if he, ok := wire.GetHandshakeError(err); ok {
+			he.WithPeerName(c.dst.Name)
+		}
+
+		c.log.Errorf(
+			"Handshake failed peer=%s identity_hash=%x descriptor_addrs=%s local=%s remote=%s after=%v timeout=%v: %v",
+			c.dst.Name,
+			peerIdentityHash[:],
+			strings.Join(descriptorAddrs, ","),
+			localAddr,
+			remoteAddr,
+			handshakeElapsed,
+			timeoutMs,
+			err,
+		)
+
 		// Log detailed debug info (contains IPs, keys) at debug level only
 		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
@@ -342,6 +377,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			if !ok {
 				return
 			}
+
 			cmd := commands.SendPacket{
 				SphinxPacket: pkt.Raw,
 				Cmds:         w.GetCommands(),
