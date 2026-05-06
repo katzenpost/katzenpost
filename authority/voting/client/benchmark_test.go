@@ -152,7 +152,7 @@ func BenchmarkHandshakeConcurrency(b *testing.B) {
 	peer := &config.Authority{
 		Identifier:         "bench-server",
 		IdentityPublicKey:  serverIdPubKey,
-		LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: serverLinkPubKey},
+		LinkPublicKey:      config.LinkPublicKey{PublicKey: serverLinkPubKey},
 		PKISignatureScheme: benchSignScheme.Name(),
 		WireKEMScheme:      benchKEMScheme.Name(),
 		Addresses:          []string{fmt.Sprintf("tcp://%s", listener.Addr().String())},
@@ -348,7 +348,7 @@ func BenchmarkHandshakeLatencyDistribution(b *testing.B) {
 	peer := &config.Authority{
 		Identifier:         "bench-server",
 		IdentityPublicKey:  serverIdPubKey,
-		LinkPublicKey:      config.KEMPublicKeyPEM{PublicKey: serverLinkPubKey},
+		LinkPublicKey:      config.LinkPublicKey{PublicKey: serverLinkPubKey},
 		PKISignatureScheme: benchSignScheme.Name(),
 		WireKEMScheme:      benchKEMScheme.Name(),
 		Addresses:          []string{fmt.Sprintf("tcp://%s", listener.Addr().String())},

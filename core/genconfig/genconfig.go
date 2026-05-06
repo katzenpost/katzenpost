@@ -312,7 +312,7 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 			WireKEMScheme:      s.WireKEMScheme,
 			Name:               s.NodeConfigs[i].Server.Identifier,
 			IdentityKey:        idPubKey,
-			LinkKey:            cConfig.KEMPublicKeyPEM{linkPubKey},
+			LinkKey:            cConfig.LinkPublicKey{PublicKey: linkPubKey},
 			Addresses:          s.NodeConfigs[i].Server.Addresses,
 		}
 		gateways = append(gateways, gateway)
@@ -623,7 +623,7 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		authority := &vConfig.Authority{
 			Identifier:         fmt.Sprintf(AuthNodeFormat, i),
 			IdentityPublicKey:  idKey,
-			LinkPublicKey:      vConfig.KEMPublicKeyPEM{linkKey},
+			LinkPublicKey:      vConfig.LinkPublicKey{PublicKey: linkKey},
 			WireKEMScheme:      wirekem,
 			PKISignatureScheme: s.PkiSignatureScheme.Name(),
 			Addresses:          cfg.Server.Addresses,

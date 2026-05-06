@@ -74,7 +74,7 @@ func TestConnector(t *testing.T) {
 						Identifier:         "auth1",
 						IdentityPublicKey:  auth1IdPubKey,
 						PKISignatureScheme: pkiSchemeName,
-						LinkPublicKey:      aconfig.KEMPublicKeyPEM{PublicKey: authlinkPubKey},
+						LinkPublicKey:      aconfig.LinkPublicKey{PublicKey: authlinkPubKey},
 						WireKEMScheme:      WireKEMSchemeName,
 						Addresses:          []string{"tcp://127.0.0.1:1224"},
 					},

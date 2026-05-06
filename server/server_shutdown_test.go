@@ -111,7 +111,7 @@ func TestServerStartShutdown(t *testing.T) {
 						PKISignatureScheme: testSignatureScheme.Name(),
 						Identifier:         "auth1",
 						IdentityPublicKey:  authPubkey,
-						LinkPublicKey:      aconfig.KEMPublicKeyPEM{PublicKey: authLinkPubKey},
+						LinkPublicKey:      aconfig.LinkPublicKey{PublicKey: authLinkPubKey},
 						Addresses:          []string{"tcp://127.0.0.1:1234"},
 					},
 				},
