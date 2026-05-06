@@ -10,7 +10,7 @@ help:
 	@echo " courier-restart    - restart courier plugin via thwack interface"
 	@echo " servicenode-restart - restart servicenode container (heavier)"
 	@echo " replica-restart    - rebuild replica binary and restart all replica containers"
-	@echo " wait               - wait for testnet to have consensus"
+	@echo " wait               - wait for testnet to have consensus and at least 2 storage replicas"
 	@echo " watch              - tail -F all logs"
 	@echo " watch-replicas     - monitor all replica logs"
 	@echo " watch-auth         - monitor all directory authority logs"
@@ -324,7 +324,7 @@ show-latest-vote:
 
 wait: $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient.toml
+	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient.toml -r 2
 
 debian_base.stamp:
 	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c "echo -e 'deb https://deb.debian.org/debian bullseye main\ndeb https://deb.debian.org/debian bullseye-updates main\ndeb https://deb.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list && cat /etc/apt/sources.list && apt update && apt upgrade -y && apt install -y pv && adduser katzenpost --gecos '' --disabled-password && apt update && apt upgrade -y"
