@@ -21,7 +21,7 @@ const (
 
 	// Common timeout defaults (in milliseconds)
 	DefaultConnectTimeout   = 60 * 1000  // 60 sec.
-	DefaultHandshakeTimeout = 180 * 1000 // 180 sec.
+	DefaultHandshakeTimeout = 60 * 1000  // 60 sec.
 	DefaultReauthInterval   = 300 * 1000 // 300 sec.
 )
 
