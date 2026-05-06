@@ -185,50 +185,11 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 	currentEpoch, elapsed, till := epochtime.Now()
 
-	uploadDeadline := PublishDeadline - descriptorUploadSafety
-	if uploadDeadline < 0 {
-		uploadDeadline = PublishDeadline
-	}
+	// Voting for doc[N] happens during epoch N-1, so a descriptor uploaded
+	// during the current epoch must claim epoch = currentEpoch + 1 to be
+	// included in the document the dirauths are about to sign.
+	doPublishEpoch := currentEpoch + 1
 
-	var doPublishEpoch uint64
-	uploadReason := ""
-
-	switch {
-	case p.lastPublishedEpoch > currentEpoch:
-		p.GetLogger().Debugf(
-			"REPLICA DESCRIPTOR UPLOAD: not needed; already published future target epoch published=%d current_epoch=%d; PKI document fetch will continue",
-			p.lastPublishedEpoch,
-			currentEpoch,
-		)
-		return nil
-
-	case elapsed >= uploadDeadline:
-		p.GetLogger().Noticef(
-			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: upload window closed; skipping descriptor upload only; PKI document fetch will continue",
-			currentEpoch,
-			elapsed,
-			PublishDeadline,
-			descriptorUploadSafety,
-			till,
-		)
-		return nil
-
-	case p.lastPublishedEpoch == 0 || p.lastPublishedEpoch < currentEpoch:
-		doPublishEpoch = currentEpoch
-		uploadReason = "current upload window open and current epoch not yet published"
-
-	case p.lastPublishedEpoch == currentEpoch:
-		doPublishEpoch = currentEpoch + 1
-		uploadReason = "current epoch already published; prepublishing next epoch while upload window remains open"
-
-	default:
-		p.GetLogger().Debugf(
-			"REPLICA DESCRIPTOR UPLOAD: not needed; published=%d current_epoch=%d; PKI document fetch will continue",
-			p.lastPublishedEpoch,
-			currentEpoch,
-		)
-		return nil
-	}
 	if p.lastPublishedEpoch >= doPublishEpoch {
 		p.GetLogger().Debugf(
 			"REPLICA DESCRIPTOR UPLOAD: not needed; already published target epoch published=%d target=%d current_epoch=%d; PKI document fetch will continue",
@@ -239,10 +200,15 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return nil
 	}
 
+	uploadDeadline := PublishDeadline - descriptorUploadSafety
+	if uploadDeadline < 0 {
+		uploadDeadline = PublishDeadline
+	}
+
 	budget := uploadDeadline - elapsed
 	if budget <= 0 {
 		p.GetLogger().Noticef(
-			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: no upload budget remains; skipping descriptor upload only; PKI document fetch will continue",
+			"REPLICA DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: upload window closed; skipping descriptor upload only; PKI document fetch will continue",
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
@@ -254,14 +220,13 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	p.GetLogger().Noticef(
-		"REPLICA DESCRIPTOR UPLOAD: selected upload epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v budget=%v reason=%s",
+		"REPLICA DESCRIPTOR UPLOAD: selected upload epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v budget=%v",
 		doPublishEpoch,
 		currentEpoch,
 		elapsed,
 		PublishDeadline,
 		descriptorUploadSafety,
 		budget,
-		strconv.QuoteToASCII(uploadReason),
 	)
 
 	uploadCtx, cancel := context.WithTimeout(pkiCtx, budget)
