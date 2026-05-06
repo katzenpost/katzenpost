@@ -18,7 +18,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
-
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -38,7 +37,14 @@ var (
 
 // benchServer runs a mock server that accepts connections and performs handshakes
 // connWg tracks in-flight connection handshakes to prevent iteration overlap
-func benchServer(listener net.Listener, serverLinkPrivKey kem.PrivateKey, serverIdPubKey sign.PublicKey, done chan struct{}, wg *sync.WaitGroup, connWg *sync.WaitGroup) {
+func benchServer(
+	listener net.Listener,
+	serverLinkPrivKey kem.PrivateKey,
+	serverIdPubKey sign.PublicKey,
+	done chan struct{},
+	wg *sync.WaitGroup,
+	connWg *sync.WaitGroup,
+) {
 	defer wg.Done()
 
 	// Pre-compute identity hash once
@@ -73,6 +79,7 @@ func benchServer(listener net.Listener, serverLinkPrivKey kem.PrivateKey, server
 				AuthenticationKey: serverLinkPrivKey,
 				RandomReader:      rand.Reader,
 			}
+
 			session, err := wire.NewPKISession(cfg, false)
 			if err != nil {
 				return
@@ -110,6 +117,7 @@ func BenchmarkHandshakeConcurrency(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to generate server link keypair: %v", err)
 	}
+
 	serverIdPubKey, _, err := benchSignScheme.GenerateKey()
 	if err != nil {
 		b.Fatalf("failed to generate server identity keypair: %v", err)
@@ -124,8 +132,10 @@ func BenchmarkHandshakeConcurrency(b *testing.B) {
 	done := make(chan struct{})
 	var serverWg sync.WaitGroup
 	var connWg sync.WaitGroup
+
 	serverWg.Add(1)
 	go benchServer(listener, serverLinkPrivKey, serverIdPubKey, done, &serverWg, &connWg)
+
 	defer func() {
 		close(done)
 		serverWg.Wait()
@@ -165,7 +175,6 @@ func BenchmarkHandshakeConcurrency(b *testing.B) {
 			first := true
 
 			b.ResetTimer()
-
 			for i := 0; i < b.N; i++ {
 				stats := runConcurrentHandshakes(logBackend, peer, clientKeys, concurrency)
 				totalAvg += stats.avgUs
@@ -191,13 +200,20 @@ func BenchmarkHandshakeConcurrency(b *testing.B) {
 				b.ReportMetric(globalMin, "min_us")
 				b.ReportMetric(globalMax, "max_us")
 			}
+			_ = totalErrors
 		})
 	}
 }
 
-func runConcurrentHandshakes(logBackend *log.Backend, peer *config.Authority, clientKeys []kem.PrivateKey, concurrency int) handshakeStats {
+func runConcurrentHandshakes(
+	logBackend *log.Backend,
+	peer *config.Authority,
+	clientKeys []kem.PrivateKey,
+	concurrency int,
+) handshakeStats {
 	var wg sync.WaitGroup
 	var barrier sync.WaitGroup
+
 	barrier.Add(1)
 
 	durations := make([]time.Duration, concurrency)
@@ -227,7 +243,6 @@ func runConcurrentHandshakes(logBackend *log.Backend, peer *config.Authority, cl
 			defer wg.Done()
 
 			clientLinkPrivKey := clientKeys[idx%len(clientKeys)]
-
 			barrier.Wait() // All goroutines wait here
 
 			// === TIMED SECTION: dial + handshake only ===
@@ -235,12 +250,14 @@ func runConcurrentHandshakes(logBackend *log.Backend, peer *config.Authority, cl
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			c, err := connectors[idx].initSession(ctx, clientLinkPrivKey, nil, peer)
+			c, err := connectors[idx].initSession(ctx, clientLinkPrivKey, nil, peer, 30*time.Second)
 			durations[idx] = time.Since(start)
+
 			if err != nil {
 				errors[idx] = err
 				return
 			}
+
 			c.conn.Close()
 		}(c)
 	}
@@ -259,8 +276,10 @@ func runConcurrentHandshakes(logBackend *log.Backend, peer *config.Authority, cl
 			errorCount++
 			continue
 		}
+
 		successCount++
 		total += d
+
 		if minDur == 0 || d < minDur {
 			minDur = d
 		}
@@ -279,6 +298,7 @@ func runConcurrentHandshakes(logBackend *log.Backend, peer *config.Authority, cl
 			errors: errorCount,
 		}
 	}
+
 	return handshakeStats{errors: errorCount}
 }
 
@@ -289,6 +309,7 @@ func BenchmarkHandshakeLatencyDistribution(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to generate server link keypair: %v", err)
 	}
+
 	serverIdPubKey, _, err := benchSignScheme.GenerateKey()
 	if err != nil {
 		b.Fatalf("failed to generate server identity keypair: %v", err)
@@ -303,8 +324,10 @@ func BenchmarkHandshakeLatencyDistribution(b *testing.B) {
 	done := make(chan struct{})
 	var serverWg sync.WaitGroup
 	var connWg sync.WaitGroup
+
 	serverWg.Add(1)
 	go benchServer(listener, serverLinkPrivKey, serverIdPubKey, done, &serverWg, &connWg)
+
 	defer func() {
 		close(done)
 		serverWg.Wait()
@@ -342,18 +365,18 @@ func BenchmarkHandshakeLatencyDistribution(b *testing.B) {
 		HandshakeTimeoutSec: 30,
 		ResponseTimeoutSec:  30,
 	}
-
 	conn := newConnector(cfg)
 
 	b.ResetTimer()
-
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		c, err := conn.initSession(ctx, clientLinkPrivKey, nil, peer)
+		c, err := conn.initSession(ctx, clientLinkPrivKey, nil, peer, 30*time.Second)
 		cancel()
+
 		if err != nil {
 			b.Fatalf("handshake failed: %v", err)
 		}
+
 		c.conn.Close()
 		connWg.Wait() // Wait for server-side handshake to complete
 	}

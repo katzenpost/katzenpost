@@ -30,6 +30,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -326,6 +327,15 @@ func (s *state) fsm() <-chan time.Time {
 			s.sendSigToAuthorities(signed, s.votingEpoch)
 		} else {
 			s.log.Errorf("FSM: Failed to compute our view of consensus for epoch %v: %s", s.votingEpoch, err)
+			certs := s.certificates[s.votingEpoch]
+			received, awaiting := s.authoritiesPresentAndMissing(func(pk [publicKeyHashSize]byte) bool {
+				_, ok := certs[pk]
+				return ok
+			})
+			s.log.Errorf("FSM: certificates received from %d authority/authorities: %v",
+				len(received), received)
+			s.log.Errorf("FSM: certificates not yet received from %d authority/authorities: %v",
+				len(awaiting), awaiting)
 		}
 		s.setState(stateAcceptSignature)
 		_, nowelapsed, _ := epochtime.Now()
@@ -352,6 +362,15 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			s.log.Errorf("FSM: CONSENSUS FAILURE for epoch %d: %s", s.votingEpoch, err)
 			s.log.Errorf("FSM: Had %d signatures out of %d required threshold", sigCount, s.threshold)
+			sigs := s.signatures[s.votingEpoch]
+			received, awaiting := s.authoritiesPresentAndMissing(func(pk [publicKeyHashSize]byte) bool {
+				_, ok := sigs[pk]
+				return ok
+			})
+			s.log.Errorf("FSM: signatures received from %d authority/authorities: %v",
+				len(received), received)
+			s.log.Errorf("FSM: signatures not yet received from %d authority/authorities: %v",
+				len(awaiting), awaiting)
 			s.setState(stateBootstrap)
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
@@ -551,6 +570,24 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
+
+	// Do not sign an empty or otherwise malformed consensus.
+	if err := pki.IsDocumentWellFormed(consensusOfOne, s.getVerifiers()); err != nil {
+		s.log.Noticef(
+			"getMyConsensus: refusing to sign malformed consensus for epoch %d: mixes=%d replicas=%d threshold=%d err=%s",
+			epoch,
+			len(mixes),
+			len(replicas),
+			s.threshold,
+			strconv.QuoteToASCII(err.Error()),
+		)
+		return nil, fmt.Errorf(
+			"refusing to sign malformed consensus for epoch %d: %w",
+			epoch,
+			err,
+		)
+	}
+
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
 		return nil, err
@@ -700,6 +737,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 
 	// Build the Document.
 	doc := &pki.Document{
+		Version:                       pki.DocumentVersion,
 		Epoch:                         s.votingEpoch,
 		GenesisEpoch:                  s.genesisEpoch,
 		SendRatePerMinute:             params.SendRatePerMinute,
@@ -933,6 +971,28 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return true
 	}
 	return false
+}
+
+// authoritiesPresentAndMissing returns two name slices: the configured
+// authorities for which `has(pkHash) == true`, and those for which it
+// is false. Caller must hold the state lock; this method only reads
+// from init-only data (s.s.cfg.Authorities) and from the per-epoch
+// map already protected by that lock via the `has` closure. No new
+// locks are taken.
+func (s *state) authoritiesPresentAndMissing(has func([publicKeyHashSize]byte) bool) (present, missing []string) {
+	present = make([]string, 0, len(s.s.cfg.Authorities))
+	missing = make([]string, 0, len(s.s.cfg.Authorities))
+	for _, peer := range s.s.cfg.Authorities {
+		var pk [publicKeyHashSize]byte
+		h := hash.Sum256From(peer.IdentityPublicKey)
+		copy(pk[:], h[:])
+		if has(pk) {
+			present = append(present, peer.Identifier)
+		} else {
+			missing = append(missing, peer.Identifier)
+		}
+	}
+	return
 }
 
 func (s *state) filterPeerAddresses(addrs []string) []string {

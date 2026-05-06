@@ -134,7 +134,7 @@ func TestIncomingConn(t *testing.T) {
 	st.initDB()
 
 	id := 0
-	addr := "tcp://127.0.0.1:1234"
+	addr := "tcp://127.0.0.1:0"
 	listener, err := newListener(server, id, addr)
 	require.NoError(t, err)
 

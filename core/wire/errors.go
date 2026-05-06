@@ -377,6 +377,31 @@ func GetHandshakeError(err error) (*HandshakeError, bool) {
 	return nil, false
 }
 
+// IsNoHandshakeBytesError returns true when a TCP client opened a connection
+// to a responder and closed it before sending the first Noise handshake
+// message. This is usually a TCP connect probe such as our regular status page
+// probe system.
+func IsNoHandshakeBytesError(err error) bool {
+	he, ok := GetHandshakeError(err)
+	if !ok {
+		return false
+	}
+	if he.IsInitiator {
+		return false
+	}
+	if he.State != HandshakeStateMsg1Receive {
+		return false
+	}
+	if he.Message != "failed to receive message 1" {
+		return false
+	}
+	if he.UnderlyingError == nil {
+		return false
+	}
+
+	return he.UnderlyingError.Error() == "EOF"
+}
+
 // ExtractConnectionInfo extracts detailed connection information from net.Conn
 func ExtractConnectionInfo(conn interface{}) *ConnectionInfo {
 	if conn == nil {

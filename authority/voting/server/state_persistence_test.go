@@ -31,11 +31,11 @@ func TestPrunePersistedEpochs(t *testing.T) {
 	defer db.Close()
 
 	const (
-		oldest    = uint64(100)
-		boundary  = uint64(102)
-		cmpEpoch  = uint64(103)
-		fresh     = uint64(105)
-		nonEpoch  = "not-an-epoch-key"
+		oldest   = uint64(100)
+		boundary = uint64(102)
+		cmpEpoch = uint64(103)
+		fresh    = uint64(105)
+		nonEpoch = "not-an-epoch-key"
 	)
 	epochs := []uint64{oldest, boundary, cmpEpoch, 104, fresh}
 
