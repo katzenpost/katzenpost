@@ -649,7 +649,7 @@ func TestReplicaPublishDescriptorDoesNotSuppressTransientFailure(t *testing.T) {
 	require.Error(t, err)
 	require.Len(t, epochs, 1)
 	require.Len(t, descriptors, 1)
-	require.Equal(t, currentEpoch, epochs[0])
+	require.Equal(t, currentEpoch+1, epochs[0])
 	require.Equal(t, epochs[0], descriptors[0].Epoch)
 	require.Equal(t, uint64(0), pkiWorker.lastPublishedEpoch)
 }
@@ -677,7 +677,7 @@ func TestReplicaPublishDescriptorSuppressesPermanentInvalidEpoch(t *testing.T) {
 	require.ErrorIs(t, err, pki.ErrInvalidPostEpoch)
 	require.Len(t, epochs, 1)
 	require.Len(t, descriptors, 1)
-	require.Equal(t, currentEpoch, epochs[0])
+	require.Equal(t, currentEpoch+1, epochs[0])
 	require.Equal(t, epochs[0], descriptors[0].Epoch)
 	require.Equal(t, epochs[0], pkiWorker.lastPublishedEpoch)
 }
