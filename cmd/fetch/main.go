@@ -27,12 +27,14 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/common"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
 // Config holds the command line configuration
 type Config struct {
-	ConfigFile string
-	LogLevel   string
+	ConfigFile  string
+	LogLevel    string
+	MinReplicas int
 }
 
 // newRootCommand creates the root cobra command
@@ -69,6 +71,8 @@ and inspecting the current state of the mixnet topology.`,
 		"path to the thin client configuration file (TOML format)")
 	cmd.Flags().StringVarP(&cfg.LogLevel, "log_level", "l", "DEBUG",
 		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
+	cmd.Flags().IntVarP(&cfg.MinReplicas, "min-replicas", "r", 0,
+		"keep waiting for further consensus documents until at least N storage replicas are present (0 = no requirement)")
 
 	return cmd
 }
@@ -106,9 +110,7 @@ func runFetch(cfg Config) error {
 		return fmt.Errorf("failed to connect to client daemon: %v", err)
 	}
 
-	// Check if we already have a PKI document
-	doc := client.PKIDocument()
-	if doc != nil {
+	if doc := client.PKIDocument(); doc != nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
 		fmt.Printf("%v", doc)
 		return nil
 	}
@@ -120,12 +122,26 @@ func runFetch(cfg Config) error {
 	for {
 		select {
 		case event := <-eventSink:
-			if docEvent, ok := event.(*thin.NewDocumentEvent); ok {
-				fmt.Printf("%v", docEvent.Document)
-				return nil
+			docEvent, ok := event.(*thin.NewDocumentEvent)
+			if !ok {
+				continue
 			}
+			if !hasEnoughReplicas(docEvent.Document, cfg.MinReplicas) {
+				continue
+			}
+			fmt.Printf("%v", docEvent.Document)
+			return nil
 		case <-client.HaltCh():
 			return fmt.Errorf("connection closed before receiving PKI document")
 		}
 	}
+}
+
+// hasEnoughReplicas reports whether the given document satisfies the caller's
+// minimum replica requirement. A min of 0 imposes no constraint.
+func hasEnoughReplicas(doc *cpki.Document, min int) bool {
+	if min <= 0 {
+		return true
+	}
+	return doc != nil && len(doc.StorageReplicas) >= min
 }
