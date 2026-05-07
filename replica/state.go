@@ -5,6 +5,7 @@ package replica
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -18,13 +19,50 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 const (
 	errDatabaseClosed = "database is closed"
+
+	// keyEpochSize is the on-disk encoding length of the replica-epoch
+	// prefix that distinguishes stored boxes by the week in which they
+	// were written. Storage keys are <8-byte big-endian epoch> || <BoxID>.
+	keyEpochSize = 8
+
+	// boxIDOffset is where the BoxID begins inside an on-disk storage key.
+	boxIDOffset = keyEpochSize
 )
+
+func epochPrefix(epoch uint64) []byte {
+	p := make([]byte, keyEpochSize)
+	binary.BigEndian.PutUint64(p, epoch)
+	return p
+}
+
+func boxKey(epoch uint64, boxID []byte) []byte {
+	k := make([]byte, keyEpochSize+len(boxID))
+	binary.BigEndian.PutUint64(k[:keyEpochSize], epoch)
+	copy(k[keyEpochSize:], boxID)
+	return k
+}
+
+// keptEpochs returns the replica epochs whose boxes are still within
+// the retention window, newest first. Boxes one week old are kept;
+// those two weeks old are eligible for deletion.
+func keptEpochs(current uint64) []uint64 {
+	if current == 0 {
+		return []uint64{0}
+	}
+	return []uint64{current, current - 1}
+}
+
+func currentReplicaEpoch() uint64 {
+	e, _, _ := replicaCommon.ReplicaNow()
+	return e
+}
 
 // boxLock is a per-BoxID mutex with a refCount. refCount is protected by
 // state.locksMu, not by bl.mu: it tracks how many goroutines currently
@@ -44,6 +82,8 @@ var (
 )
 
 type state struct {
+	worker.Worker
+
 	server *Server
 	db     *grocksdb.DB
 	log    *logging.Logger
@@ -106,6 +146,7 @@ func newState(s *Server) *state {
 
 func (s *state) Close() {
 	s.log.Debug("state: Closing state")
+	s.Worker.Halt()
 	if s.db != nil {
 		s.db.Close()
 		s.db = nil
@@ -142,28 +183,33 @@ func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pi
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
-	s.log.Debug("state: Attempting database read")
-	value, err := s.db.Get(ro, replicaRead.BoxID[:])
-	if err != nil {
-		s.log.Errorf("state: Failed to read from database: %s", err)
-		return nil, ErrFailedDBRead
+	// Storage is bucketed by replica epoch; a tombstone written in a
+	// later epoch must shadow an earlier box, so we consult the kept
+	// window newest-first and return the first hit.
+	for _, ep := range keptEpochs(currentReplicaEpoch()) {
+		key := boxKey(ep, replicaRead.BoxID[:])
+		value, err := s.db.Get(ro, key)
+		if err != nil {
+			s.log.Errorf("state: Failed to read from database: %s", err)
+			return nil, ErrFailedDBRead
+		}
+		if value.Size() == 0 {
+			value.Free()
+			continue
+		}
+		data := make([]byte, value.Size())
+		copy(data, value.Data())
+		value.Free()
+		box, err := pigeonhole.BoxFromBytes(data)
+		if err != nil {
+			s.log.Errorf("state: Failed to deserialize box: %s", err)
+			return nil, ErrFailedToDeserialize
+		}
+		s.log.Debugf("state: Successfully handled replica read at epoch %d, returning box with %d bytes payload", ep, len(box.Payload))
+		return box, nil
 	}
-	if value.Size() == 0 {
-		s.log.Debugf("state: No data found for BoxID: %x", replicaRead.BoxID)
-		return nil, ErrBoxIDNotFound
-	}
-	s.log.Debugf("state: Successfully read %d bytes from database", value.Size())
-	data := make([]byte, value.Size())
-	copy(data, value.Data())
-	value.Free()
-
-	box, err := pigeonhole.BoxFromBytes(data)
-	if err != nil {
-		s.log.Errorf("state: Failed to deserialize box: %s", err)
-		return nil, ErrFailedToDeserialize
-	}
-	s.log.Debugf("state: Successfully handled replica read, returning box with %d bytes payload", len(box.Payload))
-	return box, nil
+	s.log.Debugf("state: No data found for BoxID: %x", replicaRead.BoxID)
+	return nil, ErrBoxIDNotFound
 }
 
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
@@ -181,35 +227,36 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	bl := s.acquireBoxLock(replicaWrite.BoxID)
 	defer s.releaseBoxLock(bl, replicaWrite.BoxID)
 
-	// Check if BoxID already exists (writes are immutable, only tombstones can overwrite)
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
-	existing, err := s.db.Get(ro, replicaWrite.BoxID[:])
-	if err != nil {
-		s.log.Errorf("state: Failed to check existing entry for BoxID %x: %s", replicaWrite.BoxID, err)
-		return fmt.Errorf("failed to check existing entry: %w", err)
-	}
-	if existing.Size() > 0 {
-		// A retried write of byte-identical data is idempotent: the
-		// stored Box already represents the caller's intent, so report
-		// success rather than ErrBoxAlreadyExists. Without this, the
-		// courier's K=2 write path cannot tell "destination pre-existed
-		// with conflicting data" apart from "our prior write landed but
-		// the reply was lost" — both surface as BoxAlreadyExists at the
-		// state layer. The replication layer already assumes this
-		// idempotence (see replica/replication_reply.go).
+	cur := currentReplicaEpoch()
+
+	// Writes are immutable; a duplicate by content within the retention
+	// window is idempotent (the courier's K=2 path retries on lost
+	// replies and the replication layer assumes this), and a mismatch
+	// is rejected. We consult both retained epochs because a prior
+	// write may have landed just before an epoch boundary.
+	for _, ep := range keptEpochs(cur) {
+		existing, err := s.db.Get(ro, boxKey(ep, replicaWrite.BoxID[:]))
+		if err != nil {
+			s.log.Errorf("state: Failed to check existing entry for BoxID %x: %s", replicaWrite.BoxID, err)
+			return fmt.Errorf("failed to check existing entry: %w", err)
+		}
+		if existing.Size() == 0 {
+			existing.Free()
+			continue
+		}
 		storedBox, perr := pigeonhole.BoxFromBytes(existing.Data())
 		existing.Free()
 		if perr == nil &&
 			bytes.Equal(storedBox.Payload, replicaWrite.Payload) &&
 			storedBox.Signature == *replicaWrite.Signature {
-			s.log.Debugf("state: BoxID %x idempotent write (matching payload+signature)", replicaWrite.BoxID)
+			s.log.Debugf("state: BoxID %x idempotent write at epoch %d (matching payload+signature)", replicaWrite.BoxID, ep)
 			return nil
 		}
-		s.log.Debugf("state: BoxID %x already exists with differing data, rejecting write", replicaWrite.BoxID)
+		s.log.Debugf("state: BoxID %x already exists at epoch %d with differing data, rejecting write", replicaWrite.BoxID, ep)
 		return ErrBoxAlreadyExists
 	}
-	existing.Free()
 
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
@@ -217,12 +264,10 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		PayloadLen: uint32(len(replicaWrite.Payload)),
 		Payload:    replicaWrite.Payload,
 	}
-	// Convert pointer arrays to regular arrays
 	copy(box.BoxID[:], replicaWrite.BoxID[:])
 	copy(box.Signature[:], replicaWrite.Signature[:])
-	s.log.Debugf("state: Attempting to write %d bytes to database", len(box.Bytes()))
-	err = s.db.Put(wo, box.BoxID[:], box.Bytes())
-	if err != nil {
+	s.log.Debugf("state: Attempting to write %d bytes to database at replica epoch %d", len(box.Bytes()), cur)
+	if err := s.db.Put(wo, boxKey(cur, box.BoxID[:]), box.Bytes()); err != nil {
 		s.log.Errorf("state: Failed to write to database: %s", err)
 		return err
 	}
@@ -260,9 +305,9 @@ func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) err
 	copy(box.BoxID[:], boxID[:])
 	copy(box.Signature[:], signature[:])
 
-	s.log.Debugf("state: Writing tombstone to database for BoxID: %x", boxID)
-	err := s.db.Put(wo, box.BoxID[:], box.Bytes())
-	if err != nil {
+	cur := currentReplicaEpoch()
+	s.log.Debugf("state: Writing tombstone to database for BoxID: %x at replica epoch %d", boxID, cur)
+	if err := s.db.Put(wo, boxKey(cur, box.BoxID[:]), box.Bytes()); err != nil {
 		s.log.Errorf("state: Failed to write tombstone for BoxID %x to database: %s", boxID, err)
 		return err
 	}
@@ -347,39 +392,53 @@ func (s *state) Rebalance() error {
 
 	ro := grocksdb.NewDefaultReadOptions()
 	ro.SetFillCache(false)
+	defer ro.Destroy()
 
 	it := s.db.NewIterator(ro)
 	defer it.Close()
 
 	boxCount := 0
-	for it.Seek([]byte{0}); it.Valid(); it.Next() {
-		key := it.Key()
-		value := it.Value()
+	// Iterate only the kept epochs; anything outside the window is
+	// about to be GCed and need not be replicated again.
+	for _, ep := range keptEpochs(currentReplicaEpoch()) {
+		prefix := epochPrefix(ep)
+		for it.Seek(prefix); it.Valid(); it.Next() {
+			key := it.Key()
+			rawKey := key.Data()
+			if !bytes.HasPrefix(rawKey, prefix) {
+				key.Free()
+				break
+			}
+			if len(rawKey) < boxIDOffset+32 {
+				s.log.Errorf("state: malformed key (size %d) at epoch %d, skipping", len(rawKey), ep)
+				key.Free()
+				continue
+			}
+			boxID := make([]byte, 32)
+			copy(boxID, rawKey[boxIDOffset:boxIDOffset+32])
+			key.Free()
 
-		s.log.Debugf("state: Processing key: %x with value size %d", key.Data(), value.Size())
+			value := it.Value()
+			s.log.Debugf("state: Processing BoxID %x at epoch %d with value size %d", boxID, ep, value.Size())
+			writeCmd, err := s.replicaWriteFromBlob(value.Data())
+			value.Free()
+			if err != nil {
+				s.log.Errorf("state: Failed to create ReplicaWrite from blob: %s", err)
+				return err
+			}
 
-		writeCmd, err := s.replicaWriteFromBlob(value.Data())
-		if err != nil {
-			s.log.Errorf("state: Failed to create ReplicaWrite from blob: %s", err)
-			return err
+			remoteShards, err := s.getRemoteShards(boxID)
+			if err != nil {
+				s.log.Errorf("state: Failed to get remote shards: %s", err)
+				return err
+			}
+			for _, shard := range remoteShards {
+				idHash := blake2b.Sum256(shard.IdentityKey)
+				s.log.Debugf("state: Dispatching to shard with ID hash: %x", idHash)
+				s.server.connector.DispatchCommand(writeCmd, &idHash)
+			}
+			boxCount++
 		}
-
-		boxID := key.Data()
-		remoteShards, err := s.getRemoteShards(boxID)
-		if err != nil {
-			s.log.Errorf("state: Failed to get remote shards: %s", err)
-			return err
-		}
-
-		for _, shard := range remoteShards {
-			idHash := blake2b.Sum256(shard.IdentityKey)
-			s.log.Debugf("state: Dispatching to shard with ID hash: %x", idHash)
-			s.server.connector.DispatchCommand(writeCmd, &idHash)
-		}
-
-		key.Free()
-		value.Free()
-		boxCount++
 	}
 
 	s.log.Debugf("state: Rebalance completed, processed %d boxes", boxCount)
