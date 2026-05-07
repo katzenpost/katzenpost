@@ -56,7 +56,7 @@ lDMax=3000
 lM=0.0005
 lMMax=100
 lGMax=1000
-lR=0.002
+lR=0.005
 lRMax=1000
 
 UserForwardPayloadLength=2000
