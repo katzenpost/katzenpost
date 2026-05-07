@@ -782,7 +782,16 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.BinSuffix = cfg.BinSuffix
 	s.BasePort = uint16(cfg.BasePort)
 	s.LastPort = s.BasePort + 1
-	s.LastReplicaPort = s.BasePort + 3000
+	// Replicas are allotted their own port range so they remain
+	// distinguishable from the mix and authority listeners. The offset is
+	// kept modest (1000 rather than 3000) so that with the default
+	// BasePort of 30000 the replicas land at 31000+ rather than 33000+.
+	// On Linux the default ephemeral source-port range begins at 32768,
+	// so a listener at 33000 may collide with an outbound connection that
+	// happened to be assigned that source port first; the resulting bind
+	// failure aborts replica startup and yields flaky CI runs. Holding
+	// the replica band beneath 32768 avoids that race.
+	s.LastReplicaPort = s.BasePort + 1000
 	s.BindAddr = cfg.BindAddr
 	s.LogLevel = cfg.LogLevel
 	s.DebugConfig = &cConfig.Debug{
