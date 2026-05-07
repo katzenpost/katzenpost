@@ -39,7 +39,17 @@ type Connector struct {
 // The dest parameter is the static uint8 identifier assigned to a replica,
 // not an array index into StorageReplicas.
 func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, error) {
+	// Replica identity is stable across adjacent epochs, so a one-epoch
+	// stale document is acceptable here. Falling back to the most
+	// recently cached document covers the brief window after an epoch
+	// rotation when the worker has not yet fetched the document for
+	// the new epoch; without this, an envelope arriving in that window
+	// would be rejected with "PKI document not available" even though
+	// the replica being addressed has not changed identity.
 	doc := co.server.PKI.PKIDocument()
+	if doc == nil {
+		doc = co.server.PKI.LastCachedPKIDocument()
+	}
 	if doc == nil {
 		co.log.Errorf("destToNodeID: PKI document is nil")
 		return nil, errors.New("PKI document not available")
