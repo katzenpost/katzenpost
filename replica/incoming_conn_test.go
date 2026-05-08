@@ -185,8 +185,10 @@ func TestIncomingConn(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(ids), 0)
 
-	dummyCh := make(chan *senderRequest, 10)
-	replyCommand, ok := inConn.onReplicaCommand(new(commands.NoOp), dummyCh)
+	dummyOut := make(chan *senderRequest, 10)
+	dummyEmitter := newDelayedReplyEmitter(dummyOut, server.logBackend, "test")
+	defer dummyEmitter.Halt()
+	replyCommand, ok := inConn.onReplicaCommand(new(commands.NoOp), dummyEmitter)
 	require.True(t, ok)
 	require.Nil(t, replyCommand)
 

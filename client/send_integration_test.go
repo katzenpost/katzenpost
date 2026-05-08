@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 // createFullMockPKIDocument creates a PKI document with gateway, service nodes,
@@ -236,9 +237,9 @@ func setupFullClient(t *testing.T) (*Daemon, *Client, *[AppIDLength]byte, chan *
 		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		replyLock:          new(sync.Mutex),
 		secureRand:                rand.NewMath(),
-		timerQueue:                NewTimerQueue(func(interface{}) {}),
+		timerQueue:                queue.NewTimerQueue(func(interface{}) {}),
 		gcSurbIDCh:                make(chan *[sphinxConstants.SURBIDLength]byte, 10),
-		arqTimerQueue:             NewTimerQueue(func(interface{}) {}),
+		arqTimerQueue:             queue.NewTimerQueue(func(interface{}) {}),
 	}
 	d.timerQueue.Start()
 	d.arqTimerQueue.Start()

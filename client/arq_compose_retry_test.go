@@ -11,6 +11,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 // TestRescheduleARQAfterComposeFailureRotatesMaps covers the arqDoResend
@@ -24,7 +25,7 @@ func TestRescheduleARQAfterComposeFailureRotatesMaps(t *testing.T) {
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		replyLock:          new(sync.Mutex),
 		log:                logging.MustGetLogger("test"),
-		arqTimerQueue:      NewTimerQueue(func(interface{}) {}),
+		arqTimerQueue:      queue.NewTimerQueue(func(interface{}) {}),
 	}
 
 	oldSurbID := &[sphinxConstants.SURBIDLength]byte{}
@@ -58,7 +59,7 @@ func TestRescheduleARQAfterComposeFailureRotatesMaps(t *testing.T) {
 
 	// The pushCh entry proves the retry was queued; we cannot inspect the
 	// internal heap without starting the worker.
-	require.Equal(t, 1, len(d.arqTimerQueue.pushCh),
+	require.Equal(t, 1, d.arqTimerQueue.PushChLen(),
 		"retry must be pushed onto arqTimerQueue, not silently dropped")
 }
 
@@ -73,7 +74,7 @@ func TestRescheduleARQAfterComposeFailureWithDeletedMapEntry(t *testing.T) {
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		replyLock:          new(sync.Mutex),
 		log:                logging.MustGetLogger("test"),
-		arqTimerQueue:      NewTimerQueue(func(interface{}) {}),
+		arqTimerQueue:      queue.NewTimerQueue(func(interface{}) {}),
 	}
 
 	staleSurbID := &[sphinxConstants.SURBIDLength]byte{}
@@ -97,7 +98,7 @@ func TestRescheduleARQAfterComposeFailureWithDeletedMapEntry(t *testing.T) {
 		"SURBID must be rotated to a fresh placeholder even when the old key was absent")
 	require.Same(t, arqMessage, d.arqSurbIDMap[*arqMessage.SURBID])
 	require.Equal(t, arqMessage.SURBID, d.arqEnvelopeHashMap[*envHash])
-	require.Equal(t, 1, len(d.arqTimerQueue.pushCh),
+	require.Equal(t, 1, d.arqTimerQueue.PushChLen(),
 		"retry must be pushed onto arqTimerQueue")
 }
 
@@ -109,7 +110,7 @@ func TestRescheduleARQAfterComposeFailureNilEnvelopeHash(t *testing.T) {
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		replyLock:          new(sync.Mutex),
 		log:                logging.MustGetLogger("test"),
-		arqTimerQueue:      NewTimerQueue(func(interface{}) {}),
+		arqTimerQueue:      queue.NewTimerQueue(func(interface{}) {}),
 	}
 
 	arqMessage := &ARQMessage{EnvelopeHash: nil, SURBID: nil}

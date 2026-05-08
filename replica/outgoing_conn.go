@@ -398,16 +398,14 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	sender := newOutgoingSender(c.ch, outCh, c.co.Server().cfg.DisableDecoyTraffic, c.co.Server().LogBackend(), cmds, c.dst.Name)
 
-	// LambdaR is near-constant; tolerate a one-epoch-stale doc. Skip the
-	// UpdateRate call if nothing is cached — the sender will use its prior
-	// rate (or stay idle on first-ever connect) and the resweep will catch up.
-	if doc := c.co.Server().PKIWorker.LastCachedPKIDocument(); doc != nil {
-		rate, err := common.LambdaRateToMs(doc.LambdaR)
-		if err != nil {
-			c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
-		} else {
-			sender.UpdateRate(rate, doc.LambdaRMaxDelay)
-		}
+	// We must call UpdateRate with a real LambdaR before activating the
+	// sender. Skipping it (or accepting a zero LambdaR from a stale or
+	// uninitialised cache) leaves ExpDist.averageRate at 0 and the
+	// sender silently never ticks for the lifetime of this session.
+	if !applyOutgoingLambdaR(sender, c.co.Server().PKIWorker, c.log) {
+		c.log.Errorf("aborting outgoing connection: unable to obtain a non-zero LambdaR from the PKI")
+		sender.Halt()
+		return
 	}
 	sender.UpdateConnectionStatus(true)
 
@@ -587,4 +585,35 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, geo *geo.
 	// the connection map.
 
 	return c
+}
+
+// applyOutgoingLambdaR pushes a non-zero LambdaR into the sender's
+// ExpDist before the sender is activated. It tries the PKI cache
+// first; if that yields no usable rate, it forces a fresh PKI fetch
+// and tries once more. Returns true iff UpdateRate was successfully
+// called with a real rate.
+func applyOutgoingLambdaR(sender *outgoingSender, pkiWorker *PKIWorker, log *logging.Logger) bool {
+	if tryUpdateOutgoingRateFromCache(sender, pkiWorker, log) {
+		return true
+	}
+	log.Warningf("PKI cache lacks a usable LambdaR; force-fetching")
+	if err := pkiWorker.ForceFetchPKI(); err != nil {
+		log.Errorf("force-fetch PKI failed: %v", err)
+		return false
+	}
+	return tryUpdateOutgoingRateFromCache(sender, pkiWorker, log)
+}
+
+func tryUpdateOutgoingRateFromCache(sender *outgoingSender, pkiWorker *PKIWorker, log *logging.Logger) bool {
+	doc := pkiWorker.LastCachedPKIDocument()
+	if doc == nil {
+		return false
+	}
+	rate, err := common.LambdaRateToMs(doc.LambdaR)
+	if err != nil {
+		log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
+		return false
+	}
+	sender.UpdateRate(rate, doc.LambdaRMaxDelay)
+	return true
 }

@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: © 2023 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
-package client
+
+package queue
 
 import (
 	"math"
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/queue"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -19,7 +19,7 @@ type pushedItem struct {
 type TimerQueue struct {
 	worker.Worker
 
-	queue  *queue.PriorityQueue
+	queue  *PriorityQueue
 	timer  *time.Timer
 	mutex  sync.RWMutex
 	action func(interface{})
@@ -35,7 +35,7 @@ func NewTimerQueue(action func(interface{})) *TimerQueue {
 	// isn't blocking on it's select statement's timer channel.
 	return &TimerQueue{
 		timer:  time.NewTimer(0),
-		queue:  queue.New(),
+		queue:  New(),
 		action: action,
 		pushCh: make(chan *pushedItem, 100),
 	}
@@ -45,7 +45,7 @@ func (t *TimerQueue) Start() {
 	t.Go(t.worker)
 }
 
-func (t *TimerQueue) Peek() *queue.Entry {
+func (t *TimerQueue) Peek() *Entry {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
 	return t.queue.Peek()
@@ -92,6 +92,24 @@ func (t *TimerQueue) Push(priority uint64, value interface{}) {
 	}:
 	case <-t.HaltCh():
 	}
+}
+
+// PushChLen reports the number of items presently buffered in the push
+// channel waiting to be ingested by the worker. Intended for tests that
+// wish to assert "items were pushed but the worker has not yet drained
+// them"; production callers should not depend on this value.
+func (t *TimerQueue) PushChLen() int {
+	return len(t.pushCh)
+}
+
+// EnqueueDirect inserts an entry directly into the internal heap,
+// bypassing the push channel and any worker buffering. Intended for
+// tests that wish to populate the heap without running the worker.
+// Holds the queue's write lock for the duration of the call.
+func (t *TimerQueue) EnqueueDirect(priority uint64, value interface{}) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	t.queue.Enqueue(priority, value)
 }
 
 func (t *TimerQueue) worker() {

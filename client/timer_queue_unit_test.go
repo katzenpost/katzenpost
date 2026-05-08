@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 func TestTimerQueuePeekPopLen(t *testing.T) {
 	noop := func(interface{}) {}
-	q := NewTimerQueue(noop)
+	q := queue.NewTimerQueue(noop)
 	// Don't start the worker — test the queue data structure directly
 
 	require.Equal(t, 0, q.Len())
@@ -21,9 +22,9 @@ func TestTimerQueuePeekPopLen(t *testing.T) {
 	require.Nil(t, q.Pop())
 
 	// Enqueue directly (bypassing Push/pushCh/worker)
-	q.queue.Enqueue(300, "third")
-	q.queue.Enqueue(100, "first")
-	q.queue.Enqueue(200, "second")
+	q.EnqueueDirect(300, "third")
+	q.EnqueueDirect(100, "first")
+	q.EnqueueDirect(200, "second")
 
 	require.Equal(t, 3, q.Len())
 
@@ -49,12 +50,12 @@ func TestTimerQueuePeekPopLen(t *testing.T) {
 
 func TestTimerQueueCancelRemovesMatchingEntry(t *testing.T) {
 	noop := func(interface{}) {}
-	q := NewTimerQueue(noop)
+	q := queue.NewTimerQueue(noop)
 	// Don't start the worker — test the heap primitive directly.
 
-	q.queue.Enqueue(100, "a")
-	q.queue.Enqueue(200, "b")
-	q.queue.Enqueue(300, "c")
+	q.EnqueueDirect(100, "a")
+	q.EnqueueDirect(200, "b")
+	q.EnqueueDirect(300, "c")
 	require.Equal(t, 3, q.Len())
 
 	require.True(t, q.Cancel("b"))
@@ -73,10 +74,10 @@ func TestTimerQueueCancelRemovesMatchingEntry(t *testing.T) {
 
 func TestTimerQueueCancelAbsentValueReturnsFalse(t *testing.T) {
 	noop := func(interface{}) {}
-	q := NewTimerQueue(noop)
+	q := queue.NewTimerQueue(noop)
 
-	q.queue.Enqueue(100, "a")
-	q.queue.Enqueue(200, "b")
+	q.EnqueueDirect(100, "a")
+	q.EnqueueDirect(200, "b")
 
 	require.False(t, q.Cancel("never-pushed"))
 	require.Equal(t, 2, q.Len())
@@ -84,15 +85,15 @@ func TestTimerQueueCancelAbsentValueReturnsFalse(t *testing.T) {
 
 func TestTimerQueueCancelPointerIdentity(t *testing.T) {
 	noop := func(interface{}) {}
-	q := NewTimerQueue(noop)
+	q := queue.NewTimerQueue(noop)
 
 	// Two distinct pointers to byte arrays with identical contents.
 	p1 := &[4]byte{1, 2, 3, 4}
 	p2 := &[4]byte{1, 2, 3, 4}
 	require.NotSame(t, p1, p2)
 
-	q.queue.Enqueue(100, p1)
-	q.queue.Enqueue(200, p2)
+	q.EnqueueDirect(100, p1)
+	q.EnqueueDirect(200, p2)
 	require.Equal(t, 2, q.Len())
 
 	require.True(t, q.Cancel(p1))
@@ -111,7 +112,7 @@ func TestTimerQueueCancelDoesNotFireAction(t *testing.T) {
 		fired.Add(1)
 	}
 
-	q := NewTimerQueue(action)
+	q := queue.NewTimerQueue(action)
 	q.Start()
 	defer func() {
 		go q.Halt()
@@ -145,7 +146,7 @@ func TestTimerQueueWorkerFiresCallback(t *testing.T) {
 		}
 	}
 
-	q := NewTimerQueue(action)
+	q := queue.NewTimerQueue(action)
 	q.Start()
 	defer func() {
 		go q.Halt()

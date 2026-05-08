@@ -15,6 +15,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 func TestTimerQueueHalt(t *testing.T) {
@@ -22,7 +23,7 @@ func TestTimerQueueHalt(t *testing.T) {
 	noop := func(ignored interface{}) {
 		t.Log("action")
 	}
-	q := NewTimerQueue(noop)
+	q := queue.NewTimerQueue(noop)
 	q.Start()
 	surbID := [sConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
@@ -67,7 +68,7 @@ func TestTimerQueuePush(t *testing.T) {
 			actionsLock.Unlock()
 		}
 	}
-	q := NewTimerQueue(noop)
+	q := queue.NewTimerQueue(noop)
 	q.Start()
 
 	require.Equal(t, 0, q.Len())

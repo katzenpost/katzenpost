@@ -6,6 +6,7 @@ package instrument
 import (
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -20,16 +21,30 @@ var (
 			Help: "Number of decoy commands received from couriers",
 		},
 	)
-	incomingDecoysSent = prometheus.NewCounter(
+	incomingDecoyRepliesEmitted = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "katzenpost_replica_incoming_decoys_sent_total",
-			Help: "Number of decoy responses sent back to couriers",
+			Name: "katzenpost_replica_incoming_decoy_replies_emitted_total",
+			Help: "Number of decoy replies (responses to peer decoys) emitted by the delayed-reply scheduler on incoming connections.",
 		},
 	)
-	incomingMessagesSent = prometheus.NewCounter(
+	incomingRealRepliesEmitted = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "katzenpost_replica_incoming_messages_sent_total",
-			Help: "Number of real responses sent back to couriers",
+			Name: "katzenpost_replica_incoming_real_replies_emitted_total",
+			Help: "Number of real replies (ReplicaWriteReply, ReplicaMessageReply) emitted by the delayed-reply scheduler on incoming connections.",
+		},
+	)
+	incomingRealReplyLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_replica_incoming_real_reply_latency_seconds",
+			Help:    "Wall-clock latency from inbound real-command receipt to outbound real-reply emission on incoming connections (i.e. processing time plus the per-reply uniform jitter).",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+	incomingDecoyReplyLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_replica_incoming_decoy_reply_latency_seconds",
+			Help:    "Wall-clock latency from inbound peer-decoy receipt to outbound decoy-reply emission on incoming connections (i.e. processing time plus the per-reply uniform jitter).",
+			Buckets: prometheus.DefBuckets,
 		},
 	)
 	incomingQueueLength = prometheus.NewGaugeVec(
@@ -91,8 +106,10 @@ var (
 func StartPrometheusListener(address string) {
 	registerOnce.Do(func() {
 		prometheus.MustRegister(incomingDecoysReceived)
-		prometheus.MustRegister(incomingDecoysSent)
-		prometheus.MustRegister(incomingMessagesSent)
+		prometheus.MustRegister(incomingDecoyRepliesEmitted)
+		prometheus.MustRegister(incomingRealRepliesEmitted)
+		prometheus.MustRegister(incomingRealReplyLatency)
+		prometheus.MustRegister(incomingDecoyReplyLatency)
 		prometheus.MustRegister(incomingQueueLength)
 		prometheus.MustRegister(replicationDispatched)
 		prometheus.MustRegister(replicationLatency)
@@ -114,14 +131,20 @@ func IncomingDecoysReceived() {
 	incomingDecoysReceived.Inc()
 }
 
-// IncomingDecoysSent increments the counter for decoy responses sent back to couriers
-func IncomingDecoysSent() {
-	incomingDecoysSent.Inc()
+// IncomingDecoyReplyEmitted increments the counter for decoy replies
+// (responses to peer decoys) emitted on incoming connections, and
+// records the per-reply latency.
+func IncomingDecoyReplyEmitted(latency time.Duration) {
+	incomingDecoyRepliesEmitted.Inc()
+	incomingDecoyReplyLatency.Observe(latency.Seconds())
 }
 
-// IncomingMessagesSent increments the counter for real responses sent back to couriers
-func IncomingMessagesSent() {
-	incomingMessagesSent.Inc()
+// IncomingRealReplyEmitted increments the counter for real replies
+// (ReplicaWriteReply, ReplicaMessageReply) emitted on incoming
+// connections, and records the per-reply latency.
+func IncomingRealReplyEmitted(latency time.Duration) {
+	incomingRealRepliesEmitted.Inc()
+	incomingRealReplyLatency.Observe(latency.Seconds())
 }
 
 // IncomingQueueLength sets the incoming queue depth gauge for a peer

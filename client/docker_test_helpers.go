@@ -44,9 +44,9 @@ func registerClientForShutdown(c *thin.ThinClient) {
 }
 
 // setupThinClientWithConfig creates and connects a thin client with the specified configuration
-func setupThinClientWithConfig(t *testing.T, configFile, logLevel string) *thin.ThinClient {
+func setupThinClientWithConfig(tb testing.TB, configFile, logLevel string) *thin.ThinClient {
 	cfg, err := thin.LoadFile(configFile)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	logging := &config.Logging{
 		Disable: false,
@@ -55,18 +55,18 @@ func setupThinClientWithConfig(t *testing.T, configFile, logLevel string) *thin.
 	}
 
 	client := thin.NewThinClient(cfg, logging)
-	t.Log("thin client Dialing")
+	tb.Log("thin client Dialing")
 	err = client.Dial()
-	require.NoError(t, err)
-	t.Log("thin client connected")
+	require.NoError(tb, err)
+	tb.Log("thin client connected")
 
 	registerClientForShutdown(client)
 	return client
 }
 
 // setupThinClient creates and connects a thin client with default test configuration
-func setupThinClient(t *testing.T) *thin.ThinClient {
-	return setupThinClientWithConfig(t, defaultThinClientConfigFile, defaultTestLogLevel)
+func setupThinClient(tb testing.TB) *thin.ThinClient {
+	return setupThinClientWithConfig(tb, defaultThinClientConfigFile, defaultTestLogLevel)
 }
 
 // validatePKIDocument gets and validates the PKI document from a thin client

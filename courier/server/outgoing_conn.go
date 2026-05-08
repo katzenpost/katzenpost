@@ -305,6 +305,39 @@ func (c *outgoingConn) dialAddress(dialCtx *workerContext, dialer *net.Dialer, a
 	return conn, false
 }
 
+// applyPKILambdaR tries to push a non-zero LambdaR (and its max delay)
+// into the sender's ExpDist. The cached PKI document is consulted
+// first; if it is missing or carries an unusable LambdaR, we force a
+// fresh fetch from the directory authorities and try once more.
+// Returns true if and only if UpdateRate was called with a usable
+// rate. The caller must not activate the sender on a false return,
+// because ExpDist with averageRate == 0 silently never ticks.
+func (c *outgoingConn) applyPKILambdaR() bool {
+	if c.tryUpdateRateFromCache() {
+		return true
+	}
+	c.log.Warningf("PKI cache lacks a usable LambdaR; force-fetching")
+	if err := c.co.Server().PKI.ForceFetchPKI(); err != nil {
+		c.log.Errorf("force-fetch PKI failed: %v", err)
+		return false
+	}
+	return c.tryUpdateRateFromCache()
+}
+
+func (c *outgoingConn) tryUpdateRateFromCache() bool {
+	doc := c.co.Server().PKI.LastCachedPKIDocument()
+	if doc == nil {
+		return false
+	}
+	rate, err := kpcommon.LambdaRateToMs(doc.LambdaR)
+	if err != nil {
+		c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
+		return false
+	}
+	c.sender.UpdateRate(rate, doc.LambdaRMaxDelay)
+	return true
+}
+
 func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{}) (wasHalted bool) {
 	defer func() {
 		c.log.Debugf("TCP connection closed. (wasHalted: %v)", wasHalted)
@@ -317,13 +350,15 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 	defer w.Close()
 
-	if doc := c.co.Server().PKI.LastCachedPKIDocument(); doc != nil {
-		rate, err := kpcommon.LambdaRateToMs(doc.LambdaR)
-		if err != nil {
-			c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
-		} else {
-			c.sender.UpdateRate(rate, doc.LambdaRMaxDelay)
-		}
+	// We must call UpdateRate with a real LambdaR before activating the
+	// sender. Skipping it (or accepting a zero LambdaR from a stale or
+	// uninitialised cache) leaves ExpDist.averageRate at 0, in which
+	// case the sender's worker schedules its next tick at MaxInt64 and
+	// never fires for the lifetime of this session. That manifests as
+	// a courier whose outbound stream silently dries up.
+	if !c.applyPKILambdaR() {
+		c.log.Errorf("aborting connection: unable to obtain a non-zero LambdaR from the PKI")
+		return
 	}
 	c.sender.UpdateConnectionStatus(true)
 	defer c.sender.UpdateConnectionStatus(false)
