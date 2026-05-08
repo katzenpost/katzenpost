@@ -14,6 +14,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 // TestScheduleCopyCommandPollRotationKeepsEnvelopeHashLive pins the
@@ -29,7 +30,7 @@ func TestScheduleCopyCommandPollRotationKeepsEnvelopeHashLive(t *testing.T) {
 	d := &Daemon{
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		arqTimerQueue:      NewTimerQueue(func(_ interface{}) {}),
+		arqTimerQueue:      queue.NewTimerQueue(func(_ interface{}) {}),
 		replyLock:          new(sync.Mutex),
 		log:                logging.MustGetLogger("test"),
 	}

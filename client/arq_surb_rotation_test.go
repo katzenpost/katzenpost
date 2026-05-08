@@ -12,6 +12,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 // TestRotateARQSurbIDLockedKeepsEnvelopeHashMapping is the regression test
@@ -126,7 +127,7 @@ func TestRotateARQSurbIDRemovesStaleTimerEntry(t *testing.T) {
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		replyLock:          new(sync.Mutex),
 		log:                logging.MustGetLogger("test"),
-		arqTimerQueue:      NewTimerQueue(func(interface{}) {}),
+		arqTimerQueue:      queue.NewTimerQueue(func(interface{}) {}),
 	}
 	// The worker is intentionally NOT started. Enqueue/Cancel touch the
 	// heap synchronously under the queue's own mutex, so there is no race
@@ -148,7 +149,7 @@ func TestRotateARQSurbIDRemovesStaleTimerEntry(t *testing.T) {
 
 	// Simulate the initial Push that scheduled the original ARQ
 	// retransmit — enqueue directly to avoid depending on worker timing.
-	d.arqTimerQueue.queue.Enqueue(1000, oldSurbID)
+	d.arqTimerQueue.EnqueueDirect(1000, oldSurbID)
 	require.Equal(t, 1, d.arqTimerQueue.Len())
 
 	// Perform the production rotation pattern: capture the old SURB ID,
@@ -163,7 +164,7 @@ func TestRotateARQSurbIDRemovesStaleTimerEntry(t *testing.T) {
 		require.True(t, d.arqTimerQueue.Cancel(capturedOld),
 			"Cancel must find and remove the stale entry for the old SURB ID")
 	}
-	d.arqTimerQueue.queue.Enqueue(2000, newSurbID)
+	d.arqTimerQueue.EnqueueDirect(2000, newSurbID)
 
 	// The queue must now hold exactly one entry — the new SURB ID —
 	// rather than both the orphan and the replacement.

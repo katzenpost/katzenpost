@@ -14,6 +14,7 @@ import (
 
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/client/thin"
+	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 // newCancelRaceDaemon constructs the minimum Daemon shape the three
@@ -23,7 +24,7 @@ import (
 func newCancelRaceDaemon(t *testing.T) (*Daemon, *[AppIDLength]byte, chan *Response) {
 	t.Helper()
 	d, appID, responseCh := setupDaemonWithMockConn(t)
-	d.arqTimerQueue = NewTimerQueue(func(_ interface{}) {})
+	d.arqTimerQueue = queue.NewTimerQueue(func(_ interface{}) {})
 	d.arqTimerQueue.Start()
 	t.Cleanup(func() { d.arqTimerQueue.Halt() })
 	return d, appID, responseCh
@@ -142,7 +143,7 @@ func stubDaemonForHandleReply(t *testing.T) *Daemon {
 		replyLock:          new(sync.Mutex),
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		arqTimerQueue:      NewTimerQueue(func(_ interface{}) {}),
+		arqTimerQueue:      queue.NewTimerQueue(func(_ interface{}) {}),
 		log:                logging.MustGetLogger("test"),
 	}
 	d.arqTimerQueue.Start()

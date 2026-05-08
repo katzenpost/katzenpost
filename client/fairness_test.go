@@ -11,6 +11,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/log"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 // newTestIncomingConn builds an incomingConn with just the fields the
@@ -216,7 +217,7 @@ func TestEnqueueResend_ReschedulesWhenClientQueueFull(t *testing.T) {
 	d := newSchedulerDaemon(t, l)
 	// Real arqTimerQueue with a no-op action: we inspect Len() without
 	// running any callback.
-	d.arqTimerQueue = NewTimerQueue(func(interface{}) {})
+	d.arqTimerQueue = queue.NewTimerQueue(func(interface{}) {})
 
 	// Fill A's resendCh.
 	var filler1, filler2 [sphinxConstants.SURBIDLength]byte
@@ -239,9 +240,9 @@ func TestEnqueueResend_ReschedulesWhenClientQueueFull(t *testing.T) {
 
 	require.Len(t, a.resendCh, resendBuf, "resendCh should still be full")
 	// The TimerQueue worker is not running in this test, so the push
-	// remains in pushCh (where Push enqueues synchronously) rather than
-	// in the internal heap that Len() exposes.
-	require.Len(t, d.arqTimerQueue.pushCh, 1, "retry must be re-armed on arqTimerQueue")
+	// remains in the push channel (where Push enqueues synchronously)
+	// rather than in the internal heap that Len() exposes.
+	require.Equal(t, 1, d.arqTimerQueue.PushChLen(), "retry must be re-armed on arqTimerQueue")
 	d.replyLock.Lock()
 	_, ok := d.arqSurbIDMap[surbID]
 	d.replyLock.Unlock()

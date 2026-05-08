@@ -12,6 +12,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/log"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 // TestEnqueueResendNeverLoses verifies that a flood of ARQ timer fires
@@ -36,7 +37,7 @@ func TestEnqueueResendNeverLoses(t *testing.T) {
 	}
 
 	var rearmed atomic.Int32
-	d.arqTimerQueue = NewTimerQueue(func(interface{}) {
+	d.arqTimerQueue = queue.NewTimerQueue(func(interface{}) {
 		rearmed.Add(1)
 	})
 
@@ -62,7 +63,7 @@ func TestEnqueueResendNeverLoses(t *testing.T) {
 	require.Len(t, a.resendCh, resendBuf)
 	// Every remaining attempt must be queued for retry on the timer —
 	// nothing silently dropped. With the TimerQueue worker unstarted, the
-	// re-armed items sit in pushCh rather than the internal heap.
-	require.Len(t, d.arqTimerQueue.pushCh, numResends-resendBuf,
+	// re-armed items sit in the push channel rather than the internal heap.
+	require.Equal(t, numResends-resendBuf, d.arqTimerQueue.PushChLen(),
 		"all resends that could not enter resendCh must be re-armed, none dropped")
 }

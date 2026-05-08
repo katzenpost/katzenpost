@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/queue"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/pigeonhole"
@@ -86,14 +87,14 @@ type Daemon struct {
 	decoys    map[[sphinxConstants.SURBIDLength]byte]replyDescriptor
 	replyLock *sync.Mutex
 
-	timerQueue *TimerQueue
+	timerQueue *queue.TimerQueue
 	ingressCh  chan *sphinxReply
 	gcSurbIDCh chan *[sphinxConstants.SURBIDLength]byte
 
-	gcTimerQueue *TimerQueue
+	gcTimerQueue *queue.TimerQueue
 	gcReplyCh    chan *gcReply
 
-	arqTimerQueue      *TimerQueue
+	arqTimerQueue      *queue.TimerQueue
 	arqSurbIDMap       map[[sphinxConstants.SURBIDLength]byte]*ARQMessage
 	arqEnvelopeHashMap map[[32]byte]*[sphinxConstants.SURBIDLength]byte // EnvelopeHash -> SURB ID (for cancellation)
 
@@ -250,7 +251,7 @@ func (d *Daemon) Start() error {
 	d.cfg.Callbacks.OnConnFn = d.listener.updateConnectionStatus
 	d.cfg.Callbacks.OnDocumentFn = d.onDocument
 
-	d.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
+	d.timerQueue = queue.NewTimerQueue(func(rawSurbID interface{}) {
 		surbID, ok := rawSurbID.(*[sphinxConstants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
@@ -265,7 +266,7 @@ func (d *Daemon) Start() error {
 		}
 	})
 	d.timerQueue.Start()
-	d.arqTimerQueue = NewTimerQueue(func(rawSurbID interface{}) {
+	d.arqTimerQueue = queue.NewTimerQueue(func(rawSurbID interface{}) {
 		surbID, ok := rawSurbID.(*[sphinxConstants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
@@ -276,7 +277,7 @@ func (d *Daemon) Start() error {
 		d.enqueueResend(surbID)
 	})
 	d.arqTimerQueue.Start()
-	d.gcTimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
+	d.gcTimerQueue = queue.NewTimerQueue(func(rawGCReply interface{}) {
 		myGcReply, ok := rawGCReply.(*gcReply)
 		if !ok {
 			panic("wtf, failed type assertion!")
