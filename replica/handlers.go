@@ -42,7 +42,7 @@ func (c *incomingConn) createReplicaMessageReply(nikeScheme string, errorCode ui
 	}
 }
 
-func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, inCh chan *senderRequest) (*senderRequest, bool) {
+func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delayedReplyEmitter) (*senderRequest, bool) {
 	if _, isDecoy := rawCmd.(*commands.ReplicaDecoy); !isDecoy {
 		c.log.Debugf("onReplicaCommand received command type: %T with value: %+v", rawCmd, rawCmd)
 	}
@@ -74,6 +74,7 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, inCh chan *send
 		c.log.Debugf("Processing ReplicaMessage command with ciphertext length: %d", len(cmd.Ciphertext))
 		// Handle asynchronously so proxy requests don't block the
 		// command loop. Semaphore limits active handlers.
+		recvAt := time.Now()
 		c.l.server.Add(1)
 		go func() {
 			defer c.l.server.Done()
@@ -98,12 +99,7 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, inCh chan *send
 				return
 			default:
 			}
-			select {
-			case inCh <- &senderRequest{ReplicaMessageReply: resp}:
-			case <-c.l.closeAllCh:
-				c.log.Debugf("Terminating gracefully.")
-				return
-			}
+			emitter.Enqueue(&senderRequest{ReplicaMessageReply: resp, recvAt: recvAt})
 		}()
 		return nil, true
 	default:

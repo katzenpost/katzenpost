@@ -24,7 +24,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
-	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -32,7 +31,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 var incomingConnID uint64
@@ -105,27 +103,13 @@ func (c *incomingConn) worker() {
 		return
 	}
 
-	// Constant time message output whether or not decoy traffic
-	// is enabled.
-	inCh := make(chan *senderRequest, c.l.server.cfg.IncomingQueueSize)
+	// Egress channel: the emitter pushes scheduled replies here; the
+	// egressSender goroutine drains it onto the wire as fast as the
+	// session allows. There is no longer a paced consumer with a
+	// bounded inbound queue and an explicit outbound queue: the
+	// TimerQueue inside the emitter is the only buffer.
 	outCh := make(chan *senderRequest, c.l.server.cfg.IncomingQueueSize)
-	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
-	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds, fmt.Sprintf("%d", c.id))
-
-	// LambdaR is a near-constant network tunable, so a one-epoch-stale doc is
-	// fine here. Skip the UpdateRate call entirely if no doc is cached;
-	// the sender will use its previously-configured rate (or stay idle on
-	// first-ever connect) and the periodic resweep will catch up.
-	if doc := c.l.server.PKIWorker.LastCachedPKIDocument(); doc != nil {
-		rate, err := common.LambdaRateToMs(doc.LambdaR)
-		if err != nil {
-			c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
-		} else {
-			sender.UpdateRate(rate, doc.LambdaRMaxDelay)
-		}
-	}
-	sender.UpdateConnectionStatus(true)
+	emitter := newDelayedReplyEmitter(outCh, c.l.server.logBackend, fmt.Sprintf("%d", c.id))
 
 	// Channel to signal egress sender to drain and exit
 	egressDoneCh := make(chan struct{})
@@ -139,19 +123,18 @@ func (c *incomingConn) worker() {
 	}()
 
 	// Run command processing loop synchronously - blocks until connection closes
-	c.processCommands(session, creds, inCh)
+	c.processCommands(session, creds, emitter)
 
 	// Connection closed - begin shutdown sequence:
-	// 1. Mark as disconnected (stops sender from generating new decoys)
-	sender.UpdateConnectionStatus(false)
+	// 1. Halt the emitter so its TimerQueue worker stops scheduling
+	//    new sends and the action goroutines unblock via the
+	//    TimerQueue's halt channel.
+	emitter.Halt()
 
-	// 2. Halt sender to stop its worker goroutine
-	sender.Halt()
-
-	// 3. Signal egressSender to drain remaining messages and exit
+	// 2. Signal egressSender to drain remaining messages and exit
 	close(egressDoneCh)
 
-	// 4. Wait for egressSender to finish
+	// 3. Wait for egressSender to finish
 	wg.Wait()
 }
 
@@ -312,7 +295,7 @@ func (c *incomingConn) closeOldConnections() error {
 }
 
 // processCommands handles the main command processing loop
-func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCredentials, inCh chan *senderRequest) {
+func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCredentials, emitter *delayedReplyEmitter) {
 	// Start the reauthenticate ticker.
 	reauthMs := time.Duration(c.l.server.cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
@@ -332,8 +315,10 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 			continue
 		}
 
+		recvAt := time.Now()
+
 		// Handle all of the storage replica commands.
-		resp, allGood := c.onReplicaCommand(rawCmd, inCh)
+		resp, allGood := c.onReplicaCommand(rawCmd, emitter)
 		if !allGood {
 			c.log.Debugf("Got a disconnect or we failed to handle replica command: %v", rawCmd)
 			return
@@ -341,19 +326,15 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 
 		if resp != nil {
 			if resp.ReplicaDecoy == nil {
-				c.log.Debugf("Sending response to inCh: %T", resp)
+				c.log.Debugf("Enqueueing response: %T", resp)
 			}
 			select {
 			case <-c.l.closeAllCh:
 				return
 			default:
 			}
-			select {
-			case inCh <- resp:
-				instrument.IncomingQueueLength(fmt.Sprintf("%d", c.id), len(inCh))
-			case <-c.l.closeAllCh:
-				return
-			}
+			resp.recvAt = recvAt
+			emitter.Enqueue(resp)
 		}
 	}
 }
