@@ -221,6 +221,13 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	s.state = newState(s)
 	s.state.initDB()
 
+	// Discard any stored boxes older than the retention window before we
+	// begin serving, then start the periodic GC worker.
+	if err := s.state.WipeStaleBoxes(); err != nil {
+		s.log.Errorf("startup wipe of stale boxes failed: %s", err)
+	}
+	s.state.startGCWorker()
+
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
 
