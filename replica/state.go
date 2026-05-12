@@ -34,6 +34,14 @@ const (
 
 	// boxIDOffset is where the BoxID begins inside an on-disk storage key.
 	boxIDOffset = keyEpochSize
+
+	// defaultCFName is RocksDB's implicit column family. Box records live here.
+	defaultCFName = "default"
+
+	// metadataCFName holds small replica-local bookkeeping records that
+	// are not box data, e.g. the storage-replica-set fingerprint used to
+	// decide whether a startup rebalance is necessary.
+	metadataCFName = "metadata"
 )
 
 func epochPrefix(epoch uint64) []byte {
@@ -86,11 +94,15 @@ type state struct {
 
 	server *Server
 	db     *grocksdb.DB
+	// metaCF references the metadata column family. Box reads and
+	// writes go through the default CF via the un-suffixed Get/Put/
+	// iterator helpers, so metaCF is only consulted for bookkeeping.
+	metaCF *grocksdb.ColumnFamilyHandle
 	log    *logging.Logger
 
 	// locksMu protects boxLocks and every boxLock's refCount. Held only
-	// briefly during a map lookup / refCount adjustment — not across
-	// database I/O — so it does not serialize the actual write work.
+	// briefly during a map lookup / refCount adjustment, not across
+	// database I/O, so it does not serialize the actual write work.
 	locksMu  sync.Mutex
 	boxLocks map[[32]byte]*boxLock
 }
@@ -147,6 +159,10 @@ func newState(s *Server) *state {
 func (s *state) Close() {
 	s.log.Debug("state: Closing state")
 	s.Worker.Halt()
+	if s.metaCF != nil {
+		s.metaCF.Destroy()
+		s.metaCF = nil
+	}
 	if s.db != nil {
 		s.db.Close()
 		s.db = nil
@@ -163,10 +179,50 @@ func (s *state) initDB() {
 	s.log.Debug("state: Initializing database")
 	opts := grocksdb.NewDefaultOptions()
 	opts.SetCreateIfMissing(true)
-	var err error
-	s.db, err = grocksdb.OpenDb(opts, s.dbPath())
+	opts.SetCreateIfMissingColumnFamilies(true)
+
+	// Discover the column families already on disk. ListColumnFamilies
+	// errors when the database does not yet exist; in that case we are
+	// creating from scratch and need only the default family in the
+	// initial open list (the metadata CF is appended below).
+	existing, err := grocksdb.ListColumnFamilies(opts, s.dbPath())
+	if err != nil {
+		s.log.Debugf("state: ListColumnFamilies returned %s, treating as fresh database", err)
+		existing = []string{defaultCFName}
+	}
+
+	hasMeta := false
+	for _, name := range existing {
+		if name == metadataCFName {
+			hasMeta = true
+			break
+		}
+	}
+	cfNames := append([]string(nil), existing...)
+	if !hasMeta {
+		cfNames = append(cfNames, metadataCFName)
+	}
+
+	cfOpts := make([]*grocksdb.Options, len(cfNames))
+	for i := range cfNames {
+		cfOpts[i] = opts
+	}
+
+	db, handles, err := grocksdb.OpenDbColumnFamilies(opts, s.dbPath(), cfNames, cfOpts)
 	if err != nil {
 		panic(err)
+	}
+	s.db = db
+	for i, name := range cfNames {
+		switch name {
+		case metadataCFName:
+			s.metaCF = handles[i]
+		default:
+			handles[i].Destroy()
+		}
+	}
+	if s.metaCF == nil {
+		panic("state: metadata column family handle missing after open")
 	}
 	s.log.Debug("state: Database initialized successfully")
 }
@@ -442,5 +498,17 @@ func (s *state) Rebalance() error {
 	}
 
 	s.log.Debugf("state: Rebalance completed, processed %d boxes", boxCount)
+
+	// Record the storage-replica-set fingerprint we just rebalanced
+	// against. The startup path consults this marker to decide whether
+	// a fresh rebalance is necessary on the next boot. We only reach
+	// this point after the iterator completes without error, so a
+	// partial rebalance is never credited as complete.
+	if doc := s.server.PKIWorker.LastCachedPKIDocument(); doc != nil {
+		fp := replicaSetFingerprint(doc)
+		if err := s.storeLastRebalanceFingerprint(fp); err != nil {
+			s.log.Warningf("state: failed to persist rebalance fingerprint: %s", err)
+		}
+	}
 	return nil
 }

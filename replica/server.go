@@ -282,16 +282,42 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 
 	// Check if we have a PKI document before rebalancing
 	if s.PKIWorker.HasCurrentPKIDocument() {
-		s.log.Notice("performing rebalance after startup")
-		err := s.state.Rebalance()
-		if err != nil {
-			s.log.Errorf("failed to rebalance shares after startup: %s", err)
-		}
+		s.maybeStartupRebalance()
 	} else {
 		s.log.Notice("skipping initial rebalance - no PKI document available yet")
 	}
 
 	return s, nil
+}
+
+// maybeStartupRebalance invokes state.Rebalance unless the persisted
+// fingerprint records that we have already rebalanced against the
+// storage-replica set advertised by the current PKI document. The
+// guard exists to spare a process that crashed and restarted, or that
+// was administratively bounced, the cost of a full RocksDB scan when
+// the network membership has not in fact changed.
+func (s *Server) maybeStartupRebalance() {
+	doc := s.PKIWorker.LastCachedPKIDocument()
+	if doc == nil {
+		s.log.Notice("skipping initial rebalance - PKIWorker returned no cached document")
+		return
+	}
+	current := replicaSetFingerprint(doc)
+	persisted, ok, err := s.state.loadLastRebalanceFingerprint()
+	switch {
+	case err != nil:
+		s.log.Warningf("startup rebalance: failed to read persisted fingerprint, proceeding: %s", err)
+	case !ok:
+		s.log.Notice("performing rebalance after startup (no prior fingerprint recorded)")
+	case persisted == current:
+		s.log.Notice("skipping startup rebalance: storage-replica set unchanged since last rebalance")
+		return
+	default:
+		s.log.Notice("performing rebalance after startup (storage-replica set changed since last rebalance)")
+	}
+	if err := s.state.Rebalance(); err != nil {
+		s.log.Errorf("failed to rebalance shares after startup: %s", err)
+	}
 }
 
 // initIdentityKeys initializes the server's identity keypair
