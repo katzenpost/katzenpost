@@ -234,6 +234,66 @@ func TestPKIWaitForDocument(t *testing.T) {
 	require.Equal(t, currentDoc, testDoc)
 }
 
+// transientFailureConsensusGetter returns ConsensusNotFound for the
+// first failuresRemaining calls and ConsensusOk thereafter, allowing
+// the test to confirm that WaitForCurrentDocument retries through a
+// transient gateway response.
+type transientFailureConsensusGetter struct {
+	mu                sync.Mutex
+	failuresRemaining int
+	callCount         int
+}
+
+func (m *transientFailureConsensusGetter) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callCount++
+	if m.failuresRemaining > 0 {
+		m.failuresRemaining--
+		return &commands.Consensus2{ErrorCode: commands.ConsensusNotFound}, nil
+	}
+	return &commands.Consensus2{ErrorCode: commands.ConsensusOk}, nil
+}
+
+func TestPKIWaitForDocumentRetriesTransientFailure(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
+	}
+
+	p := newPKI(c)
+	c.pki = p
+
+	transient := &transientFailureConsensusGetter{failuresRemaining: 2}
+	p.consensusGetter = transient
+
+	originalDelay := waitForCurrentDocumentRetryDelay
+	waitForCurrentDocumentRetryDelay = 10 * time.Millisecond
+	t.Cleanup(func() { waitForCurrentDocumentRetryDelay = originalDelay })
+
+	epoch, _, _ := epochtime.Now()
+	myMockPKIClient.doc = &cpki.Document{
+		Epoch:              epoch,
+		SphinxGeometryHash: c.cfg.SphinxGeometry.Hash(),
+	}
+
+	_, currentDoc := p.currentDocument()
+	require.Nil(t, currentDoc)
+
+	c.WaitForCurrentDocument()
+
+	_, currentDoc = p.currentDocument()
+	require.NotNil(t, currentDoc, "retry loop ought to have produced a document")
+	require.Equal(t, 3, transient.callCount, "expected two failures followed by one success")
+}
+
 func TestPKIClockSkew(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)

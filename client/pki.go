@@ -31,6 +31,18 @@ var (
 	// WarpedEpoch is a build time flag that accelerates the recheckInterval
 	WarpedEpoch = "false"
 
+	// waitForCurrentDocumentAttempts caps the number of synchronous
+	// updateDocument retries WaitForCurrentDocument performs before
+	// giving up. The retries absorb the brief window around an epoch
+	// boundary during which the gateway has yet to cache the new
+	// consensus.
+	waitForCurrentDocumentAttempts = 5
+
+	// waitForCurrentDocumentRetryDelay paces successive
+	// WaitForCurrentDocument retry attempts. Declared as a var so
+	// tests may temporarily shorten it.
+	waitForCurrentDocumentRetryDelay = time.Second
+
 	ccbor cbor.EncMode
 )
 
@@ -84,16 +96,41 @@ func (c *Client) GetDocumentByEpoch(epoch uint64) *cpki.Document {
 	return c.pki.GetDocumentByEpoch(epoch)
 }
 
+// WaitForCurrentDocument makes a best effort to ensure that
+// CurrentDocument returns a non-nil document for the current epoch.
+// If the cache already holds the current epoch's document it returns
+// at once; otherwise it issues up to waitForCurrentDocumentAttempts
+// synchronous fetches separated by waitForCurrentDocumentRetryDelay.
+// A transient ErrNoDocument or "consensus not ready" reply from the
+// gateway is normal around an epoch boundary, particularly under
+// short (warped) epoch durations, and typically clears within a
+// second or two. Without the retry every caller of CurrentDocument
+// would observe nil during that window and the daemon would return
+// ThinClientErrorInternalError to its thin client.
 func (c *Client) WaitForCurrentDocument() {
-	// what is the point of this when we aren't connected
-	_, doc := c.pki.currentDocument()
-	if doc != nil {
+	if _, doc := c.pki.currentDocument(); doc != nil {
 		return
 	}
-	epoch, _, _ := epochtime.Now()
-	err := c.pki.updateDocument(epoch)
-	if err != nil && c.log != nil {
-		c.log.Errorf("WaitForCurrentDocument failed on updateDocument with err: %s", err.Error())
+	for attempt := 1; attempt <= waitForCurrentDocumentAttempts; attempt++ {
+		epoch, _, _ := epochtime.Now()
+		if err := c.pki.updateDocument(epoch); err == nil {
+			return
+		} else if c.log != nil {
+			c.log.Debugf("WaitForCurrentDocument: attempt %d/%d failed: %s",
+				attempt, waitForCurrentDocumentAttempts, err.Error())
+		}
+		if attempt == waitForCurrentDocumentAttempts {
+			break
+		}
+		select {
+		case <-c.pki.HaltCh():
+			return
+		case <-time.After(waitForCurrentDocumentRetryDelay):
+		}
+	}
+	if c.log != nil {
+		c.log.Errorf("WaitForCurrentDocument: gave up after %d attempts",
+			waitForCurrentDocumentAttempts)
 	}
 }
 
