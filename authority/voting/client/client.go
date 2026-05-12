@@ -488,8 +488,11 @@ func descriptorPostRetryDelay(cfg *Config, attempts int) time.Duration {
 	}
 
 	maxDelay := cfg.RetryMaxDelay
-	if maxDelay < base {
+	if maxDelay < 20*time.Second {
 		maxDelay = 20 * time.Second
+	}
+	if maxDelay < base {
+		maxDelay = base
 	}
 
 	delay := base
