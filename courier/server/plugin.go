@@ -92,7 +92,7 @@ const (
 	// maxCopyReadTransientAttempts is how many times a single shard
 	// replica is re-queried on a temporary error (per the classifier)
 	// before the read path fails over to the shard peer.
-	maxCopyReadTransientAttempts = 3
+	maxCopyReadTransientAttempts = 5
 
 	// copyReadReplyTimeout bounds how long the courier waits for a
 	// reply from one shard replica during a Copy read. A stuck replica
@@ -104,7 +104,7 @@ const (
 	// replicas before aborting the Copy command. Write-side failover
 	// between shard peers is not available — the intermediate replicas
 	// are baked into the client's MKEM envelope.
-	maxCopyWriteAttempts = 5
+	maxCopyWriteAttempts = 8
 
 	// copyWriteReplyTimeout bounds how long the courier waits for
 	// both intermediate-replica replies after dispatching a Copy

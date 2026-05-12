@@ -430,6 +430,39 @@ func (e *GetMessageBoxIndexCounterReply) String() string {
 	return fmt.Sprintf("GetMessageBoxIndexCounterReply: counter=%d", e.Counter)
 }
 
+// GetPKIDocumentReply is the reply to a GetPKIDocument request. The
+// Payload field carries the cert.Certificate-wrapped signed PKI document
+// exactly as the daemon received it from the gateway, retaining every
+// directory authority signature so that callers may verify it
+// themselves.
+type GetPKIDocumentReply struct {
+	// QueryID is used for correlating this reply with the GetPKIDocument
+	// request.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Payload is the cert.Certificate-wrapped signed PKI document, or
+	// nil on failure. Use core/pki.FromPayload to deserialize and verify
+	// it against the directory authorities' public keys.
+	Payload []byte `cbor:"payload"`
+
+	// Epoch is the epoch of the returned document. When the request
+	// asked for the current epoch this echoes the epoch the daemon
+	// believes is current.
+	Epoch uint64 `cbor:"epoch"`
+
+	// ErrorCode indicates the reason for a failure to return a signed
+	// PKI document if any. Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the GetPKIDocumentReply.
+func (e *GetPKIDocumentReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("GetPKIDocumentReply: epoch=%d (error: %s)", e.Epoch, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("GetPKIDocumentReply: epoch=%d payloadLen=%d", e.Epoch, len(e.Payload))
+}
+
 // Copy Channel API:
 
 // CreateCourierEnvelopesFromPayloadReply is sent in response to a CreateCourierEnvelopesFromPayload request.

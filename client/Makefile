@@ -96,6 +96,11 @@ dockertest_copy_onto_already_existing_box_error:
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyOntoAlreadyExistingBoxError"
 
+dockertest_pki_raw:
+	cd ../docker && make $(distro)_base.stamp
+	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestGetPKIDocumentRaw"
+
 dockertest_all_pigeonhole:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
