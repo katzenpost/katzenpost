@@ -4,6 +4,8 @@ codeberg.org/vula/highctidh v1.0.2025051200 h1:4xG2pxCCYKvI2HICy5YQf+44d8pEibuOg
 codeberg.org/vula/highctidh v1.0.2025051200/go.mod h1:admvznk7GhsrDih/BMy7jbIv9Y86U9vj7S5FVoquF/g=
 filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
 filippo.io/edwards25519 v1.2.0/go.mod h1:xzAOLCNug/yB62zG1bQ8uziwrIqIuxhctzJT18Q77mc=
+filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e h1:VsUbObBMxXlc23Eb9VeeJYE4jvTs87qa5RqSN2U5FJU=
+filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e/go.mod h1:32qQ5yj3R24Eu03iWFWchdC3OB653wPvoepWejkefbY=
 filippo.io/mlkem768 v0.0.0-20260214141301-2e7bebc7d88d h1:YyLyABjdrdt2l/E6JAnku4BjhEDXhxQD2bPOnOvy8/M=
 filippo.io/mlkem768 v0.0.0-20260214141301-2e7bebc7d88d/go.mod h1:ym4egWKLpazdho3bHx0xuQlCq02ttP+vhxxKO8LgO9c=
 github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
@@ -63,8 +65,10 @@ github.com/katzenpost/chacha20poly1305 v0.0.1 h1:yFPxgu/VSWsoCNQ2x15az8xBKKc/9GD
 github.com/katzenpost/chacha20poly1305 v0.0.1/go.mod h1:5sv//C8pWaXrnnP3CNiJXqAlA1/yfUZOl1tR9xsL9bI=
 github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5 h1:n+9aUwSmnz97MNS9duYeHSq+s42CG9wydFECOjqAI9A=
 github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5/go.mod h1:9KxLMK17ZLjofnmpVp4Sm315uIF3BAWHVk32EFDRicU=
-github.com/katzenpost/hpqc v0.0.78 h1:SJcrDvdS4gUh1hQuDEHDMSjg72brpJh8ySe4N3tJqkQ=
-github.com/katzenpost/hpqc v0.0.78/go.mod h1:A9ftm1U7h1pTbhFqP/Scp1CnGN6YkK5UXWtWQVKEgPU=
+github.com/katzenpost/falcon v0.1.0 h1:+WkID41Y6CaWAQE3ijCIfZHu7eHHy8DvAFWCnrW1XDw=
+github.com/katzenpost/falcon v0.1.0/go.mod h1:HtOnkNvwpvTJ3fuXmy4BNw4A8Jg2QetpmkvOPOnOwyU=
+github.com/katzenpost/hpqc v0.0.80 h1:nevwcbD47T3Bm7tu3RD1xlCqOhCTbiMc+rutGcwVp3w=
+github.com/katzenpost/hpqc v0.0.80/go.mod h1:XINEtSU2ZLULm2jBU7HYRHMRNNNsE73wIR89x/7Zs+A=
 github.com/katzenpost/nyquist v0.0.12 h1:3GDXLpW1jEXbRoaUmFoJb7HIjEoaH6p2TDi8brk+pNM=
 github.com/katzenpost/nyquist v0.0.12/go.mod h1:sWxE31e08QtA0ly7HpZcC+cKKUrmJjCnCFlr0dhjpYg=
 github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e h1:cbftK8/GNGA8ye2e2VWkVPLnO/62UadJmG3ddEa6ElU=
