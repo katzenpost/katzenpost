@@ -24,7 +24,10 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
@@ -35,7 +38,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
-
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -185,7 +187,6 @@ func (p *connector) initSession(
 	dialTimeout := time.Duration(p.cfg.DialTimeoutSec) * time.Second
 	handshakeTimeout := time.Duration(p.cfg.HandshakeTimeoutSec) * time.Second
 	responseTimeout := time.Duration(p.cfg.ResponseTimeoutSec) * time.Second
-
 	if timeoutOverride > 0 {
 		dialTimeout = timeoutOverride
 		handshakeTimeout = timeoutOverride
@@ -214,7 +215,6 @@ func (p *connector) initSession(
 		ictx, cancelFn := context.WithCancel(ctx)
 		conn, err = common.DialURL(u, ictx, dialFn)
 		cancelFn()
-
 		if err == nil {
 			connectedURL = peer.Addresses[idx]
 			break
@@ -260,7 +260,6 @@ func (p *connector) initSession(
 		AuthenticationKey:  linkKey,
 		RandomReader:       rand.Reader,
 	}
-
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
 		if conn != nil {
@@ -278,6 +277,7 @@ func (p *connector) initSession(
 		if conn.LocalAddr() != nil {
 			localAddr = conn.LocalAddr().String()
 		}
+
 		remoteAddr := ""
 		if conn.RemoteAddr() != nil {
 			remoteAddr = conn.RemoteAddr().String()
@@ -307,7 +307,6 @@ func (p *connector) initSession(
 
 	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), time.Since(handshakeStart))
 	conn.SetDeadline(time.Now().Add(responseTimeout))
-
 	return &connection{conn: conn, session: s}, nil
 }
 
@@ -406,6 +405,7 @@ func (p *connector) allPeersRoundTrip(
 	for resp := range responseCh {
 		peerResponses = append(peerResponses, resp)
 	}
+
 	if len(peerResponses) == 0 {
 		return nil, errors.New("allPeersRoundTrip: got zero responses")
 	}
@@ -433,18 +433,22 @@ type postAttemptResult struct {
 }
 
 type postPeerState struct {
-	peer     *config.Authority
-	accepted bool
-	conflict bool
-	lastErr  error
+	peer          *config.Authority
+	accepted      bool
+	conflict      bool
+	lastErr       error
+	attempts      int
+	nextAttemptAt time.Time
 }
 
 type postSummary struct {
-	successes       int
-	conflicts       int
-	transportErrors int
-	semanticErrors  int
-	errs            []error
+	successes           int
+	conflicts           int
+	transportErrors     int
+	semanticErrors      int
+	acceptedAuthorities []string
+	conflictAuthorities []string
+	errs                []error
 }
 
 func postInitialTimeout(round int) time.Duration {
@@ -462,6 +466,47 @@ func postInitialTimeout(round int) time.Duration {
 	default:
 		return 60 * time.Second
 	}
+}
+
+func descriptorPostRetryDelay(cfg *Config, attempts int) time.Duration {
+	// Descriptor POST completion rounds need a real per-authority sleep timer.
+	//
+	// The generic retry configuration can be tuned very low for unit tests or
+	// other call paths. That is fine for initSessionWithRetry(), but descriptor
+	// fanout is an upload-window operation: when an authority has a closed port
+	// or times out during handshake finalization, immediately rescheduling it a
+	// few milliseconds later causes noisy retry storms and can starve useful
+	// attempts to other dirauths. Keep trying the failed dirauth, but pace each
+	// dirauth independently.
+	if attempts < 1 {
+		attempts = 1
+	}
+
+	base := cfg.RetryBaseDelay
+	if base < 2*time.Second {
+		base = 2 * time.Second
+	}
+
+	maxDelay := cfg.RetryMaxDelay
+	if maxDelay < 20*time.Second {
+		maxDelay = 20 * time.Second
+	}
+	if maxDelay < base {
+		maxDelay = base
+	}
+
+	delay := base
+	for i := 1; i < attempts; i++ {
+		if delay >= maxDelay/2 {
+			return maxDelay
+		}
+		delay *= 2
+	}
+
+	if delay > maxDelay {
+		return maxDelay
+	}
+	return delay
 }
 
 func descriptorStatusText(code uint8) string {
@@ -486,7 +531,6 @@ func (p *connector) postAuthorityOnce(
 	timeout time.Duration,
 ) postAttemptResult {
 	start := time.Now()
-
 	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -590,24 +634,23 @@ func (p *connector) runPostRound(
 	linkKey kem.PrivateKey,
 	signingKey sign.PublicKey,
 	cmd commands.Command,
-	peers []*config.Authority,
-	round int,
-	timeout time.Duration,
+	states []*postPeerState,
 ) []postAttemptResult {
-	resultsCh := make(chan postAttemptResult, len(peers))
+	resultsCh := make(chan postAttemptResult, len(states))
 	var w worker.Worker
 
-	for _, peer := range peers {
-		peer := peer
+	for _, state := range states {
+		state := state
+		timeout := clampTimeoutToContext(ctx, postInitialTimeout(state.attempts))
 		w.Go(func() {
-			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, peer, round, timeout)
+			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, state.peer, state.attempts, timeout)
 		})
 	}
 
 	w.Wait()
 	close(resultsCh)
 
-	results := make([]postAttemptResult, 0, len(peers))
+	results := make([]postAttemptResult, 0, len(states))
 	for result := range resultsCh {
 		results = append(results, result)
 	}
@@ -616,17 +659,24 @@ func (p *connector) runPostRound(
 }
 
 func updatePostSummary(states map[string]*postPeerState) postSummary {
-	summary := postSummary{}
+	var summary postSummary
 
 	for _, state := range states {
 		switch {
 		case state.accepted:
 			summary.successes++
+			summary.acceptedAuthorities = append(summary.acceptedAuthorities, state.peer.Identifier)
+
 		case state.conflict:
 			summary.conflicts++
+			summary.conflictAuthorities = append(summary.conflictAuthorities, state.peer.Identifier)
 			if state.lastErr != nil {
-				summary.errs = append(summary.errs, fmt.Errorf("%s: %v", state.peer.Identifier, state.lastErr))
+				summary.errs = append(
+					summary.errs,
+					fmt.Errorf("%s: %v", strconv.QuoteToASCII(state.peer.Identifier), state.lastErr),
+				)
 			}
+
 		case state.lastErr != nil:
 			msg := state.lastErr.Error()
 			if strings.Contains(msg, "unexpected reply") ||
@@ -636,9 +686,15 @@ func updatePostSummary(states map[string]*postPeerState) postSummary {
 			} else {
 				summary.transportErrors++
 			}
-			summary.errs = append(summary.errs, fmt.Errorf("%s: %v", state.peer.Identifier, state.lastErr))
+			summary.errs = append(
+				summary.errs,
+				fmt.Errorf("%s: %v", strconv.QuoteToASCII(state.peer.Identifier), state.lastErr),
+			)
 		}
 	}
+
+	sort.Strings(summary.acceptedAuthorities)
+	sort.Strings(summary.conflictAuthorities)
 
 	return summary
 }
@@ -657,6 +713,48 @@ func peersNeedingCompletion(states map[string]*postPeerState) []*config.Authorit
 	}
 
 	return peers
+}
+
+func postStatesReadyForCompletion(states map[string]*postPeerState, now time.Time) []*postPeerState {
+	ready := []*postPeerState{}
+
+	for _, state := range states {
+		if state.accepted {
+			continue
+		}
+		if state.conflict {
+			continue
+		}
+		if state.nextAttemptAt.IsZero() || !state.nextAttemptAt.After(now) {
+			ready = append(ready, state)
+		}
+	}
+
+	return ready
+}
+
+func nextPostAttemptAt(states map[string]*postPeerState) (time.Time, bool) {
+	var next time.Time
+
+	for _, state := range states {
+		if state.accepted {
+			continue
+		}
+		if state.conflict {
+			continue
+		}
+		if state.nextAttemptAt.IsZero() {
+			return time.Now(), true
+		}
+		if next.IsZero() || state.nextAttemptAt.Before(next) {
+			next = state.nextAttemptAt
+		}
+	}
+
+	if next.IsZero() {
+		return time.Time{}, false
+	}
+	return next, true
 }
 
 func ctxStillOpen(ctx context.Context) bool {
@@ -702,7 +800,7 @@ func logPostAttemptResult(
 			"Post(%d): %s accepted by %s after %v successes=%d/%d conflicts=%d pending=%d",
 			epoch,
 			roundLabel,
-			result.peer.Identifier,
+			strconv.QuoteToASCII(result.peer.Identifier),
 			result.elapsed,
 			summary.successes,
 			threshold,
@@ -714,7 +812,7 @@ func logPostAttemptResult(
 			"Post(%d): %s conflict from %s after %v successes=%d/%d conflicts=%d/%d pending=%d",
 			epoch,
 			roundLabel,
-			result.peer.Identifier,
+			strconv.QuoteToASCII(result.peer.Identifier),
 			result.elapsed,
 			summary.successes,
 			threshold,
@@ -727,7 +825,7 @@ func logPostAttemptResult(
 			"Post(%d): %s semantic failure from %s after %v: %v pending=%d",
 			epoch,
 			roundLabel,
-			result.peer.Identifier,
+			strconv.QuoteToASCII(result.peer.Identifier),
 			result.elapsed,
 			result.err,
 			pending,
@@ -737,7 +835,7 @@ func logPostAttemptResult(
 			"Post(%d): %s transport failed for %s after %v: %v pending=%d",
 			epoch,
 			roundLabel,
-			result.peer.Identifier,
+			strconv.QuoteToASCII(result.peer.Identifier),
 			result.elapsed,
 			result.err,
 			pending,
@@ -753,14 +851,14 @@ func (p *connector) postDescriptorWithCompletionRounds(
 	cmd commands.Command,
 ) postSummary {
 	threshold := (len(p.cfg.Authorities) / 2) + 1
-	states := make(map[string]*postPeerState, len(p.cfg.Authorities))
 
+	states := make(map[string]*postPeerState, len(p.cfg.Authorities))
 	for _, peer := range p.cfg.Authorities {
 		states[peer.Identifier] = &postPeerState{peer: peer}
 	}
 
 	p.log.Noticef(
-		"Post(%d): descriptor fanout starting authorities=%d threshold=%d",
+		"Post(%d): starting descriptor upload fanout authorities=%d threshold=%d",
 		epoch,
 		len(p.cfg.Authorities),
 		threshold,
@@ -770,43 +868,79 @@ func (p *connector) postDescriptorWithCompletionRounds(
 	quorumReachedLogged := false
 
 	for ctxStillOpen(ctx) {
+		summary := updatePostSummary(states)
 		targets := peersNeedingCompletion(states)
+
 		if len(targets) == 0 {
-			summary := updatePostSummary(states)
 			p.log.Noticef(
-				"Post(%d): all non-conflict authorities completed successes=%d/%d conflicts=%d/%d",
+				"Post(%d): descriptor upload complete successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
 				epoch,
 				summary.successes,
 				threshold,
 				summary.conflicts,
 				threshold,
+				summary.transportErrors,
+				summary.semanticErrors,
 			)
 			return summary
 		}
 
-		timeout := clampTimeoutToContext(ctx, postInitialTimeout(round))
-		if timeout <= 0 {
-			break
+		now := time.Now()
+		readyStates := postStatesReadyForCompletion(states, now)
+		if len(readyStates) == 0 {
+			nextAttemptAt, ok := nextPostAttemptAt(states)
+			if !ok {
+				break
+			}
+
+			delay := time.Until(nextAttemptAt)
+			if delay < 0 {
+				delay = 0
+			}
+
+			remaining := remainingContextBudget(ctx)
+			if remaining > 0 && delay > remaining {
+				break
+			}
+
+			p.log.Noticef(
+				"Post(%d): waiting for next per-authority retry delay=%v next_attempt_at=%v pending=%d remaining_budget=%v",
+				epoch,
+				delay,
+				nextAttemptAt,
+				len(targets),
+				remaining,
+			)
+
+			timer := time.NewTimer(delay)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				return updatePostSummary(states)
+			}
+			continue
 		}
 
 		roundLabel := "first-attempt"
 		if round > 0 {
 			roundLabel = fmt.Sprintf("completion-round-%d", round)
-		}
-
-		if round > 0 {
 			p.log.Noticef(
-				"Post(%d): %s retrying incomplete authorities count=%d timeout=%v remaining_budget=%v",
+				"Post(%d): %s retrying ready incomplete authorities ready=%d pending=%d remaining_budget=%v",
 				epoch,
 				roundLabel,
+				len(readyStates),
 				len(targets),
-				timeout,
 				remainingContextBudget(ctx),
 			)
 		}
 
-		results := p.runPostRound(ctx, linkKey, signingKey, cmd, targets, round, timeout)
-
+		results := p.runPostRound(ctx, linkKey, signingKey, cmd, readyStates)
 		for _, result := range results {
 			state := states[result.peer.Identifier]
 			if state == nil {
@@ -817,41 +951,61 @@ func (p *connector) postDescriptorWithCompletionRounds(
 			case postAttemptAccepted:
 				state.accepted = true
 				state.lastErr = nil
+				state.nextAttemptAt = time.Time{}
+
 			case postAttemptConflict:
 				state.conflict = true
 				state.lastErr = result.err
+				state.nextAttemptAt = time.Time{}
+
 			case postAttemptSemantic, postAttemptTransport:
 				state.lastErr = result.err
+				state.attempts++
+
+				delay := descriptorPostRetryDelay(p.cfg, state.attempts)
+				state.nextAttemptAt = time.Now().Add(delay)
+
+				p.log.Noticef(
+					"Post(%d): %s scheduling retry for authority %s attempt=%d delay=%v next_attempt_at=%v",
+					epoch,
+					roundLabel,
+					strconv.QuoteToASCII(state.peer.Identifier),
+					state.attempts+1,
+					delay,
+					state.nextAttemptAt,
+				)
 			}
 
-			summary := updatePostSummary(states)
+			summary = updatePostSummary(states)
 			pending := len(peersNeedingCompletion(states))
 			logPostAttemptResult(p.log, epoch, threshold, roundLabel, result, summary, pending)
-
-			if summary.conflicts >= threshold {
-				p.log.Warningf(
-					"Post(%d): conflict quorum reached successes=%d/%d conflicts=%d/%d; suppressing further attempts for this epoch",
-					epoch,
-					summary.successes,
-					threshold,
-					summary.conflicts,
-					threshold,
-				)
-				return summary
-			}
 
 			if summary.successes >= threshold && !quorumReachedLogged {
 				quorumReachedLogged = true
 				p.log.Noticef(
-					"Post(%d): quorum reached successes=%d/%d; continuing best-effort completion rounds while upload window remains open",
+					"Post(%d): quorum reached successes=%d/%d; continuing best-effort per-authority completion retries while upload window remains open",
 					epoch,
 					summary.successes,
 					threshold,
 				)
 			}
+
+			if summary.conflicts >= threshold {
+				p.log.Warningf(
+					"Post(%d): conflict quorum reached conflicts=%d/%d successes=%d/%d transport_errors=%d semantic_errors=%d",
+					epoch,
+					summary.conflicts,
+					threshold,
+					summary.successes,
+					threshold,
+					summary.transportErrors,
+					summary.semanticErrors,
+				)
+				return summary
+			}
 		}
 
-		summary := updatePostSummary(states)
+		summary = updatePostSummary(states)
 		if summary.successes < threshold {
 			pending := len(peersNeedingCompletion(states))
 			if summary.successes+pending < threshold {
@@ -870,8 +1024,8 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 		round++
 
-		// If the caller did not provide a deadline, do not spin forever. The
-		// server PKI worker should provide an upload-window context deadline;
+		// If the caller did not provide a deadline, do not spin forever.
+		// The server PKI worker should provide an upload-window context deadline;
 		// this fallback preserves safety for tests and unusual callers.
 		if _, ok := ctx.Deadline(); !ok && round > 3 {
 			p.log.Warningf("Post(%d): no context deadline; stopping completion rounds after %d rounds", epoch, round)
@@ -881,7 +1035,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 	summary := updatePostSummary(states)
 	p.log.Noticef(
-		"Post(%d): descriptor fanout complete successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
+		"Post(%d): descriptor upload fanout stopped successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
 		epoch,
 		summary.successes,
 		threshold,
@@ -890,7 +1044,6 @@ func (p *connector) postDescriptorWithCompletionRounds(
 		summary.transportErrors,
 		summary.semanticErrors,
 	)
-
 	return summary
 }
 
@@ -936,6 +1089,54 @@ type Client struct {
 	pool      *connector
 	verifiers []sign.PublicKey
 	threshold int
+
+	lastPostReplicaMu                  sync.Mutex
+	lastPostReplicaEpoch               uint64
+	lastPostReplicaAcceptedAuthorities []string
+	lastPostReplicaConflictAuthorities []string
+}
+
+func cloneStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}
+
+func (c *Client) rememberLastPostReplicaSummary(epoch uint64, summary postSummary) {
+	c.lastPostReplicaMu.Lock()
+	defer c.lastPostReplicaMu.Unlock()
+
+	c.lastPostReplicaEpoch = epoch
+	c.lastPostReplicaAcceptedAuthorities = cloneStrings(summary.acceptedAuthorities)
+	c.lastPostReplicaConflictAuthorities = cloneStrings(summary.conflictAuthorities)
+}
+
+// LastPostReplicaAcceptedAuthorities returns the authorities that accepted the
+// most recent PostReplica call for the requested epoch.
+func (c *Client) LastPostReplicaAcceptedAuthorities(epoch uint64) []string {
+	c.lastPostReplicaMu.Lock()
+	defer c.lastPostReplicaMu.Unlock()
+
+	if c.lastPostReplicaEpoch != epoch {
+		return nil
+	}
+	return cloneStrings(c.lastPostReplicaAcceptedAuthorities)
+}
+
+// LastPostReplicaConflictAuthorities returns the authorities that reported a
+// descriptor conflict during the most recent PostReplica call for the requested
+// epoch.
+func (c *Client) LastPostReplicaConflictAuthorities(epoch uint64) []string {
+	c.lastPostReplicaMu.Lock()
+	defer c.lastPostReplicaMu.Unlock()
+
+	if c.lastPostReplicaEpoch != epoch {
+		return nil
+	}
+	return cloneStrings(c.lastPostReplicaConflictAuthorities)
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
@@ -955,7 +1156,6 @@ func (c *Client) Post(
 		MixDescriptor: d,
 		LoopStats:     loopstats,
 	}
-
 	blob, err := signedUpload.Marshal()
 	if err != nil {
 		return err
@@ -965,7 +1165,6 @@ func (c *Client) Post(
 		PublicKeySum256: hash.Sum256From(signingPublicKey),
 		Payload:         signingPrivateKey.Scheme().Sign(signingPrivateKey, blob, nil),
 	}
-
 	signed, err := signedUpload.Marshal()
 	if err != nil {
 		return err
@@ -1041,6 +1240,7 @@ func (c *Client) PostReplica(
 	if err != nil {
 		return err
 	}
+
 	signedUpload.Signature = &cert.Signature{
 		PublicKeySum256: hash.Sum256From(signingPublicKey),
 		Payload:         signingPrivateKey.Scheme().Sign(signingPrivateKey, blob, nil),
@@ -1059,6 +1259,31 @@ func (c *Client) PostReplica(
 	threshold := (len(c.cfg.Authorities) / 2) + 1
 
 	if summary.successes >= threshold {
+		c.rememberLastPostReplicaSummary(epoch, summary)
+
+		acceptedAuthorities := make([]string, 0, len(summary.acceptedAuthorities))
+		for _, authority := range summary.acceptedAuthorities {
+			acceptedAuthorities = append(acceptedAuthorities, strconv.QuoteToASCII(authority))
+		}
+
+		conflictAuthorities := make([]string, 0, len(summary.conflictAuthorities))
+		for _, authority := range summary.conflictAuthorities {
+			conflictAuthorities = append(conflictAuthorities, strconv.QuoteToASCII(authority))
+		}
+
+		c.log.Noticef(
+			"PostReplica(%d): replica descriptor upload succeeded accepted_by=%v conflicts_from=%v successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
+			epoch,
+			acceptedAuthorities,
+			conflictAuthorities,
+			summary.successes,
+			threshold,
+			summary.conflicts,
+			threshold,
+			summary.transportErrors,
+			summary.semanticErrors,
+		)
+
 		if len(summary.errs) > 0 {
 			c.log.Warningf(
 				"PostReplica(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
@@ -1076,6 +1301,7 @@ func (c *Client) PostReplica(
 	}
 
 	if summary.conflicts >= threshold {
+		c.rememberLastPostReplicaSummary(epoch, summary)
 		c.log.Warningf(
 			"PostReplica(%d): conflict quorum for replica descriptor upload: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
 			epoch,
@@ -1090,6 +1316,7 @@ func (c *Client) PostReplica(
 		return pki.ErrInvalidPostEpoch
 	}
 
+	c.rememberLastPostReplicaSummary(epoch, summary)
 	return fmt.Errorf(
 		"PostReplica(%d) failed: %d/%d successes, %d/%d conflicts, transport_errors=%d semantic_errors=%d, errors: %v",
 		epoch,

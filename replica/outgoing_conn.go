@@ -297,10 +297,7 @@ func (c *outgoingConn) validatePKIAndUpdateCredentials(dialCheckCreds *wire.Peer
 		}
 		isValid := hmac.Equal(replicaDesc.LinkKey, keyblob)
 		if isValid {
-			// The list of addresses could have changed, so update
-			// the cached pointer with the current descriptor
-			c.dst = replicaDesc
-			linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+			linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(replicaDesc.LinkKey)
 			if err != nil {
 				panic(err)
 			}
@@ -547,13 +544,15 @@ func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command
 		}
 	case *commands.ReplicaMessageReply:
 		c.log.Debugf("replica outgoingConn: Received ReplicaMessageReply error code: %d", responseCmd.ErrorCode)
-		if c.co.Server().ProxyManager() != nil {
-			handled := c.co.Server().ProxyManager().HandleReply(responseCmd)
-			if handled {
-				c.log.Debugf("replica outgoingConn: ReplicaMessageReply routed to proxy manager")
-			} else {
-				c.log.Debugf("replica outgoingConn: ReplicaMessageReply not handled by proxy manager")
-			}
+		if c.co.Server().ProxyManager() == nil {
+			c.log.Debugf("replica outgoingConn: ReplicaMessageReply received but proxy manager is nil")
+			return true
+		}
+		handled := c.co.Server().ProxyManager().HandleReply(responseCmd)
+		if handled {
+			c.log.Debugf("replica outgoingConn: ReplicaMessageReply routed to proxy manager")
+		} else {
+			c.log.Debugf("replica outgoingConn: ReplicaMessageReply not handled by proxy manager")
 		}
 	default:
 		c.log.Errorf("replica outgoingConn: BUG, Received unexpected command from replica peer: %s", responseCmd)
