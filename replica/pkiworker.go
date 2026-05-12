@@ -149,7 +149,7 @@ func (p *PKIWorker) updateReplicas(doc *pki.Document) {
 	case !isSubset(newReplicas, p.replicas.Copy()):
 		// adding replica(s)
 		p.replicas.Replace(newReplicas)
-		err := p.server.state.Rebalance()
+		err := p.server.state.Rebalance("pki_change")
 		if err != nil {
 			p.GetLogger().Errorf("Rebalance failure: %s", err)
 		}

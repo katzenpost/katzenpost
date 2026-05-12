@@ -174,6 +174,6 @@ func TestState(t *testing.T) {
 	require.Equal(t, box.Signature[:], signature[:])
 
 	t.Log("BEFORE Rebalance")
-	st.Rebalance()
+	st.Rebalance("test")
 	t.Log("AFTER Rebalance")
 }

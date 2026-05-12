@@ -315,7 +315,7 @@ func (s *Server) maybeStartupRebalance() {
 	default:
 		s.log.Notice("performing rebalance after startup (storage-replica set changed since last rebalance)")
 	}
-	if err := s.state.Rebalance(); err != nil {
+	if err := s.state.Rebalance("startup"); err != nil {
 		s.log.Errorf("failed to rebalance shares after startup: %s", err)
 	}
 }
