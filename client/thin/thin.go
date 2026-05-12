@@ -938,6 +938,12 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
+	case message.GetPKIDocumentReply != nil:
+		select {
+		case t.eventSink <- message.GetPKIDocumentReply:
+		case <-t.HaltCh():
+			return false
+		}
 
 		/**  Copy Channel API **/
 
@@ -1375,6 +1381,69 @@ func (t *ThinClient) PKIDocumentForEpoch(epoch uint64) (*cpki.Document, error) {
 	}
 
 	return nil, errors.New("no PKI document available for the requested epoch")
+}
+
+// GetPKIDocumentRaw returns the cert.Certificate-wrapped signed PKI
+// document for the requested epoch, with every directory authority
+// signature intact. Pass epoch == 0 to request the document the daemon
+// believes is current.
+//
+// The thin client receives the stripped PKI document by default (as
+// pushed in NewPKIDocumentEvent); use this method when the caller
+// needs to verify the directory authority signatures itself. The
+// payload can be deserialized and verified with core/pki.FromPayload.
+//
+// Returns:
+//   - []byte: the cert.Certificate-wrapped signed PKI document.
+//   - uint64: the epoch of the returned document.
+//   - error: any error encountered (notably if no document for the
+//     requested epoch is cached by the daemon).
+func (t *ThinClient) GetPKIDocumentRaw(epoch uint64) ([]byte, uint64, error) {
+	queryID := t.NewQueryID()
+	req := &Request{
+		GetPKIDocument: &GetPKIDocument{
+			QueryID: queryID,
+			Epoch:   epoch,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	if err := t.writeMessage(req); err != nil {
+		return nil, 0, err
+	}
+
+	for {
+		var event Event
+		select {
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, 0, errHalting
+		}
+
+		switch v := event.(type) {
+		case *GetPKIDocumentReply:
+			if v.QueryID == nil {
+				t.log.Debugf("GetPKIDocumentRaw: reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("GetPKIDocumentRaw: reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, v.Epoch, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.Payload, v.Epoch, nil
+		case *ConnectionStatusEvent:
+			t.setConnected(v.IsConnected)
+		case *NewDocumentEvent:
+			// Ignore PKI document updates while we wait for our reply.
+		default:
+			// Ignore other events.
+		}
+	}
 }
 
 // GetServices returns all services matching the specified capability name.

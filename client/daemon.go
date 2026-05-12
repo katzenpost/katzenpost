@@ -344,6 +344,7 @@ func isLocalRequest(r *Request) bool {
 		r.CancelResendingCopyCommand != nil ||
 		r.NextMessageBoxIndex != nil ||
 		r.GetMessageBoxIndexCounter != nil ||
+		r.GetPKIDocument != nil ||
 		r.CreateCourierEnvelopesFromPayload != nil ||
 		r.CreateCourierEnvelopesFromPayloads != nil ||
 		r.CreateCourierEnvelopesFromTombstoneRange != nil
@@ -369,6 +370,8 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.nextMessageBoxIndex(request)
 	case request.GetMessageBoxIndexCounter != nil:
 		d.getMessageBoxIndexCounter(request)
+	case request.GetPKIDocument != nil:
+		d.getPKIDocument(request)
 	case request.CreateCourierEnvelopesFromPayload != nil:
 		d.createCourierEnvelopesFromPayload(request)
 	case request.CreateCourierEnvelopesFromPayloads != nil:

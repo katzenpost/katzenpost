@@ -992,6 +992,52 @@ func (d *Daemon) sendGetMessageBoxIndexCounterError(request *Request, errorCode 
 	})
 }
 
+// getPKIDocument returns the cert.Certificate-wrapped signed PKI
+// document for the requested epoch, with directory authority
+// signatures intact. An epoch of zero is taken to mean the current
+// epoch.
+func (d *Daemon) getPKIDocument(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	var raw []byte
+	epoch := request.GetPKIDocument.Epoch
+	if epoch == 0 {
+		raw, epoch = d.client.CurrentRawSignedDocument()
+	} else {
+		raw = d.client.RawSignedDocumentByEpoch(epoch)
+	}
+
+	if raw == nil {
+		d.sendGetPKIDocumentError(request, epoch, thin.ThinClientErrorServiceUnavailable)
+		return
+	}
+
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		GetPKIDocumentReply: &thin.GetPKIDocumentReply{
+			QueryID:   request.GetPKIDocument.QueryID,
+			Payload:   raw,
+			Epoch:     epoch,
+			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendGetPKIDocumentError(request *Request, epoch uint64, errorCode uint8) {
+	d.sendError(request.AppID, &Response{
+		AppID: request.AppID,
+		GetPKIDocumentReply: &thin.GetPKIDocumentReply{
+			QueryID:   request.GetPKIDocument.QueryID,
+			Epoch:     epoch,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
 // createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
 func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	return createEnvelopeFromMessageWithPadding(msg, doc, isRead, replyIndex, nil)

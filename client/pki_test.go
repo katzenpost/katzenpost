@@ -26,6 +26,7 @@ type mockConsensusGetter struct {
 	errorCode   uint8
 	epochErrors map[uint64]uint8
 	returnErr   error
+	payload     []byte
 }
 
 func (m *mockConsensusGetter) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
@@ -37,7 +38,7 @@ func (m *mockConsensusGetter) GetConsensus(ctx context.Context, epoch uint64) (*
 			return &commands.Consensus2{ErrorCode: code}, nil
 		}
 	}
-	return &commands.Consensus2{ErrorCode: m.errorCode}, nil
+	return &commands.Consensus2{ErrorCode: m.errorCode, Payload: m.payload}, nil
 }
 
 type mockPKIClient struct {
@@ -108,7 +109,7 @@ func TestPKIGetDocument(t *testing.T) {
 		Epoch: epoch,
 	}
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
@@ -116,7 +117,7 @@ func TestPKIGetDocument(t *testing.T) {
 	wrongEpoch := uint64(1234567)
 	ctx = context.TODO()
 
-	_, doc, err = p.getDocument(ctx, wrongEpoch)
+	_, _, doc, err = p.getDocument(ctx, wrongEpoch)
 	require.Error(t, err)
 	require.Nil(t, doc)
 }
@@ -294,6 +295,46 @@ func TestPKIWaitForDocumentRetriesTransientFailure(t *testing.T) {
 	require.Equal(t, 3, transient.callCount, "expected two failures followed by one success")
 }
 
+// TestPKIRawSignedDocumentRetained confirms that the daemon preserves
+// the gateway's original cert.Certificate-wrapped signed payload, so
+// the thin client GetPKIDocument request can return it with the
+// directory authority signatures intact.
+func TestPKIRawSignedDocumentRetained(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
+	}
+
+	p := newPKI(c)
+	c.pki = p
+
+	rawSigned := []byte("opaque-cert-wrapped-signed-payload")
+	p.consensusGetter = &mockConsensusGetter{payload: rawSigned}
+
+	epoch, _, _ := epochtime.Now()
+	myMockPKIClient.doc = &cpki.Document{
+		Epoch:              epoch,
+		SphinxGeometryHash: c.cfg.SphinxGeometry.Hash(),
+	}
+
+	require.NoError(t, p.updateDocument(epoch))
+
+	got, gotEpoch := c.CurrentRawSignedDocument()
+	require.Equal(t, epoch, gotEpoch)
+	require.Equal(t, rawSigned, got)
+
+	require.Equal(t, rawSigned, c.RawSignedDocumentByEpoch(epoch))
+
+	require.Nil(t, c.RawSignedDocumentByEpoch(epoch+1))
+}
+
 func TestPKIClockSkew(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
@@ -317,7 +358,7 @@ func TestPKIClockSkew(t *testing.T) {
 		Epoch: epoch,
 	}
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
@@ -383,13 +424,13 @@ func TestPKICachedDoc(t *testing.T) {
 	myMockPKIClient.doc = doc2
 	ctx := context.TODO()
 	p.consensusGetter = new(mockConsensusGetter)
-	_, doc, err := p.getDocument(ctx, doc2.Epoch)
+	_, _, doc, err := p.getDocument(ctx, doc2.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, doc2, doc)
 
 	myMockPKIClient.doc = doc3
 	ctx = context.TODO()
-	_, doc, err = p.getDocument(ctx, doc3.Epoch)
+	_, _, doc, err = p.getDocument(ctx, doc3.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, doc3, doc)
 }
@@ -412,7 +453,7 @@ func TestPKIGetDocumentConsensusGone(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	ctx := context.TODO()
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.ErrorIs(t, err, cpki.ErrNoDocument)
 	require.Nil(t, doc)
 }
@@ -435,7 +476,7 @@ func TestPKIGetDocumentConsensusNotFound(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	ctx := context.TODO()
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.ErrorIs(t, err, errConsensusNotFound)
 	require.Nil(t, doc)
 }
@@ -564,7 +605,7 @@ func TestPKIGetDocumentNilConsensusGetter(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	ctx := context.TODO()
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.Error(t, err)
 	require.Nil(t, doc)
 	require.Contains(t, err.Error(), "consensus getter not initialized")
@@ -589,7 +630,7 @@ func TestPKIGetDocumentGetConsensusError(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	ctx := context.TODO()
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.ErrorIs(t, err, someErr)
 	require.Nil(t, doc)
 }
@@ -612,7 +653,7 @@ func TestPKIGetDocumentUnknownErrorCode(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	ctx := context.TODO()
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.Error(t, err)
 	require.Nil(t, doc)
 	require.Contains(t, err.Error(), "GetConsensus failed")
@@ -636,7 +677,7 @@ func TestPKIGetDocumentDeserializeFails(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	ctx := context.TODO()
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.ErrorIs(t, err, cpki.ErrNoDocument)
 	require.Nil(t, doc)
 }
@@ -660,7 +701,7 @@ func TestPKIGetDocumentDeserializeReturnsNil(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	ctx := context.TODO()
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.ErrorIs(t, err, cpki.ErrNoDocument)
 	require.Nil(t, doc)
 }
@@ -685,7 +726,7 @@ func TestPKIGetDocumentEpochMismatch(t *testing.T) {
 
 	ctx := context.TODO()
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	_, _, doc, err := p.getDocument(ctx, epoch)
 	require.Error(t, err)
 	require.Nil(t, doc)
 	require.Contains(t, err.Error(), "incorrect epoch")

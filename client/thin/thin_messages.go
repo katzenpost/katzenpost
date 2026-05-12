@@ -358,6 +358,23 @@ type GetMessageBoxIndexCounter struct {
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
 }
 
+// GetPKIDocument requests the daemon to return the raw
+// cert.Certificate-wrapped signed PKI document for the requested epoch,
+// with every directory authority signature intact. This differs from
+// the NewPKIDocumentEvent payload, which is stripped of signatures and
+// the cert wrapper before being pushed to the thin client. The reply
+// type is GetPKIDocumentReply.
+type GetPKIDocument struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Epoch is the epoch for which the signed PKI document should be
+	// returned. If zero, the daemon returns the document for the current
+	// epoch.
+	Epoch uint64 `cbor:"epoch"`
+}
+
 // CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
 // The payload is automatically chunked and each chunk is wrapped in a CourierEnvelope.
 // Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
@@ -596,6 +613,11 @@ type Response struct {
 	// GetMessageBoxIndexCounter request and carries the BACAP Idx64 value.
 	GetMessageBoxIndexCounterReply *GetMessageBoxIndexCounterReply `cbor:"get_message_box_index_counter_reply"`
 
+	// GetPKIDocumentReply is sent in response to a GetPKIDocument
+	// request and carries the cert.Certificate-wrapped signed PKI
+	// document, with directory authority signatures intact.
+	GetPKIDocumentReply *GetPKIDocumentReply `cbor:"get_pki_document_reply"`
+
 	// Copy Channel API:
 
 	// CreateCourierEnvelopesFromPayloadReply is sent when the client daemon successfully creates courier envelopes from a payload.
@@ -654,6 +676,11 @@ type Request struct {
 
 	// GetMessageBoxIndexCounter reads the Idx64 counter out of a MessageBoxIndex.
 	GetMessageBoxIndexCounter *GetMessageBoxIndexCounter `cbor:"get_message_box_index_counter"`
+
+	// GetPKIDocument asks the daemon for the raw cert-wrapped signed
+	// PKI document for an epoch, with every directory authority
+	// signature intact.
+	GetPKIDocument *GetPKIDocument `cbor:"get_pki_document"`
 
 	// CreateCourierEnvelopesFromPayload is used to create multiple CourierEnvelopes from a payload of any size.
 	CreateCourierEnvelopesFromPayload *CreateCourierEnvelopesFromPayload `cbor:"create_courier_envelopes_from_payload"`
