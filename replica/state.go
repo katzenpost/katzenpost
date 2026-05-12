@@ -498,5 +498,17 @@ func (s *state) Rebalance() error {
 	}
 
 	s.log.Debugf("state: Rebalance completed, processed %d boxes", boxCount)
+
+	// Record the storage-replica-set fingerprint we just rebalanced
+	// against. The startup path consults this marker to decide whether
+	// a fresh rebalance is necessary on the next boot. We only reach
+	// this point after the iterator completes without error, so a
+	// partial rebalance is never credited as complete.
+	if doc := s.server.PKIWorker.LastCachedPKIDocument(); doc != nil {
+		fp := replicaSetFingerprint(doc)
+		if err := s.storeLastRebalanceFingerprint(fp); err != nil {
+			s.log.Warningf("state: failed to persist rebalance fingerprint: %s", err)
+		}
+	}
 	return nil
 }
