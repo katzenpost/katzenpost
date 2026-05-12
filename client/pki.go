@@ -31,12 +31,30 @@ var (
 	// WarpedEpoch is a build time flag that accelerates the recheckInterval
 	WarpedEpoch = "false"
 
+	// waitForCurrentDocumentAttempts caps the number of synchronous
+	// updateDocument retries WaitForCurrentDocument performs before
+	// giving up. The retries absorb the brief window around an epoch
+	// boundary during which the gateway has yet to cache the new
+	// consensus.
+	waitForCurrentDocumentAttempts = 5
+
+	// waitForCurrentDocumentRetryDelay paces successive
+	// WaitForCurrentDocument retry attempts. Declared as a var so
+	// tests may temporarily shorten it.
+	waitForCurrentDocumentRetryDelay = time.Second
+
 	ccbor cbor.EncMode
 )
 
 type CachedDoc struct {
 	Doc  *cpki.Document
 	Blob []byte
+
+	// RawSignedBlob is the original cert.Certificate-wrapped signed payload
+	// as received from the gateway, with all directory authority signatures
+	// intact. The thin client GetPKIDocument request returns this so that
+	// callers may verify signatures themselves.
+	RawSignedBlob []byte
 }
 
 type ConsensusGetter interface {
@@ -84,16 +102,56 @@ func (c *Client) GetDocumentByEpoch(epoch uint64) *cpki.Document {
 	return c.pki.GetDocumentByEpoch(epoch)
 }
 
+// CurrentRawSignedDocument returns the raw cert.Certificate-wrapped signed
+// PKI document for the current epoch, with every directory authority
+// signature intact. The second return value is the epoch the daemon
+// believes is current; the first is nil if no document has been cached.
+func (c *Client) CurrentRawSignedDocument() ([]byte, uint64) {
+	return c.pki.currentRawSignedDocument()
+}
+
+// RawSignedDocumentByEpoch returns the raw cert.Certificate-wrapped signed
+// PKI document for the requested epoch, with every directory authority
+// signature intact, or nil if no document for that epoch is cached.
+func (c *Client) RawSignedDocumentByEpoch(epoch uint64) []byte {
+	return c.pki.rawSignedDocumentByEpoch(epoch)
+}
+
+// WaitForCurrentDocument makes a best effort to ensure that
+// CurrentDocument returns a non-nil document for the current epoch.
+// If the cache already holds the current epoch's document it returns
+// at once; otherwise it issues up to waitForCurrentDocumentAttempts
+// synchronous fetches separated by waitForCurrentDocumentRetryDelay.
+// A transient ErrNoDocument or "consensus not ready" reply from the
+// gateway is normal around an epoch boundary, particularly under
+// short (warped) epoch durations, and typically clears within a
+// second or two. Without the retry every caller of CurrentDocument
+// would observe nil during that window and the daemon would return
+// ThinClientErrorInternalError to its thin client.
 func (c *Client) WaitForCurrentDocument() {
-	// what is the point of this when we aren't connected
-	_, doc := c.pki.currentDocument()
-	if doc != nil {
+	if _, doc := c.pki.currentDocument(); doc != nil {
 		return
 	}
-	epoch, _, _ := epochtime.Now()
-	err := c.pki.updateDocument(epoch)
-	if err != nil && c.log != nil {
-		c.log.Errorf("WaitForCurrentDocument failed on updateDocument with err: %s", err.Error())
+	for attempt := 1; attempt <= waitForCurrentDocumentAttempts; attempt++ {
+		epoch, _, _ := epochtime.Now()
+		if err := c.pki.updateDocument(epoch); err == nil {
+			return
+		} else if c.log != nil {
+			c.log.Debugf("WaitForCurrentDocument: attempt %d/%d failed: %s",
+				attempt, waitForCurrentDocumentAttempts, err.Error())
+		}
+		if attempt == waitForCurrentDocumentAttempts {
+			break
+		}
+		select {
+		case <-c.pki.HaltCh():
+			return
+		case <-time.After(waitForCurrentDocumentRetryDelay):
+		}
+	}
+	if c.log != nil {
+		c.log.Errorf("WaitForCurrentDocument: gave up after %d attempts",
+			waitForCurrentDocumentAttempts)
 	}
 }
 
@@ -137,6 +195,30 @@ func (p *pki) currentDocument() ([]byte, *cpki.Document) {
 	}
 
 	return nil, nil
+}
+
+// currentRawSignedDocument returns the cert.Certificate-wrapped signed
+// payload for the current epoch, with every directory authority signature
+// intact, or nil if no document has been cached.
+func (p *pki) currentRawSignedDocument() ([]byte, uint64) {
+	now, _, _ := epochtime.FromUnix(p.skewedUnixTime())
+	if d, _ := p.docs.Load(now); d != nil {
+		cached := d.(*CachedDoc)
+		return cached.RawSignedBlob, cached.Doc.Epoch
+	}
+	return nil, now
+}
+
+// rawSignedDocumentByEpoch returns the cert.Certificate-wrapped signed
+// payload for the requested epoch with every directory authority
+// signature intact, or nil if no document for that epoch has been
+// cached.
+func (p *pki) rawSignedDocumentByEpoch(epoch uint64) []byte {
+	if d, _ := p.docs.Load(epoch); d != nil {
+		cached := d.(*CachedDoc)
+		return cached.RawSignedBlob
+	}
+	return nil
 }
 
 func (p *pki) worker() {
@@ -232,7 +314,7 @@ func (p *pki) updateDocument(epoch uint64) error {
 	})
 
 	// why does this start going off before we are connected?
-	docBlob, d, err := p.getDocument(pkiCtx, epoch)
+	docBlob, rawSigned, d, err := p.getDocument(pkiCtx, epoch)
 	cancelFn()
 	if err != nil {
 		return err
@@ -242,20 +324,21 @@ func (p *pki) updateDocument(epoch uint64) error {
 		panic("Sphinx Geometry mismatch!")
 	}
 	p.docs.Store(epoch, &CachedDoc{
-		Doc:  d,
-		Blob: docBlob,
+		Doc:           d,
+		Blob:          docBlob,
+		RawSignedBlob: rawSigned,
 	})
 	return nil
 }
 
-func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Document, error) {
+func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, []byte, *cpki.Document, error) {
 	var d *cpki.Document
 	var err error
 
 	p.log.Debugf("Fetching PKI doc for epoch %v from Gateway.", epoch)
 
 	if p.consensusGetter == nil {
-		return nil, nil, fmt.Errorf("consensus getter not initialized")
+		return nil, nil, nil, fmt.Errorf("consensus getter not initialized")
 	}
 
 	resp, err := p.consensusGetter.GetConsensus(ctx, epoch)
@@ -263,47 +346,53 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 	case nil:
 	case cpki.ErrNoDocument:
 		p.log.Debugf("getDocument [%v]: ErrNoDocument", epoch)
-		return nil, nil, err
+		return nil, nil, nil, err
 	default:
 		p.log.Errorf("getDocument [%v]: %s", epoch, err.Error())
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	switch resp.ErrorCode {
 	case commands.ConsensusOk:
 	case commands.ConsensusGone:
-		return nil, nil, cpki.ErrNoDocument
+		return nil, nil, nil, cpki.ErrNoDocument
 	case commands.ConsensusNotFound:
-		return nil, nil, errConsensusNotFound
+		return nil, nil, nil, errConsensusNotFound
 	default:
-		return nil, nil, fmt.Errorf("client/pki: GetConsensus failed: %v", resp.ErrorCode)
+		return nil, nil, nil, fmt.Errorf("client/pki: GetConsensus failed: %v", resp.ErrorCode)
 	}
 
 	if p.c.PKIClient == nil {
-		return nil, nil, errors.New("client/pki: PKIClient not initialized")
+		return nil, nil, nil, errors.New("client/pki: PKIClient not initialized")
 	}
 	d, err = p.c.PKIClient.Deserialize(resp.Payload)
 	if err != nil {
 		p.log.Errorf("Failed to deserialize consensus received from Gateway: %v", err)
-		return nil, nil, cpki.ErrNoDocument
+		return nil, nil, nil, cpki.ErrNoDocument
 	}
 	if d == nil {
 		p.log.Error("Failed to deserialize consensus received from Gateway")
-		return nil, nil, cpki.ErrNoDocument
+		return nil, nil, nil, cpki.ErrNoDocument
 	}
 
 	if d.Epoch != epoch {
 		p.log.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
-		return nil, nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
+		return nil, nil, nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
 	}
+	// Preserve the original signed payload (the cert.Certificate wrapper
+	// with every directory authority signature still attached) before the
+	// stripped Document representation is produced for the daemon's own use.
+	rawSigned := make([]byte, len(resp.Payload))
+	copy(rawSigned, resp.Payload)
+
 	d.Signatures = nil
 	docBlob, err := ccbor.Marshal(d)
 	if err != nil {
 		p.log.Errorf("BUG: failed to cbor marshal pki doc: %v", err)
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return docBlob, d, err
+	return docBlob, rawSigned, d, err
 }
 
 func (p *pki) pruneDocuments(now uint64) {
