@@ -475,18 +475,39 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, false)
 }
 
-// StartResendingEncryptedMessageNoRetry is like StartResendingEncryptedMessage but disables
-// automatic retries on BoxIDNotFound errors. Use this when you want immediate error feedback
-// rather than waiting for potential replication lag to resolve.
-// The CancelResendingEncryptedMessage method can cancel operations started with either method.
+// StartResendingEncryptedMessageNoRetry behaves exactly like
+// StartResendingEncryptedMessage save that it disables the daemon's
+// automatic retry of ErrBoxIDNotFound. The caller learns at once that
+// the box is absent rather than waiting for replication to settle.
+//
+// Use it when polling a box that may not yet have been written, for
+// instance when a reader peeks ahead at a peer's next message before
+// that peer has produced it; the regular variant would block until
+// the box appeared, which can be many round trips.
+//
+// As with StartResendingEncryptedMessage, an in-flight call may be
+// cancelled from another goroutine via CancelResendingEncryptedMessage.
 func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, true, false)
 }
 
-// StartResendingEncryptedMessageReturnBoxExists is like StartResendingEncryptedMessage but returns
-// BoxAlreadyExists errors instead of treating them as idempotent success. Use this when you want
-// to detect whether a write was actually performed or if the box already existed.
-// The CancelResendingEncryptedMessage method can cancel operations started with this method.
+// StartResendingEncryptedMessageReturnBoxExists behaves exactly like
+// StartResendingEncryptedMessage save that it returns
+// ErrBoxAlreadyExists when the replica reports that the destination
+// box has already been written, rather than swallowing the condition
+// as idempotent success. Use it when one needs to distinguish a
+// fresh write from a repeat: for instance, when implementing
+// optimistic concurrency on top of the channel, or when establishing
+// whether a particular call actually caused a state change at the
+// replica.
+//
+// Note that this variant costs an additional mixnet round trip: the
+// BoxAlreadyExists code is carried by the replica's reply rather than
+// the courier's ACK, so the daemon must dispatch a second SURB before
+// it can return the answer.
+//
+// As with StartResendingEncryptedMessage, an in-flight call may be
+// cancelled from another goroutine via CancelResendingEncryptedMessage.
 func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, true)
 }
@@ -774,11 +795,19 @@ func (t *ThinClient) StartResendingCopyCommand(writeCap *bacap.WriteCap) error {
 	}
 }
 
-// StartResendingCopyCommandWithCourier sends a copy command to a specific courier.
+// StartResendingCopyCommandWithCourier behaves exactly like
+// StartResendingCopyCommand save that it dispatches the copy command
+// to a courier the caller has chosen, rather than to one selected at
+// random from the current PKI document. The courier is identified by
+// the (identity-hash, queue-id) pair returned by GetAllCouriers or
+// GetDistinctCouriers.
 //
-// This method is like StartResendingCopyCommand but allows specifying which courier
-// should process the copy command. This is useful for nested copy commands where
-// different couriers should handle different layers for improved privacy.
+// This is the building block for nested copy commands, in which the
+// outer command is sent to one courier and the inner commands carried
+// inside it reference a different courier. Staggering the two layers
+// across distinct couriers reduces the chance that any single
+// compromised courier observes both halves of the copy transaction
+// and can therefore link them.
 //
 // Parameters:
 //   - writeCap: Write capability for the temporary copy stream channel
@@ -1100,18 +1129,22 @@ type CreateEnvelopesResult struct {
 	NextDestIndices []*bacap.MessageBoxIndex
 }
 
-// CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
+// CreateCourierEnvelopesFromPayload packs a payload of arbitrary
+// size (up to 10 MB) into properly sized CopyStreamElement chunks
+// for one destination channel. Each chunk is a serialised
+// CopyStreamElement, ready to be written to a box via EncryptWrite
+// followed by StartResendingEncryptedMessage; the caller marks the
+// boundaries of the stream with the isStart and isLast flags.
 //
-// This method is stateless — no daemon state is kept between calls. Each call creates
-// a fresh encoder, encodes all envelopes, flushes, and returns. The payload is limited
-// to 10MB to prevent accidental memory exhaustion.
+// This method is stateless: no daemon state is kept between calls,
+// each invocation runs a fresh encoder and flushes before returning.
+// The 10 MB cap guards against accidental memory exhaustion.
 //
-// Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
-// The caller controls the copy stream boundaries via isStart and isLast flags.
-//
-// The returned chunks must be written to a temporary copy stream channel using
-// EncryptWrite + StartResendingEncryptedMessage. After the stream is complete,
-// send a Copy command to the courier with the write capability for the temp stream.
+// Once the chunks have been written to a temporary copy stream, a
+// copy command (StartResendingCopyCommand) is despatched to a
+// courier with the WriteCap for that temporary stream; the courier
+// reads the chunks back and dispatches each envelope to its
+// destination box.
 //
 // Parameters:
 //   - payload: The data to be written (max 10MB)
@@ -1184,15 +1217,18 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(payload []byte, destWrite
 	}
 }
 
-// CreateCourierEnvelopesFromMultiPayload creates CourierEnvelopes from multiple payloads
-// going to different destination channels. This is more space-efficient than calling
-// CreateCourierEnvelopesFromPayload multiple times because all envelopes from all
-// destinations are packed together in the same encoder without wasting space.
+// CreateCourierEnvelopesFromMultiPayload packs payloads bound for
+// several destination channels into a single stream of
+// CopyStreamElement chunks. This is more space-efficient than
+// calling CreateCourierEnvelopesFromPayload once per destination,
+// because the shared encoder runs all envelopes together rather than
+// padding the final box of each destination independently.
 //
-// This method is stateless — the buffer parameter enables continuation across multiple
-// calls without daemon-side state. Pass the Buffer from the previous call's result
-// to avoid wasting space in the last box of each call. On the first call, buffer
-// should be nil.
+// This method is stateless: the buffer argument carries any residual
+// encoder state across calls in place of daemon-side bookkeeping.
+// Pass nil for buffer on the first call and the Buffer returned by
+// the previous call thereafter; set isLast on the final call so that
+// the encoder flushes its tail.
 //
 // Parameters:
 //   - destinations: Slice of DestinationPayload specifying payloads and their destination channels
@@ -1285,8 +1321,16 @@ type CourierDescriptor struct {
 	QueueID      []byte
 }
 
-// GetAllCouriers returns all available courier services from the current PKI document.
-// Use this to select specific couriers for nested copy commands.
+// GetAllCouriers returns every courier service advertised in the
+// current PKI document, each described by an (identity-hash,
+// queue-id) pair. The list reflects only the couriers that the
+// current consensus regards as serving.
+//
+// The principal caller is the nested-copy-command machinery, which
+// needs to choose particular couriers rather than accept the random
+// draw made on the caller's behalf by StartResendingCopyCommand; for
+// simple cases where any courier will do, the default routing path
+// is usually preferable.
 func (t *ThinClient) GetAllCouriers() (couriers []CourierDescriptor, err error) {
 	services, err := t.GetServices("courier")
 	if err != nil {
@@ -1303,8 +1347,14 @@ func (t *ThinClient) GetAllCouriers() (couriers []CourierDescriptor, err error) 
 	return couriers, nil
 }
 
-// GetDistinctCouriers returns N distinct random couriers.
-// Returns an error if fewer than N couriers are available.
+// GetDistinctCouriers draws n couriers uniformly at random from the
+// list returned by GetAllCouriers, without replacement, so that no
+// two entries in the returned slice refer to the same courier. This
+// is the usual building block for a nested copy command, every layer
+// of which must be carried by a different courier.
+//
+// Returns an error if the current PKI document advertises fewer than
+// n couriers.
 func (t *ThinClient) GetDistinctCouriers(n int) (couriers []CourierDescriptor, err error) {
 	couriers, err = t.GetAllCouriers()
 	if err != nil {
@@ -1339,12 +1389,17 @@ type TombstoneRangeResult struct {
 	Next      *bacap.MessageBoxIndex
 }
 
-// TombstoneRange creates tombstones for a range of pigeonhole boxes.
-// Tombstones are created by calling EncryptWrite with an empty plaintext.
-// The daemon detects this and signs empty payloads instead of encrypting,
-// which the replica recognizes as deletion requests.
+// TombstoneRange prepares the encrypted envelopes needed to
+// tombstone a consecutive range of pigeonhole boxes beginning at the
+// supplied MessageBoxIndex. A tombstone is a signed empty payload
+// that the replica recognises as a deletion marker; the daemon
+// constructs one by signing rather than encrypting whenever
+// EncryptWrite is invoked with an empty plaintext.
 //
-// To tombstone a single box, use maxCount=1.
+// This method does not itself touch the network: it returns the
+// envelopes for the caller to dispatch one by one, typically via
+// StartResendingEncryptedMessage. To tombstone a single box, pass
+// maxCount=1.
 func (c *ThinClient) TombstoneRange(
 	writeCap *bacap.WriteCap,
 	start *bacap.MessageBoxIndex,
