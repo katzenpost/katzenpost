@@ -30,7 +30,7 @@ func TestCopyAttemptBackoffMonotonic(t *testing.T) {
 // TestCopyRetryConstants guards the tunables the audit M1 fix relies
 // on. Changing these affects worst-case Copy completion time.
 func TestCopyRetryConstants(t *testing.T) {
-	require.Equal(t, 5, maxCopyReadTransientAttempts)
+	require.Equal(t, 8, maxCopyReadTransientAttempts)
 	require.Equal(t, 8, maxCopyWriteAttempts)
 	require.Equal(t, 500*time.Millisecond, copyBackoffBase)
 	require.Equal(t, 10*time.Second, copyBackoffCap)

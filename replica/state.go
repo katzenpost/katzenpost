@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/linxGnu/grocksdb"
 	"golang.org/x/crypto/blake2b"
@@ -437,10 +438,10 @@ func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) 
 // shards they belong to. If this replica node is one of the shares,
 // then just copy the share to the other replica. Otherwise copy
 // the share to the two replicas.
-func (s *state) Rebalance() error {
-	s.log.Debug("state: Starting rebalance operation")
+func (s *state) Rebalance(trigger string) error {
+	s.log.Noticef("state: starting rebalance (trigger=%s)", trigger)
+	start := time.Now()
 
-	// Check if database is still open
 	if s.db == nil {
 		s.log.Error("state: Database is closed, cannot perform rebalance")
 		return fmt.Errorf(errDatabaseClosed)
@@ -453,7 +454,6 @@ func (s *state) Rebalance() error {
 	it := s.db.NewIterator(ro)
 	defer it.Close()
 
-	boxCount := 0
 	// Iterate only the kept epochs; anything outside the window is
 	// about to be GCed and need not be replicated again.
 	for _, ep := range keptEpochs(currentReplicaEpoch()) {
@@ -475,7 +475,6 @@ func (s *state) Rebalance() error {
 			key.Free()
 
 			value := it.Value()
-			s.log.Debugf("state: Processing BoxID %x at epoch %d with value size %d", boxID, ep, value.Size())
 			writeCmd, err := s.replicaWriteFromBlob(value.Data())
 			value.Free()
 			if err != nil {
@@ -490,14 +489,12 @@ func (s *state) Rebalance() error {
 			}
 			for _, shard := range remoteShards {
 				idHash := blake2b.Sum256(shard.IdentityKey)
-				s.log.Debugf("state: Dispatching to shard with ID hash: %x", idHash)
 				s.server.connector.DispatchCommand(writeCmd, &idHash)
 			}
-			boxCount++
 		}
 	}
 
-	s.log.Debugf("state: Rebalance completed, processed %d boxes", boxCount)
+	s.log.Noticef("state: rebalance completed (trigger=%s, duration=%s)", trigger, time.Since(start))
 
 	// Record the storage-replica-set fingerprint we just rebalanced
 	// against. The startup path consults this marker to decide whether

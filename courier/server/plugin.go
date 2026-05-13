@@ -92,7 +92,7 @@ const (
 	// maxCopyReadTransientAttempts is how many times a single shard
 	// replica is re-queried on a temporary error (per the classifier)
 	// before the read path fails over to the shard peer.
-	maxCopyReadTransientAttempts = 5
+	maxCopyReadTransientAttempts = 8
 
 	// copyReadReplyTimeout bounds how long the courier waits for a
 	// reply from one shard replica during a Copy read. A stuck replica
