@@ -493,7 +493,7 @@ func generateCourierLinkKeys(t *testing.T, dataDir, kemSchemeName string) (kem.P
 	return linkPrivKey, linkPubKey
 }
 
-func createReplicaServer(t *testing.T, cfg *config.Config, pkiClient pki.Client) *replica.Server {
+func createReplicaServer(t *testing.T, cfg *config.Config, pkiClient pki.PostingClient) *replica.Server {
 	server, err := replica.NewWithPKI(cfg, pkiClient)
 	require.NoError(t, err)
 	require.NotNil(t, server)
