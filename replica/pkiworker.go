@@ -99,8 +99,16 @@ func newPKIWorkerWithClient(server *Server, pkiClient pki.ReplicaNodeClient, log
 		p.descAddrMap[scheme] = append(p.descAddrMap[scheme], v)
 	}
 
-	p.Go(p.worker)
 	return p, nil
+}
+
+// Start launches the PKI worker's background goroutine. The caller
+// must have assigned the worker to server.PKIWorker first: the
+// worker's first iteration may call into state.Rebalance, which reads
+// server.PKIWorker, and a goroutine spawned before that assignment
+// would race with, or precede, it.
+func (p *PKIWorker) Start() {
+	p.Go(p.worker)
 }
 func replicaMap(doc *pki.Document) map[[32]byte]*pki.ReplicaDescriptor {
 	newReplicas := make(map[[32]byte]*pki.ReplicaDescriptor)
