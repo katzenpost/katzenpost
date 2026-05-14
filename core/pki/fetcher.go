@@ -12,11 +12,11 @@ import (
 // DocumentFetcher provides common PKI document fetching functionality
 type DocumentFetcher struct {
 	log    *logging.Logger
-	client Client
+	client Fetcher
 }
 
 // NewDocumentFetcher creates a new document fetcher
-func NewDocumentFetcher(client Client, log *logging.Logger) *DocumentFetcher {
+func NewDocumentFetcher(client Fetcher, log *logging.Logger) *DocumentFetcher {
 	return &DocumentFetcher{
 		log:    log,
 		client: client,

@@ -165,7 +165,7 @@ func (m *mockReplicaPKIClient) posts() ([]uint64, []*pki.ReplicaDescriptor) {
 	return epochs, descriptors
 }
 
-func createPublishDescriptorTestWorker(t *testing.T, pkiClient pki.PostingClient) (*PKIWorker, func()) {
+func createPublishDescriptorTestWorker(t *testing.T, pkiClient pki.ReplicaNodeClient) (*PKIWorker, func()) {
 	pkiScheme := signschemes.ByName(testPKIScheme)
 	idpubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)

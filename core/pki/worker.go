@@ -26,7 +26,7 @@ var (
 // WorkerBase provides common PKI worker functionality shared between courier and replica
 type WorkerBase struct {
 	log     *logging.Logger
-	impl    Client
+	impl    Fetcher
 	fetcher *DocumentFetcher
 
 	lock          *sync.RWMutex
@@ -36,7 +36,7 @@ type WorkerBase struct {
 }
 
 // NewWorkerBase creates a new PKI worker base
-func NewWorkerBase(impl Client, log *logging.Logger) *WorkerBase {
+func NewWorkerBase(impl Fetcher, log *logging.Logger) *WorkerBase {
 	return &WorkerBase{
 		log:           log,
 		impl:          impl,

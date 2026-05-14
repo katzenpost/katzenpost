@@ -75,7 +75,8 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-// Config is a voting authority pki.Client instance.
+// Config is the configuration for a voting authority pki.PostingClient
+// instance.
 type Config struct {
 	// KEMScheme indicates the KEM scheme used for the LinkKey/wire protocol.
 	KEMScheme kem.Scheme
@@ -1471,9 +1472,11 @@ func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
 }
 
 // New constructs a new pki.PostingClient instance. The voting authority
-// client implements both reading and posting, so it satisfies
-// pki.PostingClient; callers that only require the reader interface may
-// assign the result to a pki.Client variable.
+// client implements the full PKI surface (fetch, deserialize against
+// configured dirauth verifiers, and both descriptor-upload methods).
+// Callers that need only a narrower role may upcast the returned value
+// on assignment to a pki.Fetcher, pki.Deserializer, pki.MixNodeClient,
+// or pki.ReplicaNodeClient variable.
 func New(cfg *Config) (pki.PostingClient, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err

@@ -40,14 +40,14 @@ type PKIWorker struct {
 
 	replicas *replicaCommon.ReplicaMap
 
-	impl pki.Client // PKI client for document fetching and publishing
+	impl pki.Fetcher // the courier only reads consensus, never posts
 
 	lastPublishedEpoch        uint64
 	lastWarnedEpoch           uint64
 	lastPublishedReplicaEpoch uint64
 }
 
-func newPKIWorker(server *Server, pkiClient pki.Client, log *logging.Logger) (*PKIWorker, error) {
+func newPKIWorker(server *Server, pkiClient pki.Fetcher, log *logging.Logger) (*PKIWorker, error) {
 	// Reduce PKI worker and PKI client log verbosity to WARNING level to reduce log noise
 	// This suppresses DEBUG and INFO messages from the PKI worker, PKI client, and connector
 	server.logBackend.SetLevel(logging.WARNING, "courier-pkiworker")

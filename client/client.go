@@ -47,7 +47,7 @@ type Client struct {
 	geo           *geo.Geometry
 	wireKEMScheme kem.Scheme
 
-	PKIClient cpki.Client
+	PKIClient cpki.Deserializer
 
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
