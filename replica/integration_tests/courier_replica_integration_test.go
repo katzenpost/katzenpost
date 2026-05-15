@@ -493,7 +493,7 @@ func generateCourierLinkKeys(t *testing.T, dataDir, kemSchemeName string) (kem.P
 	return linkPrivKey, linkPubKey
 }
 
-func createReplicaServer(t *testing.T, cfg *config.Config, pkiClient pki.PostingClient) *replica.Server {
+func createReplicaServer(t *testing.T, cfg *config.Config, pkiClient pki.ReplicaNodeClient) *replica.Server {
 	server, err := replica.NewWithPKI(cfg, pkiClient)
 	require.NoError(t, err)
 	require.NotNil(t, server)
@@ -713,7 +713,7 @@ func (c *mockPKIClient) Deserialize(raw []byte) (*pki.Document, error) {
 	return pki.ParseDocument(raw)
 }
 
-func createCourierServer(t *testing.T, cfg *courierConfig.Config, pkiClient pki.Client) *courierServer.Server {
+func createCourierServer(t *testing.T, cfg *courierConfig.Config, pkiClient pki.Fetcher) *courierServer.Server {
 	server, err := courierServer.New(cfg, pkiClient)
 	require.NoError(t, err)
 	require.NotNil(t, server)
