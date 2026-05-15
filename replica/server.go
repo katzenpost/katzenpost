@@ -458,7 +458,11 @@ func (s *Server) startServices(pkiClient pki.ReplicaNodeClient) error {
 	if err != nil {
 		panic(err)
 	}
+	// Publish the worker on the Server before starting its goroutine,
+	// so the worker's first iteration (which may call into Rebalance,
+	// reading s.PKIWorker) sees the assignment.
 	s.PKIWorker = pkiWorker
+	pkiWorker.Start()
 
 	// Bring the listener(s) online.
 	s.log.Notice("start listener workers")
