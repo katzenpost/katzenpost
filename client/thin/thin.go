@@ -272,6 +272,13 @@ type ThinClient struct {
 	daemonInstanceToken [16]byte
 	instanceToken       [16]byte
 
+	// sphinxGeo and pigeonGeo are the geometries the daemon supplies in
+	// its ConnectionStatusEvent during the handshake. They are not
+	// configured client-side; they are runtime state, protected by
+	// connMu like the rest of the connection state.
+	sphinxGeo *geo.Geometry
+	pigeonGeo *pigeonholeGeo.Geometry
+
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
 
@@ -296,38 +303,20 @@ type ThinClient struct {
 
 // Config contains the configuration parameters for a ThinClient.
 //
-// The configuration specifies how to connect to the client daemon and includes
-// the cryptographic parameters that must match the daemon's configuration.
+// The configuration specifies only how to connect to the client daemon.
+// The Sphinx and Pigeonhole geometries are no longer configured here: the
+// daemon supplies them over the socket during the connection handshake, so
+// they cannot drift out of step with the daemon. Read them after Dial() via
+// GetSphinxGeometry() and GetPigeonholeGeometry().
 //
 // Configuration can be loaded from a TOML file using LoadFile() or created
-// programmatically. The SphinxGeometry and PigeonholeGeometry parameters
-// must exactly match those used by the client daemon.
+// programmatically.
 //
 // Example TOML configuration:
 //
 //	[Dial.Tcp]
 //	Address = "localhost:64331"
-//
-//	[SphinxGeometry]
-//	  PacketLength = 3082
-//	  NrHops = 5
-//	  UserForwardPayloadLength = 2000
-//	  # ... other Sphinx parameters
-//
-//	[PigeonholeGeometry]
-//	  MaxPlaintextPayloadLength = 1553
-//	  # ... other Pigeonhole parameters
 type Config struct {
-	// SphinxGeometry defines the Sphinx packet format parameters used by the
-	// client daemon. This must exactly match the daemon's configuration to
-	// ensure proper packet size validation and processing.
-	SphinxGeometry *geo.Geometry
-
-	// PigeonholeGeometry defines the Pigeonhole protocol parameters used for
-	// channel operations. This must match the daemon's configuration for
-	// proper payload size validation and channel operation compatibility.
-	PigeonholeGeometry *pigeonholeGeo.Geometry
-
 	// Dial is the subtable-discriminated dial-transport configuration.
 	// Exactly one of its inner subtables (Unix, Tcp, and in future Ssh /
 	// Pipe / Pigeonhole) must be populated.
@@ -336,10 +325,9 @@ type Config struct {
 
 // FromConfig creates a thin client Config from a client daemon config.Config.
 //
-// This function extracts the relevant parameters from a full client daemon
-// configuration and creates a thin client configuration that can connect to
-// that daemon. The SphinxGeometry and PigeonholeGeometry are copied directly
-// to ensure compatibility.
+// This function extracts the daemon's listen address and creates a thin
+// client configuration that can connect to that daemon. Geometry is no
+// longer copied here: the daemon delivers it over the handshake.
 //
 // Parameters:
 //   - cfg: The client daemon configuration
@@ -348,15 +336,8 @@ type Config struct {
 //   - *Config: A thin client configuration compatible with the daemon
 //
 // Panics:
-//   - If cfg.SphinxGeometry is nil
-//   - If cfg.PigeonholeGeometry is nil
+//   - If cfg.Listen is nil
 func FromConfig(cfg *config.Config) *Config {
-	if cfg.SphinxGeometry == nil {
-		panic("SphinxGeometry cannot be nil")
-	}
-	if cfg.PigeonholeGeometry == nil {
-		panic("PigeonholeGeometry cannot be nil")
-	}
 	if cfg.Listen == nil {
 		panic("Listen cannot be nil")
 	}
@@ -375,17 +356,15 @@ func FromConfig(cfg *config.Config) *Config {
 	}
 
 	return &Config{
-		SphinxGeometry:     cfg.SphinxGeometry,
-		PigeonholeGeometry: cfg.PigeonholeGeometry,
-		Dial:               dial,
+		Dial: dial,
 	}
 }
 
 // LoadFile loads a thin client configuration from a TOML file.
 //
-// The TOML file should contain the network connection parameters and
-// cryptographic geometry specifications. See the package documentation
-// for an example configuration format.
+// The TOML file should contain only the network connection parameters
+// (the [Dial] section). Geometry is supplied by the daemon over the
+// handshake. See the package documentation for an example.
 //
 // Parameters:
 //   - filename: Path to the TOML configuration file
@@ -439,12 +418,6 @@ func LoadFile(filename string) (*Config, error) {
 // MetaData.Undecoded — this helper only covers structural invariants
 // the TOML decoder cannot express on its own.
 func validateLoadedConfig(cfg *Config) error {
-	if cfg.SphinxGeometry == nil {
-		return errors.New("missing required section [SphinxGeometry]")
-	}
-	if cfg.PigeonholeGeometry == nil {
-		return errors.New("missing required section [PigeonholeGeometry]")
-	}
 	if cfg.Dial == nil {
 		return errors.New("missing required section [Dial] with one of [Dial.Unix] or [Dial.Tcp]")
 	}
@@ -460,19 +433,17 @@ func validateLoadedConfig(cfg *Config) error {
 // and logging settings. The client is created in a disconnected state; call
 // Dial() to establish connection to the client daemon.
 //
-// The client will validate that required geometry parameters are present and
-// set up internal channels and workers for event handling.
+// The client sets up internal channels and workers for event handling. The
+// geometry is learned from the daemon during Dial(), not from cfg.
 //
 // Parameters:
-//   - cfg: Configuration specifying daemon connection and crypto parameters
+//   - cfg: Configuration specifying the daemon connection
 //   - logging: Logging configuration for the client
 //
 // Returns:
 //   - *ThinClient: A new thin client instance ready for connection
 //
 // Panics:
-//   - If cfg.SphinxGeometry is nil
-//   - If cfg.PigeonholeGeometry is nil
 //   - If logging configuration is invalid
 //
 // Example:
@@ -484,13 +455,6 @@ func validateLoadedConfig(cfg *Config) error {
 //	}
 //	client := thin.NewThinClient(cfg, logging)
 func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
-	if cfg.SphinxGeometry == nil {
-		panic("SphinxGeometry cannot be nil")
-	}
-	if cfg.PigeonholeGeometry == nil {
-		panic("PigeonholeGeometry cannot be nil")
-	}
-
 	logBackend, err := log.New(logging.File, logging.Level, logging.Disable)
 	if err != nil {
 		panic(err)
@@ -525,6 +489,22 @@ func (t *ThinClient) Shutdown() {
 //   - *Config: The configuration used to create this client
 func (t *ThinClient) GetConfig() *Config {
 	return t.cfg
+}
+
+// GetSphinxGeometry returns the Sphinx geometry the daemon supplied during
+// the connection handshake. It is nil until Dial() has completed.
+func (t *ThinClient) GetSphinxGeometry() *geo.Geometry {
+	t.connMu.RLock()
+	defer t.connMu.RUnlock()
+	return t.sphinxGeo
+}
+
+// GetPigeonholeGeometry returns the Pigeonhole geometry the daemon supplied
+// during the connection handshake. It is nil until Dial() has completed.
+func (t *ThinClient) GetPigeonholeGeometry() *pigeonholeGeo.Geometry {
+	t.connMu.RLock()
+	defer t.connMu.RUnlock()
+	return t.pigeonGeo
 }
 
 // GetLogger returns a logger instance with the specified prefix.
@@ -681,10 +661,18 @@ func (t *ThinClient) Dial() error {
 		panic("bug: thin client protocol sequence violation")
 	}
 
+	if message1.ConnectionStatusEvent.SphinxGeometry == nil ||
+		message1.ConnectionStatusEvent.PigeonholeGeometry == nil {
+		return fmt.Errorf("%w: daemon did not supply geometry in its "+
+			"ConnectionStatusEvent (incompatible daemon)", ErrInvalidThinConfig)
+	}
+
 	// Set connection state - allow both connected and offline modes
 	t.connMu.Lock()
 	t.isConnected = message1.ConnectionStatusEvent.IsConnected
 	t.daemonInstanceToken = message1.ConnectionStatusEvent.InstanceToken
+	t.sphinxGeo = message1.ConnectionStatusEvent.SphinxGeometry
+	t.pigeonGeo = message1.ConnectionStatusEvent.PigeonholeGeometry
 	connected := t.isConnected
 	t.connMu.Unlock()
 
@@ -740,8 +728,16 @@ func (t *ThinClient) writeMessage(request *Request) error {
 	if request.SendMessage != nil {
 		payload = request.SendMessage.Payload
 	}
-	if payload != nil && len(payload) > t.cfg.SphinxGeometry.UserForwardPayloadLength {
-		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.SphinxGeometry.UserForwardPayloadLength)
+	if payload != nil {
+		t.connMu.RLock()
+		sphinxGeo := t.sphinxGeo
+		t.connMu.RUnlock()
+		if sphinxGeo == nil {
+			return errors.New("cannot validate payload size: geometry not yet received from daemon (call Dial first)")
+		}
+		if len(payload) > sphinxGeo.UserForwardPayloadLength {
+			return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), sphinxGeo.UserForwardPayloadLength)
+		}
 	}
 
 	blob, err := cbor.Marshal(request)
@@ -808,6 +804,12 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 	case message.ConnectionStatusEvent != nil:
 		t.connMu.Lock()
 		t.isConnected = message.ConnectionStatusEvent.IsConnected
+		if message.ConnectionStatusEvent.SphinxGeometry != nil {
+			t.sphinxGeo = message.ConnectionStatusEvent.SphinxGeometry
+		}
+		if message.ConnectionStatusEvent.PigeonholeGeometry != nil {
+			t.pigeonGeo = message.ConnectionStatusEvent.PigeonholeGeometry
+		}
 		t.connMu.Unlock()
 		select {
 		case t.eventSink <- message.ConnectionStatusEvent:
@@ -1026,6 +1028,12 @@ func (t *ThinClient) redial() bool {
 		t.connMu.Lock()
 		t.isConnected = message1.ConnectionStatusEvent.IsConnected
 		t.daemonInstanceToken = message1.ConnectionStatusEvent.InstanceToken
+		if message1.ConnectionStatusEvent.SphinxGeometry != nil {
+			t.sphinxGeo = message1.ConnectionStatusEvent.SphinxGeometry
+		}
+		if message1.ConnectionStatusEvent.PigeonholeGeometry != nil {
+			t.pigeonGeo = message1.ConnectionStatusEvent.PigeonholeGeometry
+		}
 		t.connMu.Unlock()
 
 		// Handshake: read NewPKIDocumentEvent

@@ -35,10 +35,9 @@ func TestNewThinClientHasInstanceToken(t *testing.T) {
 	require.NoError(t, err)
 
 	tc := &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     sphinxGeo,
-			PigeonholeGeometry: pigeonGeo,
-		},
+		cfg:         &Config{},
+		sphinxGeo:   sphinxGeo,
+		pigeonGeo:   pigeonGeo,
 		log:         logBackend.GetLogger("thinclient"),
 		pkiDocCache: make(map[uint64]*cpki.Document),
 	}
@@ -48,8 +47,6 @@ func TestNewThinClientHasInstanceToken(t *testing.T) {
 
 	// Now test the real constructor
 	cfg := &Config{
-		SphinxGeometry:     sphinxGeo,
-		PigeonholeGeometry: pigeonGeo,
 		Dial: &transport.DialConfig{
 			Tcp: &transport.TcpDialConfig{Address: "localhost:0"},
 		},
@@ -78,10 +75,9 @@ func TestDialSendsSessionToken(t *testing.T) {
 	defer server.Close()
 
 	tc := &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     sphinxGeo,
-			PigeonholeGeometry: pigeonGeo,
-		},
+		cfg:         &Config{},
+		sphinxGeo:   sphinxGeo,
+		pigeonGeo:   pigeonGeo,
 		log:         logBackend.GetLogger("thinclient"),
 		conn:        client,
 		eventSink:   make(chan Event, 2),
@@ -99,7 +95,9 @@ func TestDialSendsSessionToken(t *testing.T) {
 		// Step 1: Send ConnectionStatusEvent
 		sendResponse(t, server, &Response{
 			ConnectionStatusEvent: &ConnectionStatusEvent{
-				IsConnected: true,
+				IsConnected:        true,
+				SphinxGeometry:     sphinxGeo,
+				PigeonholeGeometry: pigeonGeo,
 			},
 		})
 
@@ -152,10 +150,9 @@ func TestDisconnectDoesNotSendThinClose(t *testing.T) {
 	client, server := net.Pipe()
 
 	tc := &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     sphinxGeo,
-			PigeonholeGeometry: pigeonGeo,
-		},
+		cfg:         &Config{},
+		sphinxGeo:   sphinxGeo,
+		pigeonGeo:   pigeonGeo,
 		log:         logBackend.GetLogger("thinclient"),
 		conn:        client,
 		eventSink:   make(chan Event, 2),
@@ -200,10 +197,9 @@ func TestSessionTokenReplyDispatched(t *testing.T) {
 	require.NoError(t, err)
 
 	tc := &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     sphinxGeo,
-			PigeonholeGeometry: pigeonGeo,
-		},
+		cfg:       &Config{},
+		sphinxGeo: sphinxGeo,
+		pigeonGeo: pigeonGeo,
 		log:       logBackend.GetLogger("thinclient"),
 		eventSink: make(chan Event, 2),
 	}

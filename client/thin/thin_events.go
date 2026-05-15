@@ -11,6 +11,8 @@ import (
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 // Event is the generic interface for all events sent by the thin client.
@@ -85,6 +87,15 @@ type ConnectionStatusEvent struct {
 	// It uniquely identifies a daemon instance, allowing thin clients to
 	// detect whether a reconnect is to the same or a new daemon instance.
 	InstanceToken [16]byte `cbor:"instance_token"`
+
+	// SphinxGeometry is the daemon's Sphinx packet geometry. The thin
+	// client does not configure this; it learns it here so that it need
+	// not be duplicated in the thin client's config file.
+	SphinxGeometry *geo.Geometry `cbor:"sphinx_geometry"`
+
+	// PigeonholeGeometry is the daemon's Pigeonhole protocol geometry,
+	// supplied for the same reason as SphinxGeometry.
+	PigeonholeGeometry *pigeonholeGeo.Geometry `cbor:"pigeonhole_geometry"`
 }
 
 // String returns a string representation of the ConnectionStatusEvent.

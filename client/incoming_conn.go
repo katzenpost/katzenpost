@@ -145,9 +145,11 @@ func (c *incomingConn) sendPKIDoc(doc []byte) error {
 func (c *incomingConn) updateConnectionStatus(status error) {
 	c.sendResponse(&Response{
 		ConnectionStatusEvent: &thin.ConnectionStatusEvent{
-			IsConnected:   status == nil,
-			Err:           nil,
-			InstanceToken: c.listener.instanceToken,
+			IsConnected:        status == nil,
+			Err:                nil,
+			InstanceToken:      c.listener.instanceToken,
+			SphinxGeometry:     c.listener.client.cfg.SphinxGeometry,
+			PigeonholeGeometry: c.listener.client.cfg.PigeonholeGeometry,
 		},
 	})
 }

@@ -243,8 +243,9 @@ func (s *Katzenpost) GenClient2ThinCfg(net, addr string) error {
 	os.MkdirAll(filepath.Join(s.OutDir, "client"), 0700)
 	cfg := new(thin.Config)
 
-	cfg.SphinxGeometry = s.SphinxGeometry
-	cfg.PigeonholeGeometry = s.PigeonholeGeometry
+	// Geometry is no longer written to the thin client config: the
+	// daemon delivers it over the handshake. The generated
+	// thinclient.toml carries only the [Dial] section.
 	dial, err := thinDialConfigFor(net, addr)
 	if err != nil {
 		return err
