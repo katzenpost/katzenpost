@@ -4,9 +4,11 @@
 package geo
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
+	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/chacha20poly1305"
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/kem/mkem"
@@ -251,6 +253,35 @@ func (g *Geometry) Validate() error {
 // PaddedPayloadLength returns the payload size after adding length prefix
 func (g *Geometry) PaddedPayloadLength() int {
 	return g.MaxPlaintextPayloadLength + lengthPrefixSize
+}
+
+// Config wraps a Geometry so that Marshal emits a `[PigeonholeGeometry]`
+// TOML table, matching the shape expected in thinclient.toml. It mirrors
+// the equivalent wrapper in core/sphinx/geo.
+type Config struct {
+	PigeonholeGeometry *Geometry
+}
+
+// Marshal serialises the geometry as a `[PigeonholeGeometry]` TOML
+// table suitable for pasting verbatim into a thinclient.toml.
+func (g *Geometry) Marshal() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	encoder := toml.NewEncoder(buf)
+	if err := encoder.Encode(&Config{PigeonholeGeometry: g}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// Display returns the TOML representation produced by Marshal, panicking
+// only on the impossible event of an encoding failure. It is the
+// counterpart of core/sphinx/geo.Geometry.Display.
+func (g *Geometry) Display() string {
+	blob, err := g.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	return string(blob)
 }
 
 // String returns a human-readable representation

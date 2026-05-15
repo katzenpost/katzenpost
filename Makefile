@@ -1,5 +1,5 @@
 
-.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server kpclientd map sphinx replica install-replica-deps
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica install-replica-deps
 
 .PHONY: update-go-deps
 update-go-deps:
@@ -12,7 +12,7 @@ ifneq (,$(wildcard vendor))
 	go mod vendor
 endif
 
-all: server dirauth genconfig ping courier replica echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server kpclientd sphinx
+all: server dirauth genconfig ping courier replica echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd sphinx
 
 server:
 	cd cmd/server; go build
@@ -38,8 +38,8 @@ fetch:
 genkeypair:
 	cd cmd/genkeypair; go build
 
-gensphinx:
-	cd cmd/gensphinx; go build
+geometry:
+	cd cmd/geometry; go build
 
 http-proxy-client:
 	cd cmd/http-proxy-client; go build
@@ -98,7 +98,7 @@ replica: install-replica-deps
 clean:
 	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping \
 		cmd/courier/courier cmd/echo-plugin/echo-plugin cmd/fetch/fetch \
-		cmd/genkeypair/genkeypair cmd/gensphinx/gensphinx \
+		cmd/genkeypair/genkeypair cmd/geometry/geometry \
 		cmd/http-proxy-client/http-proxy-client cmd/http-proxy-server/http-proxy-server \
 		cmd/kpclientd/kpclientd \
 		cmd/sphinx/sphinx cmd/replica/replica cmd/copycat/copycat
