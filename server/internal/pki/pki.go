@@ -72,7 +72,7 @@ type pki struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	impl        cpki.Client
+	impl        cpki.PostingClient
 	descAddrMap map[string][]string
 
 	docs          map[uint64]*pkicache.Entry

@@ -1470,8 +1470,11 @@ func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
 	return pki.ParseDocument(raw)
 }
 
-// New constructs a new pki.Client instance.
-func New(cfg *Config) (pki.Client, error) {
+// New constructs a new pki.PostingClient instance. The voting authority
+// client implements both reading and posting, so it satisfies
+// pki.PostingClient; callers that only require the reader interface may
+// assign the result to a pki.Client variable.
+func New(cfg *Config) (pki.PostingClient, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
