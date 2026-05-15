@@ -98,7 +98,7 @@ katzenpost/
 │   ├── ping/                  # Round-trip connectivity test
 │   ├── fetch/                 # PKI document fetcher
 │   ├── sphinx/                # Sphinx packet diagnostic tool
-│   ├── gensphinx/             # Sphinx test packet generator
+│   ├── geometry/              # Sphinx and Pigeonhole geometry generator
 │   ├── genkeypair/            # Key pair generator
 │   ├── echo-plugin/           # Echo service plugin (example)
 │   ├── http-proxy-client/     # HTTP-over-mixnet proxy client
@@ -220,7 +220,7 @@ This builds all executables in the `cmd/` directory:
 - **echo-plugin** - Echo service plugin
 - **fetch** -  Utility for fetching the PKI doc
 - **genkeypair** - Cryptographic key pair generator
-- **gensphinx** - Sphinx packet generator
+- **geometry** - Sphinx and Pigeonhole geometry generator
 - **http-proxy-client** - HTTP proxy client
 - **http-proxy-server** - HTTP proxy server
 - **kpclientd** - Katzenpost client daemon
