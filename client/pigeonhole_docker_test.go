@@ -14,10 +14,43 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/thin"
 )
+
+// encryptWriteWithRetry wraps ThinClient.EncryptWrite with a bounded
+// retry on the transient "Internal error" kpclientd returns when it
+// momentarily holds no current PKI document around an epoch boundary.
+// Its WaitForCurrentDocument gives up after a few seconds of the
+// gateway replying "consensus not ready yet"; that window clears once
+// the new consensus is cached, comfortably within an epoch. A short
+// retry therefore keeps the long-running docker tests reliable across
+// epoch transitions without masking genuine failures: any other error,
+// or exhaustion of the retry budget, is still returned to the caller.
+func encryptWriteWithRetry(t *testing.T, c *thin.ThinClient, plaintext []byte, writeCap *bacap.WriteCap, idx *bacap.MessageBoxIndex) ([]byte, []byte, *[32]byte, *bacap.MessageBoxIndex, error) {
+	const maxAttempts = 30
+	const retryDelay = 3 * time.Second
+	transient := thin.ThinClientErrorToString(thin.ThinClientErrorInternalError)
+	var (
+		ciphertext, envDesc []byte
+		envHash             *[32]byte
+		nextIdx             *bacap.MessageBoxIndex
+		err                 error
+	)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		ciphertext, envDesc, envHash, nextIdx, err = c.EncryptWrite(plaintext, writeCap, idx)
+		if err == nil || err.Error() != transient {
+			return ciphertext, envDesc, envHash, nextIdx, err
+		}
+		t.Logf("EncryptWrite attempt %d/%d hit transient %q (epoch-boundary PKI gap); retrying in %s",
+			attempt, maxAttempts, transient, retryDelay)
+		time.Sleep(retryDelay)
+	}
+	return ciphertext, envDesc, envHash, nextIdx, err
+}
 
 // TestNewPigeonholeAPIAliceSendsBob tests the complete end-to-end flow of the new Pigeonhole API:
 // 1. Alice creates a WriteCap and derives a ReadCap for Bob
@@ -426,7 +459,7 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 		t.Logf("--- Writing copy stream chunk %d/%d to temporary channel ---", i+1, numChunks)
 
 		// Encrypt the chunk for the copy stream
-		ciphertext, envDesc, envHash, nextTempIndex, err := aliceThinClient.EncryptWrite(chunk, tempWriteCap, tempIndex)
+		ciphertext, envDesc, envHash, nextTempIndex, err := encryptWriteWithRetry(t, aliceThinClient, chunk, tempWriteCap, tempIndex)
 		require.NoError(t, err)
 		require.NotEmpty(t, ciphertext, "EncryptWrite returned empty ciphertext for chunk %d", i+1)
 		require.NotNil(t, nextTempIndex)
