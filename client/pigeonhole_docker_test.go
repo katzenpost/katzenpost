@@ -1413,7 +1413,7 @@ func TestFromPayloadMultiCall(t *testing.T) {
 
 	// Use pigeonhole geometry to size the payload: 3x the max box payload
 	// so each chunk fills exactly one destination box.
-	maxPayload := aliceThinClient.GetConfig().PigeonholeGeometry.MaxPlaintextPayloadLength
+	maxPayload := aliceThinClient.GetPigeonholeGeometry().MaxPlaintextPayloadLength
 	t.Logf("MaxPlaintextPayloadLength = %d bytes", maxPayload)
 	chunkSize := maxPayload
 	fullPayload := make([]byte, 3*chunkSize)
@@ -1549,7 +1549,7 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 
 	// Use pigeonhole geometry to size payloads: each payload is exactly one box payload
 	// so each call writes one destination box per channel.
-	maxPayload := aliceThinClient.GetConfig().PigeonholeGeometry.MaxPlaintextPayloadLength
+	maxPayload := aliceThinClient.GetPigeonholeGeometry().MaxPlaintextPayloadLength
 	t.Logf("MaxPlaintextPayloadLength = %d bytes", maxPayload)
 
 	payload1a := make([]byte, maxPayload)
