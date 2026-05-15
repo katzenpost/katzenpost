@@ -201,12 +201,12 @@ func New(cfg *config.Config) (*Server, error) {
 
 // NewWithPKI returns a new Server instance with a custom PKI implementation.
 // If pkiFactory is nil, the default PKI worker is used.
-func NewWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
+func NewWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Server, error) {
 	return newServerWithPKI(cfg, pkiClient)
 }
 
 // newServerWithPKI is the internal implementation that supports both PKI factory and PKI client
-func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
+func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
 
@@ -425,7 +425,7 @@ func (s *Server) initEnvelopeKeys() error {
 }
 
 // startServices starts all the server services (PKI worker, listeners, connector)
-func (s *Server) startServices(pkiClient pki.Client) error {
+func (s *Server) startServices(pkiClient pki.ReplicaNodeClient) error {
 	// Start the fatal error watcher.
 	go func() {
 		err, ok := <-s.fatalErrCh
@@ -458,7 +458,11 @@ func (s *Server) startServices(pkiClient pki.Client) error {
 	if err != nil {
 		panic(err)
 	}
+	// Publish the worker on the Server before starting its goroutine,
+	// so the worker's first iteration (which may call into Rebalance,
+	// reading s.PKIWorker) sees the assignment.
 	s.PKIWorker = pkiWorker
+	pkiWorker.Start()
 
 	// Bring the listener(s) online.
 	s.log.Notice("start listener workers")

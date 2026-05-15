@@ -59,11 +59,11 @@ func NewWithDefaultPKI(cfg *config.Config) (*Server, error) {
 }
 
 // NewWithPKI creates a new Server with a custom PKI client for testing
-func NewWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
+func NewWithPKI(cfg *config.Config, pkiClient pki.Fetcher) (*Server, error) {
 	return New(cfg, pkiClient)
 }
 
-func New(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
+func New(cfg *config.Config, pkiClient pki.Fetcher) (*Server, error) {
 	s := &Server{
 		cfg: cfg,
 	}
@@ -105,7 +105,7 @@ func (s *Server) initializeBasics() error {
 }
 
 // initializePKI sets up the PKI worker
-func (s *Server) initializePKI(pkiClient pki.Client) error {
+func (s *Server) initializePKI(pkiClient pki.Fetcher) error {
 	var err error
 	if pkiClient != nil {
 		s.PKI, err = newPKIWorker(s, pkiClient, s.logBackend.GetLogger("courier-pkiworker"))

@@ -38,7 +38,7 @@ type PKIWorker struct {
 
 	replicas *replicaCommon.ReplicaMap
 
-	impl pki.Client // PKI client for document fetching and publishing
+	impl pki.ReplicaNodeClient // fetches consensus and posts ReplicaDescriptor
 
 	descAddrMap        map[string][]string
 	lastPublishedEpoch uint64
@@ -69,8 +69,8 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 	return newPKIWorkerWithClient(server, pkiClient, log)
 }
 
-// newPKIWorkerWithClient creates a PKIWorker with a custom pki.Client for testing
-func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.Logger) (*PKIWorker, error) {
+// newPKIWorkerWithClient creates a PKIWorker with a custom pki.ReplicaNodeClient for testing
+func newPKIWorkerWithClient(server *Server, pkiClient pki.ReplicaNodeClient, log *logging.Logger) (*PKIWorker, error) {
 	// Reduce PKI worker and PKI client log verbosity to WARNING level to reduce log noise
 	// This suppresses DEBUG and INFO messages from the PKI worker, PKI client, and connector
 	server.logBackend.SetLevel(logging.WARNING, "replica pkiWorker")
@@ -99,8 +99,16 @@ func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.L
 		p.descAddrMap[scheme] = append(p.descAddrMap[scheme], v)
 	}
 
-	p.Go(p.worker)
 	return p, nil
+}
+
+// Start launches the PKI worker's background goroutine. The caller
+// must have assigned the worker to server.PKIWorker first: the
+// worker's first iteration may call into state.Rebalance, which reads
+// server.PKIWorker, and a goroutine spawned before that assignment
+// would race with, or precede, it.
+func (p *PKIWorker) Start() {
+	p.Go(p.worker)
 }
 func replicaMap(doc *pki.Document) map[[32]byte]*pki.ReplicaDescriptor {
 	newReplicas := make(map[[32]byte]*pki.ReplicaDescriptor)
