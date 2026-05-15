@@ -34,10 +34,9 @@ func newTestThinClientNoConn(t *testing.T) *ThinClient {
 	require.NoError(t, err)
 	nikeScheme := schemes.ByName("x25519")
 	return &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-			PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
-		},
+		cfg:         &Config{},
+		sphinxGeo:   &geo.Geometry{UserForwardPayloadLength: 1000},
+		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
 		eventSink:   make(chan Event, 10),
@@ -62,32 +61,9 @@ func TestFromConfig(t *testing.T) {
 
 	thinCfg := FromConfig(cfg)
 	require.NotNil(t, thinCfg)
-	require.Equal(t, sphinxGeo, thinCfg.SphinxGeometry)
-	require.Equal(t, pigeonGeo, thinCfg.PigeonholeGeometry)
 	require.NotNil(t, thinCfg.Dial)
 	require.NotNil(t, thinCfg.Dial.Tcp)
 	require.Equal(t, "127.0.0.1:12345", thinCfg.Dial.Tcp.Address)
-}
-
-func TestFromConfigNilSphinxGeometryPanics(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	cfg := &config.Config{
-		SphinxGeometry:     nil,
-		PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
-	}
-	require.Panics(t, func() {
-		FromConfig(cfg)
-	})
-}
-
-func TestFromConfigNilPigeonholeGeometryPanics(t *testing.T) {
-	cfg := &config.Config{
-		SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-		PigeonholeGeometry: nil,
-	}
-	require.Panics(t, func() {
-		FromConfig(cfg)
-	})
 }
 
 func TestLoadFile(t *testing.T) {
@@ -97,8 +73,6 @@ func TestLoadFile(t *testing.T) {
 	require.NotNil(t, cfg.Dial)
 	require.NotNil(t, cfg.Dial.Tcp)
 	require.Equal(t, "localhost:64331", cfg.Dial.Tcp.Address)
-	require.NotNil(t, cfg.SphinxGeometry)
-	require.Equal(t, 2000, cfg.SphinxGeometry.UserForwardPayloadLength)
 }
 
 func TestLoadFileNonexistent(t *testing.T) {
@@ -117,35 +91,18 @@ func TestLoadFileInvalidTOML(t *testing.T) {
 	require.Nil(t, cfg)
 }
 
-// canonicalGeometrySections is the SphinxGeometry + PigeonholeGeometry
-// block every strict-rejection test pairs with a varying Dial / extra
-// key. Kept as a constant so each case documents only the one thing
-// it is trying to test.
-const canonicalGeometrySections = `
-[SphinxGeometry]
-  PacketLength = 3082
-  NrHops = 5
-  HeaderLength = 476
-  RoutingInfoLength = 410
-  PerHopRoutingInfoLength = 82
-  SURBLength = 572
-  SphinxPlaintextHeaderLength = 2
-  PayloadTagLength = 32
-  ForwardPayloadLength = 2574
-  UserForwardPayloadLength = 2000
-  NextNodeHopLength = 65
-  SPRPKeyMaterialLength = 64
-  NIKEName = "x25519"
-  KEMName = ""
-
-[PigeonholeGeometry]
-  MaxPlaintextPayloadLength = 1553
-  CourierQueryReadLength = 359
-  CourierQueryWriteLength = 2000
-  CourierQueryReplyReadLength = 1698
-  CourierQueryReplyWriteLength = 50
-  NIKEName = "CTIDH1024-X25519"
-  SignatureSchemeName = "Ed25519"
+// canonicalDialSection is the sole section a valid thin-client TOML may
+// now contain. Geometry is delivered by the daemon over the socket
+// during the connection handshake, not read from disk, so the strict
+// loader rejects any geometry tables outright as unknown top-level
+// keys. The strict-rejection tests below pair this with a varying
+// extra key or malformation to document only the one thing each case
+// is trying to exercise.
+const canonicalDialSection = `
+[Dial]
+  [Dial.Tcp]
+    Address = "localhost:64331"
+    Network = "tcp"
 `
 
 func writeTempToml(t *testing.T, body string) string {
@@ -163,7 +120,7 @@ func TestLoadFile_RejectsOldFlatFormat(t *testing.T) {
 	body := `
 Network = "tcp"
 Address = "localhost:64331"
-` + canonicalGeometrySections
+`
 
 	cfg, err := LoadFile(writeTempToml(t, body))
 	require.Nil(t, cfg)
@@ -174,56 +131,37 @@ Address = "localhost:64331"
 func TestLoadFile_RejectsUnknownTopLevelKey(t *testing.T) {
 	body := `
 LegacyFlag = true
-` + canonicalGeometrySections + `
-[Dial]
-  [Dial.Tcp]
-    Address = "localhost:64331"
-    Network = "tcp"
-`
+` + canonicalDialSection
 	cfg, err := LoadFile(writeTempToml(t, body))
 	require.Nil(t, cfg)
 	require.ErrorIs(t, err, ErrInvalidThinConfig)
 	require.Contains(t, err.Error(), "LegacyFlag")
 }
 
-func TestLoadFile_RejectsMissingPigeonholeGeometry(t *testing.T) {
+// TestLoadFile_RejectsGeometrySection verifies that a leftover
+// SphinxGeometry (or PigeonholeGeometry) table from the pre-handshake
+// layout is now rejected as an unknown top-level key. Geometry is no
+// longer carried on disk; the daemon supplies it over the socket.
+func TestLoadFile_RejectsGeometrySection(t *testing.T) {
 	body := `
 [SphinxGeometry]
-  PacketLength = 3082
-  NrHops = 5
-  HeaderLength = 476
-  RoutingInfoLength = 410
-  PerHopRoutingInfoLength = 82
-  SURBLength = 572
-  SphinxPlaintextHeaderLength = 2
-  PayloadTagLength = 32
-  ForwardPayloadLength = 2574
   UserForwardPayloadLength = 2000
-  NextNodeHopLength = 65
-  SPRPKeyMaterialLength = 64
-  NIKEName = "x25519"
-  KEMName = ""
-
-[Dial]
-  [Dial.Tcp]
-    Address = "localhost:64331"
-    Network = "tcp"
-`
+` + canonicalDialSection
 	cfg, err := LoadFile(writeTempToml(t, body))
 	require.Nil(t, cfg)
 	require.ErrorIs(t, err, ErrInvalidThinConfig)
-	require.Contains(t, err.Error(), "PigeonholeGeometry")
+	require.Contains(t, err.Error(), "SphinxGeometry")
 }
 
 func TestLoadFile_RejectsMissingDial(t *testing.T) {
-	cfg, err := LoadFile(writeTempToml(t, canonicalGeometrySections))
+	cfg, err := LoadFile(writeTempToml(t, "\n"))
 	require.Nil(t, cfg)
 	require.ErrorIs(t, err, ErrInvalidThinConfig)
 	require.Contains(t, err.Error(), "[Dial]")
 }
 
 func TestLoadFile_RejectsUnknownDialSubtable(t *testing.T) {
-	body := canonicalGeometrySections + `
+	body := `
 [Dial]
   [Dial.Pipe]
     Address = "/dev/null"
@@ -234,50 +172,8 @@ func TestLoadFile_RejectsUnknownDialSubtable(t *testing.T) {
 	require.Contains(t, err.Error(), "Dial.Pipe")
 }
 
-func TestLoadFile_RejectsUnknownPigeonholeGeometryKey(t *testing.T) {
-	body := `
-[SphinxGeometry]
-  PacketLength = 3082
-  NrHops = 5
-  HeaderLength = 476
-  RoutingInfoLength = 410
-  PerHopRoutingInfoLength = 82
-  SURBLength = 572
-  SphinxPlaintextHeaderLength = 2
-  PayloadTagLength = 32
-  ForwardPayloadLength = 2574
-  UserForwardPayloadLength = 2000
-  NextNodeHopLength = 65
-  SPRPKeyMaterialLength = 64
-  NIKEName = "x25519"
-  KEMName = ""
-
-[PigeonholeGeometry]
-  MaxPlaintextPayloadLength = 1553
-  CourierQueryReadLength = 359
-  CourierQueryWriteLength = 2000
-  CourierQueryReplyReadLength = 1698
-  CourierQueryReplyWriteLength = 50
-  NIKEName = "CTIDH1024-X25519"
-  SignatureSchemeName = "Ed25519"
-  FutureField = "wat"
-
-[Dial]
-  [Dial.Tcp]
-    Address = "localhost:64331"
-    Network = "tcp"
-`
-	cfg, err := LoadFile(writeTempToml(t, body))
-	require.Nil(t, cfg)
-	require.ErrorIs(t, err, ErrInvalidThinConfig)
-	require.Contains(t, err.Error(), "FutureField")
-}
-
 func TestNewThinClient(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
 	cfg := &Config{
-		SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-		PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		Dial: &transport.DialConfig{
 			Tcp: &transport.TcpDialConfig{Address: "127.0.0.1:12345"},
 		},
@@ -291,27 +187,6 @@ func TestNewThinClient(t *testing.T) {
 	require.Equal(t, cfg, tc.GetConfig())
 	require.NotNil(t, tc.eventSink)
 	require.NotNil(t, tc.pkiDocCache)
-}
-
-func TestNewThinClientNilSphinxGeometryPanics(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	cfg := &Config{
-		SphinxGeometry:     nil,
-		PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
-	}
-	require.Panics(t, func() {
-		NewThinClient(cfg, &config.Logging{Level: "DEBUG"})
-	})
-}
-
-func TestNewThinClientNilPigeonholeGeometryPanics(t *testing.T) {
-	cfg := &Config{
-		SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-		PigeonholeGeometry: nil,
-	}
-	require.Panics(t, func() {
-		NewThinClient(cfg, &config.Logging{Level: "DEBUG"})
-	})
 }
 
 func TestGetConfig(t *testing.T) {
@@ -1064,8 +939,6 @@ func TestDispatchHaltChFired(t *testing.T) {
 // client, and that the Dial config resolves to the expected concrete
 // dialer type.
 func TestNewThinClientDialVariants(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-
 	type wantDialer int
 	const (
 		wantUnix wantDialer = iota
@@ -1110,9 +983,7 @@ func TestNewThinClientDialVariants(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-				PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
-				Dial:               tt.dial,
+				Dial: tt.dial,
 			}
 			tc := NewThinClient(cfg, &config.Logging{Level: "DEBUG"})
 			require.NotNil(t, tc)

@@ -284,7 +284,11 @@ func TestDialWithTCPListener(t *testing.T) {
 		defer conn.Close()
 
 		sendMockResponse(t, conn, &Response{
-			ConnectionStatusEvent: &ConnectionStatusEvent{IsConnected: true},
+			ConnectionStatusEvent: &ConnectionStatusEvent{
+				IsConnected:        true,
+				SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
+				PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, schemes.ByName("x25519")),
+			},
 		})
 
 		doc := &cpki.Document{Epoch: 1}
@@ -304,10 +308,7 @@ func TestDialWithTCPListener(t *testing.T) {
 		time.Sleep(time.Second)
 	}()
 
-	nikeScheme := schemes.ByName("x25519")
 	tc := NewThinClient(&Config{
-		SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-		PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		Dial: &transport.DialConfig{
 			Tcp: &transport.TcpDialConfig{Address: ln.Addr().String()},
 		},

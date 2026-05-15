@@ -37,12 +37,11 @@ func TestThinTCPSendRecv(t *testing.T) {
 	defaultPigeonholeGeometry := pigeonholeGeo.NewGeometry(1000, nikeScheme)
 
 	thin := ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     defaultSphinxGeometry,
-			PigeonholeGeometry: defaultPigeonholeGeometry,
-		},
-		log:  logBackend.GetLogger("thinclient"),
-		conn: client,
+		cfg:       &Config{},
+		sphinxGeo: defaultSphinxGeometry,
+		pigeonGeo: defaultPigeonholeGeometry,
+		log:       logBackend.GetLogger("thinclient"),
+		conn:      client,
 	}
 
 	id := &[MessageIDLength]byte{}
@@ -163,10 +162,9 @@ func TestOfflineChannelOperations(t *testing.T) {
 
 	// Create a thin client in offline mode
 	thin := &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     defaultSphinxGeometry,
-			PigeonholeGeometry: defaultPigeonholeGeometry,
-		},
+		cfg:         &Config{},
+		sphinxGeo:   defaultSphinxGeometry,
+		pigeonGeo:   defaultPigeonholeGeometry,
 		log:         logBackend.GetLogger("thinclient"),
 		isConnected: false, // This means offline mode
 		pkiDocCache: make(map[uint64]*cpki.Document),
@@ -217,10 +215,9 @@ func TestOfflineDialAndChannelOperations(t *testing.T) {
 	defer server.Close()
 
 	thin := &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     defaultSphinxGeometry,
-			PigeonholeGeometry: defaultPigeonholeGeometry,
-		},
+		cfg:         &Config{},
+		sphinxGeo:   defaultSphinxGeometry,
+		pigeonGeo:   defaultPigeonholeGeometry,
 		log:         logBackend.GetLogger("thinclient"),
 		conn:        client,
 		eventSink:   make(chan Event, 2),
@@ -236,8 +233,10 @@ func TestOfflineDialAndChannelOperations(t *testing.T) {
 		// Send connection status (not connected)
 		connectionStatusResponse := &Response{
 			ConnectionStatusEvent: &ConnectionStatusEvent{
-				IsConnected: false, // This is the key - daemon reports not connected
-				Err:         nil,
+				IsConnected:        false, // This is the key - daemon reports not connected
+				Err:                nil,
+				SphinxGeometry:     defaultSphinxGeometry,
+				PigeonholeGeometry: defaultPigeonholeGeometry,
 			},
 		}
 		sendResponse(t, server, connectionStatusResponse)
@@ -310,10 +309,9 @@ func TestCloseDoesNotLogSpuriousErrors(t *testing.T) {
 	client, server := net.Pipe()
 
 	thin := &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     defaultSphinxGeometry,
-			PigeonholeGeometry: defaultPigeonholeGeometry,
-		},
+		cfg:         &Config{},
+		sphinxGeo:   defaultSphinxGeometry,
+		pigeonGeo:   defaultPigeonholeGeometry,
 		log:         logBackend.GetLogger("thinclient"),
 		conn:        client,
 		eventSink:   make(chan Event, 2),
@@ -329,8 +327,10 @@ func TestCloseDoesNotLogSpuriousErrors(t *testing.T) {
 		// Send connection status
 		connectionStatusResponse := &Response{
 			ConnectionStatusEvent: &ConnectionStatusEvent{
-				IsConnected: true,
-				Err:         nil,
+				IsConnected:        true,
+				Err:                nil,
+				SphinxGeometry:     defaultSphinxGeometry,
+				PigeonholeGeometry: defaultPigeonholeGeometry,
 			},
 		}
 		sendResponse(t, server, connectionStatusResponse)

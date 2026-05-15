@@ -41,12 +41,12 @@ func newTestThinClient(t *testing.T, conn net.Conn) *ThinClient {
 
 	return &ThinClient{
 		cfg: &Config{
-			SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-			PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
 			Dial: &transport.DialConfig{
 				Tcp: &transport.TcpDialConfig{Address: "localhost:0"},
 			},
 		},
+		sphinxGeo:   &geo.Geometry{UserForwardPayloadLength: 1000},
+		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
 		conn:        conn,
@@ -220,10 +220,13 @@ func TestCloseStopsWorker(t *testing.T) {
 // reads SessionToken, and sends SessionTokenReply.
 func mockDaemonHandshake(t *testing.T, conn net.Conn, token [16]byte) {
 	t.Helper()
+	nikeScheme := schemes.ByName("x25519")
 	sendMockResponse(t, conn, &Response{
 		ConnectionStatusEvent: &ConnectionStatusEvent{
-			IsConnected:   true,
-			InstanceToken: token,
+			IsConnected:        true,
+			InstanceToken:      token,
+			SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
+			PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		},
 	})
 	sendMockResponse(t, conn, &Response{
@@ -285,12 +288,12 @@ func TestRedialAfterDisconnect(t *testing.T) {
 
 	tc := &ThinClient{
 		cfg: &Config{
-			SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-			PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
 			Dial: &transport.DialConfig{
 				Tcp: &transport.TcpDialConfig{Address: listener.Addr().String()},
 			},
 		},
+		sphinxGeo:   &geo.Geometry{UserForwardPayloadLength: 1000},
+		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
 		eventSink:   make(chan Event, 2),
@@ -415,12 +418,12 @@ func TestNewInstanceTokenReplaysRequests(t *testing.T) {
 
 	tc := &ThinClient{
 		cfg: &Config{
-			SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-			PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
 			Dial: &transport.DialConfig{
 				Tcp: &transport.TcpDialConfig{Address: listener.Addr().String()},
 			},
 		},
+		sphinxGeo:   &geo.Geometry{UserForwardPayloadLength: 1000},
+		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
 		eventSink:   make(chan Event, 2),
@@ -517,12 +520,12 @@ func TestSameInstanceTokenSkipsReplay(t *testing.T) {
 
 	tc := &ThinClient{
 		cfg: &Config{
-			SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-			PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
 			Dial: &transport.DialConfig{
 				Tcp: &transport.TcpDialConfig{Address: listener.Addr().String()},
 			},
 		},
+		sphinxGeo:   &geo.Geometry{UserForwardPayloadLength: 1000},
+		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
 		eventSink:   make(chan Event, 2),
@@ -781,7 +784,6 @@ func TestDaemonInstanceTokenStoredOnDial(t *testing.T) {
 	require.NoError(t, err)
 	defer listener.Close()
 
-	nikeScheme := schemes.ByName("x25519")
 	token := [16]byte{0xCA, 0xFE, 0xBA, 0xBE}
 
 	serverConnCh := make(chan net.Conn, 1)
@@ -795,8 +797,6 @@ func TestDaemonInstanceTokenStoredOnDial(t *testing.T) {
 	}()
 
 	tc := NewThinClient(&Config{
-		SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-		PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		Dial: &transport.DialConfig{
 			Tcp: &transport.TcpDialConfig{Address: listener.Addr().String()},
 		},

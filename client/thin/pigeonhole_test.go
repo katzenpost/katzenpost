@@ -29,10 +29,9 @@ func setupMockDaemon(t *testing.T) (*ThinClient, net.Conn) {
 	nikeScheme := schemes.ByName("x25519")
 
 	tc := &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-			PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
-		},
+		cfg:         &Config{},
+		sphinxGeo:   &geo.Geometry{UserForwardPayloadLength: 1000},
+		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
 		conn:        client,
@@ -153,10 +152,9 @@ func setupTestThinClient(t *testing.T) *ThinClient {
 	require.NoError(t, err)
 	nikeScheme := schemes.ByName("x25519")
 	return &ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     &geo.Geometry{UserForwardPayloadLength: 1000},
-			PigeonholeGeometry: pigeonholeGeo.NewGeometry(1000, nikeScheme),
-		},
+		cfg:         &Config{},
+		sphinxGeo:   &geo.Geometry{UserForwardPayloadLength: 1000},
+		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, nikeScheme),
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
 		eventSink:   make(chan Event, 10),
