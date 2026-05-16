@@ -492,7 +492,14 @@ func TestPKICachedDoc(t *testing.T) {
 	p.pruneDocuments(epoch)
 	require.Equal(t, 1, lenSyncMap(&p.docs))
 
+	// The immediately previous epoch's document is retained as the
+	// boundary fallback, so pruning at epoch+1 keeps the epoch
+	// document rather than discarding it.
 	p.pruneDocuments(epoch + 1)
+	require.Equal(t, 1, lenSyncMap(&p.docs))
+
+	// Two epochs on it is finally old enough to discard.
+	p.pruneDocuments(epoch + 2)
 	require.Equal(t, 0, lenSyncMap(&p.docs))
 
 	p = newPKI(c)
