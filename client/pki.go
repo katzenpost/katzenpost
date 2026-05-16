@@ -194,6 +194,20 @@ func (p *pki) currentDocument() ([]byte, *cpki.Document) {
 		return cached.Blob, cached.Doc
 	}
 
+	// Around an epoch boundary the new epoch's consensus is briefly
+	// not yet cached. pruneDocuments runs only after a successful
+	// fetch, so the previous epoch's document is still held: prefer it
+	// over reporting nothing, which surfaces to thin clients as a hard
+	// ThinClientErrorInternalError. The mix and replica keys overlap
+	// across the boundary, so the prior document still routes for the
+	// brief window until the new consensus arrives, and the fallback
+	// is bounded to a single epoch of staleness.
+	if d, _ := p.docs.Load(now - 1); d != nil {
+		cached := d.(*CachedDoc)
+		p.log.Debugf("currentDocument: epoch %d not yet cached, using previous epoch %d", now, now-1)
+		return cached.Blob, cached.Doc
+	}
+
 	return nil, nil
 }
 
@@ -398,7 +412,13 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, []byte, *c
 func (p *pki) pruneDocuments(now uint64) {
 	p.docs.Range(func(key, value interface{}) bool {
 		epoch := key.(uint64)
-		if epoch < now {
+		// Retain the immediately previous epoch's document: while the
+		// current epoch's consensus is briefly uncached around a
+		// boundary, currentDocument serves it as the last valid
+		// document. Pruning it here (epoch < now) discarded it too
+		// early, which is what surfaced to thin clients as a hard
+		// ThinClientErrorInternalError.
+		if epoch+1 < now {
 			p.log.Debugf("Discarding PKI for epoch: %v", epoch)
 			p.docs.Delete(epoch)
 		}

@@ -235,6 +235,84 @@ func TestPKIWaitForDocument(t *testing.T) {
 	require.Equal(t, currentDoc, testDoc)
 }
 
+// TestPKICurrentDocumentFallsBackToPreviousEpoch confirms that around
+// an epoch boundary, before the new epoch's consensus has been cached,
+// currentDocument returns the previous epoch's document rather than
+// nil. Returning nil here is what surfaced to thin clients as a hard
+// ThinClientErrorInternalError.
+func TestPKICurrentDocumentFallsBackToPreviousEpoch(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+	}
+	p := newPKI(c)
+	c.pki = p
+
+	now, _, _ := epochtime.Now()
+
+	// Nothing cached for any epoch: there is nothing to fall back to.
+	_, doc := p.currentDocument()
+	require.Nil(t, doc)
+
+	prevDoc := &cpki.Document{Epoch: now - 1}
+	p.docs.Store(now-1, &CachedDoc{Doc: prevDoc, Blob: []byte("prev")})
+
+	// Current epoch absent: fall back to the previous epoch.
+	blob, doc := p.currentDocument()
+	require.NotNil(t, doc)
+	require.Equal(t, prevDoc, doc)
+	require.Equal(t, []byte("prev"), blob)
+
+	// Once the current epoch's document arrives it takes precedence.
+	curDoc := &cpki.Document{Epoch: now}
+	p.docs.Store(now, &CachedDoc{Doc: curDoc, Blob: []byte("cur")})
+	blob, doc = p.currentDocument()
+	require.Equal(t, curDoc, doc)
+	require.Equal(t, []byte("cur"), blob)
+}
+
+// TestPKIPruneRetainsPreviousEpoch confirms pruneDocuments keeps the
+// immediately previous epoch's document, so currentDocument can still
+// serve it as the last valid document while the current epoch's
+// consensus is briefly uncached.
+func TestPKIPruneRetainsPreviousEpoch(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+	}
+	p := newPKI(c)
+	c.pki = p
+
+	now, _, _ := epochtime.Now()
+
+	prevDoc := &cpki.Document{Epoch: now - 1}
+	p.docs.Store(now-2, &CachedDoc{Doc: &cpki.Document{Epoch: now - 2}, Blob: []byte("old")})
+	p.docs.Store(now-1, &CachedDoc{Doc: prevDoc, Blob: []byte("prev")})
+
+	p.pruneDocuments(now)
+
+	_, gone := p.docs.Load(now - 2)
+	require.False(t, gone, "epoch now-2 ought to have been pruned")
+	_, kept := p.docs.Load(now - 1)
+	require.True(t, kept, "epoch now-1 must be retained as the fallback")
+
+	// The current epoch is still uncached: currentDocument serves the
+	// retained previous epoch rather than nothing.
+	blob, doc := p.currentDocument()
+	require.Equal(t, prevDoc, doc)
+	require.Equal(t, []byte("prev"), blob)
+}
+
 // transientFailureConsensusGetter returns ConsensusNotFound for the
 // first failuresRemaining calls and ConsensusOk thereafter, allowing
 // the test to confirm that WaitForCurrentDocument retries through a
@@ -414,7 +492,14 @@ func TestPKICachedDoc(t *testing.T) {
 	p.pruneDocuments(epoch)
 	require.Equal(t, 1, lenSyncMap(&p.docs))
 
+	// The immediately previous epoch's document is retained as the
+	// boundary fallback, so pruning at epoch+1 keeps the epoch
+	// document rather than discarding it.
 	p.pruneDocuments(epoch + 1)
+	require.Equal(t, 1, lenSyncMap(&p.docs))
+
+	// Two epochs on it is finally old enough to discard.
+	p.pruneDocuments(epoch + 2)
 	require.Equal(t, 0, lenSyncMap(&p.docs))
 
 	p = newPKI(c)
