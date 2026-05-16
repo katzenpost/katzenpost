@@ -203,7 +203,16 @@ Source: `client/thin/thin.go`, `Config` type.
       Address = "/var/run/katzenpost/kpclientd.sock"
   ```
 
-`SphinxGeometry` and `PigeonholeGeometry` remain as before.
+- **Removed** `[SphinxGeometry]` and `[PigeonholeGeometry]`.
+  **[breaking]** Both sections are gone from `thinclient.toml`; only
+  `[Dial]` remains. The daemon now delivers both geometries to the
+  thin client over the handshake (in its `ConnectionStatusEvent`),
+  exposed via `GetSphinxGeometry()` and `GetPigeonholeGeometry()`.
+  genconfig no longer writes them into the generated file. A config
+  that still carries either section is rejected at load (unknown-key
+  check), and a daemon that omits the geometries is rejected at
+  `Dial`. This removes the foot-gun of a thin-client geometry drifting
+  silently out of step with the daemon's.
 
 ## PKI document format (informational)
 
