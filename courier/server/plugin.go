@@ -23,6 +23,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/courier/server/instrument"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
@@ -53,6 +54,11 @@ type CopyCommandState struct {
 
 // Courier handles the CBOR plugin interface for our courier service.
 type Courier struct {
+	// worker.Worker manages the background replica-dispatch
+	// goroutines so they can be halted gracefully. Its zero value is
+	// usable (lazy initOnce), so no explicit construction is needed.
+	worker.Worker
+
 	write  func(cborplugin.Command)
 	server *Server
 	log    *logging.Logger
@@ -74,6 +80,24 @@ type Courier struct {
 	// truth for those polls.
 	copyDedupCacheLock sync.RWMutex
 	copyDedupCache     map[[hash.HashSize]byte]*CopyCommandState
+
+	// dispatchSem bounds the number of concurrent replica-dispatch
+	// goroutines. Replica dispatch is performed off the single
+	// serialised OnCommand goroutine (a slow replica must not be able
+	// to head-of-line block all client request handling, including
+	// cache-hit ACKs). This is the project's "Semaphore over Worker
+	// Pools" idiom: a goroutine per dispatch, capped by a buffered
+	// channel, rather than a pool of idle workers.
+	dispatchSem chan struct{}
+
+	// inFlightLock guards inFlight, the set of EnvelopeHashes that
+	// currently have a dispatch goroutine outstanding. It collapses
+	// duplicate concurrent (re-)dispatches of the same envelope to a
+	// single in-flight attempt, so a client ARQ-retransmitting a
+	// not-yet-resolved envelope cannot spawn an unbounded fan of
+	// replica traffic.
+	inFlightLock sync.Mutex
+	inFlight     map[[hash.HashSize]byte]struct{}
 
 	// processCopyCommandFn is the worker that performs the actual Copy
 	// work in a background goroutine. Defaults to
@@ -165,6 +189,15 @@ func copyFailedReply(replicaErr uint8, failedEnvelopeIndex uint64) *pigeonhole.C
 // envelope, short enough that dedupCache size stays bounded under load.
 const DedupCacheTTL = 5 * time.Minute
 
+// maxConcurrentReplicaDispatch caps the number of replica-dispatch
+// goroutines running at once. Each does only two SendMessage calls
+// (which enqueue into per-replica bounded sender queues), so a
+// generous bound keeps the replicas busy without letting a slow
+// replica turn into unbounded goroutine growth. The set of distinct
+// in-flight envelopes is itself bounded by the TTL-pruned dedupCache,
+// so any goroutines briefly parked on this semaphore are bounded too.
+const maxConcurrentReplicaDispatch = 256
+
 // NewCourier returns a new Courier type.
 func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
 	pigeonholeGeo, err := pigeonholeGeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, scheme)
@@ -182,6 +215,8 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 		dedupCache:     make(map[[hash.HashSize]byte]*CourierBookKeeping),
 		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
 		copyDedupCache: make(map[[hash.HashSize]byte]*CopyCommandState),
+		dispatchSem:    make(chan struct{}, maxConcurrentReplicaDispatch),
+		inFlight:       make(map[[hash.HashSize]byte]struct{}),
 	}
 	courier.processCopyCommandFn = courier.processCopyCommand
 	return courier
@@ -401,34 +436,82 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 	return nil
 }
 
-// handleNewMessage processes new messages and dispatches them to replicas and then
-// returns an immediate ACK reply to confirm receipt and dispatch
-func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
-	e.log.Debugf("handleNewMessage: Processing new message for envelope hash %x", envHash)
-
-	if err := e.propagateQueryToReplicas(courierMessage); err != nil {
-		e.log.Errorf("handleNewMessage: Failed to handle courier envelope: %s", err)
-		e.log.Debugf("handleNewMessage: Returning error reply due to internal error")
-		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorPropagationError, courierMessage.ReplyIndex)
-	}
-
-	// SUCCESS CASE: Messages were successfully dispatched to replicas
-	// Return immediate ACK reply to confirm receipt and dispatch
-	// The actual response with data will come later via CacheReply when replicas respond
-	e.log.Debugf("handleNewMessage: Successfully dispatched to replicas, returning immediate ACK reply (ReplyType=%d)",
-		pigeonhole.ReplyTypeACK)
-	reply := &pigeonhole.CourierQueryReply{
+// ackReply builds the immediate ACK returned to the client the moment
+// an envelope is accepted. Replica dispatch happens asynchronously
+// (see scheduleReplicaDispatch); the actual data reply arrives later
+// via CacheReply and is served on a subsequent ARQ retransmission. The
+// client is expected to keep resending the identical CourierEnvelope
+// until it receives a PAYLOAD reply (see specs/pigeonhole.md).
+func (e *Courier) ackReply(envHash *[hash.HashSize]byte, replyIndex uint8) *pigeonhole.CourierQueryReply {
+	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 			EnvelopeHash: *envHash,
-			ReplyIndex:   courierMessage.ReplyIndex,
-			ReplyType:    pigeonhole.ReplyTypeACK, // ACK - Request received and dispatched
+			ReplyIndex:   replyIndex,
+			ReplyType:    pigeonhole.ReplyTypeACK,
 			PayloadLen:   0,
 			Payload:      nil,
-			ErrorCode:    pigeonhole.EnvelopeErrorSuccess, // Success - message accepted and dispatched
+			ErrorCode:    pigeonhole.EnvelopeErrorSuccess,
 		},
 	}
-	return reply
+}
+
+// scheduleReplicaDispatch dispatches an envelope to its intermediate
+// replicas on a bounded background goroutine, off the single
+// serialised OnCommand path. This is the fix for the head-of-line
+// stall: propagateQueryToReplicas can block on a full per-replica
+// sender queue, and doing it inline would freeze all client request
+// handling (including cheap cache-hit ACKs) behind one slow replica.
+//
+// Two guards keep this bounded:
+//
+//   - The inFlight set collapses concurrent (re-)dispatches of the
+//     same EnvelopeHash to one outstanding attempt, so a client
+//     ARQ-retransmitting an unresolved envelope cannot fan out
+//     unbounded replica traffic. The distinct in-flight set is itself
+//     bounded by the TTL-pruned dedupCache.
+//   - dispatchSem caps the number of dispatches doing work at once.
+//
+// The goroutine uses the project's two-step HaltCh select so a
+// shutdown is observed promptly rather than blocking behind the
+// semaphore or a stalled send.
+func (e *Courier) scheduleReplicaDispatch(envHash *[hash.HashSize]byte, courierMessage *pigeonhole.CourierEnvelope) {
+	e.inFlightLock.Lock()
+	if _, busy := e.inFlight[*envHash]; busy {
+		e.inFlightLock.Unlock()
+		e.log.Debugf("scheduleReplicaDispatch: dispatch already in flight for %x, skipping", envHash[:8])
+		return
+	}
+	e.inFlight[*envHash] = struct{}{}
+	e.inFlightLock.Unlock()
+
+	hashCopy := *envHash
+	e.Go(func() {
+		defer func() {
+			e.inFlightLock.Lock()
+			delete(e.inFlight, hashCopy)
+			e.inFlightLock.Unlock()
+		}()
+
+		// Fast-path: bail immediately if we are already shutting down.
+		select {
+		case <-e.HaltCh():
+			return
+		default:
+		}
+
+		// Acquire a semaphore slot, or exit on shutdown.
+		select {
+		case <-e.HaltCh():
+			return
+		case e.dispatchSem <- struct{}{}:
+		}
+		defer func() { <-e.dispatchSem }()
+
+		if err := e.propagateQueryToReplicas(courierMessage); err != nil {
+			e.log.Errorf("scheduleReplicaDispatch: dispatch for %x failed: %s", hashCopy[:8], err)
+		}
+	})
 }
 
 func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[hash.HashSize]byte, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
@@ -564,34 +647,20 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorInvalidEpoch, courierMessage.ReplyIndex)
 	}
 
-	e.dedupCacheLock.RLock()
+	// Single locked check-and-insert. This is the only site that
+	// creates a dedupCache entry, so performing the membership test
+	// and the insert under one write-lock makes a concurrent pair of
+	// identical envelopes resolve to exactly one new entry and one
+	// dispatch (the loser becomes a cache hit), rather than both
+	// missing and double-dispatching to the replicas. This closes the
+	// check-then-act race that was previously masked only by
+	// OnCommand being single-threaded.
+	e.dedupCacheLock.Lock()
 	cacheEntry, ok := e.dedupCache[*envHash]
-	e.dedupCacheLock.RUnlock()
-
-	switch {
-	case ok:
-		// If the cached entry contains only read errors (e.g. BoxIDNotFound), trigger an
-		// async re-dispatch to the replicas so the cache gets refreshed for the next client
-		// retry. We still return the cached error immediately via handleOldMessage so that
-		// NoRetry clients receive the error and stop, while Retry clients' next request will
-		// find either success or a fresh BoxIDNotFound in the cache.
-		if e.cacheEntryHasOnlyErrors(cacheEntry) {
-			e.log.Debugf("OnCommand: Cached entry for %x has read errors, triggering async re-dispatch", envHash)
-			go func() {
-				if err := e.propagateQueryToReplicas(courierMessage); err != nil {
-					e.log.Errorf("OnCommand: async re-dispatch for %x failed: %s", envHash, err)
-				}
-			}()
-		}
-		e.log.Debugf("OnCommand: Found cached entry for envelope hash %x, calling handleOldMessage", envHash)
-		return e.handleOldMessage(cacheEntry, envHash, courierMessage)
-	case !ok:
-		e.log.Errorf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
-		e.dedupCacheLock.Lock()
+	if !ok {
 		e.pruneDedupCacheLocked(time.Now(), DedupCacheTTL)
-		currentEpoch := e.getCurrentEpoch()
 		e.dedupCache[*envHash] = &CourierBookKeeping{
-			Epoch:                currentEpoch,
+			Epoch:                e.getCurrentEpoch(),
 			CreatedAt:            time.Now(),
 			QueryType:            queryType,
 			IntermediateReplicas: courierMessage.IntermediateReplicas,
@@ -599,11 +668,24 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 		}
 		e.dedupCacheLock.Unlock()
 
-		return e.handleNewMessage(envHash, courierMessage)
+		e.log.Debugf("cacheHandleCourierEnvelope: new envelope %x, scheduling dispatch", envHash[:8])
+		e.scheduleReplicaDispatch(envHash, courierMessage)
+		return e.ackReply(envHash, courierMessage.ReplyIndex)
 	}
+	e.dedupCacheLock.Unlock()
 
-	// not reached
-	return nil
+	// Cache hit. If every reply that has arrived so far is an error
+	// (e.g. BoxIDNotFound while data is still propagating), schedule a
+	// bounded re-dispatch so the cache can refresh for the client's
+	// next ARQ retry. The cached error is still returned immediately
+	// via handleOldMessage so that NoRetry clients stop; the inFlight
+	// guard keeps repeated client retries from stacking dispatches.
+	if e.cacheEntryHasOnlyErrors(cacheEntry) {
+		e.log.Debugf("cacheHandleCourierEnvelope: cached entry for %x has only errors, scheduling re-dispatch", envHash[:8])
+		e.scheduleReplicaDispatch(envHash, courierMessage)
+	}
+	e.log.Debugf("cacheHandleCourierEnvelope: found cached entry for %x, calling handleOldMessage", envHash)
+	return e.handleOldMessage(cacheEntry, envHash, courierMessage)
 }
 
 // cacheEntryHasOnlyErrors returns true when every replica reply that has arrived so far
