@@ -109,6 +109,16 @@ const (
 
 	// QueryIDLength is the length of a query ID in bytes.
 	QueryIDLength = 16
+
+	// MaxMessageSize bounds a single length-prefixed frame on the
+	// thin-client/daemon socket. The 4-byte big-endian prefix is
+	// attacker-controlled in both directions; without a ceiling a
+	// hostile or buggy peer could declare a multi-gigabyte frame and
+	// drive the reader to allocate it before any payload arrives. 16
+	// MiB is far above any legitimate CBOR thin-client message yet far
+	// below a memory-exhaustion threat. Frames larger than this are
+	// rejected before allocation.
+	MaxMessageSize = 16 * 1024 * 1024
 )
 
 var (
@@ -771,6 +781,9 @@ func (t *ThinClient) readMessage() (*Response, error) {
 	}
 
 	prefixLen := binary.BigEndian.Uint32(prefix)
+	if prefixLen > MaxMessageSize {
+		return nil, fmt.Errorf("daemon response frame too large: %d bytes (max %d)", prefixLen, MaxMessageSize)
+	}
 	message := make([]byte, prefixLen)
 	_, err = io.ReadFull(t.conn, message)
 	if err != nil {
