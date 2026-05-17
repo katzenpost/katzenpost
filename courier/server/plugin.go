@@ -142,6 +142,19 @@ const (
 	// copyBackoffCap.
 	copyBackoffBase = 500 * time.Millisecond
 	copyBackoffCap  = 10 * time.Second
+
+	// maxCopyStreamBoxes and maxCopyStreamEnvelopes bound a single
+	// Copy. BACAP yields an infinite deterministic box sequence and
+	// the temp-stream loop ends only on a read failure or the
+	// client-controlled isFinal flag, so without a ceiling one small
+	// CopyCommand could drive the courier to read an unbounded number
+	// of boxes (each costing replica round-trips and a slot in
+	// boxIDList) and dispatch an unbounded number of envelopes
+	// (security audit finding H3). These are deliberately generous
+	// sanity ceilings, far above any legitimate AllOrNothing transfer
+	// yet finite; exceeding either aborts the Copy as Failed.
+	maxCopyStreamBoxes     = 1 << 16
+	maxCopyStreamEnvelopes = 1 << 16
 )
 
 // copyAttemptBackoff returns the sleep between attempt n and attempt
@@ -372,6 +385,31 @@ func (e *Courier) pruneDedupCacheLocked(now time.Time, ttl time.Duration) int {
 	for key, entry := range e.dedupCache {
 		if now.Sub(entry.CreatedAt) > ttl {
 			delete(e.dedupCache, key)
+			pruned++
+		}
+	}
+	return pruned
+}
+
+// pruneCopyDedupCacheLocked removes completed copy entries whose age
+// (now - CompletedAt) is strictly greater than ttl. In-progress
+// entries are never pruned: their worker goroutine still owns the
+// state and the client is still polling. Returns the number removed.
+// The caller MUST hold e.copyDedupCacheLock.Lock().
+//
+// This mirrors pruneDedupCacheLocked: copyDedupCache previously had no
+// pruner at all, so a client issuing Copy commands with distinct
+// WriteCaps and never re-polling grew it without bound (security audit
+// finding C3). It is swept opportunistically on each new Copy, exactly
+// as the envelope dedup cache is swept on each new envelope.
+func (e *Courier) pruneCopyDedupCacheLocked(now time.Time, ttl time.Duration) int {
+	pruned := 0
+	for key, state := range e.copyDedupCache {
+		if state.InProgress {
+			continue
+		}
+		if now.Sub(state.CompletedAt) > ttl {
+			delete(e.copyDedupCache, key)
 			pruned++
 		}
 	}
@@ -755,7 +793,10 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 		delete(e.copyDedupCache, copyKey)
 	}
 
-	// New (or TTL-expired) copy: mark InProgress, spawn worker, ACK.
+	// New (or TTL-expired) copy: sweep stale completed entries (this
+	// is the bound on copyDedupCache growth), then mark InProgress,
+	// spawn worker, ACK.
+	e.pruneCopyDedupCacheLocked(time.Now(), CopyDedupCacheTTL)
 	state = &CopyCommandState{
 		InProgress: true,
 		Done:       make(chan struct{}),
@@ -839,6 +880,14 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 	sawFinal := false
 
 	for !sawFinal {
+		if len(boxIDList) >= maxCopyStreamBoxes {
+			e.log.Errorf("processCopyCommand: copy stream exceeded %d boxes without isFinal, aborting", maxCopyStreamBoxes)
+			return copyFailedReply(0, envelopesProcessed+1)
+		}
+		if envelopesProcessed >= maxCopyStreamEnvelopes {
+			e.log.Errorf("processCopyCommand: copy stream exceeded %d envelopes, aborting", maxCopyStreamEnvelopes)
+			return copyFailedReply(0, envelopesProcessed+1)
+		}
 		boxID, err := reader.NextBoxID()
 		if err != nil {
 			e.log.Errorf("processCopyCommand: NextBoxID: %v", err)
