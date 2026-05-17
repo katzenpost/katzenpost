@@ -5,8 +5,6 @@ package replica
 
 import (
 	"fmt"
-	mrand "math/rand"
-	"sync"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
@@ -16,6 +14,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/queue"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
@@ -68,8 +67,6 @@ type delayedReplyEmitter struct {
 	log      *logging.Logger
 	out      chan *senderRequest
 	tq       *queue.TimerQueue
-	rng      *mrand.Rand
-	rngLock  sync.Mutex
 	peerName string
 }
 
@@ -77,7 +74,6 @@ func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, pe
 	e := &delayedReplyEmitter{
 		log:      logBackend.GetLogger("replica/delayedReplyEmitter"),
 		out:      out,
-		rng:      mrand.New(mrand.NewSource(time.Now().UnixNano())),
 		peerName: peerName,
 	}
 	e.tq = queue.NewTimerQueue(func(v interface{}) {
@@ -103,10 +99,18 @@ func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, pe
 // Enqueue schedules a reply for emission after a Uniform[0,
 // replyJitterMax] delay. Safe for concurrent use.
 func (e *delayedReplyEmitter) Enqueue(reply *senderRequest) {
-	e.rngLock.Lock()
-	delayNs := e.rng.Int63n(int64(replyJitterMax))
-	e.rngLock.Unlock()
-	readyAt := uint64(time.Now().UnixNano() + delayNs)
+	// The per-reply delay defends §5.4 unlinkability: an adversary
+	// must not be able to predict it. A time-seeded math/rand stream
+	// is reconstructable; draw an unbiased uniform sample from the
+	// cryptographic source instead, as the shard selector does. On
+	// the rare reader error, fall back to zero delay (emit now)
+	// rather than a predictable or panicking path.
+	delayNs, err := pigeonhole.CryptoRandIndex(int(replyJitterMax))
+	if err != nil {
+		e.log.Errorf("delayedReplyEmitter: crypto rand failed, emitting without jitter: %v", err)
+		delayNs = 0
+	}
+	readyAt := uint64(time.Now().UnixNano() + int64(delayNs))
 	e.tq.Push(readyAt, reply)
 	instrument.IncomingQueueLength(e.peerName, e.tq.Len())
 }
