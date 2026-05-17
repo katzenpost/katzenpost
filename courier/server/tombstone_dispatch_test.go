@@ -135,6 +135,28 @@ func TestDispatchTombstoneRetriesOnAllErrors(t *testing.T) {
 	require.True(t, ok, "retry after all-errors must succeed on the second attempt")
 }
 
+// TestDispatchTombstoneBoxAlreadyExistsNotRetried pins the fix for the
+// copy-command hang: a BoxAlreadyExists rejection is permanent (the
+// destination holds differing data and writes are immutable), so
+// dispatchTombstone must fail on the first attempt rather than burn
+// the full escalating-backoff budget, which spanned minutes per box
+// and stalled the client's terminal Copy status. Exactly one attempt
+// is planned; were the rejection retried, the drive helper would see
+// no second reply and the dispatch would not return in time.
+func TestDispatchTombstoneBoxAlreadyExistsNotRetried(t *testing.T) {
+	courier := createTestCourier(t)
+	conn := newFakeConnector()
+	courier.server.connector = conn
+
+	replicaIDs := []uint8{7, 8}
+	messages, envHash := buildTestTombstoneMessages(replicaIDs, 0xAE)
+
+	ok := driveTombstoneDispatch(t, courier, conn, envHash, replicaIDs, messages, [][]uint8{
+		{pigeonhole.ReplicaErrorBoxAlreadyExists, pigeonhole.ReplicaErrorBoxAlreadyExists},
+	})
+	require.False(t, ok, "a permanent BoxAlreadyExists rejection must not be retried")
+}
+
 // TestDispatchTombstoneSingleShardSuccess covers the degraded case
 // where only one shard's envelope key was usable (the other shard's
 // key was missing or failed to unmarshal). The dispatch still works

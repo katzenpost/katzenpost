@@ -795,12 +795,18 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 		e.log.Warningf("processCopyCommand: %d bytes remaining in decoder buffer after processing", decoder.Remaining())
 	}
 
-	// Tombstones are best-effort: we've already written the destination
-	// envelopes, so an incomplete temp-stream cleanup is a cache
-	// inefficiency, not a correctness failure.
-	e.writeTombstonesToTempChannel(writeCap, boxIDList)
-
 	e.log.Debugf("processCopyCommand: processed %d envelopes from %d boxes", envelopesProcessed, len(boxIDList))
+
+	// Tombstones are best-effort: the destination envelopes are
+	// already written, so an incomplete temp-stream cleanup is a cache
+	// inefficiency, not a correctness failure. It must therefore not
+	// gate the terminal Copy reply: the daemon polls InProgress until
+	// processCopyCommand returns, and a run of replica-rejected
+	// tombstone writes can span minutes per box, hanging the client.
+	// Run it off the reply path; boxIDList and writeCap are local and
+	// no longer touched here, so the goroutine owns them safely.
+	go e.writeTombstonesToTempChannel(writeCap, boxIDList)
+
 	return copySucceededReply()
 }
 
@@ -1249,6 +1255,19 @@ func (e *Courier) dispatchTombstone(
 					e.log.Debugf("dispatchTombstone: success on attempt %d", attempt+1)
 				}
 				return true
+			}
+		}
+		for _, r := range replies {
+			if r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
+				// A box-already-exists rejection is permanent: the
+				// destination holds differing data and writes are
+				// immutable, so every escalating-backoff retry will
+				// be rejected identically (this is the run that spans
+				// minutes per box and hung the client). Bail at once.
+				// Transient errors (e.g. DatabaseFailure) still fall
+				// through to the retry below.
+				e.log.Debugf("dispatchTombstone: attempt %d permanently rejected (box already exists), not retrying", attempt+1)
+				return false
 			}
 		}
 		e.log.Debugf("dispatchTombstone: attempt %d produced %d replies, none successful", attempt+1, len(replies))
