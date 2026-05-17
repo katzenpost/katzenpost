@@ -23,6 +23,13 @@ const (
 	defaultMaxConcurrentReplications = 4       // Default max concurrent replication operations
 	defaultProxyRequestTimeout    = 300        // Default proxy request timeout in seconds (5 minutes)
 	defaultProxyWorkerCount       = 8          // Default number of proxy request worker goroutines
+
+	// DefaultMinFreeStorageBytes is the default filesystem free-space
+	// reserve. By default the replica will use the DataDir filesystem
+	// freely but stop accepting new writes once fewer than this many
+	// bytes remain available, so a runaway write rate cannot wedge the
+	// host on a full disk. 500 MiB.
+	DefaultMinFreeStorageBytes = 500 * 1024 * 1024
 )
 
 // Type aliases for common configuration structures
@@ -118,6 +125,22 @@ type Config struct {
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
+
+	// MaxStorageBytes, when greater than zero, is a hard quota on the
+	// replica database's on-disk size (measured from RocksDB's live
+	// SST footprint). Writes that would grow the store past this are
+	// rejected with ReplicaErrorStorageFull. Zero (the default) leaves
+	// the database size unbounded except by the filesystem reserve
+	// below.
+	MaxStorageBytes int64
+
+	// MinFreeStorageBytes is the filesystem free-space reserve on the
+	// DataDir filesystem. New writes are rejected with
+	// ReplicaErrorStorageFull once fewer than this many bytes remain
+	// available, regardless of MaxStorageBytes, so the replica never
+	// fills the host disk. Zero selects DefaultMinFreeStorageBytes
+	// (500 MiB); a positive value overrides it.
+	MinFreeStorageBytes int64
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
@@ -143,6 +166,16 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 		if _, err := netip.ParseAddrPort(c.MetricsAddress); err != nil {
 			return fmt.Errorf("config: MetricsAddress '%v' is invalid: %v", c.MetricsAddress, err)
 		}
+	}
+
+	if c.MaxStorageBytes < 0 {
+		return fmt.Errorf("config: MaxStorageBytes must not be negative, got %d", c.MaxStorageBytes)
+	}
+	if c.MinFreeStorageBytes < 0 {
+		return fmt.Errorf("config: MinFreeStorageBytes must not be negative, got %d", c.MinFreeStorageBytes)
+	}
+	if c.MinFreeStorageBytes == 0 {
+		c.MinFreeStorageBytes = DefaultMinFreeStorageBytes
 	}
 
 	return c.setupLoggingDefaults()
