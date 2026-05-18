@@ -69,8 +69,8 @@ github.com/katzenpost/falcon v0.1.0 h1:+WkID41Y6CaWAQE3ijCIfZHu7eHHy8DvAFWCnrW1X
 github.com/katzenpost/falcon v0.1.0/go.mod h1:HtOnkNvwpvTJ3fuXmy4BNw4A8Jg2QetpmkvOPOnOwyU=
 github.com/katzenpost/hpqc v0.0.80 h1:nevwcbD47T3Bm7tu3RD1xlCqOhCTbiMc+rutGcwVp3w=
 github.com/katzenpost/hpqc v0.0.80/go.mod h1:XINEtSU2ZLULm2jBU7HYRHMRNNNsE73wIR89x/7Zs+A=
-github.com/katzenpost/nyquist v0.0.12 h1:3GDXLpW1jEXbRoaUmFoJb7HIjEoaH6p2TDi8brk+pNM=
-github.com/katzenpost/nyquist v0.0.12/go.mod h1:sWxE31e08QtA0ly7HpZcC+cKKUrmJjCnCFlr0dhjpYg=
+github.com/katzenpost/nyquist v0.0.13 h1:U4Ogik5WuBoy9l7HFTUGXdc2B/3Xa3QLoK7vTDOPAbw=
+github.com/katzenpost/nyquist v0.0.13/go.mod h1:6DgFOY5YLt9jy2skOpeaM4Rpha2xZ1Vufg5kOzV23Gw=
 github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e h1:cbftK8/GNGA8ye2e2VWkVPLnO/62UadJmG3ddEa6ElU=
 github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e/go.mod h1:gllDz9ZRl9Q1SxRnY2p5KHjhakin0nGjJt9CeyNIIhU=
 github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 h1:TsKxH0x2RUwf5rBw67k15bqVM3oVbexA9oaTZQLIy3Y=
