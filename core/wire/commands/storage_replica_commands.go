@@ -112,6 +112,15 @@ func (c *ReplicaWrite) Length() int {
 }
 
 func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
+	// The command-length prefix is peer-controlled and is not range
+	// checked per-command by the dispatcher. Reject a body too short
+	// to hold the fixed BoxID+Signature header before indexing it,
+	// mirroring replicaWriteReplyFromBytes. The payload may be empty
+	// (a tombstone), so the minimum is exactly the header.
+	if len(b) < bacap.BoxIDSize+bacap.SignatureSize {
+		return nil, errInvalidCommand
+	}
+
 	c := new(ReplicaWrite)
 	c.Cmds = cmds
 	c.BoxID = &[bacap.BoxIDSize]byte{}
@@ -318,6 +327,15 @@ func (c *ReplicaMessageReply) ToBytes() []byte {
 }
 
 func replicaMessageReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
+	// The command-length prefix is peer-controlled and is not range
+	// checked per-command by the dispatcher. Reject a body too short
+	// to hold ErrorCode(1) + EnvelopeHash(32) + ReplicaID(1) before
+	// indexing it, mirroring replicaWriteReplyFromBytes. The trailing
+	// EnvelopeReply may be empty, so the minimum is exactly 34 bytes.
+	if len(b) < 1+32+1 {
+		return nil, errInvalidCommand
+	}
+
 	r := new(ReplicaMessageReply)
 	r.Cmds = cmds
 	r.ErrorCode = b[0]

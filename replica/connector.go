@@ -268,8 +268,13 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	// This ensures we replicate to both shard replicas
 	allShards, err := replicaCommon.GetShards(cmd.BoxID, doc)
 	if err != nil {
+		// GetShards fails transiently during PKI churn / startup
+		// (nil or sub-K configured keys, all shard peers offline).
+		// Panicking here let any write crash the replica; log and
+		// skip this replication round instead, as the other error
+		// paths in this function already do.
 		co.log.Errorf("REPLICATION: Failed - GetShards err: %v", err)
-		panic(err)
+		return
 	}
 
 	if len(allShards) == 0 {

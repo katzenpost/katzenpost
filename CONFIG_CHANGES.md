@@ -104,8 +104,30 @@ Source: `replica/config/config.go`.
 - **Added** `MetricsAddress` (string). Address/port for the Prometheus
   metrics endpoint, e.g. `"127.0.0.1:33001"`. Empty disables the
   listener. Validated with `net/netip`.
+- **Added** `MaxStorageBytes` (int64). Optional hard quota on the
+  replica database's on-disk size (RocksDB live SST footprint).
+  Writes that would exceed it are rejected with
+  `ReplicaErrorStorageFull`. Defaults to `0`, meaning no database-size
+  quota; only the filesystem reserve below applies. Must not be
+  negative.
+- **Added** `MinFreeStorageBytes` (int64). Filesystem free-space
+  reserve on the `DataDir` filesystem: new writes are rejected with
+  `ReplicaErrorStorageFull` once fewer than this many bytes remain
+  available, regardless of `MaxStorageBytes`. `0` selects the 500 MiB
+  default; a positive value overrides it. Must not be negative.
+  Tombstones (deletions) are never gated by either limit, so a full
+  replica can still be reclaimed.
 - **Removed** `ReplicationQueueLength` (int). **[breaking]** No longer
   consumed; remove from existing TOML.
+
+### Defaults
+
+- With `MinFreeStorageBytes` unset, a replica now stops accepting new
+  writes once its `DataDir` filesystem has under 500 MiB free. This
+  takes effect even if the operator's TOML is otherwise unchanged.
+  Previously writes were accepted until the disk filled and the
+  condition surfaced only as transient database errors that clients
+  retried. Set `MinFreeStorageBytes` and/or `MaxStorageBytes` to tune.
 
 ## Courier (`courier.toml`)
 

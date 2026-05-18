@@ -227,6 +227,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 		s.log.Errorf("startup wipe of stale boxes failed: %s", err)
 	}
 	s.state.startGCWorker()
+	s.state.startStorageWatcher()
 
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})

@@ -119,6 +119,9 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 		return nil, errors.New("failed to read length prefix")
 	}
 	blobLen := binary.BigEndian.Uint32(lenPrefix[:])
+	if blobLen > thin.MaxMessageSize {
+		return nil, fmt.Errorf("client request frame too large: %d bytes (max %d)", blobLen, thin.MaxMessageSize)
+	}
 	blob := make([]byte, blobLen)
 	if count, err = io.ReadFull(c.conn, blob); err != nil {
 		return nil, err

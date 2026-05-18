@@ -425,6 +425,12 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 					ErrorCode: pigeonhole.ReplicaErrorBoxAlreadyExists,
 				}
 			}
+			if errors.Is(err, ErrStorageFull) {
+				c.log.Warningf("handleReplicaWrite: rejected, storage full")
+				return &pigeonhole.ReplicaWriteReply{
+					ErrorCode: pigeonhole.ReplicaErrorStorageFull,
+				}
+			}
 			c.log.Errorf("handleReplicaWrite state update failed: %v", err)
 			return &pigeonhole.ReplicaWriteReply{
 				ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,

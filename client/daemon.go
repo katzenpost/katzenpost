@@ -9,6 +9,7 @@ import (
 	"fmt"
 	mrand "math/rand"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -254,7 +255,8 @@ func (d *Daemon) Start() error {
 	d.timerQueue = queue.NewTimerQueue(func(rawSurbID interface{}) {
 		surbID, ok := rawSurbID.(*[sphinxConstants.SURBIDLength]byte)
 		if !ok {
-			panic("wtf, failed type assertion!")
+			d.log.Errorf("timerQueue: unexpected %T in GC callback, dropping", rawSurbID)
+			return
 		}
 		select {
 		case d.gcSurbIDCh <- surbID:
@@ -269,7 +271,8 @@ func (d *Daemon) Start() error {
 	d.arqTimerQueue = queue.NewTimerQueue(func(rawSurbID interface{}) {
 		surbID, ok := rawSurbID.(*[sphinxConstants.SURBIDLength]byte)
 		if !ok {
-			panic("wtf, failed type assertion!")
+			d.log.Errorf("arqTimerQueue: unexpected %T in resend callback, dropping", rawSurbID)
+			return
 		}
 		// Route to the owning client's per-connection resend queue. The
 		// scheduler drains it on a Poisson tick along with fresh sends,
@@ -280,7 +283,8 @@ func (d *Daemon) Start() error {
 	d.gcTimerQueue = queue.NewTimerQueue(func(rawGCReply interface{}) {
 		myGcReply, ok := rawGCReply.(*gcReply)
 		if !ok {
-			panic("wtf, failed type assertion!")
+			d.log.Errorf("gcTimerQueue: unexpected %T in GC-reply callback, dropping", rawGCReply)
+			return
 		}
 		select {
 		case d.gcReplyCh <- myGcReply:
@@ -350,11 +354,33 @@ func isLocalRequest(r *Request) bool {
 		r.CreateCourierEnvelopesFromTombstoneRange != nil
 }
 
+// requestAppID returns the request's application ID bytes for logging,
+// or nil if unavailable.
+func requestAppID(request *Request) []byte {
+	if request != nil && request.AppID != nil {
+		return request.AppID[:]
+	}
+	return nil
+}
+
+// recoverDispatch contains a panicking request handler. A single thin
+// client must never be able to crash the daemon for every other
+// connected client (security audit finding C1): a handler bug or a
+// malformed request is logged and dropped here rather than unwinding
+// the process.
+func (d *Daemon) recoverDispatch(what string, request *Request) {
+	if r := recover(); r != nil {
+		d.log.Errorf("%s: recovered from panic (appID %x): %v\n%s",
+			what, requestAppID(request), r, debug.Stack())
+	}
+}
+
 // dispatchLocal runs handlers that do no mixnet I/O. Invoked inline from
 // the thin client's reader goroutine so key generation, envelope prep, box
 // index arithmetic, and ARQ cancellation proceed without waiting on the
 // Poisson gate.
 func (d *Daemon) dispatchLocal(request *Request) {
+	defer d.recoverDispatch("dispatchLocal", request)
 	switch {
 	case request.NewKeypair != nil:
 		d.newKeypair(request)
@@ -379,7 +405,8 @@ func (d *Daemon) dispatchLocal(request *Request) {
 	case request.CreateCourierEnvelopesFromTombstoneRange != nil:
 		d.createCourierEnvelopesFromTombstoneRange(request)
 	default:
-		panic("dispatchLocal: request is not a local-only variant")
+		d.log.Errorf("dispatchLocal: dropping request with no recognised local variant (appID %x)",
+			requestAppID(request))
 	}
 }
 
@@ -387,6 +414,7 @@ func (d *Daemon) dispatchLocal(request *Request) {
 // egressWorker on each Poisson tick, so these remain fairly rate-limited
 // across all connected clients.
 func (d *Daemon) dispatchMixnet(request *Request) {
+	defer d.recoverDispatch("dispatchMixnet", request)
 	switch {
 	case request.ResendARQ != nil:
 		d.arqDoResend(request.ResendARQ)
@@ -399,7 +427,8 @@ func (d *Daemon) dispatchMixnet(request *Request) {
 	case request.StartResendingCopyCommand != nil:
 		d.startResendingCopyCommand(request)
 	default:
-		panic("dispatchMixnet: request is not a mixnet-bound variant")
+		d.log.Errorf("dispatchMixnet: dropping request with no recognised mixnet variant (appID %x)",
+			requestAppID(request))
 	}
 }
 

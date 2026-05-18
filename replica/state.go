@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/linxGnu/grocksdb"
@@ -88,7 +90,13 @@ var (
 	ErrFailedDBRead        = errors.New("Failed to read from database")
 	ErrFailedToDeserialize = errors.New("Failed to deserialize data from DB")
 	ErrDBClosed            = errors.New("DB is closed")
+	ErrStorageFull         = errors.New("replica storage full")
 )
+
+// storageCheckInterval is how often the storage watcher samples the
+// database size and filesystem free space. Sampling (rather than
+// probing on every write) keeps the hot path a single atomic load.
+const storageCheckInterval = 30 * time.Second
 
 type state struct {
 	worker.Worker
@@ -106,6 +114,13 @@ type state struct {
 	// database I/O, so it does not serialize the actual write work.
 	locksMu  sync.Mutex
 	boxLocks map[[32]byte]*boxLock
+
+	// storageFull is set by the storage watcher when the database has
+	// hit the configured MaxStorageBytes quota or the DataDir
+	// filesystem free space has dropped below MinFreeStorageBytes. The
+	// write path reads it with a single atomic load; tombstones are
+	// never gated by it because they free space.
+	storageFull atomic.Bool
 }
 
 // acquireBoxLock returns a locked per-BoxID mutex. The caller MUST
@@ -174,6 +189,82 @@ func (s *state) dbPath() string {
 	path := filepath.Join(s.server.cfg.DataDir, "replica.db")
 	s.log.Debugf("state: Database path: %s", path)
 	return path
+}
+
+// startStorageWatcher launches the periodic storage-pressure sampler.
+func (s *state) startStorageWatcher() {
+	s.Go(s.storageWatcher)
+}
+
+// storageWatcher samples database size and filesystem free space on a
+// fixed interval and toggles s.storageFull. The write path then only
+// performs a cheap atomic load (see the audit's "periodically
+// sampled, not per-Put" guidance). It mirrors gcWorker's shutdown
+// discipline.
+func (s *state) storageWatcher() {
+	s.refreshStorageFull() // evaluate once at startup before the first tick
+	timer := time.NewTimer(storageCheckInterval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-s.HaltCh():
+			s.log.Debug("state: storage watcher terminating gracefully.")
+			return
+		case <-timer.C:
+		}
+		s.refreshStorageFull()
+		timer.Reset(storageCheckInterval)
+	}
+}
+
+// dbOnDiskBytes returns RocksDB's live SST footprint, or (0, false) if
+// the property is unavailable.
+func (s *state) dbOnDiskBytes() (uint64, bool) {
+	if s.db == nil {
+		return 0, false
+	}
+	v := s.db.GetProperty("rocksdb.total-sst-files-size")
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// refreshStorageFull recomputes whether the replica should refuse new
+// writes. It is "full" when the operator's MaxStorageBytes quota is
+// set and the database has reached it, or when the DataDir filesystem
+// has less than MinFreeStorageBytes available. Probe failures are
+// treated as "not full" so a transient measurement error never blocks
+// an otherwise healthy replica; the next tick re-evaluates.
+func (s *state) refreshStorageFull() {
+	cfg := s.server.cfg
+	full := false
+	reason := ""
+
+	if cfg.MaxStorageBytes > 0 {
+		if used, ok := s.dbOnDiskBytes(); ok && used >= uint64(cfg.MaxStorageBytes) {
+			full = true
+			reason = fmt.Sprintf("db size %d >= MaxStorageBytes %d", used, cfg.MaxStorageBytes)
+		}
+	}
+
+	if !full && cfg.MinFreeStorageBytes > 0 {
+		if avail, ok := availableBytes(s.server.cfg.DataDir); ok && avail < uint64(cfg.MinFreeStorageBytes) {
+			full = true
+			reason = fmt.Sprintf("free space %d < MinFreeStorageBytes %d", avail, cfg.MinFreeStorageBytes)
+		}
+	}
+
+	prev := s.storageFull.Swap(full)
+	if full && !prev {
+		s.log.Warningf("state: entering storage-full state (%s); new writes will be rejected with ReplicaErrorStorageFull", reason)
+	} else if !full && prev {
+		s.log.Noticef("state: storage pressure relieved; accepting writes again")
+	}
 }
 
 func (s *state) initDB() {
@@ -276,6 +367,17 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	if s.db == nil {
 		s.log.Error("state: Database is closed, cannot perform write")
 		return fmt.Errorf(errDatabaseClosed)
+	}
+
+	// Refuse new writes under storage pressure. Tombstones
+	// (handleReplicaTombstone) are deliberately NOT gated: they
+	// replace a box with an empty payload and so free, never grow,
+	// storage, and a client must be able to delete in order to
+	// recover. ReplicaErrorStorageFull is a terminal code, so the
+	// client stops rather than retrying into a wall.
+	if s.storageFull.Load() {
+		s.log.Warningf("state: rejecting write for BoxID %x: storage full", replicaWrite.BoxID)
+		return ErrStorageFull
 	}
 
 	// Serialize check-and-put for this BoxID so concurrent writers
