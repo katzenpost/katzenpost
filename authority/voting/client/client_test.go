@@ -237,6 +237,7 @@ type conn struct {
 	serverConn    net.Conn
 	clientConn    net.Conn
 	dialCh        chan interface{}
+	dialOnce      sync.Once
 	signingKey    sign.PrivateKey
 	signingPubKey sign.PublicKey
 }
@@ -257,10 +258,13 @@ func newMockDialer(logBackend *log.Backend) *mockDialer {
 }
 
 func (d *mockDialer) dial(ctx context.Context, network string, address string) (net.Conn, error) {
+	// A connector may dial the same address more than once across retry
+	// rounds; close the signalling channel only on the first dial.
 	defer func() {
 		d.Lock()
-		close(d.netMap[address].dialCh)
+		c := d.netMap[address]
 		d.Unlock()
+		c.dialOnce.Do(func() { close(c.dialCh) })
 	}()
 
 	d.log.Debug("MOCK DIAL %s", address)
