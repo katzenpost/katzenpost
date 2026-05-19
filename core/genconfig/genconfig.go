@@ -697,8 +697,6 @@ func RunGenConfig(cfg Config) error {
 		LambdaPMaxDelay:   cfg.LPMax,
 		LambdaL:           cfg.LL,
 		LambdaLMaxDelay:   cfg.LLMax,
-		LambdaD:           cfg.LD,
-		LambdaDMaxDelay:   cfg.LDMax,
 		LambdaM:           cfg.LM,
 		LambdaMMaxDelay:   cfg.LMMax,
 		LambdaGMaxDelay:   cfg.LGMax,
