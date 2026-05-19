@@ -11,6 +11,32 @@ The TOML field names below match the corresponding Go struct field
 names exactly. Required actions for an operator upgrading from v0.0.71
 are marked **[breaking]**; everything else is opt-in.
 
+## A note on decoding behaviour
+
+Every component except the thin client decodes its TOML with
+BurntSushi's `toml.Unmarshal`, which is lenient: a key or table that no
+longer maps to a Go struct field is silently ignored, not rejected. A
+config carrying a **removed** field therefore still loads; the field
+simply has no effect. The required operator action for a removed field
+is housekeeping (delete the dead lines so the file reflects reality),
+not an emergency: leaving it in place will not stop the daemon.
+
+The genuine hard failures are narrower and are called out explicitly
+where they occur:
+
+- **validation requirements**: a field whose *absence* fails
+  `FixupAndValidate`, e.g. the client daemon's `[Listen]`.
+- **the thin client's strict check**: `thinclient.toml` is decoded with
+  `toml.NewDecoder(...).Decode` followed by a `MetaData.Undecoded()`
+  check, so an unknown or stale key there *is* rejected at load.
+- **semantic collisions**: a field that decodes cleanly but whose value
+  is then rejected by a consistency rule, e.g. duplicate replica
+  `ReplicaID`.
+
+"**[breaking]**" below means "the operator must act to preserve
+previous behaviour or to satisfy a new requirement", which is not
+always the same as "the file fails to parse".
+
 ## Directory authority (`authority.toml`)
 
 Source: `authority/voting/server/config/config.go`.
@@ -29,10 +55,20 @@ The replica entries are now their own table type rather than re-using
 the `[[Mixes]]`/`[[GatewayNodes]]`/`[[ServiceNodes]]` `Node` shape.
 
 - **Added** `ReplicaID` (uint8). **[breaking]** A static identifier
-  unique within the replica set. Every dirauth must agree on the same
-  `ReplicaID` for each replica's `IdentityPublicKeyPem`. Without this
-  field the dirauth refuses to start (`config: StorageReplicaNode is
-  missing ...`) or rejects the descriptor on consensus.
+  unique within the replica set. Every dirauth, and the replica itself,
+  must agree on the same `ReplicaID` for each replica's
+  `IdentityPublicKeyPem`. The field is not checked by
+  `StorageReplicaNode.validate()` (which only rejects a missing
+  `Identifier` or `IdentityPublicKeyPem`), and uint8 has no
+  distinguished "unset" value: an omitted `ReplicaID` decodes as `0`.
+  The breaking effect is therefore semantic, not a decode error. If
+  more than one replica omits the field they collide on `0` and
+  `FixupAndValidate` fails with `config: Storage Replica Node:
+  ReplicaID '0' is used by both '<a>' and '<b>'`; and a `ReplicaID`
+  that decodes cleanly but disagrees with the value the replica and the
+  other dirauths use yields an inconsistent consensus and misrouted
+  shards rather than a startup error. Set it explicitly on every
+  replica entry.
 
   Example:
 
@@ -65,12 +101,30 @@ Source: `server/config/config.go`.
 ### `[Server.Gateway]`
 
 - **Removed** `[Gateway.UserDB]` table (and its `[Gateway.UserDB.Bolt]`
-  and `[Gateway.UserDB.Extern]` inner tables). **[breaking]** Old
-  configs that included these will fail to decode. The userdb backend
-  has been removed entirely.
+  and `[Gateway.UserDB.Extern]` inner tables). **[breaking]** The userdb
+  backend has been removed entirely. The server `Gateway` struct now
+  exposes only `SpoolDB`, so a stale `[Gateway.UserDB]` table is
+  silently ignored at load (BurntSushi is lenient); the operator action
+  is to delete it, since the functionality it configured is gone.
 - **Removed** `[Gateway.SQLDB]` table. **[breaking]** SQL-backed
-  storage is no longer supported. Only the BoltDB spool (`[Gateway.SpoolDB.Bolt]`)
-  remains.
+  storage is no longer supported; only the BoltDB spool
+  (`[Gateway.SpoolDB.Bolt]`) remains. As above, a leftover
+  `[Gateway.SQLDB]` table is silently ignored rather than rejected, so
+  the operator must remove it to regain a config that reflects reality.
+
+### `[Debug]`
+
+The "provider" worker pool was split into separate gateway and service
+pools, and the corresponding `[Debug]` knobs were renamed accordingly.
+
+- **Removed** `NumProviderWorkers` (int). **[breaking]** Replaced by
+  `NumServiceWorkers` and `NumGatewayWorkers`, each defaulting to `3`.
+  A config that still sets `NumProviderWorkers` is silently ignored, so
+  the value no longer takes effect: an operator who had tuned this must
+  re-express the intent under the two new keys.
+- **Removed** `ProviderDelay` (int). **[breaking]** Replaced by
+  `GatewayDelay` and `ServiceDelay`, each defaulting to `500` ms, with
+  the same silent-ignore caveat as above.
 
 ### Defaults
 
@@ -117,8 +171,10 @@ Source: `replica/config/config.go`.
   default; a positive value overrides it. Must not be negative.
   Tombstones (deletions) are never gated by either limit, so a full
   replica can still be reclaimed.
-- **Removed** `ReplicationQueueLength` (int). **[breaking]** No longer
-  consumed; remove from existing TOML.
+- **Removed** `ReplicationQueueLength` (int). No longer consumed. The
+  replica decodes via the lenient common loader, so a leftover
+  `ReplicationQueueLength` is silently ignored and does not block
+  startup; remove it from existing TOML as housekeeping.
 
 ### Defaults
 
@@ -181,15 +237,19 @@ The client TOML had the most substantial reshape, driven by the
   `LinkKey`, `PKISignatureScheme`, and `Addresses`. The `IdentityKey`
   and `LinkKey` are PEM-encoded inline.
 
-- **Removed** `RatchetNIKEScheme` (string). **[breaking]** No longer
-  consumed; remove from existing TOML.
+- **Removed** `RatchetNIKEScheme` (string). No longer consumed. The
+  client daemon decodes with the lenient `toml.Unmarshal`, so a
+  leftover `RatchetNIKEScheme` is silently ignored rather than rejected;
+  remove it from existing TOML as housekeeping. (The genuinely breaking
+  client change is the now-required `[Listen]`, above.)
 
 ### `[Debug]`
 
 - **Added** `EnableTimeSync` (bool). Use skewed remote provider time
   instead of system time when available.
-- **Removed** `PreferedTransports` ([]string). **[breaking]** No
-  longer consumed; remove from existing TOML.
+- **Removed** `PreferedTransports` ([]string). No longer consumed, and
+  silently ignored by the lenient client decoder rather than rejected;
+  remove it from existing TOML as housekeeping.
 
 ### `[[VotingAuthority.Peers]]` and the new `[[PinnedGateways.Gateways]]`
 
