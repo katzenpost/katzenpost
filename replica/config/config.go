@@ -24,12 +24,12 @@ const (
 	defaultProxyRequestTimeout    = 300        // Default proxy request timeout in seconds (5 minutes)
 	defaultProxyWorkerCount       = 8          // Default number of proxy request worker goroutines
 
-	// DefaultMinFreeStorageBytes is the default filesystem free-space
-	// reserve. By default the replica will use the DataDir filesystem
-	// freely but stop accepting new writes once fewer than this many
-	// bytes remain available, so a runaway write rate cannot wedge the
-	// host on a full disk. 500 MiB.
-	DefaultMinFreeStorageBytes = 500 * 1024 * 1024
+	// DefaultMinFreeStorageMiB is the default filesystem free-space
+	// reserve, in mebibytes. By default the replica will use the
+	// DataDir filesystem freely but stop accepting new writes once
+	// fewer than this many MiB remain available, so a runaway write
+	// rate cannot wedge the host on a full disk.
+	DefaultMinFreeStorageMiB = 500
 )
 
 // Type aliases for common configuration structures
@@ -126,21 +126,23 @@ type Config struct {
 	// key generation.
 	GenerateOnly bool
 
-	// MaxStorageBytes, when greater than zero, is a hard quota on the
-	// replica database's on-disk size (measured from RocksDB's live
-	// SST footprint). Writes that would grow the store past this are
+	// MaxStorageMiB, when greater than zero, is a hard quota on the
+	// replica database's on-disk size, expressed in mebibytes (1 MiB =
+	// 1024*1024 bytes). The quota is enforced against RocksDB's live
+	// SST footprint. Writes that would grow the store past this are
 	// rejected with ReplicaErrorStorageFull. Zero (the default) leaves
 	// the database size unbounded except by the filesystem reserve
 	// below.
-	MaxStorageBytes int64
+	MaxStorageMiB int64
 
-	// MinFreeStorageBytes is the filesystem free-space reserve on the
-	// DataDir filesystem. New writes are rejected with
-	// ReplicaErrorStorageFull once fewer than this many bytes remain
-	// available, regardless of MaxStorageBytes, so the replica never
-	// fills the host disk. Zero selects DefaultMinFreeStorageBytes
-	// (500 MiB); a positive value overrides it.
-	MinFreeStorageBytes int64
+	// MinFreeStorageMiB is the filesystem free-space reserve on the
+	// DataDir filesystem, in mebibytes (1 MiB = 1024*1024 bytes). New
+	// writes are rejected with ReplicaErrorStorageFull once fewer than
+	// this many MiB remain available, regardless of MaxStorageMiB, so
+	// the replica never fills the host disk. Zero selects
+	// DefaultMinFreeStorageMiB (500 MiB); a positive value overrides
+	// it.
+	MinFreeStorageMiB int64
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
@@ -168,14 +170,14 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 		}
 	}
 
-	if c.MaxStorageBytes < 0 {
-		return fmt.Errorf("config: MaxStorageBytes must not be negative, got %d", c.MaxStorageBytes)
+	if c.MaxStorageMiB < 0 {
+		return fmt.Errorf("config: MaxStorageMiB must not be negative, got %d", c.MaxStorageMiB)
 	}
-	if c.MinFreeStorageBytes < 0 {
-		return fmt.Errorf("config: MinFreeStorageBytes must not be negative, got %d", c.MinFreeStorageBytes)
+	if c.MinFreeStorageMiB < 0 {
+		return fmt.Errorf("config: MinFreeStorageMiB must not be negative, got %d", c.MinFreeStorageMiB)
 	}
-	if c.MinFreeStorageBytes == 0 {
-		c.MinFreeStorageBytes = DefaultMinFreeStorageBytes
+	if c.MinFreeStorageMiB == 0 {
+		c.MinFreeStorageMiB = DefaultMinFreeStorageMiB
 	}
 
 	return c.setupLoggingDefaults()
