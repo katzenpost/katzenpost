@@ -115,14 +115,6 @@ type Document struct {
 	// LambdaLMaxDelay is the maximum time interval in milliseconds.
 	LambdaLMaxDelay uint64
 
-	// LambdaD is the inverse of the mean of the exponential distribution
-	// that clients will sample to determine the time interval between sending
-	// decoy drop messages.
-	LambdaD float64
-
-	// LambdaDMaxDelay is the maximum time interval in milliseconds.
-	LambdaDMaxDelay uint64
-
 	// LambdaM is the inverse of the mean of the exponential distribution
 	// that mixes will sample to determine send timing of mix loop decoy traffic.
 	LambdaM float64
@@ -219,7 +211,7 @@ func (d *Document) String() string {
 	}
 	psrv += "]"
 
-	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nSendRatePerMinute: %v Mu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaD:%v LambdaDMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.SendRatePerMinute, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaD, d.LambdaDMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv, psrv)
+	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nSendRatePerMinute: %v Mu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.SendRatePerMinute, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv, psrv)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("  [%v]{", l)
 		s += fmt.Sprintf("%v", nodes)

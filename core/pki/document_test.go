@@ -139,8 +139,6 @@ func TestDocument(t *testing.T) {
 	require.Equal(doc.LambdaPMaxDelay, ddoc.LambdaPMaxDelay, "ParseDocument(): LambdaPMaxDelay")
 	require.Equal(doc.LambdaL, ddoc.LambdaL, "ParseDocument(): LambdaL")
 	require.Equal(doc.LambdaLMaxDelay, ddoc.LambdaLMaxDelay, "ParseDocument(): LambdaLMaxDelay")
-	require.Equal(doc.LambdaD, ddoc.LambdaD, "ParseDocument(): LambdaD")
-	require.Equal(doc.LambdaDMaxDelay, ddoc.LambdaDMaxDelay, "ParseDocument(): LambdaDMaxDelay")
 	require.Equal(doc.LambdaM, ddoc.LambdaM, "ParseDocument(): LambdaM")
 	require.Equal(doc.LambdaMMaxDelay, ddoc.LambdaMMaxDelay, "ParseDocument(): LambdaMMaxDelay")
 	require.Equal(doc.SharedRandomValue, ddoc.SharedRandomValue, "ParseDocument(): SharedRandomValue")
