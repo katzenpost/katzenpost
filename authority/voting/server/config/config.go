@@ -63,8 +63,6 @@ const (
 	defaultLambdaPMaxPercentile = 0.99999
 	defaultLambdaL              = 0.00025
 	defaultLambdaLMaxPercentile = 0.99999
-	defaultLambdaD              = 0.00025
-	defaultLambdaDMaxPercentile = 0.99999
 	defaultLambdaM              = 0.00025
 	defaultLambdaMMaxPercentile = 0.99999
 	defaultLambdaR              = 0.00025
@@ -131,13 +129,6 @@ type Parameters struct {
 	// LambdaLMaxDelay sets the maximum delay for LambdaP.
 	LambdaLMaxDelay uint64
 
-	// LambdaD is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between clients sending deop decoys.
-	LambdaD float64
-
-	// LambdaDMaxDelay sets the maximum delay for LambdaP.
-	LambdaDMaxDelay uint64
-
 	// LambdaM is the inverse of the mean of the exponential distribution
 	// that is used to select the delay between sending mix node decoys.
 	LambdaM float64
@@ -182,12 +173,6 @@ func (pCfg *Parameters) validate() error {
 	}
 	if pCfg.LambdaLMaxDelay > absoluteMaxDelay {
 		return fmt.Errorf("config: Parameters: LambdaLMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
-	}
-	if pCfg.LambdaD < 0 {
-		return fmt.Errorf("config: Parameters: LambdaD %v is invalid", pCfg.LambdaP)
-	}
-	if pCfg.LambdaDMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaDMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
 	}
 	if pCfg.LambdaM < 0 {
 		return fmt.Errorf("config: Parameters: LambdaM %v is invalid", pCfg.LambdaP)
@@ -235,12 +220,6 @@ func (pCfg *Parameters) applyDefaults() {
 	}
 	if pCfg.LambdaLMaxDelay == 0 {
 		pCfg.LambdaLMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaL, defaultLambdaLMaxPercentile))
-	}
-	if pCfg.LambdaD == 0 {
-		pCfg.LambdaD = defaultLambdaD
-	}
-	if pCfg.LambdaDMaxDelay == 0 {
-		pCfg.LambdaDMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaD, defaultLambdaDMaxPercentile))
 	}
 	if pCfg.LambdaM == 0 {
 		pCfg.LambdaM = defaultLambdaM
