@@ -81,8 +81,6 @@ func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme
 		LambdaPMaxDelay:   1,
 		LambdaL:           1,
 		LambdaLMaxDelay:   1,
-		LambdaD:           1,
-		LambdaDMaxDelay:   1,
 		LambdaM:           1,
 		LambdaMMaxDelay:   1,
 		LambdaG:           1,
