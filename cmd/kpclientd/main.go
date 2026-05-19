@@ -15,11 +15,13 @@ import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/common/tomlstrict"
 )
 
 // Config holds the command line configuration
 type Config struct {
-	ConfigFile string
+	ConfigFile   string
+	ValidateOnly bool
 }
 
 // newRootCommand creates the root cobra command
@@ -50,7 +52,10 @@ applications to share a single network connection.`,
   kpclientd --config /etc/katzenpost/client.toml
 
   # Start daemon with specific config file (short form)
-  kpclientd -c /path/to/custom-client.toml`,
+  kpclientd -c /path/to/custom-client.toml
+
+  # Validate the configuration file and exit without side effects
+  kpclientd -c /etc/katzenpost/client.toml --validate-only`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runClientDaemon(cfg)
 		},
@@ -59,6 +64,10 @@ applications to share a single network connection.`,
 	// Configuration flags
 	cmd.Flags().StringVarP(&cfg.ConfigFile, "config", "c", "",
 		"path to the client configuration file (TOML format)")
+
+	// Operation mode flags
+	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
+		"load and validate the configuration file, then exit without side effects")
 
 	// Mark required flags
 	cmd.MarkFlagRequired("config")
@@ -79,6 +88,13 @@ func runClientDaemon(cfg Config) error {
 	clientCfg, err := config.LoadFile(cfg.ConfigFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config file: %v", err)
+	}
+	if cfg.ValidateOnly {
+		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {
+			return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
+		}
+		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", cfg.ConfigFile)
+		return nil
 	}
 
 	d, err := client.NewDaemon(clientCfg)

@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/common/tomlstrict"
 	"github.com/katzenpost/katzenpost/core/compat"
 	"github.com/katzenpost/katzenpost/server"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -33,8 +34,9 @@ import (
 
 // Config holds the command line configuration
 type Config struct {
-	ConfigFile string
-	GenOnly    bool
+	ConfigFile   string
+	GenOnly      bool
+	ValidateOnly bool
 }
 
 // newRootCommand creates the root cobra command
@@ -120,6 +122,8 @@ operational parameters.`,
 	// Operation mode flags
 	cmd.Flags().BoolVarP(&cfg.GenOnly, "generate-only", "g", false,
 		"generate cryptographic keys and exit without starting server")
+	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
+		"load and validate the configuration file, then exit without side effects")
 
 	return cmd
 }
@@ -146,6 +150,13 @@ func runServer(cfg Config) error {
 	serverCfg, err := config.LoadFile(cfg.ConfigFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config file '%v': %v", cfg.ConfigFile, err)
+	}
+	if cfg.ValidateOnly {
+		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {
+			return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
+		}
+		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", cfg.ConfigFile)
+		return nil
 	}
 	if cfg.GenOnly && !serverCfg.Debug.GenerateOnly {
 		serverCfg.Debug.GenerateOnly = true
