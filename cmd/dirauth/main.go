@@ -27,13 +27,15 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/common/tomlstrict"
 	"github.com/katzenpost/katzenpost/core/compat"
 )
 
 // Config holds the command line configuration
 type Config struct {
-	ConfigFile string
-	GenOnly    bool
+	ConfigFile   string
+	GenOnly      bool
+	ValidateOnly bool
 }
 
 // newRootCommand creates the root cobra command
@@ -78,7 +80,10 @@ authority can compromise the network's security or availability.`,
   dirauth --generate-only
 
   # Generate keys with custom config and exit
-  dirauth -f /etc/katzenpost/authority.toml --generate-only`,
+  dirauth -f /etc/katzenpost/authority.toml --generate-only
+
+  # Validate the configuration file and exit without side effects
+  dirauth -f /etc/katzenpost/authority.toml --validate-only`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAuthority(cfg)
 		},
@@ -93,6 +98,8 @@ authority can compromise the network's security or availability.`,
 	// Operation mode flags
 	cmd.Flags().BoolVarP(&cfg.GenOnly, "generate-only", "g", false,
 		"generate cryptographic keys and exit without starting authority")
+	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
+		"load and validate the configuration file, then exit without side effects")
 
 	return cmd
 }
@@ -110,6 +117,13 @@ func runAuthority(cfg Config) error {
 	authorityCfg, err := config.LoadFile(cfg.ConfigFile, cfg.GenOnly)
 	if err != nil {
 		return fmt.Errorf("failed to load config file '%v': %v", cfg.ConfigFile, err)
+	}
+	if cfg.ValidateOnly {
+		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {
+			return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
+		}
+		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", cfg.ConfigFile)
+		return nil
 	}
 
 	// Setup the signal handling.
