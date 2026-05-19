@@ -116,10 +116,10 @@ type state struct {
 	boxLocks map[[32]byte]*boxLock
 
 	// storageFull is set by the storage watcher when the database has
-	// hit the configured MaxStorageBytes quota or the DataDir
-	// filesystem free space has dropped below MinFreeStorageBytes. The
-	// write path reads it with a single atomic load; tombstones are
-	// never gated by it because they free space.
+	// hit the configured MaxStorageMiB quota or the DataDir filesystem
+	// free space has dropped below MinFreeStorageMiB. The write path
+	// reads it with a single atomic load; tombstones are never gated
+	// by it because they free space.
 	storageFull atomic.Bool
 }
 
@@ -235,27 +235,30 @@ func (s *state) dbOnDiskBytes() (uint64, bool) {
 }
 
 // refreshStorageFull recomputes whether the replica should refuse new
-// writes. It is "full" when the operator's MaxStorageBytes quota is
-// set and the database has reached it, or when the DataDir filesystem
-// has less than MinFreeStorageBytes available. Probe failures are
-// treated as "not full" so a transient measurement error never blocks
-// an otherwise healthy replica; the next tick re-evaluates.
+// writes. It is "full" when the operator's MaxStorageMiB quota is set
+// and the database has reached it, or when the DataDir filesystem has
+// less than MinFreeStorageMiB available. Probe failures are treated
+// as "not full" so a transient measurement error never blocks an
+// otherwise healthy replica; the next tick re-evaluates.
 func (s *state) refreshStorageFull() {
 	cfg := s.server.cfg
 	full := false
 	reason := ""
+	const bytesPerMiB = uint64(1024 * 1024)
 
-	if cfg.MaxStorageBytes > 0 {
-		if used, ok := s.dbOnDiskBytes(); ok && used >= uint64(cfg.MaxStorageBytes) {
+	if cfg.MaxStorageMiB > 0 {
+		quota := uint64(cfg.MaxStorageMiB) * bytesPerMiB
+		if used, ok := s.dbOnDiskBytes(); ok && used >= quota {
 			full = true
-			reason = fmt.Sprintf("db size %d >= MaxStorageBytes %d", used, cfg.MaxStorageBytes)
+			reason = fmt.Sprintf("db size %d bytes >= MaxStorageMiB quota %d MiB (%d bytes)", used, cfg.MaxStorageMiB, quota)
 		}
 	}
 
-	if !full && cfg.MinFreeStorageBytes > 0 {
-		if avail, ok := availableBytes(s.server.cfg.DataDir); ok && avail < uint64(cfg.MinFreeStorageBytes) {
+	if !full && cfg.MinFreeStorageMiB > 0 {
+		reserve := uint64(cfg.MinFreeStorageMiB) * bytesPerMiB
+		if avail, ok := availableBytes(s.server.cfg.DataDir); ok && avail < reserve {
 			full = true
-			reason = fmt.Sprintf("free space %d < MinFreeStorageBytes %d", avail, cfg.MinFreeStorageBytes)
+			reason = fmt.Sprintf("free space %d bytes < MinFreeStorageMiB reserve %d MiB (%d bytes)", avail, cfg.MinFreeStorageMiB, reserve)
 		}
 	}
 
