@@ -103,7 +103,6 @@ type Listener interface {
 	CloseOldConns(interface{}) error
 	GetConnIdentities() (map[[constants.RecipientIDLength]byte]interface{}, error)
 	OnNewSendRatePerMinute(uint64)
-	OnNewSendBurst(uint64)
 }
 
 type Decoy interface {
