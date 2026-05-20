@@ -1162,8 +1162,17 @@ func (e *Courier) tryReadFromShardReplica(
 		ReadMsg:     readMsg,
 	}
 
+	// Length-prefix-and-pad so the replica's
+	// ExtractMessageFromPaddedPayload recovers the exact bytes after MKEM
+	// decryption. The pigeonhole protocol pads every inbound inner
+	// message regardless of read vs write.
+	paddedInnerMsg, err := pigeonhole.PadInnerMessageForEncryption(innerMsg, e.pigeonholeGeo)
+	if err != nil {
+		return nil, 0, fmt.Errorf("pad inner read message: %w", err)
+	}
+
 	mkemScheme := mkem.NewScheme(e.envelopeScheme)
-	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, innerMsg.Bytes())
+	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
 
 	query := &commands.ReplicaMessage{
 		Cmds:               e.cmds,
@@ -1313,9 +1322,17 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 			WriteMsg:    writeMsg,
 		}
 
+		// Length-prefix-and-pad to match the inbound inner-message
+		// format the replica expects after MKEM decryption.
+		paddedInnerMsg, err := pigeonhole.PadInnerMessageForEncryption(innerMsg, e.pigeonholeGeo)
+		if err != nil {
+			e.log.Errorf("writeTombstone: pad inner message: %v", err)
+			continue
+		}
+
 		// Encrypt using MKEM for whichever shard keys we have.
 		mkemScheme := mkem.NewScheme(e.envelopeScheme)
-		mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(usablePubKeys, innerMsg.Bytes())
+		mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
 		mkemPublicKey := mkemPrivateKey.Public()
 
 		// Build per-replica ReplicaMessages (all share SenderEPubKey +
