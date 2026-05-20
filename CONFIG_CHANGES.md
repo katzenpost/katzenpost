@@ -48,6 +48,28 @@ Source: `authority/voting/server/config/config.go`.
   decoy traffic between each other. Defaulted to `0.00025` if unset.
 - **Added** `LambdaRMaxDelay` (uint64). Maximum delay for `LambdaR`,
   in milliseconds. Defaulted from `LambdaR` if unset.
+- **Removed** `SendRatePerMinute` (uint64). The gateway daemon now
+  derives its per-client token-bucket parameters internally on every
+  PKI-document update from `doc.LambdaP + doc.LambdaL`, with a
+  10 percent refill headroom and a bucket cap of 256. No operator
+  surface is exposed; the consensus document publishes the rates,
+  the gateway enforces them. A stale `SendRatePerMinute` line in the
+  authority TOML is silently ignored by the lenient loader (and the
+  field is also no longer carried in the signed PKI document; see
+  the PKI document section).
+- **Removed** `LambdaD` (float64) and `LambdaDMaxDelay` (uint64).
+  These governed the now-retired drop-decoy Poisson process; the
+  client collapsed to a two-ticker model (`LambdaP` for
+  message-or-loop-decoy, `LambdaL` for loop-decoy-only) and no
+  client code samples `LambdaD` any more. Silently ignored if left
+  in `authority.toml`.
+- **Changed semantics** `LambdaG` (float64). Still decoded by
+  BurntSushi but now overridden by an internally computed value: the
+  dirauth derives `LambdaG` from the number of gateway nodes and the
+  other lambdas, so any value set in TOML has no effect. The field
+  carries an in-source `WARNING` comment to that effect. Remove from
+  existing files as housekeeping; `LambdaGMaxDelay` is still
+  operator-set and is validated as non-zero.
 
 ### `[[StorageReplicas]]`
 
@@ -138,6 +160,18 @@ pools, and the corresponding `[Debug]` knobs were renamed accordingly.
   the SpoolDB or UserDB tables must drop those settings; only `"bolt"`
   is now valid.
 
+### Management socket commands
+
+Not a TOML change, but operator-visible. The thwack handlers
+`SEND_RATE` and `SEND_BURST` have both been removed from the gateway
+daemon. The management socket is intended for emergency live
+overrides only; the per-client rate limit is now derived entirely
+from the consensus document's `LambdaP` and `LambdaL` and applied at
+each PKI-document update, with no operator action required. Scripts
+that issued `SEND_RATE <n>` or `SEND_BURST <n>` against
+`/var/lib/katzenpost/management_sock` will receive a "command not
+found" error from thwack and should be retired.
+
 ## Replica (`replica.toml`)
 
 Source: `replica/config/config.go`.
@@ -158,19 +192,24 @@ Source: `replica/config/config.go`.
 - **Added** `MetricsAddress` (string). Address/port for the Prometheus
   metrics endpoint, e.g. `"127.0.0.1:33001"`. Empty disables the
   listener. Validated with `net/netip`.
-- **Added** `MaxStorageBytes` (int64). Optional hard quota on the
-  replica database's on-disk size (RocksDB live SST footprint).
-  Writes that would exceed it are rejected with
+- **Added** `MaxStorageMiB` (int64). Optional hard quota on the
+  replica database's on-disk size in mebibytes (RocksDB live SST
+  footprint). Writes that would exceed it are rejected with
   `ReplicaErrorStorageFull`. Defaults to `0`, meaning no database-size
   quota; only the filesystem reserve below applies. Must not be
-  negative.
-- **Added** `MinFreeStorageBytes` (int64). Filesystem free-space
-  reserve on the `DataDir` filesystem: new writes are rejected with
-  `ReplicaErrorStorageFull` once fewer than this many bytes remain
-  available, regardless of `MaxStorageBytes`. `0` selects the 500 MiB
-  default; a positive value overrides it. Must not be negative.
-  Tombstones (deletions) are never gated by either limit, so a full
-  replica can still be reclaimed.
+  negative. (Renamed from `MaxStorageBytes` during the v0.0.71→main
+  window; the units are now operator-friendly MiB rather than raw
+  bytes. A stale `MaxStorageBytes` is silently ignored by the lenient
+  loader.)
+- **Added** `MinFreeStorageMiB` (int64). Filesystem free-space
+  reserve on the `DataDir` filesystem in mebibytes: new writes are
+  rejected with `ReplicaErrorStorageFull` once fewer than this many
+  MiB remain available, regardless of `MaxStorageMiB`. `0` selects
+  the 500 MiB default; a positive value overrides it. Must not be
+  negative. Tombstones (deletions) are never gated by either limit,
+  so a full replica can still be reclaimed. (Renamed from
+  `MinFreeStorageBytes` for the same units-friendliness reason; the
+  stale name is silently ignored.)
 - **Removed** `ReplicationQueueLength` (int). No longer consumed. The
   replica decodes via the lenient common loader, so a leftover
   `ReplicationQueueLength` is silently ignored and does not block
@@ -178,12 +217,12 @@ Source: `replica/config/config.go`.
 
 ### Defaults
 
-- With `MinFreeStorageBytes` unset, a replica now stops accepting new
+- With `MinFreeStorageMiB` unset, a replica now stops accepting new
   writes once its `DataDir` filesystem has under 500 MiB free. This
   takes effect even if the operator's TOML is otherwise unchanged.
   Previously writes were accepted until the disk filled and the
   condition surfaced only as transient database errors that clients
-  retried. Set `MinFreeStorageBytes` and/or `MaxStorageBytes` to tune.
+  retried. Set `MinFreeStorageMiB` and/or `MaxStorageMiB` to tune.
 
 ## Courier (`courier.toml`)
 
@@ -306,6 +345,24 @@ present. v0 readers will refuse a v1 document via the
 `ParseDocument` version check rather than deserialise it incorrectly.
 All clients, dirauths, mix nodes, replicas, and couriers must run
 the matching code base; mixed-version networks are not supported.
+
+Two further field removals after the version bump:
+
+- `SendRatePerMinute` (uint64). Gone from `core/pki/document.go`;
+  gateway daemons now derive their per-client token-bucket parameters
+  from `LambdaP` and `LambdaL` locally rather than reading the
+  consensus document's published cap. Older code paths that read the
+  field will see zero (the Go zero value when the CBOR decoder finds
+  no matching key), which matches the historical "rate limit
+  disabled" semantics and degrades gracefully.
+
+- `LambdaD` (float64). Gone for the same reason as in the dirauth
+  `[Parameters]`: drop decoys are retired and the client samples no
+  separate `LambdaD` process.
+
+Neither removal triggers a further version bump; CBOR decoding of a
+field absent from the wire payload yields the type's zero value, and
+no code now depends on either field being present.
 
 ## Common defaults
 
