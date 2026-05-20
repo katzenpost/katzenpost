@@ -67,8 +67,8 @@ github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5 h1:n+9aUwSmnz97
 github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5/go.mod h1:9KxLMK17ZLjofnmpVp4Sm315uIF3BAWHVk32EFDRicU=
 github.com/katzenpost/falcon v0.1.0 h1:+WkID41Y6CaWAQE3ijCIfZHu7eHHy8DvAFWCnrW1XDw=
 github.com/katzenpost/falcon v0.1.0/go.mod h1:HtOnkNvwpvTJ3fuXmy4BNw4A8Jg2QetpmkvOPOnOwyU=
-github.com/katzenpost/hpqc v0.0.82 h1:3rLEGseQtjSiVzDnKcqimWhhF2UdXN/4EeNtrtQGa/k=
-github.com/katzenpost/hpqc v0.0.82/go.mod h1:90bsAWXfdsNCZ7BKdLNbR/Sfz7uMt5ybFCMagBBxhKw=
+github.com/katzenpost/hpqc v0.0.83 h1:PumiJTel1I54/0VFh7lvGasowRE0fQFAQa7EnpJwUec=
+github.com/katzenpost/hpqc v0.0.83/go.mod h1:C/MaI/ke/uHR5FCKuqB/GNa/JLoFk9PeBnFoP23dh6Q=
 github.com/katzenpost/nyquist v0.0.13 h1:U4Ogik5WuBoy9l7HFTUGXdc2B/3Xa3QLoK7vTDOPAbw=
 github.com/katzenpost/nyquist v0.0.13/go.mod h1:6DgFOY5YLt9jy2skOpeaM4Rpha2xZ1Vufg5kOzV23Gw=
 github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e h1:cbftK8/GNGA8ye2e2VWkVPLnO/62UadJmG3ddEa6ElU=
@@ -77,8 +77,8 @@ github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 h1:TsKxH0
 github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8/go.mod h1:Hmcrwom7jcEmGdo0CsyuJNnldPeyS+M07FuCbo7I8fw=
 github.com/katzenpost/sphincsplus v0.0.2 h1:W1UWejLK62Lk0uK2R08H/sWEaQrRHWCaMEKO181SoOE=
 github.com/katzenpost/sphincsplus v0.0.2/go.mod h1:ChO9+ojgCH1yEuplGgW4mSI1FwZWtyEmEkG1xL3w264=
-github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520205505-5e9bb658be4b h1:R6/HK04SFarjaZIdrrnJvz7yOhQhUA/6iItnC3pi1uo=
-github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520205505-5e9bb658be4b/go.mod h1:CcVAF5BHgQtHH3lFCmwl3t2KKcXih+8ZcjLbxg8z3D0=
+github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520215053-47e926d8264d h1:mjXmMwB8NRO0+NoUGj9zys2vm02Ia9on0lZE5gVr4X8=
+github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520215053-47e926d8264d/go.mod h1:CcVAF5BHgQtHH3lFCmwl3t2KKcXih+8ZcjLbxg8z3D0=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
 github.com/klauspost/compress v1.18.5/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=

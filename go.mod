@@ -11,7 +11,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20poly1305 v0.0.1
-	github.com/katzenpost/hpqc v0.0.82
+	github.com/katzenpost/hpqc v0.0.83
 	github.com/katzenpost/nyquist v0.0.13
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
 	github.com/linxGnu/grocksdb v1.10.1
@@ -56,7 +56,7 @@ require (
 	github.com/katzenpost/falcon v0.1.0 // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2 // indirect
-	github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520205505-5e9bb658be4b // indirect
+	github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520215053-47e926d8264d // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
