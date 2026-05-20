@@ -6,6 +6,7 @@ package replica
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -13,12 +14,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	authconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -128,6 +131,25 @@ func GenerateTestKeys(t *testing.T, schemes *TestSchemes) *TestKeys {
 		ReplicaPrivKey:  replicaPrivKey,
 		ReplicaKeyBlob:  replicaKeyBlob,
 	}
+}
+
+// WriteTestKeysToDataDir writes the identity and link keys from the
+// given TestKeys into the directory using the same filenames the
+// replica server expects to load on startup (identity.{private,public}.pem
+// and link.{private,public}.pem). Use this BEFORE calling New() in
+// tests, instead of mutating server fields post-construction: the
+// PKIWorker goroutine starts as part of New() and immediately reads
+// linkKey and identityPublicKey, so a later assignment from the test
+// goroutine is a data race even when the pointer write itself is
+// word-atomic on x86. Pre-placing the keys lets New() load them at
+// startup and removes the race entirely.
+func WriteTestKeysToDataDir(t *testing.T, dataDir string, keys *TestKeys) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(dataDir, 0700))
+	require.NoError(t, signpem.PrivateKeyToFile(filepath.Join(dataDir, "identity.private.pem"), keys.IdentityPrivKey))
+	require.NoError(t, signpem.PublicKeyToFile(filepath.Join(dataDir, "identity.public.pem"), keys.IdentityPubKey))
+	require.NoError(t, kempem.PrivateKeyToFile(filepath.Join(dataDir, "link.private.pem"), keys.LinkPrivKey))
+	require.NoError(t, kempem.PublicKeyToFile(filepath.Join(dataDir, "link.public.pem"), keys.LinkPubKey))
 }
 
 // CreateTestConfig creates a standard test configuration

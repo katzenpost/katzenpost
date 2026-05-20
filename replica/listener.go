@@ -38,9 +38,6 @@ type Listener struct {
 	incomingCh chan<- interface{}
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
-
-	sendRatePerMinute uint64
-	sendBurst         uint64
 }
 
 func (l *Listener) Halt() {
@@ -83,6 +80,10 @@ func (l *Listener) worker() {
 			tcpConn.SetKeepAlive(true)
 			keepAliveInterval := time.Duration(l.server.cfg.KeepAliveInterval) * time.Millisecond
 			tcpConn.SetKeepAlivePeriod(keepAliveInterval)
+			// Disable Nagle so the responder's finalisation NoOp does
+			// not wait on a coalesce timer behind the small handshake
+			// messages it follows.
+			tcpConn.SetNoDelay(true)
 		}
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())

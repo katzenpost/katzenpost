@@ -84,7 +84,6 @@ func TestDocument(t *testing.T) {
 	idPub, k, err := testDocumentSignatureScheme.GenerateKey()
 	require.NoError(err)
 
-	testSendRate := uint64(3)
 	sharedRandomCommit := make([]byte, SharedRandomLength)
 	binary.BigEndian.PutUint64(sharedRandomCommit[:8], debugTestEpoch)
 
@@ -92,7 +91,6 @@ func TestDocument(t *testing.T) {
 	doc := &Document{
 		Epoch:              debugTestEpoch,
 		GenesisEpoch:       debugTestEpoch,
-		SendRatePerMinute:  testSendRate,
 		Topology:           make([][]*MixDescriptor, 3),
 		Mu:                 0.42,
 		MuMaxDelay:         23,
@@ -132,15 +130,12 @@ func TestDocument(t *testing.T) {
 	ddoc, err := ParseDocument(signed)
 	require.NoError(err, "ParseDocument()")
 	require.Equal(doc.Epoch, ddoc.Epoch, "ParseDocument(): Epoch")
-	require.Equal(doc.SendRatePerMinute, testSendRate, "ParseDocument(): SendRatePerMinute")
 	require.Equal(doc.Mu, ddoc.Mu, "ParseDocument(): Mu")
 	require.Equal(doc.MuMaxDelay, ddoc.MuMaxDelay, "ParseDocument(): MuMaxDelay")
 	require.Equal(doc.LambdaP, ddoc.LambdaP, "ParseDocument(): LambdaP")
 	require.Equal(doc.LambdaPMaxDelay, ddoc.LambdaPMaxDelay, "ParseDocument(): LambdaPMaxDelay")
 	require.Equal(doc.LambdaL, ddoc.LambdaL, "ParseDocument(): LambdaL")
 	require.Equal(doc.LambdaLMaxDelay, ddoc.LambdaLMaxDelay, "ParseDocument(): LambdaLMaxDelay")
-	require.Equal(doc.LambdaD, ddoc.LambdaD, "ParseDocument(): LambdaD")
-	require.Equal(doc.LambdaDMaxDelay, ddoc.LambdaDMaxDelay, "ParseDocument(): LambdaDMaxDelay")
 	require.Equal(doc.LambdaM, ddoc.LambdaM, "ParseDocument(): LambdaM")
 	require.Equal(doc.LambdaMMaxDelay, ddoc.LambdaMMaxDelay, "ParseDocument(): LambdaMMaxDelay")
 	require.Equal(doc.SharedRandomValue, ddoc.SharedRandomValue, "ParseDocument(): SharedRandomValue")

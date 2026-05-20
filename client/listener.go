@@ -143,6 +143,12 @@ func (l *listener) worker() {
 			}
 			continue
 		}
+		// Disable Nagle so small CBOR command frames between the thin
+		// client and kpclientd do not wait on a coalesce timer;
+		// harmless on Unix-domain accepts (cast fails silently).
+		if tcpConn, ok := conn.(*net.TCPConn); ok {
+			tcpConn.SetNoDelay(true)
+		}
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 		l.onNewConn(conn)
 	}

@@ -598,11 +598,9 @@ func generateTestPKIDocument(t *testing.T, epoch uint64, serviceDesc *pki.MixDes
 
 	return &pki.Document{
 		Epoch:                         epoch,
-		SendRatePerMinute:             100,
 		LambdaP:                       0.002,
 		LambdaPMaxDelay:               10000,
 		LambdaL:                       0.1,
-		LambdaD:                       0.1,
 		LambdaM:                       0.1,
 		LambdaR:                       0.002,
 		LambdaRMaxDelay:               10000,
@@ -658,10 +656,8 @@ func (c *mockPKIClient) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64
 			// Create a copy of the template document with the requested epoch
 			doc = &pki.Document{
 				Epoch:                         epoch,
-				SendRatePerMinute:             templateDoc.SendRatePerMinute,
 				LambdaP:                       templateDoc.LambdaP,
 				LambdaL:                       templateDoc.LambdaL,
-				LambdaD:                       templateDoc.LambdaD,
 				LambdaM:                       templateDoc.LambdaM,
 				LambdaR:                       templateDoc.LambdaR,
 				LambdaRMaxDelay:               templateDoc.LambdaRMaxDelay,
@@ -758,8 +754,10 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
+	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
+	require.NoError(t, err)
 	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(
-		sharding.ReplicaPubKeys, msg.Bytes(),
+		sharding.ReplicaPubKeys, paddedMsg,
 	)
 	mkemPublicKey := mkemPrivateKey.Public()
 
@@ -886,7 +884,9 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.NoError(t, err)
 
 	// pigeonhole.ReplicaMessageReplyInnerMessage
-	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
+	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInnerMsg)
+	require.NoError(t, err)
+	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
 	require.NoError(t, err)
 	require.NotNil(t, innerMsg.ReadReply)
 
@@ -970,7 +970,9 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 		require.NoError(t, err)
 
 		// pigeonhole.ReplicaMessageReplyInnerMessage
-		innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
+		innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInnerMsg)
+		require.NoError(t, err)
+		innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
 		require.NoError(t, err)
 		require.NotNil(t, innerMsg.ReadReply)
 
@@ -1033,7 +1035,9 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 		t.Logf("BoxID %x will be read from replica %d", boxID[:8], replicaIndex)
 	}
 
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, msg.Bytes())
+	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
+	require.NoError(t, err)
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedMsg)
 	mkemPublicKey := mkemPrivateKey.Public()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	senderPubkeyBytes := mkemPublicKey.Bytes()

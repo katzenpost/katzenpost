@@ -121,39 +121,32 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 				return true
 			}
 
-			// send token duration
-			sendRatePerMinute := atomic.LoadUint64(&c.l.sendRatePerMinute)
-			ratePerMin := float64(sendRatePerMinute)
-			sendTokenDuration := uint64((1 / ratePerMin) * 60 * 1000)
+			// Pull the latest token-bucket parameters that the PKI
+			// worker derived from the consensus document's LambdaP
+			// and LambdaL. Both atomics are zero until the first
+			// consensus-document update, at which point the limiter
+			// activates; both zero again disables it.
+			incrNs := atomic.LoadUint64(&c.l.sendTokenIncrNs)
+			maxTokens := atomic.LoadUint64(&c.l.maxSendTokens)
+			newIncr := time.Duration(incrNs)
 
-			switch sendTokenDuration {
-			case uint64(c.sendTokenIncr / time.Millisecond):
-			// The send shift didn't change, don't update anything.
-			case 0:
-				c.log.Debugf("Rate limit disabled, no SendRatePerMinute.")
+			switch {
+			case newIncr == c.sendTokenIncr && maxTokens == c.maxSendTokens:
+				// Unchanged. Preserve the running bucket state.
+			case incrNs == 0:
+				c.log.Debugf("Rate limit disabled, no client emission rate published.")
 				c.sendTokenIncr = 0
 				c.sendTokens = 0
 				c.maxSendTokens = 0
 			default:
-				c.log.Debugf("Rate limit SendRatePerMinute updated: %v", c.sendTokenIncr)
-			}
-			// If there was no previous limit start at 1 send credit.
-			if c.sendTokenIncr == 0 {
-				c.sendTokens = 1
-				c.sendTokenLast = time.Now()
-			}
-			c.sendTokenIncr = time.Duration(sendTokenDuration) * time.Millisecond
-
-			// max send tokens
-			c.maxSendTokens = atomic.LoadUint64(&c.l.sendBurst)
-			switch c.maxSendTokens {
-			case 0:
-				c.log.Debugf("Rate limit disabled, no MaxSendTokens.")
-				c.sendTokenIncr = 0
-				c.sendTokens = 0
-				c.maxSendTokens = 0
-			default:
-				c.log.Debugf("Rate limit MaxSendTokens updated: %v", c.maxSendTokens)
+				c.log.Debugf("Rate limit updated: %d ns per token, cap %d", incrNs, maxTokens)
+				if c.sendTokenIncr == 0 {
+					// Fresh activation: prime the bucket with one token.
+					c.sendTokens = 1
+					c.sendTokenLast = time.Now()
+				}
+				c.sendTokenIncr = newIncr
+				c.maxSendTokens = maxTokens
 			}
 
 			return true
@@ -603,8 +596,9 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	pkt.MustForward = c.fromClient
 	pkt.MustTerminate = c.l.glue.Config().Server.IsServiceNode && !c.fromClient
 
-	// If the packet was from the client, and there is a SendShift for the
-	// current epoch, enforce SendShift based rate limits.
+	// If the packet was from the client and the gateway has activated
+	// its derived token-bucket limit (sendTokenIncr != 0 means a
+	// positive LambdaP+LambdaL was published), enforce it.
 	if c.fromClient && c.sendTokenIncr != 0 {
 		// Update the token bucket for the time that we were idle.
 		deltaT := time.Now().Sub(c.sendTokenLast)
@@ -649,7 +643,6 @@ func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
 		sendTokenLast:     time.Now(),
-		maxSendTokens:     4, // Reasonable burst to avoid some unnecessary rate limiting.
 		closeConnectionCh: make(chan bool),
 		geo:               geo,
 	}

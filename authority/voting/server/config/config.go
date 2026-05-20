@@ -51,9 +51,6 @@ const (
 	defaultMinNodesPerLayer = 2
 	absoluteMaxDelay        = 6 * 60 * 60 * 1000 // 6 hours.
 
-	// rate limiting of client connections
-	defaultSendRatePerMinute = 100
-
 	// Note: These values are picked primarily for debugging and need to
 	// be changed to something more suitable for a production deployment
 	// at some point.
@@ -63,8 +60,6 @@ const (
 	defaultLambdaPMaxPercentile = 0.99999
 	defaultLambdaL              = 0.00025
 	defaultLambdaLMaxPercentile = 0.99999
-	defaultLambdaD              = 0.00025
-	defaultLambdaDMaxPercentile = 0.99999
 	defaultLambdaM              = 0.00025
 	defaultLambdaMMaxPercentile = 0.99999
 	defaultLambdaR              = 0.00025
@@ -106,9 +101,6 @@ func (lCfg *Logging) validate() error {
 
 // Parameters is the network parameters.
 type Parameters struct {
-	// SendRatePerMinute is the rate per minute.
-	SendRatePerMinute uint64
-
 	// Mu is the inverse of the mean of the exponential distribution
 	// that is used to select the delay for each hop.
 	Mu float64
@@ -131,28 +123,19 @@ type Parameters struct {
 	// LambdaLMaxDelay sets the maximum delay for LambdaP.
 	LambdaLMaxDelay uint64
 
-	// LambdaD is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between clients sending deop decoys.
-	LambdaD float64
-
-	// LambdaDMaxDelay sets the maximum delay for LambdaP.
-	LambdaDMaxDelay uint64
-
 	// LambdaM is the inverse of the mean of the exponential distribution
 	// that is used to select the delay between sending mix node decoys.
 	LambdaM float64
 
-	// LambdaG is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between sending gateway node decoys.
-	//
-	// WARNING: This is not used via the TOML config file; this field is only
-	// used internally by the dirauth server state machine.
-	LambdaG float64
-
 	// LambdaMMaxDelay sets the maximum delay for LambdaP.
 	LambdaMMaxDelay uint64
 
-	// LambdaGMaxDelay sets the maximum delay for LambdaG.
+	// LambdaGMaxDelay sets the maximum delay for LambdaG. The
+	// corresponding rate LambdaG is derived by the dirauth from the
+	// network topology via the Coupon Collector's Bound (see
+	// computeLambdaG in authority/voting/server/server.go) rather than
+	// taken from operator-set TOML, so only the max-delay clamp is
+	// operator-tunable here.
 	LambdaGMaxDelay uint64
 
 	// LambdaR is the inverse of the mean of the exponential distribution
@@ -183,12 +166,6 @@ func (pCfg *Parameters) validate() error {
 	if pCfg.LambdaLMaxDelay > absoluteMaxDelay {
 		return fmt.Errorf("config: Parameters: LambdaLMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
 	}
-	if pCfg.LambdaD < 0 {
-		return fmt.Errorf("config: Parameters: LambdaD %v is invalid", pCfg.LambdaP)
-	}
-	if pCfg.LambdaDMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaDMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
-	}
 	if pCfg.LambdaM < 0 {
 		return fmt.Errorf("config: Parameters: LambdaM %v is invalid", pCfg.LambdaP)
 	}
@@ -212,9 +189,6 @@ func (pCfg *Parameters) validate() error {
 }
 
 func (pCfg *Parameters) applyDefaults() {
-	if pCfg.SendRatePerMinute == 0 {
-		pCfg.SendRatePerMinute = defaultSendRatePerMinute
-	}
 	if pCfg.Mu == 0 {
 		pCfg.Mu = defaultMu
 	}
@@ -235,12 +209,6 @@ func (pCfg *Parameters) applyDefaults() {
 	}
 	if pCfg.LambdaLMaxDelay == 0 {
 		pCfg.LambdaLMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaL, defaultLambdaLMaxPercentile))
-	}
-	if pCfg.LambdaD == 0 {
-		pCfg.LambdaD = defaultLambdaD
-	}
-	if pCfg.LambdaDMaxDelay == 0 {
-		pCfg.LambdaDMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaD, defaultLambdaDMaxPercentile))
 	}
 	if pCfg.LambdaM == 0 {
 		pCfg.LambdaM = defaultLambdaM

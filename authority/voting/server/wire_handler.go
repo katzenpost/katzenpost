@@ -46,6 +46,14 @@ func (s *Server) onConn(conn net.Conn) {
 	rAddr := conn.RemoteAddr()
 	lAddr := conn.LocalAddr()
 
+	// Disable Nagle so the responder's finalisation NoOp does not wait
+	// on a coalesce timer behind the small handshake messages it
+	// follows. The cast fails for QUIC connections (rightly so; Nagle
+	// is TCP-specific) and is silently skipped in that case.
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)
+	}
+
 	phaseAtAccept, remainingAtAccept := s.state.PhaseInfo()
 	acceptedAt := time.Now()
 

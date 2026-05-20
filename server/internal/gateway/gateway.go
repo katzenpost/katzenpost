@@ -5,8 +5,6 @@ package gateway
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,7 +12,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -167,52 +164,6 @@ func (p *gateway) worker() {
 	}
 }
 
-func (p *gateway) onSendRate(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	if len(sp) != 2 {
-		c.Log().Debugf("SEND_RATE invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	rate, err := strconv.ParseUint(sp[1], 10, 64)
-	if err != nil {
-		c.Log().Errorf("SEND_RATE invalid duration: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	for _, l := range p.glue.Listeners() {
-		l.OnNewSendRatePerMinute(rate)
-	}
-
-	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, rate)
-}
-
-func (p *gateway) onSendBurst(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	if len(sp) != 2 {
-		c.Log().Debugf("SEND_BURST invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	burst, err := strconv.ParseUint(sp[1], 10, 64)
-	if err != nil {
-		c.Log().Errorf("SEND_BURST invalid integer: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	for _, l := range p.glue.Listeners() {
-		l.OnNewSendBurst(burst)
-	}
-
-	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, burst)
-}
-
 func (p *gateway) onSURBReply(pkt *packet.Packet, recipient []byte) {
 	geo := p.glue.Config().SphinxGeometry
 	if len(pkt.Payload) != geo.PayloadTagLength+geo.ForwardPayloadLength {
@@ -283,17 +234,6 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 	}
 	if err != nil {
 		return nil, err
-	}
-
-	// Wire in the management related commands.
-	if cfg.Management.Enable {
-		const (
-			cmdSendRate  = "SEND_RATE"
-			cmdSendBurst = "SEND_BURST"
-		)
-
-		glue.Management().RegisterCommand(cmdSendRate, p.onSendRate)
-		glue.Management().RegisterCommand(cmdSendBurst, p.onSendBurst)
 	}
 
 	// Start the workers.
