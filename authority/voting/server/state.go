@@ -1425,7 +1425,6 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			LambdaLMaxDelay:   vote.LambdaLMaxDelay,
 			LambdaM:           vote.LambdaM,
 			LambdaMMaxDelay:   vote.LambdaMMaxDelay,
-			LambdaG:           computeLambdaG(s.s.cfg),
 			LambdaGMaxDelay:   vote.LambdaGMaxDelay,
 			LambdaR:           vote.LambdaR,
 			LambdaRMaxDelay:   vote.LambdaRMaxDelay,

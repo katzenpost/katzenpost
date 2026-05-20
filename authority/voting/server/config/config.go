@@ -127,17 +127,15 @@ type Parameters struct {
 	// that is used to select the delay between sending mix node decoys.
 	LambdaM float64
 
-	// LambdaG is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between sending gateway node decoys.
-	//
-	// WARNING: This is not used via the TOML config file; this field is only
-	// used internally by the dirauth server state machine.
-	LambdaG float64
-
 	// LambdaMMaxDelay sets the maximum delay for LambdaP.
 	LambdaMMaxDelay uint64
 
-	// LambdaGMaxDelay sets the maximum delay for LambdaG.
+	// LambdaGMaxDelay sets the maximum delay for LambdaG. The
+	// corresponding rate LambdaG is derived by the dirauth from the
+	// network topology via the Coupon Collector's Bound (see
+	// computeLambdaG in authority/voting/server/server.go) rather than
+	// taken from operator-set TOML, so only the max-delay clamp is
+	// operator-tunable here.
 	LambdaGMaxDelay uint64
 
 	// LambdaR is the inverse of the mean of the exponential distribution
