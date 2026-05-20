@@ -63,13 +63,25 @@ Source: `authority/voting/server/config/config.go`.
   message-or-loop-decoy, `LambdaL` for loop-decoy-only) and no
   client code samples `LambdaD` any more. Silently ignored if left
   in `authority.toml`.
-- **Changed semantics** `LambdaG` (float64). Still decoded by
-  BurntSushi but now overridden by an internally computed value: the
-  dirauth derives `LambdaG` from the number of gateway nodes and the
-  other lambdas, so any value set in TOML has no effect. The field
-  carries an in-source `WARNING` comment to that effect. Remove from
-  existing files as housekeeping; `LambdaGMaxDelay` is still
-  operator-set and is validated as non-zero.
+- **Removed** `LambdaG` (float64). **[breaking]** The field has been
+  deleted from the `Parameters` struct entirely; the dirauth now
+  derives the published `Document.LambdaG` from the network
+  topology via the Coupon Collector's Bound (`computeLambdaG` in
+  `authority/voting/server/server.go`):
+
+  ```
+  LambdaG = (n^2 * log(n) / g) * Mu       events/ms
+  ```
+
+  where `n` is the maximum number of nodes in any mix layer and
+  `g` is the number of gateway nodes. The previous formula
+  (`n * log(n)`, with `n` taken from mix layer 0 alone) was
+  unit-confused and produced rates several orders of magnitude
+  faster than the paper intends. A stale `LambdaG = X` line in
+  `authority.toml` is silently ignored by the lenient BurntSushi
+  loader and the operator action is to delete it; `Document.LambdaG`
+  in the consensus document is unaffected. `LambdaGMaxDelay`
+  remains operator-set and validated as non-zero.
 
 ### `[[StorageReplicas]]`
 
