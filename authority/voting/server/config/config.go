@@ -51,9 +51,6 @@ const (
 	defaultMinNodesPerLayer = 2
 	absoluteMaxDelay        = 6 * 60 * 60 * 1000 // 6 hours.
 
-	// rate limiting of client connections
-	defaultSendRatePerMinute = 100
-
 	// Note: These values are picked primarily for debugging and need to
 	// be changed to something more suitable for a production deployment
 	// at some point.
@@ -104,9 +101,6 @@ func (lCfg *Logging) validate() error {
 
 // Parameters is the network parameters.
 type Parameters struct {
-	// SendRatePerMinute is the rate per minute.
-	SendRatePerMinute uint64
-
 	// Mu is the inverse of the mean of the exponential distribution
 	// that is used to select the delay for each hop.
 	Mu float64
@@ -197,9 +191,6 @@ func (pCfg *Parameters) validate() error {
 }
 
 func (pCfg *Parameters) applyDefaults() {
-	if pCfg.SendRatePerMinute == 0 {
-		pCfg.SendRatePerMinute = defaultSendRatePerMinute
-	}
 	if pCfg.Mu == 0 {
 		pCfg.Mu = defaultMu
 	}

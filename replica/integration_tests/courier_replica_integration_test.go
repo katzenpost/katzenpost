@@ -598,7 +598,6 @@ func generateTestPKIDocument(t *testing.T, epoch uint64, serviceDesc *pki.MixDes
 
 	return &pki.Document{
 		Epoch:                         epoch,
-		SendRatePerMinute:             100,
 		LambdaP:                       0.002,
 		LambdaPMaxDelay:               10000,
 		LambdaL:                       0.1,
@@ -657,7 +656,6 @@ func (c *mockPKIClient) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64
 			// Create a copy of the template document with the requested epoch
 			doc = &pki.Document{
 				Epoch:                         epoch,
-				SendRatePerMinute:             templateDoc.SendRatePerMinute,
 				LambdaP:                       templateDoc.LambdaP,
 				LambdaL:                       templateDoc.LambdaL,
 				LambdaM:                       templateDoc.LambdaM,
