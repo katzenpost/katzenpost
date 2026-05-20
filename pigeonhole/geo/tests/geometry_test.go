@@ -45,9 +45,11 @@ func TestGeometryUseCase1FromBoxPayloadLength(t *testing.T) {
 	require.Greater(t, g.CourierQueryReplyReadLength, 0)
 	require.Greater(t, g.CourierQueryReplyWriteLength, 0)
 
-	// Write operations should generally be larger than read operations
-	require.Greater(t, g.CourierQueryWriteLength, g.CourierQueryReadLength)
-	require.Greater(t, g.CourierQueryReplyReadLength, g.CourierQueryReplyWriteLength)
+	// Reads are padded to the write size before MKEM and write replies are
+	// padded to the read-reply size before AEAD, so on the wire the query
+	// and reply sizes are identical regardless of variant.
+	require.Equal(t, g.CourierQueryWriteLength, g.CourierQueryReadLength)
+	require.Equal(t, g.CourierQueryReplyReadLength, g.CourierQueryReplyWriteLength)
 
 	t.Logf("Geometry for BoxPayloadLength=%d:\n%s", boxPayloadLength, g.String())
 }
@@ -244,8 +246,12 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 			WriteMsg:    &writeRequest,
 		}
 
-		// MKEM encrypt the inner message like integration tests
-		mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+		// Length-prefix-pad to the write size, then MKEM encrypt, as
+		// PadInnerMessageForEncryption + Encapsulate does in the live
+		// encoder path.
+		paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, g)
+		require.NoError(t, err)
+		mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedMsg)
 		mkemPublicKey := mkemPrivateKey.Public()
 		senderPubkeyBytes := mkemPublicKey.Bytes()
 
@@ -384,13 +390,21 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		t.Logf("  Expected ReplicaInnerMessage overhead: %d bytes", expectedReplicaInnerOverhead)
 		require.Equal(t, expectedReplicaInnerOverhead, replicaInnerOverhead, "ReplicaInnerMessage overhead should match calculation")
 
-		// Layer 4: MKEM encryption (encrypts ReplicaInnerMessage)
-		mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, replicaInnerBytes)
-		mkemOverhead := len(mkemCiphertext.Envelope) - len(replicaInnerBytes)
+		// Layer 4a: length-prefix and zero-pad to the write size, as the
+		// live encoder does, so the MKEM plaintext matches the geometry.
+		paddedInnerBytes, err := pigeonhole.PadInnerMessageForEncryption(msg, g)
+		require.NoError(t, err)
+		paddingOverhead := len(paddedInnerBytes) - len(replicaInnerBytes)
+		t.Logf("Layer 4a - length-prefix-pad: bare %d → padded %d (overhead %d)",
+			len(replicaInnerBytes), len(paddedInnerBytes), paddingOverhead)
+
+		// Layer 4b: MKEM encryption (encrypts the padded ReplicaInnerMessage)
+		mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedInnerBytes)
+		mkemOverhead := len(mkemCiphertext.Envelope) - len(paddedInnerBytes)
 		expectedMKEMOverhead := 28 // mkemEncryptionOverhead constant
 
-		t.Logf("Layer 4 - MKEM:")
-		t.Logf("  ReplicaInnerMessage: %d bytes", len(replicaInnerBytes))
+		t.Logf("Layer 4b - MKEM:")
+		t.Logf("  padded ReplicaInnerMessage: %d bytes", len(paddedInnerBytes))
 		t.Logf("  MKEM ciphertext: %d bytes", len(mkemCiphertext.Envelope))
 		t.Logf("  Actual MKEM overhead: %d bytes", mkemOverhead)
 		t.Logf("  Expected MKEM overhead: %d bytes", expectedMKEMOverhead)
@@ -485,9 +499,13 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		replicaInnerMessageSize := 1 + replicaWriteSize // MessageType + ReplicaWrite
 		t.Logf("Step 3 - ReplicaInnerMessage: 1 + %d = %d", replicaWriteSize, replicaInnerMessageSize)
 
-		// Step 4: MKEM ciphertext
-		mkemCiphertextSize := replicaInnerMessageSize + 28 // mkemEncryptionOverhead
-		t.Logf("Step 4 - MKEM ciphertext: %d + 28 = %d", replicaInnerMessageSize, mkemCiphertextSize)
+		// Step 3b: length-prefix-and-pad to the write size before MKEM
+		paddedInnerSize := replicaInnerMessageSize + 4 // trunnel-layer length prefix
+		t.Logf("Step 3b - padded inner: %d + 4 = %d", replicaInnerMessageSize, paddedInnerSize)
+
+		// Step 4: MKEM ciphertext (encrypts the padded plaintext)
+		mkemCiphertextSize := paddedInnerSize + 28 // mkemEncryptionOverhead
+		t.Logf("Step 4 - MKEM ciphertext: %d + 28 = %d", paddedInnerSize, mkemCiphertextSize)
 
 		// Step 5: CourierEnvelope
 		senderPubkeySize := nikeScheme.PublicKeySize()
@@ -549,28 +567,27 @@ func TestGeometryCourierEnvelopeCiphertextSizeHelpers(t *testing.T) {
 	require.NoError(t, g.Validate())
 
 	t.Run("ReadCiphertextSize", func(t *testing.T) {
-		// Test CalculateCourierEnvelopeCiphertextSizeRead
+		// Reads are padded to the write size before MKEM, so the read
+		// ciphertext size equals the write ciphertext size: the padded
+		// ReplicaInnerMessage (write-shaped) plus MKEM AEAD overhead.
 		readCiphertextSize := g.CalculateCourierEnvelopeCiphertextSizeRead()
-
-		// Verify it matches the calculation from calculateCourierQueryReadLength
-		// BoxID + MessageType + MKEM overhead
-		expectedReadSize := bacap.BoxIDSize + 1 + 28 // BoxID + MessageType + MKEM overhead
+		expectedReadSize := g.ReplicaInnerMessagePaddedSize() + 28 // MKEM overhead
 		require.Equal(t, expectedReadSize, readCiphertextSize)
 
-		t.Logf("Read ciphertext size: %d bytes", readCiphertextSize)
-		t.Logf("  BoxID: %d bytes", bacap.BoxIDSize)
-		t.Logf("  MessageType: 1 byte")
-		t.Logf("  MKEM overhead: 28 bytes")
+		t.Logf("Read ciphertext size: %d bytes (padded inner %d + MKEM 28)",
+			readCiphertextSize, g.ReplicaInnerMessagePaddedSize())
 	})
 
 	t.Run("WriteCiphertextSize", func(t *testing.T) {
-		// Test CalculateCourierEnvelopeCiphertextSizeWrite
+		// Writes drive the padded inner-message size; the wire-level
+		// MKEM ciphertext is the padded ReplicaInnerMessage plus AEAD
+		// overhead.
 		writeCiphertextSize := g.CalculateCourierEnvelopeCiphertextSizeWrite()
 
-		// Verify it matches the calculation from calculateCourierQueryWriteLength
-		// BACAP ciphertext = MaxPlaintextPayloadLength + lengthPrefix + bacapOverhead
 		bacapCiphertextSize := g.CalculateBoxCiphertextLength()
-		expectedWriteSize := 1 + 100 + bacapCiphertextSize + 28 // MessageType + ReplicaWriteFixedOverhead + BACAP ciphertext + MKEM overhead
+		// MessageType (1) + ReplicaWriteFixedOverhead (100) + BACAP ciphertext
+		// + trunnel-layer length prefix (4) + MKEM overhead (28).
+		expectedWriteSize := 1 + 100 + bacapCiphertextSize + 4 + 28
 		require.Equal(t, expectedWriteSize, writeCiphertextSize)
 
 		t.Logf("Write ciphertext size: %d bytes", writeCiphertextSize)
@@ -597,8 +614,10 @@ func TestGeometryCourierEnvelopeCiphertextSizeHelpers(t *testing.T) {
 		t.Logf("CourierQueryWriteLength: %d bytes (includes %d bytes ciphertext)",
 			g.CourierQueryWriteLength, writeCiphertextSize)
 
-		// Write ciphertext should be much larger than read ciphertext
-		require.Greater(t, writeCiphertextSize, readCiphertextSize)
+		// Reads are padded to the write size for indistinguishability;
+		// the on-wire ciphertext is identical for both query variants.
+		require.Equal(t, readCiphertextSize, writeCiphertextSize,
+			"padding makes read and write ciphertext sizes identical")
 	})
 }
 
@@ -645,8 +664,10 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 			ReadMsg:     &readRequest,
 		}
 
-		// MKEM encrypt the inner message
-		_, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+		// Pad just as the live encoder path does, then MKEM encrypt.
+		paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, g)
+		require.NoError(t, err)
+		_, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedMsg)
 
 		// Measure the actual ciphertext size
 		actualSize := len(mkemCiphertext.Envelope)
@@ -695,8 +716,10 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 			WriteMsg:    &writeRequest,
 		}
 
-		// MKEM encrypt the inner message
-		_, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+		// Pad just as the live encoder path does, then MKEM encrypt.
+		paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, g)
+		require.NoError(t, err)
+		_, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedMsg)
 
 		// Measure the actual ciphertext size
 		actualSize := len(mkemCiphertext.Envelope)
@@ -729,7 +752,9 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 					MessageType: 0,
 					ReadMsg:     &readRequest,
 				}
-				_, readCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, readMsg.Bytes())
+				readPadded, err := pigeonhole.PadInnerMessageForEncryption(readMsg, testGeometry)
+				require.NoError(t, err)
+				_, readCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, readPadded)
 				actualReadSize := len(readCiphertext.Envelope)
 
 				require.Equal(t, readPrediction, actualReadSize,
@@ -759,7 +784,9 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 					MessageType: 1,
 					WriteMsg:    &writeRequest,
 				}
-				_, writeCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, writeMsg.Bytes())
+				writePadded, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, testGeometry)
+				require.NoError(t, err)
+				_, writeCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, writePadded)
 				actualWriteSize := len(writeCiphertext.Envelope)
 
 				require.Equal(t, writePrediction, actualWriteSize,
@@ -829,9 +856,12 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 			ReadReply:   readReply,
 		}
 
-		// Create EnvelopeReply using MKEM scheme
-		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessageBlob)
+		// Length-prefix and zero-pad to the read-reply size, just as
+		// PadReplyInnerMessageForEncryption does, then encrypt.
+		paddedInner, err := pigeonhole.CreatePaddedPayload(
+			replyInnerMessage.Bytes(), g.ReplicaReplyInnerMessagePaddedSize())
+		require.NoError(t, err)
+		envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, paddedInner)
 
 		// Measure the actual EnvelopeReply size
 		actualSize := len(envelopeReply.Envelope)
@@ -846,7 +876,9 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 	})
 
 	t.Run("WriteEnvelopeReplySizePrediction", func(t *testing.T) {
-		// Test write reply EnvelopeReply size prediction
+		// Test write reply EnvelopeReply size prediction. Write replies are
+		// padded to the read-reply size so the on-wire ciphertext does not
+		// reveal the reply variant.
 		predictedSize := g.CalculateEnvelopeReplySizeWrite()
 
 		// Create ReplicaWriteReply (just an error code)
@@ -860,9 +892,12 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 			WriteReply:  writeReply,
 		}
 
-		// Create EnvelopeReply using MKEM scheme
-		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessageBlob)
+		// Length-prefix and zero-pad to the read-reply size, just as
+		// PadReplyInnerMessageForEncryption does, then encrypt.
+		paddedInner, err := pigeonhole.CreatePaddedPayload(
+			replyInnerMessage.Bytes(), g.ReplicaReplyInnerMessagePaddedSize())
+		require.NoError(t, err)
+		envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, paddedInner)
 
 		// Measure the actual EnvelopeReply size
 		actualSize := len(envelopeReply.Envelope)
@@ -910,7 +945,10 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 					MessageType: 0,
 					ReadReply:   readReply,
 				}
-				envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessage.Bytes())
+				readPaddedInner, err := pigeonhole.CreatePaddedPayload(
+					replyInnerMessage.Bytes(), testGeometry.ReplicaReplyInnerMessagePaddedSize())
+				require.NoError(t, err)
+				envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, readPaddedInner)
 				actualReadSize := len(envelopeReply.Envelope)
 
 				require.Equal(t, readPrediction, actualReadSize,
@@ -924,7 +962,10 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 					MessageType: 1,
 					WriteReply:  writeReply,
 				}
-				writeEnvelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, writeReplyInnerMessage.Bytes())
+				writePaddedInner, err := pigeonhole.CreatePaddedPayload(
+					writeReplyInnerMessage.Bytes(), testGeometry.ReplicaReplyInnerMessagePaddedSize())
+				require.NoError(t, err)
+				writeEnvelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, writePaddedInner)
 				actualWriteSize := len(writeEnvelopeReply.Envelope)
 
 				require.Equal(t, writePrediction, actualWriteSize,
@@ -1009,8 +1050,11 @@ func TestGeometryLengthPrefixBug(t *testing.T) {
 		WriteMsg:    &writeRequest,
 	}
 
-	// MKEM encrypt the inner message
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	// MKEM encrypt the inner message after the live encoder's length-prefix
+	// and zero-pad to the write size.
+	paddedInner, err := pigeonhole.PadInnerMessageForEncryption(msg, g)
+	require.NoError(t, err)
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedInner)
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
@@ -1109,9 +1153,14 @@ func TestCalculateEnvelopeReplySizeRead(t *testing.T) {
 				ReadReply:   readReply,
 			}
 
-			// Create EnvelopeReply using MKEM scheme
+			// Length-prefix-then-pad the inner message exactly as
+			// PadReplyInnerMessageForEncryption does in the encoder
+			// path, then encrypt via the MKEM scheme.
 			replyInnerMessageBlob := replyInnerMessage.Bytes()
-			envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessageBlob)
+			paddedInner, err := pigeonhole.CreatePaddedPayload(
+				replyInnerMessageBlob, g.ReplicaReplyInnerMessagePaddedSize())
+			require.NoError(t, err)
+			envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, paddedInner)
 
 			// Measure the actual EnvelopeReply size
 			actualSize := len(envelopeReply.Envelope)
@@ -1122,6 +1171,7 @@ func TestCalculateEnvelopeReplySizeRead(t *testing.T) {
 			t.Logf("BACAP ciphertext size: %d bytes", len(ciphertext))
 			t.Logf("ReplicaReadReply size: %d bytes", len(readReply.Bytes()))
 			t.Logf("ReplicaMessageReplyInnerMessage size: %d bytes", len(replyInnerMessageBlob))
+			t.Logf("Padded inner size: %d bytes", len(paddedInner))
 			t.Logf("Predicted EnvelopeReply size: %d bytes", predictedSize)
 			t.Logf("Actual EnvelopeReply size: %d bytes", actualSize)
 			t.Logf("Difference: %d bytes", actualSize-predictedSize)
@@ -1177,12 +1227,20 @@ func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 		t.Logf("Step 3 - ReplicaMessageReplyInnerMessage: 1 + %d = %d bytes",
 			expectedReplicaReadReplySize, expectedReplicaMessageReplyInnerSize)
 
-		// Step 4: EnvelopeReply encryption overhead
+		// Step 4: trunnel-layer length prefix on the padded inner message
+		// (PadReplyInnerMessageForEncryption length-prefixes the inner
+		// message and zero-pads to the read-reply size before AEAD).
+		trunnelLengthPrefix := 4
+		expectedPaddedInnerSize := expectedReplicaMessageReplyInnerSize + trunnelLengthPrefix
+		t.Logf("Step 4 - padded inner: %d + %d = %d bytes",
+			expectedReplicaMessageReplyInnerSize, trunnelLengthPrefix, expectedPaddedInnerSize)
+
+		// Step 5: EnvelopeReply encryption overhead
 		// ChaCha20Poly1305: 12-byte nonce + 16-byte auth tag
 		envelopeReplyOverhead := 12 + 16
-		expectedEnvelopeReplySize := expectedReplicaMessageReplyInnerSize + envelopeReplyOverhead
-		t.Logf("Step 4 - EnvelopeReply: %d + %d = %d bytes",
-			expectedReplicaMessageReplyInnerSize, envelopeReplyOverhead, expectedEnvelopeReplySize)
+		expectedEnvelopeReplySize := expectedPaddedInnerSize + envelopeReplyOverhead
+		t.Logf("Step 5 - EnvelopeReply: %d + %d = %d bytes",
+			expectedPaddedInnerSize, envelopeReplyOverhead, expectedEnvelopeReplySize)
 
 		// Compare with the function's calculation
 		actualPrediction := g.CalculateEnvelopeReplySizeRead()
@@ -1237,8 +1295,15 @@ func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 		require.Equal(t, expectedReplyInnerSize, len(replyInnerMessageBytes),
 			"ReplicaMessageReplyInnerMessage size should match calculation")
 
-		// Create EnvelopeReply using MKEM scheme
-		envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessageBytes)
+		// Length-prefix and zero-pad the inner message exactly as
+		// PadReplyInnerMessageForEncryption does in the live encoder
+		// path, then encrypt via the MKEM scheme to obtain the real
+		// EnvelopeReply size.
+		paddedInner, err := pigeonhole.CreatePaddedPayload(
+			replyInnerMessageBytes, g.ReplicaReplyInnerMessagePaddedSize())
+		require.NoError(t, err)
+
+		envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, paddedInner)
 
 		// Verify the final EnvelopeReply size
 		actualSize := len(envelopeReply.Envelope)
@@ -1246,6 +1311,7 @@ func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 
 		t.Logf("ReplicaReadReply size: %d bytes", len(replicaReadReplyBytes))
 		t.Logf("ReplicaMessageReplyInnerMessage size: %d bytes", len(replyInnerMessageBytes))
+		t.Logf("Padded inner message size: %d bytes", len(paddedInner))
 		t.Logf("EnvelopeReply predicted size: %d bytes", predictedSize)
 		t.Logf("EnvelopeReply actual size: %d bytes", actualSize)
 
