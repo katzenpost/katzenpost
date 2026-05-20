@@ -7,6 +7,11 @@ import (
 	"errors"
 )
 
+// MaxParseSize bounds the total input size accepted by the
+// top-level Parse... convenience constructors in this package.
+// Adjust before the first parse call to override the default.
+var MaxParseSize = 16777216
+
 type CourierEnvelope struct {
 	IntermediateReplicas [2]uint8
 	Dek1                 [60]uint8
@@ -70,6 +75,9 @@ func (c *CourierEnvelope) Parse(data []byte) ([]byte, error) {
 		cur = cur[2:]
 	}
 	{
+		if uint64(c.SenderPubkeyLen) > uint64(len(cur)) {
+			return nil, errors.New("data too short")
+		}
 		c.SenderPubkey = make([]uint8, int(c.SenderPubkeyLen))
 		for idx := 0; idx < int(c.SenderPubkeyLen); idx++ {
 			if len(cur) < 1 {
@@ -87,6 +95,9 @@ func (c *CourierEnvelope) Parse(data []byte) ([]byte, error) {
 		cur = cur[4:]
 	}
 	{
+		if uint64(c.CiphertextLen) > uint64(len(cur)) {
+			return nil, errors.New("data too short")
+		}
 		c.Ciphertext = make([]uint8, int(c.CiphertextLen))
 		for idx := 0; idx < int(c.CiphertextLen); idx++ {
 			if len(cur) < 1 {
@@ -100,6 +111,9 @@ func (c *CourierEnvelope) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseCourierEnvelope(data []byte) (*CourierEnvelope, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	c := new(CourierEnvelope)
 	_, err := c.Parse(data)
 	if err != nil {
@@ -225,6 +239,9 @@ func (c *CourierEnvelopeReply) Parse(data []byte) ([]byte, error) {
 		cur = cur[4:]
 	}
 	{
+		if uint64(c.PayloadLen) > uint64(len(cur)) {
+			return nil, errors.New("data too short")
+		}
 		c.Payload = make([]uint8, int(c.PayloadLen))
 		for idx := 0; idx < int(c.PayloadLen); idx++ {
 			if len(cur) < 1 {
@@ -245,6 +262,9 @@ func (c *CourierEnvelopeReply) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseCourierEnvelopeReply(data []byte) (*CourierEnvelopeReply, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	c := new(CourierEnvelopeReply)
 	_, err := c.Parse(data)
 	if err != nil {
@@ -340,6 +360,9 @@ func (c *CourierQuery) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseCourierQuery(data []byte) (*CourierQuery, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	c := new(CourierQuery)
 	_, err := c.Parse(data)
 	if err != nil {
@@ -436,6 +459,9 @@ func (c *CourierQueryReply) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseCourierQueryReply(data []byte) (*CourierQueryReply, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	c := new(CourierQueryReply)
 	_, err := c.Parse(data)
 	if err != nil {
@@ -507,6 +533,9 @@ func (r *ReplicaRead) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseReplicaRead(data []byte) (*ReplicaRead, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	r := new(ReplicaRead)
 	_, err := r.Parse(data)
 	if err != nil {
@@ -582,6 +611,9 @@ func (r *ReplicaReadReply) Parse(data []byte) ([]byte, error) {
 		cur = cur[4:]
 	}
 	{
+		if uint64(r.PayloadLen) > uint64(len(cur)) {
+			return nil, errors.New("data too short")
+		}
 		r.Payload = make([]uint8, int(r.PayloadLen))
 		for idx := 0; idx < int(r.PayloadLen); idx++ {
 			if len(cur) < 1 {
@@ -595,6 +627,9 @@ func (r *ReplicaReadReply) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseReplicaReadReply(data []byte) (*ReplicaReadReply, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	r := new(ReplicaReadReply)
 	_, err := r.Parse(data)
 	if err != nil {
@@ -693,6 +728,9 @@ func (r *ReplicaInnerMessage) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseReplicaInnerMessage(data []byte) (*ReplicaInnerMessage, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	r := new(ReplicaInnerMessage)
 	_, err := r.Parse(data)
 	if err != nil {
@@ -780,6 +818,9 @@ func (r *ReplicaWrite) Parse(data []byte) ([]byte, error) {
 		cur = cur[4:]
 	}
 	{
+		if uint64(r.PayloadLen) > uint64(len(cur)) {
+			return nil, errors.New("data too short")
+		}
 		r.Payload = make([]uint8, int(r.PayloadLen))
 		for idx := 0; idx < int(r.PayloadLen); idx++ {
 			if len(cur) < 1 {
@@ -793,6 +834,9 @@ func (r *ReplicaWrite) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseReplicaWrite(data []byte) (*ReplicaWrite, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	r := new(ReplicaWrite)
 	_, err := r.Parse(data)
 	if err != nil {
@@ -890,6 +934,9 @@ func (r *ReplicaMessageReplyInnerMessage) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseReplicaMessageReplyInnerMessage(data []byte) (*ReplicaMessageReplyInnerMessage, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	r := new(ReplicaMessageReplyInnerMessage)
 	_, err := r.Parse(data)
 	if err != nil {
@@ -959,6 +1006,9 @@ func (r *ReplicaWriteReply) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseReplicaWriteReply(data []byte) (*ReplicaWriteReply, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	r := new(ReplicaWriteReply)
 	_, err := r.Parse(data)
 	if err != nil {
@@ -1010,6 +1060,9 @@ func (b *Box) Parse(data []byte) ([]byte, error) {
 		cur = cur[4:]
 	}
 	{
+		if uint64(b.PayloadLen) > uint64(len(cur)) {
+			return nil, errors.New("data too short")
+		}
 		b.Payload = make([]uint8, int(b.PayloadLen))
 		for idx := 0; idx < int(b.PayloadLen); idx++ {
 			if len(cur) < 1 {
@@ -1032,6 +1085,9 @@ func (b *Box) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseBox(data []byte) (*Box, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	b := new(Box)
 	_, err := b.Parse(data)
 	if err != nil {
@@ -1100,6 +1156,9 @@ func (c *CopyCommand) Parse(data []byte) ([]byte, error) {
 		cur = cur[4:]
 	}
 	{
+		if uint64(c.WriteCapLen) > uint64(len(cur)) {
+			return nil, errors.New("data too short")
+		}
 		c.WriteCap = make([]uint8, int(c.WriteCapLen))
 		for idx := 0; idx < int(c.WriteCapLen); idx++ {
 			if len(cur) < 1 {
@@ -1113,6 +1172,9 @@ func (c *CopyCommand) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseCopyCommand(data []byte) (*CopyCommand, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	c := new(CopyCommand)
 	_, err := c.Parse(data)
 	if err != nil {
@@ -1183,6 +1245,9 @@ func (c *CopyCommandReply) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseCopyCommandReply(data []byte) (*CopyCommandReply, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	c := new(CopyCommandReply)
 	_, err := c.Parse(data)
 	if err != nil {
@@ -1237,6 +1302,9 @@ func (c *CopyStreamElement) Parse(data []byte) ([]byte, error) {
 		cur = cur[4:]
 	}
 	{
+		if uint64(c.EnvelopeLen) > uint64(len(cur)) {
+			return nil, errors.New("data too short")
+		}
 		c.EnvelopeData = make([]uint8, int(c.EnvelopeLen))
 		for idx := 0; idx < int(c.EnvelopeLen); idx++ {
 			if len(cur) < 1 {
@@ -1250,6 +1318,9 @@ func (c *CopyStreamElement) Parse(data []byte) ([]byte, error) {
 }
 
 func ParseCopyStreamElement(data []byte) (*CopyStreamElement, error) {
+	if len(data) > MaxParseSize {
+		return nil, errors.New("input exceeds MaxParseSize")
+	}
 	c := new(CopyStreamElement)
 	_, err := c.Parse(data)
 	if err != nil {
