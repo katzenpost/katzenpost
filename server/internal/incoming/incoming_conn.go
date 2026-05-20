@@ -121,39 +121,32 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 				return true
 			}
 
-			// send token duration
+			// Update the rate limiter parameters from the current PKI
+			// document. The bucket refill rate is one token per
+			// (60000 / SendRatePerMinute) ms; the bucket cap is the
+			// constant c.maxSendTokens set at connection birth.
 			sendRatePerMinute := atomic.LoadUint64(&c.l.sendRatePerMinute)
-			ratePerMin := float64(sendRatePerMinute)
-			sendTokenDuration := uint64((1 / ratePerMin) * 60 * 1000)
+			var sendTokenDuration uint64
+			if sendRatePerMinute > 0 {
+				sendTokenDuration = uint64(float64(60*1000) / float64(sendRatePerMinute))
+			}
+			newIncr := time.Duration(sendTokenDuration) * time.Millisecond
 
-			switch sendTokenDuration {
-			case uint64(c.sendTokenIncr / time.Millisecond):
-			// The send shift didn't change, don't update anything.
-			case 0:
+			switch {
+			case newIncr == c.sendTokenIncr:
+				// Unchanged. Preserve the running bucket state.
+			case sendTokenDuration == 0:
 				c.log.Debugf("Rate limit disabled, no SendRatePerMinute.")
 				c.sendTokenIncr = 0
 				c.sendTokens = 0
-				c.maxSendTokens = 0
 			default:
-				c.log.Debugf("Rate limit SendRatePerMinute updated: %v", c.sendTokenIncr)
-			}
-			// If there was no previous limit start at 1 send credit.
-			if c.sendTokenIncr == 0 {
-				c.sendTokens = 1
-				c.sendTokenLast = time.Now()
-			}
-			c.sendTokenIncr = time.Duration(sendTokenDuration) * time.Millisecond
-
-			// max send tokens
-			c.maxSendTokens = atomic.LoadUint64(&c.l.sendBurst)
-			switch c.maxSendTokens {
-			case 0:
-				c.log.Debugf("Rate limit disabled, no MaxSendTokens.")
-				c.sendTokenIncr = 0
-				c.sendTokens = 0
-				c.maxSendTokens = 0
-			default:
-				c.log.Debugf("Rate limit MaxSendTokens updated: %v", c.maxSendTokens)
+				c.log.Debugf("Rate limit SendRatePerMinute updated: %v ms per token", sendTokenDuration)
+				if c.sendTokenIncr == 0 {
+					// Fresh activation: prime the bucket with one token.
+					c.sendTokens = 1
+					c.sendTokenLast = time.Now()
+				}
+				c.sendTokenIncr = newIncr
 			}
 
 			return true
@@ -603,8 +596,8 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	pkt.MustForward = c.fromClient
 	pkt.MustTerminate = c.l.glue.Config().Server.IsServiceNode && !c.fromClient
 
-	// If the packet was from the client, and there is a SendShift for the
-	// current epoch, enforce SendShift based rate limits.
+	// If the packet was from the client and the current PKI document
+	// publishes a SendRatePerMinute, enforce the token-bucket rate limit.
 	if c.fromClient && c.sendTokenIncr != 0 {
 		// Update the token bucket for the time that we were idle.
 		deltaT := time.Now().Sub(c.sendTokenLast)

@@ -55,7 +55,6 @@ type listener struct {
 	closeAllWg sync.WaitGroup
 
 	sendRatePerMinute uint64
-	sendBurst         uint64
 }
 
 func (l *listener) Halt() {
@@ -73,10 +72,6 @@ func (l *listener) Halt() {
 
 func (l *listener) OnNewSendRatePerMinute(sendRatePerMinute uint64) {
 	atomic.StoreUint64(&l.sendRatePerMinute, sendRatePerMinute)
-}
-
-func (l *listener) OnNewSendBurst(sendBurst uint64) {
-	atomic.StoreUint64(&l.sendBurst, sendBurst)
 }
 
 func (l *listener) worker() {

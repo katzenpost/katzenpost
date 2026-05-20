@@ -38,9 +38,6 @@ type Listener struct {
 	incomingCh chan<- interface{}
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
-
-	sendRatePerMinute uint64
-	sendBurst         uint64
 }
 
 func (l *Listener) Halt() {

@@ -190,29 +190,6 @@ func (p *gateway) onSendRate(c *thwack.Conn, l string) error {
 	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, rate)
 }
 
-func (p *gateway) onSendBurst(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	if len(sp) != 2 {
-		c.Log().Debugf("SEND_BURST invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	burst, err := strconv.ParseUint(sp[1], 10, 64)
-	if err != nil {
-		c.Log().Errorf("SEND_BURST invalid integer: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	for _, l := range p.glue.Listeners() {
-		l.OnNewSendBurst(burst)
-	}
-
-	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, burst)
-}
-
 func (p *gateway) onSURBReply(pkt *packet.Packet, recipient []byte) {
 	geo := p.glue.Config().SphinxGeometry
 	if len(pkt.Payload) != geo.PayloadTagLength+geo.ForwardPayloadLength {
@@ -287,13 +264,9 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 
 	// Wire in the management related commands.
 	if cfg.Management.Enable {
-		const (
-			cmdSendRate  = "SEND_RATE"
-			cmdSendBurst = "SEND_BURST"
-		)
+		const cmdSendRate = "SEND_RATE"
 
 		glue.Management().RegisterCommand(cmdSendRate, p.onSendRate)
-		glue.Management().RegisterCommand(cmdSendBurst, p.onSendBurst)
 	}
 
 	// Start the workers.
