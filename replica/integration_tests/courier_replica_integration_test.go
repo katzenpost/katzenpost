@@ -754,8 +754,10 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
+	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
+	require.NoError(t, err)
 	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(
-		sharding.ReplicaPubKeys, msg.Bytes(),
+		sharding.ReplicaPubKeys, paddedMsg,
 	)
 	mkemPublicKey := mkemPrivateKey.Public()
 
@@ -882,7 +884,9 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.NoError(t, err)
 
 	// pigeonhole.ReplicaMessageReplyInnerMessage
-	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
+	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInnerMsg)
+	require.NoError(t, err)
+	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
 	require.NoError(t, err)
 	require.NotNil(t, innerMsg.ReadReply)
 
@@ -966,7 +970,9 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 		require.NoError(t, err)
 
 		// pigeonhole.ReplicaMessageReplyInnerMessage
-		innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
+		innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInnerMsg)
+		require.NoError(t, err)
+		innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
 		require.NoError(t, err)
 		require.NotNil(t, innerMsg.ReadReply)
 
@@ -1029,7 +1035,9 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 		t.Logf("BoxID %x will be read from replica %d", boxID[:8], replicaIndex)
 	}
 
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, msg.Bytes())
+	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
+	require.NoError(t, err)
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedMsg)
 	mkemPublicKey := mkemPrivateKey.Public()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	senderPubkeyBytes := mkemPublicKey.Bytes()

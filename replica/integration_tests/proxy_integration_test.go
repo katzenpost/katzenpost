@@ -90,8 +90,11 @@ func TestProxyIntegration(t *testing.T) {
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
-	// Create MKEM envelope for the write operation to correct shards
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, writeMsg.Bytes())
+	// Create MKEM envelope for the write operation to correct shards.
+	// Length-prefix and pad to write size, matching PadInnerMessageForEncryption.
+	paddedWriteMsg, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, env.geometry)
+	require.NoError(t, err)
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedWriteMsg)
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
@@ -164,8 +167,11 @@ func TestProxyIntegration(t *testing.T) {
 		ReadMsg:     readRequest,
 	}
 
-	// Create MKEM envelope for read - but target NON-shard replicas to force proxying
-	bobMkemPrivateKey, bobMkemCiphertext := mkemNikeScheme.Encapsulate(bobReplicaPubKeys, readMsg.Bytes())
+	// Create MKEM envelope for read - but target NON-shard replicas to force proxying.
+	// Pad the inner message to the write size (read is padded up for indistinguishability).
+	paddedReadMsg, err := pigeonhole.PadInnerMessageForEncryption(readMsg, env.geometry)
+	require.NoError(t, err)
+	bobMkemPrivateKey, bobMkemCiphertext := mkemNikeScheme.Encapsulate(bobReplicaPubKeys, paddedReadMsg)
 	bobMkemPublicKey := bobMkemPrivateKey.Public()
 	bobSenderPubkeyBytes := bobMkemPublicKey.Bytes()
 
@@ -201,7 +207,9 @@ func TestProxyIntegration(t *testing.T) {
 	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobMkemPrivateKey, replicaPubKey, proxyReadReply.Payload)
 	require.NoError(t, err, "Failed to decrypt proxy reply")
 
-	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
+	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInnerMsg)
+	require.NoError(t, err, "Failed to extract padded reply inner message")
+	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
 	require.NoError(t, err, "Failed to parse replica message reply")
 	require.NotNil(t, innerMsg.ReadReply, "ReadReply should not be nil")
 	require.Equal(t, pigeonhole.ReplicaSuccess, innerMsg.ReadReply.ErrorCode,
