@@ -105,8 +105,6 @@ type Config struct {
 	LPMax                    uint64
 	LL                       float64
 	LLMax                    uint64
-	LD                       float64
-	LDMax                    uint64
 	LM                       float64
 	LMMax                    uint64
 	LGMax                    uint64
