@@ -67,8 +67,8 @@ github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5 h1:n+9aUwSmnz97
 github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5/go.mod h1:9KxLMK17ZLjofnmpVp4Sm315uIF3BAWHVk32EFDRicU=
 github.com/katzenpost/falcon v0.1.0 h1:+WkID41Y6CaWAQE3ijCIfZHu7eHHy8DvAFWCnrW1XDw=
 github.com/katzenpost/falcon v0.1.0/go.mod h1:HtOnkNvwpvTJ3fuXmy4BNw4A8Jg2QetpmkvOPOnOwyU=
-github.com/katzenpost/hpqc v0.0.80 h1:nevwcbD47T3Bm7tu3RD1xlCqOhCTbiMc+rutGcwVp3w=
-github.com/katzenpost/hpqc v0.0.80/go.mod h1:XINEtSU2ZLULm2jBU7HYRHMRNNNsE73wIR89x/7Zs+A=
+github.com/katzenpost/hpqc v0.0.81 h1:TpKTzdYi0oG/vm7JLp/pI3Bpaj9hHC+7YwpNP1bcTk8=
+github.com/katzenpost/hpqc v0.0.81/go.mod h1:mYRCQDLRhBiDftdzHV1r5z6wnrJxxV5mBXnxQ3P2CCA=
 github.com/katzenpost/nyquist v0.0.13 h1:U4Ogik5WuBoy9l7HFTUGXdc2B/3Xa3QLoK7vTDOPAbw=
 github.com/katzenpost/nyquist v0.0.13/go.mod h1:6DgFOY5YLt9jy2skOpeaM4Rpha2xZ1Vufg5kOzV23Gw=
 github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e h1:cbftK8/GNGA8ye2e2VWkVPLnO/62UadJmG3ddEa6ElU=
@@ -130,6 +130,8 @@ github.com/rogpeppe/go-internal v1.10.0/go.mod h1:UQnix2H7Ngw/k4C5ijL5+65zddjncj
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053 h1:h7EwPM2KjupG0zVAG+EYxbR2cHnbiP1d4DTAZ+G09LY=
 github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053/go.mod h1:/TRiIlxvQQAtfnBXEqqbnYBYPmE6XT5iZxSx+hJ9zGw=
+github.com/shurlinet/go-hqc v0.1.1 h1:p0ZSHW+Spulp0pBnuyYTjgqmqm0CkILZWyOEZeKRXl0=
+github.com/shurlinet/go-hqc v0.1.1/go.mod h1:3pQdozY8+F4AcOpiyj/ztKR90TwMDMBjbiNHNbejPtw=
 github.com/spf13/cobra v1.10.2 h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=
 github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiTUUS4=
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
