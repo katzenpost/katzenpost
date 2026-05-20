@@ -34,22 +34,28 @@ func PadToSize(data []byte, targetSize int) ([]byte, error) {
 }
 
 // PadInnerMessageForEncryption serializes a ReplicaInnerMessage and pads it
-// to the write size so that tombstones are indistinguishable from normal writes.
+// with a 4-byte length prefix and trailing zeros to the padded write size,
+// so that reads, writes, and tombstones are all indistinguishable to any
+// observer of the resulting MKEM ciphertext length. The receiver recovers
+// the exact message bytes via ExtractMessageFromPaddedPayload.
 func PadInnerMessageForEncryption(msg *ReplicaInnerMessage, geo *pgeo.Geometry) ([]byte, error) {
 	if geo == nil {
 		return nil, ErrNilGeometry
 	}
-	return PadToSize(msg.Bytes(), geo.ReplicaInnerMessageWriteSize())
+	return CreatePaddedPayload(msg.Bytes(), geo.ReplicaInnerMessagePaddedSize())
 }
 
 // PadReplyInnerMessageForEncryption serializes a ReplicaMessageReplyInnerMessage
-// and pads it to the read reply size so that tombstone read replies are
-// indistinguishable from normal read replies.
+// and pads it with a 4-byte length prefix and trailing zeros to the padded
+// read-reply size, so that read replies, write replies, and tombstone
+// replies are all indistinguishable to any observer of the resulting
+// MKEM-AEAD ciphertext length. The receiver recovers the exact message
+// bytes via ExtractMessageFromPaddedPayload.
 func PadReplyInnerMessageForEncryption(msg *ReplicaMessageReplyInnerMessage, geo *pgeo.Geometry) ([]byte, error) {
 	if geo == nil {
 		return nil, ErrNilGeometry
 	}
-	return PadToSize(msg.Bytes(), geo.ReplicaReplyInnerMessageReadSize())
+	return CreatePaddedPayload(msg.Bytes(), geo.ReplicaReplyInnerMessagePaddedSize())
 }
 
 // Helper functions for backward compatibility with the old methods.go file

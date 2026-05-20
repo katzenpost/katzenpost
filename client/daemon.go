@@ -606,9 +606,14 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 		return nil, err
 	}
 	d.log.Debugf("MKEM DECRYPT: successfully decrypted with replicaNum:%v", replicaNum)
-	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
+	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInnerMsg)
 	if err != nil {
-		d.log.Errorf("failed to unmarshal inner message: %s %v", err, rawInnerMsg)
+		d.log.Errorf("failed to extract padded inner message: %s", err)
+		return nil, fmt.Errorf("failed to extract padded inner message: %s", err)
+	}
+	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
+	if err != nil {
+		d.log.Errorf("failed to unmarshal inner message: %s %v", err, innerBytes)
 		return nil, fmt.Errorf("failed to unmarshal inner message: %s", err)
 	}
 
