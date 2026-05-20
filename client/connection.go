@@ -349,6 +349,12 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				}
 			}
 			c.log.Debugf("TCP connection established.")
+			// Disable Nagle so the PQ Noise handshake's finalisation
+			// NoOp does not wait on a coalesce timer; harmless on
+			// non-TCP transports.
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				tcpConn.SetNoDelay(true)
+			}
 
 			// Do something with the connection.
 			c.onNetConn(conn)
