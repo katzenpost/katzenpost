@@ -200,10 +200,12 @@ func TestAuthentication(t *testing.T) {
 	replica1Cfg.ConnectTimeout = int(testDialTimeout.Milliseconds())
 	replica1Cfg.ReauthInterval = int(time.Second.Milliseconds())
 
+	// Pre-place the desired identity and link keys in DataDir so
+	// New() loads them at startup. Mutating server fields after
+	// New() returns races with the PKIWorker goroutine that
+	// New() has already spawned.
+	WriteTestKeysToDataDir(t, replica1Cfg.DataDir, replica1Keys)
 	replica1Server := setupServer(t, replica1Cfg)
-	replica1Server.identityPublicKey = replica1Keys.IdentityPubKey
-	replica1Server.identityPrivateKey = replica1Keys.IdentityPrivKey
-	replica1Server.linkKey = replica1Keys.LinkPrivKey
 
 	// Setup replica2 server
 	replica2Cfg := CreateTestConfig(t, schemes, geometry, filepath.Join(baseDir, "replica2"), "replica2", []string{"tcp://127.0.0.1:4002"})
@@ -211,10 +213,8 @@ func TestAuthentication(t *testing.T) {
 	replica2Cfg.ConnectTimeout = int(testDialTimeout.Milliseconds())
 	replica2Cfg.ReauthInterval = int(time.Second.Milliseconds())
 
+	WriteTestKeysToDataDir(t, replica2Cfg.DataDir, replica2Keys)
 	replica2Server := setupServer(t, replica2Cfg)
-	replica2Server.identityPublicKey = replica2Keys.IdentityPubKey
-	replica2Server.identityPrivateKey = replica2Keys.IdentityPrivKey
-	replica2Server.linkKey = replica2Keys.LinkPrivKey
 
 	// Update PKI state with current epoch
 	epoch, _, _ := epochtime.Now()
