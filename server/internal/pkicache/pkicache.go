@@ -46,9 +46,16 @@ func (e *Entry) MuMaxDelay() uint64 {
 	return e.doc.MuMaxDelay
 }
 
-// SendRatePerMinute returns the SendRatePerMinute for the cached PKI document.
-func (e *Entry) SendRatePerMinute() uint64 {
-	return e.doc.SendRatePerMinute
+// LambdaP returns the cached PKI document's LambdaP, the client's
+// per-millisecond Poisson rate for real-message-or-loop-decoy emission.
+func (e *Entry) LambdaP() float64 {
+	return e.doc.LambdaP
+}
+
+// LambdaL returns the cached PKI document's LambdaL, the client's
+// per-millisecond Poisson rate for the loop-decoy-only emission stream.
+func (e *Entry) LambdaL() float64 {
+	return e.doc.LambdaL
 }
 
 // Self returns the descriptor for the current node.

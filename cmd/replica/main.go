@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/common/tomlstrict"
 	"github.com/katzenpost/katzenpost/core/compat"
 	"github.com/katzenpost/katzenpost/replica"
 	"github.com/katzenpost/katzenpost/replica/config"
@@ -20,8 +21,9 @@ import (
 
 // Config holds the command line configuration
 type Config struct {
-	ConfigFile string
-	GenOnly    bool
+	ConfigFile   string
+	GenOnly      bool
+	ValidateOnly bool
 }
 
 // newRootCommand creates the root cobra command
@@ -83,7 +85,10 @@ BACAP for addressing and message encryption.
   replica --generate-only
 
   # Generate keys with custom config and exit
-  replica -f /etc/katzenpost/replica.toml --generate-only`,
+  replica -f /etc/katzenpost/replica.toml --generate-only
+
+  # Validate the configuration file and exit without side effects
+  replica -f /etc/katzenpost/replica.toml --validate-only`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReplicaServer(cfg)
 		},
@@ -98,6 +103,8 @@ BACAP for addressing and message encryption.
 	// Operation mode flags
 	cmd.Flags().BoolVarP(&cfg.GenOnly, "generate-only", "g", false,
 		"generate cryptographic keys and exit without starting server")
+	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
+		"load and validate the configuration file, then exit without side effects")
 
 	return cmd
 }
@@ -129,6 +136,13 @@ func runReplicaServer(cfg Config) error {
 	replicaCfg, err := config.LoadFile(cfg.ConfigFile, cfg.GenOnly)
 	if err != nil {
 		return fmt.Errorf("failed to load server config file '%v': %v", cfg.ConfigFile, err)
+	}
+	if cfg.ValidateOnly {
+		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {
+			return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
+		}
+		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", cfg.ConfigFile)
+		return nil
 	}
 
 	// Setup the signal handling.

@@ -22,6 +22,7 @@ import (
 	"crypto/hmac"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"strconv"
@@ -160,7 +161,8 @@ func (p *pki) worker() {
 	// Note: The worker's start is delayed till after the Server's connector
 	// is initialized, so that force updating the outgoing connection table
 	// is guaranteed to work.
-	var lastUpdateEpoch, lastMuMaxDelay, lastSendTokenDuration uint64
+	var lastUpdateEpoch, lastMuMaxDelay uint64
+	var lastLambdaP, lastLambdaL float64
 
 	for {
 		var timerFired bool
@@ -275,13 +277,21 @@ func (p *pki) worker() {
 					lastMuMaxDelay = newMuMaxDelay
 				}
 
-				// send token duration
-				if newSendTokenDuration := ent.SendRatePerMinute(); newSendTokenDuration != lastSendTokenDuration {
-					p.log.Debugf("Updating listener SendTokenDuration for epoch %v: %v", now, newSendTokenDuration)
+				// Derive per-client token-bucket parameters from the
+				// consensus document's published Poisson rates. Only
+				// the gateway listener acts on these (mix and service
+				// listeners do not see client connections), but the
+				// glue.Listener interface is uniform so every listener
+				// receives the call.
+				lambdaP, lambdaL := ent.LambdaP(), ent.LambdaL()
+				if lambdaP != lastLambdaP || lambdaL != lastLambdaL {
+					incrNs, maxTokens := deriveBucketParams(lambdaP, lambdaL)
+					p.log.Debugf("Updating listener bucket params for epoch %v: LambdaP=%v LambdaL=%v -> incrNs=%d, maxTokens=%d",
+						now, lambdaP, lambdaL, incrNs, maxTokens)
 					for _, l := range p.glue.Listeners() {
-						l.OnNewSendRatePerMinute(newSendTokenDuration)
+						l.OnNewBucketParams(incrNs, maxTokens)
 					}
-					lastSendTokenDuration = newSendTokenDuration
+					lastLambdaP, lastLambdaL = lambdaP, lambdaL
 				}
 
 				p.log.Debugf("Updating decoy document for epoch %v.", now)
@@ -957,4 +967,47 @@ func makeDescAddrMap(addrs []string) (map[string][]string, error) {
 	}
 
 	return m, nil
+}
+
+const (
+	// bucketHeadroomFactor sets how much faster than the client's
+	// natural mean rate the gateway refills its per-connection token
+	// bucket. A factor of 1.1 gives a utilisation ratio
+	// ρ = (LambdaP + LambdaL) / refillRate = 1/1.1 ≈ 0.909, which
+	// drives the M/M/1/K blocking probability below 10^-9 at the
+	// bucketCap chosen below. The headroom exists to absorb the
+	// Poisson variance of the client's emission process, not to
+	// permit the client to exceed the published rate; the long-run
+	// admitted rate is still bounded by the refill rate.
+	bucketHeadroomFactor = 1.1
+
+	// bucketCap is the per-connection token-bucket cap. At
+	// ρ ≈ 0.909, P_block ≈ ρ^bucketCap, so 256 puts the blocking
+	// probability for an honest Poisson client around 10^-12 in
+	// steady state. The cap also bounds how much instantaneous
+	// burst an abusive client can obtain before being throttled
+	// to the refill rate.
+	bucketCap = 256
+)
+
+// deriveBucketParams converts the consensus document's published
+// client Poisson rates into the listener-side token-bucket parameters
+// the gateway daemon enforces. Both rates are in events per
+// millisecond; lambdaP is the message-or-loop-decoy stream, lambdaL
+// is the loop-decoy-only stream, and the gateway-bound rate from a
+// single client is their sum.
+//
+// Returns (0, 0) when no positive rate is published, which the
+// incomingConn hot path treats as "rate limit disabled".
+func deriveBucketParams(lambdaP, lambdaL float64) (incrNs, maxTokens uint64) {
+	lambdaTotal := lambdaP + lambdaL
+	if lambdaTotal <= 0 {
+		return 0, 0
+	}
+	refillRate := lambdaTotal * bucketHeadroomFactor // events/ms
+	// One event / (events/ms) = 1 ms = 10^6 ns; ceil keeps the
+	// integer interval at least one nanosecond.
+	incrNs = uint64(math.Ceil(1e6 / refillRate))
+	maxTokens = bucketCap
+	return
 }

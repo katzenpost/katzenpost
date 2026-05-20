@@ -170,12 +170,19 @@ func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Ge
 	// 6. BACAP encryption overhead
 	bacapOverhead := bacapEncryptionOverhead
 
-	// 7. Length prefix overhead for padded payloads
+	// 7. Length prefix overhead for the BACAP-encrypted application payload.
 	lengthPrefixOverhead := lengthPrefixSize
+
+	// 8. Length prefix overhead for the length-prefix-padded
+	// ReplicaInnerMessage that sits between the trunnel encoding and the
+	// MKEM plaintext. This is distinct from the BACAP-layer prefix in (7)
+	// and must be accounted for separately; see ReplicaInnerMessagePaddedSize.
+	trunnelLengthPrefixOverhead := lengthPrefixSize
 
 	// Calculate total overhead
 	totalOverhead := courierQueryOverhead + courierEnvelopeOverhead + mkemOverhead +
-		replicaInnerMessageOverhead + replicaWriteOverhead + bacapOverhead + lengthPrefixOverhead
+		replicaInnerMessageOverhead + replicaWriteOverhead + bacapOverhead +
+		lengthPrefixOverhead + trunnelLengthPrefixOverhead
 
 	// Calculate the MaxPlaintextPayloadLength by subtracting all overheads from target
 	boxPayloadLength := targetSize - totalOverhead
@@ -303,119 +310,106 @@ func (g *Geometry) String() string {
 		g.SignatureSchemeName)
 }
 
-// calculateCourierQueryReadLength computes the exact size for read operations
+// calculateCourierQueryReadLength computes the exact size for read operations.
+// Reads are padded to the write size before MKEM, so the wire-level CourierQuery
+// size is the same as for writes; both go through calculateCourierQueryLength.
 func (g *Geometry) calculateCourierQueryReadLength() int {
-	nikeScheme := g.NIKEScheme()
-
-	// ReplicaRead: just the BoxID (using BACAP constant)
-	replicaReadSize := bacap.BoxIDSize
-
-	// ReplicaInnerMessage wrapping ReplicaRead (calculate dynamically like old geometry)
-	replicaInnerMessageSize := messageTypeSize + replicaReadSize // MessageType + ReplicaRead
-
-	// MKEM encryption of ReplicaInnerMessage
-	mkemCiphertextSize := replicaInnerMessageSize + mkemEncryptionOverhead
-
-	// CourierEnvelope containing the MKEM ciphertext
-	// Use NIKE scheme to get the sender public key size (MKEM uses NIKE keys)
-	senderPubkeySize := nikeScheme.PublicKeySize() // Get NIKE public key size
-
-	// Calculate CourierEnvelope overhead dynamically like old geometry
-	courierEnvelopeOverhead := calculateCourierEnvelopeOverhead(mkemCiphertextSize, senderPubkeySize)
-	courierEnvelopeSize := courierEnvelopeOverhead + mkemCiphertextSize
-
-	// Calculate CourierQuery wrapper overhead dynamically like old geometry
-	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(courierEnvelopeSize, nikeScheme)
-	return courierEnvelopeSize + courierQueryWrapperOverhead
+	return g.calculateCourierQueryLength()
 }
 
-// calculateCourierQueryWriteLength computes the exact size for write operations
+// calculateCourierQueryWriteLength computes the exact size for write operations.
+// Writes drive the padded inner-message size, so the wire-level CourierQuery
+// size is the same as for reads; both go through calculateCourierQueryLength.
 func (g *Geometry) calculateCourierQueryWriteLength() int {
+	return g.calculateCourierQueryLength()
+}
+
+// calculateCourierQueryLength computes the wire-level CourierQuery size for
+// any read or write query, accounting for the length-prefix-and-pad applied
+// to the ReplicaInnerMessage before MKEM encryption.
+func (g *Geometry) calculateCourierQueryLength() int {
 	nikeScheme := g.NIKEScheme()
 
-	// BACAP-encrypted payload (MaxPlaintextPayloadLength + length prefix + BACAP overhead)
-	bacapPayloadSize := g.MaxPlaintextPayloadLength + lengthPrefixSize + bacapEncryptionOverhead
+	// MKEM plaintext is a length-prefix-padded ReplicaInnerMessage of write
+	// size. Reads are padded to the same size so the read/write distinction
+	// does not leak through the ciphertext length.
+	mkemCiphertextSize := g.ReplicaInnerMessagePaddedSize() + mkemEncryptionOverhead
 
-	// ReplicaWrite containing the BACAP payload
-	// BoxID + Signature + PayloadLen + BACAP payload (using actual scheme sizes)
-	replicaWriteSize := replicaWriteFixedOverhead() + bacapPayloadSize
-
-	// ReplicaInnerMessage wrapping ReplicaWrite (calculate dynamically like old geometry)
-	replicaInnerMessageSize := messageTypeSize + replicaWriteSize // MessageType + ReplicaWrite
-
-	// MKEM encryption of ReplicaInnerMessage
-	mkemCiphertextSize := replicaInnerMessageSize + mkemEncryptionOverhead
-
-	// CourierEnvelope containing the MKEM ciphertext
-	// Use NIKE scheme to get the sender public key size (MKEM uses NIKE keys)
-	senderPubkeySize := nikeScheme.PublicKeySize() // Get NIKE public key size
-
-	// Calculate CourierEnvelope overhead dynamically like old geometry
+	// CourierEnvelope containing the MKEM ciphertext.
+	senderPubkeySize := nikeScheme.PublicKeySize()
 	courierEnvelopeOverhead := calculateCourierEnvelopeOverhead(mkemCiphertextSize, senderPubkeySize)
 	courierEnvelopeSize := courierEnvelopeOverhead + mkemCiphertextSize
 
-	// Calculate CourierQuery wrapper overhead dynamically like old geometry
+	// CourierQuery wrapper.
 	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(courierEnvelopeSize, nikeScheme)
 	return courierEnvelopeSize + courierQueryWrapperOverhead
 }
 
-// calculateCourierQueryReplyReadLength computes the exact size for read replies
+// calculateCourierQueryReplyReadLength computes the exact size for read
+// replies. Write replies are padded to the read-reply size before AEAD, so
+// the wire-level CourierQueryReply is the same for both variants.
 func (g *Geometry) calculateCourierQueryReplyReadLength() int {
-	// ReplicaReadReply containing the user payload
-	// BoxID + Success + PayloadLen + Payload + Signature (using BACAP constants)
-	replicaReadReplyFixedSize := bacap.BoxIDSize + successFieldSize + payloadLenFieldSize + bacap.SignatureSize // BoxID + Success + PayloadLen + Signature
-	replicaReadReplySize := replicaReadReplyFixedSize + g.MaxPlaintextPayloadLength
-
-	// ReplicaMessageReplyInnerMessage wrapping ReplicaReadReply (calculate dynamically)
-	replicaMessageReplySize := messageTypeSize + replicaReadReplySize // MessageType + ReplicaReadReply
-
-	// MKEM encryption of ReplicaMessageReplyInnerMessage
-	mkemCiphertextSize := replicaMessageReplySize + mkemEncryptionOverhead
-
-	// CourierEnvelopeReply containing the MKEM ciphertext (calculate dynamically)
-	courierEnvelopeReplyFixedSize := successFieldSize + timestampFieldSize + ciphertextLenFieldSize // Success + Timestamp + CiphertextLen
-	courierEnvelopeReplySize := courierEnvelopeReplyFixedSize + mkemCiphertextSize
-
-	// CourierQueryReply wrapping CourierEnvelopeReply (no ErrorMsg for success, calculate dynamically)
-	return errorLenFieldSize + courierEnvelopeReplySize
+	return g.calculateCourierQueryReplyLength()
 }
 
-// calculateCourierQueryReplyWriteLength computes the exact size for write replies
+// calculateCourierQueryReplyWriteLength computes the exact size for write
+// replies. Read replies set the padded reply-inner size, so the wire-level
+// CourierQueryReply is the same for both variants.
 func (g *Geometry) calculateCourierQueryReplyWriteLength() int {
-	// ReplicaWriteReply with minimal response (just success confirmation)
-	// WriteReplyLen + minimal WriteReply (e.g., "OK")
-	replicaWriteReplySize := writeReplyLenFieldSize + minimalOkReplySize
+	return g.calculateCourierQueryReplyLength()
+}
 
-	// ReplicaMessageReplyInnerMessage wrapping ReplicaWriteReply (calculate dynamically)
-	replicaMessageReplySize := messageTypeSize + replicaWriteReplySize // MessageType + ReplicaWriteReply
+// calculateCourierQueryReplyLength computes the wire-level CourierQueryReply
+// size for any read or write reply, accounting for the length-prefix-and-pad
+// applied to the ReplicaMessageReplyInnerMessage before MKEM-AEAD encryption.
+func (g *Geometry) calculateCourierQueryReplyLength() int {
+	// AEAD plaintext is a length-prefix-padded ReplicaMessageReplyInnerMessage
+	// of read-reply size. Write replies are padded to the same size so the
+	// reply variant does not leak through the ciphertext length.
+	mkemCiphertextSize := g.ReplicaReplyInnerMessagePaddedSize() + mkemEncryptionOverhead
 
-	// MKEM encryption of ReplicaMessageReplyInnerMessage
-	mkemCiphertextSize := replicaMessageReplySize + mkemEncryptionOverhead
-
-	// CourierEnvelopeReply containing the MKEM ciphertext (calculate dynamically)
-	courierEnvelopeReplyFixedSize := successFieldSize + timestampFieldSize + ciphertextLenFieldSize // Success + Timestamp + CiphertextLen
+	// CourierEnvelopeReply containing the AEAD ciphertext.
+	courierEnvelopeReplyFixedSize := successFieldSize + timestampFieldSize + ciphertextLenFieldSize
 	courierEnvelopeReplySize := courierEnvelopeReplyFixedSize + mkemCiphertextSize
 
-	// CourierQueryReply wrapping CourierEnvelopeReply (no ErrorMsg for success, calculate dynamically)
+	// CourierQueryReply wrapper (no ErrorMsg for success).
 	return errorLenFieldSize + courierEnvelopeReplySize
 }
 
 // ReplicaInnerMessageWriteSize returns the serialized size of a ReplicaInnerMessage
 // containing a full write (the largest inbound inner message type).
-// Used to pad reads and tombstones to the same size as writes before MKEM encryption.
+// This is the bare trunnel encoding size; the padded MKEM plaintext is
+// reported by ReplicaInnerMessagePaddedSize.
 func (g *Geometry) ReplicaInnerMessageWriteSize() int {
 	bacapCiphertextSize := g.CalculateBoxCiphertextLength()
 	replicaWriteSize := replicaWriteFixedOverhead() + bacapCiphertextSize
 	return messageTypeSize + replicaWriteSize
 }
 
+// ReplicaInnerMessagePaddedSize returns the size of the MKEM plaintext for
+// any inbound ReplicaInnerMessage. Reads and writes are length-prefixed and
+// padded to the write size so that the read/write distinction does not leak
+// through the ciphertext length.
+func (g *Geometry) ReplicaInnerMessagePaddedSize() int {
+	return g.ReplicaInnerMessageWriteSize() + lengthPrefixSize
+}
+
 // ReplicaReplyInnerMessageReadSize returns the serialized size of a
 // ReplicaMessageReplyInnerMessage containing a full read reply (the largest reply type).
-// Used to pad write replies and tombstone read replies to the same size before MKEM encryption.
+// This is the bare trunnel encoding size; the padded plaintext is reported
+// by ReplicaReplyInnerMessagePaddedSize.
 func (g *Geometry) ReplicaReplyInnerMessageReadSize() int {
 	bacapCiphertextSize := g.CalculateBoxCiphertextLength()
 	replicaReadReplySize := errorCodeFieldSize + bacap.BoxIDSize + bacap.SignatureSize + payloadLenFieldSize + bacapCiphertextSize
 	return messageTypeSize + replicaReadReplySize
+}
+
+// ReplicaReplyInnerMessagePaddedSize returns the size of the AEAD plaintext
+// for any reply ReplicaMessageReplyInnerMessage. Read replies and write
+// replies are length-prefixed and padded to the read-reply size so that the
+// reply variant does not leak through the ciphertext length.
+func (g *Geometry) ReplicaReplyInnerMessagePaddedSize() int {
+	return g.ReplicaReplyInnerMessageReadSize() + lengthPrefixSize
 }
 
 // CalculateBoxCiphertextLength calculates the ciphertext size for a Box.
@@ -423,85 +417,34 @@ func (g *Geometry) CalculateBoxCiphertextLength() int {
 	return g.MaxPlaintextPayloadLength + lengthPrefixSize + bacapEncryptionOverhead
 }
 
-// CalculateCourierEnvelopeCiphertextSizeRead calculates the MKEM ciphertext size
-// for a CourierEnvelope containing a read query.
+// CalculateCourierEnvelopeCiphertextSizeRead calculates the MKEM ciphertext
+// size for a CourierEnvelope containing a read query. Because reads are
+// padded to the write size before MKEM, this is identical to
+// CalculateCourierEnvelopeCiphertextSizeWrite.
 func (g *Geometry) CalculateCourierEnvelopeCiphertextSizeRead() int {
-	// For read queries, the ciphertext contains a ReplicaInnerMessage with a ReplicaRead
-	// ReplicaRead: just the BoxID (using BACAP constant)
-	replicaReadSize := bacap.BoxIDSize
-
-	// ReplicaInnerMessage wrapping ReplicaRead
-	replicaInnerMessageSize := messageTypeSize + replicaReadSize // MessageType + ReplicaRead
-
-	// MKEM encryption of ReplicaInnerMessage
-	mkemCiphertextSize := replicaInnerMessageSize + mkemEncryptionOverhead
-
-	return mkemCiphertextSize
+	return g.ReplicaInnerMessagePaddedSize() + mkemEncryptionOverhead
 }
 
-// CalculateCourierEnvelopeCiphertextSizeWrite calculates the MKEM ciphertext size
-// for a CourierEnvelope containing a write query.
+// CalculateCourierEnvelopeCiphertextSizeWrite calculates the MKEM ciphertext
+// size for a CourierEnvelope containing a write query. The MKEM plaintext is
+// a length-prefix-padded ReplicaInnerMessage of write-size length.
 func (g *Geometry) CalculateCourierEnvelopeCiphertextSizeWrite() int {
-	// For write queries, the ciphertext contains a ReplicaInnerMessage with a ReplicaWrite
-	// The ReplicaWrite contains the BACAP-encrypted payload
-	bacapCiphertextSize := g.CalculateBoxCiphertextLength()
-
-	// ReplicaWrite containing the BACAP payload
-	// BoxID + Signature + PayloadLen + BACAP payload (using actual scheme sizes)
-	replicaWriteSize := replicaWriteFixedOverhead() + bacapCiphertextSize
-
-	// ReplicaInnerMessage wrapping ReplicaWrite
-	replicaInnerMessageSize := messageTypeSize + replicaWriteSize // MessageType + ReplicaWrite
-
-	// MKEM encryption of ReplicaInnerMessage
-	mkemCiphertextSize := replicaInnerMessageSize + mkemEncryptionOverhead
-
-	return mkemCiphertextSize
+	return g.ReplicaInnerMessagePaddedSize() + mkemEncryptionOverhead
 }
 
 // CalculateEnvelopeReplySizeRead calculates the size of the EnvelopeReply
-// for a read operation (ReplicaMessageReply.EnvelopeReply field).
+// (the AEAD ciphertext on the wire) for a read operation. The AEAD plaintext
+// is a length-prefix-padded ReplicaMessageReplyInnerMessage of read-reply
+// size length; write replies are padded to the same size for
+// indistinguishability, so this value applies to both reply variants.
 func (g *Geometry) CalculateEnvelopeReplySizeRead() int {
-	// For read replies, the EnvelopeReply contains an encrypted ReplicaMessageReplyInnerMessage
-	// with a ReplicaReadReply containing the BACAP-encrypted payload
-
-	// ReplicaReadReply structure:
-	// - ErrorCode: 1 byte
-	// - BoxID: 32 bytes (bacap.BoxIDSize)
-	// - Signature: 64 bytes (bacap.SignatureSize)
-	// - PayloadLen: 4 bytes (uint32)
-	// - Payload: BACAP ciphertext (MaxPlaintextPayloadLength + lengthPrefix + bacapOverhead)
-	bacapCiphertextSize := g.CalculateBoxCiphertextLength()
-	replicaReadReplySize := errorCodeFieldSize + bacap.BoxIDSize + bacap.SignatureSize + payloadLenFieldSize + bacapCiphertextSize
-
-	// ReplicaMessageReplyInnerMessage wrapping ReplicaReadReply
-	// MessageType: 1 byte + ReplicaReadReply
-	replicaMessageReplyInnerSize := messageTypeSize + replicaReadReplySize
-
-	// MKEM EnvelopeReply encryption overhead (nonce + auth tag)
-	// This is different from full MKEM - it's just AEAD encryption
 	envelopeReplyOverhead := chacha20poly1305.NonceSize + chacha20poly1305.Overhead
-
-	return replicaMessageReplyInnerSize + envelopeReplyOverhead
+	return g.ReplicaReplyInnerMessagePaddedSize() + envelopeReplyOverhead
 }
 
-// CalculateEnvelopeReplySizeWrite calculates the size of the EnvelopeReply
-// for a write operation (ReplicaMessageReply.EnvelopeReply field).
+// CalculateEnvelopeReplySizeWrite is identical to CalculateEnvelopeReplySizeRead
+// because write replies are padded to the read-reply size before AEAD
+// encryption.
 func (g *Geometry) CalculateEnvelopeReplySizeWrite() int {
-	// For write replies, the EnvelopeReply contains an encrypted ReplicaMessageReplyInnerMessage
-	// with a ReplicaWriteReply (just an error code)
-
-	// ReplicaWriteReply structure:
-	// - ErrorCode: 1 byte
-	replicaWriteReplySize := errorCodeFieldSize
-
-	// ReplicaMessageReplyInnerMessage wrapping ReplicaWriteReply
-	// MessageType: 1 byte + ReplicaWriteReply
-	replicaMessageReplyInnerSize := messageTypeSize + replicaWriteReplySize
-
-	// MKEM EnvelopeReply encryption overhead (nonce + auth tag)
-	// This is different from full MKEM - it's just AEAD encryption
-	envelopeReplyOverhead := chacha20poly1305.NonceSize + chacha20poly1305.Overhead
-
-	return replicaMessageReplyInnerSize + envelopeReplyOverhead
+	return g.CalculateEnvelopeReplySizeRead()
 }

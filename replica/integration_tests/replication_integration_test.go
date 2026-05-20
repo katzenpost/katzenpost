@@ -146,8 +146,11 @@ func TestReplicaReplication(t *testing.T) {
 		WriteMsg:    &writeRequest,
 	}
 
-	// Create MKEM envelope for the write operation to NON-SHARD intermediaries
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(intermediaryPubKeys, writeMsg.Bytes())
+	// Create MKEM envelope for the write operation to NON-SHARD intermediaries.
+	// Pad to write size, matching PadInnerMessageForEncryption in the live encoder.
+	paddedWriteMsg, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, env.geometry)
+	require.NoError(t, err)
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(intermediaryPubKeys, paddedWriteMsg)
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
@@ -272,7 +275,10 @@ func readFromSpecificReplica(t *testing.T, env *testEnvironment, boxID *[bacap.B
 		ReadMsg:     readRequest,
 	}
 
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, readMsg.Bytes())
+	// Pad to write size, matching PadInnerMessageForEncryption in the live encoder.
+	paddedReadMsg, err := pigeonhole.PadInnerMessageForEncryption(readMsg, env.geometry)
+	require.NoError(t, err)
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedReadMsg)
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
@@ -306,7 +312,9 @@ func readFromSpecificReplica(t *testing.T, env *testEnvironment, boxID *[bacap.B
 	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKey, readReply.Payload)
 	require.NoError(t, err, "Failed to decrypt reply from replica %d", replicaIdx)
 
-	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
+	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInnerMsg)
+	require.NoError(t, err, "Failed to extract padded reply from replica %d", replicaIdx)
+	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
 	require.NoError(t, err, "Failed to parse reply from replica %d", replicaIdx)
 
 	return innerMsg

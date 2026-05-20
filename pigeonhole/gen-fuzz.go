@@ -108,3 +108,11 @@ func FuzzCopyCommandReply(data []byte) int {
 	}
 	return 1
 }
+
+func FuzzCopyStreamElement(data []byte) int {
+	_, err := ParseCopyStreamElement(data)
+	if err != nil {
+		return 0
+	}
+	return 1
+}

@@ -146,7 +146,12 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Debugf("handleReplicaMessage decapsulated with non-current epoch key: replica_epoch=%d decap_epoch=%d",
 			replicaEpoch, successEpoch)
 	}
-	msg, err := pigeonhole.ParseReplicaInnerMessage(requestRaw)
+	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(requestRaw)
+	if err != nil {
+		c.log.Errorf("handleReplicaMessage failed to extract padded inner message: %s", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidPayload, envelopeHash, []byte{}, 0)
+	}
+	msg, err := pigeonhole.ParseReplicaInnerMessage(innerBytes)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to parse inner message: %s", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidPayload, envelopeHash, []byte{}, 0)
@@ -535,11 +540,22 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
 
-	// Create the inner message containing the read request
+	// Create the inner message containing the read request, then length-
+	// prefix-and-pad so the peer replica's ExtractMessageFromPaddedPayload
+	// recovers the exact bytes after MKEM decryption.
 	innerMessage := pigeonhole.ReplicaInnerMessage{
 		ReadMsg: replicaRead,
 	}
-	innerMessageBlob := innerMessage.Bytes()
+	pigeonholeGeoForPad, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+	if err != nil {
+		c.log.Errorf("proxyReadRequest: failed to derive pigeonhole geometry: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
+	innerMessageBlob, err := pigeonhole.PadInnerMessageForEncryption(&innerMessage, pigeonholeGeoForPad)
+	if err != nil {
+		c.log.Errorf("proxyReadRequest: failed to pad inner message: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
 
 	// Get the target replica's envelope public key (ONLY current epoch)
 	targetEnvelopeKeyBytes, exists := targetShard.EnvelopeKeys[replicaEpoch]
@@ -597,7 +613,12 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		}
 
 		// Parse the decrypted reply to get the actual read reply data
-		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(decryptedReply)
+		replyBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedReply)
+		if err != nil {
+			c.log.Errorf("proxyReadRequest: failed to extract padded reply inner message: %v", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+		}
+		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(replyBytes)
 		if err != nil {
 			c.log.Errorf("proxyReadRequest: failed to parse proxy reply inner message: %v", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
@@ -689,12 +710,23 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
 
-	// Create the inner message containing the write request
+	// Create the inner message containing the write request, then length-
+	// prefix-and-pad so the peer replica's ExtractMessageFromPaddedPayload
+	// recovers the exact bytes after MKEM decryption.
 	innerMessage := pigeonhole.ReplicaInnerMessage{
 		MessageType: 1, // 1 = write
 		WriteMsg:    replicaWrite,
 	}
-	innerMessageBlob := innerMessage.Bytes()
+	pigeonholeGeoForPad, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: failed to derive pigeonhole geometry: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
+	innerMessageBlob, err := pigeonhole.PadInnerMessageForEncryption(&innerMessage, pigeonholeGeoForPad)
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: failed to pad inner message: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
 
 	// Get the target replica's envelope public key (ONLY current epoch)
 	targetEnvelopeKeyBytes, exists := targetShard.EnvelopeKeys[replicaEpoch]
@@ -751,7 +783,12 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		}
 
 		// Parse the decrypted reply to get the actual write reply data
-		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(decryptedReply)
+		replyBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedReply)
+		if err != nil {
+			c.log.Errorf("proxyWriteRequest: failed to extract padded reply inner message: %v", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+		}
+		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(replyBytes)
 		if err != nil {
 			c.log.Errorf("proxyWriteRequest: failed to parse proxy reply inner message: %v", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)

@@ -302,6 +302,11 @@ func (c *outgoingConn) dialAddress(dialCtx *workerContext, dialer *net.Dialer, a
 	}
 
 	c.log.Debugf("%v connection established.", u.Scheme)
+	// Disable Nagle so handshake/finalisation messages do not wait on
+	// a coalesce timer; harmless on non-TCP transports.
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)
+	}
 	return conn, false
 }
 

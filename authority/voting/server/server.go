@@ -74,12 +74,47 @@ type Server struct {
 	haltOnce   sync.Once
 }
 
+// computeLambdaG returns the Poisson rate (events/ms) at which each
+// gateway should emit decoy echoes, derived from the Echomix
+// Coupon Collector's Bound. The bound (paper §3, main.tex:381) says
+// that each gateway should output at least
+//
+//	Theta(n^2 * log(n) / g)
+//
+// packets per per-hop delay period mu = 1/Mu, where n is the maximum
+// number of nodes in a mix layer and g is the number of gateways.
+// Expressed as a rate in events/ms (consistent with the other Lambda
+// parameters):
+//
+//	LambdaG = (n^2 * log(n) / g) * Mu
+//
+// Two edge cases preserve sane behaviour on degenerate topologies:
+//
+//   - g == 0 (no gateway nodes configured): fall back to LambdaP+LambdaL
+//     so an isolated dirauth setup used for unit tests still computes
+//     a positive rate. This branch should not occur in production.
+//
+//   - n <= 1: log(n) is zero or negative, which would silence gateway
+//     decoys entirely; fall back to LambdaP+LambdaL for development
+//     scaffolding running with a single-node mix layer.
 func computeLambdaG(cfg *config.Config) float64 {
-	n := float64(len(cfg.Topology.Layers[0].Nodes))
-	if n == 1 {
-		return cfg.Parameters.LambdaP + cfg.Parameters.LambdaL + cfg.Parameters.LambdaD
+	g := float64(len(cfg.GatewayNodes))
+	if g == 0 {
+		return cfg.Parameters.LambdaP + cfg.Parameters.LambdaL
 	}
-	return n * math.Log(n)
+
+	maxLayer := 0
+	for _, layer := range cfg.Topology.Layers {
+		if len(layer.Nodes) > maxLayer {
+			maxLayer = len(layer.Nodes)
+		}
+	}
+	n := float64(maxLayer)
+	if n <= 1 {
+		return cfg.Parameters.LambdaP + cfg.Parameters.LambdaL
+	}
+
+	return n * n * math.Log(n) * cfg.Parameters.Mu / g
 }
 
 func (s *Server) initDataDir() error {

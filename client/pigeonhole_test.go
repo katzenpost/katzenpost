@@ -1461,10 +1461,20 @@ func TestARQSuccessWritePayload(t *testing.T) {
 	}
 	writeReplyInnerMsgBytes := writeReplyInnerMsg.Bytes()
 
+	// Length-prefix-and-pad the inner message exactly as the replica's
+	// PadReplyInnerMessageForEncryption does in the live encoder path, so
+	// the client daemon's ExtractMessageFromPaddedPayload recovers the
+	// exact bytes after MKEM decryption. The target size only needs to be
+	// at least len+4 here; we use the minimum since this test does not
+	// exercise the indistinguishability padding property.
+	paddedReplyBytes, err := pigeonhole.CreatePaddedPayload(
+		writeReplyInnerMsgBytes, len(writeReplyInnerMsgBytes)+4)
+	require.NoError(err)
+
 	// Encrypt the reply using MKEM EnvelopeReply (replica encrypts for client)
 	// This uses DH between replica's private key and client's public key
 	encryptedPayload := replicaCommon.MKEMNikeScheme.EnvelopeReply(
-		replica0PrivKey, clientPubKey, writeReplyInnerMsgBytes,
+		replica0PrivKey, clientPubKey, paddedReplyBytes,
 	)
 
 	// Create a CourierEnvelopeReply with ReplyType=Payload containing the encrypted write reply
