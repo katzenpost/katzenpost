@@ -11,7 +11,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20poly1305 v0.0.1
-	github.com/katzenpost/hpqc v0.0.80
+	github.com/katzenpost/hpqc v0.0.81
 	github.com/katzenpost/nyquist v0.0.13
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
 	github.com/linxGnu/grocksdb v1.10.1
@@ -75,6 +75,7 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/rfjakob/eme v1.2.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/shurlinet/go-hqc v0.1.1 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
