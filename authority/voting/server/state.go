@@ -740,7 +740,6 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		Version:                       pki.DocumentVersion,
 		Epoch:                         s.votingEpoch,
 		GenesisEpoch:                  s.genesisEpoch,
-		SendRatePerMinute:             params.SendRatePerMinute,
 		Mu:                            params.Mu,
 		MuMaxDelay:                    params.MuMaxDelay,
 		LambdaP:                       params.LambdaP,
@@ -1418,7 +1417,6 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	for id, vote := range s.votes[epoch] {
 		// serialize the vote parameters and tally these as well.
 		params := &config.Parameters{
-			SendRatePerMinute: vote.SendRatePerMinute,
 			Mu:                vote.Mu,
 			MuMaxDelay:        vote.MuMaxDelay,
 			LambdaP:           vote.LambdaP,

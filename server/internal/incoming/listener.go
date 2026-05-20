@@ -54,7 +54,12 @@ type listener struct {
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
 
-	sendRatePerMinute uint64
+	// Token-bucket parameters derived from the consensus document's
+	// LambdaP and LambdaL by the PKI worker; consumed in the hot path
+	// by incomingConn.IsPeerValid. sendTokenIncrNs == 0 disables the
+	// rate limit.
+	sendTokenIncrNs uint64
+	maxSendTokens   uint64
 }
 
 func (l *listener) Halt() {
@@ -70,8 +75,13 @@ func (l *listener) Halt() {
 	l.closeAllWg.Wait()
 }
 
-func (l *listener) OnNewSendRatePerMinute(sendRatePerMinute uint64) {
-	atomic.StoreUint64(&l.sendRatePerMinute, sendRatePerMinute)
+// OnNewBucketParams installs the latest token-bucket parameters on
+// this listener. The values are precomputed by the PKI worker once
+// per consensus document; the hot path on each incoming connection
+// reads both fields without locking.
+func (l *listener) OnNewBucketParams(sendTokenIncrNs, maxSendTokens uint64) {
+	atomic.StoreUint64(&l.sendTokenIncrNs, sendTokenIncrNs)
+	atomic.StoreUint64(&l.maxSendTokens, maxSendTokens)
 }
 
 func (l *listener) worker() {

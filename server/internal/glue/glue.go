@@ -102,7 +102,12 @@ type Listener interface {
 	Halt()
 	CloseOldConns(interface{}) error
 	GetConnIdentities() (map[[constants.RecipientIDLength]byte]interface{}, error)
-	OnNewSendRatePerMinute(uint64)
+	// OnNewBucketParams delivers freshly derived token-bucket
+	// parameters to each listener after a consensus-document update.
+	// sendTokenIncrNs is the refill interval in nanoseconds (one
+	// token added per increment); maxSendTokens is the bucket cap.
+	// Both zero disables the rate limit on this listener.
+	OnNewBucketParams(sendTokenIncrNs, maxSendTokens uint64)
 }
 
 type Decoy interface {

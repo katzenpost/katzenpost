@@ -134,8 +134,6 @@ performance optimization and security requirements.`,
 		"PKI polling interval in seconds (0 for default)")
 
 	// Advanced timing parameters
-	cmd.Flags().Uint64Var(&cfg.Sr, "sendRate", 0,
-		"client send rate limit per minute (0 for unlimited)")
 	cmd.Flags().Float64Var(&cfg.Mu, "mu", 0.005,
 		"inverse of mean per-hop delay (higher = faster)")
 	cmd.Flags().Uint64Var(&cfg.MuMax, "muMax", 1000,

@@ -87,9 +87,6 @@ type Document struct {
 	// GenesisEpoch is the epoch on which authorities started consensus
 	GenesisEpoch uint64
 
-	// SendRatePerMinute is the number of packets per minute a client can send.
-	SendRatePerMinute uint64
-
 	// Mu is the inverse of the mean of the exponential distribution
 	// that the Sphinx packet per-hop mixing delay will be sampled from.
 	Mu float64
@@ -211,7 +208,7 @@ func (d *Document) String() string {
 	}
 	psrv += "]"
 
-	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nSendRatePerMinute: %v Mu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.SendRatePerMinute, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv, psrv)
+	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nMu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv, psrv)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("  [%v]{", l)
 		s += fmt.Sprintf("%v", nodes)

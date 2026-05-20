@@ -74,7 +74,6 @@ func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme
 		Epoch:        epoch,
 		GenesisEpoch: epoch,
 
-		SendRatePerMinute: 0,
 		Mu:                1,
 		MuMaxDelay:        1,
 		LambdaP:           1,

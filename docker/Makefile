@@ -44,7 +44,6 @@ serviceNodes=3
 storageNodes=5
 
 # Parameters
-sr=0
 mu=0.005
 muMax=1000
 lP=0.001
@@ -179,7 +178,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		$(sh) -c 'cd cmd/genconfig && go build && cd ../../docker \
 		&& ../cmd/genconfig/genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
 		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
+		--mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
@@ -195,7 +194,7 @@ config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
 	cd ../cmd/genconfig && go build && ./genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
 		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
+		--mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \

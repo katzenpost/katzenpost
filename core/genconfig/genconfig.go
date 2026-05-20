@@ -98,7 +98,6 @@ type Config struct {
 	DialTimeout              int
 	MaxPKIDelay              int
 	PollingIntvl             int
-	Sr                       uint64
 	Mu                       float64
 	MuMax                    uint64
 	LP                       float64
@@ -688,7 +687,6 @@ func RunGenConfig(cfg Config) error {
 
 	// Create parameters struct for voting authorities
 	parameters := &vConfig.Parameters{
-		SendRatePerMinute: cfg.Sr,
 		Mu:                cfg.Mu,
 		MuMaxDelay:        cfg.MuMax,
 		LambdaP:           cfg.LP,
