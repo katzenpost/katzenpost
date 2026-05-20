@@ -216,6 +216,11 @@ func (p *connector) initSession(
 		conn, err = common.DialURL(u, ictx, dialFn)
 		cancelFn()
 		if err == nil {
+			// Disable Nagle so handshake/finalisation messages do not
+			// wait on a coalesce timer; harmless on non-TCP transports.
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				tcpConn.SetNoDelay(true)
+			}
 			connectedURL = peer.Addresses[idx]
 			break
 		}

@@ -105,6 +105,10 @@ func (l *listener) worker() {
 		if ok {
 			tcpConn.SetKeepAlive(true)
 			tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+			// Disable Nagle so the responder's finalisation NoOp does
+			// not wait on a coalesce timer behind the small handshake
+			// messages it follows.
+			tcpConn.SetNoDelay(true)
 		}
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())

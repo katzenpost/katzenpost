@@ -204,6 +204,12 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 	}
 	c.log.Debugf("%v connection established.", u.Scheme)
 
+	// Disable Nagle so handshake/finalisation messages do not wait on
+	// a coalesce timer; harmless on non-TCP transports.
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)
+	}
+
 	start := time.Now()
 
 	// Handle the new connection.
