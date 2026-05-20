@@ -1204,7 +1204,11 @@ func (e *Courier) tryReadFromShardReplica(
 	if err != nil {
 		return nil, 0, fmt.Errorf("shard %d: decrypt envelope: %w", shard.ReplicaID, err)
 	}
-	replyInner, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(raw)
+	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(raw)
+	if err != nil {
+		return nil, 0, fmt.Errorf("shard %d: extract padded inner: %w", shard.ReplicaID, err)
+	}
+	replyInner, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
 	if err != nil {
 		return nil, 0, fmt.Errorf("shard %d: parse inner: %w", shard.ReplicaID, err)
 	}

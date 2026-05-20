@@ -146,7 +146,12 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Debugf("handleReplicaMessage decapsulated with non-current epoch key: replica_epoch=%d decap_epoch=%d",
 			replicaEpoch, successEpoch)
 	}
-	msg, err := pigeonhole.ParseReplicaInnerMessage(requestRaw)
+	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(requestRaw)
+	if err != nil {
+		c.log.Errorf("handleReplicaMessage failed to extract padded inner message: %s", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidPayload, envelopeHash, []byte{}, 0)
+	}
+	msg, err := pigeonhole.ParseReplicaInnerMessage(innerBytes)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to parse inner message: %s", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidPayload, envelopeHash, []byte{}, 0)
@@ -597,7 +602,12 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		}
 
 		// Parse the decrypted reply to get the actual read reply data
-		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(decryptedReply)
+		replyBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedReply)
+		if err != nil {
+			c.log.Errorf("proxyReadRequest: failed to extract padded reply inner message: %v", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+		}
+		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(replyBytes)
 		if err != nil {
 			c.log.Errorf("proxyReadRequest: failed to parse proxy reply inner message: %v", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
@@ -751,7 +761,12 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		}
 
 		// Parse the decrypted reply to get the actual write reply data
-		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(decryptedReply)
+		replyBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedReply)
+		if err != nil {
+			c.log.Errorf("proxyWriteRequest: failed to extract padded reply inner message: %v", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+		}
+		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(replyBytes)
 		if err != nil {
 			c.log.Errorf("proxyWriteRequest: failed to parse proxy reply inner message: %v", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
