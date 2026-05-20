@@ -30,5 +30,14 @@ func (c *TcpDialConfig) Dial() (net.Conn, error) {
 	default:
 		return nil, fmt.Errorf("transport: TcpDialConfig.Network %q is not one of tcp, tcp4, tcp6", network)
 	}
-	return net.Dial(network, c.Address)
+	conn, err := net.Dial(network, c.Address)
+	if err != nil {
+		return nil, err
+	}
+	// Disable Nagle so small CBOR command frames between the thin
+	// client and kpclientd do not wait on a coalesce timer.
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)
+	}
+	return conn, nil
 }
