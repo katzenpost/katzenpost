@@ -540,11 +540,22 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
 
-	// Create the inner message containing the read request
+	// Create the inner message containing the read request, then length-
+	// prefix-and-pad so the peer replica's ExtractMessageFromPaddedPayload
+	// recovers the exact bytes after MKEM decryption.
 	innerMessage := pigeonhole.ReplicaInnerMessage{
 		ReadMsg: replicaRead,
 	}
-	innerMessageBlob := innerMessage.Bytes()
+	pigeonholeGeoForPad, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+	if err != nil {
+		c.log.Errorf("proxyReadRequest: failed to derive pigeonhole geometry: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
+	innerMessageBlob, err := pigeonhole.PadInnerMessageForEncryption(&innerMessage, pigeonholeGeoForPad)
+	if err != nil {
+		c.log.Errorf("proxyReadRequest: failed to pad inner message: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
 
 	// Get the target replica's envelope public key (ONLY current epoch)
 	targetEnvelopeKeyBytes, exists := targetShard.EnvelopeKeys[replicaEpoch]
@@ -699,12 +710,23 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
 
-	// Create the inner message containing the write request
+	// Create the inner message containing the write request, then length-
+	// prefix-and-pad so the peer replica's ExtractMessageFromPaddedPayload
+	// recovers the exact bytes after MKEM decryption.
 	innerMessage := pigeonhole.ReplicaInnerMessage{
 		MessageType: 1, // 1 = write
 		WriteMsg:    replicaWrite,
 	}
-	innerMessageBlob := innerMessage.Bytes()
+	pigeonholeGeoForPad, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: failed to derive pigeonhole geometry: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
+	innerMessageBlob, err := pigeonhole.PadInnerMessageForEncryption(&innerMessage, pigeonholeGeoForPad)
+	if err != nil {
+		c.log.Errorf("proxyWriteRequest: failed to pad inner message: %v", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
+	}
 
 	// Get the target replica's envelope public key (ONLY current epoch)
 	targetEnvelopeKeyBytes, exists := targetShard.EnvelopeKeys[replicaEpoch]
