@@ -21,6 +21,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/katzenpost/client/instrument"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -798,9 +799,11 @@ func (c *connection) onConnStatusChange(err error) {
 
 	if err == nil {
 		c.isConnected.Store(true)
+		instrument.GatewayConnected(true)
 	} else {
 		c.log.Info("onConnStatusChange %s", err.Error())
 		c.isConnected.Store(false)
+		instrument.GatewayConnected(false)
 		// Force drain the channels used to poke the loop.
 		select {
 		case ctx := <-c.sendCh:

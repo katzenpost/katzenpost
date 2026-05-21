@@ -23,6 +23,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/common"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/profiling"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -501,10 +502,20 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		// log a warning. Cancel removes the entry regardless of its
 		// position in the queue.
 		d.arqTimerQueue.Cancel(arqMessage.SURBID)
+		instrument.SurbIDReplyReceived()
+		instrument.ARQRoundTrip(time.Since(arqMessage.SentAt))
 		d.handlePigeonholeARQReply(arqMessage, reply)
 		return
 	}
 	if !isReply && !isDecoy {
+		// A SURB reply arrived whose SURB ID does not match any
+		// known entry in the legacy reply map, the decoy map, or
+		// the ARQ map. This is the diagnostic for the reply-routing
+		// problem investigated previously: either the originating
+		// entry was garbage-collected before the reply arrived, the
+		// reply was misrouted, or the SURB ID matching itself is
+		// buggy.
+		instrument.SurbIDReplyNoMatch()
 		return
 	}
 
@@ -832,8 +843,8 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 }
 
 // dropARQMessage deletes both map entries for arqMessage under replyLock.
-// Used by handler early-bail paths that cannot rotate or retry — e.g.
-// a malformed reply — to prevent map-entry leaks now that handleReply
+// Used by handler early-bail paths that cannot rotate or retry, e.g.
+// a malformed reply, to prevent map-entry leaks now that handleReply
 // no longer pre-deletes on receipt of an ARQ reply.
 func (d *Daemon) dropARQMessage(arqMessage *ARQMessage) {
 	d.replyLock.Lock()
@@ -843,7 +854,10 @@ func (d *Daemon) dropARQMessage(arqMessage *ARQMessage) {
 	if arqMessage.EnvelopeHash != nil {
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 	}
+	inflight := len(d.arqSurbIDMap)
 	d.replyLock.Unlock()
+	instrument.ARQInflightSet(inflight)
+	instrument.SurbIDGarbageCollected()
 }
 
 // rotateARQSurbIDLocked rewires an ARQMessage to use newSurbID for its next
@@ -1014,7 +1028,14 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 			}
 		}
 	}
+	inflight := len(d.arqSurbIDMap)
 	d.replyLock.Unlock()
+	if cleanedARQ > 0 {
+		instrument.ARQInflightSet(inflight)
+		for i := 0; i < cleanedARQ; i++ {
+			instrument.SurbIDGarbageCollected()
+		}
+	}
 
 	if d.arqTimerQueue != nil {
 		for _, surbID := range arqSurbIDsToCancel {
