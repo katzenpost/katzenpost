@@ -120,12 +120,16 @@ performance optimization and security requirements.`,
 		"disable courier and replica decoy traffic")
 	cmd.Flags().BoolVar(&cfg.NoMixDecoy, "noMixDecoy", true,
 		"disable decoy traffic generation for mix nodes")
+	cmd.Flags().BoolVar(&cfg.NoGatewayDecoy, "noGatewayDecoy", true,
+		"disable decoy traffic generation for gateway nodes (independent of --noMixDecoy)")
 	cmd.Flags().BoolVar(&cfg.NoMetrics, "noMetrics", false,
 		"disable prometheus and grafana containers in docker-compose")
 	cmd.Flags().BoolVar(&cfg.PyroscopeDirauth, "pyroscopeDirauth", false,
 		"enable pyroscope profiling of the directory authorities")
 	cmd.Flags().BoolVar(&cfg.PyroscopeKpclientd, "pyroscopeKpclientd", false,
 		"enable pyroscope profiling of the kpclientd client daemon")
+	cmd.Flags().StringVar(&cfg.KpclientdMetricsAddress, "kpclientdMetricsAddress", "",
+		"bind address (host:port) for the kpclientd prometheus listener; empty disables. Only honoured by kpclientd builds compiled with -tags kpclientd_metrics.")
 	cmd.Flags().IntVar(&cfg.DialTimeout, "dialTimeout", 0,
 		"session dial timeout in seconds (0 for default)")
 	cmd.Flags().IntVar(&cfg.MaxPKIDelay, "maxPKIDelay", 0,
@@ -133,29 +137,21 @@ performance optimization and security requirements.`,
 	cmd.Flags().IntVar(&cfg.PollingIntvl, "pollingIntvl", 0,
 		"PKI polling interval in seconds (0 for default)")
 
-	// Advanced timing parameters
+	// Advanced timing parameters. Sampling safety caps are derived
+	// inside the library from each rate (common.SafetyCap); the
+	// previous --muMax, --lambdaPMax, --lambdaLMax, --lambdaMMax,
+	// --lambdaGMax, and --lambdaRMax flags are removed because no
+	// operator setting produces a useful trade-off.
 	cmd.Flags().Float64Var(&cfg.Mu, "mu", 0.005,
 		"inverse of mean per-hop delay (higher = faster)")
-	cmd.Flags().Uint64Var(&cfg.MuMax, "muMax", 1000,
-		"maximum delay for mu parameter in milliseconds")
 	cmd.Flags().Float64Var(&cfg.LP, "lambdaP", 0.001,
 		"inverse of mean client send rate (higher = more frequent)")
-	cmd.Flags().Uint64Var(&cfg.LPMax, "lambdaPMax", 1000,
-		"maximum delay for lambdaP in milliseconds")
 	cmd.Flags().Float64Var(&cfg.LL, "lambdaL", 0.0005,
 		"inverse of mean loop decoy send rate")
-	cmd.Flags().Uint64Var(&cfg.LLMax, "lambdaLMax", 1000,
-		"maximum delay for lambdaL in milliseconds")
 	cmd.Flags().Float64Var(&cfg.LM, "lambdaM", 0.2,
 		"inverse of mean mix decoy send rate")
-	cmd.Flags().Uint64Var(&cfg.LMMax, "lambdaMMax", 100,
-		"maximum delay for lambdaM in milliseconds")
-	cmd.Flags().Uint64Var(&cfg.LGMax, "lambdaGMax", 100,
-		"maximum delay for gateway lambda in milliseconds")
 	cmd.Flags().Float64Var(&cfg.LR, "lambdaR", 0.0005,
 		"inverse of mean courier/replica decoy send rate")
-	cmd.Flags().Uint64Var(&cfg.LRMax, "lambdaRMax", 1000,
-		"maximum delay for lambdaR in milliseconds")
 
 	// Mix node scheduler tuning flags
 	cmd.Flags().IntVar(&cfg.SchedulerSlack, "schedulerSlack", 0,

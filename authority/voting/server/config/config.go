@@ -35,7 +35,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -49,21 +48,17 @@ const (
 	defaultLogLevel         = "NOTICE"
 	defaultLayers           = 3
 	defaultMinNodesPerLayer = 2
-	absoluteMaxDelay        = 6 * 60 * 60 * 1000 // 6 hours.
 
 	// Note: These values are picked primarily for debugging and need to
 	// be changed to something more suitable for a production deployment
-	// at some point.
-	defaultMu                   = 0.00025
-	defaultMuMaxPercentile      = 0.99999
-	defaultLambdaP              = 0.00025
-	defaultLambdaPMaxPercentile = 0.99999
-	defaultLambdaL              = 0.00025
-	defaultLambdaLMaxPercentile = 0.99999
-	defaultLambdaM              = 0.00025
-	defaultLambdaMMaxPercentile = 0.99999
-	defaultLambdaR              = 0.00025
-	defaultLambdaRMaxPercentile = 0.99999
+	// at some point. Sampling safety caps are derived inside
+	// common.SafetyCap from each rate, so no MaxDelay companion
+	// defaults are needed here.
+	defaultMu      = 0.00025
+	defaultLambdaP = 0.00025
+	defaultLambdaL = 0.00025
+	defaultLambdaM = 0.00025
+	defaultLambdaR = 0.00025
 
 	publicKeyHashSize = 32
 )
@@ -100,91 +95,53 @@ func (lCfg *Logging) validate() error {
 }
 
 // Parameters is the network parameters.
+//
+// Sampling safety caps are derived programmatically from each rate
+// inside common.SafetyCap and are not operator-tunable. The earlier
+// MuMaxDelay, LambdaPMaxDelay, LambdaLMaxDelay, LambdaMMaxDelay,
+// LambdaGMaxDelay, and LambdaRMaxDelay fields are removed from the
+// consensus parameter set; supplying them in authority.toml is no
+// longer accepted.
 type Parameters struct {
 	// Mu is the inverse of the mean of the exponential distribution
 	// that is used to select the delay for each hop.
 	Mu float64
-
-	// MuMaxDelay sets the maximum delay for Mu.
-	MuMaxDelay uint64
 
 	// LambdaP is the inverse of the mean of the exponential distribution
 	// that is used to select the delay between clients sending from their egress
 	// FIFO queue or drop decoy message.
 	LambdaP float64
 
-	// LambdaPMaxDelay sets the maximum delay for LambdaP.
-	LambdaPMaxDelay uint64
-
 	// LambdaL is the inverse of the mean of the exponential distribution
 	// that is used to select the delay between clients sending loop decoys.
 	LambdaL float64
-
-	// LambdaLMaxDelay sets the maximum delay for LambdaP.
-	LambdaLMaxDelay uint64
 
 	// LambdaM is the inverse of the mean of the exponential distribution
 	// that is used to select the delay between sending mix node decoys.
 	LambdaM float64
 
-	// LambdaMMaxDelay sets the maximum delay for LambdaP.
-	LambdaMMaxDelay uint64
-
-	// LambdaGMaxDelay sets the maximum delay for LambdaG. The
-	// corresponding rate LambdaG is derived by the dirauth from the
-	// network topology via the Coupon Collector's Bound (see
-	// computeLambdaG in authority/voting/server/server.go) rather than
-	// taken from operator-set TOML, so only the max-delay clamp is
-	// operator-tunable here.
-	LambdaGMaxDelay uint64
-
 	// LambdaR is the inverse of the mean of the exponential distribution
 	// that the courier and storage replicas will sample to determine the
 	// send timing of decoy traffic between each other.
 	LambdaR float64
-
-	// LambdaRMaxDelay sets the maximum delay for LambdaR.
-	LambdaRMaxDelay uint64
 }
 
 func (pCfg *Parameters) validate() error {
 	if pCfg.Mu < 0 {
 		return fmt.Errorf("config: Parameters: Mu %v is invalid", pCfg.Mu)
 	}
-	if pCfg.MuMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: MuMaxDelay %v is out of range", pCfg.MuMaxDelay)
-	}
 	if pCfg.LambdaP < 0 {
 		return fmt.Errorf("config: Parameters: LambdaP %v is invalid", pCfg.LambdaP)
 	}
-	if pCfg.LambdaPMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaPMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
-	}
 	if pCfg.LambdaL < 0 {
-		return fmt.Errorf("config: Parameters: LambdaL %v is invalid", pCfg.LambdaP)
-	}
-	if pCfg.LambdaLMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaLMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+		return fmt.Errorf("config: Parameters: LambdaL %v is invalid", pCfg.LambdaL)
 	}
 	if pCfg.LambdaM < 0 {
-		return fmt.Errorf("config: Parameters: LambdaM %v is invalid", pCfg.LambdaP)
-	}
-	if pCfg.LambdaMMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaMMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
-	}
-	if pCfg.LambdaGMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaGMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
-	}
-	if pCfg.LambdaGMaxDelay == 0 {
-		return errors.New("LambdaGMaxDelay must be set")
+		return fmt.Errorf("config: Parameters: LambdaM %v is invalid", pCfg.LambdaM)
 	}
 	if pCfg.LambdaR < 0 {
 		return fmt.Errorf("config: Parameters: LambdaR %v is invalid", pCfg.LambdaR)
 	}
-	if pCfg.LambdaRMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaRMaxDelay %v is out of range", pCfg.LambdaRMaxDelay)
-	}
-
 	return nil
 }
 
@@ -192,35 +149,17 @@ func (pCfg *Parameters) applyDefaults() {
 	if pCfg.Mu == 0 {
 		pCfg.Mu = defaultMu
 	}
-	if pCfg.MuMaxDelay == 0 {
-		pCfg.MuMaxDelay = uint64(rand.ExpQuantile(pCfg.Mu, defaultMuMaxPercentile))
-		if pCfg.MuMaxDelay > absoluteMaxDelay {
-			pCfg.MuMaxDelay = absoluteMaxDelay
-		}
-	}
 	if pCfg.LambdaP == 0 {
 		pCfg.LambdaP = defaultLambdaP
-	}
-	if pCfg.LambdaPMaxDelay == 0 {
-		pCfg.LambdaPMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaP, defaultLambdaPMaxPercentile))
 	}
 	if pCfg.LambdaL == 0 {
 		pCfg.LambdaL = defaultLambdaL
 	}
-	if pCfg.LambdaLMaxDelay == 0 {
-		pCfg.LambdaLMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaL, defaultLambdaLMaxPercentile))
-	}
 	if pCfg.LambdaM == 0 {
 		pCfg.LambdaM = defaultLambdaM
 	}
-	if pCfg.LambdaMMaxDelay == 0 {
-		pCfg.LambdaMMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaM, defaultLambdaMMaxPercentile))
-	}
 	if pCfg.LambdaR == 0 {
 		pCfg.LambdaR = defaultLambdaR
-	}
-	if pCfg.LambdaRMaxDelay == 0 {
-		pCfg.LambdaRMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaR, defaultLambdaRMaxPercentile))
 	}
 }
 
@@ -501,6 +440,14 @@ type Server struct {
 
 	// DisableIPv6 disables IPv6 for peer connections
 	DisableIPv6 bool
+
+	// MetricsAddress is the host:port that the dirauth's prometheus
+	// HTTP endpoint binds to. Empty disables the endpoint. The
+	// listener is wired in server.go after the wire listeners are
+	// started; the endpoint is independent of any wire-protocol
+	// listener and exposes only metrics, never any authority
+	// state.
+	MetricsAddress string
 }
 
 // applyRetryDefaults sets default values for retry configuration

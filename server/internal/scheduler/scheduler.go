@@ -116,6 +116,7 @@ func (sch *scheduler) worker() {
 				if pkt.Delay > maxDelay {
 					sch.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.ID, pkt.Delay)
 					instrument.PacketsDropped()
+					instrument.PacketsDroppedByReason("scheduler_delay_exceeds_max")
 					instrument.MixPacketsDropped()
 					pkt.Dispose()
 					continue
@@ -131,6 +132,7 @@ func (sch *scheduler) worker() {
 					sID := utils.NodeIDToPrintString(&pkt.NextNodeHop.ID)
 					sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.ID, sID)
 					instrument.PacketsDropped()
+					instrument.PacketsDroppedByReason("scheduler_next_hop_invalid")
 					instrument.MixPacketsDropped()
 					pkt.Dispose()
 				}
@@ -198,6 +200,7 @@ func (sch *scheduler) worker() {
 				// configured slack time.
 				sch.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now.Sub(dispatchAt))
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("scheduler_deadline_blown")
 				instrument.MixPacketsDropped()
 				pkt.Dispose()
 			} else {

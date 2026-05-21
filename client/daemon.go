@@ -23,6 +23,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/common"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/profiling"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -501,10 +502,20 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		// log a warning. Cancel removes the entry regardless of its
 		// position in the queue.
 		d.arqTimerQueue.Cancel(arqMessage.SURBID)
+		instrument.SurbIDReplyReceived()
+		instrument.ARQRoundTrip(time.Since(arqMessage.SentAt))
 		d.handlePigeonholeARQReply(arqMessage, reply)
 		return
 	}
 	if !isReply && !isDecoy {
+		// A SURB reply arrived whose SURB ID does not match any
+		// known entry in the legacy reply map, the decoy map, or
+		// the ARQ map. This is the diagnostic for the reply-routing
+		// problem investigated previously: either the originating
+		// entry was garbage-collected before the reply arrived, the
+		// reply was misrouted, or the SURB ID matching itself is
+		// buggy.
+		instrument.SurbIDReplyNoMatch()
 		return
 	}
 
@@ -646,10 +657,36 @@ func (d *Daemon) send(request *Request) {
 
 	if withSURB {
 		now = time.Now()
-		// XXX  this is too aggressive, and must be at least the fetchInterval + rtt + some slopfactor to account for path delays
 
+		// SURB-ID GC timer. The map entry for this surbID is retained
+		// only until this timer fires; if the SURB reply arrives any
+		// later, handleReply finds no match in d.replies / d.decoys /
+		// d.arqSurbIDMap and the reply is silently discarded
+		// (instrument.SurbIDReplyNoMatch will increment). The
+		// retention budget must therefore cover not only the
+		// Sphinx-encoded round-trip in rtt but also every wall-clock
+		// overhead the encoded delay does not capture: per-hop
+		// scheduler dwell (up to SchedulerSlack at each mix, server
+		// default ~450ms), per-hop network transmission, Sphinx
+		// unwrap CPU, and gateway spool-to-client polling.
+		//
+		// Previously the slop was a hard-coded one second, which
+		// covered the average case but expired before any long-tail
+		// reply (Erlang sum at p99 plus accumulated scheduler slack)
+		// could arrive. The diagnostic counter
+		// katzenpost_client_surb_id_reply_no_match_total surfaced
+		// this regression at ~1 GC-late event per second under
+		// L=3, LambdaP=1/s, LambdaL=0.5/s load. Scale the slop with
+		// the topology and a per-hop wall-clock budget so long-tail
+		// replies (from either LambdaP-fallback or LambdaL decoys, or
+		// from application traffic) are not GC'd prematurely.
 		fetchInterval := d.client.GetPollInterval()
-		slop := time.Second
+		const perHopSlopMs = 500 // covers SchedulerSlack default + net + crypto per hop
+		var hops uint64 = 9      // fallback for 3-layer topology
+		if _, doc := d.client.CurrentDocument(); doc != nil && len(doc.Topology) > 0 {
+			hops = uint64(2*len(doc.Topology) + 3)
+		}
+		slop := time.Duration(hops*perHopSlopMs) * time.Millisecond
 		duration := rtt + fetchInterval + slop
 		replyArrivalTime := now.Add(duration)
 
@@ -832,8 +869,8 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 }
 
 // dropARQMessage deletes both map entries for arqMessage under replyLock.
-// Used by handler early-bail paths that cannot rotate or retry — e.g.
-// a malformed reply — to prevent map-entry leaks now that handleReply
+// Used by handler early-bail paths that cannot rotate or retry, e.g.
+// a malformed reply, to prevent map-entry leaks now that handleReply
 // no longer pre-deletes on receipt of an ARQ reply.
 func (d *Daemon) dropARQMessage(arqMessage *ARQMessage) {
 	d.replyLock.Lock()
@@ -843,7 +880,10 @@ func (d *Daemon) dropARQMessage(arqMessage *ARQMessage) {
 	if arqMessage.EnvelopeHash != nil {
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 	}
+	inflight := len(d.arqSurbIDMap)
 	d.replyLock.Unlock()
+	instrument.ARQInflightSet(inflight)
+	instrument.SurbIDGarbageCollected()
 }
 
 // rotateARQSurbIDLocked rewires an ARQMessage to use newSurbID for its next
@@ -1014,7 +1054,14 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 			}
 		}
 	}
+	inflight := len(d.arqSurbIDMap)
 	d.replyLock.Unlock()
+	if cleanedARQ > 0 {
+		instrument.ARQInflightSet(inflight)
+		for i := 0; i < cleanedARQ; i++ {
+			instrument.SurbIDGarbageCollected()
+		}
+	}
 
 	if d.arqTimerQueue != nil {
 		for _, surbID := range arqSurbIDsToCancel {

@@ -617,6 +617,8 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 		if c.sendTokens == 0 {
 			c.log.Debugf("Dropping packet: %v (Rate limited)", pkt.ID)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("gateway_rate_limited")
+			instrument.RateLimitDropped()
 			pkt.Dispose()
 			return nil
 		}

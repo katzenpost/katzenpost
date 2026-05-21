@@ -119,6 +119,7 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("cbor_kaetzchen_dwell_exceeded")
 				pkt.Dispose()
 				continue
 			}

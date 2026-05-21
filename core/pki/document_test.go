@@ -93,9 +93,7 @@ func TestDocument(t *testing.T) {
 		GenesisEpoch:       debugTestEpoch,
 		Topology:           make([][]*MixDescriptor, 3),
 		Mu:                 0.42,
-		MuMaxDelay:         23,
 		LambdaP:            0.69,
-		LambdaPMaxDelay:    17,
 		SharedRandomCommit: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomReveal: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
@@ -131,13 +129,9 @@ func TestDocument(t *testing.T) {
 	require.NoError(err, "ParseDocument()")
 	require.Equal(doc.Epoch, ddoc.Epoch, "ParseDocument(): Epoch")
 	require.Equal(doc.Mu, ddoc.Mu, "ParseDocument(): Mu")
-	require.Equal(doc.MuMaxDelay, ddoc.MuMaxDelay, "ParseDocument(): MuMaxDelay")
 	require.Equal(doc.LambdaP, ddoc.LambdaP, "ParseDocument(): LambdaP")
-	require.Equal(doc.LambdaPMaxDelay, ddoc.LambdaPMaxDelay, "ParseDocument(): LambdaPMaxDelay")
 	require.Equal(doc.LambdaL, ddoc.LambdaL, "ParseDocument(): LambdaL")
-	require.Equal(doc.LambdaLMaxDelay, ddoc.LambdaLMaxDelay, "ParseDocument(): LambdaLMaxDelay")
 	require.Equal(doc.LambdaM, ddoc.LambdaM, "ParseDocument(): LambdaM")
-	require.Equal(doc.LambdaMMaxDelay, ddoc.LambdaMMaxDelay, "ParseDocument(): LambdaMMaxDelay")
 	require.Equal(doc.SharedRandomValue, ddoc.SharedRandomValue, "ParseDocument(): SharedRandomValue")
 	require.Equal(doc.PriorSharedRandom, ddoc.PriorSharedRandom, "ParseDocument(): PriorSharedRandom")
 	require.Equal(doc.SharedRandomCommit, ddoc.SharedRandomCommit, "ParseDocument(): SharedRandomCommit")

@@ -13,6 +13,7 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -305,6 +306,7 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 func (l *listener) registerConn(c *incomingConn) {
 	l.conns[*c.appID] = c
 	l.connOrder = append(l.connOrder, *c.appID)
+	instrument.ThinSessionsSet(len(l.conns))
 }
 
 // unregisterConn removes an incomingConn from the scheduler's rotation,
@@ -330,6 +332,7 @@ func (l *listener) unregisterConn(appID [AppIDLength]byte) {
 	} else if l.rrCursor >= n {
 		l.rrCursor %= n
 	}
+	instrument.ThinSessionsSet(len(l.conns))
 }
 
 // PickNextRequest returns the next *Request to send, chosen by round-robin
@@ -379,6 +382,7 @@ func (l *listener) PickNextRequest() *Request {
 				break
 			}
 			l.rrCursor = (idx + 1) % n
+			instrument.SendQueueDequeue()
 			return req
 		default:
 		}

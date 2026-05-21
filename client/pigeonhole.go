@@ -14,6 +14,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -1153,7 +1154,9 @@ func (d *Daemon) arqSend(message *ARQMessage, envHashKey [32]byte) error {
 	d.replyLock.Lock()
 	d.arqSurbIDMap[*surbID] = message
 	d.arqEnvelopeHashMap[envHashKey] = surbID
+	instrument.ARQInflightSet(len(d.arqSurbIDMap))
 	d.replyLock.Unlock()
+	instrument.SurbIDCreated()
 
 	priority := uint64(message.SentAt.Add(rtt).Add(RoundTripTimeSlop).UnixNano())
 	d.arqTimerQueue.Push(priority, surbID)

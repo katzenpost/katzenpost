@@ -6,6 +6,7 @@ package client
 import (
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -100,6 +101,9 @@ func (s *sender) pickAndSend() {
 			return
 		}
 		toSend = newLoopDecoy()
+		instrument.LambdaPDecoy()
+	} else {
+		instrument.LambdaPFifoPop()
 	}
 	select {
 	case s.out <- toSend:
@@ -109,6 +113,7 @@ func (s *sender) pickAndSend() {
 
 // sendLoopDecoy fills one LambdaL slot with a loop decoy.
 func (s *sender) sendLoopDecoy() {
+	instrument.LambdaLDecoy()
 	select {
 	case s.out <- newLoopDecoy():
 	case <-s.HaltCh():
@@ -125,13 +130,13 @@ func (s *sender) UpdateRates(rates *Rates) {
 		s.log.Warning("Invalid messageOrLoop rate, ignoring")
 		return
 	}
-	s.sendMessageOrLoop.UpdateRate(uint64(1/rates.messageOrLoop), rates.messageOrLoopMaxDelay)
+	s.sendMessageOrLoop.UpdateRate(uint64(1 / rates.messageOrLoop))
 
 	// The LambdaL ticker stays dormant until a positive rate is
 	// published, so a PKI document that omits LambdaL produces no
 	// loop-decoy ticks.
 	if rates.loop > 0 {
-		s.sendLoop.UpdateRate(uint64(1/rates.loop), rates.loopMaxDelay)
+		s.sendLoop.UpdateRate(uint64(1 / rates.loop))
 	}
 }
 

@@ -76,6 +76,7 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 		co.log.Debug("Dropping packet: packet is nil, wtf")
 		instrument.InvalidPacketsDropped()
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("dispatch_nil_packet")
 		pkt.Dispose()
 		return
 	}
@@ -83,6 +84,7 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 		co.log.Debug("Dropping packet: packet NextNodeHop is nil, wtf")
 		instrument.InvalidPacketsDropped()
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("dispatch_nil_next_hop")
 		pkt.Dispose()
 		return
 	}
@@ -91,6 +93,7 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 		co.log.Debugf("Dropping packet: %v (No connection for destination)", pkt.ID)
 		instrument.OutgoingPacketsDropped()
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("dispatch_no_connection")
 		pkt.Dispose()
 		return
 	}

@@ -57,11 +57,34 @@ func (w *Worker) UpdateMixKeys() {
 }
 
 func (w *Worker) doUnwrap(pkt *packet.Packet) error {
-	const gracePeriod = 2 * time.Minute
-
 	// Figure out the candidate mix private keys for this packet.
-	keys := make([]*mixkey.MixKey, 0, 2)
-	epoch, elapsed, till := epochtime.Now()
+	// The current epoch is always tried first; when available, the
+	// previous and next epoch keys are also tried so that packets
+	// straddling an epoch boundary do not MAC-fail. The earlier
+	// design gated the neighbour keys on a fixed 2-minute grace
+	// period and used an if/else if, which had two failure modes:
+	//
+	//   1. With warped 2-minute epochs the grace period equals the
+	//      epoch period, so `elapsed < gracePeriod` is true almost
+	//      always; the `else if till < gracePeriod` branch is
+	//      unreachable and the next epoch's key is never accepted.
+	//      This produces a recurring burst of MAC-mismatch drops at
+	//      each epoch boundary that the docker mixnet has been
+	//      living with.
+	//
+	//   2. Under any epoch length the if/else if forces a directional
+	//      choice: a packet built with the new epoch's key arriving
+	//      at a mix still in the old epoch cannot decrypt with
+	//      either current or previous, only with next.
+	//
+	// The cost of always trying neighbour keys is bounded by two
+	// extra Sphinx unwrap attempts on the failure path only; on the
+	// success path the first matching key short-circuits the loop.
+	// Replay protection is unaffected because each MixKey carries
+	// its own tag store and a packet's MAC is valid under exactly
+	// one key.
+	keys := make([]*mixkey.MixKey, 0, 3)
+	epoch, _, _ := epochtime.Now()
 	k, ok := w.mixKeys[epoch]
 	if !ok || k == nil {
 		// There always will be a key for the current epoch, since
@@ -70,26 +93,18 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 	}
 	keys = append(keys, k)
 
-	// At certain times, this needs to also look at the previous
-	// or next epoch(s) keys, if they exist.
-	if elapsed < gracePeriod {
-		// Less than gracePeriod into the current epoch, the previous
-		// epoch's key should also be accepted.
-		k, ok = w.mixKeys[epoch-1]
-	} else if till < gracePeriod {
-		// Less than gracePeriod to the next epoch, the next epoch's
-		// key should also be accepted.
-		k, ok = w.mixKeys[epoch+1]
-	} else {
-		// Only one key to use.
-		k = nil
-		ok = false
+	// Append the previous epoch's key when available. Uses
+	// epoch-1 with wraparound semantics; if epoch is zero the map
+	// lookup simply returns "not found" and the append is skipped.
+	if prev, ok := w.mixKeys[epoch-1]; ok && prev != nil {
+		keys = append(keys, prev)
 	}
-	if ok && k != nil {
-		// Not having other keys is fine, regardless of if we are
-		// in the grace period, if a packet happens to get dropped,
-		// oh well.
-		keys = append(keys, k)
+
+	// Append the next epoch's key when available. The PKI worker
+	// pre-generates keys for [epoch, epoch+1, epoch+2] so the
+	// next-epoch key is usually present even mid-epoch.
+	if next, ok := w.mixKeys[epoch+1]; ok && next != nil {
+		keys = append(keys, next)
 	}
 
 	var lastErr error
@@ -129,6 +144,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 
 		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.ID, time.Since(unwrapAt))
 
+		instrument.SphinxUnwraps()
 		return nil
 	}
 
@@ -172,6 +188,7 @@ func (w *Worker) worker() {
 		if dwellTime > unwrapSlack {
 			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, dwellTime)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("unwrap_dwell_exceeded")
 			pkt.Dispose()
 			continue
 		} else {
@@ -183,6 +200,7 @@ func (w *Worker) worker() {
 		if err := w.doUnwrap(pkt); err != nil {
 			w.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("unwrap_failed")
 			pkt.Dispose()
 			continue
 		}
@@ -207,12 +225,14 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 		if pkt.Payload != nil {
 			w.log.Debugf("Dropping packet: %v (Unwrap() returned payload)", pkt.ID)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("unwrap_payload_unexpected")
 			pkt.Dispose()
 			return
 		}
 		if pkt.MustTerminate {
 			w.log.Debugf("Dropping packet: %v (Provider received forward packet from mix)", pkt.ID)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("provider_forward_from_mix")
 			pkt.Dispose()
 			return
 		}
@@ -222,6 +242,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 		if pkt.Delay > constants.NumMixKeys*epochtime.Period {
 			w.log.Debugf("Dropping packet: %v (Delay1 %v is past what is possible)", pkt.ID, pkt.Delay)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("delay_impossible")
 			pkt.Dispose()
 			return
 		}
@@ -247,6 +268,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 				// the client is doing something non-standard anyway.
 				w.log.Debugf("Dropping packet: %v (Delay2 0 queue delay: %v)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("zero_delay_excessive_dwell")
 				pkt.Dispose()
 				return
 			}
@@ -289,6 +311,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 			// Mixes will only ever see forward commands.
 			w.log.Errorf("Dropping mix packet that should not have been received: %v (%v)", pkt.ID, pkt.CmdsToString())
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("mix_received_non_forward")
 			pkt.Dispose()
 			return
 		}
@@ -302,6 +325,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 	if pkt.MustForward {
 		w.log.Errorf("Dropping client packet: %v (Send to local user)", pkt.ID)
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("client_to_local_user")
 		pkt.Dispose()
 		return
 	}
@@ -331,6 +355,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 
 	w.log.Errorf("Invalid packet, dropping packet: %v (%v)", pkt.ID, pkt.CmdsToString())
 	instrument.PacketsDropped()
+	instrument.PacketsDroppedByReason("invalid_packet")
 	pkt.Dispose()
 }
 

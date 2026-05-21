@@ -23,6 +23,8 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
+
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
@@ -41,9 +43,14 @@ func (e *Entry) Epoch() uint64 {
 	return e.doc.Epoch
 }
 
-// MixMaxDelay returns the MixMaxDelay for the cached PKI document.
-func (e *Entry) MuMaxDelay() uint64 {
-	return e.doc.MuMaxDelay
+// MuSafetyCap returns the (1 - 1e-12) quantile of the exponential
+// distribution with rate Mu, in milliseconds. This is the per-hop
+// safety cap the scheduler uses to drop pathologically delayed
+// packets; it is derived from the consensus document's Mu rather than
+// from a separate operator-tunable field, because the safety cap is a
+// library invariant and not a tuning parameter.
+func (e *Entry) MuSafetyCap() uint64 {
+	return common.SafetyCap(e.doc.Mu)
 }
 
 // LambdaP returns the cached PKI document's LambdaP, the client's
