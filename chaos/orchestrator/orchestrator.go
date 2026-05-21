@@ -64,6 +64,10 @@ type Options struct {
 	// invocation; default 30m to accommodate the test suite.
 	MakeTimeout time.Duration
 
+	// StreamCadence is how often to take a mid-run prometheus
+	// snapshot while the test stage runs; default 10s.
+	StreamCadence time.Duration
+
 	// SnapshotDir is the directory where per-iteration prometheus
 	// snapshots are written; default os.TempDir().
 	SnapshotDir string
@@ -86,6 +90,10 @@ type Result struct {
 	BeforeSnap      Snapshot
 	DuringSnap      Snapshot
 	AfterSnap       Snapshot
+	MidRunSamples   []MidRunSample
+	// LogsOnFailure holds the last few hundred lines from each
+	// container's log when the test stage failed. Empty on success.
+	LogsOnFailure   map[string]string
 	ChaosConfigYAML string
 }
 
@@ -189,8 +197,25 @@ func RunIteration(ctx context.Context, label string, chaosCfg *chaos.Config, opt
 		}
 	}
 
+	// Stream prometheus samples while the test suite runs so any
+	// transient spike (drop bursts, queue depth excursions, GC slop
+	// violations) is captured even when the final snapshot looks
+	// normal again.
+	streamCtx, stopStream := context.WithCancel(ctx)
+	stop := streamSamples(streamCtx, opts.PrometheusURL, opts.StreamCadence)
+
 	// Run the full pigeonhole suite from client/.
 	res.TestSuite = runClientMake(ctx, opts, "tests", opts.PigeonholeTarget)
+
+	stopStream()
+	res.MidRunSamples = stop()
+
+	// On failure, capture container logs so the reproducer report
+	// has the surrounding context (the metric snapshots alone often
+	// fail to localise a regression).
+	if res.TestSuite.Err != nil {
+		res.LogsOnFailure = dumpContainerLogs(ctx, chaos.DefaultRuntime().Docker, opts.RepoRoot, 200)
+	}
 
 	// Snapshot during chaos (taken after tests because the rate
 	// queries need recent traffic to populate p50/p90/p99).
@@ -230,6 +255,9 @@ func withDefaults(opts Options) Options {
 	}
 	if opts.MakeTimeout == 0 {
 		opts.MakeTimeout = 30 * time.Minute
+	}
+	if opts.StreamCadence == 0 {
+		opts.StreamCadence = 10 * time.Second
 	}
 	if opts.SnapshotDir == "" {
 		opts.SnapshotDir = os.TempDir()
