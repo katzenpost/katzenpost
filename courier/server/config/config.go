@@ -6,7 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
-	"net/netip"
+	"net"
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/common/config"
@@ -104,7 +104,10 @@ func (c *Config) FixupAndValidate() error {
 		c.MaxQueueSize = DefaultMaxQueueSize
 	}
 	if c.MetricsAddress != "" {
-		if _, err := netip.ParseAddrPort(c.MetricsAddress); err != nil {
+		// Accept either an IP literal or a hostname; the prometheus
+		// listener resolves whatever we hand it via net.Listen and we
+		// rely on the docker bridge to enforce reachability.
+		if _, _, err := net.SplitHostPort(c.MetricsAddress); err != nil {
 			return fmt.Errorf("config: MetricsAddress '%v' is invalid: %v", c.MetricsAddress, err)
 		}
 	}

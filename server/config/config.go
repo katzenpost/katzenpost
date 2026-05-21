@@ -20,8 +20,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/mail"
-	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -145,7 +145,10 @@ func (sCfg *Server) validate() error {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
 	}
 	if sCfg.MetricsAddress != "" {
-		if _, err := netip.ParseAddrPort(sCfg.MetricsAddress); err != nil {
+		// Accept either an IP literal or a hostname; the prometheus
+		// listener resolves whatever we hand it via net.Listen and we
+		// rely on the docker bridge to enforce reachability.
+		if _, _, err := net.SplitHostPort(sCfg.MetricsAddress); err != nil {
 			return fmt.Errorf("config: Server: MetricsAddress '%v' is invalid: %v", sCfg.MetricsAddress, err)
 		}
 	}
