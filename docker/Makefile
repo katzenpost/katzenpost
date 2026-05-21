@@ -177,7 +177,7 @@ mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
 docker_compose?= DOCKER_USER=$(docker_user) $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose; else echo $(docker_compose_v1_or_v2); fi)
 
-make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
+make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user) kpclientd_metrics=$(kpclientd_metrics) pyroscope_kpclientd=$(pyroscope_kpclientd) pyroscope_dirauth=$(pyroscope_dirauth) no_metrics=$(no_metrics) no_decoy=$(no_decoy) no_mixdecoy=$(no_mixdecoy) no_gatewaydecoy=$(no_gatewaydecoy)
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 
