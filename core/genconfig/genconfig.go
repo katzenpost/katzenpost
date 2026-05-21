@@ -1238,7 +1238,7 @@ providers:
   "editable": true,
   "title": "Katzenpost Courier & Replica",
   "uid": "katzenpost-decoy",
-  "version": 1,
+  "version": 2,
   "timezone": "browser",
   "refresh": "5s",
   "time": {"from": "now-15m", "to": "now"},
@@ -1247,7 +1247,7 @@ providers:
       "id": 1,
       "title": "Courier: Decoys Sent (rate/s)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
       "targets": [{"expr": "rate(katzenpost_courier_decoys_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
@@ -1256,7 +1256,7 @@ providers:
       "id": 2,
       "title": "Courier: Messages Sent (rate/s)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
       "targets": [{"expr": "rate(katzenpost_courier_messages_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
@@ -1265,16 +1265,16 @@ providers:
       "id": 3,
       "title": "Courier: Messages Received (rate/s)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
       "targets": [{"expr": "rate(katzenpost_courier_messages_received_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
     },
     {
       "id": 4,
-      "title": "Courier: Queue Length",
+      "title": "Courier: Queue Length per Replica",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
       "targets": [{"expr": "katzenpost_courier_queue_length", "refId": "A", "legendFormat": "{{job}} - {{replica}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
@@ -1283,41 +1283,59 @@ providers:
       "id": 5,
       "title": "Replica: Incoming Decoys Received (rate/s)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 16},
       "targets": [{"expr": "rate(katzenpost_replica_incoming_decoys_received_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
     },
     {
       "id": 6,
-      "title": "Replica: Incoming Decoys Sent (rate/s)",
+      "title": "Replica: Incoming Decoy Replies Emitted (rate/s)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
-      "targets": [{"expr": "rate(katzenpost_replica_incoming_decoys_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_replica_incoming_decoy_replies_emitted_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
     },
     {
       "id": 7,
-      "title": "Replica: Messages Sent (rate/s)",
+      "title": "Replica: Incoming Real Replies Emitted (rate/s)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
-      "targets": [{"expr": "rate(katzenpost_replica_incoming_messages_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_replica_incoming_real_replies_emitted_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
     },
     {
       "id": 8,
-      "title": "Replica: Replication Dispatched (rate/s)",
+      "title": "Replica: Outgoing Decoys Sent (rate/s)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
-      "targets": [{"expr": "rate(katzenpost_replica_replication_dispatched_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_replica_outgoing_decoys_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
     },
     {
       "id": 9,
-      "title": "Replica: Incoming Queue Length",
+      "title": "Replica: Outgoing Messages Sent (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_replica_outgoing_messages_sent_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 10,
+      "title": "Replica: Replication Dispatched (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_replica_replication_dispatched_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 11,
+      "title": "Replica: Incoming Queue Length per Peer (M/M/1 backlog diagnostic)",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
       "targets": [{"expr": "katzenpost_replica_incoming_queue_length", "refId": "A", "legendFormat": "{{job}} - {{peer}}"}],
@@ -1325,8 +1343,8 @@ providers:
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
     },
     {
-      "id": 10,
-      "title": "Replica: Outgoing Queue Length",
+      "id": 12,
+      "title": "Replica: Outgoing Queue Length per Peer (LambdaR drain diagnostic)",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
       "targets": [{"expr": "katzenpost_replica_outgoing_queue_length", "refId": "A", "legendFormat": "{{job}} - {{peer}}"}],
@@ -1334,10 +1352,54 @@ providers:
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
     },
     {
-      "id": 11,
-      "title": "Replica: Replication Latency (p50/p90/p99)",
+      "id": 13,
+      "title": "Replica: Retry Queue Size",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "targets": [{"expr": "katzenpost_replica_retry_queue_size", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 14,
+      "title": "Replica: Retry Queue Drops (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "targets": [{"expr": "rate(katzenpost_replica_retry_queue_dropped_total[1m])", "refId": "A", "legendFormat": "{{job}} - {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 15,
+      "title": "Replica: Incoming Real Reply Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 48},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_replica_incoming_real_reply_latency_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_replica_incoming_real_reply_latency_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_replica_incoming_real_reply_latency_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 16,
+      "title": "Replica: Incoming Decoy Reply Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 48},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_replica_incoming_decoy_reply_latency_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_replica_incoming_decoy_reply_latency_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_replica_incoming_decoy_reply_latency_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 17,
+      "title": "Replica: Replication Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 56},
       "targets": [
         {"expr": "histogram_quantile(0.50, rate(katzenpost_replica_replication_latency_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
         {"expr": "histogram_quantile(0.90, rate(katzenpost_replica_replication_latency_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
@@ -1428,6 +1490,163 @@ providers:
   ]
 }
 `)
+
+	// Server health dashboard: the remaining server-side counters that
+	// neither the courier-replica nor the packet-loss dashboards cover.
+	shFile := filepath.Join(dbDir, "server-health.json")
+	log.Printf(WritingLogFormat, shFile)
+	sh, err := os.Create(shFile)
+	if err != nil {
+		return err
+	}
+	defer sh.Close()
+	Write(sh, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Katzenpost Server Health",
+  "uid": "katzenpost-server-health",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Incoming Requests (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_incoming_requests_total[1m])", "refId": "A", "legendFormat": "{{job}} {{command}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "Outgoing Connections (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_outgoing_connections_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "Cancelled Outgoing Connections (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "rate(katzenpost_cancelled_outgoing_connections_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "Documents Ignored (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "rate(katzenpost_documents_ignored_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "Channel Usage",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "targets": [{"expr": "katzenpost_channel_usage", "refId": "A", "legendFormat": "{{job}} {{channel_name}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "Kaetzchen Requests (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_kaetzchen_requests_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 7,
+      "title": "Kaetzchen Drops (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+      "targets": [
+        {"expr": "rate(katzenpost_kaetzchen_dropped_packets_total[1m])", "refId": "A", "legendFormat": "{{job}} packets"},
+        {"expr": "rate(katzenpost_kaetzchen_dropped_requests_total[1m])", "refId": "B", "legendFormat": "{{job}} requests"},
+        {"expr": "rate(katzenpost_kaetzchen_mix_packets_dropped_total[1m])", "refId": "C", "legendFormat": "{{job}} mix-packets"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 8,
+      "title": "Kaetzchen Failed (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_kaetzchen_failed_requests_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 9,
+      "title": "Kaetzchen Request Duration (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32},
+      "targets": [
+        {"expr": "rate(katzenpost_kaetzchen_requests_duration_seconds_sum[5m]) / rate(katzenpost_kaetzchen_requests_duration_seconds_count[5m])", "refId": "A", "legendFormat": "{{job}} avg"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 10,
+      "title": "PKI Documents per Epoch (totals)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "targets": [
+        {"expr": "katzenpost_pki_docs_per_epoch_total", "refId": "A", "legendFormat": "{{job}} epoch {{epoch}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 11,
+      "title": "PKI Fetches (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "targets": [
+        {"expr": "rate(katzenpost_fetched_pki_docs_per_epoch_total[1m])", "refId": "A", "legendFormat": "{{job}} fetched"},
+        {"expr": "rate(katzenpost_failed_fetch_pki_docs_per_epoch_total[1m])", "refId": "B", "legendFormat": "{{job}} failed"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 12,
+      "title": "PKI Cache Errors (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 48},
+      "targets": [
+        {"expr": "rate(katzenpost_failed_pki_cache_generation_per_epoch_total[1m])", "refId": "A", "legendFormat": "{{job}} cache-gen"},
+        {"expr": "rate(katzenpost_invalid_pki_cache_per_epoch_total[1m])", "refId": "B", "legendFormat": "{{job}} invalid-cache"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 13,
+      "title": "PKI Fetch Duration (avg)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 48},
+      "targets": [
+        {"expr": "rate(katzenpost_fetched_pki_docs_per_epoch_duration_sum[5m]) / rate(katzenpost_fetched_pki_docs_per_epoch_duration_count[5m])", "refId": "A", "legendFormat": "{{job}} avg"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    }
+  ]
+}
+`)
+
 	return nil
 }
 
