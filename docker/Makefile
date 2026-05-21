@@ -132,6 +132,7 @@ endif
 
 ifeq ($(kpclientd_metrics),true)
   kpclientd_metrics_tags=kpclientd_metrics
+  kpclientdMetricsFlag=--kpclientdMetricsAddress 127.0.0.1:30099
 endif
 
 # Combine kpclientd build tags. Two `-tags ...` invocations on a single go
@@ -206,7 +207,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
+		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
@@ -222,7 +223,7 @@ config-only: | $(net_name)
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
+		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)

@@ -6,6 +6,7 @@ package client
 import (
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -100,6 +101,9 @@ func (s *sender) pickAndSend() {
 			return
 		}
 		toSend = newLoopDecoy()
+		instrument.LambdaPDecoy()
+	} else {
+		instrument.LambdaPFifoPop()
 	}
 	select {
 	case s.out <- toSend:
@@ -109,6 +113,7 @@ func (s *sender) pickAndSend() {
 
 // sendLoopDecoy fills one LambdaL slot with a loop decoy.
 func (s *sender) sendLoopDecoy() {
+	instrument.LambdaLDecoy()
 	select {
 	case s.out <- newLoopDecoy():
 	case <-s.HaltCh():

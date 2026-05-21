@@ -17,6 +17,7 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/thin"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
@@ -324,6 +325,7 @@ func (c *incomingConn) worker() {
 			}
 			select {
 			case c.requestCh <- rawReq:
+				instrument.SendQueueEnqueue()
 			case <-c.listener.HaltCh():
 				return
 			}

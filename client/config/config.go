@@ -334,6 +334,13 @@ type Config struct {
 	// outgoing network connections, with the most prefered first.
 	PreferedTransports []string
 
+	// MetricsAddress is the bind address of the kpclientd prometheus
+	// listener. The listener is only compiled in when the
+	// `kpclientd_metrics` build tag is set; production builds without
+	// the tag treat this field as inert. Convention is 127.0.0.1
+	// only; binding to a public address is not supported.
+	MetricsAddress string
+
 	upstreamProxy *proxy.Config
 }
 
