@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -45,7 +47,7 @@ import (
 
 const (
 	BasePort               = 30000
-	BindAddr               = "127.0.0.1"
+	BindAddr               = "0.0.0.0"
 	NrLayers               = 3
 	NrNodes                = 6
 	NrGateways             = 1
@@ -53,7 +55,6 @@ const (
 	NrStorageNodes         = 5
 	NrAuthorities          = 3
 	ServerLogFile          = "katzenpost.log"
-	TcpAddrFormat          = "tcp://127.0.0.1:%d"
 	IdentityPublicKeyFile  = "identity.public.pem"
 	IdentityPrivateKeyFile = "identity.private.pem"
 	LinkPublicKeyFile      = "link.public.pem"
@@ -63,7 +64,50 @@ const (
 	DebugLogLevel          = "DEBUG"
 	AuthNodeFormat         = "auth%d"
 	WritingLogFormat       = "writing %s"
+
+	// DockerNetwork is the bridge network the generated docker-compose puts
+	// every katzenpost service on. Each service has a stable container_name
+	// matching its identifier, so peers can address each other by DNS name
+	// (e.g. tcp://mix1:30030). This lets per-container chaos tools such as
+	// pumba install tc qdiscs in each service's own net namespace; the
+	// previous host-networked layout had no such namespaces to scope to.
+	DockerNetwork    = "katzenpost-net"
+	DockerProjectTag = "voting_mixnet"
 )
+
+// peerAddr returns the tcp:// URL another container should dial to reach the
+// named service on the bridge network. Both endpoints resolve the hostname
+// through the compose runtime's embedded DNS to the service's bridge IP.
+func peerAddr(identifier string, port uint16) string {
+	return fmt.Sprintf("tcp://%s:%d", identifier, port)
+}
+
+// metricsScrapeAddr returns the host:port form a service writes into
+// its own MetricsAddress field and a remote prometheus scrape dials.
+// Inside the service's own container the hostname resolves via the
+// compose-managed /etc/hosts entry to its private bridge IP, so the
+// prometheus listener binds to that specific private address rather
+// than to 0.0.0.0. From a peer container on the same bridge the
+// identifier resolves through embedded DNS to the same IP.
+func metricsScrapeAddr(identifier string, port uint16) string {
+	return fmt.Sprintf("%s:%d", identifier, port)
+}
+
+// splitHostPortPort extracts the port portion of a "host:port" string and
+// returns it as an integer. Used to rebuild host:port pairs for
+// services that need different forms on the listen side and the
+// prometheus-scrape side; the host field passed in is discarded.
+func splitHostPortPort(hostPort string) (int, error) {
+	_, portStr, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return 0, fmt.Errorf("invalid host:port %q: %w", hostPort, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid port in %q: %w", hostPort, err)
+	}
+	return port, nil
+}
 
 // Config holds all the parsed command line flags
 type Config struct {
@@ -299,8 +343,17 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	// docker Makefile turns on when kpclientd_metrics=true.
 	// Production builds of kpclientd ignore this field entirely
 	// because the listener is gated behind a build tag.
+	//
+	// Under bridge networking we discard whatever host portion was
+	// passed in and bind to the kpclientd container's own private
+	// bridge IP (reached via its `kpclientd` hostname). The prometheus
+	// container scrapes it as `kpclientd:<port>` over the same bridge.
 	if s.KpclientdMetricsAddress != "" {
-		cfg.MetricsAddress = s.KpclientdMetricsAddress
+		port, err := splitHostPortPort(s.KpclientdMetricsAddress)
+		if err != nil {
+			return err
+		}
+		cfg.MetricsAddress = metricsScrapeAddr("kpclientd", uint16(port))
 	}
 
 	gateways := make([]*cConfig.Gateway, 0)
@@ -345,7 +398,7 @@ func Write(f *os.File, str string, args ...interface{}) {
 	}
 }
 
-func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
+func (s *Katzenpost) GenCourierConfig(datadir string, serviceNodeName string) *courierConfig.Config {
 	authorities := make([]*vConfig.Authority, 0, len(s.Authorities))
 	i := 0
 	for _, auth := range s.Authorities {
@@ -373,7 +426,7 @@ func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
 		ReauthInterval:      config.DefaultReauthInterval,
 		DisableDecoyTraffic: s.NoCourierReplicaDecoy,
 	}
-	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
+	cfg.MetricsAddress = metricsScrapeAddr(serviceNodeName, s.LastPort)
 	s.LastPort++
 	return cfg
 }
@@ -390,10 +443,10 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.ReplicaNIKEScheme = s.ReplicaNIKEScheme.Name()
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
 
-	cfg.Addresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastReplicaPort)}
+	cfg.Addresses = []string{peerAddr(cfg.Identifier, s.LastReplicaPort)}
 	s.LastReplicaPort++
 
-	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastReplicaPort)
+	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastReplicaPort)
 	s.LastReplicaPort++
 
 	cfg.DataDir = filepath.Join(s.BaseDir, cfg.Identifier)
@@ -448,14 +501,14 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.WireKEM = s.WireKEMScheme
 	cfg.Server.PKISignatureScheme = s.PkiSignatureScheme.Name()
 	cfg.Server.Identifier = n
-	if isGateway {
-		cfg.Server.Addresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastPort)}
-		cfg.Server.BindAddresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastPort)}
-		s.LastPort += 2
-	} else {
-		cfg.Server.Addresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastPort)}
-		s.LastPort += 2
-	}
+	// Both the advertise address (Addresses, used by peers via the
+	// embedded bridge DNS) and the bind address (BindAddresses, used
+	// by net.Listen) point at the service's own hostname. Inside the
+	// container that resolves to the private bridge IP via /etc/hosts,
+	// so we never bind to 0.0.0.0.
+	cfg.Server.Addresses = []string{peerAddr(n, s.LastPort)}
+	cfg.Server.BindAddresses = []string{peerAddr(n, s.LastPort)}
+	s.LastPort += 2
 	cfg.Server.DataDir = filepath.Join(s.BaseDir, n)
 
 	os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
@@ -471,7 +524,7 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		cfg.Management.Enable = true
 	}
 	// Enable Metrics endpoint
-	cfg.Server.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
+	cfg.Server.MetricsAddress = metricsScrapeAddr(n, s.LastPort)
 	s.LastPort += 1
 
 	// Debug section.
@@ -535,7 +588,7 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		os.MkdirAll(courierDataDir, 0700)
 
 		internalCourierDatadir := filepath.Join(s.BaseDir, cfg.Server.Identifier, CourierService)
-		courierCfg := s.GenCourierConfig(internalCourierDatadir)
+		courierCfg := s.GenCourierConfig(internalCourierDatadir, cfg.Server.Identifier)
 		s.CourierConfigs = append(s.CourierConfigs, courierCfg)
 
 		linkPubKey := CfgLinkKey(courierCfg, courierDataDir, courierCfg.WireKEMScheme)
@@ -611,21 +664,21 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	for i := 1; i <= numAuthorities; i++ {
 		cfg := new(vConfig.Config)
 		cfg.SphinxGeometry = s.SphinxGeometry
+		authIdentifier := fmt.Sprintf(AuthNodeFormat, i)
 		cfg.Server = &vConfig.Server{
 			WireKEMScheme:      s.WireKEMScheme,
 			PKISignatureScheme: s.PkiSignatureScheme.Name(),
-			Identifier:         fmt.Sprintf(AuthNodeFormat, i),
-			Addresses:          []string{fmt.Sprintf(TcpAddrFormat, s.LastPort)},
-			DataDir:            filepath.Join(s.BaseDir, fmt.Sprintf(AuthNodeFormat, i)),
+			Identifier:         authIdentifier,
+			Addresses:          []string{peerAddr(authIdentifier, s.LastPort)},
+			DataDir:            filepath.Join(s.BaseDir, authIdentifier),
 		}
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
 		s.LastPort += 1
-		// Allocate a metrics listener port for this dirauth on the
-		// host-local interface. The prometheus listener in the
-		// dirauth code only binds when MetricsAddress is non-empty,
-		// so a future operator who wants to disable it can leave the
-		// field empty post-genconfig.
-		cfg.Server.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
+		// Allocate a metrics listener port for this dirauth. The
+		// prometheus listener in the dirauth code only binds when
+		// MetricsAddress is non-empty, so a future operator who wants
+		// to disable it can leave the field empty post-genconfig.
+		cfg.Server.MetricsAddress = metricsScrapeAddr(authIdentifier, s.LastPort)
 		s.LastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
@@ -977,17 +1030,25 @@ func SaveConfigurations(s *Katzenpost, cfg *Config) error {
 	return nil
 }
 
-// GenerateClientConfigurations creates all client configuration files
+// GenerateClientConfigurations creates all client configuration files.
+// The kpclientd daemon and the thin clients that talk to it sit at
+// opposite ends of the docker-compose port publish, so they need
+// different addresses. The daemon binds to its own private bridge IP
+// (reached via its `kpclientd` hostname), and the docker port publish
+// forwards host:64331 to that same bridge address. The thin clients
+// (ping, fetch) run on the host with --network=host and dial
+// 127.0.0.1:64331 over the published port.
 func GenerateClientConfigurations(s *Katzenpost) error {
 	clientDaemonNetwork := "tcp"
-	clientDaemonAddress := "localhost:64331"
+	clientDaemonListenAddress := "kpclientd:64331"
+	clientDaemonDialAddress := "127.0.0.1:64331"
 
-	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonAddress)
+	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonListenAddress)
 	if err != nil {
 		return fmt.Errorf("failed to generate client config: %v", err)
 	}
 
-	err = s.GenClient2ThinCfg(clientDaemonNetwork, clientDaemonAddress)
+	err = s.GenClient2ThinCfg(clientDaemonNetwork, clientDaemonDialAddress)
 	if err != nil {
 		return fmt.Errorf("failed to generate client thin config: %v", err)
 	}
@@ -1195,11 +1256,15 @@ scrape_configs:
 `, cfg.Server.Identifier, cfg.Server.MetricsAddress)
 	}
 	if s.KpclientdMetricsAddress != "" {
+		port, err := splitHostPortPort(s.KpclientdMetricsAddress)
+		if err != nil {
+			return err
+		}
 		Write(f, `- job_name: kpclientd
   scrape_interval: 1s
   static_configs:
   - targets: ['%s']
-`, s.KpclientdMetricsAddress)
+`, metricsScrapeAddr("kpclientd", uint16(port)))
 	}
 	return nil
 }
@@ -1226,7 +1291,7 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://127.0.0.1:9090
+    url: http://metrics:9090
     isDefault: true
     editable: false
 `)
@@ -2012,19 +2077,19 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		log.Fatal(err)
 	}
 
-	// helper to write environment block
+	// writeEnv emits the environment block for a service.
 	writeEnv := func(serviceName string) {
 		var envVars []string
 		if s.EpochDuration != "" {
 			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
 		}
 		if s.PyroscopeDirauth && strings.HasPrefix(serviceName, "auth") {
-			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://127.0.0.1:4040")
+			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040")
 			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-dirauth")
 			envVars = append(envVars, fmt.Sprintf("PYROSCOPE_SERVICE_TAG=%s", serviceName))
 		}
 		if s.PyroscopeKpclientd && serviceName == "kpclientd" {
-			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://127.0.0.1:4040")
+			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040")
 			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-kpclientd")
 			envVars = append(envVars, "PYROSCOPE_SERVICE_TAG=kpclientd")
 		}
@@ -2038,158 +2103,158 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		}
 	}
 
-	Write(f, `
-services:
-`)
-	for _, p := range gateways {
+	// writeKatzenpostService emits the common scaffolding for a service
+	// built from the katzenpost base image: container_name and hostname
+	// match the identifier so peers can address it as
+	// `tcp://<name>:<port>` via the bridge's embedded DNS, the source
+	// tree is mounted read-write for log persistence, and the service
+	// joins the single katzenpost bridge network. The caller appends
+	// depends_on/ports/environment as needed.
+	writeKatzenpostService := func(name, command string) {
 		Write(f, `
   %s:
     restart: "no"
+    container_name: %s
+    hostname: %s
     image: %s
     volumes:
       - ./:%s
-    command: %s/server%s -f %s/%s/katzenpost.toml
-    network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
-		writeEnv(p.Identifier)
+    command: %s
+    networks:
+      - %s`, name, name, name, dockerImage, s.BaseDir, command, DockerNetwork)
+	}
+
+	writeDependsOnAuths := func() {
 		Write(f, `
     depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			Write(f, `
       - %s`, authCfg.Server.Identifier)
 		}
+	}
+
+	// Every service joins a single bridge network. With per-container
+	// net namespaces, pumba can install `tc netem` qdiscs in each
+	// service's namespace to model real network conditions between
+	// hops; the previous host-networked layout had no such namespaces.
+	Write(f, `
+networks:
+  %s:
+    driver: bridge
+
+services:
+`, DockerNetwork)
+
+	for _, p := range gateways {
+		cmd := fmt.Sprintf("%s/server%s -f %s/%s/katzenpost.toml", s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		writeKatzenpostService(p.Identifier, cmd)
+		writeEnv(p.Identifier)
+		writeDependsOnAuths()
 	}
 
 	for _, p := range serviceNodes {
-		Write(f, `
-  %s:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/server%s -f %s/%s/katzenpost.toml
-    network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		cmd := fmt.Sprintf("%s/server%s -f %s/%s/katzenpost.toml", s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		writeKatzenpostService(p.Identifier, cmd)
 		writeEnv(p.Identifier)
-		Write(f, `
-    depends_on:`)
-		for _, authCfg := range s.VotingAuthConfigs {
-			Write(f, `
-      - %s`, authCfg.Server.Identifier)
-		}
+		writeDependsOnAuths()
 	}
 
 	for i := range mixes {
-		// mixes in this form don't have their identifiers, because that isn't
-		// part of the consensus. if/when that is fixed this could use that
-		// identifier; instead it duplicates the definition of the name format
-		// here.
-		Write(f, `
-  mix%d:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/server%s -f %s/mix%d/katzenpost.toml
-    network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
-		writeEnv(fmt.Sprintf("mix%d", i+1))
-		Write(f, `
-    depends_on:`)
-		for _, authCfg := range s.VotingAuthConfigs {
-			// is this depends_on stuff actually necessary?
-			// there was a bit more of it before this function was regenerating docker-compose.yaml...
-			Write(f, `
-      - %s`, authCfg.Server.Identifier)
-		}
+		name := fmt.Sprintf("mix%d", i+1)
+		cmd := fmt.Sprintf("%s/server%s -f %s/%s/katzenpost.toml", s.BaseDir, s.BinSuffix, s.BaseDir, name)
+		writeKatzenpostService(name, cmd)
+		writeEnv(name)
+		writeDependsOnAuths()
 	}
 
 	// pigeonhole storage replicas
 	for i := range replicas {
-		// mixes in this form don't have their identifiers, because that isn't
-		// part of the consensus. if/when that is fixed this could use that
-		// identifier; instead it duplicates the definition of the name format
-		// here.
-		Write(f, `
-  replica%d:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/replica%s -f %s/replica%d/replica.toml
-    network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
-		writeEnv(fmt.Sprintf("replica%d", i+1))
-		Write(f, `
-    depends_on:`)
-		for _, authCfg := range s.VotingAuthConfigs {
-			// is this depends_on stuff actually necessary?
-			// there was a bit more of it before this function was regenerating docker-compose.yaml...
-			Write(f, `
-      - %s`, authCfg.Server.Identifier)
-		}
+		name := fmt.Sprintf("replica%d", i+1)
+		cmd := fmt.Sprintf("%s/replica%s -f %s/%s/replica.toml", s.BaseDir, s.BinSuffix, s.BaseDir, name)
+		writeKatzenpostService(name, cmd)
+		writeEnv(name)
+		writeDependsOnAuths()
 	}
 
 	for _, authCfg := range s.VotingAuthConfigs {
-		Write(f, `
-  %s:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/dirauth%s -f %s/%s/authority.toml
-    network_mode: host`, authCfg.Server.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, authCfg.Server.Identifier)
-		writeEnv(authCfg.Server.Identifier)
+		name := authCfg.Server.Identifier
+		cmd := fmt.Sprintf("%s/dirauth%s -f %s/%s/authority.toml", s.BaseDir, s.BinSuffix, s.BaseDir, name)
+		writeKatzenpostService(name, cmd)
+		writeEnv(name)
 		Write(f, `
 `)
 	}
 
 	if !s.NoMetrics {
+		// Prometheus and grafana publish to host loopback so the operator
+		// can browse them. Their scrape paths into the katzenpost
+		// services run entirely on the bridge.
 		Write(f, `
-  %s:
+  metrics:
     restart: "no"
-    image: %s
+    container_name: metrics
+    hostname: metrics
+    image: docker.io/prom/prometheus
     pull_policy: if_not_present
     volumes:
       - ./:%s
     command: --config.file="%s/prometheus.yml"
-    network_mode: host
-`, "metrics", "docker.io/prom/prometheus", s.BaseDir, s.BaseDir)
+    networks:
+      - %s
+    ports:
+      - "127.0.0.1:9090:9090"
+`, s.BaseDir, s.BaseDir, DockerNetwork)
 
 		Write(f, `
   grafana:
     restart: "no"
+    container_name: grafana
+    hostname: grafana
     image: docker.io/grafana/grafana:latest
     pull_policy: if_not_present
     volumes:
-      - ./%s/provisioning/datasources:/etc/grafana/provisioning/datasources
-      - ./%s/provisioning/dashboards:/etc/grafana/provisioning/dashboards
-      - ./%s/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_FEATURE_TOGGLES_DISABLE=kubernetesDashboards
-    network_mode: host
+    networks:
+      - %s
+    ports:
+      - "127.0.0.1:3000:3000"
     depends_on:
       - metrics
-`, "grafana", "grafana", "grafana")
+`, DockerNetwork)
 	}
 
 	if s.PyroscopeDirauth || s.PyroscopeKpclientd {
 		Write(f, `
   pyroscope:
     restart: "no"
+    container_name: pyroscope
+    hostname: pyroscope
     image: docker.io/grafana/pyroscope:latest
     pull_policy: if_not_present
-    network_mode: host
-`)
+    networks:
+      - %s
+    ports:
+      - "127.0.0.1:4040:4040"
+`, DockerNetwork)
 	}
 
+	// kpclientd publishes its thin-client port (64331) on the host so
+	// external thin clients (ping, fetch) running with --network=host
+	// can dial 127.0.0.1:64331. Inside the bridge it is reachable as
+	// kpclientd:64331 via compose DNS, which is how prometheus scrapes
+	// it when kpclientd_metrics is enabled.
+	cmd := fmt.Sprintf("%s/kpclientd%s -c %s/client/client.toml", s.BaseDir, s.BinSuffix, s.BaseDir)
+	writeKatzenpostService("kpclientd", cmd)
 	Write(f, `
-  kpclientd:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/kpclientd%s -c %s/client/client.toml
-    network_mode: host`, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir)
+    ports:
+      - "127.0.0.1:64331:64331"`)
 	writeEnv("kpclientd")
 	Write(f, `
 `)
