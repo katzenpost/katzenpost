@@ -5,6 +5,7 @@ package server
 
 import (
 	"fmt"
+	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -16,10 +17,14 @@ import (
 )
 
 // courierSenderRequest represents a command to send to a replica, either a
-// real message or a decoy.
+// real message or a decoy. EnqueuedAt records the wall-clock time at
+// which the request was placed onto the per-replica queue and is used
+// at dequeue to feed the processing_duration and oldest_age metrics.
+// Decoys synthesised at dequeue time leave EnqueuedAt zero.
 type courierSenderRequest struct {
 	ReplicaMessage *commands.ReplicaMessage
 	ReplicaDecoy   *commands.ReplicaDecoy
+	EnqueuedAt     time.Time
 }
 
 func (r *courierSenderRequest) command() commands.Command {
@@ -80,12 +85,18 @@ func (s *sender) worker() {
 			select {
 			case toSend = <-s.in:
 				instrument.MessagesSent()
+				if !toSend.EnqueuedAt.IsZero() {
+					age := time.Since(toSend.EnqueuedAt)
+					instrument.ProcessingDuration(s.replicaName, age)
+					instrument.OldestAgeSeconds(s.replicaName, age)
+				}
 			case <-s.HaltCh():
 				return
 			default:
 				// No real message - send decoy if enabled.
 				if s.disableDecoys {
 					instrument.QueueLength(s.replicaName, len(s.in))
+					instrument.OldestAgeSeconds(s.replicaName, 0)
 					continue
 				}
 				toSend = &courierSenderRequest{
@@ -94,6 +105,7 @@ func (s *sender) worker() {
 					},
 				}
 				instrument.DecoysSent()
+				instrument.OldestAgeSeconds(s.replicaName, 0)
 			}
 			instrument.QueueLength(s.replicaName, len(s.in))
 			if toSend != nil {

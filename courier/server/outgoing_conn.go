@@ -108,8 +108,13 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) {
+	req := &courierSenderRequest{
+		ReplicaMessage: mesg,
+		EnqueuedAt:     time.Now(),
+	}
 	select {
-	case c.sender.in <- &courierSenderRequest{ReplicaMessage: mesg}:
+	case c.sender.in <- req:
+		instrument.EnqueueTotal(c.dst.Name)
 		instrument.QueueLength(c.dst.Name, len(c.sender.in))
 	case <-c.HaltCh():
 	}
@@ -366,7 +371,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		return
 	}
 	c.sender.UpdateConnectionStatus(true)
-	defer c.sender.UpdateConnectionStatus(false)
+	instrument.PeerConnected(c.dst.Name, true)
+	defer func() {
+		c.sender.UpdateConnectionStatus(false)
+		instrument.PeerConnected(c.dst.Name, false)
+	}()
 
 	receiveCmdCh := c.startPeerReader(w)
 	cmdCh, cmdCloseCh := c.startCommandSender(w)
@@ -487,6 +496,7 @@ func (c *outgoingConn) startCommandSender(w *wire.Session) (chan commands.Comman
 
 			if err := w.SendCommand(cmd); err != nil {
 				c.log.Debugf("SendCommand failed: %v", err)
+				instrument.DroppedByReason("send_command_failed")
 				return
 			}
 		}
