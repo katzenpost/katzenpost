@@ -1433,6 +1433,55 @@ providers:
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 18,
+      "title": "Courier: Enqueue Rate per Replica (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 64},
+      "targets": [{"expr": "rate(katzenpost_courier_enqueue_total[1m])", "refId": "A", "legendFormat": "{{job}} -> {{replica}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 19,
+      "title": "Courier: Oldest Pending Message Age per Replica",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 64},
+      "targets": [{"expr": "katzenpost_courier_oldest_age_seconds", "refId": "A", "legendFormat": "{{job}} -> {{replica}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 20,
+      "title": "Courier: Processing Duration p50/p90/p99 per Replica",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 72},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_courier_processing_duration_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} {{replica}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_courier_processing_duration_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} {{replica}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_courier_processing_duration_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} {{replica}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 21,
+      "title": "Courier: Peer Connected per Replica (1=connected, 0=disconnected)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 80},
+      "targets": [{"expr": "katzenpost_courier_peer_connected", "refId": "A", "legendFormat": "{{job}} -> {{replica}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 1}, "overrides": []}
+    },
+    {
+      "id": 22,
+      "title": "Courier: Drops by Reason (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 80},
+      "targets": [{"expr": "rate(katzenpost_courier_dropped_reason_total[1m])", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
     }
   ]
 }
