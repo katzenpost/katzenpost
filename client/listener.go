@@ -306,6 +306,7 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 func (l *listener) registerConn(c *incomingConn) {
 	l.conns[*c.appID] = c
 	l.connOrder = append(l.connOrder, *c.appID)
+	instrument.ThinSessionsSet(len(l.conns))
 }
 
 // unregisterConn removes an incomingConn from the scheduler's rotation,
@@ -331,6 +332,7 @@ func (l *listener) unregisterConn(appID [AppIDLength]byte) {
 	} else if l.rrCursor >= n {
 		l.rrCursor %= n
 	}
+	instrument.ThinSessionsSet(len(l.conns))
 }
 
 // PickNextRequest returns the next *Request to send, chosen by round-robin

@@ -43,3 +43,18 @@ func PKIDocFetched(_ time.Time) {}
 
 // ARQRoundTrip is a no-op when the build tag is unset.
 func ARQRoundTrip(_ time.Duration) {}
+
+// SurbIDCreated is a no-op when the build tag is unset.
+func SurbIDCreated() {}
+
+// SurbIDGarbageCollected is a no-op when the build tag is unset.
+func SurbIDGarbageCollected() {}
+
+// SurbIDReplyReceived is a no-op when the build tag is unset.
+func SurbIDReplyReceived() {}
+
+// SurbIDReplyNoMatch is a no-op when the build tag is unset.
+func SurbIDReplyNoMatch() {}
+
+// ThinSessionsSet is a no-op when the build tag is unset.
+func ThinSessionsSet(_ int) {}

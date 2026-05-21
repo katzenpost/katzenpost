@@ -79,6 +79,36 @@ var (
 			Buckets: prometheus.ExponentialBuckets(0.05, 2, 12),
 		},
 	)
+	surbIDCreated = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_surb_id_created_total",
+			Help: "Number of SURB IDs created for ARQ entries.",
+		},
+	)
+	surbIDGarbageCollected = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_surb_id_garbage_collected_total",
+			Help: "Number of SURB IDs removed from the ARQ map due to TTL expiry or session cleanup rather than reply receipt.",
+		},
+	)
+	surbIDReplyReceived = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_surb_id_reply_received_total",
+			Help: "Number of ARQ replies received whose SURB ID matched an awaiting entry.",
+		},
+	)
+	surbIDReplyNoMatch = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_surb_id_reply_no_match_total",
+			Help: "Number of ARQ replies received whose SURB ID was not in the awaiting map. Either the reply was garbage-collected before arrival, the reply was misrouted, or the SURB ID matching itself is buggy. This counter is the diagnostic for the reply-routing problem.",
+		},
+	)
+	thinSessions = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_client_thin_sessions",
+			Help: "Current count of registered thin-client sessions.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -96,6 +126,11 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(gatewayConnected)
 		prometheus.MustRegister(pkiDocAgeSeconds)
 		prometheus.MustRegister(arqRoundTrip)
+		prometheus.MustRegister(surbIDCreated)
+		prometheus.MustRegister(surbIDGarbageCollected)
+		prometheus.MustRegister(surbIDReplyReceived)
+		prometheus.MustRegister(surbIDReplyNoMatch)
+		prometheus.MustRegister(thinSessions)
 	})
 	if address == "" {
 		return
@@ -144,3 +179,24 @@ func PKIDocFetched(at time.Time) {
 func ARQRoundTrip(d time.Duration) {
 	arqRoundTrip.Observe(d.Seconds())
 }
+
+// SurbIDCreated records the creation of a new SURB ID for an ARQ entry.
+func SurbIDCreated() { surbIDCreated.Inc() }
+
+// SurbIDGarbageCollected records the removal of a SURB ID due to TTL
+// expiry or session cleanup, distinct from removal due to a successful
+// reply.
+func SurbIDGarbageCollected() { surbIDGarbageCollected.Inc() }
+
+// SurbIDReplyReceived records an ARQ reply whose SURB ID matched an
+// awaiting entry.
+func SurbIDReplyReceived() { surbIDReplyReceived.Inc() }
+
+// SurbIDReplyNoMatch records an ARQ reply whose SURB ID was not in the
+// awaiting map. This is the data-driven diagnostic for the reply-routing
+// problem we suspected during the recent ping investigation.
+func SurbIDReplyNoMatch() { surbIDReplyNoMatch.Inc() }
+
+// ThinSessionsSet sets the current count of registered thin-client
+// sessions. Pass len(listener.conns) after each register/unregister.
+func ThinSessionsSet(n int) { thinSessions.Set(float64(n)) }

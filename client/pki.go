@@ -15,6 +15,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -342,6 +343,7 @@ func (p *pki) updateDocument(epoch uint64) error {
 		Blob:          docBlob,
 		RawSignedBlob: rawSigned,
 	})
+	instrument.PKIDocFetched(time.Now())
 	return nil
 }
 

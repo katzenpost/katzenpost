@@ -1796,6 +1796,38 @@ providers:
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 10,
+      "title": "Thin Client Sessions (count)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "targets": [{"expr": "katzenpost_client_thin_sessions", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 11,
+      "title": "SURB ID Lifecycle (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "targets": [
+        {"expr": "rate(katzenpost_client_surb_id_created_total[1m])", "refId": "A", "legendFormat": "{{job}} created"},
+        {"expr": "rate(katzenpost_client_surb_id_reply_received_total[1m])", "refId": "B", "legendFormat": "{{job}} reply_received"},
+        {"expr": "rate(katzenpost_client_surb_id_garbage_collected_total[1m])", "refId": "C", "legendFormat": "{{job}} gc'd"},
+        {"expr": "rate(katzenpost_client_surb_id_reply_no_match_total[1m])", "refId": "D", "legendFormat": "{{job}} no_match"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 12,
+      "title": "SURB ID Reply-No-Match Total (diagnostic for reply routing)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 48},
+      "targets": [{"expr": "katzenpost_client_surb_id_reply_no_match_total", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
     }
   ]
 }
