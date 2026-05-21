@@ -657,10 +657,36 @@ func (d *Daemon) send(request *Request) {
 
 	if withSURB {
 		now = time.Now()
-		// XXX  this is too aggressive, and must be at least the fetchInterval + rtt + some slopfactor to account for path delays
 
+		// SURB-ID GC timer. The map entry for this surbID is retained
+		// only until this timer fires; if the SURB reply arrives any
+		// later, handleReply finds no match in d.replies / d.decoys /
+		// d.arqSurbIDMap and the reply is silently discarded
+		// (instrument.SurbIDReplyNoMatch will increment). The
+		// retention budget must therefore cover not only the
+		// Sphinx-encoded round-trip in rtt but also every wall-clock
+		// overhead the encoded delay does not capture: per-hop
+		// scheduler dwell (up to SchedulerSlack at each mix, server
+		// default ~450ms), per-hop network transmission, Sphinx
+		// unwrap CPU, and gateway spool-to-client polling.
+		//
+		// Previously the slop was a hard-coded one second, which
+		// covered the average case but expired before any long-tail
+		// reply (Erlang sum at p99 plus accumulated scheduler slack)
+		// could arrive. The diagnostic counter
+		// katzenpost_client_surb_id_reply_no_match_total surfaced
+		// this regression at ~1 GC-late event per second under
+		// L=3, LambdaP=1/s, LambdaL=0.5/s load. Scale the slop with
+		// the topology and a per-hop wall-clock budget so long-tail
+		// replies (from either LambdaP-fallback or LambdaL decoys, or
+		// from application traffic) are not GC'd prematurely.
 		fetchInterval := d.client.GetPollInterval()
-		slop := time.Second
+		const perHopSlopMs = 500 // covers SchedulerSlack default + net + crypto per hop
+		var hops uint64 = 9      // fallback for 3-layer topology
+		if _, doc := d.client.CurrentDocument(); doc != nil && len(doc.Topology) > 0 {
+			hops = uint64(2*len(doc.Topology) + 3)
+		}
+		slop := time.Duration(hops*perHopSlopMs) * time.Millisecond
 		duration := rtt + fetchInterval + slop
 		replyArrivalTime := now.Add(duration)
 
