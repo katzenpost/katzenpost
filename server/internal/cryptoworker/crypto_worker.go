@@ -129,6 +129,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 
 		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.ID, time.Since(unwrapAt))
 
+		instrument.SphinxUnwraps()
 		return nil
 	}
 

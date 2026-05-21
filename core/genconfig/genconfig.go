@@ -1505,6 +1505,24 @@ providers:
       "targets": [{"expr": "rate(katzenpost_ingress_queue_size_sum[1m]) / rate(katzenpost_ingress_queue_size_count[1m])", "refId": "A", "legendFormat": "{{job}} avg"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 7,
+      "title": "Gateway Token-Bucket Drops (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_dropped_rate_limit_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 8,
+      "title": "Sphinx Unwraps (rate/s, realised throughput)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_sphinx_unwraps_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
     }
   ]
 }
