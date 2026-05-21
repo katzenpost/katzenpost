@@ -165,6 +165,18 @@ var (
 		},
 		[]string{"channel_name"},
 	)
+	rateLimitDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_dropped_rate_limit_total",
+			Help: "Number of client packets dropped by the gateway's per-client token-bucket admission control. Sibling of katzenpost_dropped_packets_total; this counter isolates rate-limit drops from scheduler and validity drops.",
+		},
+	)
+	sphinxUnwraps = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_sphinx_unwraps_total",
+			Help: "Number of successful Sphinx unwrap operations performed by the crypto worker. The rate of this counter is the realised Sphinx throughput; compare against the BenchmarkSphinxUnwrap capacity reported by the host (paper Appendix V).",
+		},
+	)
 )
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
@@ -193,6 +205,8 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
 	prometheus.MustRegister(channelUsage)
+	prometheus.MustRegister(rateLimitDropped)
+	prometheus.MustRegister(sphinxUnwraps)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress != "" {
@@ -306,4 +320,19 @@ func FailedPKICacheGeneration(epoch string) {
 // InvalidPKICache increments the counter for the number of invalid cached PKI docs per epoch
 func InvalidPKICache(epoch string) {
 	invalidPKICache.With(prometheus.Labels{"epoch": epoch})
+}
+
+// RateLimitDropped increments the counter for client packets dropped by
+// the gateway token-bucket admission control. Call alongside
+// PacketsDropped at the rate-limit branch so the general drop counter
+// stays consistent with the legacy dashboards.
+func RateLimitDropped() {
+	rateLimitDropped.Inc()
+}
+
+// SphinxUnwraps increments the counter for successful Sphinx unwrap
+// operations. The rate of this counter is the realised Sphinx
+// decryption throughput at the node.
+func SphinxUnwraps() {
+	sphinxUnwraps.Inc()
 }
