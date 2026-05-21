@@ -89,15 +89,13 @@ cache_dir=cache
 # no_decoy is a master toggle covering clients, couriers, and replicas.
 # no_client_decoy and no_courier_replica_decoy allow selective disabling
 # when no_decoy=false. no_mixdecoy controls mix node decoys independently.
-ifeq ($(no_mixdecoy),true)
-  noMixDecoy=--noMixDecoy
-endif
-
-# Always pass an explicit value for --noGatewayDecoy so the operator's
-# choice reaches genconfig irrespective of the cobra default. (The
-# pre-existing --noMixDecoy block above only emits the flag in the
-# default-true case and silently inherits cobra's default in the
-# false case; that asymmetry is out of scope for this commit.)
+# Always pass explicit values for --noMixDecoy and --noGatewayDecoy so
+# the operator's choice reaches genconfig irrespective of the cobra
+# default. Both flags default to true in cobra; without the explicit
+# value, setting `no_mixdecoy=false` or `no_gatewaydecoy=false` in the
+# Makefile would emit no flag, the cobra default would take over, and
+# the operator's intent to enable decoys would be silently ignored.
+noMixDecoy=--noMixDecoy=$(no_mixdecoy)
 noGatewayDecoy=--noGatewayDecoy=$(no_gatewaydecoy)
 
 ifeq ($(no_decoy),true)
