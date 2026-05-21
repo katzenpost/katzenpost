@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics watch-grafana watch-prometheus
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -19,6 +19,9 @@ help:
 	@echo " watch-servicenode  - monitor service node log"
 	@echo " watch-gateway      - monitor gateway log"
 	@echo " watch-all-separate - monitor all logs with component labels"
+	@echo " start-with-client-metrics - start with prometheus + grafana and kpclientd metrics"
+	@echo " watch-grafana      - print the Grafana URL"
+	@echo " watch-prometheus   - print the Prometheus URL"
 	@echo " status             - show testnet consensus status"
 	@echo " show-latest-vote   - does what it says"
 	@echo " run-ping           - send a ping over the testnet"
@@ -33,9 +36,11 @@ no_decoy?=true
 no_client_decoy?=false
 no_courier_replica_decoy?=false
 no_mixdecoy?=true
+no_gatewaydecoy?=true
 no_metrics?=true
 pyroscope_dirauth?=false
 pyroscope_kpclientd?=false
+kpclientd_metrics?=false
 epoch_duration?=2m
 mixes=3
 auths=3
@@ -88,6 +93,13 @@ ifeq ($(no_mixdecoy),true)
   noMixDecoy=--noMixDecoy
 endif
 
+# Always pass an explicit value for --noGatewayDecoy so the operator's
+# choice reaches genconfig irrespective of the cobra default. (The
+# pre-existing --noMixDecoy block above only emits the flag in the
+# default-true case and silently inherits cobra's default in the
+# false case; that asymmetry is out of scope for this commit.)
+noGatewayDecoy=--noGatewayDecoy=$(no_gatewaydecoy)
+
 ifeq ($(no_decoy),true)
   noDecoy=--noDecoy
 endif
@@ -114,8 +126,19 @@ ifeq ($(pyroscope_dirauth),true)
 endif
 
 ifeq ($(pyroscope_kpclientd),true)
-  pyroscope_kpclientd_tags=-tags pyroscope
+  pyroscope_kpclientd_tags=pyroscope
   pyroscopeKpclientdFlag=--pyroscopeKpclientd
+endif
+
+ifeq ($(kpclientd_metrics),true)
+  kpclientd_metrics_tags=kpclientd_metrics
+endif
+
+# Combine kpclientd build tags. Two `-tags ...` invocations on a single go
+# build line do not compose; the second wins. Build one quoted list instead.
+kpclientd_build_tags=$(strip $(pyroscope_kpclientd_tags) $(kpclientd_metrics_tags))
+ifneq ($(kpclientd_build_tags),)
+  kpclientd_tags_flag=-tags "$(kpclientd_build_tags)"
 endif
 
 ifneq ($(schedulerSlack),0)
@@ -183,7 +206,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
+		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
@@ -199,7 +222,7 @@ config-only: | $(net_name)
 		--lambdaR ${lR} --lambdaRMax ${lRMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
+		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
@@ -302,6 +325,20 @@ watch-all-separate:
 	(tail -F $(net_name)/gateway1/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
 	wait
 
+# start-with-client-metrics brings the mixnet up with prometheus and grafana
+# scraping everything, including kpclientd. The build embeds the
+# kpclientd_metrics tag so the daemon registers and serves its /metrics
+# endpoint; production builds without the tag still compile out the listener
+# entirely.
+start-with-client-metrics:
+	$(MAKE) start no_metrics=false kpclientd_metrics=true
+
+watch-grafana:
+	@echo "Grafana is provisioned at http://127.0.0.1:3000 (default admin/admin on first run)."
+
+watch-prometheus:
+	@echo "Prometheus is provisioned at http://127.0.0.1:9090."
+
 ps:
 	cd $(net_name); $(docker_compose) ps
 
@@ -373,7 +410,7 @@ $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 			mv ping /$(net_name)/ping.$(distro)'
 
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(pyroscope_kpclientd_tags) -ldflags ${ldflags} && \
+		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} && \
 			mv kpclientd /$(net_name)/kpclientd.$(distro)'
 
 clean-images: stop

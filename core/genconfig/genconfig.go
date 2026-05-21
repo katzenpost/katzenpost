@@ -92,6 +92,7 @@ type Config struct {
 	NoClientDecoy            bool
 	NoCourierReplicaDecoy    bool
 	NoMixDecoy               bool
+	NoGatewayDecoy           bool
 	NoMetrics                bool
 	PyroscopeDirauth         bool
 	PyroscopeKpclientd       bool
@@ -147,6 +148,7 @@ type Katzenpost struct {
 	NoClientDecoy         bool
 	NoCourierReplicaDecoy bool
 	NoMixDecoy            bool
+	NoGatewayDecoy        bool
 	NoMetrics             bool
 	PyroscopeDirauth   bool
 	PyroscopeKpclientd bool
@@ -469,7 +471,16 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = !s.NoMixDecoy
+	// Decoy emission is governed by separate switches for gateway and
+	// internal-mix roles so that the coupon-collector decoys at the
+	// gateway can be exercised independently of the mix-layer decoys.
+	// Service nodes do not run the decoy worker, so the value selected
+	// here is moot for them.
+	if isGateway {
+		cfg.Debug.SendDecoyTraffic = !s.NoGatewayDecoy
+	} else {
+		cfg.Debug.SendDecoyTraffic = !s.NoMixDecoy
+	}
 	if s.SchedulerSlack > 0 {
 		cfg.Debug.SchedulerSlack = s.SchedulerSlack
 	}
@@ -798,6 +809,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.NoClientDecoy = cfg.NoDecoy || cfg.NoClientDecoy
 	s.NoCourierReplicaDecoy = cfg.NoDecoy || cfg.NoCourierReplicaDecoy
 	s.NoMixDecoy = cfg.NoMixDecoy
+	s.NoGatewayDecoy = cfg.NoGatewayDecoy
 	s.NoMetrics = cfg.NoMetrics
 	s.PyroscopeDirauth = cfg.PyroscopeDirauth
 	s.PyroscopeKpclientd = cfg.PyroscopeKpclientd

@@ -120,6 +120,8 @@ performance optimization and security requirements.`,
 		"disable courier and replica decoy traffic")
 	cmd.Flags().BoolVar(&cfg.NoMixDecoy, "noMixDecoy", true,
 		"disable decoy traffic generation for mix nodes")
+	cmd.Flags().BoolVar(&cfg.NoGatewayDecoy, "noGatewayDecoy", true,
+		"disable decoy traffic generation for gateway nodes (independent of --noMixDecoy)")
 	cmd.Flags().BoolVar(&cfg.NoMetrics, "noMetrics", false,
 		"disable prometheus and grafana containers in docker-compose")
 	cmd.Flags().BoolVar(&cfg.PyroscopeDirauth, "pyroscopeDirauth", false,
