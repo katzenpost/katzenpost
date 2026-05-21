@@ -619,6 +619,6 @@ func tryUpdateOutgoingRateFromCache(sender *outgoingSender, pkiWorker *PKIWorker
 		log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
 		return false
 	}
-	sender.UpdateRate(rate, doc.LambdaRMaxDelay)
+	sender.UpdateRate(rate)
 	return true
 }

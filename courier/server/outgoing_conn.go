@@ -115,8 +115,8 @@ func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) {
 	}
 }
 
-func (c *outgoingConn) updateDecoyRate(rate, maxDelay uint64) {
-	c.sender.UpdateRate(rate, maxDelay)
+func (c *outgoingConn) updateDecoyRate(rate uint64) {
+	c.sender.UpdateRate(rate)
 }
 
 func (c *outgoingConn) worker() {
@@ -339,7 +339,7 @@ func (c *outgoingConn) tryUpdateRateFromCache() bool {
 		c.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
 		return false
 	}
-	c.sender.UpdateRate(rate, doc.LambdaRMaxDelay)
+	c.sender.UpdateRate(rate)
 	return true
 }
 

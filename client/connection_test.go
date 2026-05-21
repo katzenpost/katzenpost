@@ -75,15 +75,10 @@ func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme
 		GenesisEpoch: epoch,
 
 		Mu:                1,
-		MuMaxDelay:        1,
 		LambdaP:           1,
-		LambdaPMaxDelay:   1,
 		LambdaL:           1,
-		LambdaLMaxDelay:   1,
 		LambdaM:           1,
-		LambdaMMaxDelay:   1,
 		LambdaG:           1,
-		LambdaGMaxDelay:   1,
 
 		Topology:           topology,
 		StorageReplicas:    []*cpki.ReplicaDescriptor{},

@@ -99,7 +99,6 @@ func TestOnDocument(t *testing.T) {
 
 	doc := &cpki.Document{
 		LambdaP:         0.005,
-		LambdaPMaxDelay: 30000,
 		LambdaL:         0.001,
 	}
 

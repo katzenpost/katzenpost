@@ -111,10 +111,10 @@ func (s *sender) UpdateConnectionStatus(isConnected bool) {
 	s.sendQueryOrDecoy.UpdateConnectionStatus(isConnected)
 }
 
-func (s *sender) UpdateRate(rate, maxDelay uint64) error {
+func (s *sender) UpdateRate(rate uint64) error {
 	if rate <= 0 {
 		return fmt.Errorf("invalid rate: %v", rate)
 	}
-	s.sendQueryOrDecoy.UpdateRate(rate, maxDelay)
+	s.sendQueryOrDecoy.UpdateRate(rate)
 	return nil
 }

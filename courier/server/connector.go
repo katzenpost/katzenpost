@@ -189,12 +189,11 @@ func (co *Connector) updateDecoyRates() {
 		co.log.Errorf("Invalid LambdaR %v in PKI document: %v", doc.LambdaR, err)
 		return
 	}
-	maxDelay := doc.LambdaRMaxDelay
 
 	co.RLock()
 	defer co.RUnlock()
 	for _, c := range co.conns {
-		c.updateDecoyRate(rate, maxDelay)
+		c.updateDecoyRate(rate)
 	}
 }
 

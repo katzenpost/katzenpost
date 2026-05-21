@@ -13,6 +13,42 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
+// safetyCapEps is the tail probability past which the safety cap
+// triggers. With epsilon = 10^-12 a sampled delay is clamped roughly
+// once per 10^12 draws, vanishing for any honest measurement window.
+// The corresponding quantile multiplier is -ln(eps) ≈ 27.63, so the
+// cap is about 27.63 × the mean delay.
+const safetyCapEps = 1e-12
+
+// SafetyCap returns the (1 - safetyCapEps) quantile of the exponential
+// distribution with rate parameter lambda, in milliseconds. It is the
+// canonical sampling safety cap for every cover-traffic timing in
+// Katzenpost: large enough that clamping is effectively never observed
+// (P(clamp) ≈ 10^-12 per draw), so the realised inter-arrival
+// distribution is indistinguishable from the unclamped exponential in
+// any finite measurement window.
+//
+// Lambda is in events per millisecond, matching the PKI document's
+// LambdaP, LambdaL, LambdaM, LambdaG, LambdaR and Mu fields. Callers
+// that previously consumed an operator-supplied *MaxDelay companion
+// field should obtain their bound from this function instead; the
+// companion fields have been removed from the consensus schema because
+// no operator setting produces a useful trade-off.
+//
+// Returns zero if lambda is non-positive or non-finite; the caller
+// should treat zero as "rate-limit disabled" exactly as the
+// pre-existing zero-rate paths do.
+func SafetyCap(lambda float64) uint64 {
+	if lambda <= 0 || math.IsNaN(lambda) || math.IsInf(lambda, 0) {
+		return 0
+	}
+	ms := math.Ceil(-math.Log(safetyCapEps) / lambda)
+	if ms > float64(math.MaxUint64) {
+		return math.MaxUint64
+	}
+	return uint64(ms)
+}
+
 // LambdaRateToMs converts a PKI lambda parameter (the rate of an Exp
 // distribution, in events per millisecond) into the mean delay in
 // milliseconds that ExpDist.UpdateRate expects. math.Ceil avoids the
@@ -34,12 +70,15 @@ type opConnStatusChanged struct {
 
 type opExpNewRate struct {
 	averageRate uint64
-	maxDelay    uint64
 }
 
-// ExpDist provides a pseudorandom ticker with an average and maximum delay
-// The channel returned by OutCh() is written at an average rate specified
-// with UpdateRate(average, max uint64), in units of milliseconds.
+// ExpDist provides a pseudorandom ticker writing to OutCh at an
+// exponential distribution whose mean inter-arrival is specified via
+// UpdateRate. A built-in safety cap drawn from SafetyCap clamps draws
+// at the (1 - 10^-12) quantile of the configured distribution; the
+// clamp is set far enough into the tail that the realised mean is
+// indistinguishable from the unclamped exponential in any honest
+// measurement window.
 type ExpDist struct {
 	worker.Worker
 
@@ -65,14 +104,16 @@ func (e *ExpDist) OutCh() <-chan struct{} {
 	return e.outCh
 }
 
-// UpdateRate is a value in milliseconds and specifies the average and
-// maximum delay between writes to the channel returned by OutCh.
-func (e *ExpDist) UpdateRate(averageRate uint64, maxDelay uint64) {
+// UpdateRate takes the mean inter-arrival delay in milliseconds (i.e.
+// 1/lambda where lambda is in events per millisecond) and configures
+// the worker to emit on OutCh with that mean. Passing zero is treated
+// as "disabled" and the worker stops emitting until a positive rate is
+// published. The safety cap is derived internally from the mean rate.
+func (e *ExpDist) UpdateRate(averageRate uint64) {
 	select {
 	case <-e.HaltCh():
 	case e.opCh <- opExpNewRate{
 		averageRate: averageRate,
-		maxDelay:    maxDelay,
 	}:
 	}
 }
@@ -119,7 +160,18 @@ func (e *ExpDist) worker() {
 				mustResetTimer = true
 			case opExpNewRate:
 				e.averageRate = op.averageRate
-				e.maxDelay = op.maxDelay
+				// Derive the safety cap from the mean rate so the
+				// tail of the exponential is not truncated within
+				// any honest measurement window. lambda (events/ms)
+				// is the reciprocal of the mean delay; SafetyCap
+				// expects lambda. If averageRate is zero the worker
+				// is treated as disabled and the cap value is
+				// immaterial.
+				if e.averageRate != 0 {
+					e.maxDelay = SafetyCap(1.0 / float64(e.averageRate))
+				} else {
+					e.maxDelay = 0
+				}
 				mustResetTimer = true
 			default:
 				panic(fmt.Sprintf("BUG: Worker received nonsensical op: %T", op))

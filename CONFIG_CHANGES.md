@@ -46,8 +46,20 @@ Source: `authority/voting/server/config/config.go`.
 - **Added** `LambdaR` (float64). Inverse of the mean of the exponential
   distribution that the courier and storage replicas sample for
   decoy traffic between each other. Defaulted to `0.00025` if unset.
-- **Added** `LambdaRMaxDelay` (uint64). Maximum delay for `LambdaR`,
-  in milliseconds. Defaulted from `LambdaR` if unset.
+- **Removed** `MuMaxDelay`, `LambdaPMaxDelay`, `LambdaLMaxDelay`,
+  `LambdaMMaxDelay`, `LambdaGMaxDelay`, `LambdaRMaxDelay` (all uint64).
+  These six operator-tunable safety caps no longer exist. Sampling
+  safety caps are derived programmatically inside the library by
+  `common.SafetyCap`, which returns the `1 - 10^-12` quantile of the
+  exponential distribution with rate parameter `lambda`: about
+  `27.63 / lambda` milliseconds. The previous defaults (and the
+  docker-mixnet defaults of `1000` ms) sat at or below the mean of the
+  corresponding exponential and silently biased the realised
+  inter-arrival rate upward, breaking the memorylessness property
+  that the traffic-coupling argument relies on. Stale `*MaxDelay`
+  lines in `authority.toml` are silently ignored by the lenient
+  BurntSushi loader and may be deleted at the operator's
+  convenience.
 - **Removed** `SendRatePerMinute` (uint64). The gateway daemon now
   derives its per-client token-bucket parameters internally on every
   PKI-document update from `doc.LambdaP + doc.LambdaL`, with a
@@ -351,14 +363,14 @@ Source: `client/thin/thin.go`, `Config` type.
 
 This is not a config-file change but consequences propagate to
 operators: the signed PKI document version was bumped from `v0` to
-`v1` because new fields (`LambdaR`, `LambdaRMaxDelay`,
-`ConfiguredReplicaIdentityKeys`, `ReplicaEnvelopeKeys`) are now
-present. v0 readers will refuse a v1 document via the
-`ParseDocument` version check rather than deserialise it incorrectly.
-All clients, dirauths, mix nodes, replicas, and couriers must run
-the matching code base; mixed-version networks are not supported.
+`v1` because new fields (`LambdaR`, `ConfiguredReplicaIdentityKeys`,
+`ReplicaEnvelopeKeys`) are now present. v0 readers will refuse a v1
+document via the `ParseDocument` version check rather than deserialise
+it incorrectly. All clients, dirauths, mix nodes, replicas, and
+couriers must run the matching code base; mixed-version networks are
+not supported.
 
-Two further field removals after the version bump:
+Three further field removals after the version bump:
 
 - `SendRatePerMinute` (uint64). Gone from `core/pki/document.go`;
   gateway daemons now derive their per-client token-bucket parameters
@@ -372,9 +384,21 @@ Two further field removals after the version bump:
   `[Parameters]`: drop decoys are retired and the client samples no
   separate `LambdaD` process.
 
-Neither removal triggers a further version bump; CBOR decoding of a
-field absent from the wire payload yields the type's zero value, and
-no code now depends on either field being present.
+- `MuMaxDelay`, `LambdaPMaxDelay`, `LambdaLMaxDelay`, `LambdaMMaxDelay`,
+  `LambdaGMaxDelay`, `LambdaRMaxDelay` (all uint64). The six
+  exponential-distribution safety caps are derived programmatically
+  inside the library via `common.SafetyCap` and are no longer carried
+  in the consensus document. Field-absent CBOR yields the Go zero
+  value; the `SafetyCap` helper produces a non-zero cap derived from
+  the rate parameter, so the absence of the document field is
+  invisible to callers. The pre-existing per-hop clamping site in
+  `core/sphinx/path/path.go` and the mix-decoy clamping site in
+  `server/internal/decoy/decoy.go` both now consult `SafetyCap`
+  directly.
+
+These removals do not trigger a further version bump; CBOR decoding of
+a field absent from the wire payload yields the type's zero value, and
+no code now depends on the removed fields being present.
 
 ## Common defaults
 

@@ -130,13 +130,13 @@ func (s *sender) UpdateRates(rates *Rates) {
 		s.log.Warning("Invalid messageOrLoop rate, ignoring")
 		return
 	}
-	s.sendMessageOrLoop.UpdateRate(uint64(1/rates.messageOrLoop), rates.messageOrLoopMaxDelay)
+	s.sendMessageOrLoop.UpdateRate(uint64(1 / rates.messageOrLoop))
 
 	// The LambdaL ticker stays dormant until a positive rate is
 	// published, so a PKI document that omits LambdaL produces no
 	// loop-decoy ticks.
 	if rates.loop > 0 {
-		s.sendLoop.UpdateRate(uint64(1/rates.loop), rates.loopMaxDelay)
+		s.sendLoop.UpdateRate(uint64(1 / rates.loop))
 	}
 }
 

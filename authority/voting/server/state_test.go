@@ -87,10 +87,10 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001, MuMaxDelay: 9000,
-		LambdaP: 0.002, LambdaPMaxDelay: 9000,
-		LambdaL: 0.0005, LambdaLMaxDelay: 9000,
-		LambdaM: 0.2, LambdaMMaxDelay: 9000,
+		Mu: 0.001,
+		LambdaP: 0.002,
+		LambdaL: 0.0005,
+		LambdaM: 0.2,
 	}
 
 	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
@@ -861,10 +861,10 @@ func TestReplicaDescriptorConsensus(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001, MuMaxDelay: 9000,
-		LambdaP: 0.002, LambdaPMaxDelay: 9000,
-		LambdaL: 0.0005, LambdaLMaxDelay: 9000,
-		LambdaM: 0.2, LambdaMMaxDelay: 9000,
+		Mu: 0.001,
+		LambdaP: 0.002,
+		LambdaL: 0.0005,
+		LambdaM: 0.2,
 	}
 
 	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
@@ -1325,10 +1325,10 @@ func TestConfiguredReplicaIdentityKeys(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001, MuMaxDelay: 9000,
-		LambdaP: 0.002, LambdaPMaxDelay: 9000,
-		LambdaL: 0.0005, LambdaLMaxDelay: 9000,
-		LambdaM: 0.2, LambdaMMaxDelay: 9000,
+		Mu: 0.001,
+		LambdaP: 0.002,
+		LambdaL: 0.0005,
+		LambdaM: 0.2,
 	}
 
 	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
@@ -1649,10 +1649,10 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001, MuMaxDelay: 9000,
-		LambdaP: 0.002, LambdaPMaxDelay: 9000,
-		LambdaL: 0.0005, LambdaLMaxDelay: 9000,
-		LambdaM: 0.2, LambdaMMaxDelay: 9000,
+		Mu: 0.001,
+		LambdaP: 0.002,
+		LambdaL: 0.0005,
+		LambdaM: 0.2,
 	}
 
 	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
@@ -2052,10 +2052,10 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001, MuMaxDelay: 9000,
-		LambdaP: 0.002, LambdaPMaxDelay: 9000,
-		LambdaL: 0.0005, LambdaLMaxDelay: 9000,
-		LambdaM: 0.2, LambdaMMaxDelay: 9000,
+		Mu: 0.001,
+		LambdaP: 0.002,
+		LambdaL: 0.0005,
+		LambdaM: 0.2,
 	}
 
 	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
@@ -2539,10 +2539,10 @@ func TestEmptyEnvelopeKeysWithConfiguredReplicas(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001, MuMaxDelay: 9000,
-		LambdaP: 0.002, LambdaPMaxDelay: 9000,
-		LambdaL: 0.0005, LambdaLMaxDelay: 9000,
-		LambdaM: 0.2, LambdaMMaxDelay: 9000,
+		Mu: 0.001,
+		LambdaP: 0.002,
+		LambdaL: 0.0005,
+		LambdaM: 0.2,
 	}
 
 	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
@@ -2824,10 +2824,10 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001, MuMaxDelay: 9000,
-		LambdaP: 0.002, LambdaPMaxDelay: 9000,
-		LambdaL: 0.0005, LambdaLMaxDelay: 9000,
-		LambdaM: 0.2, LambdaMMaxDelay: 9000,
+		Mu: 0.001,
+		LambdaP: 0.002,
+		LambdaL: 0.0005,
+		LambdaM: 0.2,
 	}
 
 	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
