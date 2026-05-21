@@ -440,6 +440,14 @@ type Server struct {
 
 	// DisableIPv6 disables IPv6 for peer connections
 	DisableIPv6 bool
+
+	// MetricsAddress is the host:port that the dirauth's prometheus
+	// HTTP endpoint binds to. Empty disables the endpoint. The
+	// listener is wired in server.go after the wire listeners are
+	// started; the endpoint is independent of any wire-protocol
+	// listener and exposes only metrics, never any authority
+	// state.
+	MetricsAddress string
 }
 
 // applyRetryDefaults sets default values for retry configuration

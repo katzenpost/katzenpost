@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -505,6 +506,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	default:
 		// The peer is publishing for an epoch that's invalid.
 		s.log.Errorf("Peer %s: Invalid descriptor epoch '%v'", peerID, cmd.Epoch)
+		instrument.DescriptorRejected("replica", "invalid_epoch")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
@@ -514,6 +516,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	err := signedUpload.Unmarshal(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("Peer %s: Invalid descriptor: %v", peerID, err)
+		instrument.DescriptorRejected("replica", "deserialize_failed")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
@@ -525,6 +528,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 			strconv.QuoteToASCII(peerID),
 			cmd.Epoch,
 		)
+		instrument.DescriptorRejected("replica", "nil_descriptor")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
@@ -533,6 +537,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	identityKeyHash := hash.Sum256(desc.IdentityKey)
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
 		s.log.Errorf("Peer %s: Identity key hash '%x' is not link key '%x'.", peerID, hash.Sum256(desc.IdentityKey), pubKeyHash)
+		instrument.DescriptorRejected("replica", "identity_mismatch")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -541,12 +546,14 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
 	if err != nil {
 		s.log.Error("failed to unmarshal descriptor IdentityKey")
+		instrument.DescriptorRejected("replica", "identity_unmarshal_failed")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
 
 	if !signedUpload.Verify(descIdPubKey) {
 		s.log.Error("PostDescriptorStatus contained a SignedUpload with an invalid signature")
+		instrument.DescriptorRejected("replica", "signature_invalid")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -554,6 +561,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	// Ensure that the descriptor is from an allowed peer.
 	if !s.state.isReplicaDescriptorAuthorized(desc) {
 		s.log.Errorf("Peer %s: Identity key hash '%x' not authorized", peerID, hash.Sum256(desc.IdentityKey))
+		instrument.DescriptorRejected("replica", "unauthorized")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -566,6 +574,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 			cmd.Epoch,
 			strconv.QuoteToASCII(err.Error()),
 		)
+		instrument.DescriptorRejected("replica", "malformed")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
@@ -578,6 +587,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 		// retroactively modify their descriptor. This should disambituate
 		// the condition, but the latter is more likely.
 		s.log.Errorf("Peer %s: Rejected probably a conflict: %v", peerID, err)
+		instrument.DescriptorRejected("replica", "conflict")
 		resp.ErrorCode = commands.DescriptorConflict
 		return resp
 	}
@@ -589,6 +599,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 		strconv.QuoteToASCII(desc.Name),
 		cmd.Epoch,
 	)
+	instrument.DescriptorAccepted("replica")
 	resp.ErrorCode = commands.DescriptorOk
 	return resp
 }
@@ -612,6 +623,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	default:
 		// The peer is publishing for an epoch that's invalid.
 		s.log.Errorf("onPostDescriptor: EPOCH VALIDATION FAILED from peer %s: invalid descriptor epoch %d (current: %d, acceptable: %d-%d)", peerID, cmd.Epoch, now, now-1, now+1)
+		instrument.DescriptorRejected("mix", "invalid_epoch")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
@@ -622,6 +634,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	err := signedUpload.Unmarshal(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("onPostDescriptor: DESERIALIZATION FAILED from peer %s: invalid descriptor: %s", strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+		instrument.DescriptorRejected("mix", "deserialize_failed")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
@@ -634,6 +647,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 			strconv.QuoteToASCII(peerID),
 			cmd.Epoch,
 		)
+		instrument.DescriptorRejected("mix", "nil_descriptor")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
@@ -645,6 +659,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	identityKeyHash := hash.Sum256(desc.IdentityKey)
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
 		s.log.Errorf("onPostDescriptor: IDENTITY KEY MISMATCH from peer %s: identity key hash %x != link key %x", strconv.QuoteToASCII(peerID), hash.Sum256(desc.IdentityKey), pubKeyHash)
+		instrument.DescriptorRejected("mix", "identity_mismatch")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -655,6 +670,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
 	if err != nil {
 		s.log.Errorf("onPostDescriptor: IDENTITY KEY UNMARSHAL FAILED from peer %s: %s", strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+		instrument.DescriptorRejected("mix", "identity_unmarshal_failed")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -663,6 +679,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	s.log.Debugf("onPostDescriptor: Verifying SignedUpload signature from peer %s", strconv.QuoteToASCII(peerID))
 	if !signedUpload.Verify(descIdPubKey) {
 		s.log.Errorf("onPostDescriptor: SIGNATURE VERIFICATION FAILED from peer %s: SignedUpload has invalid signature", strconv.QuoteToASCII(peerID))
+		instrument.DescriptorRejected("mix", "signature_invalid")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -672,6 +689,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	s.log.Debugf("onPostDescriptor: Checking authorization for node %s from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
 	if !s.state.isDescriptorAuthorized(desc) {
 		s.log.Errorf("onPostDescriptor: AUTHORIZATION FAILED for node %s from peer %s: identity key hash %x not authorized", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), hash.Sum256(desc.IdentityKey))
+		instrument.DescriptorRejected("mix", "unauthorized")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -687,6 +705,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 			strconv.QuoteToASCII(peerID),
 			strconv.QuoteToASCII(err.Error()),
 		)
+		instrument.DescriptorRejected("mix", "malformed")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
@@ -700,6 +719,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 		// retroactively modify their descriptor. This should disambituate
 		// the condition, but the latter is more likely.
 		s.log.Errorf("onPostDescriptor: DESCRIPTOR UPLOAD FAILED for node %s from peer %s: probably a conflict: %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+		instrument.DescriptorRejected("mix", "conflict")
 		resp.ErrorCode = commands.DescriptorConflict
 		return resp
 	}
@@ -712,6 +732,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 		cmd.Epoch,
 		strconv.QuoteToASCII(peerID),
 	)
+	instrument.DescriptorAccepted("mix")
 	resp.ErrorCode = commands.DescriptorOk
 	return resp
 }

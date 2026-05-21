@@ -52,6 +52,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -171,6 +172,8 @@ func (s *state) Halt() {
 func (s *state) setState(newState string) {
 	s.state = newState
 	s.cachedPhase.Store(newState)
+	instrument.VotingPhase(newState)
+	instrument.CurrentEpoch(s.votingEpoch)
 }
 
 func (s *state) onUpdate() {
@@ -631,6 +634,7 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	}
 	if err == nil {
 		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures: %v", epoch, len(good), len(s.verifiers), ourConsensus)
+		instrument.ConsensusReached()
 		// Persist the document to disk.
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
@@ -656,6 +660,11 @@ func (s *state) identityPubKeyHash() [publicKeyHashSize]byte {
 }
 
 func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors []*pki.ReplicaDescriptor, params *config.Parameters, srv []byte) *pki.Document {
+	docGenStart := time.Now()
+	defer func() {
+		instrument.DocumentGenerated(time.Since(docGenStart))
+	}()
+
 	// Carve out the descriptors between providers and nodes.
 	gateways := []*pki.MixDescriptor{}
 	serviceNodes := []*pki.MixDescriptor{}
@@ -2072,6 +2081,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
 		s.log.Error("Voter not authorized.")
+		instrument.VoteReceived("not_authorized")
 		resp.ErrorCode = commands.VoteNotAuthorized
 		return &resp
 	}
@@ -2080,11 +2090,13 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	// we have any bugs in our implmementation
 	if vote.Epoch < s.votingEpoch {
 		s.log.Errorf("Vote from %s received too early: %d < %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		instrument.VoteReceived("too_early")
 		resp.ErrorCode = commands.VoteTooEarly
 		return &resp
 	}
 	if vote.Epoch > s.votingEpoch {
 		s.log.Errorf("Vote from %s received too late: %d > %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		instrument.VoteReceived("too_late")
 		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
@@ -2103,6 +2115,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	_, ok = s.votes[s.votingEpoch][pk]
 	if ok {
 		s.log.Errorf("Vote from %s already received", s.authorityNames[pk])
+		instrument.VoteReceived("already_received")
 		resp.ErrorCode = commands.VoteAlreadyReceived
 		return &resp
 	}
@@ -2111,6 +2124,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	_, err := cert.Verify(vote.PublicKey, vote.Payload)
 	if err != nil {
 		s.log.Errorf("Vote from %s failed to verify.", s.authorityNames[pk])
+		instrument.VoteReceived("not_signed")
 		resp.ErrorCode = commands.VoteNotSigned
 		return &resp
 	}
@@ -2118,6 +2132,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	doc, err := s.doParseDocument(vote.Payload)
 	if err != nil {
 		s.log.Errorf("Vote from %s failed signature verification.", s.authorityNames[pk])
+		instrument.VoteReceived("not_signed")
 		resp.ErrorCode = commands.VoteNotSigned
 		return &resp
 	}
@@ -2125,6 +2140,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	// Check that the deserialiezd payload was signed for the correct Epoch
 	if doc.Epoch != s.votingEpoch {
 		s.log.Errorf("Vote from %s contains wrong Epoch %d", s.authorityNames[pk], doc.Epoch)
+		instrument.VoteReceived("malformed")
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp
 	}
@@ -2137,6 +2153,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		// It's possible that an authority submitted another authoritys vote on its behalf,
 		// but we are not going to allow that behavior as it is not specified.
 		s.log.Error("Vote from %s did not contain SharedRandom Commit.", s.authorityNames[pk])
+		instrument.VoteReceived("malformed")
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp
 	}
@@ -2145,6 +2162,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	// save the commit
 	s.commits[s.votingEpoch][pk] = commit
 	s.log.Noticef("Vote OK from: %s\n%s", s.authorityNames[pk], doc)
+	instrument.VoteReceived("ok")
 	resp.ErrorCode = commands.VoteOk
 	return &resp
 }
