@@ -1037,11 +1037,13 @@ func SaveConfigurations(s *Katzenpost, cfg *Config) error {
 // (reached via its `kpclientd` hostname), and the docker port publish
 // forwards host:64331 to that same bridge address. The thin clients
 // (ping, fetch) run on the host with --network=host and dial
-// 127.0.0.1:64331 over the published port.
+// localhost:64331 over the published port; the host's /etc/hosts
+// resolves localhost to 127.0.0.1 and the published forward picks it
+// up.
 func GenerateClientConfigurations(s *Katzenpost) error {
 	clientDaemonNetwork := "tcp"
 	clientDaemonListenAddress := "kpclientd:64331"
-	clientDaemonDialAddress := "127.0.0.1:64331"
+	clientDaemonDialAddress := "localhost:64331"
 
 	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonListenAddress)
 	if err != nil {
