@@ -45,8 +45,11 @@ const (
 	SharedRandomValueLength = 32
 
 	// DocumentVersion identifies the document format version.
-	// v1 introduces LambdaR/LambdaRMaxDelay, ConfiguredReplicaIdentityKeys,
-	// and ReplicaEnvelopeKeys, which are not present in v0 documents.
+	// v1 introduced LambdaR, ConfiguredReplicaIdentityKeys, and
+	// ReplicaEnvelopeKeys, which were not present in v0 documents. v1
+	// also drops the six *MaxDelay companion fields that previously
+	// accompanied Mu/LambdaP/LambdaL/LambdaM/LambdaG/LambdaR; sampling
+	// safety caps are derived programmatically inside the library now.
 	DocumentVersion = "v1"
 )
 
@@ -89,50 +92,38 @@ type Document struct {
 
 	// Mu is the inverse of the mean of the exponential distribution
 	// that the Sphinx packet per-hop mixing delay will be sampled from.
+	// Sampling safety caps are derived programmatically inside
+	// common.SafetyCap from this rate; there is no companion
+	// MuMaxDelay field, as no operator setting produces a useful
+	// trade-off (cf. plan: declarative-sauteeing-crystal.md).
 	Mu float64
-
-	// MuMaxDelay is the maximum Sphinx packet per-hop mixing delay in
-	// milliseconds.
-	MuMaxDelay uint64
 
 	// LambdaP is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine the time interval between sending
 	// messages from it's FIFO egress queue or drop decoy messages if the queue
-	// is empty.
+	// is empty. Safety cap derived from common.SafetyCap.
 	LambdaP float64
-
-	// LambdaPMaxDelay is the maximum time interval in milliseconds.
-	LambdaPMaxDelay uint64
 
 	// LambdaL is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine the time interval between sending
-	// decoy loop messages.
+	// decoy loop messages. Safety cap derived from common.SafetyCap.
 	LambdaL float64
-
-	// LambdaLMaxDelay is the maximum time interval in milliseconds.
-	LambdaLMaxDelay uint64
 
 	// LambdaM is the inverse of the mean of the exponential distribution
 	// that mixes will sample to determine send timing of mix loop decoy traffic.
+	// Safety cap derived from common.SafetyCap.
 	LambdaM float64
-
-	// LambdaMMaxDelay is the maximum send interval in milliseconds.
-	LambdaMMaxDelay uint64
 
 	// LambdaG is the inverse of the mean of the exponential distribution
 	// that mixes will sample to determine send timing of gateway node loop decoy traffic.
+	// Safety cap derived from common.SafetyCap.
 	LambdaG float64
-
-	// LambdaGMaxDelay is the maximum send interval in milliseconds.
-	LambdaGMaxDelay uint64
 
 	// LambdaR is the inverse of the mean of the exponential distribution
 	// that the courier and storage replicas will sample to determine the
 	// send timing of decoy traffic between each other.
+	// Safety cap derived from common.SafetyCap.
 	LambdaR float64
-
-	// LambdaRMaxDelay is the maximum send interval in milliseconds.
-	LambdaRMaxDelay uint64
 
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
@@ -208,7 +199,7 @@ func (d *Document) String() string {
 	}
 	psrv += "]"
 
-	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nMu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv, psrv)
+	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nMu: %v LambdaP: %v LambdaL: %v LambdaM: %v LambdaG: %v LambdaR: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.Mu, d.LambdaP, d.LambdaL, d.LambdaM, d.LambdaG, d.LambdaR, srv, psrv)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("  [%v]{", l)
 		s += fmt.Sprintf("%v", nodes)

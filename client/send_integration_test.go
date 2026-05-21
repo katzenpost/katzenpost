@@ -152,9 +152,7 @@ func createFullMockPKIDocument(t *testing.T, geo *geo.Geometry) (*cpki.Document,
 		StorageReplicas:               replicaDescs,
 		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
 		LambdaP:                       0.001,
-		LambdaPMaxDelay:               1000,
 		Mu:                            0.005,
-		MuMaxDelay:                    1000,
 	}
 
 	return doc, &gatewayIdHash, &serviceIdHash, serviceQueueID

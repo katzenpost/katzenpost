@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -327,22 +328,22 @@ func (d *decoy) worker() {
 			isGatewayNode := d.glue.Config().Server.IsGatewayNode
 
 			var lambda float64
-			var max uint64
 			doc := docCache.Document()
 
-			if !isGatewayNode {
-				max = doc.LambdaMMaxDelay
-				lambda = doc.LambdaM
-			}
 			if isGatewayNode {
-				max = doc.LambdaGMaxDelay
 				lambda = doc.LambdaG
+			} else {
+				lambda = doc.LambdaM
 			}
 
 			d.log.Debug("DECOY LAMBDA %f", lambda)
 
+			// The safety cap is the (1 - 1e-12) quantile of the
+			// configured exponential, derived programmatically so
+			// the rate is not biased by truncation.
+			max := common.SafetyCap(lambda)
 			wakeMsec := uint64(rand.Exp(d.rng, lambda))
-			if wakeMsec > max {
+			if max != 0 && wakeMsec > max {
 				wakeMsec = max
 			}
 			wakeInterval = time.Duration(wakeMsec) * time.Millisecond

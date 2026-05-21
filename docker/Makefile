@@ -48,18 +48,14 @@ gateways=1
 serviceNodes=3
 storageNodes=5
 
-# Parameters
+# Parameters. Sampling safety caps for each rate are derived inside the
+# library (common.SafetyCap) from the rate itself, so no MaxDelay knobs
+# are passed to genconfig.
 mu=0.005
-muMax=1000
 lP=0.001
-lPMax=1000
 lL=0.0005
-lLMax=1000
 lM=0.0005
-lMMax=100
-lGMax=1000
 lR=0.005
-lRMax=1000
 
 UserForwardPayloadLength=2000
 
@@ -200,9 +196,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		$(sh) -c 'cd cmd/genconfig && go build && cd ../../docker \
 		&& ../cmd/genconfig/genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
 		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
-		--lambdaLMax ${lLMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
-		--lambdaR ${lR} --lambdaRMax ${lRMax} \
+		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
 		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
@@ -216,9 +210,7 @@ config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
 	cd ../cmd/genconfig && go build && ./genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
 		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
-		--lambdaLMax ${lLMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
-		--lambdaR ${lR} --lambdaRMax ${lRMax} \
+		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
 		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \

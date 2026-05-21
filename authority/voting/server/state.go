@@ -741,17 +741,11 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		Epoch:                         s.votingEpoch,
 		GenesisEpoch:                  s.genesisEpoch,
 		Mu:                            params.Mu,
-		MuMaxDelay:                    params.MuMaxDelay,
 		LambdaP:                       params.LambdaP,
-		LambdaPMaxDelay:               params.LambdaPMaxDelay,
 		LambdaL:                       params.LambdaL,
-		LambdaLMaxDelay:               params.LambdaLMaxDelay,
 		LambdaM:                       params.LambdaM,
-		LambdaMMaxDelay:               params.LambdaMMaxDelay,
 		LambdaG:                       lambdaG,
-		LambdaGMaxDelay:               params.LambdaGMaxDelay,
 		LambdaR:                       params.LambdaR,
-		LambdaRMaxDelay:               params.LambdaRMaxDelay,
 		Topology:                      topology,
 		GatewayNodes:                  gateways,
 		ServiceNodes:                  serviceNodes,
@@ -1417,17 +1411,11 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	for id, vote := range s.votes[epoch] {
 		// serialize the vote parameters and tally these as well.
 		params := &config.Parameters{
-			Mu:                vote.Mu,
-			MuMaxDelay:        vote.MuMaxDelay,
-			LambdaP:           vote.LambdaP,
-			LambdaPMaxDelay:   vote.LambdaPMaxDelay,
-			LambdaL:           vote.LambdaL,
-			LambdaLMaxDelay:   vote.LambdaLMaxDelay,
-			LambdaM:           vote.LambdaM,
-			LambdaMMaxDelay:   vote.LambdaMMaxDelay,
-			LambdaGMaxDelay:   vote.LambdaGMaxDelay,
-			LambdaR:           vote.LambdaR,
-			LambdaRMaxDelay:   vote.LambdaRMaxDelay,
+			Mu:      vote.Mu,
+			LambdaP: vote.LambdaP,
+			LambdaL: vote.LambdaL,
+			LambdaM: vote.LambdaM,
+			LambdaR: vote.LambdaR,
 		}
 		b := bytes.Buffer{}
 		e := gob.NewEncoder(&b)

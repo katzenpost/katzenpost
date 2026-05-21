@@ -101,16 +101,10 @@ type Config struct {
 	MaxPKIDelay              int
 	PollingIntvl             int
 	Mu                       float64
-	MuMax                    uint64
 	LP                       float64
-	LPMax                    uint64
 	LL                       float64
-	LLMax                    uint64
 	LM                       float64
-	LMMax                    uint64
-	LGMax                    uint64
 	LR                       float64
-	LRMax                    uint64
 	SchedulerSlack           int
 	SchedulerMaxBurst        int
 	SendSlack                int
@@ -707,19 +701,15 @@ func RunGenConfig(cfg Config) error {
 		return err
 	}
 
-	// Create parameters struct for voting authorities
+	// Create parameters struct for voting authorities. Sampling
+	// safety caps are derived inside the library from each rate, so
+	// no MaxDelay companion fields are written here.
 	parameters := &vConfig.Parameters{
-		Mu:                cfg.Mu,
-		MuMaxDelay:        cfg.MuMax,
-		LambdaP:           cfg.LP,
-		LambdaPMaxDelay:   cfg.LPMax,
-		LambdaL:           cfg.LL,
-		LambdaLMaxDelay:   cfg.LLMax,
-		LambdaM:           cfg.LM,
-		LambdaMMaxDelay:   cfg.LMMax,
-		LambdaGMaxDelay:   cfg.LGMax,
-		LambdaR:           cfg.LR,
-		LambdaRMaxDelay:   cfg.LRMax,
+		Mu:      cfg.Mu,
+		LambdaP: cfg.LP,
+		LambdaL: cfg.LL,
+		LambdaM: cfg.LM,
+		LambdaR: cfg.LR,
 	}
 
 	// Initialize katzenpost struct
