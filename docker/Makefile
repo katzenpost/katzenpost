@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-status pumba-stop
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -24,8 +24,10 @@ help:
 	@echo " print-url-prometheus - print the Prometheus URL"
 	@echo " pumba-latency      - induce network delay/jitter on mixnet containers (see pumba_* vars)"
 	@echo " pumba-loss         - induce packet loss on mixnet containers (see pumba_* vars)"
-	@echo " pumba-status       - show the running pumba chaos container, if any"
-	@echo " pumba-stop         - stop any running pumba chaos container"
+	@echo " pumba-corrupt      - induce single-bit packet corruption (see pumba_corrupt_pct)"
+	@echo " pumba-pause        - freeze a single container for pumba_pause_duration"
+	@echo " pumba-status       - show all running pumba chaos containers"
+	@echo " pumba-stop         - stop every katzenpost_pumba_* chaos container"
 	@echo " status             - show testnet consensus status"
 	@echo " show-latest-vote   - does what it says"
 	@echo " run-ping           - send a ping over the testnet"
@@ -186,22 +188,34 @@ endif
 #   pumba_correlation_pct optional jitter correlation, percent (default empty)
 #   pumba_loss_pct        packet loss percent for `pumba-loss` (default 5)
 #   pumba_loss_corr_pct   optional loss correlation, percent (default empty)
-#   pumba_duration        how long to apply (default 1h; use e.g. 999h to leave it running)
+#   pumba_corrupt_pct     bit-corruption percent for `pumba-corrupt` (default 0.01)
+#   pumba_pause_duration  duration of `pumba-pause` freeze (default 30s)
+#   pumba_pause_target    container name to pause (default replica1)
+#   pumba_duration        how long to apply netem chaos (default 1h)
 #   pumba_targets         pumba target spec; default re2 regex matches
 #                         every mix/gateway/servicenode/replica/kpclientd
 #                         container by predictable name. Override with a
 #                         narrower regex or a space-separated list.
+#   pumba_container       name of the chaos container. Override per lane
+#                         (e.g. katzenpost_pumba_slowreplica) when
+#                         stacking asymmetric chaos; `pumba-stop` removes
+#                         every container whose name starts with
+#                         `katzenpost_pumba_`.
 pumba_latency_ms?=25
 pumba_jitter_ms?=10
 pumba_distribution?=normal
 pumba_correlation_pct?=
 pumba_loss_pct?=5
 pumba_loss_corr_pct?=
+pumba_corrupt_pct?=0.01
+pumba_pause_duration?=30s
+pumba_pause_target?=replica1
 pumba_duration?=1h
 pumba_targets?=re2:^(mix[0-9]+|gateway[0-9]+|servicenode[0-9]+|replica[0-9]+|kpclientd)$$
 pumba_image?=docker.io/gaiaadm/pumba:latest
 pumba_tc_image?=docker.io/gaiadocker/iproute2
 pumba_container?=katzenpost_pumba_chaos
+pumba_prefix=katzenpost_pumba_
 
 pumba_sock_mount=$(shell if echo ${docker}|grep -q podman; then echo "-v $$XDG_RUNTIME_DIR/podman/podman.sock:/var/run/docker.sock"; else echo "-v /var/run/docker.sock:/var/run/docker.sock"; fi)
 
@@ -387,12 +401,15 @@ print-url-grafana:
 print-url-prometheus:
 	@echo "Prometheus is provisioned at http://127.0.0.1:9090."
 
-# Pumba chaos. Each `pumba-*` start target stops any previously running
-# pumba container before launching a new one, so the knobs can be
-# re-tuned iteratively without bookkeeping. Pumba removes the netem
+# Pumba chaos. Each start target launches a single chaos container with
+# a distinct name; multiple lanes can run side-by-side by passing
+# pumba_container=<unique-name> to a second invocation, which is how
+# asymmetric latency experiments are set up. Pumba removes the netem
 # qdisc when its duration elapses or when the container is stopped,
-# restoring normal networking.
-pumba-latency: pumba-stop
+# restoring normal networking. `pumba-stop` tears down every chaos
+# container whose name begins with `katzenpost_pumba_`, regardless of
+# which lane started it.
+pumba-latency:
 	@echo "Starting pumba netem delay: ${pumba_latency_ms}ms jitter=${pumba_jitter_ms}ms distribution=${pumba_distribution} duration=${pumba_duration}"
 	@echo "Targets: ${pumba_targets}"
 	$(docker) run -d --rm --name $(pumba_container) \
@@ -404,7 +421,7 @@ pumba-latency: pumba-stop
 		'${pumba_targets}'
 	@echo "Pumba running as '$(pumba_container)'. Stop with: make pumba-stop"
 
-pumba-loss: pumba-stop
+pumba-loss:
 	@echo "Starting pumba netem loss: ${pumba_loss_pct}% duration=${pumba_duration}"
 	@echo "Targets: ${pumba_targets}"
 	$(docker) run -d --rm --name $(pumba_container) \
@@ -416,13 +433,41 @@ pumba-loss: pumba-stop
 		'${pumba_targets}'
 	@echo "Pumba running as '$(pumba_container)'. Stop with: make pumba-stop"
 
+pumba-corrupt:
+	@echo "Starting pumba netem corrupt: ${pumba_corrupt_pct}% duration=${pumba_duration}"
+	@echo "Targets: ${pumba_targets}"
+	$(docker) run -d --rm --name $(pumba_container) \
+		${pumba_sock_mount} \
+		${pumba_image} \
+		--log-level info \
+		netem --duration ${pumba_duration} --tc-image ${pumba_tc_image} \
+		corrupt --percent ${pumba_corrupt_pct} \
+		'${pumba_targets}'
+	@echo "Pumba running as '$(pumba_container)'. Stop with: make pumba-stop"
+
+# pumba-pause freezes the named container for the configured duration.
+# The Sphinx unwrap, replica replication, and courier outgoing queues
+# should all back up; we verify recovery once the pause ends.
+pumba-pause:
+	@echo "Pausing $(pumba_pause_target) for ${pumba_pause_duration}"
+	$(docker) run -d --rm --name $(pumba_container) \
+		${pumba_sock_mount} \
+		${pumba_image} \
+		--log-level info \
+		pause --duration ${pumba_pause_duration} \
+		$(pumba_pause_target)
+	@echo "Pumba running as '$(pumba_container)'. Stop with: make pumba-stop"
+
 pumba-status:
-	@$(docker) ps --filter "name=^$(pumba_container)$$" --format "{{.Names}}\t{{.Status}}\t{{.Command}}" \
-		|grep . || echo "No pumba chaos container is running."
+	@out=$$($(docker) ps --filter "name=^$(pumba_prefix)" --format "{{.Names}}\t{{.Status}}\t{{.Command}}"); \
+		if [ -n "$$out" ]; then echo "$$out"; else echo "No pumba chaos container is running."; fi
 
 pumba-stop:
-	-@$(docker) stop $(i_if_podman) $(pumba_container) 2>/dev/null || true
-	-@$(docker) rm $(i_if_podman) $(pumba_container) 2>/dev/null || true
+	-@for c in $$($(docker) ps -a --filter "name=^$(pumba_prefix)" --format "{{.Names}}"); do \
+		$(docker) stop $(i_if_podman) $$c 2>/dev/null || true; \
+		$(docker) rm $(i_if_podman) $$c 2>/dev/null || true; \
+	done
+	@echo "Pumba chaos cleared."
 
 ps:
 	cd $(net_name); $(docker_compose) ps
