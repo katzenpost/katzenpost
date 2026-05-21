@@ -227,7 +227,7 @@ func StartPrometheusListener(glue glue.Glue) {
 // Incoming increments the counter for incoming requests
 func Incoming(cmd commands.Command) {
 	cmdStr := fmt.Sprintf("%T", cmd)
-	incomingConns.With(prometheus.Labels{"command": cmdStr})
+	incomingConns.With(prometheus.Labels{"command": cmdStr}).Inc()
 }
 
 // Outgoing increments the counter for outgoing connections
@@ -302,7 +302,7 @@ func MixQueueSize(size uint64) {
 
 // PKIDocs increments the counter for the number of PKI docs per epoch
 func PKIDocs(epoch string) {
-	pkiDocs.With(prometheus.Labels{"epoch": epoch})
+	pkiDocs.With(prometheus.Labels{"epoch": epoch}).Inc()
 }
 
 // CancelledOutgoing increments the counter for the number of cancelled outgoing requests
@@ -312,22 +312,31 @@ func CancelledOutgoing() {
 
 // FetchedPKIDocs increments the counter for the number of fetched PKI docs per epoch
 func FetchedPKIDocs(epoch string) {
-	fetchedPKIDocs.With(prometheus.Labels{"epoch": epoch})
+	fetchedPKIDocs.With(prometheus.Labels{"epoch": epoch}).Inc()
 }
 
 // FailedFetchPKIDocs increments the counter for the number of times fetching a PKI doc failed per epoch
 func FailedFetchPKIDocs(epoch string) {
-	failedFetchPKIDocs.With(prometheus.Labels{"epoch": epoch})
+	failedFetchPKIDocs.With(prometheus.Labels{"epoch": epoch}).Inc()
 }
 
 // FailedPKICacheGeneration increments the counter for the number of times generating a cached PKI doc failed
 func FailedPKICacheGeneration(epoch string) {
-	failedPKICacheGeneration.With(prometheus.Labels{"epoch": epoch})
+	failedPKICacheGeneration.With(prometheus.Labels{"epoch": epoch}).Inc()
 }
 
 // InvalidPKICache increments the counter for the number of invalid cached PKI docs per epoch
 func InvalidPKICache(epoch string) {
-	invalidPKICache.With(prometheus.Labels{"epoch": epoch})
+	invalidPKICache.With(prometheus.Labels{"epoch": epoch}).Inc()
+}
+
+// GaugeChannelLength sets the per-channel depth gauge. Matching the
+// signature of the noprometheus stub so callers can invoke this
+// unconditionally; the metric is registered above as channelUsage.
+// No call site references it yet; this accessor is added so that
+// future use does not require touching the instrument package.
+func GaugeChannelLength(name string, length int) {
+	channelUsage.With(prometheus.Labels{"channel_name": name}).Set(float64(length))
 }
 
 // RateLimitDropped increments the counter for client packets dropped by
