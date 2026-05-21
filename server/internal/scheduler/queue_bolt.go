@@ -236,11 +236,13 @@ func (q *boltQueue) Pop() {
 				instrument.DeadlineBlownPacketsDropped()
 				instrument.OutgoingPacketsDropped()
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("bolt_pop_deadline_blown")
 			} else if pkt, err = packetFromBoltBkt(packetsBkt, k, q.glue); err != nil {
 				q.log.Debugf("Dropping packet: %v (s11n failure: %v)", id, err)
 				instrument.InvalidPacketsDropped()
 				instrument.OutgoingPacketsDropped()
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("bolt_pop_s11n_failure")
 			}
 
 			// Regardless of what happened, obliterate the bucket.
@@ -300,6 +302,7 @@ func (q *boltQueue) BulkEnqueue(batch []*packet.Packet) {
 				q.log.Warningf("Failed to enqueue packet: %v (%v)", pkt.ID, err)
 				instrument.OutgoingPacketsDropped()
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("bolt_enqueue_failed")
 			} else {
 				added++
 			}

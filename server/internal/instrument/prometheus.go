@@ -177,6 +177,13 @@ var (
 			Help: "Number of successful Sphinx unwrap operations performed by the crypto worker. The rate of this counter is the realised Sphinx throughput; compare against the BenchmarkSphinxUnwrap capacity reported by the host (paper Appendix V).",
 		},
 	)
+	packetsDroppedByReason = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_dropped_reason_total",
+			Help: "Packets dropped, broken down by the specific code path that discarded them. Fires alongside katzenpost_dropped_packets_total so the legacy aggregate counter stays consistent while the per-reason breakdown identifies which drop site is active.",
+		},
+		[]string{"reason"},
+	)
 )
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
@@ -207,6 +214,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(channelUsage)
 	prometheus.MustRegister(rateLimitDropped)
 	prometheus.MustRegister(sphinxUnwraps)
+	prometheus.MustRegister(packetsDroppedByReason)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress != "" {
@@ -335,4 +343,15 @@ func RateLimitDropped() {
 // decryption throughput at the node.
 func SphinxUnwraps() {
 	sphinxUnwraps.Inc()
+}
+
+// PacketsDroppedByReason increments the per-reason drop counter for
+// the supplied reason label. Use a stable, low-cardinality string
+// (see the call sites for the canonical reasons). This is the
+// data-driven way to identify which drop site is active without
+// having to grep "Dropping packet" lines out of unstructured logs.
+// Always pairs with a PacketsDropped() call at the same site so the
+// aggregate legacy counter remains the sum across all reasons.
+func PacketsDroppedByReason(reason string) {
+	packetsDroppedByReason.With(prometheus.Labels{"reason": reason}).Inc()
 }

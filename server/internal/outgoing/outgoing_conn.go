@@ -390,6 +390,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			if err := w.SendCommand(&cmd); err != nil {
 				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.ID, err)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("outgoing_send_command_failed")
 				instrument.OutgoingPacketsDropped()
 				pkt.Dispose()
 				return
@@ -435,6 +436,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 				instrument.DeadlineBlownPacketsDropped()
 				instrument.OutgoingPacketsDropped()
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("outgoing_send_deadline_blown")
 				pkt.Dispose()
 				continue
 			}
@@ -446,6 +448,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			c.log.Debugf("Dropping packet: %v (Not yet connected to outbound mix node.)", pkt.ID)
 			instrument.OutgoingPacketsDropped()
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("outgoing_peer_not_connected")
 			pkt.Dispose()
 			continue
 		}

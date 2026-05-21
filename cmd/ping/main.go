@@ -61,12 +61,18 @@ func getLogFilePath() string {
 	return logPath
 }
 
-// Config holds the command line configuration
+// Config holds the command line configuration.
+//
+// The per-packet timeout is no longer an operator-tunable: the ping
+// derives it from the consensus document's Mu parameter and the
+// number of mix layers (see roundTripTimeout in ping.go). An
+// operator-chosen value would either be too short (legitimate paths
+// time out) or so long that lost packets stall the batch
+// indefinitely, neither of which is helpful for a smoke-test tool.
 type Config struct {
 	ConfigFile     string
 	Service        string
 	Count          int
-	Timeout        int
 	Concurrency    int
 	PrintDiff      bool
 	ThinClientOnly bool
@@ -128,7 +134,6 @@ full client mode where this ping tool starts it's own client daemon.`,
 	cmd.Flags().StringVarP(&cfg.ConfigFile, "config", "c", "", "configuration file")
 	cmd.Flags().StringVarP(&cfg.Service, "service", "s", "echo", "service name")
 	cmd.Flags().IntVarP(&cfg.Count, "count", "n", 5, "number of ping messages to send")
-	cmd.Flags().IntVarP(&cfg.Timeout, "timeout", "t", 45, "timeout in seconds")
 	cmd.Flags().IntVarP(&cfg.Concurrency, "concurrency", "C", 1, "number of concurrent ping operations")
 	cmd.Flags().BoolVar(&cfg.PrintDiff, "print-diff", false, "print payload contents if reply is different than original")
 	cmd.Flags().BoolVar(&cfg.ThinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")

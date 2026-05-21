@@ -132,6 +132,7 @@ func (p *gateway) worker() {
 			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("gateway_dwell_exceeded")
 				pkt.Dispose()
 				continue
 			}
@@ -159,6 +160,7 @@ func (p *gateway) worker() {
 
 		p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%x')", pkt.ID, recipient)
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("gateway_invalid_recipient")
 		pkt.Dispose()
 
 	}
@@ -184,6 +186,7 @@ func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 	if err != nil {
 		p.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("gateway_parse_forward_failed")
 		return
 	}
 
