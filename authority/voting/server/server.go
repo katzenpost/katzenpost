@@ -41,6 +41,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	"github.com/katzenpost/katzenpost/authority/voting/server/profiling"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -455,6 +456,13 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("Failed to start all listeners.")
 		return nil, fmt.Errorf("authority: failed to start all listeners")
 	}
+
+	// Start the prometheus listener after the wire listeners are
+	// running. Empty MetricsAddress disables the endpoint entirely;
+	// production deployments should leave it unset and only set it
+	// in docker and other operator-controlled diagnostic
+	// environments.
+	instrument.StartPrometheusListener(s.cfg.Server.MetricsAddress)
 
 	isOk = true
 	return s, nil

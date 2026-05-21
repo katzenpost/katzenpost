@@ -620,6 +620,13 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		}
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
 		s.LastPort += 1
+		// Allocate a metrics listener port for this dirauth on the
+		// host-local interface. The prometheus listener in the
+		// dirauth code only binds when MetricsAddress is non-empty,
+		// so a future operator who wants to disable it can leave the
+		// field empty post-genconfig.
+		cfg.Server.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
+		s.LastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
 			File:    ServerLogFile,
@@ -1171,6 +1178,16 @@ scrape_configs:
 `, i+1, cfg.MetricsAddress)
 	}
 	for _, cfg := range s.NodeConfigs {
+		Write(f, `- job_name: %s
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['%s']
+`, cfg.Server.Identifier, cfg.Server.MetricsAddress)
+	}
+	for _, cfg := range s.VotingAuthConfigs {
+		if cfg.Server.MetricsAddress == "" {
+			continue
+		}
 		Write(f, `- job_name: %s
   scrape_interval: 1s
   static_configs:
@@ -1776,6 +1793,116 @@ providers:
         {"expr": "histogram_quantile(0.50, rate(katzenpost_client_arq_round_trip_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
         {"expr": "histogram_quantile(0.90, rate(katzenpost_client_arq_round_trip_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
         {"expr": "histogram_quantile(0.99, rate(katzenpost_client_arq_round_trip_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    }
+  ]
+}
+`)
+
+	// Dirauth dashboard. The voting directory authorities have no
+	// in-band reporting of their consensus state today; this surface
+	// fills the gap. Panels organised by FSM, vote and descriptor
+	// flow, peer health, and document generation.
+	daFile := filepath.Join(dbDir, "dirauth.json")
+	log.Printf(WritingLogFormat, daFile)
+	da, err := os.Create(daFile)
+	if err != nil {
+		return err
+	}
+	defer da.Close()
+	Write(da, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Katzenpost Dirauth",
+  "uid": "katzenpost-dirauth",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Voting FSM Phase (0=bootstrap 1=desc 2=vote 3=reveal 4=cert 5=sig)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "katzenpost_dirauth_voting_phase", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short", "min": -1, "max": 5}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "Current Voting Epoch",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "katzenpost_dirauth_current_epoch", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "Votes Received (rate/s by result)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "targets": [{"expr": "rate(katzenpost_dirauth_votes_received_total[1m])", "refId": "A", "legendFormat": "{{job}} {{result}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "Descriptors Accepted (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_dirauth_descriptors_accepted_total[1m])", "refId": "A", "legendFormat": "{{job}} {{kind}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "Descriptors Rejected (rate/s, stacked by reason)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_dirauth_descriptors_rejected_total[1m])", "refId": "A", "legendFormat": "{{job}} {{kind}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "Consensus Reached (rate/s, should average 1 per epoch)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_dirauth_consensus_reached_total[5m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 7,
+      "title": "Peer Send Result (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [{"expr": "rate(katzenpost_dirauth_peer_send_attempt_total[1m])", "refId": "A", "legendFormat": "{{job}} {{peer}} {{result}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 8,
+      "title": "Peer Connected (1=connected, 0=disconnected)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "targets": [{"expr": "katzenpost_dirauth_peer_connected", "refId": "A", "legendFormat": "{{job}} -> {{peer}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 1}, "overrides": []}
+    },
+    {
+      "id": 9,
+      "title": "Document Generation Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_dirauth_document_generation_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_dirauth_document_generation_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_dirauth_document_generation_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
