@@ -14,6 +14,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
 )
@@ -96,6 +97,13 @@ func runClientDaemon(cfg Config) error {
 		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", cfg.ConfigFile)
 		return nil
 	}
+
+	// Start the prometheus listener before the daemon so that any
+	// startup-time emissions are captured. When the build tag
+	// `kpclientd_metrics` is not set the call is a no-op and incurs
+	// no listener; production builds therefore expose no /metrics
+	// surface regardless of whether the config field is populated.
+	instrument.StartPrometheusListener(clientCfg.MetricsAddress)
 
 	d, err := client.NewDaemon(clientCfg)
 	if err != nil {

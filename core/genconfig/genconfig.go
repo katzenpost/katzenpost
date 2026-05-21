@@ -96,6 +96,7 @@ type Config struct {
 	NoMetrics                bool
 	PyroscopeDirauth         bool
 	PyroscopeKpclientd       bool
+	KpclientdMetricsAddress  string
 	DialTimeout              int
 	MaxPKIDelay              int
 	PollingIntvl             int
@@ -149,9 +150,10 @@ type Katzenpost struct {
 	NoCourierReplicaDecoy bool
 	NoMixDecoy            bool
 	NoGatewayDecoy        bool
-	NoMetrics             bool
-	PyroscopeDirauth   bool
-	PyroscopeKpclientd bool
+	NoMetrics               bool
+	PyroscopeDirauth        bool
+	PyroscopeKpclientd      bool
+	KpclientdMetricsAddress string
 	EpochDuration     string
 	DebugConfig       *cConfig.Debug
 	SchedulerSlack    int
@@ -297,6 +299,15 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 
 	// Debug section
 	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: s.DebugConfig.DisableDecoyTraffic}
+
+	// Metrics listener: only written into client.toml when the operator
+	// has chosen to enable it via --kpclientdMetricsAddress, which the
+	// docker Makefile turns on when kpclientd_metrics=true.
+	// Production builds of kpclientd ignore this field entirely
+	// because the listener is gated behind a build tag.
+	if s.KpclientdMetricsAddress != "" {
+		cfg.MetricsAddress = s.KpclientdMetricsAddress
+	}
 
 	gateways := make([]*cConfig.Gateway, 0)
 	for i := 0; i < len(s.NodeConfigs); i++ {
@@ -813,6 +824,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.NoMetrics = cfg.NoMetrics
 	s.PyroscopeDirauth = cfg.PyroscopeDirauth
 	s.PyroscopeKpclientd = cfg.PyroscopeKpclientd
+	s.KpclientdMetricsAddress = cfg.KpclientdMetricsAddress
 	s.EpochDuration = cfg.EpochDuration
 	s.SchedulerSlack = cfg.SchedulerSlack
 	s.SchedulerMaxBurst = cfg.SchedulerMaxBurst
@@ -1174,6 +1186,13 @@ scrape_configs:
   static_configs:
   - targets: ['%s']
 `, cfg.Server.Identifier, cfg.Server.MetricsAddress)
+	}
+	if s.KpclientdMetricsAddress != "" {
+		Write(f, `- job_name: kpclientd
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['%s']
+`, s.KpclientdMetricsAddress)
 	}
 	return nil
 }
@@ -1639,6 +1658,116 @@ providers:
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 48},
       "targets": [
         {"expr": "rate(katzenpost_fetched_pki_docs_per_epoch_duration_sum[5m]) / rate(katzenpost_fetched_pki_docs_per_epoch_duration_count[5m])", "refId": "A", "legendFormat": "{{job}} avg"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    }
+  ]
+}
+`)
+
+	// kpclientd dashboard: only meaningful when the daemon is built
+	// with -tags kpclientd_metrics and scraped by prometheus. Emitted
+	// unconditionally so that operators who later enable the build tag
+	// find a ready-made dashboard.
+	kcFile := filepath.Join(dbDir, "kpclientd.json")
+	log.Printf(WritingLogFormat, kcFile)
+	kc, err := os.Create(kcFile)
+	if err != nil {
+		return err
+	}
+	defer kc.Close()
+	Write(kc, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Katzenpost kpclientd",
+  "uid": "katzenpost-kpclientd",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "LambdaP: FIFO Pop (rate/s, real messages)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_client_lambdap_fifo_pop_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "LambdaP: Decoy Fallback (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "rate(katzenpost_client_lambdap_decoy_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "LambdaP: Aggregate Emission Rate (real + decoy)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "targets": [{"expr": "rate(katzenpost_client_lambdap_fifo_pop_total[1m]) + rate(katzenpost_client_lambdap_decoy_total[1m])", "refId": "A", "legendFormat": "{{job}} observed LambdaP"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "LambdaL: Loop Decoy Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "rate(katzenpost_client_lambdal_decoy_total[1m])", "refId": "A", "legendFormat": "{{job}} observed LambdaL"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "Send Queue Depth (aggregate)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "katzenpost_client_send_queue_depth", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "ARQ In-Flight",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [{"expr": "katzenpost_client_arq_inflight", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 7,
+      "title": "Gateway Connected",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [{"expr": "katzenpost_client_gateway_connected", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 1}, "overrides": []}
+    },
+    {
+      "id": 8,
+      "title": "PKI Document Age",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "targets": [{"expr": "katzenpost_client_pki_doc_age_seconds", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 9,
+      "title": "ARQ Round-Trip Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_client_arq_round_trip_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_client_arq_round_trip_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_client_arq_round_trip_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}

@@ -128,6 +128,8 @@ performance optimization and security requirements.`,
 		"enable pyroscope profiling of the directory authorities")
 	cmd.Flags().BoolVar(&cfg.PyroscopeKpclientd, "pyroscopeKpclientd", false,
 		"enable pyroscope profiling of the kpclientd client daemon")
+	cmd.Flags().StringVar(&cfg.KpclientdMetricsAddress, "kpclientdMetricsAddress", "",
+		"bind address (host:port) for the kpclientd prometheus listener; empty disables. Only honoured by kpclientd builds compiled with -tags kpclientd_metrics.")
 	cmd.Flags().IntVar(&cfg.DialTimeout, "dialTimeout", 0,
 		"session dial timeout in seconds (0 for default)")
 	cmd.Flags().IntVar(&cfg.MaxPKIDelay, "maxPKIDelay", 0,

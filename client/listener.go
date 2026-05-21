@@ -13,6 +13,7 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 
+	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -379,6 +380,7 @@ func (l *listener) PickNextRequest() *Request {
 				break
 			}
 			l.rrCursor = (idx + 1) % n
+			instrument.SendQueueDequeue()
 			return req
 		default:
 		}
