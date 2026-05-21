@@ -247,6 +247,7 @@ func (k *KaetzchenWorker) worker() {
 				count := k.incrementDropCounter()
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("kaetzchen_dwell_exceeded")
 				instrument.KaetzchenPacketsDropped()
 				pkt.Dispose()
 				continue

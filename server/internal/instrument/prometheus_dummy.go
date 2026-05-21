@@ -87,3 +87,12 @@ func FailedPKICacheGeneration(epoch string) {}
 func InvalidPKICache(epoch string) {}
 
 func GaugeChannelLength(c string, length int) {}
+
+// RateLimitDropped is a no-op when the noprometheus build tag is set.
+func RateLimitDropped() {}
+
+// SphinxUnwraps is a no-op when the noprometheus build tag is set.
+func SphinxUnwraps() {}
+
+// PacketsDroppedByReason is a no-op when the noprometheus build tag is set.
+func PacketsDroppedByReason(reason string) {}

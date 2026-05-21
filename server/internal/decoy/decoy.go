@@ -246,6 +246,7 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	if subtle.ConstantTimeCompare(pkt.Recipient.ID[:], d.recipient) != 1 {
 		d.log.Debugf("Dropping packet: %v (Invalid recipient)", pkt.ID)
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("decoy_invalid_recipient")
 		return
 	}
 
@@ -253,6 +254,7 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	if idBase != d.surbIDBase {
 		d.log.Debugf("Dropping packet: %v (Invalid SURB ID base: %v)", pkt.ID, idBase)
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("decoy_invalid_surb_id_base")
 		return
 	}
 
@@ -262,12 +264,14 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	if ctx == nil {
 		d.log.Debugf("Dropping packet: %v (Unknown SURB ID: 0x%08x)", pkt.ID, id)
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("decoy_unknown_surb_id")
 		return
 	}
 
 	if _, err := d.sphinx.DecryptSURBPayload(pkt.Payload, ctx.sprpKey); err != nil {
 		d.log.Debugf("Dropping packet: %v (SURB ID: 0x08x%): %v", pkt.ID, id, err)
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("decoy_surb_decrypt_failed")
 		return
 	}
 

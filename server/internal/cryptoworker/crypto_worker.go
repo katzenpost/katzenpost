@@ -173,6 +173,7 @@ func (w *Worker) worker() {
 		if dwellTime > unwrapSlack {
 			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, dwellTime)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("unwrap_dwell_exceeded")
 			pkt.Dispose()
 			continue
 		} else {
@@ -184,6 +185,7 @@ func (w *Worker) worker() {
 		if err := w.doUnwrap(pkt); err != nil {
 			w.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("unwrap_failed")
 			pkt.Dispose()
 			continue
 		}
@@ -208,12 +210,14 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 		if pkt.Payload != nil {
 			w.log.Debugf("Dropping packet: %v (Unwrap() returned payload)", pkt.ID)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("unwrap_payload_unexpected")
 			pkt.Dispose()
 			return
 		}
 		if pkt.MustTerminate {
 			w.log.Debugf("Dropping packet: %v (Provider received forward packet from mix)", pkt.ID)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("provider_forward_from_mix")
 			pkt.Dispose()
 			return
 		}
@@ -223,6 +227,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 		if pkt.Delay > constants.NumMixKeys*epochtime.Period {
 			w.log.Debugf("Dropping packet: %v (Delay1 %v is past what is possible)", pkt.ID, pkt.Delay)
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("delay_impossible")
 			pkt.Dispose()
 			return
 		}
@@ -248,6 +253,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 				// the client is doing something non-standard anyway.
 				w.log.Debugf("Dropping packet: %v (Delay2 0 queue delay: %v)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("zero_delay_excessive_dwell")
 				pkt.Dispose()
 				return
 			}
@@ -290,6 +296,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 			// Mixes will only ever see forward commands.
 			w.log.Errorf("Dropping mix packet that should not have been received: %v (%v)", pkt.ID, pkt.CmdsToString())
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("mix_received_non_forward")
 			pkt.Dispose()
 			return
 		}
@@ -303,6 +310,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 	if pkt.MustForward {
 		w.log.Errorf("Dropping client packet: %v (Send to local user)", pkt.ID)
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("client_to_local_user")
 		pkt.Dispose()
 		return
 	}
@@ -332,6 +340,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 
 	w.log.Errorf("Invalid packet, dropping packet: %v (%v)", pkt.ID, pkt.CmdsToString())
 	instrument.PacketsDropped()
+	instrument.PacketsDroppedByReason("invalid_packet")
 	pkt.Dispose()
 }
 
