@@ -16,10 +16,9 @@ import (
 )
 
 const (
-	defaultAddress                = ":3266"
-	defaultOutgoingQueueSize      = 64         // Default queue size for outgoing connections
-	defaultKeepAliveInterval      = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
-	defaultMaxConcurrentReplications = 4       // Default max concurrent replication operations
+	defaultAddress           = ":3266"
+	defaultOutgoingQueueSize = 64         // Default queue size for outgoing connections
+	defaultKeepAliveInterval = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
 
 	// IncomingQueueSize, ProxyRequestTimeout and ProxyWorkerCount
 	// intentionally have no fixed defaults here. Zero in the config
@@ -105,11 +104,6 @@ type Config struct {
 
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
-
-	// MaxConcurrentReplications specifies the maximum number of concurrent
-	// replication operations. Higher values allow more concurrent replication
-	// to shard members under high write load.
-	MaxConcurrentReplications int
 
 	// ProxyRequestTimeout is the per-proxy-request wall-clock timeout
 	// in seconds for waiting on a peer replica's response. Omit this
@@ -217,9 +211,6 @@ func (c *Config) SetDefaultTimeouts() {
 	}
 	if c.KeepAliveInterval <= 0 {
 		c.KeepAliveInterval = defaultKeepAliveInterval
-	}
-	if c.MaxConcurrentReplications <= 0 {
-		c.MaxConcurrentReplications = defaultMaxConcurrentReplications
 	}
 	// IncomingQueueSize, ProxyRequestTimeout and ProxyWorkerCount are
 	// auto-derived later, in server.New, via ApplyRuntimeDefaults.

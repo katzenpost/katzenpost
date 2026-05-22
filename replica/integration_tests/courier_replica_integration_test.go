@@ -383,7 +383,6 @@ func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 		ConnectTimeout:         60000,  // 60 seconds
 		HandshakeTimeout:       30000,  // 30 seconds
 		ReauthInterval:         300000, // 5 minutes
-		MaxConcurrentReplications: 4,
 		ProxyWorkerCount:       8,      // Concurrency limit for proxy request goroutines
 		ProxyRequestTimeout:    300,    // 5 minutes
 		Logging: &config.Logging{

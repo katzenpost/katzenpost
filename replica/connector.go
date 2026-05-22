@@ -22,6 +22,16 @@ import (
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
+// maxConcurrentReplications bounds the number of in-flight
+// DispatchReplication goroutines. Each goroutine is short-lived
+// (a few microseconds of PKI lookup, hashing, and a per-peer
+// channel send to the outbound queue; no MKEM or DB work happens
+// here), so the constant is not a throughput knob but a hard
+// ceiling against unbounded goroutine spawn during bursty inbound
+// writes. The matching const on the courier side is
+// courier/server/plugin.go:maxConcurrentReplicaDispatch.
+const maxConcurrentReplications = 256
+
 type Connector struct {
 	sync.RWMutex
 	worker.Worker
@@ -451,7 +461,7 @@ func newConnector(server *Server) *Connector {
 		server:        server,
 		log:           server.LogBackend().GetLogger("replica Connector"),
 		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
-		replicationSem: make(chan struct{}, server.cfg.MaxConcurrentReplications),
+		replicationSem: make(chan struct{}, maxConcurrentReplications),
 		forceUpdateCh:  make(chan interface{}, 1), // See forceUpdate().
 		closeAllCh:    make(chan interface{}),
 	}
