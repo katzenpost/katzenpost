@@ -129,16 +129,6 @@ type Config struct {
 	// replicas.
 	ProxyWorkerCount int
 
-	// CoTenancyFactor is the number of replica processes this
-	// deployment expects to share the host's CPU with (itself
-	// included). For a single-replica-per-host deployment leave this
-	// at 0; the runtime treats 0 as 1 (no co-tenancy). For the docker
-	// mixnet or any deployment that runs N replicas on one box, set
-	// it to N so the auto-derived ProxyWorkerCount stays at
-	// ceil(NumCPU/N) rather than oversubscribing every replica to all
-	// of the host's cores. Genconfig sets this automatically from the
-	// --replicaCoTenancyFactor flag.
-	CoTenancyFactor int
 
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	// If empty, no metrics listener is started.
@@ -240,34 +230,32 @@ func (c *Config) SetDefaultTimeouts() {
 // ApplyRuntimeDefaults fills in any zero-valued runtime-tunable
 // fields based on the host's CPU count and the saturated CTIDH op
 // rate measured at startup. Operators should leave the three
-// affected fields unset in their TOML on a single-replica-per-host
-// deployment so the runtime can pick sensible values; an explicit
-// non-zero value in the TOML wins.
+// affected fields unset in their TOML so the runtime can pick
+// sensible values; an explicit non-zero value in the TOML wins.
 //
 // `numCPU` should be `runtime.NumCPU()`. `saturatedOpsPerSec` should
 // be the saturated rate from the replica's CTIDH startup
 // self-check; pass 0 if no measurement is available, in which case
 // the queue and timeout fall back to NumCPU-only defaults.
+//
+// Note: an earlier revision divided ProxyWorkerCount by an
+// operator-declared CoTenancyFactor, on the intuition that fewer
+// workers per replica would reduce CPU contention on a co-tenanted
+// host. Empirical parallel-load measurements showed the opposite: the
+// application-layer semaphore serialised pipeline parallelism more
+// aggressively than CPU contention would, and throughput dropped
+// 2.5x with a 12x p99 latency increase. The OS scheduler handles CPU
+// sharing fine; the application just needs enough work in flight to
+// mask network latency. ProxyWorkerCount = runtime.NumCPU regardless
+// of how many replicas share the host. The
+// `saturatedOpsPerSec` measurement already captures the realised
+// contention, so the queue and timeout derivations remain accurate.
 func (c *Config) ApplyRuntimeDefaults(numCPU int, saturatedOpsPerSec float64) {
 	if c.ProxyWorkerCount <= 0 {
 		if numCPU < 1 {
 			numCPU = 1
 		}
-		// Co-tenancy divisor: how many replicas share this host's CPU.
-		// Defaults to 1 (single-tenant). When set to N by genconfig
-		// for an N-replica-per-host deployment (docker mixnet, small
-		// VPS, etc.) the worker count becomes ceil(NumCPU/N) so
-		// concurrent CTIDH ops across all replicas stay close to the
-		// host's actual core count rather than N times it.
-		tenancy := c.CoTenancyFactor
-		if tenancy < 1 {
-			tenancy = 1
-		}
-		effectiveCores := (numCPU + tenancy - 1) / tenancy
-		if effectiveCores < 1 {
-			effectiveCores = 1
-		}
-		c.ProxyWorkerCount = effectiveCores
+		c.ProxyWorkerCount = numCPU
 	}
 	if c.IncomingQueueSize <= 0 {
 		// Default sizing: enough buffer to absorb 10 seconds of

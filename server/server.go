@@ -258,6 +258,23 @@ func New(cfg *config.Config) (*Server, error) {
 	instrument.StartPrometheusListener(goo)
 	logStartupStep("prometheus listener")
 
+	// Startup Sphinx self-check. Measures the per-core Unwrap rate on
+	// this host so ops teams have a concrete throughput ceiling number
+	// to reason about, exposed both as a log notice and as prometheus
+	// gauges. The measurement also feeds Debug.ApplyRuntimeDefaults
+	// below, which fills in the worker-count knobs if the operator
+	// left them at 0.
+	selfCheck := runSphinxSelfCheck(s.log, s.cfg.SphinxGeometry)
+	s.cfg.Debug.ApplyRuntimeDefaults(selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
+	s.log.Noticef("Server runtime defaults: NumSphinxWorkers=%d, NumGatewayWorkers=%d, NumServiceWorkers=%d, NumKaetzchenWorkers=%d (derived from runtime.NumCPU=%d, saturated Sphinx=%.2f ops/s)",
+		s.cfg.Debug.NumSphinxWorkers,
+		s.cfg.Debug.NumGatewayWorkers,
+		s.cfg.Debug.NumServiceWorkers,
+		s.cfg.Debug.NumKaetzchenWorkers,
+		selfCheck.NumCPU,
+		selfCheck.OpsPerSecSaturated)
+	logStartupStep("Sphinx self-check + runtime defaults")
+
 	if err := profiling.Start(s.log); err != nil {
 		return nil, fmt.Errorf("failed to start profiling: %w", err)
 	}

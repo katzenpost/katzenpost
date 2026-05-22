@@ -184,6 +184,24 @@ var (
 		},
 		[]string{"reason"},
 	)
+	selfCheckSphinxOpsPerSecSolo = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_server_selfcheck_sphinx_ops_per_sec_solo",
+			Help: "Sphinx Unwrap ops/sec measured by a single goroutine at startup: the best-case per-core throughput. Useful for a one-process-per-host deployment baseline. For a co-tenanted host, see the saturated gauge instead.",
+		},
+	)
+	selfCheckSphinxOpsPerSecSaturated = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_server_selfcheck_sphinx_ops_per_sec_saturated",
+			Help: "Sphinx Unwrap ops/sec measured at startup with runtime.NumCPU goroutines unwrapping concurrently: the realistic aggregate ceiling for this mix-server process when the host's cores are fully utilised. Ops teams running multiple katzenpost processes on one host should divide this number by the count of co-tenanted processes for the per-process share.",
+		},
+	)
+	selfCheckSphinxCores = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_server_selfcheck_num_cpu",
+			Help: "Cores reported by runtime.NumCPU at startup. Pair with the solo and saturated ops/sec gauges to reason about queue size and worker counts.",
+		},
+	)
 )
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
@@ -215,6 +233,9 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(rateLimitDropped)
 	prometheus.MustRegister(sphinxUnwraps)
 	prometheus.MustRegister(packetsDroppedByReason)
+	prometheus.MustRegister(selfCheckSphinxOpsPerSecSolo)
+	prometheus.MustRegister(selfCheckSphinxOpsPerSecSaturated)
+	prometheus.MustRegister(selfCheckSphinxCores)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress != "" {
@@ -363,4 +384,17 @@ func SphinxUnwraps() {
 // aggregate legacy counter remains the sum across all reasons.
 func PacketsDroppedByReason(reason string) {
 	packetsDroppedByReason.With(prometheus.Labels{"reason": reason}).Inc()
+}
+
+// SelfCheckResults publishes the startup Sphinx self-check
+// measurement to its prometheus gauges. opsPerSecSolo is the
+// single-goroutine rate (best-case per-core); opsPerSecSaturated is
+// the NumCPU-goroutines-in-parallel aggregate (realistic ceiling for
+// one mix-server process when its host is busy); numCPU is the cores
+// at startup. Per-machine deployments care about the solo number,
+// co-tenanted deployments care about the saturated number.
+func SelfCheckResults(opsPerSecSolo, opsPerSecSaturated float64, numCPU int) {
+	selfCheckSphinxOpsPerSecSolo.Set(opsPerSecSolo)
+	selfCheckSphinxOpsPerSecSaturated.Set(opsPerSecSaturated)
+	selfCheckSphinxCores.Set(float64(numCPU))
 }

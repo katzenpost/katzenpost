@@ -25,7 +25,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -41,12 +40,14 @@ import (
 )
 
 const (
-	defaultAddress             = ":3219"
-	defaultLogLevel            = "NOTICE"
-	defaultNumGatewayWorkers   = 3
-	defaultNumServiceWorkers   = 3
-	defaultNumKaetzchenWorkers = 3
-	defaultUnwrapDelay         = 250 // 250 ms.
+	defaultAddress  = ":3219"
+	defaultLogLevel = "NOTICE"
+	// NumSphinxWorkers, NumGatewayWorkers, NumServiceWorkers and
+	// NumKaetzchenWorkers intentionally have no fixed defaults here.
+	// Zero in the config signals "auto-derive at server.New from
+	// runtime.NumCPU, Server.CoTenancyFactor and the startup
+	// Sphinx self-check"; see Debug.ApplyRuntimeDefaults.
+	defaultUnwrapDelay = 250 // 250 ms.
 	defaultSchedulerSlack      = 450 // 450 ms.
 	defaultSchedulerMaxBurst   = 16
 	defaultSendSlack           = 50        // 50 ms.
@@ -157,20 +158,29 @@ func (sCfg *Server) validate() error {
 
 // Debug is the Katzenpost server debug configuration.
 type Debug struct {
-	// NumSphinxWorkers specifies the number of worker instances to use for
-	// inbound Sphinx packet processing.
+	// NumSphinxWorkers is the inbound Sphinx-packet processing worker
+	// pool size. Omit this field (or set it to 0) on a
+	// single-process-per-host deployment so the runtime picks
+	// ceil(runtime.NumCPU / CoTenancyFactor) from the startup Sphinx
+	// self-check; an explicit non-zero value overrides and is
+	// intended for unusual deployments (research workloads, hosts
+	// with reserved cores for other work, etc.).
 	NumSphinxWorkers int
 
-	// NumServiceWorkers specifies the number of worker instances to use for
-	// provider specific packet processing.
+	// NumServiceWorkers is the service-node worker pool size. Omit
+	// (or set to 0) for the runtime to pick a sensible default
+	// matched to the auto-derived NumSphinxWorkers; an explicit
+	// non-zero value overrides.
 	NumServiceWorkers int
 
-	// NumGatewayWorkers specifies the number of worker instances to use for
-	// provider specific packet processing.
+	// NumGatewayWorkers is the gateway worker pool size. Omit (or
+	// set to 0) for the runtime to pick a sensible default; an
+	// explicit non-zero value overrides.
 	NumGatewayWorkers int
 
-	// NumKaetzchenWorkers specifies the number of worker instances to use for
-	// Kaetzchen specific packet processing.
+	// NumKaetzchenWorkers is the Kaetzchen-plugin worker pool size.
+	// Omit (or set to 0) for the runtime to pick a sensible default;
+	// an explicit non-zero value overrides.
 	NumKaetzchenWorkers int
 
 	// SchedulerExternalMemoryQueue will enable the experimental external
@@ -243,29 +253,10 @@ type Debug struct {
 }
 
 func (dCfg *Debug) applyDefaults() {
-	if dCfg.NumSphinxWorkers <= 0 {
-		// Pick a sane default for the number of workers.
-		//
-		// TODO/perf: This should detect the number of physical cores, since
-		// the AES-NI unit is a per-core resource.
-		dCfg.NumSphinxWorkers = runtime.NumCPU()
-	}
-	if dCfg.NumGatewayWorkers <= 0 {
-		// TODO/perf: This should do something clever as well, though 1 is
-		// the right number for something that uses the boltspool due to all
-		// write spool operations being serialized.
-		dCfg.NumGatewayWorkers = defaultNumGatewayWorkers
-	}
-	if dCfg.NumServiceWorkers <= 0 {
-		// TODO/perf: This should do something clever as well, though 1 is
-		// the right number for something that uses the boltspool due to all
-		// write spool operations being serialized.
-		dCfg.NumServiceWorkers = defaultNumServiceWorkers
-	}
-
-	if dCfg.NumKaetzchenWorkers <= 0 {
-		dCfg.NumKaetzchenWorkers = defaultNumKaetzchenWorkers
-	}
+	// NumSphinxWorkers, NumGatewayWorkers, NumServiceWorkers and
+	// NumKaetzchenWorkers are auto-derived later, in server.New, via
+	// ApplyRuntimeDefaults. Leave zero values alone here so they
+	// propagate as the "auto-derive" sentinel.
 	if dCfg.UnwrapDelay <= 0 {
 		dCfg.UnwrapDelay = defaultUnwrapDelay
 	}
@@ -301,6 +292,55 @@ func (dCfg *Debug) applyDefaults() {
 	}
 	if dCfg.ReauthInterval <= 0 {
 		dCfg.ReauthInterval = defaultReauthInterval
+	}
+}
+
+// ApplyRuntimeDefaults fills in any zero-valued worker-count fields
+// based on the host's CPU count and the saturated Sphinx unwrap rate
+// measured at startup. Operators should leave NumSphinxWorkers,
+// NumGatewayWorkers, NumServiceWorkers and NumKaetzchenWorkers unset
+// in their TOML so the runtime picks sensible values; an explicit
+// non-zero value in the TOML wins.
+//
+// `numCPU` should be `runtime.NumCPU()`. `saturatedOpsPerSec` is the
+// saturated Sphinx rate from the startup self-check; pass 0 if no
+// measurement is available, in which case the worker counts fall
+// back to NumCPU-only defaults.
+//
+// Note: an earlier revision divided the worker counts by an
+// operator-declared CoTenancyFactor. Empirical parallel-load
+// measurements on the analogous replica change showed the divisor
+// caused a 2.5x throughput regression and a 12x p99 latency
+// increase because the application-layer pool serialised pipeline
+// parallelism more aggressively than the OS scheduler would have
+// shared the cores. NumSphinxWorkers = runtime.NumCPU regardless of
+// how many katzenpost processes share the host; the
+// saturatedOpsPerSec measurement already captures realised
+// contention for queue-and-timeout derivations.
+func (dCfg *Debug) ApplyRuntimeDefaults(numCPU int, saturatedOpsPerSec float64) {
+	_ = saturatedOpsPerSec // reserved for future PKI-driven derivations
+	if numCPU < 1 {
+		numCPU = 1
+	}
+	if dCfg.NumSphinxWorkers <= 0 {
+		dCfg.NumSphinxWorkers = numCPU
+	}
+	// Gateway, service and kaetzchen workers do strictly less
+	// CPU-heavy work per request than the Sphinx unwrapper; size them
+	// to half the Sphinx pool, floored at 1, so they take some of
+	// the load without claiming all cores for non-crypto work.
+	siblingPool := numCPU / 2
+	if siblingPool < 1 {
+		siblingPool = 1
+	}
+	if dCfg.NumGatewayWorkers <= 0 {
+		dCfg.NumGatewayWorkers = siblingPool
+	}
+	if dCfg.NumServiceWorkers <= 0 {
+		dCfg.NumServiceWorkers = siblingPool
+	}
+	if dCfg.NumKaetzchenWorkers <= 0 {
+		dCfg.NumKaetzchenWorkers = siblingPool
 	}
 }
 

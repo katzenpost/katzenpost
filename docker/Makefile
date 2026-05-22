@@ -267,7 +267,6 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		$(sh) -c 'cd cmd/genconfig && go build && cd ../../docker \
 		&& ../cmd/genconfig/genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
 		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--replicaCoTenancyFactor ${storageNodes} \
 		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
@@ -282,7 +281,6 @@ config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
 	cd ../cmd/genconfig && go build && ./genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
 		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--replicaCoTenancyFactor ${storageNodes} \
 		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \

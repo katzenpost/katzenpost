@@ -70,8 +70,6 @@ performance optimization and security requirements.`,
 		"number of service nodes with plugins (storage, HTTP proxy, etc.)")
 	cmd.Flags().IntVar(&cfg.NrStorageNodes, "storageNodes", genconfig.NrStorageNodes,
 		"number of storage replica nodes for Pigeonhole system")
-	cmd.Flags().IntVar(&cfg.ReplicaCoTenancyFactor, "replicaCoTenancyFactor", 1,
-		"number of replicas expected to share each host's CPU (1 = one-per-host). The docker mixnet runs all replicas on a single box, so pass the storageNodes value here to make ProxyWorkerCount auto-derive to ceil(NumCPU/N) per replica instead of NumCPU per replica.")
 
 	// Authority and voting flags
 	cmd.Flags().BoolVarP(&cfg.Voting, "voting", "v", false,
