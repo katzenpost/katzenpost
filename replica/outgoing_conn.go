@@ -547,6 +547,7 @@ func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command
 		case replicationReplyDrop:
 			c.log.Warningf("replica outgoingConn: peer replied with permanent error %d, dropping ReplicaWrite (retry would not help)",
 				responseCmd.ErrorCode)
+			instrument.DroppedByReason("peer_permanent_error")
 		}
 	case *commands.ReplicaMessageReply:
 		c.log.Debugf("replica outgoingConn: Received ReplicaMessageReply error code: %d", responseCmd.ErrorCode)

@@ -110,6 +110,7 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 
 	if cmd == nil {
 		co.log.Error("Dropping command: command is nil, wtf")
+		instrument.DroppedByReason("nil_command")
 		return
 	}
 

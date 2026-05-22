@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 // lastRebalanceReplicasKey names the metadata-CF entry that records the
@@ -71,6 +72,7 @@ func (s *state) loadLastRebalanceFingerprint() ([32]byte, bool, error) {
 	}
 	if value.Size() != 32 {
 		s.log.Warningf("state: discarding malformed rebalance-fingerprint record of size %d", value.Size())
+		instrument.DroppedByReason("malformed_rebalance_fingerprint")
 		return zero, false, nil
 	}
 	var fp [32]byte

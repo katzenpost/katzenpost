@@ -99,6 +99,13 @@ var (
 		},
 		[]string{"reason"},
 	)
+	replicaDroppedByReason = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_replica_dropped_reason_total",
+			Help: "Number of commands or persisted records the replica dropped, labelled by the specific drop site. Mirrors the server-side katzenpost_dropped_reason_total pattern; counts events the retry queue does not see (e.g. nil command, permanent peer error, malformed persisted record).",
+		},
+		[]string{"reason"},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -118,6 +125,7 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(outgoingMessagesSent)
 		prometheus.MustRegister(retryQueueSize)
 		prometheus.MustRegister(retryQueueDropped)
+		prometheus.MustRegister(replicaDroppedByReason)
 	})
 
 	if address != "" {
@@ -186,4 +194,11 @@ func RetryQueueSize(size int) {
 // ("capacity" or "ttl").
 func RetryQueueDropped(reason string) {
 	retryQueueDropped.With(prometheus.Labels{"reason": reason}).Inc()
+}
+
+// DroppedByReason increments the per-reason replica drop counter. Use
+// at any site where the replica discards a command or record outside
+// the retry-queue path (which has its own RetryQueueDropped).
+func DroppedByReason(reason string) {
+	replicaDroppedByReason.With(prometheus.Labels{"reason": reason}).Inc()
 }
