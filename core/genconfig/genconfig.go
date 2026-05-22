@@ -1268,6 +1268,16 @@ scrape_configs:
   - targets: ['%s']
 `, metricsScrapeAddr("kpclientd", uint16(port)))
 	}
+	// parallel-load is an opt-in ad-hoc container launched by `make
+	// run-parallel-load`; the host name `parallel-load` resolves only
+	// while the container is alive. Prometheus will report up=0 on this
+	// target between runs, which is the intended UX: the panel becomes
+	// non-empty exactly when a load run is in progress.
+	Write(f, `- job_name: parallel-load
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['parallel-load:9101']
+`)
 	return nil
 }
 
@@ -2144,6 +2154,146 @@ providers:
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    }
+  ]
+}
+`)
+
+	// SEDA-style load-curve dashboard. Driven by the chaos
+	// parallel-load tool's prometheus surface; panels show
+	// throughput-vs-load knees, response-time quantiles and CDF,
+	// the Jain fairness index across thin clients, and the
+	// downstream courier oldest-age and drop-by-reason signals.
+	sedaFile := filepath.Join(dbDir, "seda-load.json")
+	log.Printf(WritingLogFormat, sedaFile)
+	sd, err := os.Create(sedaFile)
+	if err != nil {
+		return err
+	}
+	defer sd.Close()
+	Write(sd, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Katzenpost SEDA Load Curves",
+  "uid": "katzenpost-seda-load",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-30m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active Clients (offered concurrency)",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {"expr": "katzenpost_parallel_load_active_clients", "refId": "A", "legendFormat": "active"},
+        {"expr": "katzenpost_parallel_load_sweep_step_clients", "refId": "B", "legendFormat": "sweep step"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "description": "Welsh figure 2 inspiration: track offered load to align the throughput and latency curves with the concurrency level."
+    },
+    {
+      "id": 2,
+      "title": "Successful Iteration Throughput (ops/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "sum(rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[30s]))", "refId": "A", "legendFormat": "total ok"},
+        {"expr": "sum(rate(katzenpost_parallel_load_iterations_total{result=\"error\"}[30s]))", "refId": "B", "legendFormat": "total err"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Aggregate successful pigeonhole write+read cycles per second. The shape of this curve against the Active Clients gauge above is the saturation knee from SEDA figures 2 and 4."
+    },
+    {
+      "id": 3,
+      "title": "Iteration Latency Quantiles (s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 6},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[1m])))", "refId": "A", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.90, sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[1m])))", "refId": "B", "legendFormat": "p90"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[1m])))", "refId": "C", "legendFormat": "p99"},
+        {"expr": "histogram_quantile(0.999, sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[1m])))", "refId": "D", "legendFormat": "p99.9"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "description": "SEDA figure 12b on a time axis. Watch the p99.9 line for the heavy tail that averages would hide."
+    },
+    {
+      "id": 4,
+      "title": "Iteration Latency CDF (probability that response_time <= bucket)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 14},
+      "targets": [
+        {"expr": "sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[5m])) / on() group_left sum(rate(katzenpost_parallel_load_iteration_seconds_count{op=\"cycle\"}[5m]))", "refId": "A", "legendFormat": "<= {{le}}s"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+      "description": "Cumulative distribution of pigeonhole iteration latency, sampled over the last 5 minutes. The trailing series is the long tail."
+    },
+    {
+      "id": 5,
+      "title": "Jain Fairness Index across clients (1.0 = perfectly equal service)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 14},
+      "targets": [
+        {"expr": "(sum(rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[1m])))^2 / (count(rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[1m])) * sum((rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[1m]))^2))", "refId": "A", "legendFormat": "Jain index"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 1.05}, "overrides": []},
+      "description": "Jain (1984) fairness across thin clients. f(x) = (sum xi)^2 / (N * sum xi^2) where xi is per-client throughput. 1.0 means every client got equal service; a drop below 0.95 indicates scheduling or queueing unfairness somewhere in the daemon, gateway, courier, or replica path."
+    },
+    {
+      "id": 6,
+      "title": "Per-client iteration rate (ops/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+      "targets": [
+        {"expr": "rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[1m])", "refId": "A", "legendFormat": "{{client_id}} ok"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Per-thin-client iteration rate. Visual companion to the Jain index above; spread is the unfairness."
+    },
+    {
+      "id": 7,
+      "title": "Errors by stage and kind (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32},
+      "targets": [
+        {"expr": "rate(katzenpost_parallel_load_errors_total[1m])", "refId": "A", "legendFormat": "{{stage}} / {{kind}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Categorised iteration failures. ARQ-level outcomes like tombstone or box_not_found land here too; they are legitimate end states, not bugs."
+    },
+    {
+      "id": 8,
+      "title": "Courier oldest queue age vs offered load (s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "targets": [
+        {"expr": "katzenpost_courier_oldest_age_seconds", "refId": "A", "legendFormat": "{{job}} -> {{replica}}"},
+        {"expr": "katzenpost_parallel_load_active_clients", "refId": "B", "legendFormat": "active clients"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "description": "Cross-pane: as the parallel-load tool ramps offered concurrency, watch the courier's oldest-age gauge climb. SEDA's queue-length plots (figure 8) are this gauge's analogue here."
+    },
+    {
+      "id": 9,
+      "title": "Courier drops by reason (rate/s) under offered load",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "targets": [
+        {"expr": "sum by (reason) (rate(katzenpost_courier_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "{{reason}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Categorical drop rates correlated with offered load. queue_full is the canonical backpressure signal."
     }
   ]
 }

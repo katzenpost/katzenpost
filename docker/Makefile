@@ -539,6 +539,10 @@ $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/ping && go mod verify && go build -ldflags ${ldflags} && \
 			mv ping /$(net_name)/ping.$(distro)'
 
+$(net_name)/parallel-load.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd chaos/cmd/parallel-load && go build -ldflags ${ldflags} && \
+			mv parallel-load /$(net_name)/parallel-load.$(distro)'
+
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} && \
 			mv kpclientd /$(net_name)/kpclientd.$(distro)'
@@ -579,6 +583,32 @@ clean: clean-images clean-local
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/ping.$(distro) --thin -c /go/katzenpost/client/testdata/thinclient.toml -s echo --print-diff -n 10
+
+# parallel-load knobs. Override on the make command line:
+#   make run-parallel-load clients=8 duration=5m
+#   make run-parallel-load sweep=1,2,4,8,16 step=90s
+clients?=4
+duration?=5m
+sweep?=
+step?=90s
+payload?=256
+parallel_load_metrics_port?=9101
+run-parallel-load: $(net_name)/parallel-load.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
+	$(docker) run --network=voting_mixnet_katzenpost-net --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+        /$(net_name)/parallel-load.$(distro) \
+            -config /$(net_name)/client/thinclient-bridge.toml \
+            -clients $(clients) -duration $(duration) -sweep "$(sweep)" -step $(step) \
+            -payload-bytes $(payload) -metrics 0.0.0.0:$(parallel_load_metrics_port)
+
+# Generate the bridge-network thinclient config the first time it is needed.
+# The host-network thinclient.toml points at localhost:64331 (kpclientd is
+# exposed on the host via rootlessport); the bridge-network variant uses
+# the compose service name kpclientd:64331 directly.
+$(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
+	@echo '[Dial]'                                       >  $@
+	@echo '  [Dial.Tcp]'                                 >> $@
+	@echo '    Address = "kpclientd:64331"'              >> $@
+	@echo '    Network = "tcp"'                          >> $@
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)
