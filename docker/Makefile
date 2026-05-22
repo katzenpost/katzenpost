@@ -543,6 +543,10 @@ $(net_name)/parallel-load.$(distro): $(distro)_base.stamp | $(net_name) $(cache_
 		$(docker_run_sh) 'cd chaos/cmd/parallel-load && go build -ldflags ${ldflags} && \
 			mv parallel-load /$(net_name)/parallel-load.$(distro)'
 
+$(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd chaos/cmd/cp-bench && go build -ldflags ${ldflags} && \
+			mv cp-bench /$(net_name)/cp-bench.$(distro)'
+
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} && \
 			mv kpclientd /$(net_name)/kpclientd.$(distro)'
@@ -609,6 +613,20 @@ $(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
 	@echo '  [Dial.Tcp]'                                 >> $@
 	@echo '    Address = "kpclientd:64331"'              >> $@
 	@echo '    Network = "tcp"'                          >> $@
+
+# cp-bench knobs. Override on the make command line:
+#   make run-cp-bench cp_payload=65536
+#   make run-cp-bench cp_sweep=4096,16384,65536,262144
+cp_payload?=4096
+cp_sweep?=
+cp_propagation?=30s
+cp_metrics_port?=9102
+run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
+	$(docker) run --network=voting_mixnet_katzenpost-net --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+        /$(net_name)/cp-bench.$(distro) \
+            -config /$(net_name)/client/thinclient-bridge.toml \
+            -payload $(cp_payload) -sweep "$(cp_sweep)" -propagation $(cp_propagation) \
+            -metrics 0.0.0.0:$(cp_metrics_port)
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)
