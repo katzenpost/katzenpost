@@ -2126,9 +2126,13 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 				return nil, fmt.Errorf("%w: failed to create StatefulReader: %v", errBACAPDecryptionFailed, err)
 			}
 
-			// Calculate the expected BoxID from the ReadCap and MessageBoxIndex
+			// Calculate the expected BoxID from the ReadCap and MessageBoxIndex.
+			// The Got field is logged for diagnostic comparison against
+			// Expected; this is information, not an error, so log it at
+			// Debug. The decryption a few lines below is what will fail
+			// loudly when the BoxIDs actually disagree.
 			expectedBoxID := messageBoxIndex.BoxIDForContext(arqMessage.ReadCap, constants.PIGEONHOLE_CTX)
-			d.log.Errorf("decryptPigeonholeReply: BoxID comparison - Expected: %x, Got from replica: %x",
+			d.log.Debugf("decryptPigeonholeReply: BoxID comparison - Expected: %x, Got from replica: %x",
 				expectedBoxID.Bytes(), innerMsg.ReadReply.BoxID)
 
 			// Decrypt the BACAP payload (also verifies signature)
