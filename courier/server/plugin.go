@@ -548,6 +548,7 @@ func (e *Courier) scheduleReplicaDispatch(envHash *[hash.HashSize]byte, courierM
 
 		if err := e.propagateQueryToReplicas(courierMessage); err != nil {
 			e.log.Errorf("scheduleReplicaDispatch: dispatch for %x failed: %s", hashCopy[:8], err)
+			instrument.DroppedByReason("replica_dispatch_failed")
 		}
 	})
 }
@@ -560,6 +561,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// courier goroutine on the indexed lookups below.
 	if courierMessage.ReplyIndex > 1 {
 		e.log.Warningf("handleOldMessage: rejecting out-of-range ReplyIndex=%d for envelope hash %x", courierMessage.ReplyIndex, envHash)
+		instrument.DroppedByReason("invalid_reply_index")
 		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorInvalidEnvelope, 0)
 	}
 
@@ -682,6 +684,7 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	if !isEnvelopeEpochAcceptable(courierMessage.Epoch, currentReplicaEpoch) {
 		e.log.Warningf("cacheHandleCourierEnvelope: rejecting envelope %x with epoch %d (current replica epoch %d)",
 			envHash[:8], courierMessage.Epoch, currentReplicaEpoch)
+		instrument.DroppedByReason("stale_epoch_envelope")
 		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorInvalidEpoch, courierMessage.ReplyIndex)
 	}
 
@@ -1038,6 +1041,7 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 	}
 
 	e.log.Errorf("dispatchCopyEnvelope: exhausted %d attempts, aborting Copy", maxCopyWriteAttempts)
+	instrument.DroppedByReason("copy_dispatch_exhausted")
 	return false, 0
 }
 
@@ -1056,12 +1060,14 @@ func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDS
 	decryptedPadded, err := reader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, sig)
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to decrypt box %x: %v", boxID[:8], err)
+		instrument.DroppedByReason("copy_read_decrypt_failed")
 		return nil, 0, err
 	}
 
 	decryptedPayload, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedPadded)
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to extract payload from padded data: %v", err)
+		instrument.DroppedByReason("copy_read_extract_failed")
 		return nil, 0, err
 	}
 
