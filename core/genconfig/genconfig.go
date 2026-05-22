@@ -1646,6 +1646,50 @@ providers:
       "targets": [{"expr": "rate(katzenpost_sphinx_unwraps_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 9,
+      "title": "Mix Server Drops by Reason (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 32},
+      "targets": [{"expr": "sum by (job, reason) (rate(katzenpost_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops", "custom": {"stacking": {"mode": "normal"}}}, "overrides": []},
+      "description": "Every per-reason drop site in server/internal/instrument. Use this panel to attribute the totals on panel 1 to specific code paths (unwrap_failed, scheduler_deadline_blown, kaetzchen_handler_failed, gateway_rate_limited, etc.). The kaetzchen_* reasons were added in commit 9ccaa106; the cbor_kaetzchen_* reasons too."
+    },
+    {
+      "id": 10,
+      "title": "Replica Drops by Reason (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 32},
+      "targets": [{"expr": "sum by (job, reason) (rate(katzenpost_replica_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops", "custom": {"stacking": {"mode": "normal"}}}, "overrides": []},
+      "description": "Replica-side drop attribution introduced in commit 294d3fc2. Reasons include nil_command, malformed_rebalance_fingerprint, peer_permanent_error. Sister to the mix-server reason counter on panel 9; the replica's own retry-queue evictions are on the courier-replica dashboard."
+    },
+    {
+      "id": 11,
+      "title": "Courier Drops by Reason (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 42},
+      "targets": [{"expr": "sum by (job, reason) (rate(katzenpost_courier_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops", "custom": {"stacking": {"mode": "normal"}}}, "overrides": []},
+      "description": "Courier-side drop attribution. Currently the only fired reason is send_command_failed (outgoing connection error), but the metric will sprout series as future drop sites are paired."
+    },
+    {
+      "id": 12,
+      "title": "All Drops by Reason — Cluster Total (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 42},
+      "targets": [
+        {"expr": "sum by (reason) (rate(katzenpost_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "mix:{{reason}}"},
+        {"expr": "sum by (reason) (rate(katzenpost_replica_dropped_reason_total[1m]))", "refId": "B", "legendFormat": "replica:{{reason}}"},
+        {"expr": "sum by (reason) (rate(katzenpost_courier_dropped_reason_total[1m]))", "refId": "C", "legendFormat": "courier:{{reason}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops", "custom": {"stacking": {"mode": "normal"}}}, "overrides": []},
+      "description": "Per-reason drop rate across the whole cluster, with the originating subsystem in the legend prefix. The single panel a chaos investigator should look at first when packet loss appears under chaos."
     }
   ]
 }
