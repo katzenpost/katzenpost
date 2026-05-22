@@ -91,10 +91,16 @@ var (
 			Help: "Number of SURB IDs removed from the ARQ map due to TTL expiry or session cleanup rather than reply receipt.",
 		},
 	)
-	surbIDReplyReceived = prometheus.NewCounter(
+	surbIDReplyMatched = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "katzenpost_client_surb_id_reply_received_total",
-			Help: "Number of ARQ replies received whose SURB ID matched an awaiting entry.",
+			Name: "katzenpost_client_surb_id_reply_matched_total",
+			Help: "Number of ARQ replies received whose SURB ID matched an awaiting entry in arqSurbIDMap. A match is NOT itself an exit from the map: the entry stays alive until the downstream handler either rotates it (Rotated), errors it out, or deletes it on terminal success (Delivered). Pair this counter with reply_no_match_total to diagnose lost replies, and with delivered_total to see what fraction of matches went on to a delivered outcome.",
+		},
+	)
+	surbIDDelivered = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_surb_id_delivered_total",
+			Help: "Number of SURB IDs that exited arqSurbIDMap via a terminal success path: ARQActionComplete (Write ACK), CopyStatusSucceeded, payloadActionIdempotentSuccess, or the post-payload-handling cleanup after a successful read. This is one of the four exit counters whose sum should equal created_total at steady state (the others are Rotated, GarbageCollected, and the error-deletes which are not yet counted).",
 		},
 	)
 	surbIDReplyNoMatch = prometheus.NewCounter(
@@ -134,7 +140,8 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(arqRoundTrip)
 		prometheus.MustRegister(surbIDCreated)
 		prometheus.MustRegister(surbIDGarbageCollected)
-		prometheus.MustRegister(surbIDReplyReceived)
+		prometheus.MustRegister(surbIDReplyMatched)
+		prometheus.MustRegister(surbIDDelivered)
 		prometheus.MustRegister(surbIDReplyNoMatch)
 		prometheus.MustRegister(surbIDRotated)
 		prometheus.MustRegister(thinSessions)
@@ -195,9 +202,21 @@ func SurbIDCreated() { surbIDCreated.Inc() }
 // reply.
 func SurbIDGarbageCollected() { surbIDGarbageCollected.Inc() }
 
-// SurbIDReplyReceived records an ARQ reply whose SURB ID matched an
-// awaiting entry.
-func SurbIDReplyReceived() { surbIDReplyReceived.Inc() }
+// SurbIDReplyMatched records an ARQ reply whose SURB ID matched an
+// awaiting entry in arqSurbIDMap. This is a match indicator only, NOT
+// an exit from the map: the downstream handler will either rotate the
+// entry to a fresh SURB (SurbIDRotated), error it out (currently
+// uncounted), or delete it on terminal success (SurbIDDelivered).
+func SurbIDReplyMatched() { surbIDReplyMatched.Inc() }
+
+// SurbIDDelivered records the exit of a SURB ID from arqSurbIDMap via
+// a terminal-success delete: ARQActionComplete (Write ACK),
+// CopyStatusSucceeded, payloadActionIdempotentSuccess, or the
+// post-payload-handling cleanup after a successful read. The lifecycle
+// balance is: created = delivered + rotated + garbage_collected +
+// (uncounted error/cancel deletes). See instrument/prometheus.go for
+// the rationale on which exit each delete site belongs to.
+func SurbIDDelivered() { surbIDDelivered.Inc() }
 
 // SurbIDReplyNoMatch records an ARQ reply whose SURB ID was not in the
 // awaiting map. This is the data-driven diagnostic for the reply-routing

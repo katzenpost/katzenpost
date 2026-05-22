@@ -150,9 +150,13 @@ type Snapshot struct {
 	// CourierReasonDrops mirrors the above for the courier.
 	CourierReasonDrops map[string]float64
 	// SurbCreated/etc capture the client-side SURB lifecycle.
+	// SurbReplyMatched is a match indicator, not an exit (replaces the
+	// older SurbReplied which conflated the two). SurbDelivered is the
+	// terminal-success exit counter.
 	SurbCreated      float64
 	SurbGCed         float64
-	SurbReplied      float64
+	SurbReplyMatched float64
+	SurbDelivered    float64
 	SurbReplyNoMatch float64
 	SurbRotated      float64
 	// ARQInflight is the current gauge value.
@@ -443,7 +447,8 @@ func readSnapshot(ctx context.Context, base string) (Snapshot, error) {
 		{"sum(katzenpost_cancelled_outgoing_connections_total)", &snap.CancelledOutgoingConns},
 		{"sum(katzenpost_client_surb_id_created_total)", &snap.SurbCreated},
 		{"sum(katzenpost_client_surb_id_garbage_collected_total)", &snap.SurbGCed},
-		{"sum(katzenpost_client_surb_id_reply_received_total)", &snap.SurbReplied},
+		{"sum(katzenpost_client_surb_id_reply_matched_total)", &snap.SurbReplyMatched},
+		{"sum(katzenpost_client_surb_id_delivered_total)", &snap.SurbDelivered},
 		{"sum(katzenpost_client_surb_id_reply_no_match_total)", &snap.SurbReplyNoMatch},
 		{"sum(katzenpost_client_surb_id_rotated_total)", &snap.SurbRotated},
 		{"katzenpost_client_arq_inflight", &snap.ARQInflight},

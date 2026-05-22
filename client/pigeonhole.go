@@ -1409,6 +1409,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		}
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
+		instrument.SurbIDDelivered()
 
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
@@ -1538,6 +1539,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
+		instrument.SurbIDDelivered()
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
@@ -1915,6 +1917,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 			delete(d.arqSurbIDMap, *arqMessage.SURBID)
 			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 			d.replyLock.Unlock()
+			instrument.SurbIDDelivered()
 
 			conn.sendResponse(&Response{
 				AppID: arqMessage.AppID,
@@ -1954,6 +1957,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 	d.replyLock.Unlock()
+	instrument.SurbIDDelivered()
 
 	// Handle writes: for write operations, we don't expect any payload data.
 	// A successful write returns nil plaintext and nil error.

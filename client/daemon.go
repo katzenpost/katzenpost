@@ -502,7 +502,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		// log a warning. Cancel removes the entry regardless of its
 		// position in the queue.
 		d.arqTimerQueue.Cancel(arqMessage.SURBID)
-		instrument.SurbIDReplyReceived()
+		instrument.SurbIDReplyMatched()
 		instrument.ARQRoundTrip(time.Since(arqMessage.SentAt))
 		d.handlePigeonholeARQReply(arqMessage, reply)
 		return
@@ -921,11 +921,11 @@ func (d *Daemon) rotateARQSurbIDLocked(
 	}
 	// Every entry added to arqSurbIDMap must be counted so the
 	// SURB lifecycle invariant remains balanced. The new SURBID
-	// will later exit via one of SurbIDReplyReceived,
-	// SurbIDGarbageCollected, SurbIDReplyNoMatch, or another
-	// rotation. The OLD SURBID, if any, exits via SurbIDRotated
-	// (the missing-exit-counter we previously had to tolerate
-	// with a 50% slack in the lifecycle invariant).
+	// will later exit via one of SurbIDDelivered (terminal
+	// success), SurbIDRotated (rotation to a new SURB),
+	// SurbIDGarbageCollected (TTL or session cleanup), or one of
+	// the still-uncounted error/cancel deletes. The OLD SURBID,
+	// if any, exits via SurbIDRotated here.
 	if hadOld {
 		instrument.SurbIDRotated()
 	}

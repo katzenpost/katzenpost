@@ -62,7 +62,7 @@ func TestSurbLifecycleBalancedHealthy(t *testing.T) {
 		AfterSnap: orchestrator.Snapshot{
 			SurbCreated:      100,
 			SurbGCed:         10,
-			SurbReplied:      87,
+			SurbDelivered:    87,
 			SurbReplyNoMatch: 0,
 			SurbRotated:      0,
 		},
@@ -70,16 +70,15 @@ func TestSurbLifecycleBalancedHealthy(t *testing.T) {
 	require.True(t, SurbLifecycleBalanced(r).Passed)
 }
 
-func TestSurbLifecycleBalancedAcceptsDualFiring(t *testing.T) {
-	// Dual-firing under current counter semantics: per Copy
-	// ACK-then-payload, the OLD SURBID fires both `received` and
-	// `rotated`. The invariant accepts this until the counters are
-	// refactored to be strict exits-only.
+func TestSurbLifecycleBalancedAcceptsRotationExits(t *testing.T) {
+	// Mix of delivered and rotated exits, with the matching reply
+	// indicator firing on top. The invariant should accept this.
 	r := &orchestrator.Result{
 		AfterSnap: orchestrator.Snapshot{
-			SurbCreated: 100,
-			SurbReplied: 80,
-			SurbRotated: 90,
+			SurbCreated:      100,
+			SurbDelivered:    80,
+			SurbRotated:      10,
+			SurbReplyMatched: 90,
 		},
 	}
 	require.True(t, SurbLifecycleBalanced(r).Passed)

@@ -132,38 +132,34 @@ func NoSurbReplyNoMatch(r *orchestrator.Result) Result {
 }
 
 // SurbLifecycleBalanced asserts the SURB lifecycle counters do not
-// drift unboundedly: a SURBID's life should be observable via the
-// four exit-ish counters (replied, gc, no_match, rotated) but the
-// exact accounting is not yet a strict balance.
+// drift unboundedly: every SURBID entered into arqSurbIDMap should
+// eventually exit via one of the three counted exits (delivered,
+// rotated, garbage_collected). A small uncounted residue remains
+// because error-deletes and cancel-deletes do not yet fire their own
+// exit counter; the invariant accepts that residue and only flags a
+// hard leak.
 //
-// The current counter semantics under analysis (see the
-// investigation notes for the full derivation):
+// Counter semantics (the refactor that closed the older dual-firing
+// gap is in commit 3b074a82's predecessor on this branch):
 //
-//   - SurbIDReplyReceived fires when a reply MATCHES an arqSurbIDMap
-//     entry but does NOT remove the entry. The downstream handler is
-//     responsible for either rotating to a new SURBID (in Copy
-//     ACK-then-payload flows) or directly deleting both maps on
-//     terminal outcomes. So "received" is a match indicator, not an
-//     exit.
+//   - SurbIDCreated fires at every insertion into arqSurbIDMap.
+//   - SurbIDDelivered fires at terminal-success deletes:
+//     ARQActionComplete, CopyStatusSucceeded,
+//     payloadActionIdempotentSuccess, post-payload-success cleanup.
 //   - SurbIDRotated fires when an entry is removed from arqSurbIDMap
-//     by rotation, regardless of whether the entry had received a
-//     reply first. An ACK-then-payload Copy command's OLD SURBID
-//     fires BOTH `received` (at the ACK match) AND `rotated` (at the
-//     subsequent rotation). The dual-firing makes the lifecycle
-//     equation `created = received + rotated + gc + no_match` an
-//     over-count of exits.
-//   - dropARQMessage and a few other map-removal sites delete
-//     entries without firing any exit counter at all.
+//     because a new SURBID has taken its place (e.g. ACK-then-payload
+//     Copy command's old SURBID after the ACK).
+//   - SurbIDGarbageCollected fires on TTL or session-cleanup deletes.
+//   - SurbIDReplyMatched is a MATCH INDICATOR, not an exit (a reply
+//     arrived with a matching SURB but the downstream handler decides
+//     whether the entry exits and via which counter).
+//   - SurbIDReplyNoMatch fires when a reply arrives whose SURB has no
+//     entry in the map; never associated with a created entry.
 //
-// The strict balance therefore cannot hold today; tightening it
-// would require either renaming the counters or adding a
-// "delivered" / "delete-after-reply" exit counter. Until that
-// refactor lands, the invariant accepts a wide tolerance on both
-// directions of imbalance and only flags a SURBID hard leak (the
-// scenario where created grows but no exit counters do).
+// Hard leak: created grew but every exit counter is zero.
 func SurbLifecycleBalanced(r *orchestrator.Result) Result {
 	created := r.AfterSnap.SurbCreated
-	exits := r.AfterSnap.SurbGCed + r.AfterSnap.SurbReplied + r.AfterSnap.SurbReplyNoMatch + r.AfterSnap.SurbRotated
+	exits := r.AfterSnap.SurbGCed + r.AfterSnap.SurbDelivered + r.AfterSnap.SurbRotated
 	if created == 0 {
 		return Result{Name: "surb_lifecycle_balanced", Passed: true}
 	}
@@ -172,12 +168,9 @@ func SurbLifecycleBalanced(r *orchestrator.Result) Result {
 		return Result{
 			Name:   "surb_lifecycle_balanced",
 			Passed: false,
-			Reason: fmt.Sprintf("SURB hard leak: created=%g but every exit counter is zero", created),
+			Reason: fmt.Sprintf("SURB hard leak: created=%g but every counted exit is zero", created),
 		}
 	}
-	// Otherwise we accept the current dual-firing accounting; the
-	// "exits" series in the kpclientd dashboard is a more honest
-	// view than this single boolean.
 	return Result{Name: "surb_lifecycle_balanced", Passed: true}
 }
 

@@ -2003,10 +2003,11 @@ providers:
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
       "targets": [
         {"expr": "rate(katzenpost_client_surb_id_created_total[1m])", "refId": "A", "legendFormat": "{{job}} created"},
-        {"expr": "rate(katzenpost_client_surb_id_reply_received_total[1m])", "refId": "B", "legendFormat": "{{job}} reply_received"},
-        {"expr": "rate(katzenpost_client_surb_id_garbage_collected_total[1m])", "refId": "C", "legendFormat": "{{job}} gc'd"},
-        {"expr": "rate(katzenpost_client_surb_id_reply_no_match_total[1m])", "refId": "D", "legendFormat": "{{job}} no_match"},
-        {"expr": "rate(katzenpost_client_surb_id_rotated_total[1m])", "refId": "E", "legendFormat": "{{job}} rotated"}
+        {"expr": "rate(katzenpost_client_surb_id_delivered_total[1m])", "refId": "B", "legendFormat": "{{job}} delivered (exit)"},
+        {"expr": "rate(katzenpost_client_surb_id_rotated_total[1m])", "refId": "C", "legendFormat": "{{job}} rotated (exit)"},
+        {"expr": "rate(katzenpost_client_surb_id_garbage_collected_total[1m])", "refId": "D", "legendFormat": "{{job}} gc'd (exit)"},
+        {"expr": "rate(katzenpost_client_surb_id_reply_matched_total[1m])", "refId": "E", "legendFormat": "{{job}} reply_matched (NOT an exit)"},
+        {"expr": "rate(katzenpost_client_surb_id_reply_no_match_total[1m])", "refId": "F", "legendFormat": "{{job}} reply_no_match (no entry)"}
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
@@ -2027,23 +2028,23 @@ providers:
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 56},
       "targets": [
         {"expr": "katzenpost_client_surb_id_created_total", "refId": "A", "legendFormat": "{{job}} created"},
-        {"expr": "katzenpost_client_surb_id_reply_received_total + katzenpost_client_surb_id_garbage_collected_total + katzenpost_client_surb_id_reply_no_match_total + katzenpost_client_surb_id_rotated_total", "refId": "B", "legendFormat": "{{job}} exits (received+gc+no_match+rotated)"}
+        {"expr": "katzenpost_client_surb_id_delivered_total + katzenpost_client_surb_id_garbage_collected_total + katzenpost_client_surb_id_rotated_total", "refId": "B", "legendFormat": "{{job}} exits (delivered+gc+rotated)"}
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "description": "Lifecycle invariant visualization. The two series should track each other closely (the gap is the current ARQ in-flight count). A persistent widening between them indicates a SURBID is being abandoned without firing any exit counter, the same defect the SurbLifecycleBalanced PBT invariant catches."
+      "description": "Lifecycle invariant. The two series should track each other closely; the gap is the sum of (currently in-flight ARQ entries) and (entries that exited via the still-uncounted error or cancel paths). A persistent widening with no in-flight growth indicates either a SURBID is being abandoned without firing any exit counter, or an error/cancel-exit site needs its own counter."
     },
     {
       "id": 14,
-      "title": "SURB Lifecycle Gap (created minus exits)",
+      "title": "SURB Lifecycle Gap (created minus counted exits)",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 56},
       "targets": [
-        {"expr": "katzenpost_client_surb_id_created_total - (katzenpost_client_surb_id_reply_received_total + katzenpost_client_surb_id_garbage_collected_total + katzenpost_client_surb_id_reply_no_match_total + katzenpost_client_surb_id_rotated_total)", "refId": "A", "legendFormat": "{{job}} unaccounted"}
+        {"expr": "katzenpost_client_surb_id_created_total - (katzenpost_client_surb_id_delivered_total + katzenpost_client_surb_id_garbage_collected_total + katzenpost_client_surb_id_rotated_total)", "refId": "A", "legendFormat": "{{job}} unaccounted"}
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "description": "Same as panel 13 but as a single signed series. Tracks arq_inflight closely under healthy operation; a value that grows without ARQ inflight also growing indicates a real leak."
+      "description": "Same as panel 13 but as a single signed series. Tracks arq_inflight + uncounted error/cancel exits under healthy operation; a value that grows without arq_inflight also growing and with no error/cancel activity indicates a real leak."
     }
   ]
 }

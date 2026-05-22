@@ -50,8 +50,11 @@ func SurbIDCreated() {}
 // SurbIDGarbageCollected is a no-op when the build tag is unset.
 func SurbIDGarbageCollected() {}
 
-// SurbIDReplyReceived is a no-op when the build tag is unset.
-func SurbIDReplyReceived() {}
+// SurbIDReplyMatched is a no-op when the build tag is unset.
+func SurbIDReplyMatched() {}
+
+// SurbIDDelivered is a no-op when the build tag is unset.
+func SurbIDDelivered() {}
 
 // SurbIDReplyNoMatch is a no-op when the build tag is unset.
 func SurbIDReplyNoMatch() {}
