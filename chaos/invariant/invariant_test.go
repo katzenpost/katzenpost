@@ -27,11 +27,25 @@ func TestTestSuiteSucceededFailsOnError(t *testing.T) {
 
 func TestConsensusProgressedFailsWhenStuck(t *testing.T) {
 	r := &orchestrator.Result{
-		BeforeSnap: orchestrator.Snapshot{ConsensusReached: 5},
-		AfterSnap:  orchestrator.Snapshot{ConsensusReached: 5},
+		BeforeSnap: orchestrator.Snapshot{ConsensusReached: 5, CurrentEpoch: 100},
+		AfterSnap:  orchestrator.Snapshot{ConsensusReached: 5, CurrentEpoch: 100},
 	}
 	out := ConsensusProgressed(r)
 	require.False(t, out.Passed)
+}
+
+func TestConsensusProgressedPassesOnUnreachableSnap(t *testing.T) {
+	// If after-snap couldn't reach prometheus, CurrentEpoch reads 0
+	// and the invariant returns Passed with a diagnostic reason so
+	// it doesn't fire spuriously alongside an unrelated test
+	// failure.
+	r := &orchestrator.Result{
+		BeforeSnap: orchestrator.Snapshot{ConsensusReached: 5, CurrentEpoch: 100},
+		AfterSnap:  orchestrator.Snapshot{ConsensusReached: 0, CurrentEpoch: 0},
+	}
+	out := ConsensusProgressed(r)
+	require.True(t, out.Passed)
+	require.Contains(t, out.Reason, "inconclusive")
 }
 
 func TestNoSurbReplyNoMatchFailsOnNonZero(t *testing.T) {

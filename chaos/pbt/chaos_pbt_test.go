@@ -76,7 +76,13 @@ func TestChaosProperties(t *testing.T) {
 			res, runErr := orchestrator.RunIteration(ctx, label, cfg, orchestrator.Options{
 				RepoRoot:           repoRoot,
 				PigeonholeCpScript: envOr("CHAOS_PBT_PIGEONHOLE_CP_SCRIPT", filepath.Join(repoRoot, "chaos/scripts/pigeonhole_cp_roundtrip.sh")),
-				PigeonholeCpFileSizeBytes: envInt("CHAOS_PBT_PIGEONHOLE_CP_SIZE", 65536),
+				// 1 KiB fits in a single pigeonhole box (one Copy
+				// command at send, one read at receive) and
+				// completes in a couple of minutes even under
+				// moderate chaos. The earlier 64 KiB default
+				// took 22+ minutes baseline and routinely hit the
+				// orchestrator's MakeTimeout under chaos.
+				PigeonholeCpFileSizeBytes: envInt("CHAOS_PBT_PIGEONHOLE_CP_SIZE", 1024),
 				Stdout:                    os.Stdout,
 				Stderr:                    os.Stderr,
 			})

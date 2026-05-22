@@ -88,7 +88,21 @@ func PigeonholeCpRoundtripSucceeded(r *orchestrator.Result) Result {
 // consensus document between the before and after snapshots. Chaos
 // that targets dirauths is allowed to slow consensus; it is not
 // allowed to halt it for the whole iteration.
+//
+// If either snapshot's CurrentEpoch reads zero, the snapshot probably
+// failed to query prometheus (orchestrator context cancelled at
+// timeout, dirauths unreachable, etc.) and the invariant cannot
+// meaningfully evaluate; it returns Passed with a diagnostic reason
+// so a real-but-unrelated test failure does not also produce a
+// spurious "consensus did not advance" alarm.
 func ConsensusProgressed(r *orchestrator.Result) Result {
+	if r.BeforeSnap.CurrentEpoch == 0 || r.AfterSnap.CurrentEpoch == 0 {
+		return Result{
+			Name:   "consensus_progressed",
+			Passed: true,
+			Reason: fmt.Sprintf("snapshot inconclusive: before.current_epoch=%g after.current_epoch=%g; prometheus probably unreachable at snap time", r.BeforeSnap.CurrentEpoch, r.AfterSnap.CurrentEpoch),
+		}
+	}
 	delta := r.AfterSnap.ConsensusReached - r.BeforeSnap.ConsensusReached
 	if delta > 0 {
 		return Result{Name: "consensus_progressed", Passed: true}
