@@ -103,9 +103,17 @@ var AllHosts = []string{
 	"kpclientd",
 }
 
-// Validate checks that every host name in the config is one the chaos
-// tool knows how to address. An unknown name is almost always a typo
-// in the YAML and would silently do nothing if we let it through.
+// Validate checks every host name in the config and rejects two
+// classes of error:
+//
+//   - Unknown host names. Almost always a typo in the YAML; the apply
+//     tool would silently do nothing.
+//   - Multiple netem primitives on the same host (e.g. both
+//     latency_ms and loss_pct). Pumba's `netem` subcommand only
+//     supports ONE primitive at a time and Linux tc rejects a second
+//     root qdisc on the same interface, so the second primitive's
+//     sidecar container fails silently leaving only the first in
+//     effect. Operators expecting both would get only one.
 func (c *Config) Validate() error {
 	if c == nil {
 		return errors.New("chaos: nil config")
@@ -114,9 +122,29 @@ func (c *Config) Validate() error {
 	for _, h := range AllHosts {
 		known[h] = struct{}{}
 	}
-	for name := range c.Hosts {
+	for name, hc := range c.Hosts {
 		if _, ok := known[name]; !ok {
 			return fmt.Errorf("chaos: unknown host %q (known: %v)", name, AllHosts)
+		}
+		if hc.PauseForSec > 0 {
+			// pause is mutually exclusive with netem; Plan already
+			// suppresses the netem primitives in this case, so the
+			// operator can declare both knowingly. No validation
+			// failure here.
+			continue
+		}
+		netemCount := 0
+		if hc.LatencyMs > 0 || hc.JitterMs > 0 {
+			netemCount++
+		}
+		if hc.LossPct > 0 {
+			netemCount++
+		}
+		if hc.CorruptPct > 0 {
+			netemCount++
+		}
+		if netemCount > 1 {
+			return fmt.Errorf("chaos: host %q has %d netem primitives (delay, loss, corrupt); only one may be applied per host because pumba's netem subcommand and Linux tc both reject a second root qdisc on the same interface", name, netemCount)
 		}
 	}
 	return nil

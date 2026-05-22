@@ -56,6 +56,39 @@ hosts:
 	require.Contains(t, err.Error(), "unknown host")
 }
 
+func TestLoadFileRejectsMultipleNetemPrimitives(t *testing.T) {
+	dir := t.TempDir()
+	body := `
+hosts:
+  mix1:
+    latency_ms: 100
+    loss_pct: 5
+`
+	path := filepath.Join(dir, "chaos.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
+	_, err := LoadFile(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "netem primitives")
+}
+
+func TestLoadFileAllowsPauseWithIgnoredNetem(t *testing.T) {
+	// pause is mutually exclusive with netem; Plan suppresses the
+	// netem primitives, so the operator may declare both knowingly.
+	dir := t.TempDir()
+	body := `
+hosts:
+  replica1:
+    pause_for_sec: 30
+    latency_ms: 100
+`
+	path := filepath.Join(dir, "chaos.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
+	_, err := LoadFile(path)
+	require.NoError(t, err)
+}
+
 func TestHostChaosIsEmpty(t *testing.T) {
 	require.True(t, HostChaos{}.IsEmpty())
 	require.False(t, HostChaos{LatencyMs: 1}.IsEmpty())
