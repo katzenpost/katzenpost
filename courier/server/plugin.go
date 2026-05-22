@@ -1241,6 +1241,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 	writer, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
 		e.log.Errorf("writeTombstonesToTempChannel: Failed to create StatefulWriter: %v", err)
+		instrument.DroppedByReason("tombstone_writer_create_failed")
 		return
 	}
 
@@ -1248,6 +1249,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 	doc := e.server.PKI.PKIDocument()
 	if doc == nil {
 		e.log.Errorf("writeTombstonesToTempChannel: PKI document is nil")
+		instrument.DroppedByReason("tombstone_nil_pki")
 		return
 	}
 
@@ -1425,11 +1427,13 @@ func (e *Courier) dispatchTombstone(
 				// Transient errors (e.g. DatabaseFailure) still fall
 				// through to the retry below.
 				e.log.Debugf("dispatchTombstone: attempt %d permanently rejected (box already exists), not retrying", attempt+1)
+				instrument.DroppedByReason("tombstone_already_exists")
 				return false
 			}
 		}
 		e.log.Debugf("dispatchTombstone: attempt %d produced %d replies, none successful", attempt+1, len(replies))
 	}
+	instrument.DroppedByReason("tombstone_dispatch_exhausted")
 	return false
 }
 
