@@ -154,6 +154,7 @@ type Config struct {
 	SendSlack                int
 	UnwrapDelay              int
 	NumSphinxWorkers         int
+	ReplicaCoTenancyFactor   int
 }
 
 type Katzenpost struct {
@@ -194,11 +195,12 @@ type Katzenpost struct {
 	KpclientdMetricsAddress string
 	EpochDuration     string
 	DebugConfig       *cConfig.Debug
-	SchedulerSlack    int
-	SchedulerMaxBurst int
-	SendSlack         int
-	UnwrapDelay       int
-	NumSphinxWorkers  int
+	SchedulerSlack         int
+	SchedulerMaxBurst      int
+	SendSlack              int
+	UnwrapDelay            int
+	NumSphinxWorkers       int
+	ReplicaCoTenancyFactor int
 }
 
 type AuthById []*vConfig.Authority
@@ -457,6 +459,12 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
 	cfg.ReauthInterval = config.DefaultReauthInterval
 	cfg.DisableDecoyTraffic = s.NoCourierReplicaDecoy
+	// Co-tenancy hint: how many replica processes share this host's
+	// CPU. Replica.ApplyRuntimeDefaults divides NumCPU by this when
+	// auto-deriving ProxyWorkerCount, so the docker mixnet (5
+	// replicas on one box) gets ceil(NumCPU/5) workers per replica
+	// rather than oversubscribing to NumCPU per replica.
+	cfg.CoTenancyFactor = s.ReplicaCoTenancyFactor
 
 	authorities := make([]*vConfig.Authority, 0, len(s.Authorities))
 	i := 0
@@ -881,6 +889,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.SendSlack = cfg.SendSlack
 	s.UnwrapDelay = cfg.UnwrapDelay
 	s.NumSphinxWorkers = cfg.NumSphinxWorkers
+	s.ReplicaCoTenancyFactor = cfg.ReplicaCoTenancyFactor
 
 	return s
 }

@@ -123,10 +123,22 @@ type Config struct {
 	// ProxyWorkerCount caps how many proxy-request handlers can be in
 	// flight concurrently. Omit this field (or set it to 0) on a
 	// single-replica-per-host deployment so the runtime picks
-	// runtime.NumCPU; an explicit non-zero value is intended for
-	// shared/multi-tenant hosts where the operator wants to reserve
-	// CPU for other work.
+	// runtime.NumCPU divided by CoTenancyFactor; an explicit non-zero
+	// value is intended for unusual deployments where the operator
+	// wants to reserve CPU for other work beyond the co-tenanted
+	// replicas.
 	ProxyWorkerCount int
+
+	// CoTenancyFactor is the number of replica processes this
+	// deployment expects to share the host's CPU with (itself
+	// included). For a single-replica-per-host deployment leave this
+	// at 0; the runtime treats 0 as 1 (no co-tenancy). For the docker
+	// mixnet or any deployment that runs N replicas on one box, set
+	// it to N so the auto-derived ProxyWorkerCount stays at
+	// ceil(NumCPU/N) rather than oversubscribing every replica to all
+	// of the host's cores. Genconfig sets this automatically from the
+	// --replicaCoTenancyFactor flag.
+	CoTenancyFactor int
 
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	// If empty, no metrics listener is started.
@@ -241,7 +253,21 @@ func (c *Config) ApplyRuntimeDefaults(numCPU int, saturatedOpsPerSec float64) {
 		if numCPU < 1 {
 			numCPU = 1
 		}
-		c.ProxyWorkerCount = numCPU
+		// Co-tenancy divisor: how many replicas share this host's CPU.
+		// Defaults to 1 (single-tenant). When set to N by genconfig
+		// for an N-replica-per-host deployment (docker mixnet, small
+		// VPS, etc.) the worker count becomes ceil(NumCPU/N) so
+		// concurrent CTIDH ops across all replicas stay close to the
+		// host's actual core count rather than N times it.
+		tenancy := c.CoTenancyFactor
+		if tenancy < 1 {
+			tenancy = 1
+		}
+		effectiveCores := (numCPU + tenancy - 1) / tenancy
+		if effectiveCores < 1 {
+			effectiveCores = 1
+		}
+		c.ProxyWorkerCount = effectiveCores
 	}
 	if c.IncomingQueueSize <= 0 {
 		// Default sizing: enough buffer to absorb 10 seconds of
