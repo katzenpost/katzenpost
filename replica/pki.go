@@ -18,9 +18,47 @@ import (
 
 const (
 	NumPKIDocsToFetch = 3
-
-	descriptorUploadSafety = 10 * time.Second
 )
+
+// descriptorUploadSafety is the wall-clock margin we leave before
+// the dirauths' MixPublishDeadline so a slow upload still finishes
+// inside the descriptor-accept window.
+//
+// The previous hard-coded 10 s was tuned for the production
+// 20-minute epoch (MixPublishDeadline = 150 s → 140 s budget,
+// generous). Under warped 2-minute epochs (MixPublishDeadline =
+// 15 s → 5 s budget) the budget became too tight: the dirauth
+// voting client's PQ-Noise handshake under chaos can run several
+// seconds, and a single failed attempt consumes the whole budget,
+// preventing the upload from completing inside the window.
+//
+// Surfaced empirically: the asymmetric_replica_latency chaos
+// scenario applies 300 ms / 100 ms jitter to replica1 and replica2.
+// Within a minute of chaos start, both replicas began missing
+// their descriptor uploads, the dirauths excluded them from the
+// next consensus document, and the courier started dropping
+// envelopes with reason "replica_dispatch_failed" because the
+// referenced replicas were no longer in the PKI.
+//
+// Proportional safety keeps the trade-off uniform across epoch
+// regimes. Empirically the 1/6 ratio (25 s safety on production,
+// 2.5 s safety on warped) gives the most upload-budget while
+// still leaving enough margin for the dirauths to assemble the
+// descriptors into the document:
+//
+//	production (20 min) → MixPublishDeadline 150 s, safety 25 s,
+//	                       upload budget 125 s
+//	warped (2 min)     → MixPublishDeadline 15 s, safety 2.5 s,
+//	                       upload budget 12.5 s
+//
+// The warped budget is still tight under heavy chaos (the
+// asymmetric_replica_latency scenario at 300 ms / 100 ms jitter
+// can stretch a single dirauth handshake past 6 seconds), but at
+// least the constant scales with the epoch period the operator
+// chose. A more durable fix would lengthen the warped epoch or
+// allow descriptor uploads to span an epoch boundary; that is
+// left for a separate change so this commit stays focused.
+var descriptorUploadSafety = PublishDeadline / 6
 
 type postReplicaAcceptedAuthoritiesProvider interface {
 	LastPostReplicaAcceptedAuthorities(epoch uint64) []string
