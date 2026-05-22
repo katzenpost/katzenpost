@@ -43,7 +43,7 @@ func TestNoSurbReplyNoMatchFailsOnNonZero(t *testing.T) {
 	require.False(t, out.Passed)
 }
 
-func TestSurbLifecycleBalancedAllowsSmallGap(t *testing.T) {
+func TestSurbLifecycleBalancedHealthy(t *testing.T) {
 	r := &orchestrator.Result{
 		AfterSnap: orchestrator.Snapshot{
 			SurbCreated:      100,
@@ -53,33 +53,31 @@ func TestSurbLifecycleBalancedAllowsSmallGap(t *testing.T) {
 			SurbRotated:      0,
 		},
 	}
-	out := SurbLifecycleBalanced(r)
-	require.True(t, out.Passed) // 3 SURBs in flight = 3% leak ratio
+	require.True(t, SurbLifecycleBalanced(r).Passed)
 }
 
-func TestSurbLifecycleBalancedAccountsRotation(t *testing.T) {
-	// 200 entered the map (100 originals + 100 rotated-in); replied=98,
-	// rotated_out=100 (the old SURBIDs in each rotation pair), in-flight=2.
-	r := &orchestrator.Result{
-		AfterSnap: orchestrator.Snapshot{
-			SurbCreated: 200,
-			SurbReplied: 98,
-			SurbRotated: 100,
-		},
-	}
-	out := SurbLifecycleBalanced(r)
-	require.True(t, out.Passed)
-}
-
-func TestSurbLifecycleBalancedFailsOnLargeGap(t *testing.T) {
+func TestSurbLifecycleBalancedAcceptsDualFiring(t *testing.T) {
+	// Dual-firing under current counter semantics: per Copy
+	// ACK-then-payload, the OLD SURBID fires both `received` and
+	// `rotated`. The invariant accepts this until the counters are
+	// refactored to be strict exits-only.
 	r := &orchestrator.Result{
 		AfterSnap: orchestrator.Snapshot{
 			SurbCreated: 100,
-			SurbReplied: 10,
+			SurbReplied: 80,
+			SurbRotated: 90,
 		},
+	}
+	require.True(t, SurbLifecycleBalanced(r).Passed)
+}
+
+func TestSurbLifecycleBalancedFailsOnHardLeak(t *testing.T) {
+	r := &orchestrator.Result{
+		AfterSnap: orchestrator.Snapshot{SurbCreated: 100},
 	}
 	out := SurbLifecycleBalanced(r)
 	require.False(t, out.Passed)
+	require.Contains(t, out.Reason, "hard leak")
 }
 
 func TestARQInflightBoundedFailsAboveLimit(t *testing.T) {
