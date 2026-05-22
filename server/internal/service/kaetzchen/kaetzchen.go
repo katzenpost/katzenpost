@@ -265,6 +265,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		k.incrementDropCounter()
+		instrument.PacketsDroppedByReason("kaetzchen_parse_forward_failed")
 		instrument.KaetzchenRequestsDropped(k.getDropCounter())
 		return
 	}
@@ -277,6 +278,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 		k.log.Error("KaetzchenWorker does not handle the specified recipient")
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		k.incrementDropCounter()
+		instrument.PacketsDroppedByReason("kaetzchen_unknown_recipient")
 		instrument.KaetzchenRequestsDropped(k.getDropCounter())
 		return
 	}
@@ -291,6 +293,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 		return
 	default:
 		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v)", pkt.ID, err)
+		instrument.PacketsDroppedByReason("kaetzchen_handler_failed")
 		instrument.KaetzchenRequestsFailed()
 		return
 	}
