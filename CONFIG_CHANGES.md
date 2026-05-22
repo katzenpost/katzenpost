@@ -92,8 +92,7 @@ Source: `authority/voting/server/config/config.go`.
   faster than the paper intends. A stale `LambdaG = X` line in
   `authority.toml` is silently ignored by the lenient BurntSushi
   loader and the operator action is to delete it; `Document.LambdaG`
-  in the consensus document is unaffected. `LambdaGMaxDelay`
-  remains operator-set and validated as non-zero.
+  in the consensus document is unaffected.
 
 ### `[[StorageReplicas]]`
 
