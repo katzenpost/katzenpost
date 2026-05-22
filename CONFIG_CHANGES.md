@@ -131,11 +131,6 @@ No TOML-visible changes. The Go type of `LinkPublicKey` was wrapped in
 a new `LinkPublicKey` struct so that BurntSushi/toml can serialise it
 back to PEM via `MarshalText`; the on-disk encoding is unchanged.
 
-### `[Server]` defaults
-
-- `HandshakeTimeoutSec` default raised from `60` to `180`. Operators
-  who left this at `0` (default) will see the longer timeout.
-
 ### Removed fields
 
 None.
@@ -160,22 +155,27 @@ Source: `server/config/config.go`.
 
 ### `[Debug]`
 
-The "provider" worker pool was split into separate gateway and service
-pools, and the corresponding `[Debug]` knobs were renamed accordingly.
+The four worker-count fields are unchanged in name and type from
+v0.0.71, but their default semantics shifted during the
+v0.0.71→main window.
 
-- **Removed** `NumProviderWorkers` (int). **[breaking]** Replaced by
-  `NumServiceWorkers` and `NumGatewayWorkers`, each defaulting to `3`.
-  A config that still sets `NumProviderWorkers` is silently ignored, so
-  the value no longer takes effect: an operator who had tuned this must
-  re-express the intent under the two new keys.
-- **Removed** `ProviderDelay` (int). **[breaking]** Replaced by
-  `GatewayDelay` and `ServiceDelay`, each defaulting to `500` ms, with
-  the same silent-ignore caveat as above.
+- `NumSphinxWorkers`, `NumGatewayWorkers`, `NumServiceWorkers`,
+  `NumKaetzchenWorkers` (all int). The previous fixed defaults
+  (`runtime.NumCPU()` for Sphinx, `3` for the other three) have been
+  replaced by a zero-value-as-sentinel pattern. Zero in the TOML now
+  triggers an auto-derivation step at startup driven by a
+  Sphinx-unwrap self-check (`server/selfcheck.go`):
+  `NumSphinxWorkers` lands at `runtime.NumCPU()`; the three sibling
+  pools at `NumCPU/2`, floored at 1. An explicit non-zero value in
+  the operator's TOML still wins. Operators should leave the four
+  fields unset on single-tenant hosts and let the runtime size them;
+  the startup self-check publishes
+  `katzenpost_server_selfcheck_sphinx_*` gauges so the chosen
+  values are visible to Prometheus.
 
 ### Defaults
 
 - `defaultSchedulerSlack` raised from `150` to `450` ms.
-- `defaultHandshakeTimeout` raised from `60` to `180` seconds.
 
 ### Removed fields
 
@@ -205,17 +205,31 @@ Source: `replica/config/config.go`.
 - **Added** `ReplicaID` (uint8). **[breaking]** Must match the
   corresponding `ReplicaID` in every dirauth's `[[StorageReplicas]]`
   entry for this replica.
-- **Added** `IncomingQueueSize` (int). Buffer size for the incoming
-  connection sender queue. Defaults to `1000`.
+- **Added** `IncomingQueueSize` (int). Buffer size for the
+  incoming-connection sender queue. Zero in the TOML triggers
+  auto-derivation at startup, sized to absorb roughly 10 seconds of
+  the measured saturated CTIDH ops-per-second, floored at
+  `ProxyWorkerCount * 32`. The earlier fixed default of `1000` is
+  gone; operators should omit the field on a single-tenant host.
 - **Added** `MaxConcurrentReplications` (int). Concurrency cap on
   replication operations to shard members. Defaults to `4`.
 - **Added** `ProxyRequestTimeout` (int). Timeout in seconds for proxy
-  requests to other replicas. Defaults to `300` (5 minutes).
-- **Added** `ProxyWorkerCount` (int). Number of goroutines that handle
-  proxy requests concurrently. Defaults to `8`.
+  requests to other replicas. Zero in the TOML triggers
+  auto-derivation at startup, sized to be order-of-magnitude generous
+  against the measured CTIDH rate. The earlier fixed default of
+  `300` seconds is gone.
+- **Added** `ProxyWorkerCount` (int). Cap on concurrently-in-flight
+  proxy-request handlers. Zero in the TOML triggers auto-derivation
+  at startup to `max(1, runtime.NumCPU())`. The earlier fixed default
+  of `8` is gone. The startup CTIDH self-check publishes
+  `katzenpost_replica_selfcheck_*` gauges so the chosen values are
+  visible to Prometheus.
 - **Added** `MetricsAddress` (string). Address/port for the Prometheus
-  metrics endpoint, e.g. `"127.0.0.1:33001"`. Empty disables the
-  listener. Validated with `net/netip`.
+  metrics endpoint, e.g. `"127.0.0.1:33001"` or `"replica1:31100"`.
+  Empty disables the listener. Hostnames are accepted as well as IP
+  literals (the validator switched from `netip.ParseAddrPort` to
+  `net.SplitHostPort` so a bridge-network service may bind on its
+  docker-compose hostname).
 - **Added** `MaxStorageMiB` (int64). Optional hard quota on the
   replica database's on-disk size in mebibytes (RocksDB live SST
   footprint). Writes that would exceed it are rejected with
@@ -255,7 +269,10 @@ Source: `courier/server/config/config.go`.
 ### Top level
 
 - **Added** `MetricsAddress` (string). Address/port for the Prometheus
-  metrics endpoint. Empty disables the listener.
+  metrics endpoint. Empty disables the listener. Hostnames are
+  accepted as well as IP literals (the validator switched from
+  `netip.ParseAddrPort` to `net.SplitHostPort` so a bridge-network
+  courier may bind on its docker-compose hostname).
 
 No removals or breaking changes.
 
@@ -306,13 +323,16 @@ The client TOML had the most substantial reshape, driven by the
   remove it from existing TOML as housekeeping. (The genuinely breaking
   client change is the now-required `[Listen]`, above.)
 
+- **Added** top-level `MetricsAddress` (string). Bind address of the
+  kpclientd Prometheus listener. The listener is compiled in only when
+  the `kpclientd_metrics` build tag is set; production builds without
+  the tag treat the field as inert. Convention is `127.0.0.1` only;
+  binding to a public address is not supported.
+
 ### `[Debug]`
 
 - **Added** `EnableTimeSync` (bool). Use skewed remote provider time
   instead of system time when available.
-- **Removed** `PreferedTransports` ([]string). No longer consumed, and
-  silently ignored by the lenient client decoder rather than rejected;
-  remove it from existing TOML as housekeeping.
 
 ### `[[VotingAuthority.Peers]]` and the new `[[PinnedGateways.Gateways]]`
 
@@ -405,5 +425,6 @@ no code now depends on the removed fields being present.
 Source: `common/config/config.go`. These values are inherited by
 several components.
 
-- `DefaultHandshakeTimeout` raised from `60` to `180` seconds.
-- `DefaultConnectTimeout` and `DefaultReauthInterval` unchanged.
+- No changes since v0.0.71. `DefaultHandshakeTimeout`,
+  `DefaultConnectTimeout`, and `DefaultReauthInterval` retain their
+  v0.0.71 values (60, 60, and 30 seconds respectively).
