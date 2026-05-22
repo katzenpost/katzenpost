@@ -58,6 +58,14 @@ type incomingConn struct {
 
 	// Mutex to protect session access
 	sessionMutex sync.RWMutex
+
+	// closed is set the first time the listener observes this
+	// connection as closed. onClosedConn uses it as an idempotency
+	// guard so duplicate cleanup calls (e.g. the unit-test path that
+	// invokes onClosedConn directly while the worker goroutine is
+	// still in its handshake) do not double-Done the listener's
+	// closeAllWg and panic with a negative counter.
+	closed atomic.Bool
 }
 
 func (c *incomingConn) Close() {
