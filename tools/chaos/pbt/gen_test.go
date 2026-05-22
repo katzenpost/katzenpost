@@ -10,7 +10,7 @@ import (
 	"github.com/leanovate/gopter"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/chaos"
+	"github.com/katzenpost/katzenpost/tools/chaos"
 )
 
 // genConfigOnce draws one ChaosConfig with the given seed and bounds

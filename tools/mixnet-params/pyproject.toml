@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: (c) 2024 Eva Infeld
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mixnet-params"
+version = "0.1.0"
+description = "Capacity calculator for Katzenpost mixnet operator-tunable parameters"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "AGPL-3.0-only"
+authors = [
+    { name = "Eva Infeld" },
+]
+keywords = ["katzenpost", "mixnet", "anonymity", "operations"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Internet",
+]
+dependencies = [
+    "click>=8.0",
+]
+
+[project.scripts]
+mixnet-params = "mixnet_params.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mixnet_params"]

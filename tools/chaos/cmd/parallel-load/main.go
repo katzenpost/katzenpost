@@ -28,7 +28,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/katzenpost/katzenpost/chaos/parallelload"
+	"github.com/katzenpost/katzenpost/tools/chaos/parallelload"
 )
 
 func main() {

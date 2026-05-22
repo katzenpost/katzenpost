@@ -41,9 +41,9 @@ import (
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/prop"
 
-	"github.com/katzenpost/katzenpost/chaos"
-	"github.com/katzenpost/katzenpost/chaos/invariant"
-	"github.com/katzenpost/katzenpost/chaos/orchestrator"
+	"github.com/katzenpost/katzenpost/tools/chaos"
+	"github.com/katzenpost/katzenpost/tools/chaos/invariant"
+	"github.com/katzenpost/katzenpost/tools/chaos/orchestrator"
 )
 
 func TestChaosProperties(t *testing.T) {

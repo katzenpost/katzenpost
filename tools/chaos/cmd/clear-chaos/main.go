@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/katzenpost/katzenpost/chaos"
+	"github.com/katzenpost/katzenpost/tools/chaos"
 )
 
 func main() {

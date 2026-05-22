@@ -32,7 +32,7 @@
 # that path.
 #
 # Apply with:
-#   go run ./chaos/cmd/apply-chaos -f chaos/scenarios/epoch_transition_latency.yaml
+#   go run ./tools/chaos/cmd/apply-chaos -f tools/chaos/scenarios/epoch_transition_latency.yaml
 # Tear down with:
 #   make -C docker pumba-stop
 

@@ -11,7 +11,7 @@ package invariant
 import (
 	"fmt"
 
-	"github.com/katzenpost/katzenpost/chaos/orchestrator"
+	"github.com/katzenpost/katzenpost/tools/chaos/orchestrator"
 )
 
 // Result records one invariant's outcome on one iteration.

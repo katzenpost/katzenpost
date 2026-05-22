@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/chaos/orchestrator"
+	"github.com/katzenpost/katzenpost/tools/chaos/orchestrator"
 )
 
 func TestTestSuiteSucceededPasses(t *testing.T) {

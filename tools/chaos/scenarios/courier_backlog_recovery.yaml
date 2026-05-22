@@ -28,7 +28,7 @@
 #     resumes and rejoins the bridge cleanly.
 #
 # Apply with:
-#   go run ./chaos/cmd/apply-chaos -f chaos/scenarios/courier_backlog_recovery.yaml
+#   go run ./tools/chaos/cmd/apply-chaos -f tools/chaos/scenarios/courier_backlog_recovery.yaml
 #
 # Pumba sends SIGCONT automatically when the pause duration ends;
 # no explicit teardown is needed for the pause primitive, but

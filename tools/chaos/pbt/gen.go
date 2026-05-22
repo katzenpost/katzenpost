@@ -13,7 +13,7 @@ import (
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 
-	"github.com/katzenpost/katzenpost/chaos"
+	"github.com/katzenpost/katzenpost/tools/chaos"
 )
 
 // Bounds collects the parameter ranges the generator samples from.

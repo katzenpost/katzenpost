@@ -30,7 +30,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/katzenpost/katzenpost/chaos/cpbench"
+	"github.com/katzenpost/katzenpost/tools/chaos/cpbench"
 )
 
 func main() {

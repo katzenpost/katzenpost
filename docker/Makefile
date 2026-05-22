@@ -540,11 +540,11 @@ $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 			mv ping /$(net_name)/ping.$(distro)'
 
 $(net_name)/parallel-load.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd chaos/cmd/parallel-load && go build -ldflags ${ldflags} && \
+		$(docker_run_sh) 'cd tools/chaos/cmd/parallel-load && go build -ldflags ${ldflags} && \
 			mv parallel-load /$(net_name)/parallel-load.$(distro)'
 
 $(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd chaos/cmd/cp-bench && go build -ldflags ${ldflags} && \
+		$(docker_run_sh) 'cd tools/chaos/cmd/cp-bench && go build -ldflags ${ldflags} && \
 			mv cp-bench /$(net_name)/cp-bench.$(distro)'
 
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)

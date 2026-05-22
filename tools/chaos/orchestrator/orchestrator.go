@@ -39,7 +39,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/katzenpost/katzenpost/chaos"
+	"github.com/katzenpost/katzenpost/tools/chaos"
 )
 
 // Options collects every parameter that varies between iterations.

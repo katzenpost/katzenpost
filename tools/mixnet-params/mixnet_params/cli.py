@@ -1,12 +1,14 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # SPDX-FileCopyrightText: (c) 2024 Eva Infeld
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Command-line tool for computing mixnet traffic and capacity parameters.
 
-import math
+Exposed as the ``mixnet-params`` entry point by the package's
+pyproject.toml; see :func:`main` for the click command itself.
+"""
+
 import sys
+
 import click
 
 
