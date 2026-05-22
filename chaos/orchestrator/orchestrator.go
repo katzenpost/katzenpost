@@ -150,10 +150,11 @@ type Snapshot struct {
 	// CourierReasonDrops mirrors the above for the courier.
 	CourierReasonDrops map[string]float64
 	// SurbCreated/etc capture the client-side SURB lifecycle.
-	SurbCreated     float64
-	SurbGCed        float64
-	SurbReplied     float64
+	SurbCreated      float64
+	SurbGCed         float64
+	SurbReplied      float64
 	SurbReplyNoMatch float64
+	SurbRotated      float64
 	// ARQInflight is the current gauge value.
 	ARQInflight float64
 	// CourierOldestAge is the max across replicas at snapshot time.
@@ -444,6 +445,7 @@ func readSnapshot(ctx context.Context, base string) (Snapshot, error) {
 		{"sum(katzenpost_client_surb_id_garbage_collected_total)", &snap.SurbGCed},
 		{"sum(katzenpost_client_surb_id_reply_received_total)", &snap.SurbReplied},
 		{"sum(katzenpost_client_surb_id_reply_no_match_total)", &snap.SurbReplyNoMatch},
+		{"sum(katzenpost_client_surb_id_rotated_total)", &snap.SurbRotated},
 		{"katzenpost_client_arq_inflight", &snap.ARQInflight},
 		{"max(katzenpost_courier_oldest_age_seconds)", &snap.CourierOldestAge},
 		{"sum(katzenpost_dirauth_consensus_reached_total)", &snap.ConsensusReached},

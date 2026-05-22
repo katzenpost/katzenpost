@@ -813,7 +813,8 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 	}
 
 	d.replyLock.Lock()
-	if arqMessage.SURBID != nil {
+	hadOld := arqMessage.SURBID != nil
+	if hadOld {
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	}
 	arqMessage.SURBID = placeholder
@@ -822,6 +823,9 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = placeholder
 	}
 	d.replyLock.Unlock()
+	if hadOld {
+		instrument.SurbIDRotated()
+	}
 	instrument.SurbIDCreated()
 
 	if d.arqTimerQueue == nil {
@@ -902,7 +906,8 @@ func (d *Daemon) rotateARQSurbIDLocked(
 	surbKey []byte,
 	rtt time.Duration,
 ) {
-	if arqMessage.SURBID != nil {
+	hadOld := arqMessage.SURBID != nil
+	if hadOld {
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	}
 	arqMessage.SURBID = newSurbID
@@ -915,9 +920,15 @@ func (d *Daemon) rotateARQSurbIDLocked(
 		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = newSurbID
 	}
 	// Every entry added to arqSurbIDMap must be counted so the
-	// SURB lifecycle invariant remains balanced. The new SURBID will
-	// later exit via one of SurbIDReplyReceived,
-	// SurbIDGarbageCollected, or SurbIDReplyNoMatch.
+	// SURB lifecycle invariant remains balanced. The new SURBID
+	// will later exit via one of SurbIDReplyReceived,
+	// SurbIDGarbageCollected, SurbIDReplyNoMatch, or another
+	// rotation. The OLD SURBID, if any, exits via SurbIDRotated
+	// (the missing-exit-counter we previously had to tolerate
+	// with a 50% slack in the lifecycle invariant).
+	if hadOld {
+		instrument.SurbIDRotated()
+	}
 	instrument.SurbIDCreated()
 }
 

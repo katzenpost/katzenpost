@@ -56,5 +56,8 @@ func SurbIDReplyReceived() {}
 // SurbIDReplyNoMatch is a no-op when the build tag is unset.
 func SurbIDReplyNoMatch() {}
 
+// SurbIDRotated is a no-op when the build tag is unset.
+func SurbIDRotated() {}
+
 // ThinSessionsSet is a no-op when the build tag is unset.
 func ThinSessionsSet(_ int) {}

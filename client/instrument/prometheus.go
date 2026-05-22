@@ -103,6 +103,12 @@ var (
 			Help: "Number of ARQ replies received whose SURB ID was not in the awaiting map. Either the reply was garbage-collected before arrival, the reply was misrouted, or the SURB ID matching itself is buggy. This counter is the diagnostic for the reply-routing problem.",
 		},
 	)
+	surbIDRotated = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_surb_id_rotated_total",
+			Help: "Number of times an existing ARQ map entry's SURB ID was replaced by a new one (ACK-before-payload Copy command flows, compose-retry placeholders, Copy-status-poll placeholders). The old SURB ID exits the map without firing any of reply_received, garbage_collected, or reply_no_match; rotated_total is the missing exit counter that closes the lifecycle balance with created_total.",
+		},
+	)
 	thinSessions = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "katzenpost_client_thin_sessions",
@@ -130,6 +136,7 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(surbIDGarbageCollected)
 		prometheus.MustRegister(surbIDReplyReceived)
 		prometheus.MustRegister(surbIDReplyNoMatch)
+		prometheus.MustRegister(surbIDRotated)
 		prometheus.MustRegister(thinSessions)
 	})
 	if address == "" {
@@ -196,6 +203,13 @@ func SurbIDReplyReceived() { surbIDReplyReceived.Inc() }
 // awaiting map. This is the data-driven diagnostic for the reply-routing
 // problem we suspected during the recent ping investigation.
 func SurbIDReplyNoMatch() { surbIDReplyNoMatch.Inc() }
+
+// SurbIDRotated records the exit of an old SURB ID from the ARQ map
+// via rotation: a new SURB ID replaces it for the next retransmission
+// (ACK-before-payload Copy command flows, compose-retry placeholders,
+// Copy-status-poll placeholders). Pair with SurbIDCreated at the
+// matching insertion site to keep the lifecycle balanced.
+func SurbIDRotated() { surbIDRotated.Inc() }
 
 // ThinSessionsSet sets the current count of registered thin-client
 // sessions. Pass len(listener.conns) after each register/unregister.

@@ -117,30 +117,28 @@ func NoSurbReplyNoMatch(r *orchestrator.Result) Result {
 	}
 }
 
-// SurbLifecycleBalanced asserts the SURB lifecycle counters do not
-// drift unboundedly: every SURB ID that entered the ARQ map should
-// eventually exit via reply received, garbage-collected, or no-match.
+// SurbLifecycleBalanced asserts the SURB lifecycle counters balance
+// per SURBID. Every entry that enters arqSurbIDMap (counted as
+// `created`) eventually exits via one of four counters: a reply
+// matched (`replied`), the TTL timer fired (`gc`), a late reply
+// arrived with no match (`no_match`), or a rotation/placeholder
+// swap replaced it (`rotated`). The invariant is therefore:
 //
-// Rotation (ACK-before-payload, compose-retry placeholders) and the
-// orphan SURB IDs that leave the map without firing any exit counter
-// make the bound asymmetric: `received - created` can become positive
-// when rotations happen (we count each new map entry as `created`,
-// but the OLD SURBID in a rotation pair leaves the map silently if it
-// did not get its own reply first). We therefore allow up to 50% of
-// the cumulative created count to be "unaccounted" on the exits side,
-// which is generous enough for the rotation orphans the current
-// instrumentation does not track but tight enough to surface a real
-// leak (a forgotten exit counter, a map entry that nobody ever
-// retires).
+//	created ~= replied + gc + no_match + rotated + in_flight
+//
+// The 5% slack is for in-flight entries the snapshot caught mid-life.
+// A gap above 5% means a SURB ID is being abandoned outside of any
+// exit counter — a forgotten exit increment, or a code path that
+// silently drops an arqSurbIDMap entry without rotating or replying.
 func SurbLifecycleBalanced(r *orchestrator.Result) Result {
 	created := r.AfterSnap.SurbCreated
-	exits := r.AfterSnap.SurbGCed + r.AfterSnap.SurbReplied + r.AfterSnap.SurbReplyNoMatch
+	exits := r.AfterSnap.SurbGCed + r.AfterSnap.SurbReplied + r.AfterSnap.SurbReplyNoMatch + r.AfterSnap.SurbRotated
 	if created == 0 {
 		return Result{Name: "surb_lifecycle_balanced", Passed: true}
 	}
 	if exits >= created {
-		// Excess of exits over created is only possible if create
-		// fires fail at a map-entry site; flag it loudly.
+		// Excess of exits over created is only possible if a create
+		// site is missing; flag it loudly.
 		gap := exits - created
 		if gap/created <= 0.05 {
 			return Result{Name: "surb_lifecycle_balanced", Passed: true}
@@ -148,17 +146,17 @@ func SurbLifecycleBalanced(r *orchestrator.Result) Result {
 		return Result{
 			Name:   "surb_lifecycle_balanced",
 			Passed: false,
-			Reason: fmt.Sprintf("SURB lifecycle gap: exits=%g exceed created=%g by %g; the create counter likely misses one or more arqSurbIDMap insertion sites", exits, created, gap),
+			Reason: fmt.Sprintf("SURB lifecycle gap: exits=%g (replied+gc+no_match+rotated) exceed created=%g by %g; one or more arqSurbIDMap insertion sites still miss SurbIDCreated", exits, created, gap),
 		}
 	}
 	leakRatio := (created - exits) / created
-	if leakRatio <= 0.50 {
+	if leakRatio <= 0.05 {
 		return Result{Name: "surb_lifecycle_balanced", Passed: true}
 	}
 	return Result{
 		Name:   "surb_lifecycle_balanced",
 		Passed: false,
-		Reason: fmt.Sprintf("SURB lifecycle gap: created=%g, exits=%g (gc+replied+no_match), leak_ratio=%.2f%%; a SURB ID is being abandoned outside of any exit counter", created, exits, leakRatio*100),
+		Reason: fmt.Sprintf("SURB lifecycle gap: created=%g, exits=%g (replied+gc+no_match+rotated), leak_ratio=%.2f%%; a SURB ID is being abandoned outside of any exit counter", created, exits, leakRatio*100),
 	}
 }
 

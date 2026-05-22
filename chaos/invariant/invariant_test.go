@@ -46,14 +46,29 @@ func TestNoSurbReplyNoMatchFailsOnNonZero(t *testing.T) {
 func TestSurbLifecycleBalancedAllowsSmallGap(t *testing.T) {
 	r := &orchestrator.Result{
 		AfterSnap: orchestrator.Snapshot{
-			SurbCreated:    100,
-			SurbGCed:       10,
-			SurbReplied:    87,
+			SurbCreated:      100,
+			SurbGCed:         10,
+			SurbReplied:      87,
 			SurbReplyNoMatch: 0,
+			SurbRotated:      0,
 		},
 	}
 	out := SurbLifecycleBalanced(r)
 	require.True(t, out.Passed) // 3 SURBs in flight = 3% leak ratio
+}
+
+func TestSurbLifecycleBalancedAccountsRotation(t *testing.T) {
+	// 200 entered the map (100 originals + 100 rotated-in); replied=98,
+	// rotated_out=100 (the old SURBIDs in each rotation pair), in-flight=2.
+	r := &orchestrator.Result{
+		AfterSnap: orchestrator.Snapshot{
+			SurbCreated: 200,
+			SurbReplied: 98,
+			SurbRotated: 100,
+		},
+	}
+	out := SurbLifecycleBalanced(r)
+	require.True(t, out.Passed)
 }
 
 func TestSurbLifecycleBalancedFailsOnLargeGap(t *testing.T) {
