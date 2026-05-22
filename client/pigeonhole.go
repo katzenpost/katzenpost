@@ -1615,6 +1615,7 @@ func (d *Daemon) scheduleCopyCommandPoll(arqMessage *ARQMessage) {
 		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = placeholder
 	}
 	d.replyLock.Unlock()
+	instrument.SurbIDCreated()
 
 	if d.arqTimerQueue == nil {
 		d.log.Debugf("scheduleCopyCommandPoll: arqTimerQueue is nil, skipping poll schedule")

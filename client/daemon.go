@@ -822,6 +822,7 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = placeholder
 	}
 	d.replyLock.Unlock()
+	instrument.SurbIDCreated()
 
 	if d.arqTimerQueue == nil {
 		return
@@ -913,6 +914,11 @@ func (d *Daemon) rotateARQSurbIDLocked(
 	if arqMessage.EnvelopeHash != nil {
 		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = newSurbID
 	}
+	// Every entry added to arqSurbIDMap must be counted so the
+	// SURB lifecycle invariant remains balanced. The new SURBID will
+	// later exit via one of SurbIDReplyReceived,
+	// SurbIDGarbageCollected, or SurbIDReplyNoMatch.
+	instrument.SurbIDCreated()
 }
 
 func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
