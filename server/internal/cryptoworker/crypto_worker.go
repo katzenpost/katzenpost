@@ -174,6 +174,13 @@ func (w *Worker) worker() {
 			continue
 		case e := <-w.incomingCh:
 			pkt = e.(*packet.Packet)
+			// Report the remaining channel depth after this
+			// dequeue. The pre-decoy-observability gauge
+			// (katzenpost_channel_usage) was registered without
+			// any setter wired; this is the one place it makes
+			// sense for a mix node, where the depth is a direct
+			// indicator of producer-side back-pressure.
+			instrument.GaugeChannelLength("cryptoworker_incoming", len(w.incomingCh))
 		}
 
 		// This deliberately ignores the cryptographic processing time, since
