@@ -1,0 +1,54 @@
+# Scenario: epoch transitions under latency.
+#
+# Apply moderate symmetric latency to every traffic-carrying
+# katzenpost component (mix, gateway, service node, replica,
+# kpclientd) and keep it on long enough for the dirauth FSM to cross
+# multiple epoch boundaries. The duration is calibrated to span at
+# least four warped 2-minute epochs (10 minutes / 2 minutes = 5
+# rollovers).
+#
+# What this scenario tries to surface:
+#
+#   - cryptoworker MAC failures clustered at the boundary instant.
+#     The fix in commit cce11859 always tries the previous, current,
+#     and next epoch keys, but the moment of rotation is still the
+#     most fragile window in the pipeline.
+#   - kpclientd PKI hand-off when the daemon transitions from the
+#     prior epoch's document to the new one's. Stale PKI use should
+#     not cause silent drops.
+#   - courier envelope-epoch tolerance under the new
+#     `stale_epoch_envelope` reason label: any envelope whose
+#     ReplicaEpoch is one off should still resolve, but two off
+#     should fall into the tolerance window's drop case with a
+#     reason.
+#   - dirauth voting FSM phase transitions while peers are slower
+#     than baseline. Votes should still be collected and consensus
+#     should still form, although possibly with one or two phase
+#     resends.
+#
+# Dirauths are deliberately NOT perturbed in this scenario so that
+# consensus is not part of the failure mode being measured. A
+# companion scenario (`dirauth_flaky.yaml`, future) will exercise
+# that path.
+#
+# Apply with:
+#   go run ./chaos/cmd/apply-chaos -f chaos/scenarios/epoch_transition_latency.yaml
+# Tear down with:
+#   make -C docker pumba-stop
+
+duration: 10m
+
+hosts:
+  gateway1:     { latency_ms: 80, jitter_ms: 25 }
+  mix1:         { latency_ms: 80, jitter_ms: 25 }
+  mix2:         { latency_ms: 80, jitter_ms: 25 }
+  mix3:         { latency_ms: 80, jitter_ms: 25 }
+  servicenode1: { latency_ms: 80, jitter_ms: 25 }
+  servicenode2: { latency_ms: 80, jitter_ms: 25 }
+  servicenode3: { latency_ms: 80, jitter_ms: 25 }
+  replica1:     { latency_ms: 80, jitter_ms: 25 }
+  replica2:     { latency_ms: 80, jitter_ms: 25 }
+  replica3:     { latency_ms: 80, jitter_ms: 25 }
+  replica4:     { latency_ms: 80, jitter_ms: 25 }
+  replica5:     { latency_ms: 80, jitter_ms: 25 }
+  kpclientd:    { latency_ms: 80, jitter_ms: 25 }
