@@ -1050,16 +1050,27 @@ func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd comman
 			if attempt > 0 {
 				s.log.Noticef("peer %s: succeeded after %d retries", peer.Identifier, attempt)
 			}
+			instrument.PeerSendAttempt(peer.Identifier, "ok")
+			instrument.PeerConnected(peer.Identifier, true)
 			return resp, nil
 		}
 		lastErr = err
 
 		if !retry.IsTransientError(err) {
 			s.log.Debugf("peer %s: permanent error: %v", peer.Identifier, err)
+			instrument.PeerSendAttempt(peer.Identifier, "permanent_error")
+			instrument.PeerConnected(peer.Identifier, false)
 			return nil, err
 		}
+		instrument.PeerSendAttempt(peer.Identifier, "transient_error")
 		s.log.Warningf("peer %s: attempt %d/%d failed: %v", peer.Identifier, attempt+1, maxAttempts+1, err)
 	}
+	// All retries exhausted; mark the peer disconnected and report
+	// the final outcome as deadline-exceeded so the rate panel can
+	// distinguish "transient flake we recovered from" from "we gave
+	// up entirely".
+	instrument.PeerSendAttempt(peer.Identifier, "deadline_exceeded")
+	instrument.PeerConnected(peer.Identifier, false)
 	return nil, lastErr
 }
 
