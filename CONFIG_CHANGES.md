@@ -210,8 +210,6 @@ Source: `replica/config/config.go`.
   the measured saturated CTIDH ops-per-second, floored at
   `ProxyWorkerCount * 32`. The earlier fixed default of `1000` is
   gone; operators should omit the field on a single-tenant host.
-- **Added** `MaxConcurrentReplications` (int). Concurrency cap on
-  replication operations to shard members. Defaults to `4`.
 - **Added** `ProxyRequestTimeout` (int). Timeout in seconds for proxy
   requests to other replicas. Zero in the TOML triggers
   auto-derivation at startup, sized to be order-of-magnitude generous
@@ -251,6 +249,17 @@ Source: `replica/config/config.go`.
   replica decodes via the lenient common loader, so a leftover
   `ReplicationQueueLength` is silently ignored and does not block
   startup; remove it from existing TOML as housekeeping.
+- **No longer a field** `MaxConcurrentReplications` (int). The field
+  briefly existed in a transitional revision between v0.0.71 and main
+  with a default of `4`, and is now gone again. The bounded work
+  (the `DispatchReplication` goroutine in `replica/connector.go`) is
+  sub-millisecond per goroutine (PKI snapshot lookup, blake2b hashes,
+  GetShards, per-peer channel send; no MKEM, no DB write, no wait
+  for peer acknowledgement), so the cap is a hard ceiling against
+  unbounded goroutine spawn rather than a tuning knob. Hard-coded to
+  256 at `replica/connector.go:maxConcurrentReplications`, mirroring
+  the courier's analogous `maxConcurrentReplicaDispatch`. A stale
+  `MaxConcurrentReplications = N` line is silently ignored.
 
 ### Defaults
 
