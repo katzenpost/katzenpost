@@ -251,10 +251,21 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	// Ensure config defaults are set (tests may skip FixupAndValidate).
 	s.cfg.SetDefaultTimeouts()
 
+	// Startup CTIDH self-check. Measures the per-core MKEM Decapsulate
+	// ops/sec rate on this host so ops teams have a concrete throughput
+	// ceiling number to reason about, exposed both as a log notice and
+	// as prometheus gauges. The measurement also informs the
+	// ProxyWorkerCount recommendation below.
+	selfCheck := runMKEMSelfCheck(s.log)
+
 	// Initialize proxy request manager and concurrency limiter.
 	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
 	s.proxySema = make(chan struct{}, s.cfg.ProxyWorkerCount)
 	s.log.Noticef("Proxy request concurrency limit: %d, timeout: %ds", s.cfg.ProxyWorkerCount, s.cfg.ProxyRequestTimeout)
+	if selfCheck.NumCPU > 0 && s.cfg.ProxyWorkerCount != selfCheck.NumCPU {
+		s.log.Noticef("ProxyWorkerCount=%d, runtime.NumCPU=%d: consider matching to NumCPU for best parallel CTIDH throughput on this host.",
+			s.cfg.ProxyWorkerCount, selfCheck.NumCPU)
+	}
 
 	if s.cfg.GenerateOnly {
 		return nil, ErrGenerateOnly

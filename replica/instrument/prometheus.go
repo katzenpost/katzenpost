@@ -106,6 +106,24 @@ var (
 		},
 		[]string{"reason"},
 	)
+	selfCheckOpsPerSec = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_per_core",
+			Help: "MKEM (CTIDH1024-X25519) Decapsulate operations per second per core, measured by the startup self-check. The replica's pigeonhole throughput ceiling is dominated by this number under realistic load; ops teams should expect aggregate iter/s roughly proportional to this gauge times the number of cores available.",
+		},
+	)
+	selfCheckOpsPerSecAggregate = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_total",
+			Help: "MKEM (CTIDH1024-X25519) Decapsulate operations per second across all cores reported by runtime.NumCPU at startup. Useful as a rough throughput-ceiling estimate for queue-sizing.",
+		},
+	)
+	selfCheckCores = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_selfcheck_num_cpu",
+			Help: "Cores reported by runtime.NumCPU at startup. Pair with the per-core ops/sec gauge to reason about queue size and worker counts.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -126,6 +144,9 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(retryQueueSize)
 		prometheus.MustRegister(retryQueueDropped)
 		prometheus.MustRegister(replicaDroppedByReason)
+		prometheus.MustRegister(selfCheckOpsPerSec)
+		prometheus.MustRegister(selfCheckOpsPerSecAggregate)
+		prometheus.MustRegister(selfCheckCores)
 	})
 
 	if address != "" {
@@ -201,4 +222,15 @@ func RetryQueueDropped(reason string) {
 // the retry-queue path (which has its own RetryQueueDropped).
 func DroppedByReason(reason string) {
 	replicaDroppedByReason.With(prometheus.Labels{"reason": reason}).Inc()
+}
+
+// SelfCheckResults publishes the startup CTIDH self-check measurement
+// to its prometheus gauges. opsPerSecPerCore is the single-threaded
+// per-core rate from the benchmark; numCPU is the number of cores at
+// startup; the aggregate gauge is their product. Ops teams can read
+// these to estimate the replica's pigeonhole throughput ceiling.
+func SelfCheckResults(opsPerSecPerCore float64, numCPU int) {
+	selfCheckOpsPerSec.Set(opsPerSecPerCore)
+	selfCheckCores.Set(float64(numCPU))
+	selfCheckOpsPerSecAggregate.Set(opsPerSecPerCore * float64(numCPU))
 }
