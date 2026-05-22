@@ -106,22 +106,22 @@ var (
 		},
 		[]string{"reason"},
 	)
-	selfCheckOpsPerSec = prometheus.NewGauge(
+	selfCheckOpsPerSecSolo = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_per_core",
-			Help: "MKEM (CTIDH1024-X25519) Decapsulate operations per second per core, measured by the startup self-check. The replica's pigeonhole throughput ceiling is dominated by this number under realistic load; ops teams should expect aggregate iter/s roughly proportional to this gauge times the number of cores available.",
+			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_solo",
+			Help: "MKEM (CTIDH1024-X25519) Decapsulate ops/sec measured by a single goroutine at startup: the best-case per-core throughput. Useful for a one-replica-per-machine deployment baseline. For a co-tenanted host, see the saturated gauge instead.",
 		},
 	)
-	selfCheckOpsPerSecAggregate = prometheus.NewGauge(
+	selfCheckOpsPerSecSaturated = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_total",
-			Help: "MKEM (CTIDH1024-X25519) Decapsulate operations per second across all cores reported by runtime.NumCPU at startup. Useful as a rough throughput-ceiling estimate for queue-sizing.",
+			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_saturated",
+			Help: "MKEM (CTIDH1024-X25519) Decapsulate ops/sec measured at startup with runtime.NumCPU goroutines decapsulating concurrently: the realistic aggregate ceiling for this replica process when the host's cores are fully utilised. Ops teams running multiple replicas on one host should divide this number by the count of co-tenanted replicas to estimate the per-replica share.",
 		},
 	)
 	selfCheckCores = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "katzenpost_replica_selfcheck_num_cpu",
-			Help: "Cores reported by runtime.NumCPU at startup. Pair with the per-core ops/sec gauge to reason about queue size and worker counts.",
+			Help: "Cores reported by runtime.NumCPU at startup. Pair with the solo and saturated ops/sec gauges to reason about queue size and worker counts.",
 		},
 	)
 )
@@ -144,8 +144,8 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(retryQueueSize)
 		prometheus.MustRegister(retryQueueDropped)
 		prometheus.MustRegister(replicaDroppedByReason)
-		prometheus.MustRegister(selfCheckOpsPerSec)
-		prometheus.MustRegister(selfCheckOpsPerSecAggregate)
+		prometheus.MustRegister(selfCheckOpsPerSecSolo)
+		prometheus.MustRegister(selfCheckOpsPerSecSaturated)
 		prometheus.MustRegister(selfCheckCores)
 	})
 
@@ -225,12 +225,15 @@ func DroppedByReason(reason string) {
 }
 
 // SelfCheckResults publishes the startup CTIDH self-check measurement
-// to its prometheus gauges. opsPerSecPerCore is the single-threaded
-// per-core rate from the benchmark; numCPU is the number of cores at
-// startup; the aggregate gauge is their product. Ops teams can read
-// these to estimate the replica's pigeonhole throughput ceiling.
-func SelfCheckResults(opsPerSecPerCore float64, numCPU int) {
-	selfCheckOpsPerSec.Set(opsPerSecPerCore)
+// to its prometheus gauges. opsPerSecSolo is the single-goroutine rate
+// (best-case per-core); opsPerSecSaturated is the
+// NumCPU-goroutines-in-parallel aggregate (realistic ceiling for one
+// replica process when its host is busy); numCPU is the cores at
+// startup. The two ops/sec numbers serve different audiences:
+// per-machine deployments care about the solo number, co-tenanted
+// deployments care about the saturated number.
+func SelfCheckResults(opsPerSecSolo, opsPerSecSaturated float64, numCPU int) {
+	selfCheckOpsPerSecSolo.Set(opsPerSecSolo)
+	selfCheckOpsPerSecSaturated.Set(opsPerSecSaturated)
 	selfCheckCores.Set(float64(numCPU))
-	selfCheckOpsPerSecAggregate.Set(opsPerSecPerCore * float64(numCPU))
 }
