@@ -76,6 +76,26 @@ var (
 		},
 		[]string{"reason"},
 	)
+	dispatchSemWaiters = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_courier_dispatch_sem_waiters",
+			Help: "Number of replica-dispatch goroutines currently blocked acquiring a dispatchSem slot. Sustained values above zero indicate the hard-coded maxConcurrentReplicaDispatch cap (256) is acting as a constraint and a Courier.MaxConcurrentReplicaDispatch config field should be considered.",
+		},
+	)
+	copyShardReadCompute = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_courier_copy_shard_read_compute_seconds",
+			Help:    "Wall-clock time the courier itself spends on MKEM Encapsulate plus DecryptEnvelope during one per-shard Copy read. Pair with katzenpost_courier_copy_shard_read_total_seconds to derive the courier's CTIDH wait-to-compute ratio: W/C = (total - compute) / compute.",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+	copyShardReadTotal = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_courier_copy_shard_read_total_seconds",
+			Help:    "Wall-clock from Encapsulate start to DecryptEnvelope end on a per-shard Copy read. Includes the courier's own CTIDH compute plus the replica round-trip (network plus the replica's own CTIDH). Only observed on the success path so every sample carries both an Encap and a Decap.",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -91,6 +111,9 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(oldestAgeSeconds)
 		prometheus.MustRegister(peerConnected)
 		prometheus.MustRegister(droppedReason)
+		prometheus.MustRegister(dispatchSemWaiters)
+		prometheus.MustRegister(copyShardReadCompute)
+		prometheus.MustRegister(copyShardReadTotal)
 	})
 
 	if address != "" {
@@ -151,4 +174,33 @@ func PeerConnected(replica string, connected bool) {
 // DroppedByReason increments the per-reason drop counter.
 func DroppedByReason(reason string) {
 	droppedReason.With(prometheus.Labels{"reason": reason}).Inc()
+}
+
+// DispatchSemWaitStart marks the entry of a goroutine into the blocking
+// dispatchSem acquire. Pair with DispatchSemWaitEnd on every exit path
+// from the acquire select so the gauge tracks only currently-blocked
+// goroutines and not steady-state ones holding a slot.
+func DispatchSemWaitStart() {
+	dispatchSemWaiters.Inc()
+}
+
+// DispatchSemWaitEnd marks the exit of a goroutine from the dispatchSem
+// acquire select, whether the slot was obtained or the wait was cancelled
+// by shutdown.
+func DispatchSemWaitEnd() {
+	dispatchSemWaiters.Dec()
+}
+
+// CopyShardReadCompute observes the per-shard Copy-read MKEM compute time
+// (Encapsulate plus DecryptEnvelope), in seconds.
+func CopyShardReadCompute(d time.Duration) {
+	copyShardReadCompute.Observe(d.Seconds())
+}
+
+// CopyShardReadTotal observes the per-shard Copy-read wall-clock from
+// Encapsulate start through DecryptEnvelope end, in seconds. Recorded only
+// on the success path so every sample carries both a compute and a wait
+// component.
+func CopyShardReadTotal(d time.Duration) {
+	copyShardReadTotal.Observe(d.Seconds())
 }

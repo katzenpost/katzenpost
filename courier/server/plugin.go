@@ -538,12 +538,18 @@ func (e *Courier) scheduleReplicaDispatch(envHash *[hash.HashSize]byte, courierM
 		default:
 		}
 
-		// Acquire a semaphore slot, or exit on shutdown.
+		// Acquire a semaphore slot, or exit on shutdown. The waiters
+		// gauge is incremented around the blocking select so an operator
+		// can see whether the maxConcurrentReplicaDispatch cap is acting
+		// as a constraint.
+		instrument.DispatchSemWaitStart()
 		select {
 		case <-e.HaltCh():
+			instrument.DispatchSemWaitEnd()
 			return
 		case e.dispatchSem <- struct{}{}:
 		}
+		instrument.DispatchSemWaitEnd()
 		defer func() { <-e.dispatchSem }()
 
 		if err := e.propagateQueryToReplicas(courierMessage); err != nil {
@@ -1178,7 +1184,10 @@ func (e *Courier) tryReadFromShardReplica(
 	}
 
 	mkemScheme := mkem.NewScheme(e.envelopeScheme)
+	totalStart := time.Now()
+	encapStart := totalStart
 	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
+	computeElapsed := time.Since(encapStart)
 
 	query := &commands.ReplicaMessage{
 		Cmds:               e.cmds,
@@ -1215,10 +1224,14 @@ func (e *Courier) tryReadFromShardReplica(
 		return nil, reply.ErrorCode, nil
 	}
 
+	decapStart := time.Now()
 	raw, err := mkemScheme.DecryptEnvelope(mkemPrivateKey, shardPubKey, reply.EnvelopeReply)
 	if err != nil {
 		return nil, 0, fmt.Errorf("shard %d: decrypt envelope: %w", shard.ReplicaID, err)
 	}
+	computeElapsed += time.Since(decapStart)
+	instrument.CopyShardReadCompute(computeElapsed)
+	instrument.CopyShardReadTotal(time.Since(totalStart))
 	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(raw)
 	if err != nil {
 		return nil, 0, fmt.Errorf("shard %d: extract padded inner: %w", shard.ReplicaID, err)
