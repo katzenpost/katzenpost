@@ -74,9 +74,11 @@ func TestChaosProperties(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 			defer cancel()
 			res, runErr := orchestrator.RunIteration(ctx, label, cfg, orchestrator.Options{
-				RepoRoot: repoRoot,
-				Stdout:   os.Stdout,
-				Stderr:   os.Stderr,
+				RepoRoot:           repoRoot,
+				PigeonholeCpScript: envOr("CHAOS_PBT_PIGEONHOLE_CP_SCRIPT", filepath.Join(repoRoot, "chaos/scripts/pigeonhole_cp_roundtrip.sh")),
+				PigeonholeCpFileSizeBytes: envInt("CHAOS_PBT_PIGEONHOLE_CP_SIZE", 65536),
+				Stdout:                    os.Stdout,
+				Stderr:                    os.Stderr,
 			})
 			if runErr != nil {
 				t.Logf("iteration %s: orchestrator error: %v", label, runErr)

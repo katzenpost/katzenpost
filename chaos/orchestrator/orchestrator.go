@@ -55,6 +55,21 @@ type Options struct {
 	// the test suite; default dockertest_all_pigeonhole.
 	PigeonholeTarget string
 
+	// PigeonholeCpScript is the absolute path to the
+	// chaos/scripts/pigeonhole_cp_roundtrip.sh harness. When set,
+	// the orchestrator runs the script as an additional stage after
+	// the Go test suite succeeds; an empty string skips the stage.
+	// The script needs both the pigeonhole-cp binary (default at
+	// ~/thin_client/target/release/pigeonhole-cp) and the mixnet's
+	// generated thinclient.toml; it brings its own defaults.
+	PigeonholeCpScript string
+
+	// PigeonholeCpFileSizeBytes is the size of the random-content
+	// file the roundtrip uses; default 65536. Larger sizes exercise
+	// the multi-box path more thoroughly at proportionally slower
+	// wall-clock cost.
+	PigeonholeCpFileSizeBytes int
+
 	// MakeArgs are extra variables passed to make start. The
 	// orchestrator always adds no_metrics=false and
 	// kpclientd_metrics=true so prometheus is reachable.
@@ -86,11 +101,16 @@ type Result struct {
 	Setup           StageResult
 	ApplyChaos      StageResult
 	TestSuite       StageResult
-	Teardown        StageResult
-	BeforeSnap      Snapshot
-	DuringSnap      Snapshot
-	AfterSnap       Snapshot
-	MidRunSamples   []MidRunSample
+	// PigeonholeCpRoundtrip captures the result of the
+	// pigeonhole-cp end-to-end file roundtrip when the orchestrator
+	// is configured with a script path. Empty Stage means the stage
+	// was skipped (no script configured or the Go tests failed).
+	PigeonholeCpRoundtrip StageResult
+	Teardown              StageResult
+	BeforeSnap            Snapshot
+	DuringSnap            Snapshot
+	AfterSnap             Snapshot
+	MidRunSamples         []MidRunSample
 	// LogsOnFailure holds the last few hundred lines from each
 	// container's log when the test stage failed. Empty on success.
 	LogsOnFailure   map[string]string
@@ -217,6 +237,18 @@ func RunIteration(ctx context.Context, label string, chaosCfg *chaos.Config, opt
 		res.LogsOnFailure = dumpContainerLogs(ctx, chaos.DefaultRuntime().Docker, opts.RepoRoot, 200)
 	}
 
+	// If the Go test suite passed and the operator configured a
+	// pigeonhole-cp script, drive a real-workload roundtrip through
+	// the live mixnet. This stage uses the same docker bridge as the
+	// pumba chaos lanes, so it sees the configured per-host latency
+	// and loss exactly as a real thin-client operator would.
+	if res.TestSuite.Err == nil && opts.PigeonholeCpScript != "" {
+		res.PigeonholeCpRoundtrip = runPigeonholeCpRoundtrip(ctx, opts)
+		if res.PigeonholeCpRoundtrip.Err != nil && len(res.LogsOnFailure) == 0 {
+			res.LogsOnFailure = dumpContainerLogs(ctx, chaos.DefaultRuntime().Docker, opts.RepoRoot, 200)
+		}
+	}
+
 	// Snapshot during chaos (taken after tests because the rate
 	// queries need recent traffic to populate p50/p90/p99).
 	if snap, err := readSnapshot(ctx, opts.PrometheusURL); err == nil {
@@ -294,6 +326,39 @@ func runMake(ctx context.Context, opts Options, stage string, args ...string) St
 	stageRes.Err = err
 	stageRes.Output = boundOutput(buf.String())
 	return stageRes
+}
+
+// runPigeonholeCpRoundtrip drives the pigeonhole-cp shell harness
+// against the live mixnet. The script needs three positional args
+// (size in bytes, thinclient.toml path, pigeonhole-cp binary path);
+// we pass the first explicitly and let the script's own defaults
+// supply the other two when the operator did not set them.
+func runPigeonholeCpRoundtrip(ctx context.Context, opts Options) StageResult {
+	stage := StageResult{Stage: "pigeonhole_cp_roundtrip", StartedAt: time.Now()}
+	cctx, cancel := context.WithTimeout(ctx, opts.MakeTimeout)
+	defer cancel()
+	size := opts.PigeonholeCpFileSizeBytes
+	if size <= 0 {
+		size = 65536
+	}
+	cmd := exec.CommandContext(cctx, opts.PigeonholeCpScript, fmt.Sprintf("%d", size))
+	cmd.Dir = opts.RepoRoot
+	var buf bytes.Buffer
+	if opts.Stdout != nil {
+		cmd.Stdout = io.MultiWriter(&buf, opts.Stdout)
+	} else {
+		cmd.Stdout = &buf
+	}
+	if opts.Stderr != nil {
+		cmd.Stderr = io.MultiWriter(&buf, opts.Stderr)
+	} else {
+		cmd.Stderr = &buf
+	}
+	err := cmd.Run()
+	stage.Duration = time.Since(stage.StartedAt)
+	stage.Err = err
+	stage.Output = boundOutput(buf.String())
+	return stage
 }
 
 func runClientMake(ctx context.Context, opts Options, stage string, args ...string) StageResult {

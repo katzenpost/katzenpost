@@ -40,6 +40,7 @@ func CheckAll(r *orchestrator.Result, checks []Invariant) []Result {
 func Standard() []Invariant {
 	return []Invariant{
 		TestSuiteSucceeded,
+		PigeonholeCpRoundtripSucceeded,
 		ConsensusProgressed,
 		NoSurbReplyNoMatch,
 		SurbLifecycleBalanced,
@@ -61,6 +62,25 @@ func TestSuiteSucceeded(r *orchestrator.Result) Result {
 		Name:   "test_suite_succeeded",
 		Passed: false,
 		Reason: fmt.Sprintf("dockertest_all_pigeonhole failed: %v", r.TestSuite.Err),
+	}
+}
+
+// PigeonholeCpRoundtripSucceeded asserts the pigeonhole-cp end-to-end
+// file roundtrip succeeded under the iteration's chaos. The stage is
+// only populated when the orchestrator was configured with a script
+// path; a zero-value Stage means the orchestrator skipped it, which
+// the invariant treats as a pass (it has nothing to assert against).
+func PigeonholeCpRoundtripSucceeded(r *orchestrator.Result) Result {
+	if r.PigeonholeCpRoundtrip.Stage == "" {
+		return Result{Name: "pigeonhole_cp_roundtrip_succeeded", Passed: true}
+	}
+	if r.PigeonholeCpRoundtrip.Err == nil {
+		return Result{Name: "pigeonhole_cp_roundtrip_succeeded", Passed: true}
+	}
+	return Result{
+		Name:   "pigeonhole_cp_roundtrip_succeeded",
+		Passed: false,
+		Reason: fmt.Sprintf("pigeonhole-cp roundtrip failed in %v: %v", r.PigeonholeCpRoundtrip.Duration, r.PigeonholeCpRoundtrip.Err),
 	}
 }
 
