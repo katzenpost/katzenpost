@@ -254,18 +254,25 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	// Startup CTIDH self-check. Measures the per-core MKEM Decapsulate
 	// ops/sec rate on this host so ops teams have a concrete throughput
 	// ceiling number to reason about, exposed both as a log notice and
-	// as prometheus gauges. The measurement also informs the
-	// ProxyWorkerCount recommendation below.
+	// as prometheus gauges. The measurement also feeds
+	// ApplyRuntimeDefaults below.
 	selfCheck := runMKEMSelfCheck(s.log)
+
+	// Auto-derive runtime-tunable config values that the operator
+	// left unset. Operators on a single-replica-per-host deployment
+	// should leave ProxyWorkerCount, IncomingQueueSize and
+	// ProxyRequestTimeout absent from their TOML so this picks
+	// sensible values from runtime.NumCPU and the self-check's
+	// saturated ops/sec; explicit TOML values win and are intended
+	// only for multi-tenant or research workloads.
+	s.cfg.ApplyRuntimeDefaults(selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
+	s.log.Noticef("Replica runtime defaults: ProxyWorkerCount=%d, IncomingQueueSize=%d, ProxyRequestTimeout=%ds (derived from runtime.NumCPU=%d, saturated CTIDH=%.2f ops/s)",
+		s.cfg.ProxyWorkerCount, s.cfg.IncomingQueueSize, s.cfg.ProxyRequestTimeout,
+		selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
 
 	// Initialize proxy request manager and concurrency limiter.
 	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
 	s.proxySema = make(chan struct{}, s.cfg.ProxyWorkerCount)
-	s.log.Noticef("Proxy request concurrency limit: %d, timeout: %ds", s.cfg.ProxyWorkerCount, s.cfg.ProxyRequestTimeout)
-	if selfCheck.NumCPU > 0 && s.cfg.ProxyWorkerCount != selfCheck.NumCPU {
-		s.log.Noticef("ProxyWorkerCount=%d, runtime.NumCPU=%d: consider matching to NumCPU for best parallel CTIDH throughput on this host.",
-			s.cfg.ProxyWorkerCount, selfCheck.NumCPU)
-	}
 
 	if s.cfg.GenerateOnly {
 		return nil, ErrGenerateOnly
