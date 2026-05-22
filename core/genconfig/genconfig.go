@@ -1549,6 +1549,26 @@ providers:
       "targets": [{"expr": "rate(katzenpost_courier_dropped_reason_total[1m])", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 23,
+      "title": "Replica: Drops by Reason (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 88},
+      "targets": [{"expr": "rate(katzenpost_replica_dropped_reason_total[1m])", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Per-replica drop attribution introduced in commit 294d3fc2. Reasons: nil_command (a connector dispatched a nil command, should never fire), malformed_rebalance_fingerprint (the persisted rebalance marker was corrupt on startup), peer_permanent_error (a peer replica returned a permanent ErrorCode during replication, retry is futile)."
+    },
+    {
+      "id": 24,
+      "title": "Courier: Outgoing Backpressure Indicator (queue length × oldest age)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 88},
+      "targets": [{"expr": "katzenpost_courier_queue_length * katzenpost_courier_oldest_age_seconds", "refId": "A", "legendFormat": "{{job}} -> {{replica}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "Composite indicator for the courier dispatch path's lack of an overflow bound (the third concern from the recent queue audit). Multiplying queue depth by oldest-pending age yields a number that grows linearly during a slow-replica stall and is exactly zero in steady state. A sustained non-zero value during the courier_backlog_recovery scenario would confirm the bound is needed."
     }
   ]
 }
@@ -1975,7 +1995,8 @@ providers:
         {"expr": "rate(katzenpost_client_surb_id_created_total[1m])", "refId": "A", "legendFormat": "{{job}} created"},
         {"expr": "rate(katzenpost_client_surb_id_reply_received_total[1m])", "refId": "B", "legendFormat": "{{job}} reply_received"},
         {"expr": "rate(katzenpost_client_surb_id_garbage_collected_total[1m])", "refId": "C", "legendFormat": "{{job}} gc'd"},
-        {"expr": "rate(katzenpost_client_surb_id_reply_no_match_total[1m])", "refId": "D", "legendFormat": "{{job}} no_match"}
+        {"expr": "rate(katzenpost_client_surb_id_reply_no_match_total[1m])", "refId": "D", "legendFormat": "{{job}} no_match"},
+        {"expr": "rate(katzenpost_client_surb_id_rotated_total[1m])", "refId": "E", "legendFormat": "{{job}} rotated"}
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
@@ -1988,6 +2009,31 @@ providers:
       "targets": [{"expr": "katzenpost_client_surb_id_reply_no_match_total", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 13,
+      "title": "SURB Lifecycle Balance: created vs exits (cumulative)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 56},
+      "targets": [
+        {"expr": "katzenpost_client_surb_id_created_total", "refId": "A", "legendFormat": "{{job}} created"},
+        {"expr": "katzenpost_client_surb_id_reply_received_total + katzenpost_client_surb_id_garbage_collected_total + katzenpost_client_surb_id_reply_no_match_total + katzenpost_client_surb_id_rotated_total", "refId": "B", "legendFormat": "{{job}} exits (received+gc+no_match+rotated)"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "Lifecycle invariant visualization. The two series should track each other closely (the gap is the current ARQ in-flight count). A persistent widening between them indicates a SURBID is being abandoned without firing any exit counter, the same defect the SurbLifecycleBalanced PBT invariant catches."
+    },
+    {
+      "id": 14,
+      "title": "SURB Lifecycle Gap (created minus exits)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 56},
+      "targets": [
+        {"expr": "katzenpost_client_surb_id_created_total - (katzenpost_client_surb_id_reply_received_total + katzenpost_client_surb_id_garbage_collected_total + katzenpost_client_surb_id_reply_no_match_total + katzenpost_client_surb_id_rotated_total)", "refId": "A", "legendFormat": "{{job}} unaccounted"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "Same as panel 13 but as a single signed series. Tracks arq_inflight closely under healthy operation; a value that grows without ARQ inflight also growing indicates a real leak."
     }
   ]
 }

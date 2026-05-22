@@ -1,0 +1,37 @@
+# Scenario: flaky dirauths exercise the state machine.
+#
+# Apply heavy latency and loss to one dirauth out of three while
+# leaving the other two healthy. The voting FSM should still reach
+# consensus on a 2-of-3 threshold; one dirauth's vote may arrive
+# after the deadline or be re-requested via PeerRetry, but the
+# consensus document should still publish on schedule.
+#
+# This is the scenario for the state machine violations bug category
+# (task #37). What to watch in prometheus:
+#
+#   - katzenpost_dirauth_consensus_reached_total continues to advance
+#     epoch by epoch (auth1 only, summed across dirauths is meaningless
+#     here because each peer agrees on the same epoch).
+#   - katzenpost_dirauth_votes_received_total{result="..."} should show
+#     mostly result="ok" with occasional result="too_late" or
+#     result="transient_error" for the flaky peer.
+#   - katzenpost_dirauth_voting_phase per dirauth should still rotate
+#     through accept_desc, accept_vote, accept_reveal, accept_cert,
+#     accept_signature in order.
+#   - katzenpost_dirauth_document_generation_seconds p99 should not
+#     grow without bound; the dirauth that completed without the
+#     flaky peer should be near its baseline.
+#   - kpclientd should continue serving thin-client traffic; PKI
+#     fetches should succeed every epoch via the healthy peers.
+#
+# A failure would be: consensus stalls (no new consensus_reached_total
+# events for 2+ epochs), or the phase gauge gets stuck, or one
+# dirauth shows phase=X while others show phase=Y.
+
+duration: 12m
+
+hosts:
+  auth1:
+    latency_ms: 400
+    jitter_ms: 100
+    loss_pct: 5
