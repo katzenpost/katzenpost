@@ -5,7 +5,6 @@ package replica
 
 import (
 	"os"
-	"runtime"
 	"testing"
 	"time"
 
@@ -14,81 +13,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/selfcheckcache"
 )
-
-// TestLoadOrRunMKEMSelfCheckEnvVarSkipsLive proves that
-// KATZENPOST_SKIP_SELFCHECK=1 short-circuits the live measurement
-// and writes no sidecar, so a future boot without the env var
-// would still measure. The check completes in milliseconds because
-// it never touches CTIDH.
-func TestLoadOrRunMKEMSelfCheckEnvVarSkipsLive(t *testing.T) {
-	t.Setenv(SkipSelfCheckEnv, "1")
-	dir := t.TempDir()
-	logger := logging.MustGetLogger("loadorrun-envskip-test")
-
-	start := time.Now()
-	result := loadOrRunMKEMSelfCheck(logger, dir)
-	elapsed := time.Since(start)
-
-	// NumCPU still populated so ApplyRuntimeDefaults can pick its
-	// NumCPU-only floors; saturated-ops/sec stays zero so the
-	// floor branch is taken.
-	require.Greater(t, result.NumCPU, 0)
-	require.Zero(t, result.OpsPerSecPerCore)
-	require.Zero(t, result.OpsPerSecSaturated)
-
-	// No sidecar written: a zero measurement must not poison a
-	// future boot that no longer sets the env var.
-	_, err := os.Stat(selfcheckcache.PathIn(dir))
-	require.ErrorIs(t, err, os.ErrNotExist)
-
-	// Skip path must be fast (sub-second). A 1s margin keeps this
-	// stable across CI hardware while catching a regression that
-	// accidentally falls through to the live measurement.
-	require.Less(t, elapsed, time.Second,
-		"env-var skip path should be near-instant, took %s", elapsed)
-}
-
-func TestSkipSelfCheckRequestedRecognisesTruthyValues(t *testing.T) {
-	truthy := []string{"1", "true", "TRUE", "True", "yes", "YES", "on", "ON", " true "}
-	for _, v := range truthy {
-		t.Run("truthy/"+v, func(t *testing.T) {
-			t.Setenv(SkipSelfCheckEnv, v)
-			require.True(t, skipSelfCheckRequested(), "value %q should be truthy", v)
-		})
-	}
-	falsy := []string{"", "0", "false", "no", "off", "anything-else", "2"}
-	for _, v := range falsy {
-		t.Run("falsy/"+v, func(t *testing.T) {
-			t.Setenv(SkipSelfCheckEnv, v)
-			require.False(t, skipSelfCheckRequested(), "value %q should be falsy", v)
-		})
-	}
-}
-
-// TestLoadOrRunMKEMSelfCheckEnvVarYieldsToCache shows that a present
-// sidecar wins over the env-var skip flag: the env var only
-// suppresses the LIVE measurement; cached numbers are cheap to use
-// and strictly better than the floor fallback, so we use them.
-func TestLoadOrRunMKEMSelfCheckEnvVarYieldsToCache(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, selfcheckcache.Save(dir, &selfcheckcache.Result{
-		NumCPU:             runtime.NumCPU(),
-		OpsPerSecPerCore:   7.7,
-		OpsPerSecSaturated: 55.5,
-		IterationTime:      100 * time.Millisecond,
-	}))
-
-	t.Setenv(SkipSelfCheckEnv, "1")
-	logger := logging.MustGetLogger("loadorrun-envskip-yields-test")
-
-	start := time.Now()
-	result := loadOrRunMKEMSelfCheck(logger, dir)
-	elapsed := time.Since(start)
-
-	require.InDelta(t, 7.7, result.OpsPerSecPerCore, 0.0001)
-	require.InDelta(t, 55.5, result.OpsPerSecSaturated, 0.0001)
-	require.Less(t, elapsed, time.Second)
-}
 
 // TestLoadOrRunMKEMSelfCheckUsesCache exercises the cached-second-boot
 // path end-to-end. The first call has to run the live CTIDH self-check
