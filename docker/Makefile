@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -294,11 +294,35 @@ config-only: | $(net_name)
 $(net_name)/running.stamp:
 	make $(make_args) start
 
-start: $(docker_compose_yml) testnet_binaries
+# Restore committed self-check sidecars into each daemon's DataDir
+# before docker compose up. The replica's CTIDH self-check costs
+# multiple seconds per operation on a small CI runner, and Sphinx-
+# side server self-checks all pile onto the same boot moment; the
+# committed sidecars in ./selfcheck-cache/<svc>.toml short-circuit
+# the live measurement on first boot. The daemon validates each
+# loaded sidecar against the live host's NumCPU and the container's
+# hostname (set by docker-compose to the service identifier, which
+# matches the cache file's basename); a mismatch invalidates the
+# cache and triggers a fresh measurement, which then overwrites
+# the sidecar in the DataDir but never the committed copy here.
+# A missing or topology-mismatched cache file is non-fatal; the
+# daemon simply measures and writes its own.
+selfcheck-cache-restore: $(docker_compose_yml)
+	@if [ -d selfcheck-cache ]; then \
+	  for f in selfcheck-cache/*.toml; do \
+	    svc=$$(basename $$f .toml); \
+	    if [ -d "$(net_name)/$$svc" ]; then \
+	      cp "$$f" "$(net_name)/$$svc/selfcheck.toml"; \
+	      echo "  restored $(net_name)/$$svc/selfcheck.toml from selfcheck-cache/$$svc.toml"; \
+	    fi; \
+	  done; \
+	fi
+
+start: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
-start_debug: $(docker_compose_yml) testnet_binaries
+start_debug: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	cd $(net_name); $(docker_compose) up --remove-orphans;
 	touch $(net_name)/running.stamp
 
