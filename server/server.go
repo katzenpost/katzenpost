@@ -264,7 +264,13 @@ func New(cfg *config.Config) (*Server, error) {
 	// gauges. The measurement also feeds Debug.ApplyRuntimeDefaults
 	// below, which fills in the worker-count knobs if the operator
 	// left them at 0.
-	selfCheck := runSphinxSelfCheck(s.log, s.cfg.SphinxGeometry)
+	//
+	// The result is cached to <DataDir>/selfcheck.toml after the
+	// first successful measurement, so a restart on the same host
+	// reuses the cached numbers instead of re-measuring. The cache
+	// is invalidated automatically when hostname or NumCPU changes;
+	// see loadOrRunSphinxSelfCheck.
+	selfCheck := loadOrRunSphinxSelfCheck(s.log, s.cfg.SphinxGeometry, s.cfg.Server.DataDir)
 	s.cfg.Debug.ApplyRuntimeDefaults(selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
 	s.log.Noticef("Server runtime defaults: NumSphinxWorkers=%d, NumGatewayWorkers=%d, NumServiceWorkers=%d, NumKaetzchenWorkers=%d (derived from runtime.NumCPU=%d, saturated Sphinx=%.2f ops/s)",
 		s.cfg.Debug.NumSphinxWorkers,

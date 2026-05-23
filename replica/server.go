@@ -256,7 +256,13 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	// ceiling number to reason about, exposed both as a log notice and
 	// as prometheus gauges. The measurement also feeds
 	// ApplyRuntimeDefaults below.
-	selfCheck := runMKEMSelfCheck(s.log)
+	//
+	// The result is cached to <DataDir>/selfcheck.toml after the first
+	// successful measurement, so a restart on the same host reuses
+	// the cached numbers instead of paying the multi-second CTIDH
+	// cost again. loadOrRunMKEMSelfCheck handles invalidation when
+	// hostname or NumCPU changes.
+	selfCheck := loadOrRunMKEMSelfCheck(s.log, s.cfg.DataDir)
 
 	// Auto-derive runtime-tunable config values that the operator
 	// left unset. Operators on a single-replica-per-host deployment
