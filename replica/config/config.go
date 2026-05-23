@@ -241,6 +241,15 @@ func (c *Config) SetDefaultTimeouts() {
 // of how many replicas share the host. The
 // `saturatedOpsPerSec` measurement already captures the realised
 // contention, so the queue and timeout derivations remain accurate.
+// ApplyRuntimeDefaults fills in any zero-valued runtime-tunable
+// fields from the host's NumCPU and the CTIDH self-check rate.
+// Callers may pass saturatedOpsPerSec=0 to skip the
+// self-check-driven derivation; in that case the documented
+// minimum floors (minBuffer=64 for IncomingQueueSize,
+// minTimeoutSeconds=30 for ProxyRequestTimeout) supply sane
+// non-zero values. The `if saturatedOpsPerSec > 0` guards in
+// each branch are the safety check for that zero / negative /
+// NaN case, since float comparisons against 0 fail closed.
 func (c *Config) ApplyRuntimeDefaults(numCPU int, saturatedOpsPerSec float64) {
 	if c.ProxyWorkerCount <= 0 {
 		if numCPU < 1 {
