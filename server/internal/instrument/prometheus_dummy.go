@@ -99,3 +99,9 @@ func PacketsDroppedByReason(reason string) {}
 
 // SelfCheckResults is a no-op when the noprometheus build tag is set.
 func SelfCheckResults(opsPerSecSolo, opsPerSecSaturated float64, numCPU int) {}
+
+// HandshakeFailure is a no-op when the noprometheus build tag is set.
+func HandshakeFailure(direction, state string) {}
+
+// HandshakeDuration is a no-op when the noprometheus build tag is set.
+func HandshakeDuration(direction, result string, seconds float64) {}

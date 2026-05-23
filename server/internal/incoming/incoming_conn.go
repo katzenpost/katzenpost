@@ -216,12 +216,22 @@ func (c *incomingConn) worker() {
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
 	if err = c.w.Initialize(c.c); err != nil {
+		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		instrument.HandshakeFailure("incoming", state)
+		instrument.HandshakeDuration("incoming", "failure", handshakeElapsed.Seconds())
+
 		if wire.IsNoHandshakeBytesError(err) {
 			c.log.Debugf(
 				"TCP connection closed before Noise handshake bytes local=%v remote=%v after=%v timeout=%v: %v",
 				c.c.LocalAddr(),
 				c.c.RemoteAddr(),
-				time.Since(handshakeStart),
+				handshakeElapsed,
 				timeoutMs,
 				err,
 			)
@@ -232,7 +242,7 @@ func (c *incomingConn) worker() {
 			"Handshake failed local=%v remote=%v after=%v timeout=%v: %v",
 			c.c.LocalAddr(),
 			c.c.RemoteAddr(),
-			time.Since(handshakeStart),
+			handshakeElapsed,
 			timeoutMs,
 			err,
 		)
@@ -240,11 +250,13 @@ func (c *incomingConn) worker() {
 		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
+	handshakeElapsed := time.Since(handshakeStart)
+	instrument.HandshakeDuration("incoming", "success", handshakeElapsed.Seconds())
 	c.log.Debugf(
 		"Handshake completed local=%v remote=%v in %v",
 		c.c.LocalAddr(),
 		c.c.RemoteAddr(),
-		time.Since(handshakeStart),
+		handshakeElapsed,
 	)
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
