@@ -1881,6 +1881,102 @@ providers:
 }
 `)
 
+	// Handshake dashboard. PqXX is a five-message exchange: four
+	// Noise messages plus a post-Noise NoOp that distinguishes
+	// auth-success from auth-failure (see
+	// core/wire/session.go:finalizeHandshake). The duration histogram
+	// captures all five exchanges; the failure counter labels by
+	// direction (incoming/outgoing) and the wire state at the point
+	// of failure (including "finalization" for NoOp timeouts); the
+	// two responder-side counters attribute boot-time PKI-propagation
+	// races vs steady-state auth rejections.
+	hsFile := filepath.Join(dbDir, "handshakes.json")
+	log.Printf(WritingLogFormat, hsFile)
+	hs, err := os.Create(hsFile)
+	if err != nil {
+		return err
+	}
+	defer hs.Close()
+	Write(hs, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Katzenpost Handshakes",
+  "uid": "katzenpost-handshakes",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Handshake Duration p50 (success, by role+direction)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum by (job, direction, le) (rate(katzenpost_handshake_duration_seconds_bucket{result=\"success\"}[1m])))", "refId": "A", "legendFormat": "{{job}} {{direction}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "Handshake Duration p99 (success, by role+direction)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum by (job, direction, le) (rate(katzenpost_handshake_duration_seconds_bucket{result=\"success\"}[1m])))", "refId": "A", "legendFormat": "{{job}} {{direction}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "Handshake Failures by State (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "sum by (direction, state) (rate(katzenpost_handshake_failures_total[1m]))", "refId": "A", "legendFormat": "{{direction}} {{state}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "Failure Duration p99 (by direction)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum by (job, direction, le) (rate(katzenpost_handshake_duration_seconds_bucket{result=\"failure\"}[1m])))", "refId": "A", "legendFormat": "{{job}} {{direction}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "Responder Peer-Validation Failures (rate/s, by reason)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [
+        {"expr": "sum by (reason) (rate(katzenpost_incoming_peer_validation_failures_total[1m]))", "refId": "A", "legendFormat": "{{reason}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "TCP Connections Refused: No PKI Doc (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+      "targets": [
+        {"expr": "sum by (job) (rate(katzenpost_incoming_refused_no_pki_doc_total[1m]))", "refId": "A", "legendFormat": "{{job}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    }
+  ]
+}
+`)
+
 	// kpclientd dashboard: only meaningful when the daemon is built
 	// with -tags kpclientd_metrics and scraped by prometheus. Emitted
 	// unconditionally so that operators who later enable the build tag
