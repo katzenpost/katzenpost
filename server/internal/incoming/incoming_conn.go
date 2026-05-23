@@ -339,6 +339,8 @@ func (c *incomingConn) worker() {
 			// The peer's PKI document entry isn't for the current epoch,
 			// or within the slack time.
 			c.log.Debugf("Dropping mix command received out of epoch.")
+			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("incoming_out_of_epoch")
 			continue
 		}
 
