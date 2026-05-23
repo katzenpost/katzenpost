@@ -2422,6 +2422,18 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		if s.EpochDuration != "" {
 			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
 		}
+		// KATZENPOST_SKIP_SELFCHECK is a host-environment passthrough
+		// (no `=value` suffix means compose forwards the host's value
+		// to the container at up time). Replicas and mix/gateway/service
+		// nodes honour it to suppress their startup self-check; the
+		// dirauths, kpclientd and the courier ignore it because they do
+		// not run a self-check. Emitting the line unconditionally is
+		// harmless for the latter group, costs one line per service in
+		// the generated compose, and saves the operator (and CI) from
+		// having to regenerate compose to opt in.
+		if !strings.HasPrefix(serviceName, "auth") && serviceName != "kpclientd" {
+			envVars = append(envVars, "KATZENPOST_SKIP_SELFCHECK")
+		}
 		if s.PyroscopeDirauth && strings.HasPrefix(serviceName, "auth") {
 			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040")
 			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-dirauth")
