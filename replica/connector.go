@@ -247,11 +247,16 @@ func (co *Connector) processRetryQueue() {
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
 	co.Go(func() {
 		start := time.Now()
-		// Acquire semaphore slot (or bail on shutdown)
+		// Acquire semaphore slot (or bail on shutdown). The waiters
+		// gauge brackets the blocking select so an operator can see
+		// whether maxConcurrentReplications is acting as a constraint.
+		instrument.ReplicationSemWaitStart()
 		select {
 		case <-co.HaltCh():
+			instrument.ReplicationSemWaitEnd()
 			return
 		case co.replicationSem <- struct{}{}:
+			instrument.ReplicationSemWaitEnd()
 		}
 		defer func() { <-co.replicationSem }()
 		co.doReplication(cmd)
