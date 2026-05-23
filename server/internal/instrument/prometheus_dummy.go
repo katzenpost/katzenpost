@@ -108,3 +108,6 @@ func HandshakeDuration(direction, result string, seconds float64) {}
 
 // IncomingPeerValidationFailure is a no-op when the noprometheus build tag is set.
 func IncomingPeerValidationFailure(reason string) {}
+
+// IncomingRefusedNoPKIDoc is a no-op when the noprometheus build tag is set.
+func IncomingRefusedNoPKIDoc() {}

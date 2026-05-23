@@ -224,6 +224,12 @@ var (
 		},
 		[]string{"reason"},
 	)
+	incomingRefusedNoPKIDoc = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_incoming_refused_no_pki_doc_total",
+			Help: "Number of accepted TCP connections the listener immediately closed because no PKI document had been loaded yet. Without a document the responder cannot validate any peer; attempting Noise would produce spurious handshake failures on the initiator side. This counter should grow only during the startup convergence window (before the first PKI doc is fetched) and then stay flat in steady state. Sustained growth in steady state would indicate the daemon is missing its current-epoch document and may be falling behind on consensus.",
+		},
+	)
 )
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
@@ -261,6 +267,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(handshakeFailures)
 	prometheus.MustRegister(handshakeDurationSeconds)
 	prometheus.MustRegister(incomingPeerValidationFailures)
+	prometheus.MustRegister(incomingRefusedNoPKIDoc)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress != "" {
@@ -452,4 +459,11 @@ func HandshakeDuration(direction, result string, seconds float64) {
 // userdb.
 func IncomingPeerValidationFailure(reason string) {
 	incomingPeerValidationFailures.With(prometheus.Labels{"reason": reason}).Inc()
+}
+
+// IncomingRefusedNoPKIDoc increments the counter for connections
+// the listener refused at TCP accept because no PKI document was
+// loaded.
+func IncomingRefusedNoPKIDoc() {
+	incomingRefusedNoPKIDoc.Inc()
 }

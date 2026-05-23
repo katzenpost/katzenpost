@@ -36,6 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -103,6 +104,19 @@ func (l *listener) worker() {
 				l.log.Errorf("accept failure: %v", err)
 				return
 			}
+			continue
+		}
+
+		// If no PKI document has been loaded yet, we cannot validate
+		// any incoming peer credentials at IsPeerValid time and would
+		// produce spurious handshake failures on the initiator side
+		// during the boot convergence window. Refuse the connection
+		// at the TCP layer instead and let the initiator's Connector
+		// retry on its existing backoff once both sides have converged.
+		if _, perr := l.glue.PKI().CurrentDocument(); perr != nil {
+			l.log.Debugf("Refusing connection from %v: no PKI document loaded yet", conn.RemoteAddr())
+			conn.Close()
+			instrument.IncomingRefusedNoPKIDoc()
 			continue
 		}
 
