@@ -109,6 +109,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			}
 			c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
 				peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+			instrument.IncomingPeerValidationFailure("client_dropped_from_userdb")
 			c.canSend = false
 			return false
 		} else if isClient {
@@ -175,6 +176,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		}
 		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
 			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+		instrument.IncomingPeerValidationFailure("unknown_mix")
 	}
 
 	return isValid

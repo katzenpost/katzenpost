@@ -217,6 +217,13 @@ var (
 		},
 		[]string{"direction", "result"},
 	)
+	incomingPeerValidationFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_incoming_peer_validation_failures_total",
+			Help: "Number of times the responder side of a wire handshake rejected the initiator at the Authenticator callback (after Noise msg3, before msg4). Pairs operationally with katzenpost_handshake_failures_total{direction=\"outgoing\",state=\"message_4_receive\"} on the initiator's side: a rise on both at once is the diagnostic signature of asymmetric PKI propagation, i.e. the initiator has a fresh enough view of the responder but the responder has not yet ingested the initiator's descriptor.",
+		},
+		[]string{"reason"},
+	)
 )
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
@@ -253,6 +260,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(selfCheckSphinxCores)
 	prometheus.MustRegister(handshakeFailures)
 	prometheus.MustRegister(handshakeDurationSeconds)
+	prometheus.MustRegister(incomingPeerValidationFailures)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress != "" {
@@ -432,4 +440,16 @@ func HandshakeFailure(direction, state string) {
 // confirm whether timeouts dominate the failure mode.
 func HandshakeDuration(direction, result string, seconds float64) {
 	handshakeDurationSeconds.With(prometheus.Labels{"direction": direction, "result": result}).Observe(seconds)
+}
+
+// IncomingPeerValidationFailure increments the responder-side
+// counter for handshakes the daemon rejected at the Authenticator
+// callback. reason classifies the rejection: "unknown_mix" when
+// PKI.AuthenticateConnection refused a putative peer mix node
+// (typically because that node is not yet in the responder's
+// current consensus), or "client_dropped_from_userdb" when a
+// previously-known client is no longer present in the gateway's
+// userdb.
+func IncomingPeerValidationFailure(reason string) {
+	incomingPeerValidationFailures.With(prometheus.Labels{"reason": reason}).Inc()
 }
