@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/quic/common"
 )
 
@@ -142,6 +143,15 @@ func (s *Server) onConn(conn net.Conn) {
 		elapsed := time.Since(handshakeStart)
 		classification := classifyAuthorityHandshakeFailure(err)
 
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("incoming", state)
+		handshakeinstrument.HandshakeDuration("incoming", "failure", elapsed)
+
 		if wire.IsNoHandshakeBytesError(err) {
 			s.log.Debugf(
 				"Peer %s: TCP connection closed before Noise handshake bytes local=%v remote=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
@@ -181,6 +191,7 @@ func (s *Server) onConn(conn net.Conn) {
 	}
 
 	handshakeDuration := time.Since(handshakeStart)
+	handshakeinstrument.HandshakeDuration("incoming", "success", handshakeDuration)
 
 	// Determine peer identifier for logging (name if known, otherwise IP)
 	peerID := auth.peerName

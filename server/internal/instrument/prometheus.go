@@ -202,34 +202,6 @@ var (
 			Help: "Cores reported by runtime.NumCPU at startup. Pair with the solo and saturated ops/sec gauges to reason about queue size and worker counts.",
 		},
 	)
-	handshakeFailures = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "katzenpost_handshake_failures_total",
-			Help: "Number of PQ Noise handshake attempts that failed, labelled by direction (incoming/outgoing) and the wire-protocol state at which the failure was observed (e.g. message_2_receive, peer_authentication, premature_close). Use the state label to distinguish slow-PQ-KEM timeouts from PKI rollover misses from connection-reset cases.",
-		},
-		[]string{"direction", "state"},
-	)
-	handshakeDurationSeconds = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "katzenpost_handshake_duration_seconds",
-			Help:    "Wall-clock duration of a PQ Noise handshake attempt, labelled by direction (incoming/outgoing) and result (success/failure). Success samples bound the realistic PQ-KEM cost on this host; failure samples sit at or just above the configured HandshakeTimeout when a timeout was the cause.",
-			Buckets: prometheus.ExponentialBuckets(0.05, 2, 12),
-		},
-		[]string{"direction", "result"},
-	)
-	incomingPeerValidationFailures = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "katzenpost_incoming_peer_validation_failures_total",
-			Help: "Number of times the responder side of a wire handshake rejected the initiator at the Authenticator callback (after Noise msg3, before msg4). Pairs operationally with katzenpost_handshake_failures_total{direction=\"outgoing\",state=\"message_4_receive\"} on the initiator's side: a rise on both at once is the diagnostic signature of asymmetric PKI propagation, i.e. the initiator has a fresh enough view of the responder but the responder has not yet ingested the initiator's descriptor.",
-		},
-		[]string{"reason"},
-	)
-	incomingRefusedNoPKIDoc = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "katzenpost_incoming_refused_no_pki_doc_total",
-			Help: "Number of accepted TCP connections the listener immediately closed because no PKI document had been loaded yet. Without a document the responder cannot validate any peer; attempting Noise would produce spurious handshake failures on the initiator side. This counter should grow only during the startup convergence window (before the first PKI doc is fetched) and then stay flat in steady state. Sustained growth in steady state would indicate the daemon is missing its current-epoch document and may be falling behind on consensus.",
-		},
-	)
 )
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
@@ -264,10 +236,6 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(selfCheckSphinxOpsPerSecSolo)
 	prometheus.MustRegister(selfCheckSphinxOpsPerSecSaturated)
 	prometheus.MustRegister(selfCheckSphinxCores)
-	prometheus.MustRegister(handshakeFailures)
-	prometheus.MustRegister(handshakeDurationSeconds)
-	prometheus.MustRegister(incomingPeerValidationFailures)
-	prometheus.MustRegister(incomingRefusedNoPKIDoc)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress != "" {
@@ -431,39 +399,3 @@ func SelfCheckResults(opsPerSecSolo, opsPerSecSaturated float64, numCPU int) {
 	selfCheckSphinxCores.Set(float64(numCPU))
 }
 
-// HandshakeFailure increments the failure counter for a PQ Noise
-// handshake attempt. direction is "incoming" or "outgoing"; state
-// is one of the wire.HandshakeState values (e.g. "message_2_receive",
-// "peer_authentication") plus the synthetic "premature_close" for
-// the TCP-closed-before-bytes case and "other" for anything else.
-func HandshakeFailure(direction, state string) {
-	handshakeFailures.With(prometheus.Labels{"direction": direction, "state": state}).Inc()
-}
-
-// HandshakeDuration observes the wall-clock time of a handshake
-// attempt. direction is "incoming" or "outgoing"; result is
-// "success" or "failure". Use the success quantile to gauge the
-// realistic PQ-KEM cost on this host, and the failure quantile to
-// confirm whether timeouts dominate the failure mode.
-func HandshakeDuration(direction, result string, seconds float64) {
-	handshakeDurationSeconds.With(prometheus.Labels{"direction": direction, "result": result}).Observe(seconds)
-}
-
-// IncomingPeerValidationFailure increments the responder-side
-// counter for handshakes the daemon rejected at the Authenticator
-// callback. reason classifies the rejection: "unknown_mix" when
-// PKI.AuthenticateConnection refused a putative peer mix node
-// (typically because that node is not yet in the responder's
-// current consensus), or "client_dropped_from_userdb" when a
-// previously-known client is no longer present in the gateway's
-// userdb.
-func IncomingPeerValidationFailure(reason string) {
-	incomingPeerValidationFailures.With(prometheus.Labels{"reason": reason}).Inc()
-}
-
-// IncomingRefusedNoPKIDoc increments the counter for connections
-// the listener refused at TCP accept because no PKI document was
-// loaded.
-func IncomingRefusedNoPKIDoc() {
-	incomingRefusedNoPKIDoc.Inc()
-}

@@ -39,6 +39,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
@@ -324,8 +325,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		} else if wire.IsNoHandshakeBytesError(err) {
 			state = "premature_close"
 		}
-		instrument.HandshakeFailure("outgoing", state)
-		instrument.HandshakeDuration("outgoing", "failure", handshakeElapsed.Seconds())
+		handshakeinstrument.HandshakeFailure("outgoing", state)
+		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
 
 		localAddr := ""
 		if conn.LocalAddr() != nil {
@@ -365,7 +366,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		return
 	}
 	handshakeElapsed := time.Since(handshakeStart)
-	instrument.HandshakeDuration("outgoing", "success", handshakeElapsed.Seconds())
+	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
 	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.

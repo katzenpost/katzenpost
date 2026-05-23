@@ -47,6 +47,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/quic/common"
@@ -278,6 +279,14 @@ func (p *connector) initSession(
 	handshakeStart := time.Now()
 	if err = s.Initialize(conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("outgoing", state)
+		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
 
 		localAddr := ""
 		if conn.LocalAddr() != nil {
@@ -311,7 +320,9 @@ func (p *connector) initSession(
 		)
 	}
 
-	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), time.Since(handshakeStart))
+	handshakeElapsed := time.Since(handshakeStart)
+	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
+	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), handshakeElapsed)
 	conn.SetDeadline(time.Now().Add(responseTimeout))
 	return &connection{conn: conn, session: s}, nil
 }

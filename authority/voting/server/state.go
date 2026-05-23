@@ -61,6 +61,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/quic/common"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -1127,6 +1128,15 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
 	if err = session.Initialize(conn); err != nil {
+		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("outgoing", state)
+		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
 		// Add peer name context to the error if it's a HandshakeError
 		if he, ok := wire.GetHandshakeError(err); ok {
 			he.WithPeerName(peer.Identifier)
@@ -1135,7 +1145,9 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 		s.log.Debugf("peer %s: handshake failure details:\n%s", peer.Identifier, wire.GetDebugError(err))
 		return nil, err
 	}
-	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, time.Since(handshakeStart))
+	handshakeElapsed := time.Since(handshakeStart)
+	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
+	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, handshakeElapsed)
 
 	conn.SetDeadline(time.Now().Add(responseTimeout))
 	err = session.SendCommand(cmd)

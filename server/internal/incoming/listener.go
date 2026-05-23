@@ -32,11 +32,11 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -116,7 +116,7 @@ func (l *listener) worker() {
 		if _, perr := l.glue.PKI().CurrentDocument(); perr != nil {
 			l.log.Debugf("Refusing connection from %v: no PKI document loaded yet", conn.RemoteAddr())
 			conn.Close()
-			instrument.IncomingRefusedNoPKIDoc()
+			handshakeinstrument.IncomingRefusedNoPKIDoc()
 			continue
 		}
 
