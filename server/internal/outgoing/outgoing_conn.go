@@ -119,16 +119,21 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 	select {
 	case c.ch <- pkt:
 	default:
-		// Drop-tail.  This would be better as a RingChannel from the channels
-		// package (Drop-head), but it doesn't provide a way to tell if the
-		// item was discared or not.
+		// Drop-tail.  This would be better as a RingChannel from the
+		// channels package (Drop-head), but it doesn't provide a way to
+		// tell if the item was discarded or not.
 		//
-		// The drops here should basically only happen if the link is down,
-		// since the connection worker will handle dropping packets when the
-		// link is congested.
+		// The drops here should basically only happen if the link is
+		// down, since the connection worker will handle dropping packets
+		// when the link is congested.
 		//
-		// Note: Not logging here because this would get spammy, and we may be
-		// under catastrophic load, in which case we can't afford to log.
+		// Not logging at this site because it would get spammy and we
+		// may be under catastrophic load, but the prometheus counter
+		// rolls up cheaply and gives operators a visible signal that
+		// the per-peer outgoing buffer is full.
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("outgoing_queue_full")
+		instrument.OutgoingPacketsDropped()
 		pkt.Dispose()
 	}
 }
