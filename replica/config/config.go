@@ -152,6 +152,16 @@ type Config struct {
 	// DefaultMinFreeStorageMiB (500 MiB); a positive value overrides
 	// it.
 	MinFreeStorageMiB int64
+
+	// AllowHostnameAddresses, when true, permits DNS hostnames in
+	// Addresses, BindAddresses, MetricsAddress and the configured
+	// PKI authority Addresses lists. The default is false: a
+	// production deployment must use IP literals so the daemon
+	// never performs a DNS lookup at runtime. Genconfig sets this
+	// to true when generating docker-mixnet configs where service
+	// hostnames resolve via the compose runtime's embedded DNS.
+	// Onion addresses are always permitted.
+	AllowHostnameAddresses bool
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
@@ -173,12 +183,30 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 		return err
 	}
 
+	// Refuse DNS hostnames in advertised and bind addresses unless
+	// the operator opted in (docker-mixnet). The earlier
+	// validateAndSetupAddresses already checked URL well-formedness.
+	if err := utils.RejectDNSAddrs(c.Addresses, c.AllowHostnameAddresses); err != nil {
+		return fmt.Errorf("config: Addresses: %w", err)
+	}
+	if err := utils.RejectDNSAddrs(c.BindAddresses, c.AllowHostnameAddresses); err != nil {
+		return fmt.Errorf("config: BindAddresses: %w", err)
+	}
+	// Refuse DNS hostnames in PKI authority Addresses.
+	if c.PKI != nil && c.PKI.Voting != nil {
+		for _, auth := range c.PKI.Voting.Authorities {
+			if err := utils.RejectDNSAddrs(auth.Addresses, c.AllowHostnameAddresses); err != nil {
+				return fmt.Errorf("config: PKI authority %q: %w", auth.Identifier, err)
+			}
+		}
+	}
+
 	if c.MetricsAddress != "" {
-		// Accept either an IP literal or a hostname; the prometheus
-		// listener resolves whatever we hand it via net.Listen and we
-		// rely on the docker bridge to enforce reachability.
 		if _, _, err := net.SplitHostPort(c.MetricsAddress); err != nil {
 			return fmt.Errorf("config: MetricsAddress '%v' is invalid: %v", c.MetricsAddress, err)
+		}
+		if err := utils.RejectDNSMetricsAddr(c.MetricsAddress, c.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: %w", err)
 		}
 	}
 

@@ -448,6 +448,17 @@ type Server struct {
 	// listener and exposes only metrics, never any authority
 	// state.
 	MetricsAddress string
+
+	// AllowHostnameAddresses, when true, permits DNS hostnames in
+	// Addresses, BindAddresses, MetricsAddress and the per-authority
+	// Authority.Addresses lists. The default is false: a production
+	// dirauth deployment must use IP literals so the daemon never
+	// performs a DNS lookup at runtime. Genconfig sets this to true
+	// when generating docker-mixnet configs where dirauths reach
+	// each other via container hostnames resolved by the
+	// compose-runtime's embedded DNS. Onion addresses are always
+	// permitted.
+	AllowHostnameAddresses bool
 }
 
 // applyRetryDefaults sets default values for retry configuration
@@ -508,6 +519,12 @@ func (sCfg *Server) validate() error {
 				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 			}
 		}
+		if err := utils.RejectDNSAddrs(sCfg.Addresses, sCfg.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Authority Server Addresses: %w", err)
+		}
+		if err := utils.RejectDNSAddrs(sCfg.BindAddresses, sCfg.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Authority Server BindAddresses: %w", err)
+		}
 	} else {
 		// Try to guess a "suitable" external IPv4 address.  If people want
 		// to do loopback testing, they can manually specify one.  If people
@@ -517,6 +534,11 @@ func (sCfg *Server) validate() error {
 			return err
 		}
 		sCfg.Addresses = []string{addr.String() + defaultAddress}
+	}
+	if sCfg.MetricsAddress != "" {
+		if err := utils.RejectDNSMetricsAddr(sCfg.MetricsAddress, sCfg.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Authority Server: %w", err)
+		}
 	}
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Authority: DataDir '%v' is not an absolute path", sCfg.DataDir)
@@ -599,6 +621,15 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	// Validate and fixup the various sections.
 	if err := cfg.Server.validate(); err != nil {
 		return err
+	}
+	// Refuse DNS hostnames in peer-authority Addresses unless the
+	// operator explicitly opted in (docker-mixnet). Authority.Validate
+	// already checked URL well-formedness; this loop applies the
+	// no-DNS-in-production policy across every authority entry.
+	for _, auth := range cfg.Authorities {
+		if err := utils.RejectDNSAddrs(auth.Addresses, cfg.Server.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Authority %q: %w", auth.Identifier, err)
+		}
 	}
 	if err := cfg.Logging.validate(); err != nil {
 		return err

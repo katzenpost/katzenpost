@@ -323,6 +323,10 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.SphinxGeometry = s.SphinxGeometry
 	cfg.PigeonholeGeometry = s.PigeonholeGeometry
+	// Docker-mixnet kpclientd reaches gateways and dirauths by
+	// container hostname through the compose-runtime's embedded
+	// DNS; opt in to hostname-permitting validation.
+	cfg.AllowHostnameAddresses = true
 
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
@@ -414,17 +418,18 @@ func (s *Katzenpost) GenCourierConfig(datadir string, serviceNodeName string) *c
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
 	cfg := &courierConfig.Config{
-		PKI:                 pki,
-		Logging:             &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
-		WireKEMScheme:       s.WireKEMScheme,
-		PKIScheme:           s.PkiSignatureScheme.Name(),
-		EnvelopeScheme:      s.ReplicaNIKEScheme.Name(),
-		DataDir:             datadir,
-		SphinxGeometry:      s.SphinxGeometry,
-		ConnectTimeout:      config.DefaultConnectTimeout,
-		HandshakeTimeout:    config.DefaultHandshakeTimeout,
-		ReauthInterval:      config.DefaultReauthInterval,
-		DisableDecoyTraffic: s.NoCourierReplicaDecoy,
+		PKI:                    pki,
+		Logging:                &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
+		WireKEMScheme:          s.WireKEMScheme,
+		PKIScheme:              s.PkiSignatureScheme.Name(),
+		EnvelopeScheme:         s.ReplicaNIKEScheme.Name(),
+		DataDir:                datadir,
+		SphinxGeometry:         s.SphinxGeometry,
+		ConnectTimeout:         config.DefaultConnectTimeout,
+		HandshakeTimeout:       config.DefaultHandshakeTimeout,
+		ReauthInterval:         config.DefaultReauthInterval,
+		DisableDecoyTraffic:    s.NoCourierReplicaDecoy,
+		AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 	}
 	cfg.MetricsAddress = metricsScrapeAddr(serviceNodeName, s.LastPort)
 	s.LastPort++
@@ -442,6 +447,9 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.ReplicaNIKEScheme = s.ReplicaNIKEScheme.Name()
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
+	// Docker-mixnet replicas address dirauths and peers by container
+	// hostname; opt in to hostname-permitting validation.
+	cfg.AllowHostnameAddresses = true
 
 	cfg.Addresses = []string{peerAddr(cfg.Identifier, s.LastReplicaPort)}
 	s.LastReplicaPort++
@@ -515,6 +523,12 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 	cfg.Server.IsGatewayNode = isGateway
 	cfg.Server.IsServiceNode = isServiceNode
+	// Generated configs live on the docker-mixnet's bridge network
+	// where peers address one another by container hostname; opt in
+	// to hostname-permitting validation for every emitted TOML so
+	// production parity is maintained (operators never use genconfig
+	// to produce production configs).
+	cfg.Server.AllowHostnameAddresses = true
 	if isGateway {
 		cfg.Management = new(sConfig.Management)
 		cfg.Management.Enable = true
@@ -666,8 +680,9 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.SphinxGeometry = s.SphinxGeometry
 		authIdentifier := fmt.Sprintf(AuthNodeFormat, i)
 		cfg.Server = &vConfig.Server{
-			WireKEMScheme:      s.WireKEMScheme,
-			PKISignatureScheme: s.PkiSignatureScheme.Name(),
+			WireKEMScheme:          s.WireKEMScheme,
+			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
+			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 			Identifier:         authIdentifier,
 			Addresses:          []string{peerAddr(authIdentifier, s.LastPort)},
 			DataDir:            filepath.Join(s.BaseDir, authIdentifier),

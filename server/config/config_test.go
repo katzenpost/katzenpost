@@ -99,7 +99,7 @@ Level = "DEBUG"
       Identifier = "auth1"
       IdentityPublicKey = "-----BEGIN ED25519 PUBLIC KEY-----\nxwPliuI1LbUbWbkDYQsL8gwYfYzsaxhdcY4kwp+f2W8=\n-----END ED25519 PUBLIC KEY-----\n"
       LinkPublicKey = "%s"
-      Addresses = ["127.0.0.1:30001"]
+      Addresses = ["tcp://127.0.0.1:30001"]
 `
 
 	tempDir, err := os.MkdirTemp("", "server_config_test")

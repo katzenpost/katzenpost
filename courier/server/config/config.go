@@ -11,6 +11,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/common/config"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (
@@ -69,6 +70,16 @@ type Config struct {
 
 	// DisableDecoyTraffic disables sending decoy traffic.
 	DisableDecoyTraffic bool
+
+	// AllowHostnameAddresses, when true, permits DNS hostnames in
+	// MetricsAddress and the configured PKI authority Addresses
+	// lists. The default is false: production deployments must use
+	// IP literals so the courier never performs a DNS lookup at
+	// runtime. Genconfig sets this to true when generating
+	// docker-mixnet courier configs where dirauth addresses are
+	// container hostnames resolved by the compose-runtime's
+	// embedded DNS. Onion addresses are always permitted.
+	AllowHostnameAddresses bool
 }
 
 func (c *Config) FixupAndValidate() error {
@@ -104,11 +115,20 @@ func (c *Config) FixupAndValidate() error {
 		c.MaxQueueSize = DefaultMaxQueueSize
 	}
 	if c.MetricsAddress != "" {
-		// Accept either an IP literal or a hostname; the prometheus
-		// listener resolves whatever we hand it via net.Listen and we
-		// rely on the docker bridge to enforce reachability.
 		if _, _, err := net.SplitHostPort(c.MetricsAddress); err != nil {
 			return fmt.Errorf("config: MetricsAddress '%v' is invalid: %v", c.MetricsAddress, err)
+		}
+		if err := utils.RejectDNSMetricsAddr(c.MetricsAddress, c.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
+	}
+	// Refuse DNS hostnames in PKI authority Addresses unless the
+	// operator opted in (docker-mixnet).
+	if c.PKI != nil && c.PKI.Voting != nil {
+		for _, auth := range c.PKI.Voting.Authorities {
+			if err := utils.RejectDNSAddrs(auth.Addresses, c.AllowHostnameAddresses); err != nil {
+				return fmt.Errorf("config: PKI authority %q: %w", auth.Identifier, err)
+			}
 		}
 	}
 	return nil

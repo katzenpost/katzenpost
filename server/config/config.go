@@ -102,6 +102,19 @@ type Server struct {
 
 	// IsServiceNode specifies if the server is a service node or not.
 	IsServiceNode bool
+
+	// AllowHostnameAddresses, when true, permits DNS hostnames in
+	// Addresses, BindAddresses, MetricsAddress and the configured
+	// PKI authority Addresses lists. The default is false: a
+	// production deployment must use IP literals for every address
+	// the daemon will dial or advertise, so that the daemon never
+	// performs a DNS lookup at runtime. This flag is set to true by
+	// genconfig when generating docker-mixnet configurations, where
+	// service hostnames (auth1, mix2, replica3, ...) resolve via
+	// the docker-compose embedded DNS rather than the system
+	// resolver. Onion addresses are always permitted because Tor
+	// resolves them inside its local proxy, not via DNS.
+	AllowHostnameAddresses bool
 }
 
 func (sCfg *Server) validate() error {
@@ -125,6 +138,17 @@ func (sCfg *Server) validate() error {
 				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 			}
 		}
+		// Production deployments must not perform DNS resolution; the
+		// daemon expects every advertised or bind address to be a
+		// literal IP. AllowHostnameAddresses is the operator opt-out
+		// for docker-mixnet testing where service hostnames resolve
+		// via an embedded DNS runtime.
+		if err := utils.RejectDNSAddrs(sCfg.Addresses, sCfg.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Server: Addresses: %w", err)
+		}
+		if err := utils.RejectDNSAddrs(sCfg.BindAddresses, sCfg.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Server: BindAddresses: %w", err)
+		}
 	} else {
 		// Try to guess a "suitable" external IPv4 address.  If people want
 		// to do loopback testing, they can manually specify one.  If people
@@ -146,11 +170,11 @@ func (sCfg *Server) validate() error {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
 	}
 	if sCfg.MetricsAddress != "" {
-		// Accept either an IP literal or a hostname; the prometheus
-		// listener resolves whatever we hand it via net.Listen and we
-		// rely on the docker bridge to enforce reachability.
 		if _, _, err := net.SplitHostPort(sCfg.MetricsAddress); err != nil {
 			return fmt.Errorf("config: Server: MetricsAddress '%v' is invalid: %v", sCfg.MetricsAddress, err)
+		}
+		if err := utils.RejectDNSMetricsAddr(sCfg.MetricsAddress, sCfg.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Server: %w", err)
 		}
 	}
 	return nil
@@ -695,6 +719,17 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 	if err := cfg.PKI.validate(cfg.Server.DataDir); err != nil {
 		return err
+	}
+	// Refuse DNS hostnames in any configured PKI authority address
+	// unless the operator explicitly opted in (docker-mixnet only).
+	// Auth.Validate above checks well-formedness; this loop applies
+	// the no-DNS-in-production policy.
+	if cfg.PKI != nil && cfg.PKI.Voting != nil {
+		for _, auth := range cfg.PKI.Voting.Authorities {
+			if err := utils.RejectDNSAddrs(auth.Addresses, cfg.Server.AllowHostnameAddresses); err != nil {
+				return fmt.Errorf("config: PKI authority %q: %w", auth.Identifier, err)
+			}
+		}
 	}
 	if cfg.Server.IsGatewayNode {
 		if cfg.Gateway == nil {
