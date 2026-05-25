@@ -273,9 +273,10 @@ func (dCfg *Debug) applyDefaults() {
 		// TODO/perf: Tune this.
 		dCfg.SchedulerSlack = defaultSchedulerSlack
 	}
-	if dCfg.SchedulerMaxBurst <= 0 {
-		dCfg.SchedulerMaxBurst = defaultSchedulerMaxBurst
-	}
+	// SchedulerMaxBurst is auto-derived later, in server.New, via
+	// ApplyRuntimeDefaults from the Sphinx self-check's saturated
+	// rate. Leave zero values alone here so they propagate as the
+	// "auto-derive" sentinel.
 	if dCfg.SendSlack < defaultSendSlack {
 		// TODO/perf: Tune this, probably upwards to be more tolerant of poor
 		// networking conditions.
@@ -318,7 +319,6 @@ func (dCfg *Debug) applyDefaults() {
 // saturatedOpsPerSec measurement already captures realised
 // contention for queue-and-timeout derivations.
 func (dCfg *Debug) ApplyRuntimeDefaults(numCPU int, saturatedOpsPerSec float64) {
-	_ = saturatedOpsPerSec // reserved for future PKI-driven derivations
 	if numCPU < 1 {
 		numCPU = 1
 	}
@@ -341,6 +341,36 @@ func (dCfg *Debug) ApplyRuntimeDefaults(numCPU int, saturatedOpsPerSec float64) 
 	}
 	if dCfg.NumKaetzchenWorkers <= 0 {
 		dCfg.NumKaetzchenWorkers = siblingPool
+	}
+	// SchedulerMaxBurst caps how many packets the scheduler dispatches
+	// per wakeup before yielding to the runtime. The constraint is
+	// anti-monopolisation: dispatching one burst should not take so
+	// long that the scheduler is locked out of competing with other
+	// goroutines. Target a 10ms yield interval; if a single Sphinx
+	// op costs perOpMs, MaxBurst = round(10 / perOpMs). Floor at
+	// NumSphinxWorkers so every worker can be fed within one burst;
+	// cap at 256 to keep the anti-monopolisation property even on
+	// hosts with very fast Sphinx Unwrap.
+	if dCfg.SchedulerMaxBurst <= 0 {
+		const targetYieldMs = 10.0
+		const burstCap = 256
+		burst := numCPU // fallback when no measurement is available
+		if saturatedOpsPerSec > 0 {
+			perOpMs := float64(numCPU) * 1000.0 / saturatedOpsPerSec
+			if perOpMs > 0 {
+				derived := int(targetYieldMs/perOpMs + 0.5)
+				if derived > burst {
+					burst = derived
+				}
+			}
+		}
+		if burst < dCfg.NumSphinxWorkers {
+			burst = dCfg.NumSphinxWorkers
+		}
+		if burst > burstCap {
+			burst = burstCap
+		}
+		dCfg.SchedulerMaxBurst = burst
 	}
 }
 

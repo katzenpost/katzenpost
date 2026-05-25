@@ -213,3 +213,79 @@ PublicKeyPem = "auth_id_pub_key.pem"
 	require.EqualError(err, "config: Server: Identifier is not set")
 
 }
+
+func TestApplyRuntimeDefaults_SchedulerMaxBurst(t *testing.T) {
+	// Auto-derivation: SchedulerMaxBurst = clamp(
+	//   round(targetYieldMs / perOpMs), NumSphinxWorkers, 256
+	// ) where perOpMs = numCPU * 1000 / saturatedOpsPerSec and
+	// targetYieldMs = 10. Floor at NumSphinxWorkers so every worker
+	// can be fed within one burst; cap at 256 to keep the
+	// anti-monopolisation property on very fast Sphinx hosts.
+	tests := []struct {
+		name               string
+		preset             int     // operator's TOML value; 0 = auto-derive
+		numCPU             int
+		saturatedOpsPerSec float64
+		wantMaxBurst       int
+	}{
+		{
+			name:               "no measurement: floor at NumSphinxWorkers",
+			numCPU:             4,
+			saturatedOpsPerSec: 0,
+			wantMaxBurst:       4,
+		},
+		{
+			name:               "negative measurement: floor at NumSphinxWorkers",
+			numCPU:             4,
+			saturatedOpsPerSec: -1.0,
+			wantMaxBurst:       4,
+		},
+		{
+			name:               "namenlos-like (NumCPU=4, ~400 ops/s → 10ms per op): floor binds",
+			numCPU:             4,
+			saturatedOpsPerSec: 400,
+			wantMaxBurst:       4, // derived 1, floor 4
+		},
+		{
+			name:               "CI-like (NumCPU=4, ~1000 ops/s → 4ms per op): floor binds",
+			numCPU:             4,
+			saturatedOpsPerSec: 1000,
+			wantMaxBurst:       4, // derived 3, floor 4
+		},
+		{
+			name:               "typical VPS (NumCPU=4, ~4000 ops/s → 1ms per op): derived 10",
+			numCPU:             4,
+			saturatedOpsPerSec: 4000,
+			wantMaxBurst:       10,
+		},
+		{
+			name:               "fast host (NumCPU=8, ~80000 ops/s → 0.1ms per op): derived 100",
+			numCPU:             8,
+			saturatedOpsPerSec: 80000,
+			wantMaxBurst:       100,
+		},
+		{
+			name:               "very fast host: cap at 256",
+			numCPU:             16,
+			saturatedOpsPerSec: 1_000_000_000, // 0.000016ms per op
+			wantMaxBurst:       256,
+		},
+		{
+			name:               "operator override preserved",
+			preset:             42,
+			numCPU:             4,
+			saturatedOpsPerSec: 4000,
+			wantMaxBurst:       42,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &Debug{SchedulerMaxBurst: tc.preset}
+			d.ApplyRuntimeDefaults(tc.numCPU, tc.saturatedOpsPerSec)
+			require.Equal(t, tc.wantMaxBurst, d.SchedulerMaxBurst,
+				"SchedulerMaxBurst (preset=%d numCPU=%d saturatedOpsPerSec=%v)",
+				tc.preset, tc.numCPU, tc.saturatedOpsPerSec)
+		})
+	}
+}
