@@ -171,23 +171,25 @@ const firstPKIDocDialWait = 30 * time.Second
 // onNewConn finishes setting up a freshly-accepted thin-client
 // connection. The conn is registered with the listener
 // immediately so callers introspecting `listener.conns` see it
-// even while waitForPKIDoc is still polling; only the PKIDoc
-// event the thin client receives is delayed. A nil return after
-// timeout falls back to the prior behaviour, so a true outage
-// still surfaces to the client as the existing "no PKI document
-// available yet" notice.
+// even while waitForPKIDoc is still polling. The strict-order
+// ConnectionStatusEvent + NewPKIDocumentEvent pair that the
+// thin client's Dial() expects as its first two messages is
+// queued only after the wait finishes; the broadcast workers
+// (doUpdateConnectionStatus and doUpdateFromPKIDoc) skip this
+// conn while initialSequenceDone is false, so a status-change
+// or doc-update fired during the wait cannot queue an
+// out-of-order message ahead of the initial pair.
 //
-// Concurrent doc-update broadcasts via doUpdateFromPKIDoc may
-// call c.sendPKIDoc on this same conn during the wait window; the
-// thin client tolerates receiving the same document twice on its
-// initial connection and uses the first one to unblock Dial().
+// A nil return after timeout preserves the prior behaviour, so a
+// true outage still surfaces to the client as the existing
+// "no PKI document available yet" notice.
 //
 // The function blocks the accept loop on purpose: thin-client
-// dials get strict-ordering ConnectionStatus+PKIDoc events on
-// their initial connection, and a brief queue under cache-cold
-// conditions is preferable to handing the client a nil PKIDoc
-// that breaks test code which expects ThinClient.PKIDocument()
-// to return non-nil immediately after Dial().
+// dials get strict ConnectionStatus+PKIDoc ordering, and a brief
+// queue under cache-cold conditions is preferable to handing the
+// client a nil PKIDoc that would break test code expecting
+// ThinClient.PKIDocument() to return non-nil immediately after
+// Dial().
 func (l *listener) onNewConn(conn net.Conn) {
 	c := newIncomingConn(l, conn)
 
@@ -199,12 +201,16 @@ func (l *listener) onNewConn(conn net.Conn) {
 	l.registerConn(c)
 	l.connsLock.Unlock()
 
+	docBlob := l.waitForPKIDoc(firstPKIDocDialWait)
+
 	status := l.getConnectionStatus()
 	c.updateConnectionStatus(status)
-
-	docBlob := l.waitForPKIDoc(firstPKIDocDialWait)
 	// Always send PKI doc event, even if empty - thin client expects it
 	c.sendPKIDoc(docBlob)
+
+	// Open the conn to broadcast traffic now that the initial
+	// strict-order pair is queued.
+	c.initialSequenceDone.Store(true)
 }
 
 // waitForPKIDoc polls the daemon's PKI cache for up to timeout,
@@ -331,6 +337,13 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 
 	l.connsLock.RLock()
 	for _, c := range l.conns {
+		// Skip conns still in their initial onNewConn sequence;
+		// queueing a status event here could land ahead of the
+		// strict-order ConnectionStatus + PKIDoc pair the thin
+		// client expects on Dial().
+		if !c.initialSequenceDone.Load() {
+			continue
+		}
 		c.updateConnectionStatus(status)
 	}
 	l.connsLock.RUnlock()
@@ -347,6 +360,12 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// broadcast to the other clients; log and continue.
 	l.connsLock.RLock()
 	for _, c := range l.conns {
+		// Skip conns still in their initial onNewConn sequence;
+		// queueing a pkidoc event here could land ahead of the
+		// initial ConnectionStatus the thin client expects first.
+		if !c.initialSequenceDone.Load() {
+			continue
+		}
 		if err := c.sendPKIDoc(docBlob); err != nil {
 			l.log.Warningf("sendPKIDoc to AppID %x failed: %s", c.appID[:], err)
 		}

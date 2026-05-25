@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -90,6 +91,17 @@ type incomingConn struct {
 	// and any goroutine waiting for the writer can unwind.
 	doneCh   chan struct{}
 	doneOnce sync.Once
+
+	// initialSequenceDone is set true by onNewConn once it has
+	// queued the strict-order ConnectionStatusEvent +
+	// NewPKIDocumentEvent pair that the thin client's Dial()
+	// expects as the first two messages. Broadcast workers
+	// (doUpdateConnectionStatus / doUpdateFromPKIDoc) check this
+	// flag and skip conns whose initial sequence is still in
+	// progress, so a status-change or doc-update event during
+	// onNewConn's wait-for-pki-doc window cannot queue an
+	// out-of-order message ahead of the initial pair.
+	initialSequenceDone atomic.Bool
 }
 
 // closeDone closes doneCh exactly once. Called from the worker's defer
