@@ -156,16 +156,39 @@ func (l *listener) worker() {
 	// NOTREACHED
 }
 
-func (l *listener) onNewConn(conn net.Conn) {
-	// Get document if available (don't block or reject if not ready)
-	var docBlob []byte
-	l.client.RLock()
-	pki := l.client.pki
-	l.client.RUnlock()
-	if pki != nil {
-		docBlob, _ = pki.currentDocument()
-	}
+// firstPKIDocDialWait bounds how long a freshly-accepted thin-client
+// connection waits in onNewConn for the daemon's PKI document cache
+// to populate before responding with a nil-blob PKIDoc event. The
+// daemon's pki.currentDocument() already falls back to the previous
+// epoch's document when the current epoch's is not yet cached, so a
+// nil return here only happens at daemon cold-start or when fetches
+// have failed for more than one epoch. Thirty seconds covers warped
+// (test) and standard epoch lengths while still surfacing a real
+// outage by returning nil and letting the thin client log the
+// "no PKI document available yet" notice.
+const firstPKIDocDialWait = 30 * time.Second
 
+// onNewConn finishes setting up a freshly-accepted thin-client
+// connection. The conn is registered with the listener
+// immediately so callers introspecting `listener.conns` see it
+// even while waitForPKIDoc is still polling; only the PKIDoc
+// event the thin client receives is delayed. A nil return after
+// timeout falls back to the prior behaviour, so a true outage
+// still surfaces to the client as the existing "no PKI document
+// available yet" notice.
+//
+// Concurrent doc-update broadcasts via doUpdateFromPKIDoc may
+// call c.sendPKIDoc on this same conn during the wait window; the
+// thin client tolerates receiving the same document twice on its
+// initial connection and uses the first one to unblock Dial().
+//
+// The function blocks the accept loop on purpose: thin-client
+// dials get strict-ordering ConnectionStatus+PKIDoc events on
+// their initial connection, and a brief queue under cache-cold
+// conditions is preferable to handing the client a nil PKIDoc
+// that breaks test code which expects ThinClient.PKIDocument()
+// to return non-nil immediately after Dial().
+func (l *listener) onNewConn(conn net.Conn) {
 	c := newIncomingConn(l, conn)
 
 	defer func() {
@@ -178,8 +201,40 @@ func (l *listener) onNewConn(conn net.Conn) {
 
 	status := l.getConnectionStatus()
 	c.updateConnectionStatus(status)
+
+	docBlob := l.waitForPKIDoc(firstPKIDocDialWait)
 	// Always send PKI doc event, even if empty - thin client expects it
 	c.sendPKIDoc(docBlob)
+}
+
+// waitForPKIDoc polls the daemon's PKI cache for up to timeout,
+// returning the CBOR-marshalled current document as soon as one is
+// available. Returns nil on timeout or listener shutdown. Poll
+// interval is short (200ms) so the typical cache-gap window of
+// a few hundred milliseconds resolves with minimal added dial
+// latency; a doc-arrival channel would be tighter but the existing
+// pki.docs.Load path is contention-free under read load.
+func (l *listener) waitForPKIDoc(timeout time.Duration) []byte {
+	const pollInterval = 200 * time.Millisecond
+	deadline := time.Now().Add(timeout)
+	for {
+		l.client.RLock()
+		pki := l.client.pki
+		l.client.RUnlock()
+		if pki != nil {
+			if blob, doc := pki.currentDocument(); doc != nil && blob != nil {
+				return blob
+			}
+		}
+		if !time.Now().Before(deadline) {
+			return nil
+		}
+		select {
+		case <-l.HaltCh():
+			return nil
+		case <-time.After(pollInterval):
+		}
+	}
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
