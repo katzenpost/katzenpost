@@ -277,7 +277,9 @@ func (l *listener) onClosedConn(c *incomingConn) {
 				return
 			}
 			delete(l.disconnectedSessions, *appID)
+			count := len(l.disconnectedSessions)
 			l.disconnectedSessionsLock.Unlock()
+			instrument.DisconnectedSessionsSet(count)
 
 			l.log.Infof("Grace period expired for session %x, cleaning up", appID[:4])
 
@@ -290,7 +292,9 @@ func (l *listener) onClosedConn(c *incomingConn) {
 			}
 		})
 		l.disconnectedSessions[*appID] = session
+		count := len(l.disconnectedSessions)
 		l.disconnectedSessionsLock.Unlock()
+		instrument.DisconnectedSessionsSet(count)
 		l.log.Infof("Preserving state for disconnected session %x (grace period %v)", appID[:4], l.sessionGracePeriod)
 		return
 	}
@@ -484,9 +488,25 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 }
 
 const (
-	defaultSessionGracePeriod = 30 * time.Minute
+	// defaultSessionGracePeriod is the compile-time fallback for how
+	// long the daemon preserves per-app state after a thin client
+	// disconnects without sending thin_close. Ten minutes is long
+	// enough for a crash-and-restart to resume seamlessly, short
+	// enough that orphans from kill -9 do not accumulate over a
+	// day's testing. The value may be overridden at runtime via
+	// (*listener).SetSessionGracePeriod, which Daemon construction
+	// calls when Config.SessionGracePeriod is non-zero.
+	defaultSessionGracePeriod = 10 * time.Minute
 	maxQueuedReplies          = 1000
 )
+
+// SetSessionGracePeriod overrides the per-app reap delay. Daemon
+// construction calls it when Config.SessionGracePeriod is non-zero.
+// Safe to call before the listener has accepted any connections; the
+// new value takes effect for every grace timer armed thereafter.
+func (l *listener) SetSessionGracePeriod(d time.Duration) {
+	l.sessionGracePeriod = d
+}
 
 type DisconnectedSession struct {
 	AppID         *[AppIDLength]byte
@@ -521,6 +541,7 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 
 		// Cancel any pending cleanup timer and flush queued replies
 		l.disconnectedSessionsLock.Lock()
+		cancelledTimer := false
 		if session, ok := l.disconnectedSessions[*existingAppID]; ok {
 			session.CleanupTimer.Stop()
 			for _, reply := range session.QueuedReplies {
@@ -529,8 +550,14 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 				}
 			}
 			delete(l.disconnectedSessions, *existingAppID)
+			cancelledTimer = true
 		}
+		count := len(l.disconnectedSessions)
 		l.disconnectedSessionsLock.Unlock()
+		if cancelledTimer {
+			instrument.DisconnectedSessionsSet(count)
+			l.log.Infof("Grace timer cancelled on session resume for AppID %x", existingAppID[:4])
+		}
 
 		token := st.ClientInstanceToken
 		c.clientToken = &token

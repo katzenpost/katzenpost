@@ -165,6 +165,11 @@ performance optimization and security requirements.`,
 	cmd.Flags().IntVar(&cfg.NumSphinxWorkers, "numSphinxWorkers", 0,
 		"number of Sphinx crypto workers per mix node (0 for default 2)")
 
+	cmd.Flags().DurationVar(&cfg.SessionGracePeriod, "sessionGracePeriod", 0,
+		"how long kpclientd preserves per-app state after a thin-client disconnect "+
+			"before reaping it (0 means use the daemon's built-in default of 10 minutes; "+
+			"docker mixnet sets a shorter value so the reaper visibly exercises)")
+
 	// Logging flags
 	cmd.Flags().StringVar(&cfg.LogLevel, "logLevel", genconfig.DebugLogLevel,
 		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")

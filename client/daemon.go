@@ -246,6 +246,9 @@ func (d *Daemon) Start() error {
 	if err != nil {
 		return err
 	}
+	if d.cfg.SessionGracePeriod > 0 {
+		d.listener.SetSessionGracePeriod(d.cfg.SessionGracePeriod)
+	}
 	d.listener.SetLocalDispatch(d.dispatchLocal)
 
 	d.cfg.Callbacks = &config.Callbacks{}

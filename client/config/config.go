@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -352,6 +353,16 @@ type Config struct {
 	// kpclientd, gateway1, auth1. Onion addresses are always
 	// permitted.
 	AllowHostnameAddresses bool
+
+	// SessionGracePeriod sets how long the daemon preserves
+	// per-app state (ARQ entries, reply queues, the AppID-to-token
+	// mapping) after a thin client's underlying connection drops
+	// without a thin_close. A reconnect within the window restores
+	// the prior session; an absence beyond it reaps the state.
+	// Zero (the unset default) means the compile-time fallback in
+	// listener.go applies. Parsed from a Go duration string such as
+	// "10m" or "30s".
+	SessionGracePeriod time.Duration
 
 	upstreamProxy *proxy.Config
 }

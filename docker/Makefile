@@ -48,6 +48,15 @@ pyroscope_dirauth?=false
 pyroscope_kpclientd?=false
 kpclientd_metrics?=false
 epoch_duration?=2m
+# session_grace_period sets how long kpclientd preserves per-app
+# state after a thin-client connection drops without thin_close.
+# Thirty seconds is the docker-mixnet default: short enough that
+# a SIGKILL'd test subprocess's resources are visibly reaped
+# within a single CI epoch, long enough that a same-test reconnect
+# resumes seamlessly. Override on the make command line for
+# longer test scenarios. Empty means "use the daemon's compile-time
+# default" (currently 10 minutes).
+session_grace_period?=30s
 mixes=3
 auths=3
 gateways=1
@@ -118,6 +127,10 @@ endif
 
 ifneq ($(epoch_duration),)
   epochDurationFlag=--epochDuration $(epoch_duration)
+endif
+
+ifneq ($(session_grace_period),)
+  sessionGracePeriodFlag=--sessionGracePeriod $(session_grace_period)
 endif
 
 ifeq ($(pyroscope_dirauth),true)
@@ -270,7 +283,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
+		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
@@ -284,7 +297,7 @@ config-only: | $(net_name)
 		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
+		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)

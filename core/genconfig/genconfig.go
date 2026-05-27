@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -154,6 +155,11 @@ type Config struct {
 	SendSlack                int
 	UnwrapDelay              int
 	NumSphinxWorkers         int
+	// SessionGracePeriod controls how long kpclientd preserves
+	// per-app state after a thin client's socket drops without a
+	// thin_close. Parsed from a Go duration string ("30s", "10m");
+	// zero means use the compile-time default in client/listener.go.
+	SessionGracePeriod time.Duration
 }
 
 type Katzenpost struct {
@@ -199,6 +205,11 @@ type Katzenpost struct {
 	SendSlack         int
 	UnwrapDelay       int
 	NumSphinxWorkers  int
+	// SessionGracePeriod is written into the generated kpclientd
+	// client.toml so the daemon's per-app reap interval is tunable
+	// per docker invocation; zero means the daemon's compile-time
+	// default applies.
+	SessionGracePeriod time.Duration
 }
 
 type AuthById []*vConfig.Authority
@@ -341,6 +352,16 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 
 	// Debug section
 	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: s.DebugConfig.DisableDecoyTraffic}
+
+	// SessionGracePeriod controls how long the daemon preserves
+	// per-app state after a thin client's connection drops without
+	// thin_close. Zero means the daemon's compile-time default
+	// (currently ten minutes) applies; the docker Makefile sets a
+	// shorter value via --sessionGracePeriod so the reaper visibly
+	// exercises within a single CI run.
+	if s.SessionGracePeriod > 0 {
+		cfg.SessionGracePeriod = s.SessionGracePeriod
+	}
 
 	// Metrics listener: only written into client.toml when the operator
 	// has chosen to enable it via --kpclientdMetricsAddress, which the
@@ -896,6 +917,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.SendSlack = cfg.SendSlack
 	s.UnwrapDelay = cfg.UnwrapDelay
 	s.NumSphinxWorkers = cfg.NumSphinxWorkers
+	s.SessionGracePeriod = cfg.SessionGracePeriod
 
 	return s
 }

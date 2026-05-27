@@ -121,6 +121,12 @@ var (
 			Help: "Current count of registered thin-client sessions.",
 		},
 	)
+	disconnectedSessions = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_client_disconnected_sessions",
+			Help: "Number of thin-client sessions whose underlying connection has dropped without thin_close and whose state is being preserved in case the client reconnects within the grace period.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -145,6 +151,7 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(surbIDReplyNoMatch)
 		prometheus.MustRegister(surbIDRotated)
 		prometheus.MustRegister(thinSessions)
+		prometheus.MustRegister(disconnectedSessions)
 	})
 	if address == "" {
 		return
@@ -233,3 +240,9 @@ func SurbIDRotated() { surbIDRotated.Inc() }
 // ThinSessionsSet sets the current count of registered thin-client
 // sessions. Pass len(listener.conns) after each register/unregister.
 func ThinSessionsSet(n int) { thinSessions.Set(float64(n)) }
+
+// DisconnectedSessionsSet sets the current count of disconnected
+// thin-client sessions whose per-app state is being preserved
+// pending a possible reconnect. Pass len(listener.disconnectedSessions)
+// after each insert into or delete from that map.
+func DisconnectedSessionsSet(n int) { disconnectedSessions.Set(float64(n)) }

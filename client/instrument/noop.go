@@ -64,3 +64,6 @@ func SurbIDRotated() {}
 
 // ThinSessionsSet is a no-op when the build tag is unset.
 func ThinSessionsSet(_ int) {}
+
+// DisconnectedSessionsSet is a no-op when the build tag is unset.
+func DisconnectedSessionsSet(_ int) {}

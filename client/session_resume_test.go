@@ -441,6 +441,139 @@ func TestGraceTimerCancelledOnResume(t *testing.T) {
 	require.True(t, ok, "token should still exist after resume")
 }
 
+// TestSessionGracePeriodDefaultIsTenMinutes pins the compile-time
+// fallback. The default was thirty minutes before this change; it was
+// lowered to ten so that orphaned sessions (most often produced by a
+// SIGKILL-killed test subprocess that could not send thin_close) do
+// not accumulate across a day's work. Anything ten minutes or shorter
+// is still ample for an app to crash, restart, and resume in a
+// realistic environment.
+func TestSessionGracePeriodDefaultIsTenMinutes(t *testing.T) {
+	require.Equal(t, 10*time.Minute, defaultSessionGracePeriod)
+}
+
+// TestSessionGracePeriodConfigurableViaSetter verifies that the
+// SetSessionGracePeriod setter, which the daemon constructor uses to
+// honour Config.SessionGracePeriod, controls how long the grace
+// timer waits before reaping a disconnected session.
+func TestSessionGracePeriodConfigurableViaSetter(t *testing.T) {
+	cleanedUp := make(chan *[AppIDLength]byte, 1)
+	l := newTestListener(t, func(appID *[AppIDLength]byte) {
+		cleanedUp <- appID
+	})
+	defer l.Shutdown()
+
+	l.SetSessionGracePeriod(100 * time.Millisecond)
+
+	appID := &[AppIDLength]byte{1, 2, 3}
+	token := [16]byte{10, 20, 30}
+	c := &incomingConn{
+		listener:    l,
+		appID:       appID,
+		sendWake:    make(chan struct{}, 1),
+		doneCh:      make(chan struct{}),
+		log:         l.logBackend.GetLogger("test"),
+		clientToken: &token,
+	}
+
+	l.clientTokensLock.Lock()
+	l.clientTokens[token] = appID
+	l.clientTokensLock.Unlock()
+
+	l.connsLock.Lock()
+	l.conns[*appID] = c
+	l.connsLock.Unlock()
+
+	start := time.Now()
+	l.onClosedConn(c)
+
+	select {
+	case got := <-cleanedUp:
+		elapsed := time.Since(start)
+		require.Equal(t, appID, got)
+		// With a 100 ms grace period, cleanup must fire at or after
+		// 100 ms and well before the default 10 m would. A generous
+		// 500 ms upper bound tolerates loaded CI.
+		require.GreaterOrEqual(t, elapsed, 100*time.Millisecond)
+		require.Less(t, elapsed, 500*time.Millisecond)
+	case <-time.After(2 * time.Second):
+		t.Fatal("grace timer did not fire cleanup at the configured 100ms")
+	}
+}
+
+// TestDisconnectedSessionsCountLifecycle pins the bookkeeping that
+// drives the katzenpost_client_disconnected_sessions Prometheus gauge:
+// inserting in onClosedConn, deleting in handleSessionToken on resume,
+// and deleting in the grace-timer callback on expiry. The gauge is a
+// thin mirror of len(l.disconnectedSessions); verifying the count is
+// equivalent to verifying the gauge across both build tags.
+func TestDisconnectedSessionsCountLifecycle(t *testing.T) {
+	l := newTestListener(t, func(*[AppIDLength]byte) {})
+	defer l.Shutdown()
+
+	l.SetSessionGracePeriod(150 * time.Millisecond)
+
+	mkConn := func(appIDBytes [AppIDLength]byte, tokenBytes [16]byte) (*incomingConn, *[AppIDLength]byte, [16]byte) {
+		appID := &appIDBytes
+		c := &incomingConn{
+			listener:    l,
+			appID:       appID,
+			sendWake:    make(chan struct{}, 1),
+			doneCh:      make(chan struct{}),
+			log:         l.logBackend.GetLogger("test"),
+			clientToken: &tokenBytes,
+		}
+		l.clientTokensLock.Lock()
+		l.clientTokens[tokenBytes] = appID
+		l.clientTokensLock.Unlock()
+		l.connsLock.Lock()
+		l.conns[*appID] = c
+		l.connsLock.Unlock()
+		return c, appID, tokenBytes
+	}
+
+	c1, appID1, token1 := mkConn([AppIDLength]byte{1, 2, 3}, [16]byte{10, 20, 30})
+	c2, appID2, _ := mkConn([AppIDLength]byte{4, 5, 6}, [16]byte{40, 50, 60})
+
+	current := func() int {
+		l.disconnectedSessionsLock.Lock()
+		defer l.disconnectedSessionsLock.Unlock()
+		return len(l.disconnectedSessions)
+	}
+
+	require.Equal(t, 0, current())
+
+	// Both go away unintentionally.
+	l.onClosedConn(c1)
+	l.onClosedConn(c2)
+	require.Equal(t, 2, current())
+
+	// Resume the first one; the gauge drops by one.
+	newC1 := &incomingConn{
+		listener: l,
+		appID:    &[AppIDLength]byte{99},
+		sendWake: make(chan struct{}, 1),
+		doneCh:   make(chan struct{}),
+		log:      l.logBackend.GetLogger("test"),
+	}
+	l.connsLock.Lock()
+	l.conns[*newC1.appID] = newC1
+	l.connsLock.Unlock()
+	l.handleSessionToken(newC1, &thin.SessionToken{ClientInstanceToken: token1})
+	require.Equal(t, 1, current())
+	_ = appID1
+
+	// Let the other expire. With 150 ms grace, allow up to 1 s.
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		if current() == 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	require.Equal(t, 0, current(), "grace timer should have reaped session for %x", appID2[:4])
+}
+
 // TestOnClosedConnLegacyClient verifies that a client without a token
 // (legacy client) gets immediate cleanup as before.
 func TestOnClosedConnLegacyClient(t *testing.T) {
