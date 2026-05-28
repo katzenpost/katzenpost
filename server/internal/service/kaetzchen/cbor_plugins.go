@@ -103,6 +103,7 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 	k.Unlock()
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", recipient)
+		instrument.PacketsDroppedByReason("cbor_kaetzchen_no_handler")
 		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
@@ -143,6 +144,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	payload, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("%v: Dropping Kaetzchen request: %v (%v)", pluginCap, pkt.ID, err)
+		instrument.PacketsDroppedByReason("cbor_kaetzchen_parse_forward_failed")
 		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
@@ -181,6 +183,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 					// response is probably invalid, so drop it
 					k.log.Errorf("%v: Got response too long: %d > max (%d)",
 						pluginCap, len(r.Payload), k.geo.UserForwardPayloadLength)
+					instrument.PacketsDroppedByReason("cbor_kaetzchen_response_too_long")
 					instrument.KaetzchenRequestsDropped(1)
 					continue
 				}
@@ -207,6 +210,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 			default:
 				// received some unknown command type
 				k.log.Errorf("%v: Failed to handle Kaetzchen request, unknown command type: (%v), response: %s", pluginCap, r, cborResponse)
+				instrument.PacketsDroppedByReason("cbor_kaetzchen_unknown_response_type")
 				instrument.KaetzchenRequestsDropped(1)
 			}
 		}

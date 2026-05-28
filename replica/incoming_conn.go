@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -58,6 +59,14 @@ type incomingConn struct {
 
 	// Mutex to protect session access
 	sessionMutex sync.RWMutex
+
+	// closed is set the first time the listener observes this
+	// connection as closed. onClosedConn uses it as an idempotency
+	// guard so duplicate cleanup calls (e.g. the unit-test path that
+	// invokes onClosedConn directly while the worker goroutine is
+	// still in its handshake) do not double-Done the listener's
+	// closeAllWg and panic with a negative counter.
+	closed atomic.Bool
 }
 
 func (c *incomingConn) Close() {
@@ -236,6 +245,14 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 	handshakeStart := time.Now()
 	if err := session.Initialize(c.c); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("incoming", state)
+		handshakeinstrument.HandshakeDuration("incoming", "failure", handshakeElapsed)
 
 		if wire.IsNoHandshakeBytesError(err) {
 			c.log.Debugf(
@@ -260,6 +277,7 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return nil, err
 	}
+	handshakeinstrument.HandshakeDuration("incoming", "success", time.Since(handshakeStart))
 
 	c.log.Debugf(
 		"Handshake completed local=%s remote=%s in %v",

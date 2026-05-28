@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -24,6 +25,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/utils"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 
 	"github.com/katzenpost/katzenpost/client/proxy"
@@ -341,6 +343,27 @@ type Config struct {
 	// only; binding to a public address is not supported.
 	MetricsAddress string
 
+	// AllowHostnameAddresses, when true, permits DNS hostnames in
+	// the Listen Tcp address, MetricsAddress, PinnedGateways
+	// addresses and VotingAuthority peer addresses. The default is
+	// false: production clients must use IP literals so the daemon
+	// never performs a DNS lookup at runtime. Genconfig sets this
+	// to true for the docker-mixnet thin-client config because the
+	// embedded compose DNS resolves daemon hostnames such as
+	// kpclientd, gateway1, auth1. Onion addresses are always
+	// permitted.
+	AllowHostnameAddresses bool
+
+	// SessionGracePeriod sets how long the daemon preserves
+	// per-app state (ARQ entries, reply queues, the AppID-to-token
+	// mapping) after a thin client's underlying connection drops
+	// without a thin_close. A reconnect within the window restores
+	// the prior session; an absence beyond it reaps the state.
+	// Zero (the unset default) means the compile-time fallback in
+	// listener.go applies. Parsed from a Go duration string such as
+	// "10m" or "30s".
+	SessionGracePeriod time.Duration
+
 	upstreamProxy *proxy.Config
 }
 
@@ -401,6 +424,34 @@ func (c *Config) FixupAndValidate() error {
 		c.upstreamProxy = uCfg
 	} else {
 		return err
+	}
+
+	// Refuse DNS hostnames in client-side addresses unless the
+	// operator explicitly opted in (docker-mixnet only). Covers
+	// the Tcp listen subtable (Unix is exempt), the kpclientd
+	// metrics listener, and every gateway / authority address the
+	// client might dial. Onion addresses are always permitted.
+	if c.Listen != nil && c.Listen.Tcp != nil {
+		if err := utils.RejectDNSMetricsAddr(c.Listen.Tcp.Address, c.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Listen.Tcp.Address: %w", err)
+		}
+	}
+	if err := utils.RejectDNSMetricsAddr(c.MetricsAddress, c.AllowHostnameAddresses); err != nil {
+		return fmt.Errorf("config: MetricsAddress: %w", err)
+	}
+	if c.PinnedGateways != nil {
+		for _, gw := range c.PinnedGateways.Gateways {
+			if err := utils.RejectDNSAddrs(gw.Addresses, c.AllowHostnameAddresses); err != nil {
+				return fmt.Errorf("config: PinnedGateway %q: %w", gw.Name, err)
+			}
+		}
+	}
+	if c.VotingAuthority != nil {
+		for _, peer := range c.VotingAuthority.Peers {
+			if err := utils.RejectDNSAddrs(peer.Addresses, c.AllowHostnameAddresses); err != nil {
+				return fmt.Errorf("config: VotingAuthority peer %q: %w", peer.Identifier, err)
+			}
+		}
 	}
 
 	return nil

@@ -96,3 +96,7 @@ func SphinxUnwraps() {}
 
 // PacketsDroppedByReason is a no-op when the noprometheus build tag is set.
 func PacketsDroppedByReason(reason string) {}
+
+// SelfCheckResults is a no-op when the noprometheus build tag is set.
+func SelfCheckResults(opsPerSecSolo, opsPerSecSaturated float64, numCPU int) {}
+

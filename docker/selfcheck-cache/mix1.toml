@@ -1,0 +1,6 @@
+Hostname = "mix1"
+MeasuredAt = 2026-05-23T19:31:55.604484079Z
+NumCPU = 4
+OpsPerSecPerCore = 896.800824482806
+OpsPerSecSaturated = 359.30237993632517
+IterationTime = "1.115074ms"

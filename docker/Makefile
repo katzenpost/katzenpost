@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics watch-grafana watch-prometheus
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -20,8 +20,14 @@ help:
 	@echo " watch-gateway      - monitor gateway log"
 	@echo " watch-all-separate - monitor all logs with component labels"
 	@echo " start-with-client-metrics - start with prometheus + grafana and kpclientd metrics"
-	@echo " watch-grafana      - print the Grafana URL"
-	@echo " watch-prometheus   - print the Prometheus URL"
+	@echo " print-url-grafana  - print the Grafana URL"
+	@echo " print-url-prometheus - print the Prometheus URL"
+	@echo " pumba-latency      - induce network delay/jitter on mixnet containers (see pumba_* vars)"
+	@echo " pumba-loss         - induce packet loss on mixnet containers (see pumba_* vars)"
+	@echo " pumba-corrupt      - induce single-bit packet corruption (see pumba_corrupt_pct)"
+	@echo " pumba-pause        - freeze a single container for pumba_pause_duration"
+	@echo " pumba-status       - show all running pumba chaos containers"
+	@echo " pumba-stop         - stop every katzenpost_pumba_* chaos container"
 	@echo " status             - show testnet consensus status"
 	@echo " show-latest-vote   - does what it says"
 	@echo " run-ping           - send a ping over the testnet"
@@ -42,6 +48,15 @@ pyroscope_dirauth?=false
 pyroscope_kpclientd?=false
 kpclientd_metrics?=false
 epoch_duration?=2m
+# session_grace_period sets how long kpclientd preserves per-app
+# state after a thin-client connection drops without thin_close.
+# Thirty seconds is the docker-mixnet default: short enough that
+# a SIGKILL'd test subprocess's resources are visibly reaped
+# within a single CI epoch, long enough that a same-test reconnect
+# resumes seamlessly. Override on the make command line for
+# longer test scenarios. Empty means "use the daemon's compile-time
+# default" (currently 10 minutes).
+session_grace_period?=30s
 mixes=3
 auths=3
 gateways=1
@@ -114,6 +129,10 @@ ifneq ($(epoch_duration),)
   epochDurationFlag=--epochDuration $(epoch_duration)
 endif
 
+ifneq ($(session_grace_period),)
+  sessionGracePeriodFlag=--sessionGracePeriod $(session_grace_period)
+endif
+
 ifeq ($(pyroscope_dirauth),true)
   pyroscope_dirauth_tags=-tags pyroscope
   pyroscopeDirauthFlag=--pyroscopeDirauth
@@ -154,6 +173,71 @@ endif
 
 ifneq ($(numSphinxWorkers),0)
   numSphinxWorkersFlag=--numSphinxWorkers $(numSphinxWorkers)
+endif
+
+# Pumba network chaos. Off by default; invoke `make pumba-latency` or
+# `make pumba-loss` to start a sidecar that applies `tc netem` qdiscs in
+# each target container's net namespace, and `make pumba-stop` to remove
+# it. Pumba speaks the docker API over the socket; on a podman host the
+# rootless socket at $XDG_RUNTIME_DIR/podman/podman.sock is mounted in
+# its place. The default target regex matches every katzenpost service
+# whose container_name follows the predictable `<role><n>` pattern set
+# by genconfig: gateway, servicenode, mix, replica, and kpclientd. The
+# dirauths, prometheus, grafana, and pyroscope are deliberately excluded
+# from chaos by default.
+#
+# The default delay and jitter are calibrated against observations on
+# the live Namenlos mixnet (https://status.namenlos.network), where
+# inter-component ICMP round-trip times cluster around 13-30 ms with
+# outliers up to 133 ms for geographically distant peers. We pick a
+# one-way per-container egress delay of 25 ms with 10 ms jitter so a
+# nine-hop ping accumulates roughly the same end-to-end network
+# latency observers see on the real network, before mix sampling
+# delays are layered on top.
+#
+#   pumba_latency_ms      one-way per-container egress delay, in ms (default 25)
+#   pumba_jitter_ms       jitter in milliseconds (default 10)
+#   pumba_distribution    uniform, normal, pareto, paretonormal (default normal)
+#   pumba_correlation_pct optional jitter correlation, percent (default empty)
+#   pumba_loss_pct        packet loss percent for `pumba-loss` (default 5)
+#   pumba_loss_corr_pct   optional loss correlation, percent (default empty)
+#   pumba_corrupt_pct     bit-corruption percent for `pumba-corrupt` (default 0.01)
+#   pumba_pause_duration  duration of `pumba-pause` freeze (default 30s)
+#   pumba_pause_target    container name to pause (default replica1)
+#   pumba_duration        how long to apply netem chaos (default 1h)
+#   pumba_targets         pumba target spec; default re2 regex matches
+#                         every mix/gateway/servicenode/replica/kpclientd
+#                         container by predictable name. Override with a
+#                         narrower regex or a space-separated list.
+#   pumba_container       name of the chaos container. Override per lane
+#                         (e.g. katzenpost_pumba_slowreplica) when
+#                         stacking asymmetric chaos; `pumba-stop` removes
+#                         every container whose name starts with
+#                         `katzenpost_pumba_`.
+pumba_latency_ms?=25
+pumba_jitter_ms?=10
+pumba_distribution?=normal
+pumba_correlation_pct?=
+pumba_loss_pct?=5
+pumba_loss_corr_pct?=
+pumba_corrupt_pct?=0.01
+pumba_pause_duration?=30s
+pumba_pause_target?=replica1
+pumba_duration?=1h
+pumba_targets?=re2:^(mix[0-9]+|gateway[0-9]+|servicenode[0-9]+|replica[0-9]+|kpclientd)$$
+pumba_image?=docker.io/gaiaadm/pumba:latest
+pumba_tc_image?=docker.io/gaiadocker/iproute2
+pumba_container?=katzenpost_pumba_chaos
+pumba_prefix=katzenpost_pumba_
+
+pumba_sock_mount=$(shell if echo ${docker}|grep -q podman; then echo "-v $$XDG_RUNTIME_DIR/podman/podman.sock:/var/run/docker.sock"; else echo "-v /var/run/docker.sock:/var/run/docker.sock"; fi)
+
+ifneq ($(pumba_correlation_pct),)
+  pumba_correlation_flag=--correlation $(pumba_correlation_pct)
+endif
+
+ifneq ($(pumba_loss_corr_pct),)
+  pumba_loss_corr_flag=--correlation $(pumba_loss_corr_pct)
 endif
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
@@ -199,7 +283,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
+		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
@@ -213,7 +297,7 @@ config-only: | $(net_name)
 		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
+		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
 		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
@@ -223,11 +307,35 @@ config-only: | $(net_name)
 $(net_name)/running.stamp:
 	make $(make_args) start
 
-start: $(docker_compose_yml) testnet_binaries
+# Restore committed self-check sidecars into each daemon's DataDir
+# before docker compose up. The replica's CTIDH self-check costs
+# multiple seconds per operation on a small CI runner, and Sphinx-
+# side server self-checks all pile onto the same boot moment; the
+# committed sidecars in ./selfcheck-cache/<svc>.toml short-circuit
+# the live measurement on first boot. The daemon validates each
+# loaded sidecar against the live host's NumCPU and the container's
+# hostname (set by docker-compose to the service identifier, which
+# matches the cache file's basename); a mismatch invalidates the
+# cache and triggers a fresh measurement, which then overwrites
+# the sidecar in the DataDir but never the committed copy here.
+# A missing or topology-mismatched cache file is non-fatal; the
+# daemon simply measures and writes its own.
+selfcheck-cache-restore: $(docker_compose_yml)
+	@if [ -d selfcheck-cache ]; then \
+	  for f in selfcheck-cache/*.toml; do \
+	    svc=$$(basename $$f .toml); \
+	    if [ -d "$(net_name)/$$svc" ]; then \
+	      cp "$$f" "$(net_name)/$$svc/selfcheck.toml"; \
+	      echo "  restored $(net_name)/$$svc/selfcheck.toml from selfcheck-cache/$$svc.toml"; \
+	    fi; \
+	  done; \
+	fi
+
+start: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
-start_debug: $(docker_compose_yml) testnet_binaries
+start_debug: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	cd $(net_name); $(docker_compose) up --remove-orphans;
 	touch $(net_name)/running.stamp
 
@@ -324,11 +432,79 @@ watch-all-separate:
 start-with-client-metrics:
 	$(MAKE) start no_metrics=false kpclientd_metrics=true
 
-watch-grafana:
+print-url-grafana:
 	@echo "Grafana is provisioned at http://127.0.0.1:3000 (default admin/admin on first run)."
 
-watch-prometheus:
+print-url-prometheus:
 	@echo "Prometheus is provisioned at http://127.0.0.1:9090."
+
+# Pumba chaos. Each start target launches a single chaos container with
+# a distinct name; multiple lanes can run side-by-side by passing
+# pumba_container=<unique-name> to a second invocation, which is how
+# asymmetric latency experiments are set up. Pumba removes the netem
+# qdisc when its duration elapses or when the container is stopped,
+# restoring normal networking. `pumba-stop` tears down every chaos
+# container whose name begins with `katzenpost_pumba_`, regardless of
+# which lane started it.
+pumba-latency:
+	@echo "Starting pumba netem delay: ${pumba_latency_ms}ms jitter=${pumba_jitter_ms}ms distribution=${pumba_distribution} duration=${pumba_duration}"
+	@echo "Targets: ${pumba_targets}"
+	$(docker) run -d --rm --name $(pumba_container) \
+		${pumba_sock_mount} \
+		${pumba_image} \
+		--log-level info \
+		netem --duration ${pumba_duration} --tc-image ${pumba_tc_image} \
+		delay --time ${pumba_latency_ms} --jitter ${pumba_jitter_ms} --distribution ${pumba_distribution} ${pumba_correlation_flag} \
+		'${pumba_targets}'
+	@echo "Pumba running as '$(pumba_container)'. Stop with: make pumba-stop"
+
+pumba-loss:
+	@echo "Starting pumba netem loss: ${pumba_loss_pct}% duration=${pumba_duration}"
+	@echo "Targets: ${pumba_targets}"
+	$(docker) run -d --rm --name $(pumba_container) \
+		${pumba_sock_mount} \
+		${pumba_image} \
+		--log-level info \
+		netem --duration ${pumba_duration} --tc-image ${pumba_tc_image} \
+		loss --percent ${pumba_loss_pct} ${pumba_loss_corr_flag} \
+		'${pumba_targets}'
+	@echo "Pumba running as '$(pumba_container)'. Stop with: make pumba-stop"
+
+pumba-corrupt:
+	@echo "Starting pumba netem corrupt: ${pumba_corrupt_pct}% duration=${pumba_duration}"
+	@echo "Targets: ${pumba_targets}"
+	$(docker) run -d --rm --name $(pumba_container) \
+		${pumba_sock_mount} \
+		${pumba_image} \
+		--log-level info \
+		netem --duration ${pumba_duration} --tc-image ${pumba_tc_image} \
+		corrupt --percent ${pumba_corrupt_pct} \
+		'${pumba_targets}'
+	@echo "Pumba running as '$(pumba_container)'. Stop with: make pumba-stop"
+
+# pumba-pause freezes the named container for the configured duration.
+# The Sphinx unwrap, replica replication, and courier outgoing queues
+# should all back up; we verify recovery once the pause ends.
+pumba-pause:
+	@echo "Pausing $(pumba_pause_target) for ${pumba_pause_duration}"
+	$(docker) run -d --rm --name $(pumba_container) \
+		${pumba_sock_mount} \
+		${pumba_image} \
+		--log-level info \
+		pause --duration ${pumba_pause_duration} \
+		$(pumba_pause_target)
+	@echo "Pumba running as '$(pumba_container)'. Stop with: make pumba-stop"
+
+pumba-status:
+	@out=$$($(docker) ps --filter "name=^$(pumba_prefix)" --format "{{.Names}}\t{{.Status}}\t{{.Command}}"); \
+		if [ -n "$$out" ]; then echo "$$out"; else echo "No pumba chaos container is running."; fi
+
+pumba-stop:
+	-@for c in $$($(docker) ps -a --filter "name=^$(pumba_prefix)" --format "{{.Names}}"); do \
+		$(docker) stop $(i_if_podman) $$c 2>/dev/null || true; \
+		$(docker) rm $(i_if_podman) $$c 2>/dev/null || true; \
+	done
+	@echo "Pumba chaos cleared."
 
 ps:
 	cd $(net_name); $(docker_compose) ps
@@ -400,6 +576,14 @@ $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/ping && go mod verify && go build -ldflags ${ldflags} && \
 			mv ping /$(net_name)/ping.$(distro)'
 
+$(net_name)/parallel-load.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd tools/chaos/cmd/parallel-load && go build -ldflags ${ldflags} && \
+			mv parallel-load /$(net_name)/parallel-load.$(distro)'
+
+$(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd tools/chaos/cmd/cp-bench && go build -ldflags ${ldflags} && \
+			mv cp-bench /$(net_name)/cp-bench.$(distro)'
+
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} && \
 			mv kpclientd /$(net_name)/kpclientd.$(distro)'
@@ -440,6 +624,46 @@ clean: clean-images clean-local
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/ping.$(distro) --thin -c /go/katzenpost/client/testdata/thinclient.toml -s echo --print-diff -n 10
+
+# parallel-load knobs. Override on the make command line:
+#   make run-parallel-load clients=8 duration=5m
+#   make run-parallel-load sweep=1,2,4,8,16 step=90s
+clients?=4
+duration?=5m
+sweep?=
+step?=90s
+payload?=256
+parallel_load_metrics_port?=9101
+run-parallel-load: $(net_name)/parallel-load.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
+	$(docker) run --network=voting_mixnet_katzenpost-net --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+        /$(net_name)/parallel-load.$(distro) \
+            -config /$(net_name)/client/thinclient-bridge.toml \
+            -clients $(clients) -duration $(duration) -sweep "$(sweep)" -step $(step) \
+            -payload-bytes $(payload) -metrics 0.0.0.0:$(parallel_load_metrics_port)
+
+# Generate the bridge-network thinclient config the first time it is needed.
+# The host-network thinclient.toml points at localhost:64331 (kpclientd is
+# exposed on the host via rootlessport); the bridge-network variant uses
+# the compose service name kpclientd:64331 directly.
+$(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
+	@echo '[Dial]'                                       >  $@
+	@echo '  [Dial.Tcp]'                                 >> $@
+	@echo '    Address = "kpclientd:64331"'              >> $@
+	@echo '    Network = "tcp"'                          >> $@
+
+# cp-bench knobs. Override on the make command line:
+#   make run-cp-bench cp_payload=65536
+#   make run-cp-bench cp_sweep=4096,16384,65536,262144
+cp_payload?=4096
+cp_sweep?=
+cp_propagation?=30s
+cp_metrics_port?=9102
+run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
+	$(docker) run --network=voting_mixnet_katzenpost-net --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+        /$(net_name)/cp-bench.$(distro) \
+            -config /$(net_name)/client/thinclient-bridge.toml \
+            -payload $(cp_payload) -sweep "$(cp_sweep)" -propagation $(cp_propagation) \
+            -metrics 0.0.0.0:$(cp_metrics_port)
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)

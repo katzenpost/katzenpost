@@ -1,0 +1,42 @@
+# Scenario: courier backlog recovery under a single-replica outage.
+#
+# Pause replica1 for thirty seconds while normal offered load
+# continues. The K=2 consistent-hashing means roughly two-fifths of
+# write requests (the boxes whose first shard happens to land on
+# replica1) will lose their primary path during the pause. The
+# courier outgoing queue depth and oldest_age_seconds should grow
+# while paused, but the K=2 redundancy should keep ongoing
+# operations completing on the surviving shard. When replica1
+# resumes, the queue should drain back to baseline within seconds.
+#
+# What this scenario tries to surface:
+#
+#   - Unbounded courier queue growth. The dispatch path's blocking
+#     send (courier/server/outgoing_conn.go:116) has no overflow
+#     bound; sustained backpressure against a paused replica could
+#     in principle grow the queue without limit before pause ends.
+#   - K=2 failover behaviour. The consistent-hashing assignment
+#     should mean every box has a live shard; reads / writes
+#     should not see BoxIDNotFound spikes.
+#   - The replication retry queue. Failed replica-to-replica
+#     replications during the pause should land in the per-peer
+#     retry queue (bounded at 2000 items per peer, TTL = 3 *
+#     epochtime.Period) and either succeed on resume or drop with a
+#     reason label.
+#   - Pumba pause behaviour itself: pumba should SIGCONT the
+#     container after the configured duration. Verify the replica
+#     resumes and rejoins the bridge cleanly.
+#
+# Apply with:
+#   go run ./tools/chaos/cmd/apply-chaos -f tools/chaos/scenarios/courier_backlog_recovery.yaml
+#
+# Pumba sends SIGCONT automatically when the pause duration ends;
+# no explicit teardown is needed for the pause primitive, but
+# `make -C docker pumba-stop` will tear the sidecar container down
+# early if the scenario must be cut short.
+
+duration: 5m
+
+hosts:
+  replica1:
+    pause_for_sec: 30

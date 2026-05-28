@@ -54,7 +54,23 @@ var (
 	PublishDeadline      = vServer.MixPublishDeadline
 	nextFetchTill        = epochtime.Period - PublishDeadline
 
-	descriptorUploadSafety = 10 * time.Second
+	// descriptorUploadSafety is the wall-clock margin we leave
+	// before MixPublishDeadline so a slow upload still finishes
+	// inside the descriptor-accept window. The hardcoded 10 s was
+	// fine for production 20-minute epochs (140 s upload budget)
+	// but broken under warped 2-minute epochs (5 s budget, too
+	// tight for a PQ-Noise handshake under chaos). Proportional
+	// safety keeps the trade-off uniform across epoch regimes;
+	// see the matching change in replica/pki.go (commit 4c1d9c85)
+	// for the full derivation and the surfacing chaos scenario
+	// (asymmetric_replica_latency).
+	//
+	// This is the SAME bug as the replica's hardcoded constant
+	// but on the mix-server side: surfaced by
+	// epoch_transition_latency at 80 ms / 25 ms, which caused
+	// mix1, mix2, and gateway1 to drop out of consensus when
+	// their descriptor uploads timed out.
+	descriptorUploadSafety = PublishDeadline / 6
 )
 
 // authDocsCache holds a snapshot of documents for authentication.

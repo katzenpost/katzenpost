@@ -1151,7 +1151,7 @@ func (d *Daemon) arqSend(message *ARQMessage, envHashKey [32]byte) error {
 	message.ReplyETA = rtt
 	message.Retransmissions = 0
 
-	d.replyLock.Lock()
+	d.lockReply()
 	d.arqSurbIDMap[*surbID] = message
 	d.arqEnvelopeHashMap[envHashKey] = surbID
 	instrument.ARQInflightSet(len(d.arqSurbIDMap))
@@ -1261,7 +1261,7 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 		return
 	}
 
-	d.replyLock.Lock()
+	d.lockReply()
 	surbID, ok := d.arqEnvelopeHashMap[*req.EnvelopeHash]
 	var arqMessage *ARQMessage
 	if ok && surbID != nil {
@@ -1385,7 +1385,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	switch transition.Action {
 	case ARQActionError:
 		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", transition.ErrorCode)
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
@@ -1403,12 +1403,13 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	case ARQActionComplete:
 		d.log.Debugf("handlePigeonholeARQReply: Write ACK received, returning success (single round-trip)")
-		d.replyLock.Lock()
+		d.lockReply()
 		if arqMessage.SURBID != nil {
 			delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		}
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
+		instrument.SurbIDDelivered()
 
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
@@ -1451,7 +1452,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 		oldSurbID := arqMessage.SURBID
 
-		d.replyLock.Lock()
+		d.lockReply()
 		// Abort if a concurrent cancel has already cleared this
 		// arqMessage. Rotating here would silently un-cancel the
 		// operation.
@@ -1534,10 +1535,11 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		return
 
 	case pigeonhole.CopyStatusSucceeded:
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
+		instrument.SurbIDDelivered()
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
@@ -1547,7 +1549,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		})
 
 	case pigeonhole.CopyStatusFailed:
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
@@ -1563,7 +1565,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 
 	default:
 		d.log.Warningf("handleCopyCommandARQReply: unexpected Status=%d, treating as failure", copyCommandReply.Status)
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
@@ -1593,7 +1595,7 @@ func (d *Daemon) scheduleCopyCommandPoll(arqMessage *ARQMessage) {
 		return
 	}
 
-	d.replyLock.Lock()
+	d.lockReply()
 	// Abort if a concurrent cancel has already removed the arqMessage
 	// from the maps. Re-registering here would silently un-cancel the
 	// operation.
@@ -1615,6 +1617,8 @@ func (d *Daemon) scheduleCopyCommandPoll(arqMessage *ARQMessage) {
 		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = placeholder
 	}
 	d.replyLock.Unlock()
+	instrument.SurbIDRotated()
+	instrument.SurbIDCreated()
 
 	if d.arqTimerQueue == nil {
 		d.log.Debugf("scheduleCopyCommandPoll: arqTimerQueue is nil, skipping poll schedule")
@@ -1746,7 +1750,7 @@ func (d *Daemon) cancelResendingCopyCommand(request *Request) {
 	}
 
 	// Look up SURB ID from EnvelopeHash map (using WriteCapHash as the key)
-	d.replyLock.Lock()
+	d.lockReply()
 	surbID, ok := d.arqEnvelopeHashMap[*req.WriteCapHash]
 	var arqMessage *ARQMessage
 	if ok && surbID != nil {
@@ -1874,7 +1878,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 
 			oldSurbID := arqMessage.SURBID
 
-			d.replyLock.Lock()
+			d.lockReply()
 			// Abort if a concurrent cancel has already cleared this
 			// arqMessage.
 			if oldSurbID == nil {
@@ -1909,10 +1913,11 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 
 		case payloadActionIdempotentSuccess:
 			d.log.Debugf("handlePayloadReply: BoxAlreadyExists for write operation - treating as idempotent success")
-			d.replyLock.Lock()
+			d.lockReply()
 			delete(d.arqSurbIDMap, *arqMessage.SURBID)
 			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 			d.replyLock.Unlock()
+			instrument.SurbIDDelivered()
 
 			conn.sendResponse(&Response{
 				AppID: arqMessage.AppID,
@@ -1927,7 +1932,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		}
 
 		// payloadActionReturnError (or retry/idempotent fell through on infrastructure failure)
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
@@ -1948,10 +1953,11 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	}
 
 	// Remove from ARQ tracking
-	d.replyLock.Lock()
+	d.lockReply()
 	delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 	d.replyLock.Unlock()
+	instrument.SurbIDDelivered()
 
 	// Handle writes: for write operations, we don't expect any payload data.
 	// A successful write returns nil plaintext and nil error.
@@ -2125,9 +2131,13 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 				return nil, fmt.Errorf("%w: failed to create StatefulReader: %v", errBACAPDecryptionFailed, err)
 			}
 
-			// Calculate the expected BoxID from the ReadCap and MessageBoxIndex
+			// Calculate the expected BoxID from the ReadCap and MessageBoxIndex.
+			// The Got field is logged for diagnostic comparison against
+			// Expected; this is information, not an error, so log it at
+			// Debug. The decryption a few lines below is what will fail
+			// loudly when the BoxIDs actually disagree.
 			expectedBoxID := messageBoxIndex.BoxIDForContext(arqMessage.ReadCap, constants.PIGEONHOLE_CTX)
-			d.log.Errorf("decryptPigeonholeReply: BoxID comparison - Expected: %x, Got from replica: %x",
+			d.log.Debugf("decryptPigeonholeReply: BoxID comparison - Expected: %x, Got from replica: %x",
 				expectedBoxID.Bytes(), innerMsg.ReadReply.BoxID)
 
 			// Decrypt the BACAP payload (also verifies signature)

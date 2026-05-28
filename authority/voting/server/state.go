@@ -61,6 +61,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/quic/common"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -1050,16 +1051,27 @@ func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd comman
 			if attempt > 0 {
 				s.log.Noticef("peer %s: succeeded after %d retries", peer.Identifier, attempt)
 			}
+			instrument.PeerSendAttempt(peer.Identifier, "ok")
+			instrument.PeerConnected(peer.Identifier, true)
 			return resp, nil
 		}
 		lastErr = err
 
 		if !retry.IsTransientError(err) {
 			s.log.Debugf("peer %s: permanent error: %v", peer.Identifier, err)
+			instrument.PeerSendAttempt(peer.Identifier, "permanent_error")
+			instrument.PeerConnected(peer.Identifier, false)
 			return nil, err
 		}
+		instrument.PeerSendAttempt(peer.Identifier, "transient_error")
 		s.log.Warningf("peer %s: attempt %d/%d failed: %v", peer.Identifier, attempt+1, maxAttempts+1, err)
 	}
+	// All retries exhausted; mark the peer disconnected and report
+	// the final outcome as deadline-exceeded so the rate panel can
+	// distinguish "transient flake we recovered from" from "we gave
+	// up entirely".
+	instrument.PeerSendAttempt(peer.Identifier, "deadline_exceeded")
+	instrument.PeerConnected(peer.Identifier, false)
 	return nil, lastErr
 }
 
@@ -1116,6 +1128,15 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
 	if err = session.Initialize(conn); err != nil {
+		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("outgoing", state)
+		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
 		// Add peer name context to the error if it's a HandshakeError
 		if he, ok := wire.GetHandshakeError(err); ok {
 			he.WithPeerName(peer.Identifier)
@@ -1124,7 +1145,9 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 		s.log.Debugf("peer %s: handshake failure details:\n%s", peer.Identifier, wire.GetDebugError(err))
 		return nil, err
 	}
-	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, time.Since(handshakeStart))
+	handshakeElapsed := time.Since(handshakeStart)
+	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
+	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, handshakeElapsed)
 
 	conn.SetDeadline(time.Now().Add(responseTimeout))
 	err = session.SendCommand(cmd)

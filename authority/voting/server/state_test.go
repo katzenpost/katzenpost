@@ -667,7 +667,7 @@ func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identity
 	cfg.Server.WireKEM = testingSchemeName
 	cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 	cfg.Server.Identifier = name
-	cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", port)}
+	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", port)}
 
 	datadir, err := os.MkdirTemp("", fmt.Sprintf("provider_%s", name))
 	if err != nil {

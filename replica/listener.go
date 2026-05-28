@@ -123,6 +123,13 @@ func (l *Listener) onInitializedConn(c *incomingConn) {
 }
 
 func (l *Listener) onClosedConn(c *incomingConn) {
+	// Idempotent: a unit test or other code path may invoke this
+	// directly while the worker goroutine is still alive; the worker's
+	// defer will also call it on exit. Without the CAS guard, the
+	// second call's Done() drives closeAllWg negative and panics.
+	if !c.closed.CompareAndSwap(false, true) {
+		return
+	}
 	l.Lock()
 	defer func() {
 		l.Unlock()

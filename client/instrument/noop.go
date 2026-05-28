@@ -50,11 +50,32 @@ func SurbIDCreated() {}
 // SurbIDGarbageCollected is a no-op when the build tag is unset.
 func SurbIDGarbageCollected() {}
 
-// SurbIDReplyReceived is a no-op when the build tag is unset.
-func SurbIDReplyReceived() {}
+// SurbIDReplyMatched is a no-op when the build tag is unset.
+func SurbIDReplyMatched() {}
+
+// SurbIDDelivered is a no-op when the build tag is unset.
+func SurbIDDelivered() {}
 
 // SurbIDReplyNoMatch is a no-op when the build tag is unset.
 func SurbIDReplyNoMatch() {}
 
+// SurbIDRotated is a no-op when the build tag is unset.
+func SurbIDRotated() {}
+
 // ThinSessionsSet is a no-op when the build tag is unset.
 func ThinSessionsSet(_ int) {}
+
+// DisconnectedSessionsSet is a no-op when the build tag is unset.
+func DisconnectedSessionsSet(_ int) {}
+
+// ReplyLockWait is a no-op when the build tag is unset.
+func ReplyLockWait(_ time.Duration) {}
+
+// CleanupForAppIDDuration is a no-op when the build tag is unset.
+func CleanupForAppIDDuration(_ time.Duration) {}
+
+// ARQOrphanedEntriesSet is a no-op when the build tag is unset.
+func ARQOrphanedEntriesSet(_ int) {}
+
+// DaemonGoroutinesSet is a no-op when the build tag is unset.
+func DaemonGoroutinesSet(_ int) {}

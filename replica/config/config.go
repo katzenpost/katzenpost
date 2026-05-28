@@ -6,7 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
-	"net/netip"
+	"net"
 	"net/url"
 	"path/filepath"
 
@@ -16,13 +16,14 @@ import (
 )
 
 const (
-	defaultAddress                = ":3266"
-	defaultOutgoingQueueSize      = 64         // Default queue size for outgoing connections
-	defaultIncomingQueueSize      = 1000       // Default queue size for incoming connection sender
-	defaultKeepAliveInterval      = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
-	defaultMaxConcurrentReplications = 4       // Default max concurrent replication operations
-	defaultProxyRequestTimeout    = 300        // Default proxy request timeout in seconds (5 minutes)
-	defaultProxyWorkerCount       = 8          // Default number of proxy request worker goroutines
+	defaultAddress           = ":3266"
+	defaultOutgoingQueueSize = 64         // Default queue size for outgoing connections
+	defaultKeepAliveInterval = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
+
+	// IncomingQueueSize, ProxyRequestTimeout and ProxyWorkerCount
+	// intentionally have no fixed defaults here. Zero in the config
+	// signals "auto-derive at server.New from runtime.NumCPU and the
+	// startup CTIDH self-check"; see ApplyRuntimeDefaults below.
 
 	// DefaultMinFreeStorageMiB is the default filesystem free-space
 	// reserve, in mebibytes. By default the replica will use the
@@ -92,28 +93,36 @@ type Config struct {
 	// queued for outgoing connections.
 	OutgoingQueueSize int
 
-	// IncomingQueueSize specifies the buffer size for the incoming connection
-	// sender queue. This must be large enough to absorb response bursts
-	// between sender ticks without blocking command processing.
+	// IncomingQueueSize is the buffer size for the incoming-connection
+	// sender queue. Omit this field (or set it to 0) on a
+	// single-replica-per-host deployment so the runtime can pick a
+	// sensible value from runtime.NumCPU and the CTIDH self-check; an
+	// explicit non-zero value overrides the auto-derivation and is
+	// intended for unusual deployments (multi-tenancy on a shared
+	// host, intentional small-buffer testing, etc.).
 	IncomingQueueSize int
 
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
 
-	// MaxConcurrentReplications specifies the maximum number of concurrent
-	// replication operations. Higher values allow more concurrent replication
-	// to shard members under high write load.
-	MaxConcurrentReplications int
-
-	// ProxyRequestTimeout specifies the timeout in seconds for proxy requests
-	// to other replicas. This must be long enough for the request to traverse
-	// the replica-to-replica connection under decoy traffic load.
+	// ProxyRequestTimeout is the per-proxy-request wall-clock timeout
+	// in seconds for waiting on a peer replica's response. Omit this
+	// field (or set it to 0) so the runtime can pick a sensible value
+	// from the CTIDH self-check's saturated rate; an explicit
+	// non-zero value overrides and is intended for unusual cases
+	// (research workloads, debugging chaos scenarios with very long
+	// per-op times, etc.).
 	ProxyRequestTimeout int
 
-	// ProxyWorkerCount specifies the number of goroutines that handle proxy
-	// requests concurrently. This prevents proxy requests from blocking the
-	// incoming connection command loop.
+	// ProxyWorkerCount caps how many proxy-request handlers can be in
+	// flight concurrently. Omit this field (or set it to 0) on a
+	// single-replica-per-host deployment so the runtime picks
+	// runtime.NumCPU divided by CoTenancyFactor; an explicit non-zero
+	// value is intended for unusual deployments where the operator
+	// wants to reserve CPU for other work beyond the co-tenanted
+	// replicas.
 	ProxyWorkerCount int
+
 
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	// If empty, no metrics listener is started.
@@ -143,6 +152,16 @@ type Config struct {
 	// DefaultMinFreeStorageMiB (500 MiB); a positive value overrides
 	// it.
 	MinFreeStorageMiB int64
+
+	// AllowHostnameAddresses, when true, permits DNS hostnames in
+	// Addresses, BindAddresses, MetricsAddress and the configured
+	// PKI authority Addresses lists. The default is false: a
+	// production deployment must use IP literals so the daemon
+	// never performs a DNS lookup at runtime. Genconfig sets this
+	// to true when generating docker-mixnet configs where service
+	// hostnames resolve via the compose runtime's embedded DNS.
+	// Onion addresses are always permitted.
+	AllowHostnameAddresses bool
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
@@ -164,9 +183,30 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 		return err
 	}
 
+	// Refuse DNS hostnames in advertised and bind addresses unless
+	// the operator opted in (docker-mixnet). The earlier
+	// validateAndSetupAddresses already checked URL well-formedness.
+	if err := utils.RejectDNSAddrs(c.Addresses, c.AllowHostnameAddresses); err != nil {
+		return fmt.Errorf("config: Addresses: %w", err)
+	}
+	if err := utils.RejectDNSAddrs(c.BindAddresses, c.AllowHostnameAddresses); err != nil {
+		return fmt.Errorf("config: BindAddresses: %w", err)
+	}
+	// Refuse DNS hostnames in PKI authority Addresses.
+	if c.PKI != nil && c.PKI.Voting != nil {
+		for _, auth := range c.PKI.Voting.Authorities {
+			if err := utils.RejectDNSAddrs(auth.Addresses, c.AllowHostnameAddresses); err != nil {
+				return fmt.Errorf("config: PKI authority %q: %w", auth.Identifier, err)
+			}
+		}
+	}
+
 	if c.MetricsAddress != "" {
-		if _, err := netip.ParseAddrPort(c.MetricsAddress); err != nil {
+		if _, _, err := net.SplitHostPort(c.MetricsAddress); err != nil {
 			return fmt.Errorf("config: MetricsAddress '%v' is invalid: %v", c.MetricsAddress, err)
+		}
+		if err := utils.RejectDNSMetricsAddr(c.MetricsAddress, c.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: %w", err)
 		}
 	}
 
@@ -197,20 +237,89 @@ func (c *Config) SetDefaultTimeouts() {
 	if c.OutgoingQueueSize <= 0 {
 		c.OutgoingQueueSize = defaultOutgoingQueueSize
 	}
-	if c.IncomingQueueSize <= 0 {
-		c.IncomingQueueSize = defaultIncomingQueueSize
-	}
 	if c.KeepAliveInterval <= 0 {
 		c.KeepAliveInterval = defaultKeepAliveInterval
 	}
-	if c.MaxConcurrentReplications <= 0 {
-		c.MaxConcurrentReplications = defaultMaxConcurrentReplications
+	// IncomingQueueSize, ProxyRequestTimeout and ProxyWorkerCount are
+	// auto-derived later, in server.New, via ApplyRuntimeDefaults.
+	// Leave zero values alone here so they propagate as the
+	// "auto-derive" sentinel.
+}
+
+// ApplyRuntimeDefaults fills in any zero-valued runtime-tunable
+// fields based on the host's CPU count and the saturated CTIDH op
+// rate measured at startup. Operators should leave the three
+// affected fields unset in their TOML so the runtime can pick
+// sensible values; an explicit non-zero value in the TOML wins.
+//
+// `numCPU` should be `runtime.NumCPU()`. `saturatedOpsPerSec` should
+// be the saturated rate from the replica's CTIDH startup
+// self-check; pass 0 if no measurement is available, in which case
+// the queue and timeout fall back to NumCPU-only defaults.
+//
+// Note: an earlier revision divided ProxyWorkerCount by an
+// operator-declared CoTenancyFactor, on the intuition that fewer
+// workers per replica would reduce CPU contention on a co-tenanted
+// host. Empirical parallel-load measurements showed the opposite: the
+// application-layer semaphore serialised pipeline parallelism more
+// aggressively than CPU contention would, and throughput dropped
+// 2.5x with a 12x p99 latency increase. The OS scheduler handles CPU
+// sharing fine; the application just needs enough work in flight to
+// mask network latency. ProxyWorkerCount = runtime.NumCPU regardless
+// of how many replicas share the host. The
+// `saturatedOpsPerSec` measurement already captures the realised
+// contention, so the queue and timeout derivations remain accurate.
+// ApplyRuntimeDefaults fills in any zero-valued runtime-tunable
+// fields from the host's NumCPU and the CTIDH self-check rate.
+// Callers may pass saturatedOpsPerSec=0 to skip the
+// self-check-driven derivation; in that case the documented
+// minimum floors (minBuffer=64 for IncomingQueueSize,
+// minTimeoutSeconds=30 for ProxyRequestTimeout) supply sane
+// non-zero values. The `if saturatedOpsPerSec > 0` guards in
+// each branch are the safety check for that zero / negative /
+// NaN case, since float comparisons against 0 fail closed.
+func (c *Config) ApplyRuntimeDefaults(numCPU int, saturatedOpsPerSec float64) {
+	if c.ProxyWorkerCount <= 0 {
+		if numCPU < 1 {
+			numCPU = 1
+		}
+		c.ProxyWorkerCount = numCPU
+	}
+	if c.IncomingQueueSize <= 0 {
+		// Default sizing: enough buffer to absorb 10 seconds of
+		// peak-rate bursts. Floor at 64 so very slow hosts still
+		// have room for bursty courier handshakes. Without a
+		// measurement, use a 32-per-CPU heuristic.
+		const targetSeconds = 10.0
+		const minBuffer = 64
+		size := minBuffer
+		if saturatedOpsPerSec > 0 {
+			derived := int(saturatedOpsPerSec*targetSeconds) + 1
+			if derived > size {
+				size = derived
+			}
+		}
+		if c.ProxyWorkerCount*32 > size {
+			size = c.ProxyWorkerCount * 32
+		}
+		c.IncomingQueueSize = size
 	}
 	if c.ProxyRequestTimeout <= 0 {
-		c.ProxyRequestTimeout = defaultProxyRequestTimeout
-	}
-	if c.ProxyWorkerCount <= 0 {
-		c.ProxyWorkerCount = defaultProxyWorkerCount
+		// Default sizing: 30 per-op times, floored at 30 seconds so
+		// chaos and warm-start scenarios get a generous-but-not-
+		// absurd window. The legacy 300-second timeout was chosen
+		// pre-self-check and overshoots the observed p99 by orders
+		// of magnitude.
+		const minTimeoutSeconds = 30
+		const opMultiplier = 30
+		t := minTimeoutSeconds
+		if saturatedOpsPerSec > 0 {
+			derived := int(opMultiplier/saturatedOpsPerSec) + 1
+			if derived > t {
+				t = derived
+			}
+		}
+		c.ProxyRequestTimeout = t
 	}
 }
 

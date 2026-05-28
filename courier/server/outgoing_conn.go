@@ -29,6 +29,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/courier/server/config"
 	"github.com/katzenpost/katzenpost/courier/server/instrument"
@@ -412,6 +413,14 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 	handshakeStart := time.Now()
 	if err = w.Initialize(conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("outgoing", state)
+		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
 
 		localAddr := ""
 		if conn.LocalAddr() != nil {
@@ -449,6 +458,7 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return nil, err
 	}
+	handshakeinstrument.HandshakeDuration("outgoing", "success", time.Since(handshakeStart))
 	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.

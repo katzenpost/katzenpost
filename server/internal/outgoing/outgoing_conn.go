@@ -39,6 +39,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
@@ -119,16 +120,21 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 	select {
 	case c.ch <- pkt:
 	default:
-		// Drop-tail.  This would be better as a RingChannel from the channels
-		// package (Drop-head), but it doesn't provide a way to tell if the
-		// item was discared or not.
+		// Drop-tail.  This would be better as a RingChannel from the
+		// channels package (Drop-head), but it doesn't provide a way to
+		// tell if the item was discarded or not.
 		//
-		// The drops here should basically only happen if the link is down,
-		// since the connection worker will handle dropping packets when the
-		// link is congested.
+		// The drops here should basically only happen if the link is
+		// down, since the connection worker will handle dropping packets
+		// when the link is congested.
 		//
-		// Note: Not logging here because this would get spammy, and we may be
-		// under catastrophic load, in which case we can't afford to log.
+		// Not logging at this site because it would get spammy and we
+		// may be under catastrophic load, but the prometheus counter
+		// rolls up cheaply and gives operators a visible signal that
+		// the per-peer outgoing buffer is full.
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("outgoing_queue_full")
+		instrument.OutgoingPacketsDropped()
 		pkt.Dispose()
 	}
 }
@@ -313,6 +319,14 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	handshakeStart := time.Now()
 	if err = w.Initialize(conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("outgoing", state)
+		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
 
 		localAddr := ""
 		if conn.LocalAddr() != nil {
@@ -351,7 +365,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
-	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
+	handshakeElapsed := time.Since(handshakeStart)
+	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
+	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 

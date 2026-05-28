@@ -99,6 +99,37 @@ var (
 		},
 		[]string{"reason"},
 	)
+	replicaDroppedByReason = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_replica_dropped_reason_total",
+			Help: "Number of commands or persisted records the replica dropped, labelled by the specific drop site. Mirrors the server-side katzenpost_dropped_reason_total pattern; counts events the retry queue does not see (e.g. nil command, permanent peer error, malformed persisted record).",
+		},
+		[]string{"reason"},
+	)
+	selfCheckOpsPerSecSolo = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_solo",
+			Help: "MKEM (CTIDH1024-X25519) Decapsulate ops/sec measured by a single goroutine at startup: the best-case per-core throughput. Useful for a one-replica-per-machine deployment baseline. For a co-tenanted host, see the saturated gauge instead.",
+		},
+	)
+	selfCheckOpsPerSecSaturated = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_saturated",
+			Help: "MKEM (CTIDH1024-X25519) Decapsulate ops/sec measured at startup with runtime.NumCPU goroutines decapsulating concurrently: the realistic aggregate ceiling for this replica process when the host's cores are fully utilised. Ops teams running multiple replicas on one host should divide this number by the count of co-tenanted replicas to estimate the per-replica share.",
+		},
+	)
+	selfCheckCores = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_selfcheck_num_cpu",
+			Help: "Cores reported by runtime.NumCPU at startup. Pair with the solo and saturated ops/sec gauges to reason about queue size and worker counts.",
+		},
+	)
+	replicationSemWaiters = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_replication_sem_waiters",
+			Help: "Number of DispatchReplication goroutines currently blocked acquiring a replicationSem slot. The cap is the package-level const maxConcurrentReplications (256) in replica/connector.go. Sustained values above zero would indicate the cap is acting as a constraint and a config field should be reconsidered; in practice the bounded work is sub-millisecond per goroutine so this gauge should stay at zero. Sibling of katzenpost_courier_dispatch_sem_waiters on the courier side.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -118,6 +149,11 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(outgoingMessagesSent)
 		prometheus.MustRegister(retryQueueSize)
 		prometheus.MustRegister(retryQueueDropped)
+		prometheus.MustRegister(replicaDroppedByReason)
+		prometheus.MustRegister(selfCheckOpsPerSecSolo)
+		prometheus.MustRegister(selfCheckOpsPerSecSaturated)
+		prometheus.MustRegister(selfCheckCores)
+		prometheus.MustRegister(replicationSemWaiters)
 	})
 
 	if address != "" {
@@ -186,4 +222,44 @@ func RetryQueueSize(size int) {
 // ("capacity" or "ttl").
 func RetryQueueDropped(reason string) {
 	retryQueueDropped.With(prometheus.Labels{"reason": reason}).Inc()
+}
+
+// DroppedByReason increments the per-reason replica drop counter. Use
+// at any site where the replica discards a command or record outside
+// the retry-queue path (which has its own RetryQueueDropped).
+func DroppedByReason(reason string) {
+	replicaDroppedByReason.With(prometheus.Labels{"reason": reason}).Inc()
+}
+
+// SelfCheckResults publishes the startup CTIDH self-check measurement
+// to its prometheus gauges. opsPerSecSolo is the single-goroutine rate
+// (best-case per-core); opsPerSecSaturated is the
+// NumCPU-goroutines-in-parallel aggregate (realistic ceiling for one
+// replica process when its host is busy); numCPU is the cores at
+// startup. The two ops/sec numbers serve different audiences:
+// per-machine deployments care about the solo number, co-tenanted
+// deployments care about the saturated number.
+func SelfCheckResults(opsPerSecSolo, opsPerSecSaturated float64, numCPU int) {
+	selfCheckOpsPerSecSolo.Set(opsPerSecSolo)
+	selfCheckOpsPerSecSaturated.Set(opsPerSecSaturated)
+	selfCheckCores.Set(float64(numCPU))
+}
+
+// ReplicationSemWaitStart and ReplicationSemWaitEnd bracket the
+// blocking acquire of the per-process replicationSem inside
+// Connector.DispatchReplication (see replica/connector.go). The
+// gauge tracks the number of goroutines currently parked on the
+// semaphore. The bounded work after the slot is held is
+// sub-millisecond, so this gauge should stay at zero in steady
+// state; sustained positive values would mean the hard-coded
+// maxConcurrentReplications const is the constraint and a
+// configurable cap should be reconsidered.
+func ReplicationSemWaitStart() {
+	replicationSemWaiters.Inc()
+}
+
+// ReplicationSemWaitEnd marks exit from the acquire select (either
+// slot obtained or shutdown).
+func ReplicationSemWaitEnd() {
+	replicationSemWaiters.Dec()
 }

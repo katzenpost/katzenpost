@@ -47,6 +47,28 @@ jobs:
       - name: Sleep for a few seconds to allow the mixnet to fully start
         run: sleep 5
 
+      # Print each daemon's startup self-check sidecar so an operator
+      # can copy the numbers into a committed cache and short-circuit
+      # the live measurement on future CI runs. The sidecars are
+      # written by every replica and every mix/gateway/service node
+      # the first time it boots on a fresh DataDir; their contents are
+      # also bundled into the testnet-state artifact below for download.
+      - name: Print selfcheck.toml from every daemon
+        if: always()
+        run: |
+          cd docker
+          shopt -s nullglob
+          found=0
+          for f in voting_mixnet/*/selfcheck.toml; do
+            found=1
+            echo "=== $f ==="
+            cat "$f" || echo "(unreadable: $f)"
+            echo
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "no selfcheck.toml files were written; the mixnet may have failed to start"
+          fi
+
       - name: run all docker integration tests in parallel
         run: cd client && make dockertest-all
 
@@ -75,3 +97,4 @@ jobs:
           path: |
             docker/voting_mixnet/*/*.log
             docker/voting_mixnet/servicenode*/courier/courier.log
+            docker/voting_mixnet/*/selfcheck.toml

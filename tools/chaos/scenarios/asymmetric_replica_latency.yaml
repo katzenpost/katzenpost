@@ -1,0 +1,52 @@
+# Scenario: asymmetric latency across the replica set induces reordering.
+#
+# Apply heavy latency to two replicas, very light latency to the other
+# three. With K=2 consistent-hashing, every box has one fast shard
+# and one slow shard depending on its hash. Reads complete on the
+# fast shard while writes pile up on the slow side; replication
+# pulls the slow side back into sync as fast as it can.
+#
+# This is the scenario for the correctness-under-reordering bug
+# category (task #39). What to watch:
+#
+#   - katzenpost_replica_replication_latency_seconds p50 / p99 on
+#     the slow replicas. p99 will be elevated; that is expected.
+#     What would be a bug: the fast replicas' p99 also climbing
+#     because their queue back-pressures upstream.
+#   - katzenpost_replica_outgoing_queue_length per peer. Slow peers
+#     accumulate; fast peers stay near zero.
+#   - katzenpost_replica_retry_queue_size and the
+#     reason-labelled retry_queue_dropped_total{reason="ttl"}.
+#     Retries that exceed 3*epochtime.Period TTL drop with reason
+#     ttl; under sustained latency this is the expected steady
+#     state.
+#   - katzenpost_client_surb_id_reply_no_match_total: should stay
+#     at 0. Out-of-order replies that arrive after a SURB-ID is
+#     rotated produce no_match events.
+#   - katzenpost_dropped_reason_total{reason="copy_dispatch_exhausted"}
+#     and reason="copy_read_decrypt_failed" attribute Copy command
+#     terminal failures under sustained slow-shard load.
+#
+# A failure would be: read-before-write race exposed as a sustained
+# stream of box_not_found errors that never recover, or unbounded
+# growth of any queue on the FAST replicas (an inversion that would
+# indicate cross-replica back-pressure).
+
+duration: 8m
+
+hosts:
+  replica1:
+    latency_ms: 300
+    jitter_ms: 100
+  replica2:
+    latency_ms: 300
+    jitter_ms: 100
+  replica3:
+    latency_ms: 15
+    jitter_ms: 5
+  replica4:
+    latency_ms: 15
+    jitter_ms: 5
+  replica5:
+    latency_ms: 15
+    jitter_ms: 5

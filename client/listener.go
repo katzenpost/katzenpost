@@ -156,16 +156,41 @@ func (l *listener) worker() {
 	// NOTREACHED
 }
 
-func (l *listener) onNewConn(conn net.Conn) {
-	// Get document if available (don't block or reject if not ready)
-	var docBlob []byte
-	l.client.RLock()
-	pki := l.client.pki
-	l.client.RUnlock()
-	if pki != nil {
-		docBlob, _ = pki.currentDocument()
-	}
+// firstPKIDocDialWait bounds how long a freshly-accepted thin-client
+// connection waits in onNewConn for the daemon's PKI document cache
+// to populate before responding with a nil-blob PKIDoc event. The
+// daemon's pki.currentDocument() already falls back to the previous
+// epoch's document when the current epoch's is not yet cached, so a
+// nil return here only happens at daemon cold-start or when fetches
+// have failed for more than one epoch. Thirty seconds covers warped
+// (test) and standard epoch lengths while still surfacing a real
+// outage by returning nil and letting the thin client log the
+// "no PKI document available yet" notice.
+const firstPKIDocDialWait = 30 * time.Second
 
+// onNewConn finishes setting up a freshly-accepted thin-client
+// connection. The conn is registered with the listener
+// immediately so callers introspecting `listener.conns` see it
+// even while waitForPKIDoc is still polling. The strict-order
+// ConnectionStatusEvent + NewPKIDocumentEvent pair that the
+// thin client's Dial() expects as its first two messages is
+// queued only after the wait finishes; the broadcast workers
+// (doUpdateConnectionStatus and doUpdateFromPKIDoc) skip this
+// conn while initialSequenceDone is false, so a status-change
+// or doc-update fired during the wait cannot queue an
+// out-of-order message ahead of the initial pair.
+//
+// A nil return after timeout preserves the prior behaviour, so a
+// true outage still surfaces to the client as the existing
+// "no PKI document available yet" notice.
+//
+// The function blocks the accept loop on purpose: thin-client
+// dials get strict ConnectionStatus+PKIDoc ordering, and a brief
+// queue under cache-cold conditions is preferable to handing the
+// client a nil PKIDoc that would break test code expecting
+// ThinClient.PKIDocument() to return non-nil immediately after
+// Dial().
+func (l *listener) onNewConn(conn net.Conn) {
 	c := newIncomingConn(l, conn)
 
 	defer func() {
@@ -176,10 +201,46 @@ func (l *listener) onNewConn(conn net.Conn) {
 	l.registerConn(c)
 	l.connsLock.Unlock()
 
+	docBlob := l.waitForPKIDoc(firstPKIDocDialWait)
+
 	status := l.getConnectionStatus()
 	c.updateConnectionStatus(status)
 	// Always send PKI doc event, even if empty - thin client expects it
 	c.sendPKIDoc(docBlob)
+
+	// Open the conn to broadcast traffic now that the initial
+	// strict-order pair is queued.
+	c.initialSequenceDone.Store(true)
+}
+
+// waitForPKIDoc polls the daemon's PKI cache for up to timeout,
+// returning the CBOR-marshalled current document as soon as one is
+// available. Returns nil on timeout or listener shutdown. Poll
+// interval is short (200ms) so the typical cache-gap window of
+// a few hundred milliseconds resolves with minimal added dial
+// latency; a doc-arrival channel would be tighter but the existing
+// pki.docs.Load path is contention-free under read load.
+func (l *listener) waitForPKIDoc(timeout time.Duration) []byte {
+	const pollInterval = 200 * time.Millisecond
+	deadline := time.Now().Add(timeout)
+	for {
+		l.client.RLock()
+		pki := l.client.pki
+		l.client.RUnlock()
+		if pki != nil {
+			if blob, doc := pki.currentDocument(); doc != nil && blob != nil {
+				return blob
+			}
+		}
+		if !time.Now().Before(deadline) {
+			return nil
+		}
+		select {
+		case <-l.HaltCh():
+			return nil
+		case <-time.After(pollInterval):
+		}
+	}
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
@@ -216,7 +277,9 @@ func (l *listener) onClosedConn(c *incomingConn) {
 				return
 			}
 			delete(l.disconnectedSessions, *appID)
+			count := len(l.disconnectedSessions)
 			l.disconnectedSessionsLock.Unlock()
+			instrument.DisconnectedSessionsSet(count)
 
 			l.log.Infof("Grace period expired for session %x, cleaning up", appID[:4])
 
@@ -229,7 +292,9 @@ func (l *listener) onClosedConn(c *incomingConn) {
 			}
 		})
 		l.disconnectedSessions[*appID] = session
+		count := len(l.disconnectedSessions)
 		l.disconnectedSessionsLock.Unlock()
+		instrument.DisconnectedSessionsSet(count)
 		l.log.Infof("Preserving state for disconnected session %x (grace period %v)", appID[:4], l.sessionGracePeriod)
 		return
 	}
@@ -276,6 +341,13 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 
 	l.connsLock.RLock()
 	for _, c := range l.conns {
+		// Skip conns still in their initial onNewConn sequence;
+		// queueing a status event here could land ahead of the
+		// strict-order ConnectionStatus + PKIDoc pair the thin
+		// client expects on Dial().
+		if !c.initialSequenceDone.Load() {
+			continue
+		}
 		c.updateConnectionStatus(status)
 	}
 	l.connsLock.RUnlock()
@@ -292,6 +364,12 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// broadcast to the other clients; log and continue.
 	l.connsLock.RLock()
 	for _, c := range l.conns {
+		// Skip conns still in their initial onNewConn sequence;
+		// queueing a pkidoc event here could land ahead of the
+		// initial ConnectionStatus the thin client expects first.
+		if !c.initialSequenceDone.Load() {
+			continue
+		}
 		if err := c.sendPKIDoc(docBlob); err != nil {
 			l.log.Warningf("sendPKIDoc to AppID %x failed: %s", c.appID[:], err)
 		}
@@ -410,9 +488,25 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 }
 
 const (
-	defaultSessionGracePeriod = 30 * time.Minute
+	// defaultSessionGracePeriod is the compile-time fallback for how
+	// long the daemon preserves per-app state after a thin client
+	// disconnects without sending thin_close. Ten minutes is long
+	// enough for a crash-and-restart to resume seamlessly, short
+	// enough that orphans from kill -9 do not accumulate over a
+	// day's testing. The value may be overridden at runtime via
+	// (*listener).SetSessionGracePeriod, which Daemon construction
+	// calls when Config.SessionGracePeriod is non-zero.
+	defaultSessionGracePeriod = 10 * time.Minute
 	maxQueuedReplies          = 1000
 )
+
+// SetSessionGracePeriod overrides the per-app reap delay. Daemon
+// construction calls it when Config.SessionGracePeriod is non-zero.
+// Safe to call before the listener has accepted any connections; the
+// new value takes effect for every grace timer armed thereafter.
+func (l *listener) SetSessionGracePeriod(d time.Duration) {
+	l.sessionGracePeriod = d
+}
 
 type DisconnectedSession struct {
 	AppID         *[AppIDLength]byte
@@ -447,6 +541,7 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 
 		// Cancel any pending cleanup timer and flush queued replies
 		l.disconnectedSessionsLock.Lock()
+		cancelledTimer := false
 		if session, ok := l.disconnectedSessions[*existingAppID]; ok {
 			session.CleanupTimer.Stop()
 			for _, reply := range session.QueuedReplies {
@@ -455,8 +550,14 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 				}
 			}
 			delete(l.disconnectedSessions, *existingAppID)
+			cancelledTimer = true
 		}
+		count := len(l.disconnectedSessions)
 		l.disconnectedSessionsLock.Unlock()
+		if cancelledTimer {
+			instrument.DisconnectedSessionsSet(count)
+			l.log.Infof("Grace timer cancelled on session resume for AppID %x", existingAppID[:4])
+		}
 
 		token := st.ClientInstanceToken
 		c.clientToken = &token

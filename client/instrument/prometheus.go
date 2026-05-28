@@ -91,10 +91,16 @@ var (
 			Help: "Number of SURB IDs removed from the ARQ map due to TTL expiry or session cleanup rather than reply receipt.",
 		},
 	)
-	surbIDReplyReceived = prometheus.NewCounter(
+	surbIDReplyMatched = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "katzenpost_client_surb_id_reply_received_total",
-			Help: "Number of ARQ replies received whose SURB ID matched an awaiting entry.",
+			Name: "katzenpost_client_surb_id_reply_matched_total",
+			Help: "Number of ARQ replies received whose SURB ID matched an awaiting entry in arqSurbIDMap. A match is NOT itself an exit from the map: the entry stays alive until the downstream handler either rotates it (Rotated), errors it out, or deletes it on terminal success (Delivered). Pair this counter with reply_no_match_total to diagnose lost replies, and with delivered_total to see what fraction of matches went on to a delivered outcome.",
+		},
+	)
+	surbIDDelivered = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_surb_id_delivered_total",
+			Help: "Number of SURB IDs that exited arqSurbIDMap via a terminal success path: ARQActionComplete (Write ACK), CopyStatusSucceeded, payloadActionIdempotentSuccess, or the post-payload-handling cleanup after a successful read. This is one of the four exit counters whose sum should equal created_total at steady state (the others are Rotated, GarbageCollected, and the error-deletes which are not yet counted).",
 		},
 	)
 	surbIDReplyNoMatch = prometheus.NewCounter(
@@ -103,10 +109,48 @@ var (
 			Help: "Number of ARQ replies received whose SURB ID was not in the awaiting map. Either the reply was garbage-collected before arrival, the reply was misrouted, or the SURB ID matching itself is buggy. This counter is the diagnostic for the reply-routing problem.",
 		},
 	)
+	surbIDRotated = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_surb_id_rotated_total",
+			Help: "Number of times an existing ARQ map entry's SURB ID was replaced by a new one (ACK-before-payload Copy command flows, compose-retry placeholders, Copy-status-poll placeholders). The old SURB ID exits the map without firing any of reply_received, garbage_collected, or reply_no_match; rotated_total is the missing exit counter that closes the lifecycle balance with created_total.",
+		},
+	)
 	thinSessions = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "katzenpost_client_thin_sessions",
 			Help: "Current count of registered thin-client sessions.",
+		},
+	)
+	disconnectedSessions = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_client_disconnected_sessions",
+			Help: "Number of thin-client sessions whose underlying connection has dropped without thin_close and whose state is being preserved in case the client reconnects within the grace period.",
+		},
+	)
+	replyLockWait = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_client_arq_reply_lock_wait_seconds",
+			Help:    "Time each call site spent waiting to acquire daemon.replyLock. This lock is the daemon's hottest, taken on every ARQ reply, retry, rotation, cancel, and per-AppID cleanup; rising p99 is the leading indicator of contention as in-flight ARQ counts grow.",
+			Buckets: prometheus.ExponentialBuckets(0.0001, 4, 12),
+		},
+	)
+	cleanupForAppIDDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_client_cleanup_for_app_id_seconds",
+			Help:    "Wall-clock duration of cleanupForAppID, which iterates the entire ARQ map under replyLock. Long durations block the ingressWorker and surface as latency spikes on every other reply that lands during the scan.",
+			Buckets: prometheus.ExponentialBuckets(0.0001, 4, 12),
+		},
+	)
+	arqOrphanedEntries = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_client_arq_orphaned_entries",
+			Help: "Number of ARQ map entries whose AppID has no live connection. Sampled on a periodic ticker; should remain at zero. A persistent non-zero value indicates a cleanup-was-skipped bug or a race between AppID reaping and ARQ insertion.",
+		},
+	)
+	daemonGoroutines = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_client_goroutines",
+			Help: "runtime.NumGoroutine() sampled on a ticker. Steady growth over uptime indicates a per-AppID or per-ARQ goroutine leak.",
 		},
 	)
 )
@@ -128,9 +172,16 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(arqRoundTrip)
 		prometheus.MustRegister(surbIDCreated)
 		prometheus.MustRegister(surbIDGarbageCollected)
-		prometheus.MustRegister(surbIDReplyReceived)
+		prometheus.MustRegister(surbIDReplyMatched)
+		prometheus.MustRegister(surbIDDelivered)
 		prometheus.MustRegister(surbIDReplyNoMatch)
+		prometheus.MustRegister(surbIDRotated)
 		prometheus.MustRegister(thinSessions)
+		prometheus.MustRegister(disconnectedSessions)
+		prometheus.MustRegister(replyLockWait)
+		prometheus.MustRegister(cleanupForAppIDDuration)
+		prometheus.MustRegister(arqOrphanedEntries)
+		prometheus.MustRegister(daemonGoroutines)
 	})
 	if address == "" {
 		return
@@ -188,15 +239,57 @@ func SurbIDCreated() { surbIDCreated.Inc() }
 // reply.
 func SurbIDGarbageCollected() { surbIDGarbageCollected.Inc() }
 
-// SurbIDReplyReceived records an ARQ reply whose SURB ID matched an
-// awaiting entry.
-func SurbIDReplyReceived() { surbIDReplyReceived.Inc() }
+// SurbIDReplyMatched records an ARQ reply whose SURB ID matched an
+// awaiting entry in arqSurbIDMap. This is a match indicator only, NOT
+// an exit from the map: the downstream handler will either rotate the
+// entry to a fresh SURB (SurbIDRotated), error it out (currently
+// uncounted), or delete it on terminal success (SurbIDDelivered).
+func SurbIDReplyMatched() { surbIDReplyMatched.Inc() }
+
+// SurbIDDelivered records the exit of a SURB ID from arqSurbIDMap via
+// a terminal-success delete: ARQActionComplete (Write ACK),
+// CopyStatusSucceeded, payloadActionIdempotentSuccess, or the
+// post-payload-handling cleanup after a successful read. The lifecycle
+// balance is: created = delivered + rotated + garbage_collected +
+// (uncounted error/cancel deletes). See instrument/prometheus.go for
+// the rationale on which exit each delete site belongs to.
+func SurbIDDelivered() { surbIDDelivered.Inc() }
 
 // SurbIDReplyNoMatch records an ARQ reply whose SURB ID was not in the
 // awaiting map. This is the data-driven diagnostic for the reply-routing
 // problem we suspected during the recent ping investigation.
 func SurbIDReplyNoMatch() { surbIDReplyNoMatch.Inc() }
 
+// SurbIDRotated records the exit of an old SURB ID from the ARQ map
+// via rotation: a new SURB ID replaces it for the next retransmission
+// (ACK-before-payload Copy command flows, compose-retry placeholders,
+// Copy-status-poll placeholders). Pair with SurbIDCreated at the
+// matching insertion site to keep the lifecycle balanced.
+func SurbIDRotated() { surbIDRotated.Inc() }
+
 // ThinSessionsSet sets the current count of registered thin-client
 // sessions. Pass len(listener.conns) after each register/unregister.
 func ThinSessionsSet(n int) { thinSessions.Set(float64(n)) }
+
+// DisconnectedSessionsSet sets the current count of disconnected
+// thin-client sessions whose per-app state is being preserved
+// pending a possible reconnect. Pass len(listener.disconnectedSessions)
+// after each insert into or delete from that map.
+func DisconnectedSessionsSet(n int) { disconnectedSessions.Set(float64(n)) }
+
+// ReplyLockWait observes the time spent waiting to acquire
+// daemon.replyLock at a single call site.
+func ReplyLockWait(d time.Duration) { replyLockWait.Observe(d.Seconds()) }
+
+// CleanupForAppIDDuration observes the wall-clock cost of one
+// cleanupForAppID invocation.
+func CleanupForAppIDDuration(d time.Duration) {
+	cleanupForAppIDDuration.Observe(d.Seconds())
+}
+
+// ARQOrphanedEntriesSet sets the count of ARQ entries whose AppID
+// has no live connection (sampled on a ticker).
+func ARQOrphanedEntriesSet(n int) { arqOrphanedEntries.Set(float64(n)) }
+
+// DaemonGoroutinesSet sets the current runtime.NumGoroutine() reading.
+func DaemonGoroutinesSet(n int) { daemonGoroutines.Set(float64(n)) }

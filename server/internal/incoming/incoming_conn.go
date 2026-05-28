@@ -38,6 +38,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
@@ -109,6 +110,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			}
 			c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
 				peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+			handshakeinstrument.IncomingPeerValidationFailure("client_dropped_from_userdb")
 			c.canSend = false
 			return false
 		} else if isClient {
@@ -175,6 +177,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		}
 		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
 			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+		handshakeinstrument.IncomingPeerValidationFailure("unknown_mix")
 	}
 
 	return isValid
@@ -216,12 +219,22 @@ func (c *incomingConn) worker() {
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
 	if err = c.w.Initialize(c.c); err != nil {
+		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("incoming", state)
+		handshakeinstrument.HandshakeDuration("incoming", "failure", handshakeElapsed)
+
 		if wire.IsNoHandshakeBytesError(err) {
 			c.log.Debugf(
 				"TCP connection closed before Noise handshake bytes local=%v remote=%v after=%v timeout=%v: %v",
 				c.c.LocalAddr(),
 				c.c.RemoteAddr(),
-				time.Since(handshakeStart),
+				handshakeElapsed,
 				timeoutMs,
 				err,
 			)
@@ -232,7 +245,7 @@ func (c *incomingConn) worker() {
 			"Handshake failed local=%v remote=%v after=%v timeout=%v: %v",
 			c.c.LocalAddr(),
 			c.c.RemoteAddr(),
-			time.Since(handshakeStart),
+			handshakeElapsed,
 			timeoutMs,
 			err,
 		)
@@ -240,11 +253,13 @@ func (c *incomingConn) worker() {
 		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
+	handshakeElapsed := time.Since(handshakeStart)
+	handshakeinstrument.HandshakeDuration("incoming", "success", handshakeElapsed)
 	c.log.Debugf(
 		"Handshake completed local=%v remote=%v in %v",
 		c.c.LocalAddr(),
 		c.c.RemoteAddr(),
-		time.Since(handshakeStart),
+		handshakeElapsed,
 	)
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
@@ -339,6 +354,8 @@ func (c *incomingConn) worker() {
 			// The peer's PKI document entry isn't for the current epoch,
 			// or within the slack time.
 			c.log.Debugf("Dropping mix command received out of epoch.")
+			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("incoming_out_of_epoch")
 			continue
 		}
 

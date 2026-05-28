@@ -9,6 +9,7 @@ import (
 	"fmt"
 	mrand "math/rand"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -246,6 +247,9 @@ func (d *Daemon) Start() error {
 	if err != nil {
 		return err
 	}
+	if d.cfg.SessionGracePeriod > 0 {
+		d.listener.SetSessionGracePeriod(d.cfg.SessionGracePeriod)
+	}
 	d.listener.SetLocalDispatch(d.dispatchLocal)
 
 	d.cfg.Callbacks = &config.Callbacks{}
@@ -300,6 +304,7 @@ func (d *Daemon) Start() error {
 
 	d.Go(d.ingressWorker)
 	d.Go(d.egressWorker)
+	d.Go(d.metricsSampler)
 
 	err = d.client.Start()
 	if err != nil {
@@ -458,7 +463,7 @@ func (d *Daemon) ingressWorker() {
 				d.log.Errorf("failed to send Response: %s", err)
 			}
 		case surbID := <-d.gcSurbIDCh:
-			d.replyLock.Lock()
+			d.lockReply()
 			delete(d.replies, *surbID)
 			delete(d.decoys, *surbID)
 			d.replyLock.Unlock()
@@ -472,7 +477,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	// Single lookup-and-delete under one Lock: each SURB ID is a key in
 	// exactly one of the three maps, so we classify and remove the
 	// entry in one critical section instead of re-acquiring.
-	d.replyLock.Lock()
+	d.lockReply()
 	var (
 		desc       replyDescriptor
 		arqMessage *ARQMessage
@@ -502,7 +507,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		// log a warning. Cancel removes the entry regardless of its
 		// position in the queue.
 		d.arqTimerQueue.Cancel(arqMessage.SURBID)
-		instrument.SurbIDReplyReceived()
+		instrument.SurbIDReplyMatched()
 		instrument.ARQRoundTrip(time.Since(arqMessage.SentAt))
 		d.handlePigeonholeARQReply(arqMessage, reply)
 		return
@@ -717,7 +722,7 @@ func (d *Daemon) send(request *Request) {
 		}
 	}
 
-	d.replyLock.Lock()
+	d.lockReply()
 	if isLoopDecoy {
 		d.decoys[*surbID] = replyDescriptor{
 			appID:   request.AppID,
@@ -812,8 +817,9 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 		return
 	}
 
-	d.replyLock.Lock()
-	if arqMessage.SURBID != nil {
+	d.lockReply()
+	hadOld := arqMessage.SURBID != nil
+	if hadOld {
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	}
 	arqMessage.SURBID = placeholder
@@ -822,6 +828,10 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = placeholder
 	}
 	d.replyLock.Unlock()
+	if hadOld {
+		instrument.SurbIDRotated()
+	}
+	instrument.SurbIDCreated()
 
 	if d.arqTimerQueue == nil {
 		return
@@ -841,7 +851,7 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 // retry forever. If the client is disconnected the enqueue is a no-op;
 // cleanupForAppID removes the stale map entry.
 func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
-	d.replyLock.Lock()
+	d.lockReply()
 	message, ok := d.arqSurbIDMap[*surbID]
 	d.replyLock.Unlock()
 	if !ok {
@@ -873,7 +883,7 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 // a malformed reply, to prevent map-entry leaks now that handleReply
 // no longer pre-deletes on receipt of an ARQ reply.
 func (d *Daemon) dropARQMessage(arqMessage *ARQMessage) {
-	d.replyLock.Lock()
+	d.lockReply()
 	if arqMessage.SURBID != nil {
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	}
@@ -901,7 +911,8 @@ func (d *Daemon) rotateARQSurbIDLocked(
 	surbKey []byte,
 	rtt time.Duration,
 ) {
-	if arqMessage.SURBID != nil {
+	hadOld := arqMessage.SURBID != nil
+	if hadOld {
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	}
 	arqMessage.SURBID = newSurbID
@@ -913,10 +924,21 @@ func (d *Daemon) rotateARQSurbIDLocked(
 	if arqMessage.EnvelopeHash != nil {
 		d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash] = newSurbID
 	}
+	// Every entry added to arqSurbIDMap must be counted so the
+	// SURB lifecycle invariant remains balanced. The new SURBID
+	// will later exit via one of SurbIDDelivered (terminal
+	// success), SurbIDRotated (rotation to a new SURB),
+	// SurbIDGarbageCollected (TTL or session cleanup), or one of
+	// the still-uncounted error/cancel deletes. The OLD SURBID,
+	// if any, exits via SurbIDRotated here.
+	if hadOld {
+		instrument.SurbIDRotated()
+	}
+	instrument.SurbIDCreated()
 }
 
 func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
-	d.replyLock.Lock()
+	d.lockReply()
 	message, ok := d.arqSurbIDMap[*surbID]
 
 	// NOTE(david): if the arqSurbIDMap entry is not found
@@ -1001,9 +1023,52 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 }
 
+// lockReply acquires d.replyLock and observes the time spent
+// waiting. Every production caller that previously wrote
+// d.lockReply() goes through here so the per-call-site
+// contention surfaces on Prometheus as the
+// arq_reply_lock_wait_seconds histogram.
+func (d *Daemon) lockReply() {
+	t0 := time.Now()
+	d.replyLock.Lock()
+	instrument.ReplyLockWait(time.Since(t0))
+}
+
+// metricsSampler updates the gauges that have no natural event
+// site to attach to: orphaned ARQ entries and goroutine count.
+// Runs on a thirty-second tick; the sampling cost itself is
+// dominated by an O(n) scan under replyLock, which is cheap
+// while the map is small but worth bounding if it grows.
+func (d *Daemon) metricsSampler() {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-d.HaltCh():
+			return
+		case <-t.C:
+		}
+		instrument.DaemonGoroutinesSet(runtime.NumGoroutine())
+		orphaned := 0
+		d.lockReply()
+		for _, msg := range d.arqSurbIDMap {
+			if msg.AppID == nil {
+				continue
+			}
+			if d.listener == nil || d.listener.getConnection(msg.AppID) == nil {
+				orphaned++
+			}
+		}
+		d.replyLock.Unlock()
+		instrument.ARQOrphanedEntriesSet(orphaned)
+	}
+}
+
 // cleanupForAppID cleans up all daemon state associated with a given App ID.
 // This is called when a thin client disconnects to ensure proper cleanup.
 func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
+	t0 := time.Now()
+	defer func() { instrument.CleanupForAppIDDuration(time.Since(t0)) }()
 	d.log.Infof("cleanupForAppID: cleaning up state for App ID %x", appID[:])
 
 	cleanedARQ := 0
@@ -1017,7 +1082,7 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 	// than the map key's address.
 	var arqSurbIDsToCancel []*[sphinxConstants.SURBIDLength]byte
 
-	d.replyLock.Lock()
+	d.lockReply()
 	if d.arqSurbIDMap != nil {
 		var envHashesToDrop [][32]byte
 		for surbID, message := range d.arqSurbIDMap {

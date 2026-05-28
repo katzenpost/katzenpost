@@ -10,11 +10,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -45,7 +48,7 @@ import (
 
 const (
 	BasePort               = 30000
-	BindAddr               = "127.0.0.1"
+	BindAddr               = "0.0.0.0"
 	NrLayers               = 3
 	NrNodes                = 6
 	NrGateways             = 1
@@ -53,7 +56,6 @@ const (
 	NrStorageNodes         = 5
 	NrAuthorities          = 3
 	ServerLogFile          = "katzenpost.log"
-	TcpAddrFormat          = "tcp://127.0.0.1:%d"
 	IdentityPublicKeyFile  = "identity.public.pem"
 	IdentityPrivateKeyFile = "identity.private.pem"
 	LinkPublicKeyFile      = "link.public.pem"
@@ -63,7 +65,50 @@ const (
 	DebugLogLevel          = "DEBUG"
 	AuthNodeFormat         = "auth%d"
 	WritingLogFormat       = "writing %s"
+
+	// DockerNetwork is the bridge network the generated docker-compose puts
+	// every katzenpost service on. Each service has a stable container_name
+	// matching its identifier, so peers can address each other by DNS name
+	// (e.g. tcp://mix1:30030). This lets per-container chaos tools such as
+	// pumba install tc qdiscs in each service's own net namespace; the
+	// previous host-networked layout had no such namespaces to scope to.
+	DockerNetwork    = "katzenpost-net"
+	DockerProjectTag = "voting_mixnet"
 )
+
+// peerAddr returns the tcp:// URL another container should dial to reach the
+// named service on the bridge network. Both endpoints resolve the hostname
+// through the compose runtime's embedded DNS to the service's bridge IP.
+func peerAddr(identifier string, port uint16) string {
+	return fmt.Sprintf("tcp://%s:%d", identifier, port)
+}
+
+// metricsScrapeAddr returns the host:port form a service writes into
+// its own MetricsAddress field and a remote prometheus scrape dials.
+// Inside the service's own container the hostname resolves via the
+// compose-managed /etc/hosts entry to its private bridge IP, so the
+// prometheus listener binds to that specific private address rather
+// than to 0.0.0.0. From a peer container on the same bridge the
+// identifier resolves through embedded DNS to the same IP.
+func metricsScrapeAddr(identifier string, port uint16) string {
+	return fmt.Sprintf("%s:%d", identifier, port)
+}
+
+// splitHostPortPort extracts the port portion of a "host:port" string and
+// returns it as an integer. Used to rebuild host:port pairs for
+// services that need different forms on the listen side and the
+// prometheus-scrape side; the host field passed in is discarded.
+func splitHostPortPort(hostPort string) (int, error) {
+	_, portStr, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return 0, fmt.Errorf("invalid host:port %q: %w", hostPort, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid port in %q: %w", hostPort, err)
+	}
+	return port, nil
+}
 
 // Config holds all the parsed command line flags
 type Config struct {
@@ -110,6 +155,11 @@ type Config struct {
 	SendSlack                int
 	UnwrapDelay              int
 	NumSphinxWorkers         int
+	// SessionGracePeriod controls how long kpclientd preserves
+	// per-app state after a thin client's socket drops without a
+	// thin_close. Parsed from a Go duration string ("30s", "10m");
+	// zero means use the compile-time default in client/listener.go.
+	SessionGracePeriod time.Duration
 }
 
 type Katzenpost struct {
@@ -155,6 +205,11 @@ type Katzenpost struct {
 	SendSlack         int
 	UnwrapDelay       int
 	NumSphinxWorkers  int
+	// SessionGracePeriod is written into the generated kpclientd
+	// client.toml so the daemon's per-app reap interval is tunable
+	// per docker invocation; zero means the daemon's compile-time
+	// default applies.
+	SessionGracePeriod time.Duration
 }
 
 type AuthById []*vConfig.Authority
@@ -279,6 +334,10 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.SphinxGeometry = s.SphinxGeometry
 	cfg.PigeonholeGeometry = s.PigeonholeGeometry
+	// Docker-mixnet kpclientd reaches gateways and dirauths by
+	// container hostname through the compose-runtime's embedded
+	// DNS; opt in to hostname-permitting validation.
+	cfg.AllowHostnameAddresses = true
 
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
@@ -294,13 +353,32 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	// Debug section
 	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: s.DebugConfig.DisableDecoyTraffic}
 
+	// SessionGracePeriod controls how long the daemon preserves
+	// per-app state after a thin client's connection drops without
+	// thin_close. Zero means the daemon's compile-time default
+	// (currently ten minutes) applies; the docker Makefile sets a
+	// shorter value via --sessionGracePeriod so the reaper visibly
+	// exercises within a single CI run.
+	if s.SessionGracePeriod > 0 {
+		cfg.SessionGracePeriod = s.SessionGracePeriod
+	}
+
 	// Metrics listener: only written into client.toml when the operator
 	// has chosen to enable it via --kpclientdMetricsAddress, which the
 	// docker Makefile turns on when kpclientd_metrics=true.
 	// Production builds of kpclientd ignore this field entirely
 	// because the listener is gated behind a build tag.
+	//
+	// Under bridge networking we discard whatever host portion was
+	// passed in and bind to the kpclientd container's own private
+	// bridge IP (reached via its `kpclientd` hostname). The prometheus
+	// container scrapes it as `kpclientd:<port>` over the same bridge.
 	if s.KpclientdMetricsAddress != "" {
-		cfg.MetricsAddress = s.KpclientdMetricsAddress
+		port, err := splitHostPortPort(s.KpclientdMetricsAddress)
+		if err != nil {
+			return err
+		}
+		cfg.MetricsAddress = metricsScrapeAddr("kpclientd", uint16(port))
 	}
 
 	gateways := make([]*cConfig.Gateway, 0)
@@ -345,7 +423,7 @@ func Write(f *os.File, str string, args ...interface{}) {
 	}
 }
 
-func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
+func (s *Katzenpost) GenCourierConfig(datadir string, serviceNodeName string) *courierConfig.Config {
 	authorities := make([]*vConfig.Authority, 0, len(s.Authorities))
 	i := 0
 	for _, auth := range s.Authorities {
@@ -361,19 +439,20 @@ func (s *Katzenpost) GenCourierConfig(datadir string) *courierConfig.Config {
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
 	cfg := &courierConfig.Config{
-		PKI:                 pki,
-		Logging:             &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
-		WireKEMScheme:       s.WireKEMScheme,
-		PKIScheme:           s.PkiSignatureScheme.Name(),
-		EnvelopeScheme:      s.ReplicaNIKEScheme.Name(),
-		DataDir:             datadir,
-		SphinxGeometry:      s.SphinxGeometry,
-		ConnectTimeout:      config.DefaultConnectTimeout,
-		HandshakeTimeout:    config.DefaultHandshakeTimeout,
-		ReauthInterval:      config.DefaultReauthInterval,
-		DisableDecoyTraffic: s.NoCourierReplicaDecoy,
+		PKI:                    pki,
+		Logging:                &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
+		WireKEMScheme:          s.WireKEMScheme,
+		PKIScheme:              s.PkiSignatureScheme.Name(),
+		EnvelopeScheme:         s.ReplicaNIKEScheme.Name(),
+		DataDir:                datadir,
+		SphinxGeometry:         s.SphinxGeometry,
+		ConnectTimeout:         config.DefaultConnectTimeout,
+		HandshakeTimeout:       config.DefaultHandshakeTimeout,
+		ReauthInterval:         config.DefaultReauthInterval,
+		DisableDecoyTraffic:    s.NoCourierReplicaDecoy,
+		AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 	}
-	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
+	cfg.MetricsAddress = metricsScrapeAddr(serviceNodeName, s.LastPort)
 	s.LastPort++
 	return cfg
 }
@@ -389,11 +468,14 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.ReplicaNIKEScheme = s.ReplicaNIKEScheme.Name()
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
+	// Docker-mixnet replicas address dirauths and peers by container
+	// hostname; opt in to hostname-permitting validation.
+	cfg.AllowHostnameAddresses = true
 
-	cfg.Addresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastReplicaPort)}
+	cfg.Addresses = []string{peerAddr(cfg.Identifier, s.LastReplicaPort)}
 	s.LastReplicaPort++
 
-	cfg.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastReplicaPort)
+	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastReplicaPort)
 	s.LastReplicaPort++
 
 	cfg.DataDir = filepath.Join(s.BaseDir, cfg.Identifier)
@@ -448,20 +530,26 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.WireKEM = s.WireKEMScheme
 	cfg.Server.PKISignatureScheme = s.PkiSignatureScheme.Name()
 	cfg.Server.Identifier = n
-	if isGateway {
-		cfg.Server.Addresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastPort)}
-		cfg.Server.BindAddresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastPort)}
-		s.LastPort += 2
-	} else {
-		cfg.Server.Addresses = []string{fmt.Sprintf(TcpAddrFormat, s.LastPort)}
-		s.LastPort += 2
-	}
+	// Both the advertise address (Addresses, used by peers via the
+	// embedded bridge DNS) and the bind address (BindAddresses, used
+	// by net.Listen) point at the service's own hostname. Inside the
+	// container that resolves to the private bridge IP via /etc/hosts,
+	// so we never bind to 0.0.0.0.
+	cfg.Server.Addresses = []string{peerAddr(n, s.LastPort)}
+	cfg.Server.BindAddresses = []string{peerAddr(n, s.LastPort)}
+	s.LastPort += 2
 	cfg.Server.DataDir = filepath.Join(s.BaseDir, n)
 
 	os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
 
 	cfg.Server.IsGatewayNode = isGateway
 	cfg.Server.IsServiceNode = isServiceNode
+	// Generated configs live on the docker-mixnet's bridge network
+	// where peers address one another by container hostname; opt in
+	// to hostname-permitting validation for every emitted TOML so
+	// production parity is maintained (operators never use genconfig
+	// to produce production configs).
+	cfg.Server.AllowHostnameAddresses = true
 	if isGateway {
 		cfg.Management = new(sConfig.Management)
 		cfg.Management.Enable = true
@@ -471,7 +559,7 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		cfg.Management.Enable = true
 	}
 	// Enable Metrics endpoint
-	cfg.Server.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
+	cfg.Server.MetricsAddress = metricsScrapeAddr(n, s.LastPort)
 	s.LastPort += 1
 
 	// Debug section.
@@ -535,7 +623,7 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		os.MkdirAll(courierDataDir, 0700)
 
 		internalCourierDatadir := filepath.Join(s.BaseDir, cfg.Server.Identifier, CourierService)
-		courierCfg := s.GenCourierConfig(internalCourierDatadir)
+		courierCfg := s.GenCourierConfig(internalCourierDatadir, cfg.Server.Identifier)
 		s.CourierConfigs = append(s.CourierConfigs, courierCfg)
 
 		linkPubKey := CfgLinkKey(courierCfg, courierDataDir, courierCfg.WireKEMScheme)
@@ -611,21 +699,22 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	for i := 1; i <= numAuthorities; i++ {
 		cfg := new(vConfig.Config)
 		cfg.SphinxGeometry = s.SphinxGeometry
+		authIdentifier := fmt.Sprintf(AuthNodeFormat, i)
 		cfg.Server = &vConfig.Server{
-			WireKEMScheme:      s.WireKEMScheme,
-			PKISignatureScheme: s.PkiSignatureScheme.Name(),
-			Identifier:         fmt.Sprintf(AuthNodeFormat, i),
-			Addresses:          []string{fmt.Sprintf(TcpAddrFormat, s.LastPort)},
-			DataDir:            filepath.Join(s.BaseDir, fmt.Sprintf(AuthNodeFormat, i)),
+			WireKEMScheme:          s.WireKEMScheme,
+			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
+			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
+			Identifier:         authIdentifier,
+			Addresses:          []string{peerAddr(authIdentifier, s.LastPort)},
+			DataDir:            filepath.Join(s.BaseDir, authIdentifier),
 		}
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
 		s.LastPort += 1
-		// Allocate a metrics listener port for this dirauth on the
-		// host-local interface. The prometheus listener in the
-		// dirauth code only binds when MetricsAddress is non-empty,
-		// so a future operator who wants to disable it can leave the
-		// field empty post-genconfig.
-		cfg.Server.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.LastPort)
+		// Allocate a metrics listener port for this dirauth. The
+		// prometheus listener in the dirauth code only binds when
+		// MetricsAddress is non-empty, so a future operator who wants
+		// to disable it can leave the field empty post-genconfig.
+		cfg.Server.MetricsAddress = metricsScrapeAddr(authIdentifier, s.LastPort)
 		s.LastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
@@ -828,6 +917,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.SendSlack = cfg.SendSlack
 	s.UnwrapDelay = cfg.UnwrapDelay
 	s.NumSphinxWorkers = cfg.NumSphinxWorkers
+	s.SessionGracePeriod = cfg.SessionGracePeriod
 
 	return s
 }
@@ -977,17 +1067,27 @@ func SaveConfigurations(s *Katzenpost, cfg *Config) error {
 	return nil
 }
 
-// GenerateClientConfigurations creates all client configuration files
+// GenerateClientConfigurations creates all client configuration files.
+// The kpclientd daemon and the thin clients that talk to it sit at
+// opposite ends of the docker-compose port publish, so they need
+// different addresses. The daemon binds to its own private bridge IP
+// (reached via its `kpclientd` hostname), and the docker port publish
+// forwards host:64331 to that same bridge address. The thin clients
+// (ping, fetch) run on the host with --network=host and dial
+// localhost:64331 over the published port; the host's /etc/hosts
+// resolves localhost to 127.0.0.1 and the published forward picks it
+// up.
 func GenerateClientConfigurations(s *Katzenpost) error {
 	clientDaemonNetwork := "tcp"
-	clientDaemonAddress := "localhost:64331"
+	clientDaemonListenAddress := "kpclientd:64331"
+	clientDaemonDialAddress := "localhost:64331"
 
-	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonAddress)
+	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonListenAddress)
 	if err != nil {
 		return fmt.Errorf("failed to generate client config: %v", err)
 	}
 
-	err = s.GenClient2ThinCfg(clientDaemonNetwork, clientDaemonAddress)
+	err = s.GenClient2ThinCfg(clientDaemonNetwork, clientDaemonDialAddress)
 	if err != nil {
 		return fmt.Errorf("failed to generate client thin config: %v", err)
 	}
@@ -1195,12 +1295,26 @@ scrape_configs:
 `, cfg.Server.Identifier, cfg.Server.MetricsAddress)
 	}
 	if s.KpclientdMetricsAddress != "" {
+		port, err := splitHostPortPort(s.KpclientdMetricsAddress)
+		if err != nil {
+			return err
+		}
 		Write(f, `- job_name: kpclientd
   scrape_interval: 1s
   static_configs:
   - targets: ['%s']
-`, s.KpclientdMetricsAddress)
+`, metricsScrapeAddr("kpclientd", uint16(port)))
 	}
+	// parallel-load is an opt-in ad-hoc container launched by `make
+	// run-parallel-load`; the host name `parallel-load` resolves only
+	// while the container is alive. Prometheus will report up=0 on this
+	// target between runs, which is the intended UX: the panel becomes
+	// non-empty exactly when a load run is in progress.
+	Write(f, `- job_name: parallel-load
+  scrape_interval: 1s
+  static_configs:
+  - targets: ['parallel-load:9101']
+`)
 	return nil
 }
 
@@ -1226,7 +1340,7 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://127.0.0.1:9090
+    url: http://metrics:9090
     isDefault: true
     editable: false
 `)
@@ -1482,6 +1596,26 @@ providers:
       "targets": [{"expr": "rate(katzenpost_courier_dropped_reason_total[1m])", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 23,
+      "title": "Replica: Drops by Reason (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 88},
+      "targets": [{"expr": "rate(katzenpost_replica_dropped_reason_total[1m])", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Per-replica drop attribution introduced in commit 294d3fc2. Reasons: nil_command (a connector dispatched a nil command, should never fire), malformed_rebalance_fingerprint (the persisted rebalance marker was corrupt on startup), peer_permanent_error (a peer replica returned a permanent ErrorCode during replication, retry is futile)."
+    },
+    {
+      "id": 24,
+      "title": "Courier: Outgoing Backpressure Indicator (queue length × oldest age)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 88},
+      "targets": [{"expr": "katzenpost_courier_queue_length * katzenpost_courier_oldest_age_seconds", "refId": "A", "legendFormat": "{{job}} -> {{replica}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "Composite indicator for the courier dispatch path's lack of an overflow bound (the third concern from the recent queue audit). Multiplying queue depth by oldest-pending age yields a number that grows linearly during a slow-replica stall and is exactly zero in steady state. A sustained non-zero value during the courier_backlog_recovery scenario would confirm the bound is needed."
     }
   ]
 }
@@ -1579,6 +1713,50 @@ providers:
       "targets": [{"expr": "rate(katzenpost_sphinx_unwraps_total[1m])", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 9,
+      "title": "Mix Server Drops by Reason (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 32},
+      "targets": [{"expr": "sum by (job, reason) (rate(katzenpost_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops", "custom": {"stacking": {"mode": "normal"}}}, "overrides": []},
+      "description": "Every per-reason drop site in server/internal/instrument. Use this panel to attribute the totals on panel 1 to specific code paths (unwrap_failed, scheduler_deadline_blown, kaetzchen_handler_failed, gateway_rate_limited, etc.). The kaetzchen_* reasons were added in commit 9ccaa106; the cbor_kaetzchen_* reasons too."
+    },
+    {
+      "id": 10,
+      "title": "Replica Drops by Reason (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 32},
+      "targets": [{"expr": "sum by (job, reason) (rate(katzenpost_replica_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops", "custom": {"stacking": {"mode": "normal"}}}, "overrides": []},
+      "description": "Replica-side drop attribution introduced in commit 294d3fc2. Reasons include nil_command, malformed_rebalance_fingerprint, peer_permanent_error. Sister to the mix-server reason counter on panel 9; the replica's own retry-queue evictions are on the courier-replica dashboard."
+    },
+    {
+      "id": 11,
+      "title": "Courier Drops by Reason (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 42},
+      "targets": [{"expr": "sum by (job, reason) (rate(katzenpost_courier_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "{{job}} {{reason}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops", "custom": {"stacking": {"mode": "normal"}}}, "overrides": []},
+      "description": "Courier-side drop attribution. Currently the only fired reason is send_command_failed (outgoing connection error), but the metric will sprout series as future drop sites are paired."
+    },
+    {
+      "id": 12,
+      "title": "All Drops by Reason — Cluster Total (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 42},
+      "targets": [
+        {"expr": "sum by (reason) (rate(katzenpost_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "mix:{{reason}}"},
+        {"expr": "sum by (reason) (rate(katzenpost_replica_dropped_reason_total[1m]))", "refId": "B", "legendFormat": "replica:{{reason}}"},
+        {"expr": "sum by (reason) (rate(katzenpost_courier_dropped_reason_total[1m]))", "refId": "C", "legendFormat": "courier:{{reason}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops", "custom": {"stacking": {"mode": "normal"}}}, "overrides": []},
+      "description": "Per-reason drop rate across the whole cluster, with the originating subsystem in the legend prefix. The single panel a chaos investigator should look at first when packet loss appears under chaos."
     }
   ]
 }
@@ -1740,6 +1918,102 @@ providers:
 }
 `)
 
+	// Handshake dashboard. PqXX is a five-message exchange: four
+	// Noise messages plus a post-Noise NoOp that distinguishes
+	// auth-success from auth-failure (see
+	// core/wire/session.go:finalizeHandshake). The duration histogram
+	// captures all five exchanges; the failure counter labels by
+	// direction (incoming/outgoing) and the wire state at the point
+	// of failure (including "finalization" for NoOp timeouts); the
+	// two responder-side counters attribute boot-time PKI-propagation
+	// races vs steady-state auth rejections.
+	hsFile := filepath.Join(dbDir, "handshakes.json")
+	log.Printf(WritingLogFormat, hsFile)
+	hs, err := os.Create(hsFile)
+	if err != nil {
+		return err
+	}
+	defer hs.Close()
+	Write(hs, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Katzenpost Handshakes",
+  "uid": "katzenpost-handshakes",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Handshake Duration p50 (success, by role+direction)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum by (job, direction, le) (rate(katzenpost_handshake_duration_seconds_bucket{result=\"success\"}[1m])))", "refId": "A", "legendFormat": "{{job}} {{direction}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "Handshake Duration p99 (success, by role+direction)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum by (job, direction, le) (rate(katzenpost_handshake_duration_seconds_bucket{result=\"success\"}[1m])))", "refId": "A", "legendFormat": "{{job}} {{direction}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "Handshake Failures by State (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "sum by (direction, state) (rate(katzenpost_handshake_failures_total[1m]))", "refId": "A", "legendFormat": "{{direction}} {{state}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "Failure Duration p99 (by direction)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum by (job, direction, le) (rate(katzenpost_handshake_duration_seconds_bucket{result=\"failure\"}[1m])))", "refId": "A", "legendFormat": "{{job}} {{direction}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "Responder Peer-Validation Failures (rate/s, by reason)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [
+        {"expr": "sum by (reason) (rate(katzenpost_incoming_peer_validation_failures_total[1m]))", "refId": "A", "legendFormat": "{{reason}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "TCP Connections Refused: No PKI Doc (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+      "targets": [
+        {"expr": "sum by (job) (rate(katzenpost_incoming_refused_no_pki_doc_total[1m]))", "refId": "A", "legendFormat": "{{job}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    }
+  ]
+}
+`)
+
 	// kpclientd dashboard: only meaningful when the daemon is built
 	// with -tags kpclientd_metrics and scraped by prometheus. Emitted
 	// unconditionally so that operators who later enable the build tag
@@ -1862,9 +2136,11 @@ providers:
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
       "targets": [
         {"expr": "rate(katzenpost_client_surb_id_created_total[1m])", "refId": "A", "legendFormat": "{{job}} created"},
-        {"expr": "rate(katzenpost_client_surb_id_reply_received_total[1m])", "refId": "B", "legendFormat": "{{job}} reply_received"},
-        {"expr": "rate(katzenpost_client_surb_id_garbage_collected_total[1m])", "refId": "C", "legendFormat": "{{job}} gc'd"},
-        {"expr": "rate(katzenpost_client_surb_id_reply_no_match_total[1m])", "refId": "D", "legendFormat": "{{job}} no_match"}
+        {"expr": "rate(katzenpost_client_surb_id_delivered_total[1m])", "refId": "B", "legendFormat": "{{job}} delivered (exit)"},
+        {"expr": "rate(katzenpost_client_surb_id_rotated_total[1m])", "refId": "C", "legendFormat": "{{job}} rotated (exit)"},
+        {"expr": "rate(katzenpost_client_surb_id_garbage_collected_total[1m])", "refId": "D", "legendFormat": "{{job}} gc'd (exit)"},
+        {"expr": "rate(katzenpost_client_surb_id_reply_matched_total[1m])", "refId": "E", "legendFormat": "{{job}} reply_matched (NOT an exit)"},
+        {"expr": "rate(katzenpost_client_surb_id_reply_no_match_total[1m])", "refId": "F", "legendFormat": "{{job}} reply_no_match (no entry)"}
       ],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
@@ -1877,6 +2153,79 @@ providers:
       "targets": [{"expr": "katzenpost_client_surb_id_reply_no_match_total", "refId": "A", "legendFormat": "{{job}}"}],
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 13,
+      "title": "SURB Lifecycle Balance: created vs exits (cumulative)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 56},
+      "targets": [
+        {"expr": "katzenpost_client_surb_id_created_total", "refId": "A", "legendFormat": "{{job}} created"},
+        {"expr": "katzenpost_client_surb_id_delivered_total + katzenpost_client_surb_id_garbage_collected_total + katzenpost_client_surb_id_rotated_total", "refId": "B", "legendFormat": "{{job}} exits (delivered+gc+rotated)"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "Lifecycle invariant. The two series should track each other closely; the gap is the sum of (currently in-flight ARQ entries) and (entries that exited via the still-uncounted error or cancel paths). A persistent widening with no in-flight growth indicates either a SURBID is being abandoned without firing any exit counter, or an error/cancel-exit site needs its own counter."
+    },
+    {
+      "id": 14,
+      "title": "SURB Lifecycle Gap (created minus counted exits)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 56},
+      "targets": [
+        {"expr": "katzenpost_client_surb_id_created_total - (katzenpost_client_surb_id_delivered_total + katzenpost_client_surb_id_garbage_collected_total + katzenpost_client_surb_id_rotated_total)", "refId": "A", "legendFormat": "{{job}} unaccounted"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "Same as panel 13 but as a single signed series. Tracks arq_inflight + uncounted error/cancel exits under healthy operation; a value that grows without arq_inflight also growing and with no error/cancel activity indicates a real leak."
+    },
+    {
+      "id": 15,
+      "title": "replyLock Wait (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 64},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_client_arq_reply_lock_wait_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_client_arq_reply_lock_wait_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_client_arq_reply_lock_wait_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "description": "Time each call site spends waiting to acquire daemon.replyLock. p99 rising while in-flight ARQ counts also rise is the canonical signature of lock contention on the hottest mutex in the daemon."
+    },
+    {
+      "id": 16,
+      "title": "cleanupForAppID Duration (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 64},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_client_cleanup_for_app_id_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_client_cleanup_for_app_id_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_client_cleanup_for_app_id_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "description": "Wall-clock duration of one cleanupForAppID. The function scans the entire ARQ map under replyLock, so a long duration blocks every other reply that lands during the scan and surfaces as a latency spike on panel 9."
+    },
+    {
+      "id": 17,
+      "title": "ARQ Orphaned Entries",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 72},
+      "targets": [{"expr": "katzenpost_client_arq_orphaned_entries", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "ARQ map entries whose AppID has no live connection. Should be zero. Persistent non-zero values mean cleanupForAppID was skipped for that AppID or an ARQ insert raced with a disconnect."
+    },
+    {
+      "id": 18,
+      "title": "Daemon Goroutines (runtime.NumGoroutine)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 72},
+      "targets": [{"expr": "katzenpost_client_goroutines", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "runtime.NumGoroutine() sampled every thirty seconds. Steady-state growth over hours of uptime indicates a per-AppID or per-ARQ goroutine leak. The four background workers plus per-connection reader/writer pairs set the baseline."
     }
   ]
 }
@@ -1992,6 +2341,146 @@ providers:
 }
 `)
 
+	// SEDA-style load-curve dashboard. Driven by the chaos
+	// parallel-load tool's prometheus surface; panels show
+	// throughput-vs-load knees, response-time quantiles and CDF,
+	// the Jain fairness index across thin clients, and the
+	// downstream courier oldest-age and drop-by-reason signals.
+	sedaFile := filepath.Join(dbDir, "seda-load.json")
+	log.Printf(WritingLogFormat, sedaFile)
+	sd, err := os.Create(sedaFile)
+	if err != nil {
+		return err
+	}
+	defer sd.Close()
+	Write(sd, `{
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "Katzenpost SEDA Load Curves",
+  "uid": "katzenpost-seda-load",
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-30m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active Clients (offered concurrency)",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {"expr": "katzenpost_parallel_load_active_clients", "refId": "A", "legendFormat": "active"},
+        {"expr": "katzenpost_parallel_load_sweep_step_clients", "refId": "B", "legendFormat": "sweep step"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "description": "Welsh figure 2 inspiration: track offered load to align the throughput and latency curves with the concurrency level."
+    },
+    {
+      "id": 2,
+      "title": "Successful Iteration Throughput (ops/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "sum(rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[30s]))", "refId": "A", "legendFormat": "total ok"},
+        {"expr": "sum(rate(katzenpost_parallel_load_iterations_total{result=\"error\"}[30s]))", "refId": "B", "legendFormat": "total err"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Aggregate successful pigeonhole write+read cycles per second. The shape of this curve against the Active Clients gauge above is the saturation knee from SEDA figures 2 and 4."
+    },
+    {
+      "id": 3,
+      "title": "Iteration Latency Quantiles (s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 6},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[1m])))", "refId": "A", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.90, sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[1m])))", "refId": "B", "legendFormat": "p90"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[1m])))", "refId": "C", "legendFormat": "p99"},
+        {"expr": "histogram_quantile(0.999, sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[1m])))", "refId": "D", "legendFormat": "p99.9"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "description": "SEDA figure 12b on a time axis. Watch the p99.9 line for the heavy tail that averages would hide."
+    },
+    {
+      "id": 4,
+      "title": "Iteration Latency CDF (probability that response_time <= bucket)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 14},
+      "targets": [
+        {"expr": "sum by (le) (rate(katzenpost_parallel_load_iteration_seconds_bucket{op=\"cycle\"}[5m])) / on() group_left sum(rate(katzenpost_parallel_load_iteration_seconds_count{op=\"cycle\"}[5m]))", "refId": "A", "legendFormat": "<= {{le}}s"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+      "description": "Cumulative distribution of pigeonhole iteration latency, sampled over the last 5 minutes. The trailing series is the long tail."
+    },
+    {
+      "id": 5,
+      "title": "Jain Fairness Index across clients (1.0 = perfectly equal service)",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 14},
+      "targets": [
+        {"expr": "(sum(rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[1m])))^2 / (count(rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[1m])) * sum((rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[1m]))^2))", "refId": "A", "legendFormat": "Jain index"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 1.05}, "overrides": []},
+      "description": "Jain (1984) fairness across thin clients. f(x) = (sum xi)^2 / (N * sum xi^2) where xi is per-client throughput. 1.0 means every client got equal service; a drop below 0.95 indicates scheduling or queueing unfairness somewhere in the daemon, gateway, courier, or replica path."
+    },
+    {
+      "id": 6,
+      "title": "Per-client iteration rate (ops/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+      "targets": [
+        {"expr": "rate(katzenpost_parallel_load_iterations_total{result=\"ok\"}[1m])", "refId": "A", "legendFormat": "{{client_id}} ok"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Per-thin-client iteration rate. Visual companion to the Jain index above; spread is the unfairness."
+    },
+    {
+      "id": 7,
+      "title": "Errors by stage and kind (rate/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32},
+      "targets": [
+        {"expr": "rate(katzenpost_parallel_load_errors_total[1m])", "refId": "A", "legendFormat": "{{stage}} / {{kind}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Categorised iteration failures. ARQ-level outcomes like tombstone or box_not_found land here too; they are legitimate end states, not bugs."
+    },
+    {
+      "id": 8,
+      "title": "Courier oldest queue age vs offered load (s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "targets": [
+        {"expr": "katzenpost_courier_oldest_age_seconds", "refId": "A", "legendFormat": "{{job}} -> {{replica}}"},
+        {"expr": "katzenpost_parallel_load_active_clients", "refId": "B", "legendFormat": "active clients"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "description": "Cross-pane: as the parallel-load tool ramps offered concurrency, watch the courier's oldest-age gauge climb. SEDA's queue-length plots (figure 8) are this gauge's analogue here."
+    },
+    {
+      "id": 9,
+      "title": "Courier drops by reason (rate/s) under offered load",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "targets": [
+        {"expr": "sum by (reason) (rate(katzenpost_courier_dropped_reason_total[1m]))", "refId": "A", "legendFormat": "{{reason}}"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "description": "Categorical drop rates correlated with offered load. queue_full is the canonical backpressure signal."
+    }
+  ]
+}
+`)
+
 	return nil
 }
 
@@ -2012,19 +2501,19 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		log.Fatal(err)
 	}
 
-	// helper to write environment block
+	// writeEnv emits the environment block for a service.
 	writeEnv := func(serviceName string) {
 		var envVars []string
 		if s.EpochDuration != "" {
 			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
 		}
 		if s.PyroscopeDirauth && strings.HasPrefix(serviceName, "auth") {
-			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://127.0.0.1:4040")
+			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040")
 			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-dirauth")
 			envVars = append(envVars, fmt.Sprintf("PYROSCOPE_SERVICE_TAG=%s", serviceName))
 		}
 		if s.PyroscopeKpclientd && serviceName == "kpclientd" {
-			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://127.0.0.1:4040")
+			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040")
 			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-kpclientd")
 			envVars = append(envVars, "PYROSCOPE_SERVICE_TAG=kpclientd")
 		}
@@ -2038,158 +2527,158 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		}
 	}
 
-	Write(f, `
-services:
-`)
-	for _, p := range gateways {
+	// writeKatzenpostService emits the common scaffolding for a service
+	// built from the katzenpost base image: container_name and hostname
+	// match the identifier so peers can address it as
+	// `tcp://<name>:<port>` via the bridge's embedded DNS, the source
+	// tree is mounted read-write for log persistence, and the service
+	// joins the single katzenpost bridge network. The caller appends
+	// depends_on/ports/environment as needed.
+	writeKatzenpostService := func(name, command string) {
 		Write(f, `
   %s:
     restart: "no"
+    container_name: %s
+    hostname: %s
     image: %s
     volumes:
       - ./:%s
-    command: %s/server%s -f %s/%s/katzenpost.toml
-    network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
-		writeEnv(p.Identifier)
+    command: %s
+    networks:
+      - %s`, name, name, name, dockerImage, s.BaseDir, command, DockerNetwork)
+	}
+
+	writeDependsOnAuths := func() {
 		Write(f, `
     depends_on:`)
 		for _, authCfg := range s.VotingAuthConfigs {
 			Write(f, `
       - %s`, authCfg.Server.Identifier)
 		}
+	}
+
+	// Every service joins a single bridge network. With per-container
+	// net namespaces, pumba can install `tc netem` qdiscs in each
+	// service's namespace to model real network conditions between
+	// hops; the previous host-networked layout had no such namespaces.
+	Write(f, `
+networks:
+  %s:
+    driver: bridge
+
+services:
+`, DockerNetwork)
+
+	for _, p := range gateways {
+		cmd := fmt.Sprintf("%s/server%s -f %s/%s/katzenpost.toml", s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		writeKatzenpostService(p.Identifier, cmd)
+		writeEnv(p.Identifier)
+		writeDependsOnAuths()
 	}
 
 	for _, p := range serviceNodes {
-		Write(f, `
-  %s:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/server%s -f %s/%s/katzenpost.toml
-    network_mode: host`, p.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		cmd := fmt.Sprintf("%s/server%s -f %s/%s/katzenpost.toml", s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)
+		writeKatzenpostService(p.Identifier, cmd)
 		writeEnv(p.Identifier)
-		Write(f, `
-    depends_on:`)
-		for _, authCfg := range s.VotingAuthConfigs {
-			Write(f, `
-      - %s`, authCfg.Server.Identifier)
-		}
+		writeDependsOnAuths()
 	}
 
 	for i := range mixes {
-		// mixes in this form don't have their identifiers, because that isn't
-		// part of the consensus. if/when that is fixed this could use that
-		// identifier; instead it duplicates the definition of the name format
-		// here.
-		Write(f, `
-  mix%d:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/server%s -f %s/mix%d/katzenpost.toml
-    network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
-		writeEnv(fmt.Sprintf("mix%d", i+1))
-		Write(f, `
-    depends_on:`)
-		for _, authCfg := range s.VotingAuthConfigs {
-			// is this depends_on stuff actually necessary?
-			// there was a bit more of it before this function was regenerating docker-compose.yaml...
-			Write(f, `
-      - %s`, authCfg.Server.Identifier)
-		}
+		name := fmt.Sprintf("mix%d", i+1)
+		cmd := fmt.Sprintf("%s/server%s -f %s/%s/katzenpost.toml", s.BaseDir, s.BinSuffix, s.BaseDir, name)
+		writeKatzenpostService(name, cmd)
+		writeEnv(name)
+		writeDependsOnAuths()
 	}
 
 	// pigeonhole storage replicas
 	for i := range replicas {
-		// mixes in this form don't have their identifiers, because that isn't
-		// part of the consensus. if/when that is fixed this could use that
-		// identifier; instead it duplicates the definition of the name format
-		// here.
-		Write(f, `
-  replica%d:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/replica%s -f %s/replica%d/replica.toml
-    network_mode: host`, i+1, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, i+1)
-		writeEnv(fmt.Sprintf("replica%d", i+1))
-		Write(f, `
-    depends_on:`)
-		for _, authCfg := range s.VotingAuthConfigs {
-			// is this depends_on stuff actually necessary?
-			// there was a bit more of it before this function was regenerating docker-compose.yaml...
-			Write(f, `
-      - %s`, authCfg.Server.Identifier)
-		}
+		name := fmt.Sprintf("replica%d", i+1)
+		cmd := fmt.Sprintf("%s/replica%s -f %s/%s/replica.toml", s.BaseDir, s.BinSuffix, s.BaseDir, name)
+		writeKatzenpostService(name, cmd)
+		writeEnv(name)
+		writeDependsOnAuths()
 	}
 
 	for _, authCfg := range s.VotingAuthConfigs {
-		Write(f, `
-  %s:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/dirauth%s -f %s/%s/authority.toml
-    network_mode: host`, authCfg.Server.Identifier, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir, authCfg.Server.Identifier)
-		writeEnv(authCfg.Server.Identifier)
+		name := authCfg.Server.Identifier
+		cmd := fmt.Sprintf("%s/dirauth%s -f %s/%s/authority.toml", s.BaseDir, s.BinSuffix, s.BaseDir, name)
+		writeKatzenpostService(name, cmd)
+		writeEnv(name)
 		Write(f, `
 `)
 	}
 
 	if !s.NoMetrics {
+		// Prometheus and grafana publish to host loopback so the operator
+		// can browse them. Their scrape paths into the katzenpost
+		// services run entirely on the bridge.
 		Write(f, `
-  %s:
+  metrics:
     restart: "no"
-    image: %s
+    container_name: metrics
+    hostname: metrics
+    image: docker.io/prom/prometheus
     pull_policy: if_not_present
     volumes:
       - ./:%s
     command: --config.file="%s/prometheus.yml"
-    network_mode: host
-`, "metrics", "docker.io/prom/prometheus", s.BaseDir, s.BaseDir)
+    networks:
+      - %s
+    ports:
+      - "127.0.0.1:9090:9090"
+`, s.BaseDir, s.BaseDir, DockerNetwork)
 
 		Write(f, `
   grafana:
     restart: "no"
+    container_name: grafana
+    hostname: grafana
     image: docker.io/grafana/grafana:latest
     pull_policy: if_not_present
     volumes:
-      - ./%s/provisioning/datasources:/etc/grafana/provisioning/datasources
-      - ./%s/provisioning/dashboards:/etc/grafana/provisioning/dashboards
-      - ./%s/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_FEATURE_TOGGLES_DISABLE=kubernetesDashboards
-    network_mode: host
+    networks:
+      - %s
+    ports:
+      - "127.0.0.1:3000:3000"
     depends_on:
       - metrics
-`, "grafana", "grafana", "grafana")
+`, DockerNetwork)
 	}
 
 	if s.PyroscopeDirauth || s.PyroscopeKpclientd {
 		Write(f, `
   pyroscope:
     restart: "no"
+    container_name: pyroscope
+    hostname: pyroscope
     image: docker.io/grafana/pyroscope:latest
     pull_policy: if_not_present
-    network_mode: host
-`)
+    networks:
+      - %s
+    ports:
+      - "127.0.0.1:4040:4040"
+`, DockerNetwork)
 	}
 
+	// kpclientd publishes its thin-client port (64331) on the host so
+	// external thin clients (ping, fetch) running with --network=host
+	// can dial 127.0.0.1:64331. Inside the bridge it is reachable as
+	// kpclientd:64331 via compose DNS, which is how prometheus scrapes
+	// it when kpclientd_metrics is enabled.
+	cmd := fmt.Sprintf("%s/kpclientd%s -c %s/client/client.toml", s.BaseDir, s.BinSuffix, s.BaseDir)
+	writeKatzenpostService("kpclientd", cmd)
 	Write(f, `
-  kpclientd:
-    restart: "no"
-    image: %s
-    volumes:
-      - ./:%s
-    command: %s/kpclientd%s -c %s/client/client.toml
-    network_mode: host`, dockerImage, s.BaseDir, s.BaseDir, s.BinSuffix, s.BaseDir)
+    ports:
+      - "127.0.0.1:64331:64331"`)
 	writeEnv("kpclientd")
 	Write(f, `
 `)

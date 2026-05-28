@@ -38,4 +38,10 @@ docs/web/Admin_guide/target/en/
 
 pigeonhole/testdata/fuzz
 
+coverage.out
+*.coverage.out
+
+__pycache__/
+*.pyc
+
 

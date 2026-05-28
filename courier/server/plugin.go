@@ -538,16 +538,23 @@ func (e *Courier) scheduleReplicaDispatch(envHash *[hash.HashSize]byte, courierM
 		default:
 		}
 
-		// Acquire a semaphore slot, or exit on shutdown.
+		// Acquire a semaphore slot, or exit on shutdown. The waiters
+		// gauge is incremented around the blocking select so an operator
+		// can see whether the maxConcurrentReplicaDispatch cap is acting
+		// as a constraint.
+		instrument.DispatchSemWaitStart()
 		select {
 		case <-e.HaltCh():
+			instrument.DispatchSemWaitEnd()
 			return
 		case e.dispatchSem <- struct{}{}:
 		}
+		instrument.DispatchSemWaitEnd()
 		defer func() { <-e.dispatchSem }()
 
 		if err := e.propagateQueryToReplicas(courierMessage); err != nil {
 			e.log.Errorf("scheduleReplicaDispatch: dispatch for %x failed: %s", hashCopy[:8], err)
+			instrument.DroppedByReason("replica_dispatch_failed")
 		}
 	})
 }
@@ -560,6 +567,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// courier goroutine on the indexed lookups below.
 	if courierMessage.ReplyIndex > 1 {
 		e.log.Warningf("handleOldMessage: rejecting out-of-range ReplyIndex=%d for envelope hash %x", courierMessage.ReplyIndex, envHash)
+		instrument.DroppedByReason("invalid_reply_index")
 		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorInvalidEnvelope, 0)
 	}
 
@@ -682,6 +690,7 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	if !isEnvelopeEpochAcceptable(courierMessage.Epoch, currentReplicaEpoch) {
 		e.log.Warningf("cacheHandleCourierEnvelope: rejecting envelope %x with epoch %d (current replica epoch %d)",
 			envHash[:8], courierMessage.Epoch, currentReplicaEpoch)
+		instrument.DroppedByReason("stale_epoch_envelope")
 		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorInvalidEpoch, courierMessage.ReplyIndex)
 	}
 
@@ -1038,6 +1047,7 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 	}
 
 	e.log.Errorf("dispatchCopyEnvelope: exhausted %d attempts, aborting Copy", maxCopyWriteAttempts)
+	instrument.DroppedByReason("copy_dispatch_exhausted")
 	return false, 0
 }
 
@@ -1056,12 +1066,14 @@ func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDS
 	decryptedPadded, err := reader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, sig)
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to decrypt box %x: %v", boxID[:8], err)
+		instrument.DroppedByReason("copy_read_decrypt_failed")
 		return nil, 0, err
 	}
 
 	decryptedPayload, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedPadded)
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to extract payload from padded data: %v", err)
+		instrument.DroppedByReason("copy_read_extract_failed")
 		return nil, 0, err
 	}
 
@@ -1172,7 +1184,10 @@ func (e *Courier) tryReadFromShardReplica(
 	}
 
 	mkemScheme := mkem.NewScheme(e.envelopeScheme)
+	totalStart := time.Now()
+	encapStart := totalStart
 	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
+	computeElapsed := time.Since(encapStart)
 
 	query := &commands.ReplicaMessage{
 		Cmds:               e.cmds,
@@ -1209,10 +1224,14 @@ func (e *Courier) tryReadFromShardReplica(
 		return nil, reply.ErrorCode, nil
 	}
 
+	decapStart := time.Now()
 	raw, err := mkemScheme.DecryptEnvelope(mkemPrivateKey, shardPubKey, reply.EnvelopeReply)
 	if err != nil {
 		return nil, 0, fmt.Errorf("shard %d: decrypt envelope: %w", shard.ReplicaID, err)
 	}
+	computeElapsed += time.Since(decapStart)
+	instrument.CopyShardReadCompute(computeElapsed)
+	instrument.CopyShardReadTotal(time.Since(totalStart))
 	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(raw)
 	if err != nil {
 		return nil, 0, fmt.Errorf("shard %d: extract padded inner: %w", shard.ReplicaID, err)
@@ -1235,6 +1254,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 	writer, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
 		e.log.Errorf("writeTombstonesToTempChannel: Failed to create StatefulWriter: %v", err)
+		instrument.DroppedByReason("tombstone_writer_create_failed")
 		return
 	}
 
@@ -1242,6 +1262,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 	doc := e.server.PKI.PKIDocument()
 	if doc == nil {
 		e.log.Errorf("writeTombstonesToTempChannel: PKI document is nil")
+		instrument.DroppedByReason("tombstone_nil_pki")
 		return
 	}
 
@@ -1419,11 +1440,13 @@ func (e *Courier) dispatchTombstone(
 				// Transient errors (e.g. DatabaseFailure) still fall
 				// through to the retry below.
 				e.log.Debugf("dispatchTombstone: attempt %d permanently rejected (box already exists), not retrying", attempt+1)
+				instrument.DroppedByReason("tombstone_already_exists")
 				return false
 			}
 		}
 		e.log.Debugf("dispatchTombstone: attempt %d produced %d replies, none successful", attempt+1, len(replies))
 	}
+	instrument.DroppedByReason("tombstone_dispatch_exhausted")
 	return false
 }
 

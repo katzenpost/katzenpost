@@ -59,6 +59,7 @@ require (
 	github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520215053-47e926d8264d // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/leanovate/gopter v0.2.11 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect

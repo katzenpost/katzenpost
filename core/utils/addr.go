@@ -19,6 +19,19 @@ package utils
 import (
 	"fmt"
 	"net"
+	"net/url"
+	"strings"
+)
+
+// Transport scheme names recognised by EnsureURLAddrIPPort. These
+// mirror the constants in core/pki but are duplicated here to keep
+// core/utils free of an import cycle with that package.
+const (
+	transportTCP   = "tcp"
+	transportTCPv4 = "tcp4"
+	transportTCPv6 = "tcp6"
+	transportQUIC  = "quic"
+	transportOnion = "onion"
 )
 
 var unsuitableNetworks []*net.IPNet
@@ -31,6 +44,85 @@ func EnsureAddrIPPort(a string) error {
 	}
 	if net.ParseIP(host) == nil {
 		return fmt.Errorf("address '%v' is not an IP", host)
+	}
+	return nil
+}
+
+// EnsureURLAddrIPPort returns nil iff addr is a URL of the form
+// `<scheme>://host:port` whose host portion is a literal IPv4 or
+// IPv6 address and whose port is present. The onion:// scheme is
+// always accepted because .onion addresses are resolved by Tor's
+// local proxy, not by the system DNS resolver. All other recognised
+// schemes (tcp, tcp4, tcp6, quic) must carry an IP literal so that
+// the daemon does not perform a DNS lookup at dial time. Used by
+// daemon config validators to refuse hostname addresses in
+// production deployments where DNS is not part of the trust base.
+func EnsureURLAddrIPPort(addr string) error {
+	u, err := url.Parse(addr)
+	if err != nil {
+		return fmt.Errorf("address %q is not a valid URL: %w", addr, err)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case transportOnion:
+		return nil
+	case transportTCP, transportTCPv4, transportTCPv6, transportQUIC:
+	default:
+		return fmt.Errorf("address %q has unrecognised scheme %q", addr, u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("address %q has no host portion", addr)
+	}
+	if u.Port() == "" {
+		return fmt.Errorf("address %q has no port", addr)
+	}
+	if net.ParseIP(host) == nil {
+		return fmt.Errorf("address %q has hostname %q which is not an IP literal; production deployments must not rely on DNS resolution (set AllowHostnameAddresses=true to override for docker-mixnet testing)", addr, host)
+	}
+	return nil
+}
+
+// RejectDNSAddrs validates every URL in addrs by calling
+// EnsureURLAddrIPPort, but only when allowHostnames is false. When
+// allowHostnames is true (e.g. inside a docker-mixnet bridge
+// network where service hostnames resolve via an embedded DNS
+// runtime), the function returns nil without inspecting the
+// addresses. This is the canonical entry point for daemon config
+// validators: pass the operator-supplied flag together with the
+// address slice.
+func RejectDNSAddrs(addrs []string, allowHostnames bool) error {
+	if allowHostnames {
+		return nil
+	}
+	for _, a := range addrs {
+		if err := EnsureURLAddrIPPort(a); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RejectDNSMetricsAddr validates a plain `host:port` string (the
+// shape MetricsAddress fields use; no scheme prefix). When
+// allowHostnames is true the function returns nil unconditionally;
+// otherwise the host portion must be a literal IPv4 or IPv6
+// address and the port must be present.
+func RejectDNSMetricsAddr(addr string, allowHostnames bool) error {
+	if allowHostnames {
+		return nil
+	}
+	if addr == "" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("metrics address %q is not a valid host:port: %w", addr, err)
+	}
+	if port == "" {
+		return fmt.Errorf("metrics address %q has no port", addr)
+	}
+	if net.ParseIP(host) == nil {
+		return fmt.Errorf("metrics address %q has hostname %q which is not an IP literal; production deployments must not rely on DNS resolution", addr, host)
 	}
 	return nil
 }
