@@ -127,6 +127,32 @@ var (
 			Help: "Number of thin-client sessions whose underlying connection has dropped without thin_close and whose state is being preserved in case the client reconnects within the grace period.",
 		},
 	)
+	replyLockWait = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_client_arq_reply_lock_wait_seconds",
+			Help:    "Time each call site spent waiting to acquire daemon.replyLock. This lock is the daemon's hottest, taken on every ARQ reply, retry, rotation, cancel, and per-AppID cleanup; rising p99 is the leading indicator of contention as in-flight ARQ counts grow.",
+			Buckets: prometheus.ExponentialBuckets(0.0001, 4, 12),
+		},
+	)
+	cleanupForAppIDDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_client_cleanup_for_app_id_seconds",
+			Help:    "Wall-clock duration of cleanupForAppID, which iterates the entire ARQ map under replyLock. Long durations block the ingressWorker and surface as latency spikes on every other reply that lands during the scan.",
+			Buckets: prometheus.ExponentialBuckets(0.0001, 4, 12),
+		},
+	)
+	arqOrphanedEntries = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_client_arq_orphaned_entries",
+			Help: "Number of ARQ map entries whose AppID has no live connection. Sampled on a periodic ticker; should remain at zero. A persistent non-zero value indicates a cleanup-was-skipped bug or a race between AppID reaping and ARQ insertion.",
+		},
+	)
+	daemonGoroutines = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_client_goroutines",
+			Help: "runtime.NumGoroutine() sampled on a ticker. Steady growth over uptime indicates a per-AppID or per-ARQ goroutine leak.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -152,6 +178,10 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(surbIDRotated)
 		prometheus.MustRegister(thinSessions)
 		prometheus.MustRegister(disconnectedSessions)
+		prometheus.MustRegister(replyLockWait)
+		prometheus.MustRegister(cleanupForAppIDDuration)
+		prometheus.MustRegister(arqOrphanedEntries)
+		prometheus.MustRegister(daemonGoroutines)
 	})
 	if address == "" {
 		return
@@ -246,3 +276,20 @@ func ThinSessionsSet(n int) { thinSessions.Set(float64(n)) }
 // pending a possible reconnect. Pass len(listener.disconnectedSessions)
 // after each insert into or delete from that map.
 func DisconnectedSessionsSet(n int) { disconnectedSessions.Set(float64(n)) }
+
+// ReplyLockWait observes the time spent waiting to acquire
+// daemon.replyLock at a single call site.
+func ReplyLockWait(d time.Duration) { replyLockWait.Observe(d.Seconds()) }
+
+// CleanupForAppIDDuration observes the wall-clock cost of one
+// cleanupForAppID invocation.
+func CleanupForAppIDDuration(d time.Duration) {
+	cleanupForAppIDDuration.Observe(d.Seconds())
+}
+
+// ARQOrphanedEntriesSet sets the count of ARQ entries whose AppID
+// has no live connection (sampled on a ticker).
+func ARQOrphanedEntriesSet(n int) { arqOrphanedEntries.Set(float64(n)) }
+
+// DaemonGoroutinesSet sets the current runtime.NumGoroutine() reading.
+func DaemonGoroutinesSet(n int) { daemonGoroutines.Set(float64(n)) }

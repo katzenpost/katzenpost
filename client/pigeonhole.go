@@ -1151,7 +1151,7 @@ func (d *Daemon) arqSend(message *ARQMessage, envHashKey [32]byte) error {
 	message.ReplyETA = rtt
 	message.Retransmissions = 0
 
-	d.replyLock.Lock()
+	d.lockReply()
 	d.arqSurbIDMap[*surbID] = message
 	d.arqEnvelopeHashMap[envHashKey] = surbID
 	instrument.ARQInflightSet(len(d.arqSurbIDMap))
@@ -1261,7 +1261,7 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 		return
 	}
 
-	d.replyLock.Lock()
+	d.lockReply()
 	surbID, ok := d.arqEnvelopeHashMap[*req.EnvelopeHash]
 	var arqMessage *ARQMessage
 	if ok && surbID != nil {
@@ -1385,7 +1385,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	switch transition.Action {
 	case ARQActionError:
 		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", transition.ErrorCode)
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
@@ -1403,7 +1403,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	case ARQActionComplete:
 		d.log.Debugf("handlePigeonholeARQReply: Write ACK received, returning success (single round-trip)")
-		d.replyLock.Lock()
+		d.lockReply()
 		if arqMessage.SURBID != nil {
 			delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		}
@@ -1452,7 +1452,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 		oldSurbID := arqMessage.SURBID
 
-		d.replyLock.Lock()
+		d.lockReply()
 		// Abort if a concurrent cancel has already cleared this
 		// arqMessage. Rotating here would silently un-cancel the
 		// operation.
@@ -1535,7 +1535,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		return
 
 	case pigeonhole.CopyStatusSucceeded:
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
@@ -1549,7 +1549,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		})
 
 	case pigeonhole.CopyStatusFailed:
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
@@ -1565,7 +1565,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 
 	default:
 		d.log.Warningf("handleCopyCommandARQReply: unexpected Status=%d, treating as failure", copyCommandReply.Status)
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
@@ -1595,7 +1595,7 @@ func (d *Daemon) scheduleCopyCommandPoll(arqMessage *ARQMessage) {
 		return
 	}
 
-	d.replyLock.Lock()
+	d.lockReply()
 	// Abort if a concurrent cancel has already removed the arqMessage
 	// from the maps. Re-registering here would silently un-cancel the
 	// operation.
@@ -1750,7 +1750,7 @@ func (d *Daemon) cancelResendingCopyCommand(request *Request) {
 	}
 
 	// Look up SURB ID from EnvelopeHash map (using WriteCapHash as the key)
-	d.replyLock.Lock()
+	d.lockReply()
 	surbID, ok := d.arqEnvelopeHashMap[*req.WriteCapHash]
 	var arqMessage *ARQMessage
 	if ok && surbID != nil {
@@ -1878,7 +1878,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 
 			oldSurbID := arqMessage.SURBID
 
-			d.replyLock.Lock()
+			d.lockReply()
 			// Abort if a concurrent cancel has already cleared this
 			// arqMessage.
 			if oldSurbID == nil {
@@ -1913,7 +1913,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 
 		case payloadActionIdempotentSuccess:
 			d.log.Debugf("handlePayloadReply: BoxAlreadyExists for write operation - treating as idempotent success")
-			d.replyLock.Lock()
+			d.lockReply()
 			delete(d.arqSurbIDMap, *arqMessage.SURBID)
 			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 			d.replyLock.Unlock()
@@ -1932,7 +1932,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		}
 
 		// payloadActionReturnError (or retry/idempotent fell through on infrastructure failure)
-		d.replyLock.Lock()
+		d.lockReply()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
@@ -1953,7 +1953,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	}
 
 	// Remove from ARQ tracking
-	d.replyLock.Lock()
+	d.lockReply()
 	delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 	d.replyLock.Unlock()

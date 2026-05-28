@@ -2178,6 +2178,54 @@ providers:
       "datasource": "Prometheus",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
       "description": "Same as panel 13 but as a single signed series. Tracks arq_inflight + uncounted error/cancel exits under healthy operation; a value that grows without arq_inflight also growing and with no error/cancel activity indicates a real leak."
+    },
+    {
+      "id": 15,
+      "title": "replyLock Wait (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 64},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_client_arq_reply_lock_wait_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_client_arq_reply_lock_wait_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_client_arq_reply_lock_wait_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "description": "Time each call site spends waiting to acquire daemon.replyLock. p99 rising while in-flight ARQ counts also rise is the canonical signature of lock contention on the hottest mutex in the daemon."
+    },
+    {
+      "id": 16,
+      "title": "cleanupForAppID Duration (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 64},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(katzenpost_client_cleanup_for_app_id_seconds_bucket[5m]))", "refId": "A", "legendFormat": "{{job}} p50"},
+        {"expr": "histogram_quantile(0.90, rate(katzenpost_client_cleanup_for_app_id_seconds_bucket[5m]))", "refId": "B", "legendFormat": "{{job}} p90"},
+        {"expr": "histogram_quantile(0.99, rate(katzenpost_client_cleanup_for_app_id_seconds_bucket[5m]))", "refId": "C", "legendFormat": "{{job}} p99"}
+      ],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "description": "Wall-clock duration of one cleanupForAppID. The function scans the entire ARQ map under replyLock, so a long duration blocks every other reply that lands during the scan and surfaces as a latency spike on panel 9."
+    },
+    {
+      "id": 17,
+      "title": "ARQ Orphaned Entries",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 72},
+      "targets": [{"expr": "katzenpost_client_arq_orphaned_entries", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "ARQ map entries whose AppID has no live connection. Should be zero. Persistent non-zero values mean cleanupForAppID was skipped for that AppID or an ARQ insert raced with a disconnect."
+    },
+    {
+      "id": 18,
+      "title": "Daemon Goroutines (runtime.NumGoroutine)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 72},
+      "targets": [{"expr": "katzenpost_client_goroutines", "refId": "A", "legendFormat": "{{job}}"}],
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "description": "runtime.NumGoroutine() sampled every thirty seconds. Steady-state growth over hours of uptime indicates a per-AppID or per-ARQ goroutine leak. The four background workers plus per-connection reader/writer pairs set the baseline."
     }
   ]
 }

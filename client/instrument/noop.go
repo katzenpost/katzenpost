@@ -67,3 +67,15 @@ func ThinSessionsSet(_ int) {}
 
 // DisconnectedSessionsSet is a no-op when the build tag is unset.
 func DisconnectedSessionsSet(_ int) {}
+
+// ReplyLockWait is a no-op when the build tag is unset.
+func ReplyLockWait(_ time.Duration) {}
+
+// CleanupForAppIDDuration is a no-op when the build tag is unset.
+func CleanupForAppIDDuration(_ time.Duration) {}
+
+// ARQOrphanedEntriesSet is a no-op when the build tag is unset.
+func ARQOrphanedEntriesSet(_ int) {}
+
+// DaemonGoroutinesSet is a no-op when the build tag is unset.
+func DaemonGoroutinesSet(_ int) {}
