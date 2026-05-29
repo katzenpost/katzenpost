@@ -457,6 +457,60 @@ func lenSyncMap(m *sync.Map) int {
 	return i
 }
 
+// TestNextPKIWakeup pins the event-driven schedule the worker uses to
+// avoid waking up every recheckInterval just to find both epochs still
+// cached. With both now and now+1 in hand the worker should sleep across
+// the boundary plus the gateway publish-and-cache window so the new
+// now+1 is ready on the next wake; while waiting for now+1 to become
+// fetchable it should sleep until the nextFetchTill threshold; in
+// outright failure cases (no current doc, or past the threshold with
+// next still missing) it falls back to recheckInterval polling.
+func TestNextPKIWakeup(t *testing.T) {
+	period := epochtime.Period
+	cases := []struct {
+		name     string
+		till     time.Duration
+		haveNow  bool
+		haveNext bool
+		want     time.Duration
+	}{
+		{
+			name:     "no current doc: poll at recheckInterval",
+			till:     period / 2,
+			haveNow:  false,
+			haveNext: false,
+			want:     recheckInterval,
+		},
+		{
+			name:     "have current, next not yet fetchable: sleep until threshold",
+			till:     period - period/8,
+			haveNow:  true,
+			haveNext: false,
+			want:     (period - period/8) - nextFetchTill,
+		},
+		{
+			name:     "have current, past threshold with next missing: poll",
+			till:     period / 32,
+			haveNow:  true,
+			haveNext: false,
+			want:     recheckInterval,
+		},
+		{
+			name:     "both cached: sleep across boundary plus publish+cache window",
+			till:     period / 4,
+			haveNow:  true,
+			haveNext: true,
+			want:     period/4 + PublishDeadline + mixServerCacheDelay,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := nextPKIWakeup(tc.till, tc.haveNow, tc.haveNext)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestPKICachedDoc(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)

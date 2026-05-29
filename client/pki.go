@@ -44,6 +44,15 @@ var (
 	// tests may temporarily shorten it.
 	waitForCurrentDocumentRetryDelay = time.Second
 
+	// pkiFetchTimeout bounds a single GetConsensus round-trip from the
+	// PKI worker. Without it, a half-broken gateway link (peer dead but
+	// no FIN/RST observed) wedges the worker indefinitely inside
+	// updateDocument, since GetConsensus only listens on ctx.Done() and
+	// HaltCh and the worker's only context was previously unbounded.
+	// 30s is comfortably above the millisecond-scale latencies seen in
+	// practice and well below the 2-minute epoch period.
+	pkiFetchTimeout = 30 * time.Second
+
 	ccbor cbor.EncMode
 )
 
@@ -290,10 +299,13 @@ func (p *pki) worker() {
 				switch err {
 				case cpki.ErrNoDocument:
 					p.failedFetches[epoch] = err
-				case errGetConsensusCanceled:
-					return
 				default:
 				}
+				// Other errors (including a deadline-expired
+				// errGetConsensusCanceled or a transient
+				// ErrNotConnected) are treated as routine: the
+				// next timer tick retries. Shutdown is observed
+				// by the HaltCh arm of the outer select above.
 				continue
 			}
 			didUpdate = true
@@ -311,14 +323,43 @@ func (p *pki) worker() {
 				p.c.cfg.Callbacks.OnDocumentFn(cached.Doc)
 			}
 		}
-		timer.Reset(recheckInterval)
+		_, haveNow := p.docs.Load(now)
+		_, haveNext := p.docs.Load(now + 1)
+		timer.Reset(nextPKIWakeup(till, haveNow, haveNext))
 	}
 
 	// NOTREACHED
 }
 
+// nextPKIWakeup returns how long the PKI worker should sleep before its
+// next fetch attempt. The worker is event-driven on epoch boundaries
+// rather than polling at recheckInterval, so it wakes only when there is
+// a fetch that could plausibly succeed.
+//
+//   till      time remaining in the current epoch.
+//   haveNow   the current epoch's document is cached.
+//   haveNext  the next epoch's document is cached.
+//
+// With both cached, sleep across the boundary plus the publish-and-cache
+// window so the new now+1 is ready when we wake. With only the current
+// cached, sleep until we cross the nextFetchTill threshold (or fall back
+// to recheckInterval if we are already past it). With no current doc,
+// poll at recheckInterval.
+func nextPKIWakeup(till time.Duration, haveNow, haveNext bool) time.Duration {
+	if !haveNow {
+		return recheckInterval
+	}
+	if !haveNext {
+		if till > nextFetchTill {
+			return till - nextFetchTill
+		}
+		return recheckInterval
+	}
+	return till + PublishDeadline + mixServerCacheDelay
+}
+
 func (p *pki) updateDocument(epoch uint64) error {
-	pkiCtx, cancelFn := context.WithCancel(context.Background())
+	pkiCtx, cancelFn := context.WithTimeout(context.Background(), pkiFetchTimeout)
 	p.Go(func() {
 		select {
 		case <-p.HaltCh():
