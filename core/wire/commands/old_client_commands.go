@@ -11,14 +11,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
-func (c *Commands) messageMsgPaddingLength() int {
-	return constants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
-}
-
-func (c *Commands) messageMsgLength() int {
-	return messageBaseLength + c.messageMsgPaddingLength()
-}
-
 func messageACKLength() int {
 	return messageBaseLength + constants.SURBIDLength
 }
@@ -159,38 +151,6 @@ func (c *MessageACK) Length() int {
 	return cmdOverhead + 1 + 4 + constants.SURBIDLength + c.Geo.PacketLength
 }
 
-// Message is a de-serialized message command containing a message.
-type Message struct {
-	Geo  *geo.Geometry
-	Cmds *Commands
-
-	QueueSizeHint uint8
-	Sequence      uint32
-	Payload       []byte
-}
-
-func (c *Message) String() string { return "Message" }
-
-// ToBytes serializes the Message and returns the resulting slice.
-func (c *Message) ToBytes() []byte {
-	if len(c.Payload) != c.Geo.UserForwardPayloadLength {
-		panic("wire: invalid Message payload when serializing")
-	}
-
-	out := make([]byte, cmdOverhead+c.Cmds.messageMsgLength()+len(c.Payload))
-	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageMsgLength()+len(c.Payload)))
-	out[6] = byte(messageTypeMessage)
-	out[7] = c.QueueSizeHint
-	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	copy(out[12:], c.Payload)
-	return c.Cmds.padToMaxCommandSize(out, false)
-}
-
-func (c *Message) Length() int {
-	return cmdOverhead + 1 + 4 + c.Geo.PacketLength
-}
-
 // MessageEmpty is a de-serialized message command signifying a empty queue.
 type MessageEmpty struct {
 	Cmds *Commands
@@ -237,24 +197,6 @@ func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
 		r.Sequence = seq
 		copy(r.ID[:], b[:constants.SURBIDLength])
 		b = b[constants.SURBIDLength:]
-		r.Payload = make([]byte, 0, len(b))
-		r.Payload = append(r.Payload, b...)
-		r.Cmds = cmds
-		return r, nil
-	case messageTypeMessage:
-		if len(b) != c.messageMsgPaddingLength()+c.geo.UserForwardPayloadLength {
-			return nil, errInvalidCommand
-		}
-
-		padding := b[c.geo.UserForwardPayloadLength:]
-		if !utils.CtIsZero(padding) {
-			return nil, errInvalidCommand
-		}
-		b = b[:c.geo.UserForwardPayloadLength]
-
-		r := new(Message)
-		r.QueueSizeHint = hint
-		r.Sequence = seq
 		r.Payload = make([]byte, 0, len(b))
 		r.Payload = append(r.Payload, b...)
 		r.Cmds = cmds

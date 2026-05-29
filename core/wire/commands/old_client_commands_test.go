@@ -87,11 +87,6 @@ func TestMessage(t *testing.T) {
 
 	require := require.New(t)
 
-	// Generate the payload.
-	payload := make([]byte, cmds.geo.ForwardPayloadLength)
-	_, err := rand.Reader.Read(payload)
-	require.NoError(err, "Message: failed to generate payload")
-
 	// MessageEmpty
 	cmdEmpty := &MessageEmpty{
 		Cmds:     cmds,
@@ -107,29 +102,6 @@ func TestMessage(t *testing.T) {
 
 	cmdEmpty = c.(*MessageEmpty)
 	require.Equal(uint32(seq), cmdEmpty.Sequence, "MessageEmpty: FromBytes() Sequence")
-
-	// Message
-	msgPayload := payload[:cmds.geo.UserForwardPayloadLength]
-	cmdMessage := &Message{
-		Geo:  geo,
-		Cmds: cmds,
-
-		QueueSizeHint: hint,
-		Sequence:      seq,
-		Payload:       msgPayload,
-	}
-	b = cmdMessage.ToBytes()
-	require.Len(b, cmds.MaxMessageLenServerToClient, "Message: ToBytes() length")
-	require.True(util.CtIsZero(b[expectedLen:]), "Message: ToBytes() padding must be zero")
-
-	c, err = cmds.FromBytes(b)
-	require.NoError(err, "Message: FromBytes() failed")
-	require.IsType(cmdMessage, c, "Message: FromBytes() invalid type")
-
-	cmdMessage = c.(*Message)
-	require.Equal(uint8(hint), cmdMessage.QueueSizeHint, "Message: FromBytes() QueueSizeHint")
-	require.Equal(uint32(seq), cmdMessage.Sequence, "Message: FromBytes() Sequence")
-	require.Equal(msgPayload, cmdMessage.Payload, "Message: FromBytes() Payload")
 
 	// MessageACK
 	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)

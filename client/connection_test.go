@@ -275,7 +275,6 @@ func setupClientCallbacks(cfg *config.Config) {
 	cfg.Callbacks.OnConnFn = func(err error) {}
 	cfg.Callbacks.OnDocumentFn = func(*cpki.Document) {}
 	cfg.Callbacks.OnEmptyFn = func() error { return nil }
-	cfg.Callbacks.OnMessageFn = func([]byte) error { return nil }
 	cfg.Callbacks.OnACKFn = func(*[constants.SURBIDLength]byte, []byte) error { return nil }
 }
 
@@ -600,11 +599,6 @@ func TestConnection(t *testing.T) {
 	// Empty callback for test - empty message events are not tested here
 	clientCfg.Callbacks.OnEmptyFn = func() error {
 		// Intentionally empty - empty message events not relevant for connection test
-		return nil
-	}
-	// Empty callback for test - message handling is not the focus of this test
-	clientCfg.Callbacks.OnMessageFn = func([]byte) error {
-		// Intentionally empty - message handling not tested in this connection test
 		return nil
 	}
 	// Empty callback for test - ACK handling is not tested in this connection test
@@ -1158,7 +1152,6 @@ func TestOnWireConnMessageACKCallback(t *testing.T) {
 		OnConnFn:     func(error) {},
 		OnDocumentFn: func(*cpki.Document) {},
 		OnEmptyFn:    func() error { return nil },
-		OnMessageFn:  func([]byte) error { return nil },
 		OnACKFn: func(id *[constants.SURBIDLength]byte, payload []byte) error {
 			ackCh <- id[:]
 			return nil

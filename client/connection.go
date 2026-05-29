@@ -622,33 +622,6 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			// push delivery; treat as a protocol regression by
 			// an old peer.
 			c.log.Errorf("Received unexpected MessageEmpty from gateway in push-delivery mode; ignoring.")
-		case *commands.Message:
-			c.log.Debugf("Received pushed Message: %v", cmd.Sequence)
-			seqCopy := cmd.Sequence
-			payload := cmd.Payload
-			onMessage := c.client.cfg.Callbacks.OnMessageFn
-			c.Go(func() {
-				select {
-				case <-c.HaltCh():
-					return
-				default:
-				}
-				if onMessage != nil {
-					if err := onMessage(payload); err != nil {
-						c.log.Debugf("Caller failed to handle Message: %v", err)
-						forceCloseConn(err)
-						return
-					}
-				}
-				ack := &commands.MessageDelivered{
-					Sequence: seqCopy,
-					Cmds:     w.GetCommands(),
-				}
-				if err := w.SendCommand(ack); err != nil {
-					c.log.Debugf("Failed to send MessageDelivered for Message seq %d: %v", seqCopy, err)
-					forceCloseConn(err)
-				}
-			})
 		case *commands.MessageACK:
 			c.log.Debugf("Received pushed MessageACK: %v", cmd.Sequence)
 			seqCopy := cmd.Sequence

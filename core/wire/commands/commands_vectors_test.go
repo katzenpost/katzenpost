@@ -44,10 +44,6 @@ type commandsTest struct {
 	RetrieveMessage    string
 	MessageEmpty       string
 	MessageEmptySeq    uint32
-	Message            string
-	MessageHint        uint8
-	MessageSeq         uint32
-	MessagePayload     string
 	MessageAck         string
 	MessageAckHint     uint8
 	MessageAckSeq      uint32
@@ -94,21 +90,10 @@ func NoTestBuildCommandVectors(t *testing.T) {
 		Sequence: emptyMsgSeq,
 	}
 
-	msgPayload := make([]byte, cmds.geo.ForwardPayloadLength)
-	_, err := rand.Read(msgPayload)
-	assert.NoError(err)
 	var msgSeq uint32 = 9876
-	message := &Message{
-		Cmds: cmds,
-		Geo:  geo,
-
-		QueueSizeHint: hint,
-		Sequence:      msgSeq,
-		Payload:       msgPayload[:geo.UserForwardPayloadLength],
-	}
 
 	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
-	_, err = rand.Read(ackPayload)
+	_, err := rand.Read(ackPayload)
 	assert.NoError(err)
 	cmdMessageACK := &MessageACK{
 		Geo:           geo,
@@ -138,10 +123,6 @@ func NoTestBuildCommandVectors(t *testing.T) {
 		RetrieveMessageSeq: retrieveMessageSeq,
 		MessageEmpty:       hex.EncodeToString(messageEmpty.ToBytes()),
 		MessageEmptySeq:    emptyMsgSeq,
-		MessageHint:        hint,
-		MessageSeq:         msgSeq,
-		MessagePayload:     hex.EncodeToString(msgPayload[:cmds.geo.UserForwardPayloadLength]),
-		Message:            hex.EncodeToString(message.ToBytes()),
 		MessageAck:         hex.EncodeToString(cmdMessageACK.ToBytes()),
 		MessageAckHint:     hint,
 		MessageAckSeq:      msgSeq,
@@ -219,24 +200,6 @@ func TestCommandVectors(t *testing.T) {
 	emptyMessageCmd := emptyMessage.ToBytes()
 	assert.Equal(emptyMessageCmd[:len(messageEmptyWant)], messageEmptyWant)
 	assert.True(util.CtIsZero(emptyMessageCmd[len(messageEmptyWant):]), "MessageEmpty: ToBytes() padding must be zero")
-
-	messageWant, err := hex.DecodeString(cmdsTest.Message)
-	assert.NoError(err)
-
-	payload, err := hex.DecodeString(cmdsTest.MessagePayload)
-	assert.NoError(err)
-
-	message := &Message{
-		Geo:           geo,
-		Cmds:          cmds,
-		QueueSizeHint: cmdsTest.MessageHint,
-		Sequence:      cmdsTest.MessageSeq,
-		Payload:       payload,
-	}
-
-	messageCmd := message.ToBytes()
-	assert.Equal(messageCmd[:len(messageWant)], messageWant)
-	assert.True(util.CtIsZero(messageCmd[len(messageWant):]), "Message: ToBytes() padding must be zero")
 
 	messageAckWant, err := hex.DecodeString(cmdsTest.MessageAck)
 	assert.NoError(err)

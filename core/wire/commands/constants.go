@@ -27,9 +27,8 @@ const (
 	replicaMessageReplyLength = 1
 	replicaWriteReplyLength   = 1
 
-	messageTypeMessage messageType = 0
-	messageTypeACK     messageType = 1
-	messageTypeEmpty   messageType = 2
+	messageTypeACK   messageType = 1
+	messageTypeEmpty messageType = 2
 
 	// Generic commands.
 	noOp       commandID = 0

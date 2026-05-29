@@ -290,7 +290,7 @@ func (c *incomingConn) worker() {
 	c.l.onInitializedConn(c)
 
 	// Spawn the push-delivery sender for client connections. The
-	// sender pushes spool entries as Message / MessageACK as soon as
+	// sender pushes spool entries as MessageACK as soon as
 	// the listener pings it from the gateway worker, and sends NoOp
 	// heartbeats during otherwise quiet stretches. Mix-to-mix
 	// connections have no spool and skip this.
@@ -410,7 +410,7 @@ func (c *incomingConn) worker() {
 				c.log.Debugf("Received unexpected RetrieveMessage from peer in push-delivery mode; closing.")
 				return
 			case *commands.MessageDelivered:
-				// Acknowledgement of a Message or MessageACK we pushed.
+				// Acknowledgement of a MessageACK we pushed.
 				// Hand the Sequence to the sender goroutine so it can
 				// advance the spool. Non-blocking: a stale ack arriving
 				// between sends would overwrite the pending value in
@@ -578,8 +578,8 @@ func (c *incomingConn) onSendRetrievePacket(cmd *commands.SendRetrievePacket) er
 	return c.w.SendCommand(respCmd)
 }
 
-// senderWorker pushes Message and MessageACK commands to a connected
-// client as soon as the spool has work for them, and emits NoOp
+// senderWorker pushes MessageACK commands to a connected client as
+// soon as the spool has work for them, and emits NoOp
 // heartbeats during otherwise quiet stretches so the client's
 // post-handshake read deadline stays warm. Spawned once per
 // authenticated client connection by worker(); exits on connection
@@ -647,34 +647,22 @@ func (c *incomingConn) senderWorker() {
 			seq++
 			mySeq := seq
 
-			var cmd commands.Command
-			if surbID != nil {
-				if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
-					c.log.Errorf("senderWorker: stored SURBReply payload is mis-sized: %v", len(msg))
-					return
-				}
-				ack := &commands.MessageACK{
-					Geo:           c.geo,
-					Cmds:          commands.NewMixnetCommands(c.geo),
-					QueueSizeHint: hint,
-					Sequence:      mySeq,
-					Payload:       msg,
-				}
-				copy(ack.ID[:], surbID)
-				cmd = ack
-			} else {
-				if len(msg) != c.geo.UserForwardPayloadLength {
-					c.log.Errorf("senderWorker: stored user payload is mis-sized: %v", len(msg))
-					return
-				}
-				cmd = &commands.Message{
-					Geo:           c.geo,
-					Cmds:          commands.NewMixnetCommands(c.geo),
-					QueueSizeHint: hint,
-					Sequence:      mySeq,
-					Payload:       msg,
-				}
+			if surbID == nil {
+				c.log.Errorf("senderWorker: spool entry has no SURB ID; cannot deliver as MessageACK")
+				return
 			}
+			if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
+				c.log.Errorf("senderWorker: stored SURBReply payload is mis-sized: %v", len(msg))
+				return
+			}
+			cmd := &commands.MessageACK{
+				Geo:           c.geo,
+				Cmds:          commands.NewMixnetCommands(c.geo),
+				QueueSizeHint: hint,
+				Sequence:      mySeq,
+				Payload:       msg,
+			}
+			copy(cmd.ID[:], surbID)
 
 			// Drain any stale ack that arrived before we sent this one
 			// so it is not mistaken for the response we are about to
