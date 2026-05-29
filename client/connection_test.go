@@ -698,6 +698,71 @@ func TestGetConsensusNotConnected(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotConnected)
 }
 
+// TestGetDescriptorReusesPriorDescriptor pins the redial behaviour after a
+// long gateway outage. When the daemon's PKI cache has expired and no
+// PinnedGateways are configured, getDescriptor previously returned an
+// error and zeroed out c.descriptor in its deferred cleanup, causing
+// doConnect to abort with "descriptor no longer present" on every
+// iteration of the connectWorker for-loop. Without a descriptor the
+// daemon never dials again, so it cannot refresh PKI, so the descriptor
+// never returns: a catch-22 that wedges reconnect indefinitely. The fix
+// preserves the previously-cached descriptor across PKI-fetch failures
+// so the connect loop has an address to dial; the next successful
+// handshake will refresh PKI and overwrite it.
+func TestGetDescriptorReusesPriorDescriptor(t *testing.T) {
+	conn := newTestConnection(t)
+
+	// Speed the synchronous WaitForCurrentDocument retry loop so the test
+	// completes in milliseconds rather than waiting the production
+	// waitForCurrentDocumentRetryDelay × waitForCurrentDocumentAttempts.
+	prevAttempts := waitForCurrentDocumentAttempts
+	prevDelay := waitForCurrentDocumentRetryDelay
+	waitForCurrentDocumentAttempts = 1
+	waitForCurrentDocumentRetryDelay = time.Millisecond
+	defer func() {
+		waitForCurrentDocumentAttempts = prevAttempts
+		waitForCurrentDocumentRetryDelay = prevDelay
+	}()
+
+	// Stand up a minimal pki with an empty document cache and a
+	// consensusGetter wired to the test connection. updateDocument's
+	// synchronous calls into GetConsensus then return ErrNotConnected
+	// fast (isConnected is false on the test connection) rather than
+	// NPEing on a missing getter, mirroring the production failure.
+	conn.client.pki = &pki{
+		c:               conn.client,
+		log:             conn.client.logbackend.GetLogger("pki"),
+		failedFetches:   make(map[uint64]error),
+		forceUpdateCh:   make(chan interface{}, 1),
+		consensusGetter: conn,
+	}
+
+	// No CachedDocument and no PinnedGateways: the only way getDescriptor
+	// can succeed under these conditions is by reusing the previously
+	// cached c.descriptor.
+	conn.client.cfg.CachedDocument = nil
+	conn.client.cfg.PinnedGateways = &config.Gateways{}
+	conn.client.cfg.Debug = &config.Debug{}
+
+	prior := &cpki.MixDescriptor{
+		Name:        "gateway-stale",
+		IdentityKey: []byte("identity"),
+		LinkKey:     []byte("linkkey"),
+		Addresses: map[string][]string{
+			"tcp": {"tcp://stale.example:1234"},
+		},
+		IsGatewayNode: true,
+	}
+	conn.descriptor = prior
+	conn.pkiEpoch = 42
+
+	err := conn.getDescriptor()
+	require.NoError(t, err, "getDescriptor must succeed by reusing the prior descriptor when fresh PKI is unavailable")
+	require.NotNil(t, conn.descriptor, "the prior descriptor must be preserved across PKI fetch failure")
+	require.Equal(t, prior.Name, conn.descriptor.Name)
+	require.Equal(t, prior.Addresses, conn.descriptor.Addresses)
+}
+
 func TestGetConsensusContextCanceled(t *testing.T) {
 	conn := newTestConnection(t)
 	conn.isConnected.Store(true)

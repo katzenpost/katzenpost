@@ -170,19 +170,39 @@ func (c *Client) ForceFetchPKI() {
 }
 
 func (c *connection) getDescriptor() error {
+	// Save the previously-cached descriptor so the deferred cleanup can
+	// restore it if the fresh PKI fetch fails. Otherwise a momentary
+	// outage that expires the daemon's PKI cache would also wipe the
+	// gateway descriptor, leaving the connect loop with no address to
+	// dial. Reconnect is how PKI is refreshed in the first place, so
+	// gating it on fresh PKI deadlocks.
+	prev := c.descriptor
 	ok := false
 	defer func() {
 		if !ok {
 			c.pkiEpoch = 0
-			c.descriptor = nil
+			c.descriptor = prev
 		}
 	}()
 
 	_, doc := c.client.CurrentDocument()
 	if doc == nil && c.client.cfg.CachedDocument == nil {
 		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
-		n := len(c.client.cfg.PinnedGateways.Gateways)
+		n := 0
+		if c.client.cfg.PinnedGateways != nil {
+			n = len(c.client.cfg.PinnedGateways.Gateways)
+		}
 		if n == 0 {
+			if prev != nil {
+				// No fresh PKI and no pinned gateways: keep the
+				// previously-known descriptor so doConnect can
+				// retry the same gateway. A stale address is far
+				// better than refusing to redial; the next
+				// successful handshake refreshes PKI.
+				c.log.Debugf("No fresh PKI doc; reusing prior descriptor for %v", prev.Name)
+				ok = true
+				return nil
+			}
 			return errors.New("no PinnedGateways")
 		}
 		gateway := c.client.cfg.PinnedGateways.Gateways[rand.NewMath().Intn(n)]
