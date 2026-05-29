@@ -262,20 +262,6 @@ type Callbacks struct {
 	// attempt has failed).
 	OnConnFn func(error)
 
-	// OnMessageEmptyFn is the callback function that will be called
-	// when the user's server side spool is empty.  This can happen
-	// as the result of periodic background fetches.  Calls to the callback
-	// that return an error will be treated as a signal to tear down the
-	// connection.
-	OnEmptyFn func() error
-
-	// OnMessageFn is the callback function that will be called when
-	// a message is retrived from the user's server side spool.  Callers
-	// MUST be prepared to receive multiple callbacks with the same
-	// message body.  Calls to the callback that return an error will
-	// be treated as a signal to tear down the connection.
-	OnMessageFn func([]byte) error
-
 	// OnACKFn is the callback function that will be called when a
 	// message CK is retreived from the user's server side spool.  Callers
 	// MUST be prepared to receive multiple callbacks with the same

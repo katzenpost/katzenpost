@@ -122,7 +122,16 @@ func (s *sender) sendLoopDecoy() {
 
 func (s *sender) UpdateConnectionStatus(isConnected bool) {
 	s.sendMessageOrLoop.UpdateConnectionStatus(isConnected)
-	s.sendLoop.UpdateConnectionStatus(isConnected)
+	// When decoys are disabled the worker mutes loopCh and never drains
+	// sendLoop.OutCh(). Driving the sendLoop ExpDist anyway would let its
+	// worker block forever emitting to that unread OutCh; a blocked
+	// ExpDist worker can no longer service its opCh, so the next
+	// UpdateRate/UpdateConnectionStatus call blocks, and since those run
+	// on the PKI-document broadcast path that backpressure wedges the PKI
+	// worker and freezes all consensus updates. Keep sendLoop dormant.
+	if !s.disableDecoys {
+		s.sendLoop.UpdateConnectionStatus(isConnected)
+	}
 }
 
 func (s *sender) UpdateRates(rates *Rates) {
@@ -134,8 +143,10 @@ func (s *sender) UpdateRates(rates *Rates) {
 
 	// The LambdaL ticker stays dormant until a positive rate is
 	// published, so a PKI document that omits LambdaL produces no
-	// loop-decoy ticks.
-	if rates.loop > 0 {
+	// loop-decoy ticks. It likewise stays dormant whenever decoys are
+	// disabled: its OutCh is never drained, so driving it would wedge the
+	// PKI-document path (see UpdateConnectionStatus).
+	if !s.disableDecoys && rates.loop > 0 {
 		s.sendLoop.UpdateRate(uint64(1 / rates.loop))
 	}
 }

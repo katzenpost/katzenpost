@@ -116,7 +116,6 @@ type connection struct {
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
 
-	fetchCh        chan interface{}
 	sendCh         chan *connSendCtx
 	getConsensusCh chan *getConsensusCtx
 
@@ -147,19 +146,6 @@ type getConsensusCtx struct {
 type connSendCtx struct {
 	pkt    []byte
 	doneFn func(error)
-}
-
-// ForceFetch attempts to force an otherwise idle client to attempt to fetch
-// the contents of the user's spool.  This call has no effect if a connection
-// is not established or if the connection is already in the middle of a
-// fetch cycle, and should be considered a best effort operation.
-func (c *Client) ForceFetch() {
-	select {
-	case c.conn.fetchCh <- true:
-	case <-c.HaltCh():
-		// Client is shutting down, don't send
-	default:
-	}
 }
 
 // ForceFetchPKI attempts to force client's pkiclient to wake and fetch
@@ -546,23 +532,6 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 		}
 	})
 
-	dispatchOnEmpty := func() error {
-		if c.client.cfg.Callbacks.OnEmptyFn != nil {
-			c.Go(func() {
-				select {
-				case <-c.HaltCh():
-					return
-				default:
-					if err := c.client.cfg.Callbacks.OnEmptyFn(); err != nil {
-						c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
-						forceCloseConn(err)
-					}
-				}
-			})
-		}
-		return nil
-	}
-
 	var consensusCtx *getConsensusCtx
 	defer func() {
 		if consensusCtx != nil {
@@ -573,31 +542,9 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 		}
 	}()
 
-	//var fetchDelay time.Duration
-	fetchDelay := time.Second * 3
-	var selectAt time.Time
-	adjFetchDelay := func() {
-		sendAt := time.Now()
-		if deltaT := sendAt.Sub(selectAt); deltaT < fetchDelay {
-			fetchDelay = fetchDelay - deltaT
-		} else {
-			fetchDelay = 0 // fetch immediately
-		}
-	}
-	var seq uint32
-	checkSeq := func(cmdSeq uint32) error {
-		return checkSequence(seq, cmdSeq)
-	}
-	nrReqs, nrResps := 0, 0
 	for {
 		var rawCmd commands.Command
-		var doFetch bool
-		selectAt = time.Now()
 		select {
-		case <-time.After(fetchDelay):
-			doFetch = true
-		case <-c.fetchCh:
-			doFetch = true
 		case ctx := <-c.getConsensusCh:
 			if consensusCtx != nil {
 				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
@@ -614,8 +561,6 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 					return
 				}
 			}
-
-			adjFetchDelay()
 			continue
 		case ctx := <-c.sendCh:
 			cmd := &commands.SendPacket{
@@ -628,8 +573,6 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				c.log.Debugf("Failed to send SendPacket: %v", wireErr)
 				return
 			}
-
-			adjFetchDelay()
 			continue
 		case tmp, ok := <-cmdCh:
 			if !ok {
@@ -651,31 +594,9 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			return
 		}
 
-		// Send a fetch if there is not one outstanding.
-		if doFetch {
-			if nrReqs == nrResps {
-				cmd := &commands.RetrieveMessage{
-					Sequence: seq,
-					Cmds:     w.GetCommands(),
-				}
-				if wireErr = w.SendCommand(cmd); wireErr != nil {
-					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
-					return
-				}
-				nrReqs++
-			}
-			fetchDelay = c.client.GetPollInterval()
-			if fetchDelay < time.Second {
-				fetchDelay = time.Second
-			}
-			adjFetchDelay()
-			continue
-		}
-
 		creds, err := w.PeerCredentials()
 		if err != nil {
 			// do not continue processing this command
-			adjFetchDelay()
 			continue
 		}
 		// Update the cached descriptor, and re-validate the connection.
@@ -688,70 +609,43 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 		// Handle the response.
 		switch cmd := rawCmd.(type) {
 		case *commands.NoOp:
+			// Gateway's wire-level heartbeat under push delivery;
+			// the peer reader has already rearmed the read
+			// deadline, so nothing more to do.
 			c.log.Debugf("Received NoOp.")
 		case *commands.Disconnect:
 			c.log.Debugf("Received Disconnect.")
 			wireErr = newProtocolError("peer send Disconnect")
 			return
-		case *commands.MessageEmpty:
-			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
-				c.log.Errorf("MessageEmpty sequence unexpected: %v", cmd.Sequence)
-				return
-			}
-			nrResps++
-			if wireErr = dispatchOnEmpty(); wireErr != nil {
-				return
-			}
 		case *commands.Message:
-			c.log.Debugf("Received Message: %v", cmd.Sequence)
-			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
-				c.log.Errorf("Message sequence unexpected: %v", cmd.Sequence)
-				return
-			}
-			nrResps++
-			if c.client.cfg.Callbacks.OnMessageFn != nil {
-				c.Go(func() {
-					select {
-					case <-c.HaltCh():
-						return
-					default:
-						if err := c.client.cfg.Callbacks.OnMessageFn(cmd.Payload); err != nil {
-							c.log.Debugf("Caller failed to handle Message: %v", err)
-							forceCloseConn(err)
-						}
-					}
-				})
-			}
-			seq++
-			if cmd.QueueSizeHint == 0 {
-				c.log.Debugf("QueueSizeHint indicates empty queue, calling dispatchOnEmpty.")
-				if wireErr = dispatchOnEmpty(); wireErr != nil {
-					c.log.Debugf("dispatchOnEmpty returned error: %v", wireErr)
-					return
-				}
-			}
-		case *commands.MessageACK:
-			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
-				c.log.Errorf("MessageACK sequence unexpected: %v", cmd.Sequence)
-				return
-			}
-			nrResps++
-			if c.client.cfg.Callbacks.OnACKFn != nil {
-				c.Go(func() {
-					select {
-					case <-c.HaltCh():
-						return
-					default:
-						if err := c.client.cfg.Callbacks.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
-							c.log.Debugf("Caller failed to handle MessageACK: %v", err)
-							forceCloseConn(err)
-						}
-					}
-				})
-			} else {
+			c.log.Debugf("Received pushed Message: %v", cmd.Sequence)
+			seqCopy := cmd.Sequence
+			payload := cmd.Payload
+			id := cmd.SURBID
+			onACK := c.client.cfg.Callbacks.OnACKFn
+			if onACK == nil {
 				panic("client.cfg.Callbacks.OnACKFn must not be nil")
 			}
-			seq++
+			c.Go(func() {
+				select {
+				case <-c.HaltCh():
+					return
+				default:
+				}
+				if err := onACK(&id, payload); err != nil {
+					c.log.Debugf("Caller failed to handle Message: %v", err)
+					forceCloseConn(err)
+					return
+				}
+				ack := &commands.MessageDelivered{
+					Sequence: seqCopy,
+					Cmds:     w.GetCommands(),
+				}
+				if err := w.SendCommand(ack); err != nil {
+					c.log.Debugf("Failed to send MessageDelivered for Message seq %d: %v", seqCopy, err)
+					forceCloseConn(err)
+				}
+			})
 		case *commands.Consensus:
 			c.log.Errorf("Received legacy Consensus from gateway when Consensus2 is expected; closing connection.")
 			wireErr = newProtocolError("peer sent legacy Consensus instead of Consensus2")
@@ -807,7 +701,6 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			wireErr = newProtocolError("received unknown command: %T", cmd)
 			return
 		}
-		adjFetchDelay()
 	}
 }
 
@@ -871,10 +764,6 @@ func (c *connection) onConnStatusChange(err error) {
 		select {
 		case ctx := <-c.getConsensusCh:
 			ctx.doneFn(ErrNotConnected)
-		default:
-		}
-		select {
-		case <-c.fetchCh:
 		default:
 		}
 	}
@@ -976,7 +865,6 @@ func (c *connection) Shutdown() {
 	c.isShutdown.Store(true)
 
 	c.Halt()
-	close(c.fetchCh)
 	close(c.sendCh)
 }
 
@@ -988,7 +876,6 @@ func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.client = c
 	k.log = c.logbackend.GetLogger("client/conn")
-	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)
 	return k

@@ -69,6 +69,17 @@ func (p *gateway) OnPacket(pkt *packet.Packet) {
 	}
 }
 
+// notifyListeners wakes the push-delivery sender on any listener that
+// currently holds an authenticated connection for recipient, so it
+// drains the spool entry we just stored. Broadcast to every listener
+// because the recipient's connection (if any) could live on any of
+// them; each listener's Notify is a cheap map lookup with a no-op miss.
+func (p *gateway) notifyListeners(recipient []byte) {
+	for _, listener := range p.glue.Listeners() {
+		listener.Notify(recipient)
+	}
+}
+
 func (p *gateway) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
 	identities := make(map[[sConstants.RecipientIDLength]byte]interface{})
 	for _, listener := range p.glue.Listeners() {
@@ -176,9 +187,10 @@ func (p *gateway) onSURBReply(pkt *packet.Packet, recipient []byte) {
 	// Store the payload in the spool.
 	if err := p.spool.StoreSURBReply(recipient, &pkt.SurbReply.ID, pkt.Payload); err != nil {
 		p.log.Debugf("Failed to store SURB-Reply: %v (%v)", pkt.ID, err)
-	} else {
-		p.log.Debugf("Stored SURB-Reply: %v", pkt.ID)
+		return
 	}
+	p.log.Debugf("Stored SURB-Reply: %v", pkt.ID)
+	p.notifyListeners(recipient)
 }
 
 func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
@@ -195,6 +207,7 @@ func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 		p.log.Debugf("Failed to store message payload: %v (%v)", pkt.ID, err)
 		return
 	}
+	p.notifyListeners(recipient)
 
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
 	if surb != nil {

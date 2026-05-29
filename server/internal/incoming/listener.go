@@ -51,6 +51,13 @@ type listener struct {
 	l     net.Listener
 	conns *list.List
 
+	// connsByID indexes the post-handshake connections by their
+	// AdditionalData (the client identity) so the gateway can wake
+	// the right sender goroutine when fresh spool work arrives.
+	// Populated in onInitializedConn and cleared in onClosedConn.
+	// Guarded by the embedded RWMutex.
+	connsByID map[[sConstants.RecipientIDLength]byte]*incomingConn
+
 	incomingCh chan<- interface{}
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
@@ -161,6 +168,19 @@ func (l *listener) onNewConn(conn net.Conn) {
 func (l *listener) onInitializedConn(c *incomingConn) {
 	// Use atomic store to avoid lock contention during handshake completion.
 	atomic.StoreUint32(&c.isInitialized, 1)
+
+	// Register the freshly authenticated conn in the by-ID map so the
+	// gateway can wake its sender when fresh spool work arrives.
+	creds, err := c.w.PeerCredentials()
+	if err != nil {
+		l.log.Errorf("onInitializedConn: PeerCredentials failed: %v", err)
+		return
+	}
+	var key [sConstants.RecipientIDLength]byte
+	copy(key[:], creds.AdditionalData)
+	l.Lock()
+	l.connsByID[key] = c
+	l.Unlock()
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
@@ -170,6 +190,41 @@ func (l *listener) onClosedConn(c *incomingConn) {
 		l.closeAllWg.Done()
 	}()
 	l.conns.Remove(c.e)
+
+	// Deregister the conn from the by-ID map if it was ever
+	// authenticated. PeerCredentials only returns a usable value once
+	// the handshake completed; pre-handshake conns were never
+	// registered so nothing to clear.
+	if c.w != nil {
+		if creds, err := c.w.PeerCredentials(); err == nil {
+			var key [sConstants.RecipientIDLength]byte
+			copy(key[:], creds.AdditionalData)
+			// Only delete if the entry still points at this conn:
+			// a reconnect by the same client may have overwritten
+			// it with the newer conn in onInitializedConn.
+			if l.connsByID[key] == c {
+				delete(l.connsByID, key)
+			}
+		}
+	}
+}
+
+// Notify wakes the sender goroutine of the connection matching
+// clientID, so it drains any fresh spool work the gateway just
+// enqueued. No-op if the client is not currently connected here.
+func (l *listener) Notify(clientID []byte) {
+	if len(clientID) < sConstants.RecipientIDLength {
+		return
+	}
+	var key [sConstants.RecipientIDLength]byte
+	copy(key[:], clientID[:sConstants.RecipientIDLength])
+	l.RLock()
+	c, ok := l.connsByID[key]
+	l.RUnlock()
+	if !ok {
+		return
+	}
+	c.notify()
 }
 
 // GetConnIdentities returns a slice of byte slices each corresponding
@@ -252,6 +307,7 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger(fmt.Sprintf("listener:%d", id)),
 		conns:      list.New(),
+		connsByID:  make(map[[sConstants.RecipientIDLength]byte]*incomingConn),
 		incomingCh: incomingCh,
 		closeAllCh: make(chan interface{}),
 	}

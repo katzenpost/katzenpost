@@ -22,10 +22,7 @@ var (
 	errInvalidCommand = errors.New("wire: invalid wire protocol command")
 )
 
-type (
-	commandID   byte
-	messageType byte
-)
+type commandID byte
 
 // Command is the common interface exposed by all message command structures.
 type Command interface {
@@ -59,7 +56,7 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 	c.clientToServerCommands = []Command{
 		&NoOp{}, &SendPacket{
 			Cmds: c,
-		}, &Disconnect{}, &RetrieveMessage{}, &GetConsensus{}, &GetConsensus2{}, &SendRetrievePacket{
+		}, &Disconnect{}, &RetrieveMessage{}, &MessageDelivered{}, &GetConsensus{}, &GetConsensus2{}, &SendRetrievePacket{
 			Geo:  geo,
 			Cmds: c,
 		},
@@ -69,11 +66,6 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 		&Consensus2{},
 		&Message{
 			Geo:  geo,
-			Cmds: c,
-		}, &MessageACK{
-			Geo:  geo,
-			Cmds: c,
-		}, &MessageEmpty{
 			Cmds: c,
 		}, &SendRetrievePacketReply{
 			Geo:  geo,
@@ -390,6 +382,8 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 		return sendPacketFromBytes(b, c)
 	case retreiveMessage:
 		return retreiveMessageFromBytes(b, c)
+	case messageDelivered:
+		return messageDeliveredFromBytes(b, c)
 	case message:
 		return c.messageFromBytes(b, c)
 	case getConsensus:

@@ -10,7 +10,7 @@ const (
 	cmdOverhead = CmdOverhead // deprecated: use CmdOverhead
 
 	retreiveMessageLength = 4
-	messageBaseLength     = 1 + 1 + 4
+	messageBaseLength     = 4 // Sequence
 
 	getConsensusLength   = 8
 	consensusBaseLength  = 1         // len of ErrorCode
@@ -27,10 +27,6 @@ const (
 	replicaMessageReplyLength = 1
 	replicaWriteReplyLength   = 1
 
-	messageTypeMessage messageType = 0
-	messageTypeACK     messageType = 1
-	messageTypeEmpty   messageType = 2
-
 	// Generic commands.
 	noOp       commandID = 0
 	disconnect commandID = 1
@@ -38,6 +34,13 @@ const (
 	// client commands
 	sendRetrievePacket      commandID = 3
 	sendRetrievePacketReply commandID = 4
+
+	// messageDelivered is the client→gateway acknowledgement for a
+	// pushed Message. Carries the Sequence the gateway assigned to the
+	// pushed command so the gateway can advance the head of the
+	// client's spool.
+	messageDelivered       commandID = 5
+	messageDeliveredLength           = 4
 
 	// used by Pigeonhole Storage Replicas when talking to the PKI
 	postReplicaDescriptorStatus commandID = 10
