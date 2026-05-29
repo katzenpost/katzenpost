@@ -323,10 +323,39 @@ func (p *pki) worker() {
 				p.c.cfg.Callbacks.OnDocumentFn(cached.Doc)
 			}
 		}
-		timer.Reset(recheckInterval)
+		_, haveNow := p.docs.Load(now)
+		_, haveNext := p.docs.Load(now + 1)
+		timer.Reset(nextPKIWakeup(till, haveNow, haveNext))
 	}
 
 	// NOTREACHED
+}
+
+// nextPKIWakeup returns how long the PKI worker should sleep before its
+// next fetch attempt. The worker is event-driven on epoch boundaries
+// rather than polling at recheckInterval, so it wakes only when there is
+// a fetch that could plausibly succeed.
+//
+//   till      time remaining in the current epoch.
+//   haveNow   the current epoch's document is cached.
+//   haveNext  the next epoch's document is cached.
+//
+// With both cached, sleep across the boundary plus the publish-and-cache
+// window so the new now+1 is ready when we wake. With only the current
+// cached, sleep until we cross the nextFetchTill threshold (or fall back
+// to recheckInterval if we are already past it). With no current doc,
+// poll at recheckInterval.
+func nextPKIWakeup(till time.Duration, haveNow, haveNext bool) time.Duration {
+	if !haveNow {
+		return recheckInterval
+	}
+	if !haveNext {
+		if till > nextFetchTill {
+			return till - nextFetchTill
+		}
+		return recheckInterval
+	}
+	return till + PublishDeadline + mixServerCacheDelay
 }
 
 func (p *pki) updateDocument(epoch uint64) error {
