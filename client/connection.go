@@ -46,6 +46,17 @@ var (
 
 	keepAliveInterval = 3 * time.Minute
 	connectTimeout    = 1 * time.Minute
+
+	// readIdleTimeout bounds how long the peer reader will wait between
+	// successive commands from the gateway before declaring the link
+	// dead and tearing it down for reconnect. The post-handshake socket
+	// otherwise has no read deadline ("client can take however long it
+	// wants"), so a half-broken TCP link with no FIN/RST leaves
+	// RecvCommand blocked indefinitely. The connection's existing
+	// fetchDelay polling sends a RetrieveMessage roughly every 3s, so
+	// two minutes is generous slack on top of the natural heartbeat
+	// cadence yet still well below an epoch period.
+	readIdleTimeout = 2 * time.Minute
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
@@ -353,9 +364,16 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			c.log.Debugf("TCP connection established.")
 			// Disable Nagle so the PQ Noise handshake's finalisation
 			// NoOp does not wait on a coalesce timer; harmless on
-			// non-TCP transports.
+			// non-TCP transports. Also enable TCP keepalive so the
+			// kernel probes a silent peer rather than leaving us
+			// blocked on a half-broken socket indefinitely; the
+			// application-level read deadline below complements
+			// this for cases where the kernel's probe budget is
+			// generous.
 			if tcpConn, ok := conn.(*net.TCPConn); ok {
 				tcpConn.SetNoDelay(true)
+				_ = tcpConn.SetKeepAlive(true)
+				_ = tcpConn.SetKeepAlivePeriod(15 * time.Second)
 			}
 
 			// Do something with the connection.
@@ -432,13 +450,14 @@ func (c *connection) onNetConn(conn net.Conn) {
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
 	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
-	conn.SetDeadline(time.Time{}) // client can take however long it wants
-	//if err = conn.SetDeadline(time.Now().Add(90 * time.Second)); err != nil {
-	//   panic(err)
-	//}
+	// Writes remain unbounded ("client can take however long it wants");
+	// reads are rearmed for readIdleTimeout after every command the peer
+	// reader successfully receives (see onWireConn).
+	conn.SetWriteDeadline(time.Time{})
+	conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
 	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
-	c.onWireConn(w)
+	c.onWireConn(conn, w)
 }
 
 // checkSequence validates that the received command sequence matches the expected value.
@@ -449,7 +468,7 @@ func checkSequence(expected, actual uint32) error {
 	return nil
 }
 
-func (c *connection) onWireConn(w *wire.Session) {
+func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 	c.onConnStatusChange(nil)
 
 	var wireErr error
@@ -489,6 +508,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 				return
 			}
+			// Re-arm the read deadline now that we have evidence
+			// the peer is alive. A subsequent RecvCommand that
+			// blocks beyond readIdleTimeout will fail and tear the
+			// connection down for reconnect rather than wedging.
+			_ = conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
 			atomic.StoreInt64(&c.retryDelay, int64(2*time.Second))
 			select {
 			case <-c.HaltCh():

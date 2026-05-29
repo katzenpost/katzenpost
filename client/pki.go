@@ -44,6 +44,15 @@ var (
 	// tests may temporarily shorten it.
 	waitForCurrentDocumentRetryDelay = time.Second
 
+	// pkiFetchTimeout bounds a single GetConsensus round-trip from the
+	// PKI worker. Without it, a half-broken gateway link (peer dead but
+	// no FIN/RST observed) wedges the worker indefinitely inside
+	// updateDocument, since GetConsensus only listens on ctx.Done() and
+	// HaltCh and the worker's only context was previously unbounded.
+	// 30s is comfortably above the millisecond-scale latencies seen in
+	// practice and well below the 2-minute epoch period.
+	pkiFetchTimeout = 30 * time.Second
+
 	ccbor cbor.EncMode
 )
 
@@ -290,10 +299,13 @@ func (p *pki) worker() {
 				switch err {
 				case cpki.ErrNoDocument:
 					p.failedFetches[epoch] = err
-				case errGetConsensusCanceled:
-					return
 				default:
 				}
+				// Other errors (including a deadline-expired
+				// errGetConsensusCanceled or a transient
+				// ErrNotConnected) are treated as routine: the
+				// next timer tick retries. Shutdown is observed
+				// by the HaltCh arm of the outer select above.
 				continue
 			}
 			didUpdate = true
@@ -318,7 +330,7 @@ func (p *pki) worker() {
 }
 
 func (p *pki) updateDocument(epoch uint64) error {
-	pkiCtx, cancelFn := context.WithCancel(context.Background())
+	pkiCtx, cancelFn := context.WithTimeout(context.Background(), pkiFetchTimeout)
 	p.Go(func() {
 		select {
 		case <-p.HaltCh():
