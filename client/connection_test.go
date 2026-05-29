@@ -1114,33 +1114,42 @@ func TestOnWireConnDisconnectCommand(t *testing.T) {
 func TestOnWireConnMessageACKCallback(t *testing.T) {
 	env := newTestGatewayEnv(t)
 	gwAddr := "tcp://127.0.0.1:12352"
-	sentACK := false
+	pushed := false
 
 	ackCh := make(chan []byte, 1)
+	deliveredCh := make(chan uint32, 1)
+	const pushedSeq uint32 = 42
 
 	clientCfg := setupTestGatewayFull(t, gwAddr, env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
 		switch mycmd := cmd.(type) {
-		case *commands.RetrieveMessage:
-			if !sentACK {
-				sentACK = true
-				// Send a MessageACK instead of MessageEmpty.
-				var surbID [constants.SURBIDLength]byte
-				copy(surbID[:], []byte("test-surb-id-xxx"))
-				resp := &commands.MessageACK{
-					Geo:           env.geo,
-					Cmds:          cmds,
-					QueueSizeHint: 0,
-					Sequence:      mycmd.Sequence,
-					ID:            surbID,
-					Payload:       make([]byte, env.geo.PayloadTagLength+env.geo.ForwardPayloadLength),
-				}
-				wireConn.SendCommand(resp)
-			} else {
-				resp := &commands.MessageEmpty{Cmds: cmds, Sequence: mycmd.Sequence}
-				wireConn.SendCommand(resp)
-			}
 		case *commands.GetConsensus2:
 			env.sendValidDocument(t, wireConn, cmds, mycmd.Epoch)
+			if !pushed {
+				pushed = true
+				// Push a MessageACK unsolicited, mirroring the
+				// gateway's push-delivery behaviour. The client
+				// should dispatch OnACKFn and then send a
+				// MessageDelivered with the same Sequence.
+				go func() {
+					time.Sleep(200 * time.Millisecond)
+					var surbID [constants.SURBIDLength]byte
+					copy(surbID[:], []byte("test-surb-id-xxx"))
+					resp := &commands.MessageACK{
+						Geo:           env.geo,
+						Cmds:          cmds,
+						QueueSizeHint: 0,
+						Sequence:      pushedSeq,
+						ID:            surbID,
+						Payload:       make([]byte, env.geo.PayloadTagLength+env.geo.ForwardPayloadLength),
+					}
+					_ = wireConn.SendCommand(resp)
+				}()
+			}
+		case *commands.MessageDelivered:
+			select {
+			case deliveredCh <- mycmd.Sequence:
+			default:
+			}
 		}
 		return true
 	})
@@ -1169,36 +1178,17 @@ func TestOnWireConnMessageACKCallback(t *testing.T) {
 	case id := <-ackCh:
 		require.Equal(t, []byte("test-surb-id-xxx"), id[:constants.SURBIDLength])
 	case <-time.After(10 * time.Second):
-		t.Fatal("OnACKFn was not called")
+		t.Fatal("OnACKFn was not called on the pushed MessageACK")
+	}
+
+	select {
+	case seq := <-deliveredCh:
+		require.Equal(t, pushedSeq, seq, "client should send MessageDelivered echoing the pushed Sequence")
+	case <-time.After(10 * time.Second):
+		t.Fatal("MessageDelivered was not sent back to the gateway")
 	}
 
 	c.Shutdown()
-}
-
-func TestForceFetchSendsToChannel(t *testing.T) {
-	conn := newTestConnection(t)
-	c := conn.client
-	c.conn = conn
-
-	c.ForceFetch()
-
-	select {
-	case <-conn.fetchCh:
-	default:
-		t.Fatal("ForceFetch should have sent to fetchCh")
-	}
-}
-
-func TestForceFetchChannelFull(t *testing.T) {
-	conn := newTestConnection(t)
-	c := conn.client
-	c.conn = conn
-
-	// Fill the buffered channel.
-	conn.fetchCh <- true
-
-	// Should not block.
-	c.ForceFetch()
 }
 
 func TestForceFetchPKISendsToChannel(t *testing.T) {

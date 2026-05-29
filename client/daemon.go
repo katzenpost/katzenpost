@@ -314,9 +314,6 @@ func (d *Daemon) Start() error {
 }
 
 func (d *Daemon) onDocument(doc *cpki.Document) {
-	slopFactor := 0.8
-	pollProvider := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * slopFactor * float64(time.Millisecond))
-	d.client.SetPollInterval(pollProvider)
 	d.listener.updateFromPKIDoc(doc)
 }
 
@@ -672,8 +669,9 @@ func (d *Daemon) send(request *Request) {
 		// Sphinx-encoded round-trip in rtt but also every wall-clock
 		// overhead the encoded delay does not capture: per-hop
 		// scheduler dwell (up to SchedulerSlack at each mix, server
-		// default ~450ms), per-hop network transmission, Sphinx
-		// unwrap CPU, and gateway spool-to-client polling.
+		// default ~450ms), per-hop network transmission, and Sphinx
+		// unwrap CPU. With push-delivery from the gateway the
+		// previous spool-to-client polling term is gone.
 		//
 		// Previously the slop was a hard-coded one second, which
 		// covered the average case but expired before any long-tail
@@ -685,14 +683,13 @@ func (d *Daemon) send(request *Request) {
 		// the topology and a per-hop wall-clock budget so long-tail
 		// replies (from either LambdaP-fallback or LambdaL decoys, or
 		// from application traffic) are not GC'd prematurely.
-		fetchInterval := d.client.GetPollInterval()
 		const perHopSlopMs = 500 // covers SchedulerSlack default + net + crypto per hop
 		var hops uint64 = 9      // fallback for 3-layer topology
 		if _, doc := d.client.CurrentDocument(); doc != nil && len(doc.Topology) > 0 {
 			hops = uint64(2*len(doc.Topology) + 3)
 		}
 		slop := time.Duration(hops*perHopSlopMs) * time.Millisecond
-		duration := rtt + fetchInterval + slop
+		duration := rtt + slop
 		replyArrivalTime := now.Add(duration)
 
 		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)

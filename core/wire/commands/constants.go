@@ -39,6 +39,13 @@ const (
 	sendRetrievePacket      commandID = 3
 	sendRetrievePacketReply commandID = 4
 
+	// messageDelivered is the client→gateway acknowledgement for a
+	// pushed Message or MessageACK. Carries the Sequence the gateway
+	// assigned to the pushed command so the gateway can advance the
+	// head of the client's spool.
+	messageDelivered      commandID = 5
+	messageDeliveredLength            = 4
+
 	// used by Pigeonhole Storage Replicas when talking to the PKI
 	postReplicaDescriptorStatus commandID = 10
 	postReplicaDescriptor       commandID = 11

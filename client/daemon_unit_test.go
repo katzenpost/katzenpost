@@ -98,17 +98,13 @@ func TestOnDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	doc := &cpki.Document{
-		LambdaP:         0.005,
-		LambdaL:         0.001,
+		LambdaP: 0.005,
+		LambdaL: 0.001,
 	}
 
-	// Should not panic and should update poll interval
+	// Push delivery makes onDocument's only job the listener fanout;
+	// confirm it does not panic on a freshly cached consensus.
 	d.onDocument(doc)
-
-	// Verify poll interval was set (1/(LambdaP+LambdaL) * 0.8)
-	expectedInterval := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * 0.8 * float64(time.Millisecond))
-	actual := d.client.GetPollInterval()
-	require.Equal(t, expectedInterval, actual)
 
 	d.Shutdown()
 }

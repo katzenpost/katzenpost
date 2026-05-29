@@ -162,3 +162,36 @@ func TestMessage(t *testing.T) {
 	require.Equal(id[:], cmdMessageACK.ID[:], "MessageACK: FromBytes() ID")
 	require.Equal(ackPayload, cmdMessageACK.Payload, "MessageACK: FromBytes() Payload")
 }
+
+// TestMessageDelivered pins the client-to-gateway acknowledgement that
+// replaces the polled RetrieveMessage in the push-delivery model. The
+// client echoes back the Sequence the gateway assigned to a pushed
+// Message or MessageACK so the gateway can advance the head of the
+// client's spool. Symmetric to RetrieveMessage in size and shape; just
+// flowing in the opposite direction.
+func TestMessageDelivered(t *testing.T) {
+	t.Parallel()
+	const seq = 0xdeadbeef
+
+	require := require.New(t)
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+	cmds := NewMixnetCommands(s.Geometry())
+
+	cmd := &MessageDelivered{Sequence: seq, Cmds: cmds}
+	b := cmd.ToBytes()
+	require.Len(b, cmds.MaxMessageLenClientToServer, "MessageDelivered: ToBytes() length")
+	actualDataLength := cmdOverhead + 4
+	require.True(util.CtIsZero(b[actualDataLength:]), "MessageDelivered: ToBytes() padding must be zero")
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "MessageDelivered: FromBytes() failed")
+	require.IsType(cmd, c, "MessageDelivered: FromBytes() invalid type")
+
+	cmd = c.(*MessageDelivered)
+	require.Equal(uint32(seq), cmd.Sequence, "MessageDelivered: FromBytes() Sequence")
+}

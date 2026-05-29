@@ -88,6 +88,42 @@ func retreiveMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 	return r, nil
 }
 
+// MessageDelivered is the client→gateway acknowledgement of a Message
+// or MessageACK that was pushed unsolicited by the gateway. The
+// Sequence echoes the value the gateway assigned to the pushed
+// command, identifying which spool entry the gateway may now advance
+// past.
+type MessageDelivered struct {
+	Sequence uint32
+	Cmds     *Commands
+}
+
+func (c *MessageDelivered) String() string { return "MessageDelivered" }
+
+// ToBytes serializes the MessageDelivered and returns the resulting slice.
+func (c *MessageDelivered) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+messageDeliveredLength)
+	out[0] = byte(messageDelivered)
+	binary.BigEndian.PutUint32(out[2:6], messageDeliveredLength)
+	binary.BigEndian.PutUint32(out[6:10], c.Sequence)
+	return c.Cmds.padToMaxCommandSize(out, true)
+}
+
+func (c *MessageDelivered) Length() int {
+	return cmdOverhead + messageDeliveredLength
+}
+
+func messageDeliveredFromBytes(b []byte, cmds *Commands) (Command, error) {
+	if len(b) != messageDeliveredLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(MessageDelivered)
+	r.Sequence = binary.BigEndian.Uint32(b[0:4])
+	r.Cmds = cmds
+	return r, nil
+}
+
 // MessageACK is a de-serialized message command containing an ACK.
 type MessageACK struct {
 	Geo  *geo.Geometry

@@ -108,6 +108,12 @@ type Listener interface {
 	// token added per increment); maxSendTokens is the bucket cap.
 	// Both zero disables the rate limit on this listener.
 	OnNewBucketParams(sendTokenIncrNs, maxSendTokens uint64)
+	// Notify signals that fresh spool work has been enqueued for the
+	// given client identity (the first RecipientIDLength bytes of the
+	// recipient). The listener nudges the matching connection's sender
+	// to drain the spool, or no-ops if the client is not connected
+	// here.
+	Notify(clientID []byte)
 }
 
 type Decoy interface {

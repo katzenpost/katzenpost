@@ -33,11 +33,6 @@ type Client struct {
 	log        *logging.Logger
 	logbackend *log.Backend
 
-	// messagePollInterval is the interval at which the server will be
-	// polled for new messages if the queue is believed to be empty.
-	// XXX This will go away once we get rid of polling.
-	messagePollInterval time.Duration
-
 	pki *pki
 	cfg *config.Config
 
@@ -95,19 +90,6 @@ func (c *Client) Shutdown() {
 	c.log.Infof("Client shutdown complete in %v", time.Since(shutdownStart))
 }
 
-// XXX This will go away once we get rid of polling.
-func (c *Client) SetPollInterval(interval time.Duration) {
-	c.Lock()
-	c.messagePollInterval = interval
-	c.Unlock()
-}
-
-// XXX This will go away once we get rid of polling.
-func (c *Client) GetPollInterval() time.Duration {
-	c.RLock()
-	defer c.RUnlock()
-	return c.messagePollInterval
-}
 
 func (c *Client) Start() error {
 	c.log.Info("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")

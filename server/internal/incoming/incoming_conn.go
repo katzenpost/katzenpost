@@ -71,7 +71,32 @@ type incomingConn struct {
 	fromMix       bool
 	canSend       bool
 
+	// notifyCh is the wake signal for the sender goroutine. The
+	// listener writes to it (non-blocking, coalescing) when the
+	// gateway has just enqueued fresh spool work for this client. The
+	// channel is buffered to depth one because the wake is
+	// level-triggered: the sender always re-checks the spool after
+	// servicing, so we only need to remember "at least one wake
+	// pending."
+	notifyCh chan struct{}
+
+	// ackCh carries the Sequence value of an arriving
+	// MessageDelivered from the client. The inbound dispatch writes
+	// the value here; the sender goroutine reads it to advance the
+	// spool. Buffered to depth one so a stray ack arriving between
+	// sends never blocks the inbound worker.
+	ackCh chan uint32
+
 	closeConnectionCh chan bool
+}
+
+// notify wakes the sender goroutine so it drains the spool. Safe to
+// call concurrently; coalesces redundant wakes via a depth-one buffer.
+func (c *incomingConn) notify() {
+	select {
+	case c.notifyCh <- struct{}{}:
+	default:
+	}
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -264,6 +289,15 @@ func (c *incomingConn) worker() {
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 
+	// Spawn the push-delivery sender for client connections. The
+	// sender pushes spool entries as Message / MessageACK as soon as
+	// the listener pings it from the gateway worker, and sends NoOp
+	// heartbeats during otherwise quiet stretches. Mix-to-mix
+	// connections have no spool and skip this.
+	if c.fromClient && c.l.glue.Gateway() != nil {
+		go c.senderWorker()
+	}
+
 	// Log the connection source.
 	creds, err := c.w.PeerCredentials()
 	if err != nil {
@@ -370,10 +404,29 @@ func (c *incomingConn) worker() {
 				}
 				continue
 			case *commands.RetrieveMessage:
-				c.log.Debugf("Received RetrieveMessage from peer.")
-				if err := c.onRetrieveMessage(cmd); err != nil {
-					c.log.Debugf("Failed to handle RetreiveMessage: %v", err)
-					return
+				// Push-delivery clients never send RetrieveMessage.
+				// A stray one indicates an out-of-date peer; drop the
+				// connection rather than silently going along.
+				c.log.Debugf("Received unexpected RetrieveMessage from peer in push-delivery mode; closing.")
+				return
+			case *commands.MessageDelivered:
+				// Acknowledgement of a Message or MessageACK we pushed.
+				// Hand the Sequence to the sender goroutine so it can
+				// advance the spool. Non-blocking: a stale ack arriving
+				// between sends would overwrite the pending value in
+				// the depth-one buffer, which is fine because the
+				// sender always validates the Sequence it consumes.
+				select {
+				case c.ackCh <- cmd.Sequence:
+				default:
+					select {
+					case <-c.ackCh:
+					default:
+					}
+					select {
+					case c.ackCh <- cmd.Sequence:
+					default:
+					}
 				}
 				continue
 			case *commands.GetConsensus:
@@ -525,79 +578,156 @@ func (c *incomingConn) onSendRetrievePacket(cmd *commands.SendRetrievePacket) er
 	return c.w.SendCommand(respCmd)
 }
 
-func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
-	advance := false
-	switch cmd.Sequence {
-	case c.retrSeq:
-		c.log.Debugf("RetrieveMessage: %d", cmd.Sequence)
-	case c.retrSeq + 1:
-		c.log.Debugf("RetrieveMessage: %d (Popping head)", cmd.Sequence)
-		c.retrSeq++ // Advance the sequence number.
-		advance = true
-	default:
-		return fmt.Errorf("provider: RetrieveMessage out of sequence: %d", cmd.Sequence)
+// senderWorker pushes Message and MessageACK commands to a connected
+// client as soon as the spool has work for them, and emits NoOp
+// heartbeats during otherwise quiet stretches so the client's
+// post-handshake read deadline stays warm. Spawned once per
+// authenticated client connection by worker(); exits on connection
+// teardown.
+func (c *incomingConn) senderWorker() {
+	const heartbeatInterval = 10 * time.Second
+	const ackTimeout = 60 * time.Second
+
+	defer c.log.Debugf("senderWorker exiting")
+
+	heartbeat := time.NewTimer(heartbeatInterval)
+	defer heartbeat.Stop()
+
+	// Initial wake so a backlog accumulated while the client was
+	// disconnected drains immediately on reconnect.
+	c.notify()
+
+	var seq uint32
+	for {
+		select {
+		case <-c.l.closeAllCh:
+			return
+		case <-c.closeConnectionCh:
+			return
+		case <-heartbeat.C:
+			cmd := &commands.NoOp{Cmds: commands.NewMixnetCommands(c.geo)}
+			if err := c.w.SendCommand(cmd); err != nil {
+				c.log.Debugf("senderWorker: NoOp send failed: %v", err)
+				return
+			}
+			heartbeat.Reset(heartbeatInterval)
+			continue
+		case <-c.notifyCh:
+		}
+
+		creds, err := c.w.PeerCredentials()
+		if err != nil {
+			c.log.Debugf("senderWorker: PeerCredentials failed: %v", err)
+			return
+		}
+
+		for {
+			select {
+			case <-c.l.closeAllCh:
+				return
+			case <-c.closeConnectionCh:
+				return
+			default:
+			}
+
+			msg, surbID, remaining, err := c.l.glue.Gateway().Spool().Get(creds.AdditionalData, false)
+			if err != nil {
+				c.log.Debugf("senderWorker: Spool.Get failed: %v", err)
+				return
+			}
+			if msg == nil {
+				break
+			}
+			if remaining > math.MaxUint8 {
+				remaining = math.MaxUint8
+			}
+			hint := uint8(remaining)
+			instrument.IngressQueue(hint)
+
+			seq++
+			mySeq := seq
+
+			var cmd commands.Command
+			if surbID != nil {
+				if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
+					c.log.Errorf("senderWorker: stored SURBReply payload is mis-sized: %v", len(msg))
+					return
+				}
+				ack := &commands.MessageACK{
+					Geo:           c.geo,
+					Cmds:          commands.NewMixnetCommands(c.geo),
+					QueueSizeHint: hint,
+					Sequence:      mySeq,
+					Payload:       msg,
+				}
+				copy(ack.ID[:], surbID)
+				cmd = ack
+			} else {
+				if len(msg) != c.geo.UserForwardPayloadLength {
+					c.log.Errorf("senderWorker: stored user payload is mis-sized: %v", len(msg))
+					return
+				}
+				cmd = &commands.Message{
+					Geo:           c.geo,
+					Cmds:          commands.NewMixnetCommands(c.geo),
+					QueueSizeHint: hint,
+					Sequence:      mySeq,
+					Payload:       msg,
+				}
+			}
+
+			// Drain any stale ack that arrived before we sent this one
+			// so it is not mistaken for the response we are about to
+			// wait on.
+			select {
+			case <-c.ackCh:
+			default:
+			}
+
+			if err := c.w.SendCommand(cmd); err != nil {
+				c.log.Debugf("senderWorker: SendCommand failed: %v", err)
+				return
+			}
+
+			ackTimer := time.NewTimer(ackTimeout)
+			waitingForAck := true
+			for waitingForAck {
+				select {
+				case <-c.l.closeAllCh:
+					ackTimer.Stop()
+					return
+				case <-c.closeConnectionCh:
+					ackTimer.Stop()
+					return
+				case <-ackTimer.C:
+					c.log.Debugf("senderWorker: ack timeout waiting for seq %d", mySeq)
+					return
+				case ackSeq := <-c.ackCh:
+					if ackSeq == mySeq {
+						waitingForAck = false
+					} else {
+						c.log.Debugf("senderWorker: ignoring stale ack seq=%d (expected %d)", ackSeq, mySeq)
+					}
+				}
+			}
+			ackTimer.Stop()
+
+			// Advance the spool past the entry the client just acked.
+			if _, _, _, err := c.l.glue.Gateway().Spool().Get(creds.AdditionalData, true); err != nil {
+				c.log.Debugf("senderWorker: Spool advance failed: %v", err)
+				return
+			}
+
+			// We just sent traffic so push the heartbeat out.
+			if !heartbeat.Stop() {
+				select {
+				case <-heartbeat.C:
+				default:
+				}
+			}
+			heartbeat.Reset(heartbeatInterval)
+		}
 	}
-
-	// Get the message from the user's spool, advancing as appropriate.
-	creds, err := c.w.PeerCredentials()
-	if err != nil {
-		return err
-	}
-	msg, surbID, remaining, err := c.l.glue.Gateway().Spool().Get(creds.AdditionalData, advance)
-	if err != nil {
-		return err
-	}
-	if remaining > math.MaxUint8 {
-		// The count hint is an 8 bit value and is clamped.
-		remaining = math.MaxUint8
-	}
-	hint := uint8(remaining)
-	instrument.IngressQueue(hint)
-
-	var respCmd commands.Command
-	if surbID != nil {
-		// This was a SURBReply.
-		surbCmd := &commands.MessageACK{
-			Geo:  c.geo,
-			Cmds: commands.NewMixnetCommands(c.geo),
-
-			QueueSizeHint: hint,
-			Sequence:      cmd.Sequence,
-			Payload:       msg,
-		}
-		copy(surbCmd.ID[:], surbID)
-		respCmd = surbCmd
-
-		if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
-			return fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
-		}
-	} else if msg != nil {
-		// This was a message.
-		respCmd = &commands.Message{
-			Geo:  c.geo,
-			Cmds: commands.NewMixnetCommands(c.geo),
-
-			QueueSizeHint: hint,
-			Sequence:      cmd.Sequence,
-			Payload:       msg,
-		}
-		if len(msg) != c.geo.UserForwardPayloadLength {
-			return fmt.Errorf("stored user payload is mis-sized: %v", len(msg))
-		}
-	} else {
-		// Queue must be empty.
-		if hint != 0 {
-			// This should NEVER happen, but it's probably not worth crashing
-			// the server over if it does.
-			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
-		}
-		respCmd = &commands.MessageEmpty{
-			Cmds:     commands.NewMixnetCommands(c.geo),
-			Sequence: cmd.Sequence,
-		}
-	}
-
-	return c.w.SendCommand(respCmd)
 }
 
 func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
@@ -662,6 +792,8 @@ func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
 		sendTokenLast:     time.Now(),
+		notifyCh:          make(chan struct{}, 1),
+		ackCh:             make(chan uint32, 1),
 		closeConnectionCh: make(chan bool),
 		geo:               geo,
 	}
