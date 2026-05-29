@@ -67,7 +67,7 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 	c.serverToClientCommands = []Command{
 		&Consensus{}, // can be arbitrarily large
 		&Consensus2{},
-		&MessageACK{
+		&Message{
 			Geo:  geo,
 			Cmds: c,
 		}, &SendRetrievePacketReply{

@@ -617,11 +617,11 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			c.log.Debugf("Received Disconnect.")
 			wireErr = newProtocolError("peer send Disconnect")
 			return
-		case *commands.MessageACK:
-			c.log.Debugf("Received pushed MessageACK: %v", cmd.Sequence)
+		case *commands.Message:
+			c.log.Debugf("Received pushed Message: %v", cmd.Sequence)
 			seqCopy := cmd.Sequence
 			payload := cmd.Payload
-			id := cmd.ID
+			id := cmd.SURBID
 			onACK := c.client.cfg.Callbacks.OnACKFn
 			if onACK == nil {
 				panic("client.cfg.Callbacks.OnACKFn must not be nil")
@@ -633,7 +633,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				default:
 				}
 				if err := onACK(&id, payload); err != nil {
-					c.log.Debugf("Caller failed to handle MessageACK: %v", err)
+					c.log.Debugf("Caller failed to handle Message: %v", err)
 					forceCloseConn(err)
 					return
 				}
@@ -642,7 +642,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 					Cmds:     w.GetCommands(),
 				}
 				if err := w.SendCommand(ack); err != nil {
-					c.log.Debugf("Failed to send MessageDelivered for MessageACK seq %d: %v", seqCopy, err)
+					c.log.Debugf("Failed to send MessageDelivered for Message seq %d: %v", seqCopy, err)
 					forceCloseConn(err)
 				}
 			})

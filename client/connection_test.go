@@ -74,11 +74,11 @@ func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme
 		Epoch:        epoch,
 		GenesisEpoch: epoch,
 
-		Mu:                1,
-		LambdaP:           1,
-		LambdaL:           1,
-		LambdaM:           1,
-		LambdaG:           1,
+		Mu:      1,
+		LambdaP: 1,
+		LambdaL: 1,
+		LambdaM: 1,
+		LambdaG: 1,
 
 		Topology:           topology,
 		StorageReplicas:    []*cpki.ReplicaDescriptor{},
@@ -862,11 +862,11 @@ func TestOnConnStatusChangeShutdownNoCallback(t *testing.T) {
 
 // testGatewayEnv holds the crypto keys and geometry needed for mock gateway tests.
 type testGatewayEnv struct {
-	pkiScheme      sign.Scheme
-	linkScheme     kem.Scheme
-	nikeScheme     nike.Scheme
-	geo            *geo.Geometry
-	authKeys       [3]struct {
+	pkiScheme  sign.Scheme
+	linkScheme kem.Scheme
+	nikeScheme nike.Scheme
+	geo        *geo.Geometry
+	authKeys   [3]struct {
 		pub  sign.PublicKey
 		priv sign.PrivateKey
 	}
@@ -1078,7 +1078,7 @@ func TestOnWireConnDisconnectCommand(t *testing.T) {
 	c.Shutdown()
 }
 
-func TestOnWireConnMessageACKCallback(t *testing.T) {
+func TestOnWireConnMessageCallback(t *testing.T) {
 	env := newTestGatewayEnv(t)
 	gwAddr := "tcp://127.0.0.1:12352"
 	pushed := false
@@ -1093,7 +1093,7 @@ func TestOnWireConnMessageACKCallback(t *testing.T) {
 			env.sendValidDocument(t, wireConn, cmds, mycmd.Epoch)
 			if !pushed {
 				pushed = true
-				// Push a MessageACK unsolicited, mirroring the
+				// Push a Message unsolicited, mirroring the
 				// gateway's push-delivery behaviour. The client
 				// should dispatch OnACKFn and then send a
 				// MessageDelivered with the same Sequence.
@@ -1101,13 +1101,12 @@ func TestOnWireConnMessageACKCallback(t *testing.T) {
 					time.Sleep(200 * time.Millisecond)
 					var surbID [constants.SURBIDLength]byte
 					copy(surbID[:], []byte("test-surb-id-xxx"))
-					resp := &commands.MessageACK{
-						Geo:           env.geo,
-						Cmds:          cmds,
-						QueueSizeHint: 0,
-						Sequence:      pushedSeq,
-						ID:            surbID,
-						Payload:       make([]byte, env.geo.PayloadTagLength+env.geo.ForwardPayloadLength),
+					resp := &commands.Message{
+						Geo:      env.geo,
+						Cmds:     cmds,
+						Sequence: pushedSeq,
+						SURBID:   surbID,
+						Payload:  make([]byte, env.geo.PayloadTagLength+env.geo.ForwardPayloadLength),
 					}
 					_ = wireConn.SendCommand(resp)
 				}()
@@ -1143,7 +1142,7 @@ func TestOnWireConnMessageACKCallback(t *testing.T) {
 	case id := <-ackCh:
 		require.Equal(t, []byte("test-surb-id-xxx"), id[:constants.SURBIDLength])
 	case <-time.After(10 * time.Second):
-		t.Fatal("OnACKFn was not called on the pushed MessageACK")
+		t.Fatal("OnACKFn was not called on the pushed Message")
 	}
 
 	select {

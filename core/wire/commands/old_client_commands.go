@@ -10,7 +10,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
-func messageACKLength() int {
+func messageLength() int {
 	return messageBaseLength + constants.SURBIDLength
 }
 
@@ -76,10 +76,9 @@ func retreiveMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 }
 
 // MessageDelivered is the client→gateway acknowledgement of a Message
-// or MessageACK that was pushed unsolicited by the gateway. The
-// Sequence echoes the value the gateway assigned to the pushed
-// command, identifying which spool entry the gateway may now advance
-// past.
+// that was pushed unsolicited by the gateway. The Sequence echoes the
+// value the gateway assigned to the pushed command, identifying which
+// spool entry the gateway may now advance past.
 type MessageDelivered struct {
 	Sequence uint32
 	Cmds     *Commands
@@ -111,38 +110,38 @@ func messageDeliveredFromBytes(b []byte, cmds *Commands) (Command, error) {
 	return r, nil
 }
 
-// MessageACK is a de-serialized message command containing an ACK.
-type MessageACK struct {
+// Message is a de-serialized message command carrying a SURB reply
+// that the gateway pushed unsolicited to a connected client. The
+// Sequence correlates the matching MessageDelivered the client returns.
+type Message struct {
 	Geo  *geo.Geometry
 	Cmds *Commands
 
-	QueueSizeHint uint8
-	Sequence      uint32
-	ID            [constants.SURBIDLength]byte
-	Payload       []byte
+	Sequence uint32
+	SURBID   [constants.SURBIDLength]byte
+	Payload  []byte
 }
 
-func (c *MessageACK) String() string { return "MessageACK" }
+func (c *Message) String() string { return "Message" }
 
-// ToBytes serializes the MessageACK and returns the resulting slice.
-func (c *MessageACK) ToBytes() []byte {
+// ToBytes serializes the Message and returns the resulting slice.
+func (c *Message) ToBytes() []byte {
 	if len(c.Payload) != c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength {
-		panic("wire: invalid MessageACK payload when serializing")
+		panic("wire: invalid Message payload when serializing")
 	}
 
-	out := make([]byte, cmdOverhead+messageACKLength(), cmdOverhead+messageACKLength()+c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength)
+	out := make([]byte, cmdOverhead+messageLength(), cmdOverhead+messageLength()+c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength)
 
 	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], uint32(messageACKLength()+len(c.Payload)))
-	out[6] = byte(messageTypeACK)
-	out[7] = c.QueueSizeHint
-	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	copy(out[12:12+constants.SURBIDLength], c.ID[:])
+	binary.BigEndian.PutUint32(out[2:6], uint32(messageLength()+len(c.Payload)))
+	out[6] = byte(messageTypeMessage)
+	binary.BigEndian.PutUint32(out[7:11], c.Sequence)
+	copy(out[11:11+constants.SURBIDLength], c.SURBID[:])
 	out = append(out, c.Payload...)
 	return c.Cmds.padToMaxCommandSize(out, false)
 }
 
-func (c *MessageACK) Length() int {
+func (c *Message) Length() int {
 	return cmdOverhead + 1 + 4 + constants.SURBIDLength + c.Geo.PacketLength
 }
 
@@ -152,20 +151,18 @@ func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
 	}
 
 	t := messageType(b[0])
-	hint := b[1]
-	seq := binary.BigEndian.Uint32(b[2:6])
+	seq := binary.BigEndian.Uint32(b[1:5])
 	b = b[messageBaseLength:]
 
 	switch t {
-	case messageTypeACK:
+	case messageTypeMessage:
 		if len(b) != constants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
 			return nil, errInvalidCommand
 		}
 
-		r := new(MessageACK)
-		r.QueueSizeHint = hint
+		r := new(Message)
 		r.Sequence = seq
-		copy(r.ID[:], b[:constants.SURBIDLength])
+		copy(r.SURBID[:], b[:constants.SURBIDLength])
 		b = b[constants.SURBIDLength:]
 		r.Payload = make([]byte, 0, len(b))
 		r.Payload = append(r.Payload, b...)

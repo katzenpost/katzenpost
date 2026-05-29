@@ -79,50 +79,45 @@ func TestMessage(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	cmds := NewMixnetCommands(geo)
 
-	const (
-		hint = 0x17
-		seq  = 0xa5a5a5a5
-	)
+	const seq = 0xa5a5a5a5
 
 	require := require.New(t)
 
-	// MessageACK
-	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
-	_, err := rand.Reader.Read(ackPayload)
-	require.NoError(err, "MessageACK: failed to generate ACK payload")
+	// Message
+	msgPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
+	_, err := rand.Reader.Read(msgPayload)
+	require.NoError(err, "Message: failed to generate payload")
 	id := make([]byte, constants.SURBIDLength)
 	_, err = rand.Reader.Read(id[:])
-	require.NoError(err, "MessageACK: Failed to generate ID")
+	require.NoError(err, "Message: Failed to generate SURBID")
 
-	cmdMessageACK := &MessageACK{
+	cmdMessage := &Message{
 		Geo:  geo,
 		Cmds: cmds,
 
-		QueueSizeHint: hint,
-		Sequence:      seq,
-		Payload:       ackPayload,
+		Sequence: seq,
+		Payload:  msgPayload,
 	}
-	copy(cmdMessageACK.ID[:], id[:])
-	b := cmdMessageACK.ToBytes()
-	expectedLen := cmdOverhead + messageACKLength() + cmds.geo.PayloadTagLength + cmds.geo.ForwardPayloadLength
-	require.Len(b, cmds.MaxMessageLenServerToClient, "MessageACK: ToBytes() length")
-	require.True(util.CtIsZero(b[expectedLen:]), "MessageACK: ToBytes() padding must be zero")
+	copy(cmdMessage.SURBID[:], id[:])
+	b := cmdMessage.ToBytes()
+	expectedLen := cmdOverhead + messageLength() + cmds.geo.PayloadTagLength + cmds.geo.ForwardPayloadLength
+	require.Len(b, cmds.MaxMessageLenServerToClient, "Message: ToBytes() length")
+	require.True(util.CtIsZero(b[expectedLen:]), "Message: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
-	require.NoError(err, "MessageACK: FromBytes() failed")
-	require.IsType(cmdMessageACK, c, "MessageACK: FromBytes() invalid type")
+	require.NoError(err, "Message: FromBytes() failed")
+	require.IsType(cmdMessage, c, "Message: FromBytes() invalid type")
 
-	cmdMessageACK = c.(*MessageACK)
-	require.Equal(uint8(hint), cmdMessageACK.QueueSizeHint, "MessageACK: FromBytes() QueueSizeHint")
-	require.Equal(uint32(seq), cmdMessageACK.Sequence, "MessageACK: FromBytes() Sequence")
-	require.Equal(id[:], cmdMessageACK.ID[:], "MessageACK: FromBytes() ID")
-	require.Equal(ackPayload, cmdMessageACK.Payload, "MessageACK: FromBytes() Payload")
+	cmdMessage = c.(*Message)
+	require.Equal(uint32(seq), cmdMessage.Sequence, "Message: FromBytes() Sequence")
+	require.Equal(id[:], cmdMessage.SURBID[:], "Message: FromBytes() SURBID")
+	require.Equal(msgPayload, cmdMessage.Payload, "Message: FromBytes() Payload")
 }
 
 // TestMessageDelivered pins the client-to-gateway acknowledgement that
 // replaces the polled RetrieveMessage in the push-delivery model. The
 // client echoes back the Sequence the gateway assigned to a pushed
-// Message or MessageACK so the gateway can advance the head of the
+// Message so the gateway can advance the head of the
 // client's spool. Symmetric to RetrieveMessage in size and shape; just
 // flowing in the opposite direction.
 func TestMessageDelivered(t *testing.T) {
