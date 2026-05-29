@@ -79,7 +79,6 @@ func TestMessage(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	cmds := NewMixnetCommands(geo)
 
-	var expectedLen = cmdOverhead + cmds.messageEmptyLength()
 	const (
 		hint = 0x17
 		seq  = 0xa5a5a5a5
@@ -87,26 +86,10 @@ func TestMessage(t *testing.T) {
 
 	require := require.New(t)
 
-	// MessageEmpty
-	cmdEmpty := &MessageEmpty{
-		Cmds:     cmds,
-		Sequence: seq,
-	}
-	b := cmdEmpty.ToBytes()
-	require.Len(b, cmds.MaxMessageLenServerToClient, "MessageEmpty: ToBytes() length")
-	require.True(util.CtIsZero(b[expectedLen:]), "MessageEmpty: ToBytes() padding must be zero")
-
-	c, err := cmds.FromBytes(b)
-	require.NoError(err, "MessageEmpty: FromBytes() failed")
-	require.IsType(cmdEmpty, c, "MessageEmpty: FromBytes() invalid type")
-
-	cmdEmpty = c.(*MessageEmpty)
-	require.Equal(uint32(seq), cmdEmpty.Sequence, "MessageEmpty: FromBytes() Sequence")
-
 	// MessageACK
 	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
-	_, err = rand.Reader.Read(ackPayload)
-	require.NoError(err, "Message: failed to generate ACK payload")
+	_, err := rand.Reader.Read(ackPayload)
+	require.NoError(err, "MessageACK: failed to generate ACK payload")
 	id := make([]byte, constants.SURBIDLength)
 	_, err = rand.Reader.Read(id[:])
 	require.NoError(err, "MessageACK: Failed to generate ID")
@@ -120,11 +103,12 @@ func TestMessage(t *testing.T) {
 		Payload:       ackPayload,
 	}
 	copy(cmdMessageACK.ID[:], id[:])
-	b = cmdMessageACK.ToBytes()
+	b := cmdMessageACK.ToBytes()
+	expectedLen := cmdOverhead + messageACKLength() + cmds.geo.PayloadTagLength + cmds.geo.ForwardPayloadLength
 	require.Len(b, cmds.MaxMessageLenServerToClient, "MessageACK: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "MessageACK: ToBytes() padding must be zero")
 
-	c, err = cmds.FromBytes(b)
+	c, err := cmds.FromBytes(b)
 	require.NoError(err, "MessageACK: FromBytes() failed")
 	require.IsType(cmdMessageACK, c, "MessageACK: FromBytes() invalid type")
 

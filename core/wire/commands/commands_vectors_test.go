@@ -42,8 +42,6 @@ type commandsTest struct {
 	SendPacket         string
 	RetrieveMessageSeq uint32
 	RetrieveMessage    string
-	MessageEmpty       string
-	MessageEmptySeq    uint32
 	MessageAck         string
 	MessageAckHint     uint8
 	MessageAckSeq      uint32
@@ -84,12 +82,6 @@ func NoTestBuildCommandVectors(t *testing.T) {
 	var retrieveMessageSeq uint32 = 12345
 	retrieveMessage := &RetrieveMessage{Sequence: retrieveMessageSeq, Cmds: cmds}
 
-	var emptyMsgSeq uint32 = 9876
-	messageEmpty := &MessageEmpty{
-		Cmds:     cmds,
-		Sequence: emptyMsgSeq,
-	}
-
 	var msgSeq uint32 = 9876
 
 	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
@@ -121,8 +113,6 @@ func NoTestBuildCommandVectors(t *testing.T) {
 		SendPacket:         hex.EncodeToString(sendPacket.ToBytes()),
 		RetrieveMessage:    hex.EncodeToString(retrieveMessage.ToBytes()),
 		RetrieveMessageSeq: retrieveMessageSeq,
-		MessageEmpty:       hex.EncodeToString(messageEmpty.ToBytes()),
-		MessageEmptySeq:    emptyMsgSeq,
 		MessageAck:         hex.EncodeToString(cmdMessageACK.ToBytes()),
 		MessageAckHint:     hint,
 		MessageAckSeq:      msgSeq,
@@ -189,17 +179,6 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal(retrieveMessageBytes[:len(retrieveMessageWant)], retrieveMessageWant)
 	assert.True(util.CtIsZero(retrieveMessageBytes[len(retrieveMessageWant):]), "RetrieveMessage: ToBytes() padding must be zero")
-
-	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
-	assert.NoError(err)
-
-	emptyMessage := &MessageEmpty{
-		Cmds:     cmds,
-		Sequence: cmdsTest.MessageEmptySeq,
-	}
-	emptyMessageCmd := emptyMessage.ToBytes()
-	assert.Equal(emptyMessageCmd[:len(messageEmptyWant)], messageEmptyWant)
-	assert.True(util.CtIsZero(emptyMessageCmd[len(messageEmptyWant):]), "MessageEmpty: ToBytes() padding must be zero")
 
 	messageAckWant, err := hex.DecodeString(cmdsTest.MessageAck)
 	assert.NoError(err)

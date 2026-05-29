@@ -8,15 +8,10 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 func messageACKLength() int {
 	return messageBaseLength + constants.SURBIDLength
-}
-
-func (c *Commands) messageEmptyLength() int {
-	return messageACKLength() + c.geo.PayloadTagLength + c.geo.ForwardPayloadLength
 }
 
 // SendPacket is a de-serialized send_packet command.
@@ -151,36 +146,11 @@ func (c *MessageACK) Length() int {
 	return cmdOverhead + 1 + 4 + constants.SURBIDLength + c.Geo.PacketLength
 }
 
-// MessageEmpty is a de-serialized message command signifying a empty queue.
-type MessageEmpty struct {
-	Cmds *Commands
-
-	Sequence uint32
-}
-
-func (c *MessageEmpty) String() string { return "MessageEmpty" }
-
-// ToBytes serializes the MessageEmpty and returns the resulting slice.
-func (c *MessageEmpty) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+c.Cmds.messageEmptyLength())
-
-	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageEmptyLength()))
-	out[6] = byte(messageTypeEmpty)
-	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	return c.Cmds.padToMaxCommandSize(out, false)
-}
-
-func (c *MessageEmpty) Length() int {
-	return cmdOverhead + 4 + c.Cmds.geo.PacketLength
-}
-
 func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
 	if len(b) < messageBaseLength {
 		return nil, errInvalidCommand
 	}
 
-	// Parse the common components belonging to all 3 message types.
 	t := messageType(b[0])
 	hint := b[1]
 	seq := binary.BigEndian.Uint32(b[2:6])
@@ -199,19 +169,6 @@ func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
 		b = b[constants.SURBIDLength:]
 		r.Payload = make([]byte, 0, len(b))
 		r.Payload = append(r.Payload, b...)
-		r.Cmds = cmds
-		return r, nil
-	case messageTypeEmpty:
-		if len(b) != c.messageEmptyLength()-messageBaseLength {
-			return nil, errInvalidCommand
-		}
-
-		if !utils.CtIsZero(b) {
-			return nil, errInvalidCommand
-		}
-
-		r := new(MessageEmpty)
-		r.Sequence = seq
 		r.Cmds = cmds
 		return r, nil
 	default:

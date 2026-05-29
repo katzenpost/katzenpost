@@ -251,14 +251,6 @@ func setupTestGateway(t *testing.T, gwAddr string, handler func(t *testing.T, wi
 				continue
 			case *commands.Disconnect:
 				return
-			case *commands.RetrieveMessage:
-				resp := &commands.MessageEmpty{
-					Cmds:     cmds,
-					Sequence: mycmd.Sequence,
-				}
-				if err = wireConn.SendCommand(resp); err != nil {
-					return
-				}
 			case *commands.GetConsensus2:
 				handler(t, wireConn, cmds, mycmd)
 			default:
@@ -274,7 +266,6 @@ func setupClientCallbacks(cfg *config.Config) {
 	cfg.Callbacks = &config.Callbacks{}
 	cfg.Callbacks.OnConnFn = func(err error) {}
 	cfg.Callbacks.OnDocumentFn = func(*cpki.Document) {}
-	cfg.Callbacks.OnEmptyFn = func() error { return nil }
 	cfg.Callbacks.OnACKFn = func(*[constants.SURBIDLength]byte, []byte) error { return nil }
 }
 
@@ -537,13 +528,6 @@ func TestConnection(t *testing.T) {
 				break loop
 			case *commands.SendPacket:
 				panic("SendPacket wtf")
-			case *commands.RetrieveMessage:
-				resp := &commands.MessageEmpty{
-					Cmds:     cmds,
-					Sequence: 0,
-				}
-				err = wireConn.SendCommand(resp)
-				require.NoError(t, err)
 			case *commands.SendRetrievePacket:
 				panic("SendRetrievePacket wtf")
 			case *commands.GetConsensus:
@@ -595,11 +579,6 @@ func TestConnection(t *testing.T) {
 	// Empty callback for test - document processing is handled elsewhere in test
 	clientCfg.Callbacks.OnDocumentFn = func(*cpki.Document) {
 		// Intentionally empty - document processing tested separately
-	}
-	// Empty callback for test - empty message events are not tested here
-	clientCfg.Callbacks.OnEmptyFn = func() error {
-		// Intentionally empty - empty message events not relevant for connection test
-		return nil
 	}
 	// Empty callback for test - ACK handling is not tested in this connection test
 	clientCfg.Callbacks.OnACKFn = func(*[constants.SURBIDLength]byte, []byte) error {
@@ -1037,9 +1016,6 @@ func TestOnWireConnMultiChunkConsensus(t *testing.T) {
 
 	clientCfg := setupTestGatewayFull(t, gwAddr, env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
 		switch mycmd := cmd.(type) {
-		case *commands.RetrieveMessage:
-			resp := &commands.MessageEmpty{Cmds: cmds, Sequence: mycmd.Sequence}
-			wireConn.SendCommand(resp)
 		case *commands.GetConsensus2:
 			// Send a valid multi-chunk document.
 			env.sendValidDocument(t, wireConn, cmds, mycmd.Epoch)
@@ -1071,9 +1047,6 @@ func TestOnWireConnDisconnectCommand(t *testing.T) {
 
 	clientCfg := setupTestGatewayFull(t, gwAddr, env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
 		switch mycmd := cmd.(type) {
-		case *commands.RetrieveMessage:
-			resp := &commands.MessageEmpty{Cmds: cmds, Sequence: mycmd.Sequence}
-			wireConn.SendCommand(resp)
 		case *commands.GetConsensus2:
 			if !gotConsensus {
 				gotConsensus = true
@@ -1151,7 +1124,6 @@ func TestOnWireConnMessageACKCallback(t *testing.T) {
 	clientCfg.Callbacks = &config.Callbacks{
 		OnConnFn:     func(error) {},
 		OnDocumentFn: func(*cpki.Document) {},
-		OnEmptyFn:    func() error { return nil },
 		OnACKFn: func(id *[constants.SURBIDLength]byte, payload []byte) error {
 			ackCh <- id[:]
 			return nil

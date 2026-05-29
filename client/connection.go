@@ -617,11 +617,6 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			c.log.Debugf("Received Disconnect.")
 			wireErr = newProtocolError("peer send Disconnect")
 			return
-		case *commands.MessageEmpty:
-			// The gateway no longer emits MessageEmpty under
-			// push delivery; treat as a protocol regression by
-			// an old peer.
-			c.log.Errorf("Received unexpected MessageEmpty from gateway in push-delivery mode; ignoring.")
 		case *commands.MessageACK:
 			c.log.Debugf("Received pushed MessageACK: %v", cmd.Sequence)
 			seqCopy := cmd.Sequence

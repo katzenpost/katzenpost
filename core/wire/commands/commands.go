@@ -70,8 +70,6 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 		&MessageACK{
 			Geo:  geo,
 			Cmds: c,
-		}, &MessageEmpty{
-			Cmds: c,
 		}, &SendRetrievePacketReply{
 			Geo:  geo,
 			Cmds: c,
