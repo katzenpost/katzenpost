@@ -52,11 +52,13 @@ var (
 	// dead and tearing it down for reconnect. The post-handshake socket
 	// otherwise has no read deadline ("client can take however long it
 	// wants"), so a half-broken TCP link with no FIN/RST leaves
-	// RecvCommand blocked indefinitely. The connection's existing
-	// fetchDelay polling sends a RetrieveMessage roughly every 3s, so
-	// two minutes is generous slack on top of the natural heartbeat
-	// cadence yet still well below an epoch period.
-	readIdleTimeout = 2 * time.Minute
+	// RecvCommand blocked indefinitely. The connection's pump sends a
+	// RetrieveMessage every fetchDelay (3s) and the gateway replies
+	// promptly under normal load, so a quiet read for more than several
+	// heartbeats indicates the link, not the gateway. Fifteen seconds is
+	// five RetrieveMessage cycles, leaves room for an occasional slow
+	// reply, and gets us back into a redial within half a minute.
+	readIdleTimeout = 15 * time.Second
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
