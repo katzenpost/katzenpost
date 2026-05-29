@@ -22,10 +22,7 @@ var (
 	errInvalidCommand = errors.New("wire: invalid wire protocol command")
 )
 
-type (
-	commandID   byte
-	messageType byte
-)
+type commandID byte
 
 // Command is the common interface exposed by all message command structures.
 type Command interface {

@@ -10,7 +10,7 @@ const (
 	cmdOverhead = CmdOverhead // deprecated: use CmdOverhead
 
 	retreiveMessageLength = 4
-	messageBaseLength     = 1 + 4 // messageType + Sequence
+	messageBaseLength     = 4 // Sequence
 
 	getConsensusLength   = 8
 	consensusBaseLength  = 1         // len of ErrorCode
@@ -26,8 +26,6 @@ const (
 
 	replicaMessageReplyLength = 1
 	replicaWriteReplyLength   = 1
-
-	messageTypeMessage messageType = 1
 
 	// Generic commands.
 	noOp       commandID = 0

@@ -134,41 +134,30 @@ func (c *Message) ToBytes() []byte {
 
 	out[0] = byte(message)
 	binary.BigEndian.PutUint32(out[2:6], uint32(messageLength()+len(c.Payload)))
-	out[6] = byte(messageTypeMessage)
-	binary.BigEndian.PutUint32(out[7:11], c.Sequence)
-	copy(out[11:11+constants.SURBIDLength], c.SURBID[:])
+	binary.BigEndian.PutUint32(out[6:10], c.Sequence)
+	copy(out[10:10+constants.SURBIDLength], c.SURBID[:])
 	out = append(out, c.Payload...)
 	return c.Cmds.padToMaxCommandSize(out, false)
 }
 
 func (c *Message) Length() int {
-	return cmdOverhead + 1 + 4 + constants.SURBIDLength + c.Geo.PacketLength
+	return cmdOverhead + 4 + constants.SURBIDLength + c.Geo.PacketLength
 }
 
 func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
-	if len(b) < messageBaseLength {
+	if len(b) != messageBaseLength+constants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
 		return nil, errInvalidCommand
 	}
 
-	t := messageType(b[0])
-	seq := binary.BigEndian.Uint32(b[1:5])
+	seq := binary.BigEndian.Uint32(b[0:4])
 	b = b[messageBaseLength:]
 
-	switch t {
-	case messageTypeMessage:
-		if len(b) != constants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
-			return nil, errInvalidCommand
-		}
-
-		r := new(Message)
-		r.Sequence = seq
-		copy(r.SURBID[:], b[:constants.SURBIDLength])
-		b = b[constants.SURBIDLength:]
-		r.Payload = make([]byte, 0, len(b))
-		r.Payload = append(r.Payload, b...)
-		r.Cmds = cmds
-		return r, nil
-	default:
-		return nil, errInvalidCommand
-	}
+	r := new(Message)
+	r.Sequence = seq
+	copy(r.SURBID[:], b[:constants.SURBIDLength])
+	b = b[constants.SURBIDLength:]
+	r.Payload = make([]byte, 0, len(b))
+	r.Payload = append(r.Payload, b...)
+	r.Cmds = cmds
+	return r, nil
 }
