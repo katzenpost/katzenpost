@@ -131,6 +131,13 @@ const (
 	// fields on the reply (if present) provide diagnostic detail, but the
 	// sentinel mapping is driven entirely by this code.
 	ThinClientErrorCopyCommandFailed uint8 = 26
+
+	// ThinClientErrorPayloadTooLarge indicates that a WriteStream plaintext or
+	// a ReadStream result would exceed the daemon's configured maximum stream
+	// payload size. The daemon reports it as a clean per-request reply rather
+	// than tearing down the connection, so the caller can match it with
+	// errors.Is(err, ErrPayloadTooLarge) and retry with a smaller payload.
+	ThinClientErrorPayloadTooLarge uint8 = 27
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -198,6 +205,8 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "Invalid tombstone signature"
 	case ThinClientErrorCopyCommandFailed:
 		return "Copy command failed"
+	case ThinClientErrorPayloadTooLarge:
+		return "Payload too large"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}

@@ -17,6 +17,33 @@ import (
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
+// DefaultMaxStreamPayloadBytes is the ceiling on a WriteStream plaintext (and
+// a ReadStream result) when the kpclientd config leaves MaxStreamPayloadBytes
+// unset. It sits well below the wire frame limit (thin.MaxMessageSize) so the
+// daemon can answer an oversize request with a clean ThinClientErrorPayloadTooLarge
+// reply rather than have the frame rejected at the transport.
+const DefaultMaxStreamPayloadBytes = 8 * 1024 * 1024
+
+// resolveMaxStreamPayload turns a configured MaxStreamPayloadBytes into the
+// effective limit: unset (<= 0) yields the default, and any value above the
+// wire frame ceiling is clamped to it, since no larger payload could be
+// carried in a single frame regardless.
+func resolveMaxStreamPayload(configured int) int {
+	if configured <= 0 {
+		return DefaultMaxStreamPayloadBytes
+	}
+	if configured > thin.MaxMessageSize {
+		return thin.MaxMessageSize
+	}
+	return configured
+}
+
+// maxStreamPayload returns the effective WriteStream/ReadStream payload ceiling
+// for this daemon from its configuration.
+func (d *Daemon) maxStreamPayload() int {
+	return resolveMaxStreamPayload(d.cfg.MaxStreamPayloadBytes)
+}
+
 // sackFallbackWindow is used only when the consensus parameters needed to
 // compute the bandwidth-delay-product window are unavailable (no PKI document
 // yet, or degenerate rates). A window of one degrades gracefully to the old
@@ -138,6 +165,11 @@ func (d *Daemon) writeStream(request *Request) {
 		d.sendWriteStreamError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
+	if limit := d.maxStreamPayload(); len(req.Payload) > limit {
+		d.log.Errorf("writeStream: plaintext %d bytes exceeds the %d byte stream limit", len(req.Payload), limit)
+		d.sendWriteStreamError(request, thin.ThinClientErrorPayloadTooLarge)
+		return
+	}
 	if d.cfg.PigeonholeGeometry == nil {
 		d.log.Error("writeStream: PigeonholeGeometry is nil")
 		d.sendWriteStreamError(request, thin.ThinClientErrorInternalError)
@@ -210,6 +242,12 @@ func (d *Daemon) readStream(request *Request) {
 	if d.cfg.PigeonholeGeometry == nil {
 		d.log.Error("readStream: PigeonholeGeometry is nil")
 		d.sendReadStreamError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	maxPlaintext := int64(d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength)
+	if limit := d.maxStreamPayload(); int64(req.BoxCount)*maxPlaintext > int64(limit) {
+		d.log.Errorf("readStream: %d boxes would exceed the %d byte stream limit", req.BoxCount, limit)
+		d.sendReadStreamError(request, thin.ThinClientErrorPayloadTooLarge)
 		return
 	}
 	_, doc := d.client.CurrentDocument()

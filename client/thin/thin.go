@@ -200,6 +200,10 @@ var (
 	// and FailedEnvelopeIndex fields on StartResendingCopyCommandReply carry
 	// diagnostic detail when present.
 	ErrCopyCommandFailed = errors.New("copy command failed")
+
+	// ErrPayloadTooLarge indicates that a WriteStream plaintext or a ReadStream
+	// result would exceed the daemon's configured maximum stream payload size.
+	ErrPayloadTooLarge = errors.New("payload too large")
 )
 
 // IsExpectedOutcome returns true for error codes that represent completed
