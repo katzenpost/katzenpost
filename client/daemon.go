@@ -104,6 +104,13 @@ type Daemon struct {
 	// Cryptographically secure random number generator
 	secureRand *mrand.Rand
 
+	// sackWindowMu guards the per-epoch cache of the computed SACK window
+	// (the bandwidth-delay-product default used when a WriteStream or
+	// ReadStream request leaves Window unset).
+	sackWindowMu     sync.Mutex
+	sackWindowEpoch  uint64
+	sackWindowCached int
+
 	haltOnce sync.Once
 }
 
@@ -354,7 +361,9 @@ func isLocalRequest(r *Request) bool {
 		r.GetPKIDocument != nil ||
 		r.CreateCourierEnvelopesFromPayload != nil ||
 		r.CreateCourierEnvelopesFromPayloads != nil ||
-		r.CreateCourierEnvelopesFromTombstoneRange != nil
+		r.CreateCourierEnvelopesFromTombstoneRange != nil ||
+		r.WriteStream != nil ||
+		r.ReadStream != nil
 }
 
 // requestAppID returns the request's application ID bytes for logging,
@@ -407,6 +416,10 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.createCourierEnvelopesFromPayloads(request)
 	case request.CreateCourierEnvelopesFromTombstoneRange != nil:
 		d.createCourierEnvelopesFromTombstoneRange(request)
+	case request.WriteStream != nil:
+		d.writeStream(request)
+	case request.ReadStream != nil:
+		d.readStream(request)
 	default:
 		d.log.Errorf("dispatchLocal: dropping request with no recognised local variant (appID %x)",
 			requestAppID(request))
@@ -429,6 +442,8 @@ func (d *Daemon) dispatchMixnet(request *Request) {
 		d.startResendingEncryptedMessage(request)
 	case request.StartResendingCopyCommand != nil:
 		d.startResendingCopyCommand(request)
+	case request.SACKBoxSend != nil:
+		d.sackDoBoxSend(request.SACKBoxSend)
 	default:
 		d.log.Errorf("dispatchMixnet: dropping request with no recognised mixnet variant (appID %x)",
 			requestAppID(request))

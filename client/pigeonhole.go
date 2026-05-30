@@ -1320,6 +1320,28 @@ func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, erro
 // - WaitingForACK: Initial state, waiting for ACK from courier
 // - ACKReceived: ACK received, for reads we need to send another SURB for payload
 // - PayloadReceived: Terminal state for reads after receiving payload
+// finishARQMessage delivers the terminal outcome of an ARQ operation to its
+// owner. A SACK-controlled box notifies its controller through OnComplete
+// (plaintext nil for writes, the decrypted box payload for reads); a
+// standalone StartResendingEncryptedMessage gets its per-message thin reply.
+// The map cleanup has already been done by the caller.
+func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, errorCode uint8, plaintext []byte) {
+	if arqMessage.OnComplete != nil {
+		arqMessage.OnComplete(errorCode, plaintext)
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: arqMessage.AppID,
+		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+			QueryID:             arqMessage.QueryID,
+			Plaintext:           plaintext,
+			ErrorCode:           errorCode,
+			CourierIdentityHash: arqMessage.DestinationIdHash,
+			CourierQueueID:      arqMessage.RecipientQueueID,
+		},
+	})
+}
+
 func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxReply) {
 	conn := d.listener.getConnection(arqMessage.AppID)
 	if conn == nil {
@@ -1390,15 +1412,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 		d.replyLock.Unlock()
 
-		conn.sendResponse(&Response{
-			AppID: arqMessage.AppID,
-			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:             arqMessage.QueryID,
-				ErrorCode:           transition.ErrorCode,
-				CourierIdentityHash: arqMessage.DestinationIdHash,
-				CourierQueueID:      arqMessage.RecipientQueueID,
-			},
-		})
+		d.finishARQMessage(arqMessage, conn, transition.ErrorCode, nil)
 		return
 
 	case ARQActionComplete:
@@ -1411,15 +1425,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		d.replyLock.Unlock()
 		instrument.SurbIDDelivered()
 
-		conn.sendResponse(&Response{
-			AppID: arqMessage.AppID,
-			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:             arqMessage.QueryID,
-				ErrorCode:           thin.ThinClientSuccess,
-				CourierIdentityHash: arqMessage.DestinationIdHash,
-				CourierQueueID:      arqMessage.RecipientQueueID,
-			},
-		})
+		d.finishARQMessage(arqMessage, conn, thin.ThinClientSuccess, nil)
 		return
 
 	case ARQActionHandlePayload:
@@ -1919,15 +1925,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 			d.replyLock.Unlock()
 			instrument.SurbIDDelivered()
 
-			conn.sendResponse(&Response{
-				AppID: arqMessage.AppID,
-				StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-					QueryID:             arqMessage.QueryID,
-					ErrorCode:           thin.ThinClientSuccess,
-					CourierIdentityHash: arqMessage.DestinationIdHash,
-					CourierQueueID:      arqMessage.RecipientQueueID,
-				},
-			})
+			d.finishARQMessage(arqMessage, conn, thin.ThinClientSuccess, nil)
 			return
 		}
 
@@ -1940,15 +1938,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		errorCode := mapDecryptionErrorToCode(err)
 		d.log.Debugf("handlePayloadReply: returning error code %d", errorCode)
 
-		conn.sendResponse(&Response{
-			AppID: arqMessage.AppID,
-			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:             arqMessage.QueryID,
-				ErrorCode:           errorCode,
-				CourierIdentityHash: arqMessage.DestinationIdHash,
-				CourierQueueID:      arqMessage.RecipientQueueID,
-			},
-		})
+		d.finishARQMessage(arqMessage, conn, errorCode, nil)
 		return
 	}
 
@@ -1963,15 +1953,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	// A successful write returns nil plaintext and nil error.
 	if !arqMessage.IsRead {
 		d.log.Debugf("handlePayloadReply: Write operation completed successfully")
-		conn.sendResponse(&Response{
-			AppID: arqMessage.AppID,
-			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:             arqMessage.QueryID,
-				ErrorCode:           thin.ThinClientSuccess,
-				CourierIdentityHash: arqMessage.DestinationIdHash,
-				CourierQueueID:      arqMessage.RecipientQueueID,
-			},
-		})
+		d.finishARQMessage(arqMessage, conn, thin.ThinClientSuccess, nil)
 		return
 	}
 
@@ -1980,16 +1962,7 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	// any case where the tombstone error code was not set.
 	if len(plaintext) == 0 {
 		d.log.Debugf("handlePayloadReply: Tombstone detected (empty plaintext)")
-		conn.sendResponse(&Response{
-			AppID: arqMessage.AppID,
-			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:             arqMessage.QueryID,
-				Plaintext:           []byte{},
-				ErrorCode:           pigeonhole.ReplicaErrorTombstone,
-				CourierIdentityHash: arqMessage.DestinationIdHash,
-				CourierQueueID:      arqMessage.RecipientQueueID,
-			},
-		})
+		d.finishARQMessage(arqMessage, conn, pigeonhole.ReplicaErrorTombstone, []byte{})
 		return
 	}
 
@@ -1997,29 +1970,12 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	unpaddedPlaintext, err := pigeonhole.ExtractMessageFromPaddedPayload(plaintext)
 	if err != nil {
 		d.log.Errorf("handlePayloadReply: Failed to unpad plaintext: %v", err)
-		conn.sendResponse(&Response{
-			AppID: arqMessage.AppID,
-			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:             arqMessage.QueryID,
-				ErrorCode:           thin.ThinClientErrorInternalError,
-				CourierIdentityHash: arqMessage.DestinationIdHash,
-				CourierQueueID:      arqMessage.RecipientQueueID,
-			},
-		})
+		d.finishARQMessage(arqMessage, conn, thin.ThinClientErrorInternalError, nil)
 		return
 	}
 
 	// Send success with unpadded plaintext to thin client
-	conn.sendResponse(&Response{
-		AppID: arqMessage.AppID,
-		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-			QueryID:             arqMessage.QueryID,
-			Plaintext:           unpaddedPlaintext,
-			ErrorCode:           thin.ThinClientSuccess,
-			CourierIdentityHash: arqMessage.DestinationIdHash,
-			CourierQueueID:      arqMessage.RecipientQueueID,
-		},
-	})
+	d.finishARQMessage(arqMessage, conn, thin.ThinClientSuccess, unpaddedPlaintext)
 }
 
 type innerMessageType int
