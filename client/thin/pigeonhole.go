@@ -623,6 +623,141 @@ func (t *ThinClient) startResendingEncryptedMessageImpl(
 	}
 }
 
+// WriteStream writes a whole payload, of any size, to the destination
+// channel using the daemon's windowed selective-ack (SACK) ARQ. The daemon
+// splits the payload into as many BACAP boxes as it spans and keeps up to
+// `window` boxes in flight at once, retransmitting only those whose
+// acknowledgements time out, so a multi-box payload is no longer serialised
+// one round trip per box. A `window` of zero asks the daemon to choose a
+// default derived from the send rate and round-trip time.
+//
+// It blocks until every box has been acknowledged (success) or the transfer
+// fails, returning the message box index immediately after the last box
+// written, ready to seed a subsequent write on the same channel.
+func (t *ThinClient) WriteStream(writeCap *bacap.WriteCap, startIndex *bacap.MessageBoxIndex, payload []byte, window int) (nextIndex *bacap.MessageBoxIndex, err error) {
+	if writeCap == nil {
+		return nil, errors.New("writeCap cannot be nil")
+	}
+	if startIndex == nil {
+		return nil, errors.New("startIndex cannot be nil")
+	}
+	if len(payload) == 0 {
+		return nil, errors.New("payload cannot be empty")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		WriteStream: &WriteStream{
+			QueryID:    queryID,
+			WriteCap:   writeCap,
+			StartIndex: startIndex,
+			Payload:    payload,
+			Window:     window,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	if err := t.writeMessage(req); err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *WriteStreamReply:
+			if v.QueryID == nil || !bytes.Equal(v.QueryID[:], queryID[:]) {
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, errorCodeToSentinel(v.ErrorCode)
+			}
+			t.log.Debugf("WriteStream: complete, %d boxes written", v.BoxCount)
+			return v.NextMessageBoxIndex, nil
+		case *ConnectionStatusEvent:
+			t.setConnected(v.IsConnected)
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// ReadStream reads boxCount sequential boxes from a channel using the
+// daemon's windowed selective-ack (SACK) ARQ, the read counterpart of
+// WriteStream. The daemon keeps up to `window` boxes in flight at once,
+// retransmitting only those whose payloads time out, decrypts each box, and
+// reassembles them in order. A `window` of zero asks the daemon to choose a
+// default.
+//
+// It blocks until every box has been read (success) or the transfer fails,
+// returning the concatenated payload and the message box index immediately
+// after the last box read.
+func (t *ThinClient) ReadStream(readCap *bacap.ReadCap, startIndex *bacap.MessageBoxIndex, boxCount uint32, window int) (payload []byte, nextIndex *bacap.MessageBoxIndex, err error) {
+	if readCap == nil {
+		return nil, nil, errors.New("readCap cannot be nil")
+	}
+	if startIndex == nil {
+		return nil, nil, errors.New("startIndex cannot be nil")
+	}
+	if boxCount == 0 {
+		return nil, nil, errors.New("boxCount must be greater than zero")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		ReadStream: &ReadStream{
+			QueryID:    queryID,
+			ReadCap:    readCap,
+			StartIndex: startIndex,
+			BoxCount:   boxCount,
+			Window:     window,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	if err := t.writeMessage(req); err != nil {
+		return nil, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *ReadStreamReply:
+			if v.QueryID == nil || !bytes.Equal(v.QueryID[:], queryID[:]) {
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, nil, errorCodeToSentinel(v.ErrorCode)
+			}
+			t.log.Debugf("ReadStream: complete, %d boxes read", v.BoxCount)
+			return v.Payload, v.NextMessageBoxIndex, nil
+		case *ConnectionStatusEvent:
+			t.setConnected(v.IsConnected)
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
 // CancelResendingEncryptedMessage cancels ARQ resending for an encrypted message.
 //
 // This method stops the automatic repeat request (ARQ) for a previously started

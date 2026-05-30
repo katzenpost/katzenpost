@@ -923,6 +923,18 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
+	case message.WriteStreamReply != nil:
+		select {
+		case t.eventSink <- message.WriteStreamReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.ReadStreamReply != nil:
+		select {
+		case t.eventSink <- message.ReadStreamReply:
+		case <-t.HaltCh():
+			return false
+		}
 	case message.CancelResendingEncryptedMessageReply != nil:
 		select {
 		case t.eventSink <- message.CancelResendingEncryptedMessageReply:
