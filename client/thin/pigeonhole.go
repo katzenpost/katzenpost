@@ -51,6 +51,8 @@ func thinClientErrorCodeToSentinel(errorCode uint8) error {
 		return ErrInvalidTombstoneSignature
 	case ThinClientErrorCopyCommandFailed:
 		return ErrCopyCommandFailed
+	case ThinClientErrorPayloadTooLarge:
+		return ErrPayloadTooLarge
 	default:
 		return errors.New(ThinClientErrorToString(errorCode))
 	}
@@ -142,6 +144,8 @@ func errorCodeToSentinel(errorCode uint8) error {
 		return ErrStartResendingCancelled
 	case ThinClientErrorInvalidTombstoneSig:
 		return ErrInvalidTombstoneSignature
+	case ThinClientErrorPayloadTooLarge:
+		return ErrPayloadTooLarge
 
 	default:
 		// For other error codes (thin client errors, etc.), return a generic error

@@ -118,6 +118,17 @@ func assertStillRunning(t *testing.T, res <-chan error) {
 	}
 }
 
+func TestResolveMaxStreamPayload(t *testing.T) {
+	// Unset (zero or negative) yields the default.
+	require.Equal(t, DefaultMaxStreamPayloadBytes, resolveMaxStreamPayload(0))
+	require.Equal(t, DefaultMaxStreamPayloadBytes, resolveMaxStreamPayload(-1))
+	// A positive value within range is used verbatim.
+	require.Equal(t, 4096, resolveMaxStreamPayload(4096))
+	// A value above the wire frame ceiling is clamped to it, since no payload
+	// larger than a frame could ever be delivered anyway.
+	require.Equal(t, thin.MaxMessageSize, resolveMaxStreamPayload(thin.MaxMessageSize+1))
+}
+
 func TestComputeSACKWindow(t *testing.T) {
 	// Default docker rates: LambdaP=0.001, Mu=0.005, forward NrHops=5
 	// (gateway + 3 mix layers + service). Round-trip N_hops = 2*5-1 = 9.

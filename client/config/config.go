@@ -294,6 +294,13 @@ type Config struct {
 	// PigeonholeGeometry
 	PigeonholeGeometry *pigeonholeGeo.Geometry
 
+	// MaxStreamPayloadBytes caps the plaintext a single WriteStream may write
+	// and the result a single ReadStream may return. When zero or unset the
+	// daemon uses DefaultMaxStreamPayloadBytes. The daemon clamps any value to
+	// the wire frame ceiling and rejects oversize requests with a clean
+	// ThinClientErrorPayloadTooLarge reply.
+	MaxStreamPayloadBytes int
+
 	// Logging
 	Logging *Logging
 
