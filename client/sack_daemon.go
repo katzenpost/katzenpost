@@ -19,10 +19,11 @@ import (
 
 // DefaultMaxStreamPayloadBytes is the ceiling on a WriteStream plaintext (and
 // a ReadStream result) when the kpclientd config leaves MaxStreamPayloadBytes
-// unset. It sits well below the wire frame limit (thin.MaxMessageSize) so the
-// daemon can answer an oversize request with a clean ThinClientErrorPayloadTooLarge
-// reply rather than have the frame rejected at the transport.
-const DefaultMaxStreamPayloadBytes = 8 * 1024 * 1024
+// unset. It matches the wire frame limit (thin.MaxMessageSize); an operator who
+// wants the daemon to answer oversize requests with a clean
+// ThinClientErrorPayloadTooLarge reply (rather than have the frame rejected at
+// the transport) sets MaxStreamPayloadBytes to something below the frame.
+const DefaultMaxStreamPayloadBytes = 40 * 1024 * 1024
 
 // resolveMaxStreamPayload turns a configured MaxStreamPayloadBytes into the
 // effective limit: unset (<= 0) yields the default, and any value above the

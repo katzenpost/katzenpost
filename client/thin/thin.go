@@ -114,11 +114,11 @@ const (
 	// thin-client/daemon socket. The 4-byte big-endian prefix is
 	// attacker-controlled in both directions; without a ceiling a
 	// hostile or buggy peer could declare a multi-gigabyte frame and
-	// drive the reader to allocate it before any payload arrives. 16
+	// drive the reader to allocate it before any payload arrives. 40
 	// MiB is far above any legitimate CBOR thin-client message yet far
 	// below a memory-exhaustion threat. Frames larger than this are
 	// rejected before allocation.
-	MaxMessageSize = 16 * 1024 * 1024
+	MaxMessageSize = 40 * 1024 * 1024
 )
 
 var (
