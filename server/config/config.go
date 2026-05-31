@@ -45,8 +45,8 @@ const (
 	// NumSphinxWorkers, NumGatewayWorkers, NumServiceWorkers and
 	// NumKaetzchenWorkers intentionally have no fixed defaults here.
 	// Zero in the config signals "auto-derive at server.New from
-	// runtime.NumCPU, Server.CoTenancyFactor and the startup
-	// Sphinx self-check"; see Debug.ApplyRuntimeDefaults.
+	// runtime.NumCPU and the startup Sphinx self-check"; see
+	// Debug.ApplyRuntimeDefaults.
 	defaultUnwrapDelay = 250 // 250 ms.
 	defaultSchedulerSlack      = 450 // 450 ms.
 	defaultSchedulerMaxBurst   = 16
@@ -183,12 +183,11 @@ func (sCfg *Server) validate() error {
 // Debug is the Katzenpost server debug configuration.
 type Debug struct {
 	// NumSphinxWorkers is the inbound Sphinx-packet processing worker
-	// pool size. Omit this field (or set it to 0) on a
-	// single-process-per-host deployment so the runtime picks
-	// ceil(runtime.NumCPU / CoTenancyFactor) from the startup Sphinx
-	// self-check; an explicit non-zero value overrides and is
-	// intended for unusual deployments (research workloads, hosts
-	// with reserved cores for other work, etc.).
+	// pool size. Omit this field (or set it to 0) so the runtime
+	// picks runtime.NumCPU, regardless of how many katzenpost
+	// processes share the host; an explicit non-zero value overrides
+	// and is intended for unusual deployments (research workloads,
+	// hosts with reserved cores for other work, etc.).
 	NumSphinxWorkers int
 
 	// NumServiceWorkers is the service-node worker pool size. Omit
