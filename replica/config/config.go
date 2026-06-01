@@ -122,7 +122,6 @@ type Config struct {
 	// for other work beyond the co-tenanted replicas.
 	ProxyWorkerCount int
 
-
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	// If empty, no metrics listener is started.
 	MetricsAddress string
