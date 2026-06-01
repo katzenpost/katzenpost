@@ -115,14 +115,12 @@ type Config struct {
 	ProxyRequestTimeout int
 
 	// ProxyWorkerCount caps how many proxy-request handlers can be in
-	// flight concurrently. Omit this field (or set it to 0) on a
-	// single-replica-per-host deployment so the runtime picks
-	// runtime.NumCPU divided by CoTenancyFactor; an explicit non-zero
-	// value is intended for unusual deployments where the operator
-	// wants to reserve CPU for other work beyond the co-tenanted
-	// replicas.
+	// flight concurrently. Omit this field (or set it to 0) so the
+	// runtime picks runtime.NumCPU, regardless of how many katzenpost
+	// processes share the host; an explicit non-zero value is intended
+	// for unusual deployments where the operator wants to reserve CPU
+	// for other work beyond the co-tenanted replicas.
 	ProxyWorkerCount int
-
 
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	// If empty, no metrics listener is started.
