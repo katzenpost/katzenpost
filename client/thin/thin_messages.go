@@ -138,6 +138,19 @@ const (
 	// than tearing down the connection, so the caller can match it with
 	// errors.Is(err, ErrPayloadTooLarge) and retry with a smaller payload.
 	ThinClientErrorPayloadTooLarge uint8 = 27
+
+	// ThinClientErrorVoucherHashMismatch indicates that a Contact Voucher
+	// payload did not hash to the Voucher token handed over out of band.
+	ThinClientErrorVoucherHashMismatch uint8 = 28
+
+	// ThinClientErrorVoucherSignatureInvalid indicates that the signed
+	// please-add in a Contact Voucher payload did not verify under the read
+	// cap's root public key.
+	ThinClientErrorVoucherSignatureInvalid uint8 = 29
+
+	// ThinClientErrorVoucherSealOpenFailed indicates that a sealed Contact
+	// Voucher reply could not be opened with the joiner's voucher secret key.
+	ThinClientErrorVoucherSealOpenFailed uint8 = 30
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -207,6 +220,12 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "Copy command failed"
 	case ThinClientErrorPayloadTooLarge:
 		return "Payload too large"
+	case ThinClientErrorVoucherHashMismatch:
+		return "Voucher payload does not hash to the voucher"
+	case ThinClientErrorVoucherSignatureInvalid:
+		return "Voucher signed please-add did not verify"
+	case ThinClientErrorVoucherSealOpenFailed:
+		return "Voucher sealed reply could not be opened"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}
@@ -696,6 +715,20 @@ type Response struct {
 	// CreateCourierEnvelopesFromTombstoneRangeReply is sent when the client daemon successfully
 	// creates tombstone courier envelopes for a range of destination indices.
 	CreateCourierEnvelopesFromTombstoneRangeReply *CreateCourierEnvelopesFromTombstoneRangeReply `cbor:"create_courier_envelopes_from_tombstone_range_reply"`
+
+	// Contact Voucher API:
+
+	// VoucherMintReply carries the minted Voucher and reply keypair.
+	VoucherMintReply *VoucherMintReply `cbor:"voucher_mint_reply"`
+
+	// VoucherInductReply carries the sealed reply and the salt-mutated read cap.
+	VoucherInductReply *VoucherInductReply `cbor:"voucher_induct_reply"`
+
+	// VoucherOpenReply carries the opened WhoReply and the salt-mutated write cap.
+	VoucherOpenReply *VoucherOpenReply `cbor:"voucher_open_reply"`
+
+	// VoucherDeriveStreamReply carries the derived VoucherStream caps.
+	VoucherDeriveStreamReply *VoucherDeriveStreamReply `cbor:"voucher_derive_stream_reply"`
 }
 
 // Request is the thin client's request message to the client daemon.
@@ -766,4 +799,70 @@ type Request struct {
 	// CreateCourierEnvelopesFromTombstoneRange is used to create tombstone CourierEnvelopes
 	// for a range of destination indices, encoded as copy stream elements.
 	CreateCourierEnvelopesFromTombstoneRange *CreateCourierEnvelopesFromTombstoneRange `cbor:"create_courier_envelopes_from_tombstone_range"`
+
+	// Contact Voucher API:
+
+	// VoucherMint mints a Voucher from the joiner's MessageStream write cap.
+	VoucherMint *VoucherMint `cbor:"voucher_mint"`
+
+	// VoucherInduct verifies a published VoucherPayload and seals a reply.
+	VoucherInduct *VoucherInduct `cbor:"voucher_induct"`
+
+	// VoucherOpen opens the inductor's sealed reply for the joiner.
+	VoucherOpen *VoucherOpen `cbor:"voucher_open"`
+
+	// VoucherDeriveStream derives the VoucherStream caps from a Voucher.
+	VoucherDeriveStream *VoucherDeriveStream `cbor:"voucher_derive_stream"`
+}
+
+// The Contact Voucher request types. Each is served synchronously by the
+// daemon from hpqc/voucher with no mixnet IO. All capability and key material
+// is opaque bytes: the thin client performs no cryptography. Seeds (the reply
+// keypair seed, the salt, the seal entropy) are never carried over the wire,
+// so the daemon always supplies fresh randomness.
+
+// VoucherMint mints a Voucher from the joiner's MessageStream write cap.
+// The reply type is VoucherMintReply.
+type VoucherMint struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// MessageWriteCap is the joiner's MessageStream write capability.
+	MessageWriteCap []byte `cbor:"message_write_cap"`
+	// DisplayName is the joiner's chosen display name.
+	DisplayName string `cbor:"display_name"`
+}
+
+// VoucherInduct verifies a published VoucherPayload and seals a reply to the
+// joiner. The reply type is VoucherInductReply.
+type VoucherInduct struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// Voucher is the 32-byte token received out of band.
+	Voucher []byte `cbor:"voucher"`
+	// VoucherPayload is the payload the inductor read from VoucherStream box 0.
+	VoucherPayload []byte `cbor:"voucher_payload"`
+	// WhoReply is the opaque group-membership blob to seal for the joiner.
+	WhoReply []byte `cbor:"who_reply"`
+}
+
+// VoucherOpen opens the inductor's sealed reply with the joiner's voucher
+// secret key, recovers the VoucherSalt, and mutates the joiner's MessageStream
+// write cap by it. The reply type is VoucherOpenReply. (This wraps the hpqc
+// voucher.VoucherOpenReply operation.)
+type VoucherOpen struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// VoucherSecretKey is the joiner's persisted voucher secret key.
+	VoucherSecretKey []byte `cbor:"voucher_secret_key"`
+	// SealedReply is the bytes the joiner read from VoucherStream box 1.
+	SealedReply []byte `cbor:"sealed_reply"`
+	// MessageWriteCap is the joiner's MessageStream write cap; the recovered
+	// salt mutates it into the live write cap for real messages.
+	MessageWriteCap []byte `cbor:"message_write_cap"`
+}
+
+// VoucherDeriveStream derives the VoucherStream caps from the Voucher, which
+// the inductor needs to read box 0 before inducting. The reply type is
+// VoucherDeriveStreamReply.
+type VoucherDeriveStream struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// Voucher is the 32-byte token.
+	Voucher []byte `cbor:"voucher"`
 }

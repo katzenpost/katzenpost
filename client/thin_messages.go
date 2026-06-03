@@ -36,6 +36,11 @@ func IntoThinResponse(r *Response) *thin.Response {
 		CreateCourierEnvelopesFromPayloadsReply:         r.CreateCourierEnvelopesFromPayloadsReply,
 		CreateCourierEnvelopesFromTombstoneRangeReply:   r.CreateCourierEnvelopesFromTombstoneRangeReply,
 
+		// Contact Voucher API:
+		VoucherMintReply:         r.VoucherMintReply,
+		VoucherInductReply:       r.VoucherInductReply,
+		VoucherOpenReply:         r.VoucherOpenReply,
+		VoucherDeriveStreamReply: r.VoucherDeriveStreamReply,
 	}
 }
 
@@ -91,6 +96,16 @@ type Response struct {
 	CreateCourierEnvelopesFromPayloadsReply *thin.CreateCourierEnvelopesFromPayloadsReply
 
 	CreateCourierEnvelopesFromTombstoneRangeReply *thin.CreateCourierEnvelopesFromTombstoneRangeReply
+
+	// Contact Voucher API:
+
+	VoucherMintReply *thin.VoucherMintReply
+
+	VoucherInductReply *thin.VoucherInductReply
+
+	VoucherOpenReply *thin.VoucherOpenReply
+
+	VoucherDeriveStreamReply *thin.VoucherDeriveStreamReply
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
@@ -113,6 +128,12 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		CreateCourierEnvelopesFromPayload:          r.CreateCourierEnvelopesFromPayload,
 		CreateCourierEnvelopesFromPayloads:         r.CreateCourierEnvelopesFromPayloads,
 		CreateCourierEnvelopesFromTombstoneRange:   r.CreateCourierEnvelopesFromTombstoneRange,
+
+		// Contact Voucher API:
+		VoucherMint:         r.VoucherMint,
+		VoucherInduct:       r.VoucherInduct,
+		VoucherOpen:         r.VoucherOpen,
+		VoucherDeriveStream: r.VoucherDeriveStream,
 
 		SessionToken: r.SessionToken,
 		SendMessage:  r.SendMessage,
@@ -160,6 +181,16 @@ type Request struct {
 	CreateCourierEnvelopesFromPayloads *thin.CreateCourierEnvelopesFromPayloads
 
 	CreateCourierEnvelopesFromTombstoneRange *thin.CreateCourierEnvelopesFromTombstoneRange
+
+	// Contact Voucher API:
+
+	VoucherMint *thin.VoucherMint
+
+	VoucherInduct *thin.VoucherInduct
+
+	VoucherOpen *thin.VoucherOpen
+
+	VoucherDeriveStream *thin.VoucherDeriveStream
 
 	SessionToken *thin.SessionToken
 

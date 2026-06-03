@@ -997,6 +997,33 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 			return false
 		}
 
+		/**  Contact Voucher API **/
+
+	case message.VoucherMintReply != nil:
+		select {
+		case t.eventSink <- message.VoucherMintReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.VoucherInductReply != nil:
+		select {
+		case t.eventSink <- message.VoucherInductReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.VoucherOpenReply != nil:
+		select {
+		case t.eventSink <- message.VoucherOpenReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.VoucherDeriveStreamReply != nil:
+		select {
+		case t.eventSink <- message.VoucherDeriveStreamReply:
+		case <-t.HaltCh():
+			return false
+		}
+
 	default:
 		t.log.Errorf("bug: received invalid thin client message: %v", message)
 	}
