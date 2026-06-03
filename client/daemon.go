@@ -363,7 +363,11 @@ func isLocalRequest(r *Request) bool {
 		r.CreateCourierEnvelopesFromPayloads != nil ||
 		r.CreateCourierEnvelopesFromTombstoneRange != nil ||
 		r.WriteStream != nil ||
-		r.ReadStream != nil
+		r.ReadStream != nil ||
+		r.VoucherMint != nil ||
+		r.VoucherInduct != nil ||
+		r.VoucherOpen != nil ||
+		r.VoucherDeriveStream != nil
 }
 
 // requestAppID returns the request's application ID bytes for logging,
@@ -420,6 +424,14 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.writeStream(request)
 	case request.ReadStream != nil:
 		d.readStream(request)
+	case request.VoucherMint != nil:
+		d.voucherMint(request)
+	case request.VoucherInduct != nil:
+		d.voucherInduct(request)
+	case request.VoucherOpen != nil:
+		d.voucherOpen(request)
+	case request.VoucherDeriveStream != nil:
+		d.voucherDeriveStream(request)
 	default:
 		d.log.Errorf("dispatchLocal: dropping request with no recognised local variant (appID %x)",
 			requestAppID(request))

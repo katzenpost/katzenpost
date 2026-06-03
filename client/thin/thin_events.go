@@ -620,3 +620,89 @@ func (e *CreateCourierEnvelopesFromTombstoneRangeReply) String() string {
 	return fmt.Sprintf("CreateCourierEnvelopesFromTombstoneRangeReply: queryID=%x numEnvelopes=%d bufferLen=%d", e.QueryID[:], len(e.Envelopes), len(e.Buffer))
 }
 
+// Contact Voucher API replies. All capability and key material is opaque
+// bytes; the thin client performs no cryptography.
+
+// VoucherMintReply is the reply to a VoucherMint request. The joiner persists
+// VoucherSecretKey to open the inductor's reply later.
+type VoucherMintReply struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// Voucher is the 32-byte token handed to the inductor out of band.
+	Voucher []byte `cbor:"voucher"`
+	// VoucherPayload is published to VoucherStream box 0.
+	VoucherPayload []byte `cbor:"voucher_payload"`
+	// VoucherWriteCap and VoucherReadCap are the rendezvous stream caps.
+	VoucherWriteCap []byte `cbor:"voucher_write_cap"`
+	VoucherReadCap  []byte `cbor:"voucher_read_cap"`
+	// VoucherSecretKey and VoucherPublicKey are the joiner's reply keypair.
+	VoucherSecretKey []byte `cbor:"voucher_secret_key"`
+	VoucherPublicKey []byte `cbor:"voucher_public_key"`
+	ErrorCode        uint8  `cbor:"error_code"`
+}
+
+// String returns a string representation of the VoucherMintReply.
+func (e *VoucherMintReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("VoucherMintReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "VoucherMintReply: success"
+}
+
+// VoucherInductReply is the reply to a VoucherInduct request.
+// MutatedMessageReadCap is the joiner's MessageStream read cap after the
+// VoucherSalt has been applied: the live read cap the inductor hands the group.
+type VoucherInductReply struct {
+	QueryID               *[QueryIDLength]byte `cbor:"query_id"`
+	DisplayName           string               `cbor:"display_name"`
+	MutatedMessageReadCap []byte               `cbor:"mutated_message_read_cap"`
+	SealedReply           []byte               `cbor:"sealed_reply"`
+	VoucherWriteCap       []byte               `cbor:"voucher_write_cap"`
+	VoucherReadCap        []byte               `cbor:"voucher_read_cap"`
+	Salt                  []byte               `cbor:"salt"`
+	ErrorCode             uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the VoucherInductReply.
+func (e *VoucherInductReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("VoucherInductReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "VoucherInductReply: success"
+}
+
+// VoucherOpenReply is the reply to a VoucherOpen request.
+// MutatedMessageWriteCap is the joiner's MessageStream write cap after the
+// recovered salt has been applied: the live write cap for real messages, which
+// lands on the same box sequence as the read cap the inductor handed the group.
+type VoucherOpenReply struct {
+	QueryID                *[QueryIDLength]byte `cbor:"query_id"`
+	WhoReply               []byte               `cbor:"who_reply"`
+	Salt                   []byte               `cbor:"salt"`
+	MutatedMessageWriteCap []byte               `cbor:"mutated_message_write_cap"`
+	ErrorCode              uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the VoucherOpenReply.
+func (e *VoucherOpenReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("VoucherOpenReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "VoucherOpenReply: success"
+}
+
+// VoucherDeriveStreamReply is the reply to a VoucherDeriveStream request.
+type VoucherDeriveStreamReply struct {
+	QueryID         *[QueryIDLength]byte `cbor:"query_id"`
+	VoucherWriteCap []byte               `cbor:"voucher_write_cap"`
+	VoucherReadCap  []byte               `cbor:"voucher_read_cap"`
+	ErrorCode       uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the VoucherDeriveStreamReply.
+func (e *VoucherDeriveStreamReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("VoucherDeriveStreamReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "VoucherDeriveStreamReply: success"
+}
+
