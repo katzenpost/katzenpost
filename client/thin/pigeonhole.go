@@ -244,40 +244,38 @@ func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap 
 // courier service to retrieve a message from a pigeonhole box. The returned
 // ciphertext should be sent via StartResendingEncryptedMessage.
 //
+// The read position is the cap's own message box index; the daemon returns the
+// read cap advanced by one box, which the caller swaps in (after the courier ack)
+// for the next read.
+//
 // Parameters:
-//   - readCap: Read capability that grants access to the channel
-//   - messageBoxIndex: Starting read position for the channel
+//   - readCap: Read capability that grants access to the channel, at the position to read
 //
 // Returns:
 //   - []byte: Encrypted message ciphertext to send to courier
 //   - []byte: Envelope descriptor for decrypting the reply
 //   - *[32]byte: Hash of the courier envelope
-//   - *bacap.MessageBoxIndex: Next message box index for subsequent reads
+//   - *bacap.ReadCap: The read cap advanced to the next box, for subsequent reads
 //   - error: Any error encountered during encryption
 //
 // Example:
 //
-//	ciphertext, envDesc, envHash, nextIndex, err := client.EncryptRead(
-//		readCap, messageBoxIndex)
+//	ciphertext, envDesc, envHash, nextReadCap, err := client.EncryptRead(readCap)
 //	if err != nil {
 //		log.Fatal("Failed to encrypt read:", err)
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, nextMessageBoxIndex *bacap.MessageBoxIndex, err error) {
+func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, mutatedReadCap *bacap.ReadCap, err error) {
 	if readCap == nil {
 		return nil, nil, nil, nil, errors.New("readCap cannot be nil")
-	}
-	if messageBoxIndex == nil {
-		return nil, nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
 	req := &Request{
 		EncryptRead: &EncryptRead{
-			QueryID:         queryID,
-			ReadCap:         readCap,
-			MessageBoxIndex: messageBoxIndex,
+			QueryID: queryID,
+			ReadCap: readCap,
 		},
 	}
 
@@ -310,7 +308,7 @@ func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, v.NextMessageBoxIndex, nil
+			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, v.ReadCap, nil
 		case *ConnectionStatusEvent:
 			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
@@ -327,43 +325,42 @@ func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.
 // courier service to store a message in a pigeonhole box. The returned
 // ciphertext should be sent via StartResendingEncryptedMessage.
 //
+// The write position is the cap's own message box index; the daemon returns the
+// write cap advanced by one box, which the caller swaps in (after the courier ack)
+// for the next write.
+//
 // Parameters:
 //   - plaintext: The plaintext message to encrypt
-//   - writeCap: Write capability that grants access to the channel
-//   - messageBoxIndex: Starting write position for the channel
+//   - writeCap: Write capability that grants access to the channel, at the position to write
 //
 // Returns:
 //   - []byte: Encrypted message ciphertext to send to courier
 //   - []byte: Envelope descriptor for decrypting the reply
 //   - *[32]byte: Hash of the courier envelope
-//   - *bacap.MessageBoxIndex: Next message box index for subsequent writes
+//   - *bacap.WriteCap: The write cap advanced to the next box, for subsequent writes
 //   - error: Any error encountered during encryption
 //
 // Example:
 //
 //	plaintext := []byte("Hello, Bob!")
-//	ciphertext, envDesc, envHash, nextIndex, err := client.EncryptWrite(
-//		plaintext, writeCap, messageBoxIndex)
+//	ciphertext, envDesc, envHash, nextWriteCap, err := client.EncryptWrite(
+//		plaintext, writeCap)
 //	if err != nil {
 //		log.Fatal("Failed to encrypt write:", err)
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, nextMessageBoxIndex *bacap.MessageBoxIndex, err error) {
+func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, mutatedWriteCap *bacap.WriteCap, err error) {
 	if writeCap == nil {
 		return nil, nil, nil, nil, errors.New("writeCap cannot be nil")
-	}
-	if messageBoxIndex == nil {
-		return nil, nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
 	req := &Request{
 		EncryptWrite: &EncryptWrite{
-			QueryID:         queryID,
-			Plaintext:       plaintext,
-			WriteCap:        writeCap,
-			MessageBoxIndex: messageBoxIndex,
+			QueryID:   queryID,
+			Plaintext: plaintext,
+			WriteCap:  writeCap,
 		},
 	}
 
@@ -396,7 +393,7 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, v.NextMessageBoxIndex, nil
+			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, v.WriteCap, nil
 		case *ConnectionStatusEvent:
 			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
@@ -1555,15 +1552,18 @@ func (c *ThinClient) TombstoneRange(
 		return &TombstoneRangeResult{Envelopes: nil, Next: start}, nil
 	}
 
-	cur := start
+	// EncryptWrite now carries the position inside the cap and returns the cap
+	// advanced one box, so re-base to start and walk the cap forward.
+	curCap := writeCap.WithMessageBoxIndex(start)
 	envelopes := make([]*TombstoneEnvelope, 0, maxCount)
 
 	for uint32(len(envelopes)) < maxCount {
-		messageCiphertext, envelopeDescriptor, envelopeHash, nextIndex, err := c.EncryptWrite([]byte{}, writeCap, cur)
+		boxIndex := curCap.GetMessageBoxIndex()
+		messageCiphertext, envelopeDescriptor, envelopeHash, nextCap, err := c.EncryptWrite([]byte{}, curCap)
 		if err != nil {
 			return &TombstoneRangeResult{
 				Envelopes: envelopes,
-				Next:      cur,
+				Next:      boxIndex,
 			}, err
 		}
 
@@ -1571,15 +1571,15 @@ func (c *ThinClient) TombstoneRange(
 			MessageCiphertext:  messageCiphertext,
 			EnvelopeDescriptor: envelopeDescriptor,
 			EnvelopeHash:       envelopeHash,
-			BoxIndex:           cur,
+			BoxIndex:           boxIndex,
 		})
 
-		cur = nextIndex
+		curCap = nextCap
 	}
 
 	return &TombstoneRangeResult{
 		Envelopes: envelopes,
-		Next:      cur,
+		Next:      curCap.GetMessageBoxIndex(),
 	}, nil
 }
 

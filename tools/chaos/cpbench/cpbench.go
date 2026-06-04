@@ -144,7 +144,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	// byte at Bob.
 	start := time.Now()
 
-	tempIndex := tempFirstIndex
+	tempCap := tempWriteCap.WithMessageBoxIndex(tempFirstIndex)
 	replyIndex := uint8(0)
 	for i, chunk := range chunks {
 		select {
@@ -152,16 +152,16 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 			return nil, ctx.Err()
 		default:
 		}
-		ciphertext, envDesc, envHash, nextTemp, err := alice.EncryptWrite(chunk, tempWriteCap, tempIndex)
+		ciphertext, envDesc, envHash, nextTempCap, err := alice.EncryptWrite(chunk, tempCap)
 		if err != nil {
 			errorsByStage.With(map[string]string{"stage": "alice_encrypt_write_chunk"}).Inc()
 			return nil, fmt.Errorf("cpbench: encrypt write chunk %d: %w", i+1, err)
 		}
-		if _, err := alice.StartResendingEncryptedMessage(nil, tempWriteCap, nil, &replyIndex, envDesc, ciphertext, envHash); err != nil {
+		if _, err := alice.StartResendingEncryptedMessage(nil, tempCap, nil, &replyIndex, envDesc, ciphertext, envHash); err != nil {
 			errorsByStage.With(map[string]string{"stage": "alice_send_chunk"}).Inc()
 			return nil, fmt.Errorf("cpbench: send chunk %d: %w", i+1, err)
 		}
-		tempIndex = nextTemp
+		tempCap = nextTempCap
 	}
 
 	// Propagation wait: temp-stream writes hit replica primaries and
@@ -181,7 +181,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 
 	// Bob reconstructs the payload chunk by chunk until the length
 	// prefix says he is done.
-	bobIndex := destFirstIndex
+	bobCap := bobReadCap.WithMessageBoxIndex(destFirstIndex)
 	var reconstructed []byte
 	var expectedLength uint32
 	for {
@@ -190,7 +190,8 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 			return nil, ctx.Err()
 		default:
 		}
-		bobCt, bobEnvDesc, bobEnvHash, bobNext, err := bob.EncryptRead(bobReadCap, bobIndex)
+		bobIndex := bobCap.GetMessageBoxIndex()
+		bobCt, bobEnvDesc, bobEnvHash, bobNextCap, err := bob.EncryptRead(bobCap)
 		if err != nil {
 			errorsByStage.With(map[string]string{"stage": "bob_encrypt_read"}).Inc()
 			return nil, fmt.Errorf("cpbench: bob encrypt read: %w", err)
@@ -200,7 +201,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 			errorsByStage.With(map[string]string{"stage": "bob_marshal_index"}).Inc()
 			return nil, fmt.Errorf("cpbench: bob marshal index: %w", err)
 		}
-		result, err := bob.StartResendingEncryptedMessage(bobReadCap, nil, bobIndexBytes, &replyIndex, bobEnvDesc, bobCt, bobEnvHash)
+		result, err := bob.StartResendingEncryptedMessage(bobCap, nil, bobIndexBytes, &replyIndex, bobEnvDesc, bobCt, bobEnvHash)
 		if err != nil {
 			errorsByStage.With(map[string]string{"stage": "bob_read"}).Inc()
 			return nil, fmt.Errorf("cpbench: bob read: %w", err)
@@ -216,7 +217,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		if expectedLength > 0 && uint32(len(reconstructed)) >= expectedLength+4 {
 			break
 		}
-		bobIndex = bobNext
+		bobCap = bobNextCap
 	}
 
 	elapsed := time.Since(start)

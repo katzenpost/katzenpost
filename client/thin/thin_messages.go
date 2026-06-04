@@ -249,11 +249,9 @@ type EncryptRead struct {
 	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
-	// ReadCap is the read capability that grants access to the channel.
+	// ReadCap is the read capability that grants access to the channel; its
+	// embedded message box index is the position to read.
 	ReadCap *bacap.ReadCap `cbor:"read_cap"`
-
-	// MessageBoxIndex specifies the starting read position for the channel.
-	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
 }
 
 // EncryptWrite requests the encryption of a write operation for a given write capability.
@@ -265,11 +263,9 @@ type EncryptWrite struct {
 	// Plaintext is the plaintext message to be encrypted.
 	Plaintext []byte `cbor:"plaintext"`
 
-	// WriteCap is the write capability that grants access to the channel.
+	// WriteCap is the write capability that grants access to the channel; its
+	// embedded message box index is the position to write.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
-
-	// MessageBoxIndex specifies the starting write position for the channel.
-	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
 }
 
 // StartResendingEncryptedMessage requests the daemon to start resending an encrypted message.
@@ -642,7 +638,6 @@ type ThinClose struct {
 
 // Response is the client daemon's response message to the thin client.
 type Response struct {
-
 	SessionTokenReply *SessionTokenReply `cbor:"session_token_reply"`
 
 	// ShutdownEvent is sent when the client daemon is shutting down.
@@ -734,7 +729,6 @@ type Response struct {
 // Request is the thin client's request message to the client daemon.
 // It can result in one or more Response messages being sent back to the thin client.
 type Request struct {
-
 	SessionToken *SessionToken `cbor:"session_token"`
 
 	// ThinClose is used to indicate that the thin client is disconnecting

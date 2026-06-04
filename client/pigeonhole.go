@@ -48,7 +48,7 @@ func (d *Daemon) newKeypair(request *Request) {
 	readCap := writeCap.ReadCap()
 
 	// Get the first message index from the WriteCap
-	firstIndex := writeCap.GetFirstMessageBoxIndex()
+	firstIndex := writeCap.GetMessageBoxIndex()
 
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
@@ -101,14 +101,10 @@ func (d *Daemon) encryptRead(request *Request) {
 		return
 	}
 
-	messageBoxIndex := request.EncryptRead.MessageBoxIndex
-	if messageBoxIndex == nil {
-		d.log.Error("encryptRead: MessageBoxIndex is nil")
-		d.sendEncryptReadError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
+	// The read position is the cap's own message box index.
+	messageBoxIndex := readCap.GetMessageBoxIndex()
 
-	// Create a StatefulReader from the provided ReadCap and MessageBoxIndex
+	// Create a StatefulReader from the provided ReadCap at its message box index.
 	statefulReader, err := bacap.NewStatefulReaderWithIndex(readCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to create stateful reader: %v", err)
@@ -182,12 +178,12 @@ func (d *Daemon) encryptRead(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		EncryptReadReply: &thin.EncryptReadReply{
-			QueryID:             request.EncryptRead.QueryID,
-			MessageCiphertext:   courierQuery.Bytes(),
-			EnvelopeDescriptor:  envelopeDescriptorBytes,
-			EnvelopeHash:        envHash,
-			NextMessageBoxIndex: nextMessageBoxIndex,
-			ErrorCode:           thin.ThinClientSuccess,
+			QueryID:            request.EncryptRead.QueryID,
+			MessageCiphertext:  courierQuery.Bytes(),
+			EnvelopeDescriptor: envelopeDescriptorBytes,
+			EnvelopeHash:       envHash,
+			ReadCap:            readCap.WithMessageBoxIndex(nextMessageBoxIndex),
+			ErrorCode:          thin.ThinClientSuccess,
 		},
 	})
 }
@@ -219,12 +215,8 @@ func (d *Daemon) encryptWrite(request *Request) {
 		return
 	}
 
-	messageBoxIndex := request.EncryptWrite.MessageBoxIndex
-	if messageBoxIndex == nil {
-		d.log.Error("encryptWrite: MessageBoxIndex is nil")
-		d.sendEncryptWriteError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
+	// The write position is the cap's own message box index.
+	messageBoxIndex := writeCap.GetMessageBoxIndex()
 	d.log.Debugf("encryptWrite: MessageBoxIndex Idx64=%d, CurBlindingFactor=%x", messageBoxIndex.Idx64, messageBoxIndex.CurBlindingFactor)
 
 	plaintext := request.EncryptWrite.Plaintext
@@ -359,12 +351,12 @@ func (d *Daemon) encryptWrite(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		EncryptWriteReply: &thin.EncryptWriteReply{
-			QueryID:             request.EncryptWrite.QueryID,
-			MessageCiphertext:   courierQuery.Bytes(),
-			EnvelopeDescriptor:  envelopeDescriptorBytes,
-			EnvelopeHash:        envHash,
-			NextMessageBoxIndex: nextMessageBoxIndex,
-			ErrorCode:           thin.ThinClientSuccess,
+			QueryID:            request.EncryptWrite.QueryID,
+			MessageCiphertext:  courierQuery.Bytes(),
+			EnvelopeDescriptor: envelopeDescriptorBytes,
+			EnvelopeHash:       envHash,
+			WriteCap:           writeCap.WithMessageBoxIndex(nextMessageBoxIndex),
+			ErrorCode:          thin.ThinClientSuccess,
 		},
 	})
 }
@@ -1809,9 +1801,9 @@ func (d *Daemon) sendCancelResendingCopyCommandError(request *Request, errorCode
 type payloadErrorAction int
 
 const (
-	payloadActionReturnError      payloadErrorAction = iota
-	payloadActionRetry                               // Retry (BoxIDNotFound on read)
-	payloadActionIdempotentSuccess                   // Treat as success (BoxAlreadyExists on write)
+	payloadActionReturnError       payloadErrorAction = iota
+	payloadActionRetry                                // Retry (BoxIDNotFound on read)
+	payloadActionIdempotentSuccess                    // Treat as success (BoxAlreadyExists on write)
 )
 
 // determinePayloadErrorAction decides what to do with a decryption error

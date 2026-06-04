@@ -177,7 +177,7 @@ func driveClient(ctx context.Context, cfg Config, clientID string) int {
 		iterStart := time.Now()
 
 		writeStart := time.Now()
-		ciphertext, envDesc, envHash, _, err := client.EncryptWrite(payload, writeCap, firstIndex)
+		ciphertext, envDesc, envHash, _, err := client.EncryptWrite(payload, writeCap)
 		if err != nil {
 			IterationFailed(clientID, "encrypt_write", classify(err))
 			continue
@@ -191,7 +191,7 @@ func driveClient(ctx context.Context, cfg Config, clientID string) int {
 		OperationLatency("write", time.Since(writeStart))
 
 		readStart := time.Now()
-		readCt, readEnvDesc, readEnvHash, _, err := client.EncryptRead(readCap, firstIndex)
+		readCt, readEnvDesc, readEnvHash, _, err := client.EncryptRead(readCap)
 		if err != nil {
 			IterationFailed(clientID, "encrypt_read", classify(err))
 			continue

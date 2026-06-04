@@ -253,9 +253,10 @@ type EncryptReadReply struct {
 	// mixnet and is used to resume the read operation.
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 
-	// NextMessageBoxIndex is the next message box index to use for subsequent
-	// read operations. This is computed by the daemon using BACAP's NextIndex.
-	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
+	// ReadCap is the read capability advanced to the next box (the daemon
+	// re-bases the supplied cap via BACAP's NextIndex). The caller swaps it in
+	// for subsequent reads.
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
 
 	// ErrorCode indicates the reason for a failure to encrypt the read if any.
 	// Otherwise it is set to zero for success.
@@ -287,9 +288,10 @@ type EncryptWriteReply struct {
 	// mixnet and is used to resume the write operation.
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 
-	// NextMessageBoxIndex is the next message box index to use for subsequent
-	// write operations. This is computed by the daemon using BACAP's NextIndex.
-	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
+	// WriteCap is the write capability advanced to the next box (the daemon
+	// re-bases the supplied cap via BACAP's NextIndex). The caller swaps it in
+	// for subsequent writes.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
 
 	// ErrorCode indicates the reason for a failure to encrypt the write if any.
 	// Otherwise it is set to zero for success.
@@ -705,4 +707,3 @@ func (e *VoucherDeriveStreamReply) String() string {
 	}
 	return "VoucherDeriveStreamReply: success"
 }
-
