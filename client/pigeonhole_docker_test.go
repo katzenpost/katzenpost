@@ -75,7 +75,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	aliceMessage := []byte("Bob, the eagle has landed. Rendezvous at dawn. Bring the package and await further instructions.")
 	t.Logf("Alice: Original message (%d bytes): %q", len(aliceMessage), aliceMessage)
 
-	aliceCiphertext, aliceEnvDesc, aliceEnvHash, _, err := aliceThinClient.EncryptWrite(aliceMessage, aliceWriteCap, aliceFirstIndex)
+	aliceCiphertext, aliceEnvDesc, aliceEnvHash, _, err := aliceThinClient.EncryptWrite(aliceMessage, aliceWriteCap.WithMessageBoxIndex(aliceFirstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, aliceCiphertext, "Alice: EncryptWrite returned empty ciphertext")
 	t.Logf("Alice: Encrypted message (%d bytes ciphertext)", len(aliceCiphertext))
@@ -103,7 +103,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	// Step 4: Bob encrypts a read request using EncryptRead
 	t.Log("=== Step 4: Bob encrypts a read request using EncryptRead ===")
 
-	bobCiphertext, bobEnvDesc, bobEnvHash, _, err := bobThinClient.EncryptRead(bobReadCap, aliceFirstIndex)
+	bobCiphertext, bobEnvDesc, bobEnvHash, _, err := bobThinClient.EncryptRead(bobReadCap.WithMessageBoxIndex(aliceFirstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, bobCiphertext, "Bob: EncryptRead returned empty ciphertext")
 	t.Logf("Bob: Encrypted read request (%d bytes ciphertext)", len(bobCiphertext))
@@ -181,8 +181,9 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 		// Alice encrypts and sends message
 		t.Logf("Alice: Encrypting message %d: %q", i+1, aliceMessage)
 
-		aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceNextIndex, err := aliceThinClient.EncryptWrite(aliceMessage, aliceWriteCap, aliceCurrentIndex)
+		aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceNextIndexCap, err := aliceThinClient.EncryptWrite(aliceMessage, aliceWriteCap.WithMessageBoxIndex(aliceCurrentIndex))
 		require.NoError(t, err)
+		aliceNextIndex := aliceNextIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, aliceCiphertext, "Alice: EncryptWrite returned empty ciphertext for message %d", i+1)
 		require.NotNil(t, aliceNextIndex, "Alice: EncryptWrite returned nil next index for message %d", i+1)
 		t.Logf("Alice: Encrypted message %d (%d bytes ciphertext)", i+1, len(aliceCiphertext))
@@ -208,8 +209,9 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 		// Bob encrypts read request
 		t.Logf("Bob: Encrypting read request for message %d", i+1)
 
-		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(bobReadCap, bobCurrentIndex)
+		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndexCap, err := bobThinClient.EncryptRead(bobReadCap.WithMessageBoxIndex(bobCurrentIndex))
 		require.NoError(t, err)
+		bobNextIndex := bobNextIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, bobCiphertext, "Bob: EncryptRead returned empty ciphertext for message %d", i+1)
 		require.NotNil(t, bobNextIndex, "Bob: EncryptRead returned nil next index for message %d", i+1)
 		t.Logf("Bob: Encrypted read request %d (%d bytes ciphertext)", i+1, len(bobCiphertext))
@@ -287,8 +289,9 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 		aliceMessage := []byte(messages[i])
 		t.Logf("Alice: Sending message %d/%d: %q", i+1, numMessages, aliceMessage)
 
-		aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceNextIndex, err := aliceThinClient.EncryptWrite(aliceMessage, aliceWriteCap, aliceCurrentIndex)
+		aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceNextIndexCap, err := aliceThinClient.EncryptWrite(aliceMessage, aliceWriteCap.WithMessageBoxIndex(aliceCurrentIndex))
 		require.NoError(t, err)
+		aliceNextIndex := aliceNextIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, aliceCiphertext)
 		require.NotNil(t, aliceNextIndex)
 
@@ -311,8 +314,9 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 	for i := 0; i < numMessages; i++ {
 		t.Logf("Bob: Reading message %d/%d", i+1, numMessages)
 
-		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(bobReadCap, bobCurrentIndex)
+		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndexCap, err := bobThinClient.EncryptRead(bobReadCap.WithMessageBoxIndex(bobCurrentIndex))
 		require.NoError(t, err)
+		bobNextIndex := bobNextIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, bobCiphertext)
 		require.NotNil(t, bobNextIndex)
 		bobCurrentIndexBytes, err := bobCurrentIndex.MarshalBinary()
@@ -426,8 +430,9 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 		t.Logf("--- Writing copy stream chunk %d/%d to temporary channel ---", i+1, numChunks)
 
 		// Encrypt the chunk for the copy stream
-		ciphertext, envDesc, envHash, nextTempIndex, err := aliceThinClient.EncryptWrite(chunk, tempWriteCap, tempIndex)
+		ciphertext, envDesc, envHash, nextTempIndexCap, err := aliceThinClient.EncryptWrite(chunk, tempWriteCap.WithMessageBoxIndex(tempIndex))
 		require.NoError(t, err)
+		nextTempIndex := nextTempIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, ciphertext, "EncryptWrite returned empty ciphertext for chunk %d", i+1)
 		require.NotNil(t, nextTempIndex)
 		t.Logf("Alice: Encrypted copy stream chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
@@ -465,8 +470,9 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 		t.Logf("--- Bob reading chunk %d ---", chunkNum)
 
 		// Bob encrypts read request
-		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(bobReadCap, bobIndex)
+		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndexCap, err := bobThinClient.EncryptRead(bobReadCap.WithMessageBoxIndex(bobIndex))
 		require.NoError(t, err)
+		bobNextIndex := bobNextIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, bobCiphertext, "Bob: EncryptRead returned empty ciphertext")
 		require.NotNil(t, bobNextIndex)
 		t.Logf("Bob: Encrypted read request %d", chunkNum)
@@ -605,8 +611,9 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 		t.Logf("--- Writing chunk %d/%d to temporary channel ---", i+1, len(allChunks))
 
 		// Encrypt the chunk for the copy stream
-		ciphertext, envDesc, envHash, nextTempIndex, err := aliceThinClient.EncryptWrite(chunk, tempWriteCap, tempIndex)
+		ciphertext, envDesc, envHash, nextTempIndexCap, err := aliceThinClient.EncryptWrite(chunk, tempWriteCap.WithMessageBoxIndex(tempIndex))
 		require.NoError(t, err)
+		nextTempIndex := nextTempIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, ciphertext, "EncryptWrite returned empty ciphertext for chunk %d", i+1)
 		require.NotNil(t, nextTempIndex)
 		t.Logf("Alice: Encrypted chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
@@ -636,7 +643,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 
 	// Read from Channel 1
 	t.Log("--- Bob reading from Channel 1 ---")
-	bob1Ciphertext, bob1EnvDesc, bob1EnvHash, _, err := bobThinClient.EncryptRead(chan1ReadCap, chan1FirstIndex)
+	bob1Ciphertext, bob1EnvDesc, bob1EnvHash, _, err := bobThinClient.EncryptRead(chan1ReadCap.WithMessageBoxIndex(chan1FirstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, bob1Ciphertext, "Bob: EncryptRead returned empty ciphertext for Channel 1")
 	chan1FirstIndexBytes, err := chan1FirstIndex.MarshalBinary()
@@ -655,7 +662,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 
 	// Read from Channel 2
 	t.Log("--- Bob reading from Channel 2 ---")
-	bob2Ciphertext, bob2EnvDesc, bob2EnvHash, _, err := bobThinClient.EncryptRead(chan2ReadCap, chan2FirstIndex)
+	bob2Ciphertext, bob2EnvDesc, bob2EnvHash, _, err := bobThinClient.EncryptRead(chan2ReadCap.WithMessageBoxIndex(chan2FirstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, bob2Ciphertext, "Bob: EncryptRead returned empty ciphertext for Channel 2")
 	chan2FirstIndexBytes, err := chan2FirstIndex.MarshalBinary()
@@ -774,8 +781,9 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 		t.Logf("--- Writing chunk %d/%d to temporary channel ---", i+1, len(allChunksResult.Envelopes))
 
 		// Encrypt the chunk for the copy stream
-		ciphertext, envDesc, envHash, nextTempIndex, err := aliceThinClient.EncryptWrite(chunk, tempWriteCap, tempIndex)
+		ciphertext, envDesc, envHash, nextTempIndexCap, err := aliceThinClient.EncryptWrite(chunk, tempWriteCap.WithMessageBoxIndex(tempIndex))
 		require.NoError(t, err)
+		nextTempIndex := nextTempIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, ciphertext, "EncryptWrite returned empty ciphertext for chunk %d", i+1)
 		require.NotNil(t, nextTempIndex)
 		t.Logf("Alice: Encrypted chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
@@ -805,7 +813,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 
 	// Read from Channel 1
 	t.Log("--- Bob reading from Channel 1 ---")
-	bob1Ciphertext, bob1EnvDesc, bob1EnvHash, _, err := bobThinClient.EncryptRead(chan1ReadCap, chan1FirstIndex)
+	bob1Ciphertext, bob1EnvDesc, bob1EnvHash, _, err := bobThinClient.EncryptRead(chan1ReadCap.WithMessageBoxIndex(chan1FirstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, bob1Ciphertext, "Bob: EncryptRead returned empty ciphertext for Channel 1")
 	chan1FirstIndexBytes, err := chan1FirstIndex.MarshalBinary()
@@ -824,7 +832,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 
 	// Read from Channel 2
 	t.Log("--- Bob reading from Channel 2 ---")
-	bob2Ciphertext, bob2EnvDesc, bob2EnvHash, _, err := bobThinClient.EncryptRead(chan2ReadCap, chan2FirstIndex)
+	bob2Ciphertext, bob2EnvDesc, bob2EnvHash, _, err := bobThinClient.EncryptRead(chan2ReadCap.WithMessageBoxIndex(chan2FirstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, bob2Ciphertext, "Bob: EncryptRead returned empty ciphertext for Channel 2")
 	chan2FirstIndexBytes, err := chan2FirstIndex.MarshalBinary()
@@ -867,7 +875,7 @@ func TestTombstoning(t *testing.T) {
 
 	// Step 1: Alice writes a message
 	message := []byte("Secret message that will be tombstoned")
-	ciphertext, envDesc, envHash, _, err := alice.EncryptWrite(message, writeCap, firstIndex)
+	ciphertext, envDesc, envHash, _, err := alice.EncryptWrite(message, writeCap.WithMessageBoxIndex(firstIndex))
 	require.NoError(t, err)
 
 	replyIndex := uint8(0)
@@ -879,7 +887,7 @@ func TestTombstoning(t *testing.T) {
 	time.Sleep(30 * time.Second)
 
 	// Step 2: Bob reads and verifies
-	ciphertext, envDesc, envHash, _, err = bob.EncryptRead(readCap, firstIndex)
+	ciphertext, envDesc, envHash, _, err = bob.EncryptRead(readCap.WithMessageBoxIndex(firstIndex))
 	require.NoError(t, err)
 	firstIndexBytes, err := firstIndex.MarshalBinary()
 	require.NoError(t, err)
@@ -906,7 +914,7 @@ func TestTombstoning(t *testing.T) {
 		t.Logf("Polling for tombstone (attempt %d/%d)...", attempt, maxAttempts)
 		time.Sleep(pollInterval)
 
-		ciphertext, envDesc, envHash, _, err = bob.EncryptRead(readCap, firstIndex)
+		ciphertext, envDesc, envHash, _, err = bob.EncryptRead(readCap.WithMessageBoxIndex(firstIndex))
 		require.NoError(t, err)
 		_, err = bob.StartResendingEncryptedMessage(readCap, nil, firstIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
 		if errors.Is(err, thin.ErrTombstone) {
@@ -952,8 +960,9 @@ func TestTombstoneRange(t *testing.T) {
 	writeIdx := firstIndex
 	replyIndex := uint8(0)
 	for i, msg := range messages {
-		ciphertext, envDesc, envHash, nextWriteIdx, err := alice.EncryptWrite(msg, writeCap, writeIdx)
+		ciphertext, envDesc, envHash, nextWriteIdxCap, err := alice.EncryptWrite(msg, writeCap.WithMessageBoxIndex(writeIdx))
 		require.NoError(t, err)
+		nextWriteIdx := nextWriteIdxCap.GetMessageBoxIndex()
 		require.NotNil(t, nextWriteIdx)
 		_, err = alice.StartResendingEncryptedMessage(nil, writeCap, nil, &replyIndex, envDesc, ciphertext, envHash)
 		require.NoError(t, err)
@@ -968,8 +977,9 @@ func TestTombstoneRange(t *testing.T) {
 	// Bob reads and verifies all messages
 	readIdx := firstIndex
 	for i, expectedMsg := range messages {
-		ciphertext, envDesc, envHash, nextReadIdx, err := bob.EncryptRead(readCap, readIdx)
+		ciphertext, envDesc, envHash, nextReadIdxCap, err := bob.EncryptRead(readCap.WithMessageBoxIndex(readIdx))
 		require.NoError(t, err)
+		nextReadIdx := nextReadIdxCap.GetMessageBoxIndex()
 		require.NotNil(t, nextReadIdx)
 		readIdxBytes, err := readIdx.MarshalBinary()
 		require.NoError(t, err)
@@ -1003,8 +1013,9 @@ func TestTombstoneRange(t *testing.T) {
 	// Bob reads again and verifies all boxes are tombstoned
 	readIdx = firstIndex
 	for i := 0; i < numMessages; i++ {
-		ciphertext, envDesc, envHash, nextReadIdx, err := bob.EncryptRead(readCap, readIdx)
+		ciphertext, envDesc, envHash, nextReadIdxCap, err := bob.EncryptRead(readCap.WithMessageBoxIndex(readIdx))
 		require.NoError(t, err)
+		nextReadIdx := nextReadIdxCap.GetMessageBoxIndex()
 		require.NotNil(t, nextReadIdx)
 		readIdxBytes, err := readIdx.MarshalBinary()
 		require.NoError(t, err)
@@ -1046,7 +1057,7 @@ func TestBoxIDNotFoundError(t *testing.T) {
 
 	// Attempt to read from the non-existent box
 	t.Log("=== Attempting to read from non-existent box ===")
-	bobCiphertext, bobEnvDesc, bobEnvHash, _, err := bobThinClient.EncryptRead(readCap, firstIndex)
+	bobCiphertext, bobEnvDesc, bobEnvHash, _, err := bobThinClient.EncryptRead(readCap.WithMessageBoxIndex(firstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, bobCiphertext, "EncryptRead should return ciphertext")
 	t.Log("Encrypted read request for non-existent box")
@@ -1129,7 +1140,7 @@ func TestReadBeforeWrite(t *testing.T) {
 	t.Log("=== Step 1: Bob starts reading (box doesn't exist yet) ===")
 	go func() {
 		// Encrypt Bob's read request
-		bobCiphertext, bobEnvDesc, bobEnvHash, _, err := bobThinClient.EncryptRead(bobReadCap, firstIndex)
+		bobCiphertext, bobEnvDesc, bobEnvHash, _, err := bobThinClient.EncryptRead(bobReadCap.WithMessageBoxIndex(firstIndex))
 		if err != nil {
 			bobResultChan <- readResult{nil, err}
 			return
@@ -1168,7 +1179,7 @@ func TestReadBeforeWrite(t *testing.T) {
 	aliceMessage := []byte("Hello Bob! I wrote this after you started reading.")
 	t.Logf("Alice: Writing message (%d bytes): %q", len(aliceMessage), aliceMessage)
 
-	aliceCiphertext, aliceEnvDesc, aliceEnvHash, _, err := aliceThinClient.EncryptWrite(aliceMessage, aliceWriteCap, firstIndex)
+	aliceCiphertext, aliceEnvDesc, aliceEnvHash, _, err := aliceThinClient.EncryptWrite(aliceMessage, aliceWriteCap.WithMessageBoxIndex(firstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, aliceCiphertext, "Alice: EncryptWrite returned empty ciphertext")
 
@@ -1230,7 +1241,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 	// First write - should succeed
 	t.Log("=== First write (should succeed) ===")
 	message1 := []byte("First message - this should work")
-	ciphertext1, envDesc1, envHash1, _, err := thinClient.EncryptWrite(message1, writeCap, firstIndex)
+	ciphertext1, envDesc1, envHash1, _, err := thinClient.EncryptWrite(message1, writeCap.WithMessageBoxIndex(firstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, ciphertext1, "EncryptWrite should return ciphertext")
 	t.Log("✓ Encrypted first message")
@@ -1255,7 +1266,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 	// Second write to the SAME box - should fail with ErrBoxAlreadyExists
 	t.Log("=== Second write to same box (should fail) ===")
 	message2 := []byte("Second message - this should fail")
-	ciphertext2, envDesc2, envHash2, _, err := thinClient.EncryptWrite(message2, writeCap, firstIndex)
+	ciphertext2, envDesc2, envHash2, _, err := thinClient.EncryptWrite(message2, writeCap.WithMessageBoxIndex(firstIndex))
 	require.NoError(t, err, "EncryptWrite should succeed even for duplicate")
 	t.Log("✓ Encrypted second message")
 
@@ -1302,7 +1313,7 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 	// First write - should succeed
 	t.Log("=== First write (should succeed) ===")
 	message1 := []byte("First message - this should work")
-	ciphertext1, envDesc1, envHash1, _, err := thinClient.EncryptWrite(message1, writeCap, firstIndex)
+	ciphertext1, envDesc1, envHash1, _, err := thinClient.EncryptWrite(message1, writeCap.WithMessageBoxIndex(firstIndex))
 	require.NoError(t, err)
 	require.NotEmpty(t, ciphertext1, "EncryptWrite should return ciphertext")
 	t.Log("✓ Encrypted first message")
@@ -1349,8 +1360,9 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 		t.Logf("--- Writing copy stream chunk %d/%d to temporary channel ---", i+1, numChunks)
 
 		// Encrypt the chunk for the copy stream
-		ciphertext, envDesc, envHash, nextTempIndex, err := thinClient.EncryptWrite(chunk, tempWriteCap, tempIndex)
+		ciphertext, envDesc, envHash, nextTempIndexCap, err := thinClient.EncryptWrite(chunk, tempWriteCap.WithMessageBoxIndex(tempIndex))
 		require.NoError(t, err)
+		nextTempIndex := nextTempIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, ciphertext, "EncryptWrite returned empty ciphertext for chunk %d", i+1)
 		require.NotNil(t, nextTempIndex)
 		t.Logf("Alice: Encrypted copy stream chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
@@ -1460,8 +1472,9 @@ func TestFromPayloadMultiCall(t *testing.T) {
 	tempIndex := tempFirstIndex
 	replyIndex := uint8(0)
 	for i, elem := range allTempElements {
-		ciphertext, envDesc, envHash, nextTempIndex, err := aliceThinClient.EncryptWrite(elem, tempWriteCap, tempIndex)
+		ciphertext, envDesc, envHash, nextTempIndexCap, err := aliceThinClient.EncryptWrite(elem, tempWriteCap.WithMessageBoxIndex(tempIndex))
 		require.NoError(t, err)
+		nextTempIndex := nextTempIndexCap.GetMessageBoxIndex()
 		require.NotNil(t, nextTempIndex)
 		_, err = aliceThinClient.StartResendingEncryptedMessage(
 			nil, tempWriteCap, nil, &replyIndex,
@@ -1483,8 +1496,9 @@ func TestFromPayloadMultiCall(t *testing.T) {
 	bobIndex := destFirstIndex
 	var reconstructed []byte
 	for len(reconstructed) < len(fullPayload) {
-		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(bobReadCap, bobIndex)
+		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndexCap, err := bobThinClient.EncryptRead(bobReadCap.WithMessageBoxIndex(bobIndex))
 		require.NoError(t, err)
+		bobNextIndex := bobNextIndexCap.GetMessageBoxIndex()
 		require.NotNil(t, bobNextIndex)
 		bobIndexBytes, err := bobIndex.MarshalBinary()
 		require.NoError(t, err)
@@ -1590,8 +1604,9 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	tempIndex := tempFirstIndex
 	replyIndex := uint8(0)
 	for i, elem := range allElements {
-		ciphertext, envDesc, envHash, nextTempIndex, err := aliceThinClient.EncryptWrite(elem, tempWriteCap, tempIndex)
+		ciphertext, envDesc, envHash, nextTempIndexCap, err := aliceThinClient.EncryptWrite(elem, tempWriteCap.WithMessageBoxIndex(tempIndex))
 		require.NoError(t, err)
+		nextTempIndex := nextTempIndexCap.GetMessageBoxIndex()
 		require.NotNil(t, nextTempIndex)
 		_, err = aliceThinClient.StartResendingEncryptedMessage(
 			nil, tempWriteCap, nil, &replyIndex,
@@ -1614,8 +1629,9 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	bobIndex := chan1FirstIndex
 	var chan1Data []byte
 	for len(chan1Data) < len(expectedChan1) {
-		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(chan1ReadCap, bobIndex)
+		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndexCap, err := bobThinClient.EncryptRead(chan1ReadCap.WithMessageBoxIndex(bobIndex))
 		require.NoError(t, err)
+		bobNextIndex := bobNextIndexCap.GetMessageBoxIndex()
 		require.NotNil(t, bobNextIndex)
 		bobIndexBytes, err := bobIndex.MarshalBinary()
 		require.NoError(t, err)
@@ -1635,8 +1651,9 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	bobIndex = chan2FirstIndex
 	var chan2Data []byte
 	for len(chan2Data) < len(expectedChan2) {
-		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(chan2ReadCap, bobIndex)
+		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndexCap, err := bobThinClient.EncryptRead(chan2ReadCap.WithMessageBoxIndex(bobIndex))
 		require.NoError(t, err)
+		bobNextIndex := bobNextIndexCap.GetMessageBoxIndex()
 		require.NotNil(t, bobNextIndex)
 		bobIndexBytes, err := bobIndex.MarshalBinary()
 		require.NoError(t, err)
@@ -1703,8 +1720,9 @@ func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
 	tempIndex := tempFirstIndex
 	replyIndex := uint8(0)
 	for i, chunk := range copyStreamChunks {
-		ciphertext, envDesc, envHash, nextTempIndex, err := alice.EncryptWrite(chunk, tempWriteCap, tempIndex)
+		ciphertext, envDesc, envHash, nextTempIndexCap, err := alice.EncryptWrite(chunk, tempWriteCap.WithMessageBoxIndex(tempIndex))
 		require.NoError(t, err)
+		nextTempIndex := nextTempIndexCap.GetMessageBoxIndex()
 		require.NotEmpty(t, ciphertext)
 		require.NotNil(t, nextTempIndex)
 
@@ -1736,8 +1754,9 @@ func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
 			t.Logf("Polling tombstone %d/%d (attempt %d/%d)...", i+1, numTombstones, attempt, maxAttempts)
 			time.Sleep(pollInterval)
 
-			ciphertext, envDesc, envHash, nextReadIdx, err := bob.EncryptRead(destReadCap, readIdx)
+			ciphertext, envDesc, envHash, nextReadIdxCap, err := bob.EncryptRead(destReadCap.WithMessageBoxIndex(readIdx))
 			require.NoError(t, err)
+			nextReadIdx := nextReadIdxCap.GetMessageBoxIndex()
 			require.NotNil(t, nextReadIdx)
 			readIdxBytes, err := readIdx.MarshalBinary()
 			require.NoError(t, err)

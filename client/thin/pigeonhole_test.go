@@ -125,8 +125,6 @@ func TestHashIdentityKey(t *testing.T) {
 	require.NotEqual(t, result, result3)
 }
 
-
-
 func newTestWriteCap(t *testing.T) *bacap.WriteCap {
 	t.Helper()
 	wc, err := bacap.NewWriteCap(rand.Reader)
@@ -286,19 +284,16 @@ func TestNewKeypairIgnoresMismatchedQueryID(t *testing.T) {
 func TestEncryptReadNilArgs(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 
-	_, _, _, _, err := tc.EncryptRead(nil, newTestMessageBoxIndex(t))
+	_, _, _, _, err := tc.EncryptRead(nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "readCap cannot be nil")
-
-	_, _, _, _, err = tc.EncryptRead(newTestReadCap(t), nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "messageBoxIndex cannot be nil")
 }
 
 func TestEncryptReadSuccess(t *testing.T) {
 	tc, server := setupMockDaemon(t)
 
 	expectedNextIndex := newTestMessageBoxIndex(t)
+	expectedReadCap := newTestReadCap(t).WithMessageBoxIndex(expectedNextIndex)
 
 	go func() {
 		req, err := readRequest(server)
@@ -310,23 +305,23 @@ func TestEncryptReadSuccess(t *testing.T) {
 		envHash := &[32]byte{1, 2, 3}
 		sendResponse(t, server, &Response{
 			EncryptReadReply: &EncryptReadReply{
-				QueryID:             req.EncryptRead.QueryID,
-				MessageCiphertext:   []byte("ciphertext"),
-				EnvelopeDescriptor:  []byte("descriptor"),
-				EnvelopeHash:        envHash,
-				NextMessageBoxIndex: expectedNextIndex,
-				ErrorCode:           ThinClientSuccess,
+				QueryID:            req.EncryptRead.QueryID,
+				MessageCiphertext:  []byte("ciphertext"),
+				EnvelopeDescriptor: []byte("descriptor"),
+				EnvelopeHash:       envHash,
+				ReadCap:            expectedReadCap,
+				ErrorCode:          ThinClientSuccess,
 			},
 		})
 	}()
 
-	ciphertext, descriptor, envHash, nextIndex, err := tc.EncryptRead(newTestReadCap(t), newTestMessageBoxIndex(t))
+	ciphertext, descriptor, envHash, nextReadCap, err := tc.EncryptRead(newTestReadCap(t))
 	require.NoError(t, err)
 	require.Equal(t, []byte("ciphertext"), ciphertext)
 	require.Equal(t, []byte("descriptor"), descriptor)
 	require.NotNil(t, envHash)
-	require.NotNil(t, nextIndex)
-	require.Equal(t, expectedNextIndex.Idx64, nextIndex.Idx64)
+	require.NotNil(t, nextReadCap)
+	require.Equal(t, expectedNextIndex.Idx64, nextReadCap.GetMessageBoxIndex().Idx64)
 }
 
 func TestEncryptReadError(t *testing.T) {
@@ -346,26 +341,23 @@ func TestEncryptReadError(t *testing.T) {
 		})
 	}()
 
-	_, _, _, _, err := tc.EncryptRead(newTestReadCap(t), newTestMessageBoxIndex(t))
+	_, _, _, _, err := tc.EncryptRead(newTestReadCap(t))
 	require.Error(t, err)
 }
 
 func TestEncryptWriteNilArgs(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 
-	_, _, _, _, err := tc.EncryptWrite([]byte("hello"), nil, newTestMessageBoxIndex(t))
+	_, _, _, _, err := tc.EncryptWrite([]byte("hello"), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "writeCap cannot be nil")
-
-	_, _, _, _, err = tc.EncryptWrite([]byte("hello"), newTestWriteCap(t), nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "messageBoxIndex cannot be nil")
 }
 
 func TestEncryptWriteSuccess(t *testing.T) {
 	tc, server := setupMockDaemon(t)
 
 	expectedNextIndex := newTestMessageBoxIndex(t)
+	expectedWriteCap := newTestWriteCap(t).WithMessageBoxIndex(expectedNextIndex)
 
 	go func() {
 		req, err := readRequest(server)
@@ -377,23 +369,23 @@ func TestEncryptWriteSuccess(t *testing.T) {
 		envHash := &[32]byte{4, 5, 6}
 		sendResponse(t, server, &Response{
 			EncryptWriteReply: &EncryptWriteReply{
-				QueryID:             req.EncryptWrite.QueryID,
-				MessageCiphertext:   []byte("encrypted"),
-				EnvelopeDescriptor:  []byte("desc"),
-				EnvelopeHash:        envHash,
-				NextMessageBoxIndex: expectedNextIndex,
-				ErrorCode:           ThinClientSuccess,
+				QueryID:            req.EncryptWrite.QueryID,
+				MessageCiphertext:  []byte("encrypted"),
+				EnvelopeDescriptor: []byte("desc"),
+				EnvelopeHash:       envHash,
+				WriteCap:           expectedWriteCap,
+				ErrorCode:          ThinClientSuccess,
 			},
 		})
 	}()
 
-	ciphertext, descriptor, envHash, nextIndex, err := tc.EncryptWrite([]byte("hello"), newTestWriteCap(t), newTestMessageBoxIndex(t))
+	ciphertext, descriptor, envHash, nextWriteCap, err := tc.EncryptWrite([]byte("hello"), newTestWriteCap(t))
 	require.NoError(t, err)
 	require.Equal(t, []byte("encrypted"), ciphertext)
 	require.Equal(t, []byte("desc"), descriptor)
 	require.NotNil(t, envHash)
-	require.NotNil(t, nextIndex)
-	require.Equal(t, expectedNextIndex.Idx64, nextIndex.Idx64)
+	require.NotNil(t, nextWriteCap)
+	require.Equal(t, expectedNextIndex.Idx64, nextWriteCap.GetMessageBoxIndex().Idx64)
 }
 
 func TestStartResendingEncryptedMessageNilEnvelopeHash(t *testing.T) {
@@ -429,13 +421,13 @@ func TestStartResendingEncryptedMessageWriteSuccess(t *testing.T) {
 	}()
 
 	result, err := tc.StartResendingEncryptedMessage(
-		nil,                 // readCap (nil = write)
-		newTestWriteCap(t),   // writeCap
-		nil,                 // nextMessageIndex
-		nil,                 // replyIndex
-		[]byte("desc"),      // envelopeDescriptor
-		[]byte("cipher"),    // messageCiphertext
-		envHash,             // envelopeHash
+		nil,                // readCap (nil = write)
+		newTestWriteCap(t), // writeCap
+		nil,                // nextMessageIndex
+		nil,                // replyIndex
+		[]byte("desc"),     // envelopeDescriptor
+		[]byte("cipher"),   // messageCiphertext
+		envHash,            // envelopeHash
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -465,13 +457,13 @@ func TestStartResendingEncryptedMessageReadSuccess(t *testing.T) {
 
 	replyIndex := uint8(0)
 	result, err := tc.StartResendingEncryptedMessage(
-		newTestReadCap(t),    // readCap (non-nil = read)
-		nil,                 // writeCap
-		[]byte("nextidx"),   // nextMessageIndex
-		&replyIndex,         // replyIndex
-		[]byte("desc"),      // envelopeDescriptor
-		[]byte("cipher"),    // messageCiphertext
-		envHash,             // envelopeHash
+		newTestReadCap(t), // readCap (non-nil = read)
+		nil,               // writeCap
+		[]byte("nextidx"), // nextMessageIndex
+		&replyIndex,       // replyIndex
+		[]byte("desc"),    // envelopeDescriptor
+		[]byte("cipher"),  // messageCiphertext
+		envHash,           // envelopeHash
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -1152,7 +1144,7 @@ func TestEncryptWriteError(t *testing.T) {
 		})
 	}()
 
-	_, _, _, _, err := tc.EncryptWrite([]byte("hello"), newTestWriteCap(t), newTestMessageBoxIndex(t))
+	_, _, _, _, err := tc.EncryptWrite([]byte("hello"), newTestWriteCap(t))
 	require.Error(t, err)
 }
 

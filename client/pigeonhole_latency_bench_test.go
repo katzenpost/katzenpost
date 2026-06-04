@@ -60,9 +60,10 @@ func BenchmarkPigeonholeWrite(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		ciphertext, envDesc, envHash, nextIdx, err :=
-			client.EncryptWrite(payload, writeCap, msgIdx)
+		ciphertext, envDesc, envHash, nextIdxCap, err :=
+			client.EncryptWrite(payload, writeCap.WithMessageBoxIndex(msgIdx))
 		require.NoError(b, err)
+		nextIdx := nextIdxCap.GetMessageBoxIndex()
 		replyIdx := uint8(0)
 		b.StartTimer()
 

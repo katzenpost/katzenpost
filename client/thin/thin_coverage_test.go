@@ -165,7 +165,7 @@ func TestTombstoneRangeSuccess(t *testing.T) {
 
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	firstIdx := writeCap.GetFirstMessageBoxIndex()
+	firstIdx := writeCap.GetMessageBoxIndex()
 
 	// Compute expected next indices so the mock replies return them
 	secondIdx, err := firstIdx.NextIndex()
@@ -183,12 +183,12 @@ func TestTombstoneRangeSuccess(t *testing.T) {
 			queryID := req.EncryptWrite.QueryID
 			sendResponse(t, server, &Response{
 				EncryptWriteReply: &EncryptWriteReply{
-					QueryID:             queryID,
-					MessageCiphertext:   []byte("ciphertext"),
-					EnvelopeDescriptor:  []byte("descriptor"),
-					EnvelopeHash:        &[32]byte{byte(i)},
-					NextMessageBoxIndex: expectedNextIndices[i],
-					ErrorCode:           ThinClientSuccess,
+					QueryID:            queryID,
+					MessageCiphertext:  []byte("ciphertext"),
+					EnvelopeDescriptor: []byte("descriptor"),
+					EnvelopeHash:       &[32]byte{byte(i)},
+					WriteCap:           writeCap.WithMessageBoxIndex(expectedNextIndices[i]),
+					ErrorCode:          ThinClientSuccess,
 				},
 			})
 		}
@@ -224,7 +224,7 @@ func TestEncryptReadIgnoresConnectionStatus(t *testing.T) {
 	readCap := createReadCap(t)
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	mbi := writeCap.GetFirstMessageBoxIndex()
+	mbi := writeCap.GetMessageBoxIndex()
 
 	go func() {
 		req, err := readRequest(server)
@@ -240,17 +240,17 @@ func TestEncryptReadIgnoresConnectionStatus(t *testing.T) {
 
 		sendResponse(t, server, &Response{
 			EncryptReadReply: &EncryptReadReply{
-				QueryID:             queryID,
-				MessageCiphertext:   []byte("ct"),
-				EnvelopeDescriptor:  []byte("desc"),
-				EnvelopeHash:        &[32]byte{},
-				NextMessageBoxIndex: mbi,
-				ErrorCode:           ThinClientSuccess,
+				QueryID:            queryID,
+				MessageCiphertext:  []byte("ct"),
+				EnvelopeDescriptor: []byte("desc"),
+				EnvelopeHash:       &[32]byte{},
+				ReadCap:            readCap.WithMessageBoxIndex(mbi),
+				ErrorCode:          ThinClientSuccess,
 			},
 		})
 	}()
 
-	ct, _, _, nextIdx, err := tc.EncryptRead(readCap, mbi)
+	ct, _, _, nextIdx, err := tc.EncryptRead(readCap)
 	require.NoError(t, err)
 	require.Equal(t, []byte("ct"), ct)
 	require.NotNil(t, nextIdx)

@@ -22,12 +22,12 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/queue"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
-	"github.com/katzenpost/katzenpost/core/queue"
 )
 
 // createFullMockPKIDocument creates a PKI document with gateway, service nodes,
@@ -93,7 +93,7 @@ func createFullMockPKIDocument(t *testing.T, geo *geo.Geometry) (*cpki.Document,
 			"courier": {"endpoint": "courier"},
 			"echo":    {"endpoint": "+echo"},
 		},
-		MixKeys:       map[uint64][]byte{currentEpoch: serviceMixKey, currentEpoch + 1: serviceMixKey},
+		MixKeys: map[uint64][]byte{currentEpoch: serviceMixKey, currentEpoch + 1: serviceMixKey},
 	}
 
 	// Generate 3 mix layers — each needs MixKeys for the current epoch
@@ -182,11 +182,11 @@ func setupFullClient(t *testing.T) (*Daemon, *Client, *[AppIDLength]byte, chan *
 	currentEpoch, _, _ := epochtime.Now()
 
 	client := &Client{
-		cfg:       cfg,
-		sphinx:    sphinxInstance,
-		geo:       cfg.SphinxGeometry,
+		cfg:        cfg,
+		sphinx:     sphinxInstance,
+		geo:        cfg.SphinxGeometry,
 		logbackend: logBackend,
-		log:       logBackend.GetLogger("client"),
+		log:        logBackend.GetLogger("client"),
 		pki: &pki{
 			log: logBackend.GetLogger("pki"),
 		},
@@ -224,20 +224,20 @@ func setupFullClient(t *testing.T) (*Daemon, *Client, *[AppIDLength]byte, chan *
 	t.Cleanup(func() { listener.Shutdown() })
 
 	d := &Daemon{
-		cfg:                       cfg,
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		client:                    client,
-		listener:                  listener,
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		cfg:                cfg,
+		logbackend:         logBackend,
+		log:                logBackend.GetLogger("test"),
+		client:             client,
+		listener:           listener,
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:             make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		replyLock:          new(sync.Mutex),
-		secureRand:                rand.NewMath(),
-		timerQueue:                queue.NewTimerQueue(func(interface{}) {}),
-		gcSurbIDCh:                make(chan *[sphinxConstants.SURBIDLength]byte, 10),
-		arqTimerQueue:             queue.NewTimerQueue(func(interface{}) {}),
+		secureRand:         rand.NewMath(),
+		timerQueue:         queue.NewTimerQueue(func(interface{}) {}),
+		gcSurbIDCh:         make(chan *[sphinxConstants.SURBIDLength]byte, 10),
+		arqTimerQueue:      queue.NewTimerQueue(func(interface{}) {}),
 	}
 	d.timerQueue.Start()
 	d.arqTimerQueue.Start()
@@ -345,10 +345,9 @@ func TestStartResendingEncryptedMessage_FullPipeline(t *testing.T) {
 	d.encryptWrite(&Request{
 		AppID: testAppID,
 		EncryptWrite: &thin.EncryptWrite{
-			QueryID:         ewQueryID,
-			Plaintext:       []byte("test message for full pipeline write"),
-			WriteCap:        kpResp.NewKeypairReply.WriteCap,
-			MessageBoxIndex: kpResp.NewKeypairReply.FirstMessageIndex,
+			QueryID:   ewQueryID,
+			Plaintext: []byte("test message for full pipeline write"),
+			WriteCap:  kpResp.NewKeypairReply.WriteCap,
 		},
 	})
 
@@ -455,7 +454,7 @@ func TestCancelResendingEncryptedMessage_FullPipeline(t *testing.T) {
 	kpQueryID := &[thin.QueryIDLength]byte{}
 	copy(kpQueryID[:], []byte("cancel-kp-query0"))
 	d.newKeypair(&Request{
-		AppID: testAppID,
+		AppID:      testAppID,
 		NewKeypair: &thin.NewKeypair{QueryID: kpQueryID, Seed: seed},
 	})
 	var kpResp *Response
@@ -470,10 +469,9 @@ func TestCancelResendingEncryptedMessage_FullPipeline(t *testing.T) {
 	d.encryptWrite(&Request{
 		AppID: testAppID,
 		EncryptWrite: &thin.EncryptWrite{
-			QueryID:         ewQueryID,
-			Plaintext:       []byte("message to cancel"),
-			WriteCap:        kpResp.NewKeypairReply.WriteCap,
-			MessageBoxIndex: kpResp.NewKeypairReply.FirstMessageIndex,
+			QueryID:   ewQueryID,
+			Plaintext: []byte("message to cancel"),
+			WriteCap:  kpResp.NewKeypairReply.WriteCap,
 		},
 	})
 	var ewResp *Response
