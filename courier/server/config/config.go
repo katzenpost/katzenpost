@@ -16,6 +16,12 @@ import (
 
 const (
 	DefaultMaxQueueSize = 64 // Default outgoing connection queue size.
+
+	// DefaultLogFile is the log file the courier falls back to when no
+	// Logging.File is configured. The courier is always launched as a
+	// CBOR plugin and announces its socket path on stdout, so logging
+	// to stdout (the empty-File behaviour) would corrupt that handshake.
+	DefaultLogFile = "courier.log"
 )
 
 // Type aliases for common configuration structures
@@ -92,6 +98,11 @@ func (c *Config) FixupAndValidate() error {
 	}
 	if err := c.Logging.Validate(); err != nil {
 		return err
+	}
+	if c.Logging.File == "" {
+		// Resolved against DataDir at log-init time; keeps stdout
+		// clear for the plugin socket handshake.
+		c.Logging.File = DefaultLogFile
 	}
 	if c.WireKEMScheme == "" {
 		return errors.New("config: Server: WireKEMScheme is not set")

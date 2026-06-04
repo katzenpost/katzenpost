@@ -282,6 +282,16 @@ Source: `courier/server/config/config.go`.
   `netip.ParseAddrPort` to `net.SplitHostPort` so a bridge-network
   courier may bind on its docker-compose hostname).
 
+### Defaults
+
+- `[Logging]` `File` now defaults to `courier.log` (resolved against
+  `DataDir`) when left empty, instead of stdout. The courier is always
+  launched as a CBOR plugin and announces its socket path on stdout, so
+  an empty `File` previously corrupted that handshake and the service
+  node refused to start. Set an absolute `File` to override the
+  location, or `Disable = true` to silence logging entirely. This takes
+  effect even if the operator's TOML is otherwise unchanged.
+
 No removals or breaking changes.
 
 ## Client daemon, kpclientd (`client.toml`)
