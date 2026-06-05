@@ -167,7 +167,8 @@ func TestTombstoneRangeSuccess(t *testing.T) {
 	require.NoError(t, err)
 	firstIdx := writeCap.GetMessageBoxIndex()
 
-	// Compute expected next indices so the mock replies return them
+	// Compute expected next indices so the mock replies return caps advanced
+	// to those positions, as EncryptWrite would.
 	secondIdx, err := firstIdx.NextIndex()
 	require.NoError(t, err)
 	thirdIdx, err := secondIdx.NextIndex()
@@ -194,28 +195,19 @@ func TestTombstoneRangeSuccess(t *testing.T) {
 		}
 	}()
 
-	result, err := tc.TombstoneRange(writeCap, firstIdx, 2)
+	result, err := tc.TombstoneRange(writeCap, 2)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Len(t, result.Envelopes, 2)
-	require.NotNil(t, result.Next)
-	require.Equal(t, thirdIdx.Idx64, result.Next.Idx64)
+	require.NotNil(t, result.NextCap)
+	require.Equal(t, thirdIdx.Idx64, result.NextCap.GetMessageBoxIndex().Idx64)
 }
 
 func TestTombstoneRangeNilWriteCap(t *testing.T) {
 	tc := newTestThinClientNoConn(t)
-	_, err := tc.TombstoneRange(nil, &bacap.MessageBoxIndex{}, 1)
+	_, err := tc.TombstoneRange(nil, 1)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "nil writeCap")
-}
-
-func TestTombstoneRangeNilStart(t *testing.T) {
-	writeCap, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	tc := newTestThinClientNoConn(t)
-	_, err = tc.TombstoneRange(writeCap, nil, 1)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "nil start")
 }
 
 func TestEncryptReadIgnoresConnectionStatus(t *testing.T) {

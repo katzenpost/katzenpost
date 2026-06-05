@@ -12,9 +12,8 @@ import (
 )
 
 var (
-	dummyWriteCap        bacap.WriteCap
-	dummyReadCap         bacap.ReadCap
-	dummyMessageBoxIndex bacap.MessageBoxIndex
+	dummyWriteCap bacap.WriteCap
+	dummyReadCap  bacap.ReadCap
 )
 
 func TestReplicaError(t *testing.T) {

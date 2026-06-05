@@ -43,9 +43,10 @@ func BenchmarkPigeonholeWrite(b *testing.B) {
 	_, err := rand.Reader.Read(seed)
 	require.NoError(b, err)
 
-	writeCap, _, msgIdx, err := client.NewKeypair(seed)
+	writeCap, _, err := client.NewKeypair(seed)
 	require.NoError(b, err)
 	require.NotNil(b, writeCap)
+	msgIdx := writeCap.GetMessageBoxIndex()
 	require.NotNil(b, msgIdx)
 
 	// Sized over 29 bytes so the courier returns ReplyTypePayload rather
@@ -69,7 +70,7 @@ func BenchmarkPigeonholeWrite(b *testing.B) {
 
 		start := time.Now()
 		_, err = client.StartResendingEncryptedMessage(
-			nil, writeCap, nil, &replyIdx, envDesc, ciphertext, envHash,
+			nil, writeCap.WithMessageBoxIndex(msgIdx), &replyIdx, envDesc, ciphertext, envHash,
 		)
 		elapsed := time.Since(start)
 

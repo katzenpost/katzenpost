@@ -167,12 +167,12 @@ func TestNewKeypairSeedValidation(t *testing.T) {
 	_ = server
 
 	// Seed too short
-	_, _, _, err := tc.NewKeypair([]byte("short"))
+	_, _, err := tc.NewKeypair([]byte("short"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "seed must be exactly 32 bytes")
 
 	// Seed too long
-	_, _, _, err = tc.NewKeypair(make([]byte, 64))
+	_, _, err = tc.NewKeypair(make([]byte, 64))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "seed must be exactly 32 bytes")
 }
@@ -193,8 +193,8 @@ func TestNewKeypairSuccess(t *testing.T) {
 		require.NotNil(t, req.NewKeypair)
 
 		// Send reply with matching QueryID
-		// Note: WriteCap/ReadCap/FirstMessageIndex are nil here because
-		// empty BACAP types can't be CBOR-marshaled without proper initialization.
+		// Note: WriteCap/ReadCap are nil here because empty BACAP types
+		// can't be CBOR-marshaled without proper initialization.
 		// The test validates request/response flow, not BACAP crypto.
 		sendResponse(t, server, &Response{
 			NewKeypairReply: &NewKeypairReply{
@@ -204,12 +204,11 @@ func TestNewKeypairSuccess(t *testing.T) {
 		})
 	}()
 
-	writeCap, readCap, firstIndex, err := tc.NewKeypair(seed)
+	writeCap, readCap, err := tc.NewKeypair(seed)
 	require.NoError(t, err)
-	// WriteCap/ReadCap/FirstMessageIndex are nil in mock response
+	// WriteCap/ReadCap are nil in mock response
 	_ = writeCap
 	_ = readCap
-	_ = firstIndex
 }
 
 func TestNewKeypairError(t *testing.T) {
@@ -233,7 +232,7 @@ func TestNewKeypairError(t *testing.T) {
 		})
 	}()
 
-	_, _, _, err = tc.NewKeypair(seed)
+	_, _, err = tc.NewKeypair(seed)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Internal error")
 }
@@ -277,7 +276,7 @@ func TestNewKeypairIgnoresMismatchedQueryID(t *testing.T) {
 		})
 	}()
 
-	_, _, _, err = tc.NewKeypair(seed)
+	_, _, err = tc.NewKeypair(seed)
 	require.NoError(t, err)
 }
 
@@ -391,7 +390,7 @@ func TestEncryptWriteSuccess(t *testing.T) {
 func TestStartResendingEncryptedMessageNilEnvelopeHash(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 
-	_, err := tc.StartResendingEncryptedMessage(nil, nil, nil, nil, nil, nil, nil)
+	_, err := tc.StartResendingEncryptedMessage(nil, nil, nil, nil, nil, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "envelopeHash cannot be nil")
 }
@@ -423,7 +422,6 @@ func TestStartResendingEncryptedMessageWriteSuccess(t *testing.T) {
 	result, err := tc.StartResendingEncryptedMessage(
 		nil,                // readCap (nil = write)
 		newTestWriteCap(t), // writeCap
-		nil,                // nextMessageIndex
 		nil,                // replyIndex
 		[]byte("desc"),     // envelopeDescriptor
 		[]byte("cipher"),   // messageCiphertext
@@ -459,7 +457,6 @@ func TestStartResendingEncryptedMessageReadSuccess(t *testing.T) {
 	result, err := tc.StartResendingEncryptedMessage(
 		newTestReadCap(t), // readCap (non-nil = read)
 		nil,               // writeCap
-		[]byte("nextidx"), // nextMessageIndex
 		&replyIndex,       // replyIndex
 		[]byte("desc"),    // envelopeDescriptor
 		[]byte("cipher"),  // messageCiphertext
@@ -490,7 +487,7 @@ func TestStartResendingEncryptedMessageErrorCode(t *testing.T) {
 	}()
 
 	_, err := tc.StartResendingEncryptedMessage(
-		newTestReadCap(t), nil, nil, nil, nil, nil, envHash,
+		newTestReadCap(t), nil, nil, nil, nil, envHash,
 	)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrBoxIDNotFound))
@@ -518,7 +515,7 @@ func TestStartResendingEncryptedMessageNoRetry(t *testing.T) {
 	}()
 
 	result, err := tc.StartResendingEncryptedMessageNoRetry(
-		newTestReadCap(t), nil, nil, nil, nil, nil, envHash,
+		newTestReadCap(t), nil, nil, nil, nil, envHash,
 	)
 	require.NoError(t, err)
 	require.Equal(t, []byte("data"), result.Plaintext)
@@ -526,7 +523,7 @@ func TestStartResendingEncryptedMessageNoRetry(t *testing.T) {
 
 func TestStartResendingEncryptedMessageNoRetryNilEnvelopeHash(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
-	_, err := tc.StartResendingEncryptedMessageNoRetry(nil, nil, nil, nil, nil, nil, nil)
+	_, err := tc.StartResendingEncryptedMessageNoRetry(nil, nil, nil, nil, nil, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "envelopeHash cannot be nil")
 }
@@ -552,7 +549,7 @@ func TestStartResendingEncryptedMessageReturnBoxExists(t *testing.T) {
 	}()
 
 	_, err := tc.StartResendingEncryptedMessageReturnBoxExists(
-		nil, newTestWriteCap(t), nil, nil, nil, nil, envHash,
+		nil, newTestWriteCap(t), nil, nil, nil, envHash,
 	)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrBoxAlreadyExists))
@@ -560,7 +557,7 @@ func TestStartResendingEncryptedMessageReturnBoxExists(t *testing.T) {
 
 func TestStartResendingEncryptedMessageReturnBoxExistsNilEnvelopeHash(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
-	_, err := tc.StartResendingEncryptedMessageReturnBoxExists(nil, nil, nil, nil, nil, nil, nil)
+	_, err := tc.StartResendingEncryptedMessageReturnBoxExists(nil, nil, nil, nil, nil, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "envelopeHash cannot be nil")
 }
@@ -805,13 +802,9 @@ func TestNextMessageBoxIndexError(t *testing.T) {
 func TestCreateCourierEnvelopesFromPayloadNilArgs(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 
-	_, _, err := tc.CreateCourierEnvelopesFromPayload([]byte("data"), nil, newTestMessageBoxIndex(t), true, true)
+	_, _, err := tc.CreateCourierEnvelopesFromPayload([]byte("data"), nil, true, true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "destWriteCap cannot be nil")
-
-	_, _, err = tc.CreateCourierEnvelopesFromPayload([]byte("data"), newTestWriteCap(t), nil, true, true)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "destStartIndex cannot be nil")
 }
 
 func TestCreateCourierEnvelopesFromPayloadSuccess(t *testing.T) {
@@ -826,19 +819,19 @@ func TestCreateCourierEnvelopesFromPayloadSuccess(t *testing.T) {
 
 		sendResponse(t, server, &Response{
 			CreateCourierEnvelopesFromPayloadReply: &CreateCourierEnvelopesFromPayloadReply{
-				QueryID:       req.CreateCourierEnvelopesFromPayload.QueryID,
-				Envelopes:     [][]byte{[]byte("env1"), []byte("env2")},
-				NextDestIndex: newTestMessageBoxIndex(t),
-				ErrorCode:     ThinClientSuccess,
+				QueryID:      req.CreateCourierEnvelopesFromPayload.QueryID,
+				Envelopes:    [][]byte{[]byte("env1"), []byte("env2")},
+				DestWriteCap: newTestWriteCap(t),
+				ErrorCode:    ThinClientSuccess,
 			},
 		})
 	}()
 
-	envelopes, nextIdx, err := tc.CreateCourierEnvelopesFromPayload(
-		[]byte("data"), newTestWriteCap(t), newTestMessageBoxIndex(t), true, true)
+	envelopes, nextCap, err := tc.CreateCourierEnvelopesFromPayload(
+		[]byte("data"), newTestWriteCap(t), true, true)
 	require.NoError(t, err)
 	require.Len(t, envelopes, 2)
-	require.NotNil(t, nextIdx)
+	require.NotNil(t, nextCap)
 }
 
 func TestCreateCourierEnvelopesFromMultiPayloadNilArgs(t *testing.T) {
@@ -865,24 +858,24 @@ func TestCreateCourierEnvelopesFromMultiPayloadSuccess(t *testing.T) {
 
 		sendResponse(t, server, &Response{
 			CreateCourierEnvelopesFromPayloadsReply: &CreateCourierEnvelopesFromPayloadsReply{
-				QueryID:         req.CreateCourierEnvelopesFromPayloads.QueryID,
-				Envelopes:       [][]byte{[]byte("env1")},
-				Buffer:          []byte("buffer-state"),
-				NextDestIndices: []*bacap.MessageBoxIndex{{}},
-				ErrorCode:       ThinClientSuccess,
+				QueryID:       req.CreateCourierEnvelopesFromPayloads.QueryID,
+				Envelopes:     [][]byte{[]byte("env1")},
+				Buffer:        []byte("buffer-state"),
+				DestWriteCaps: []*bacap.WriteCap{newTestWriteCap(t)},
+				ErrorCode:     ThinClientSuccess,
 			},
 		})
 	}()
 
 	result, err := tc.CreateCourierEnvelopesFromMultiPayload(
-		[]DestinationPayload{{Payload: []byte("data"), WriteCap: newTestWriteCap(t), StartIndex: newTestMessageBoxIndex(t)}},
+		[]DestinationPayload{{Payload: []byte("data"), WriteCap: newTestWriteCap(t)}},
 		true, true, nil,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Len(t, result.Envelopes, 1)
 	require.Equal(t, []byte("buffer-state"), result.Buffer)
-	require.Len(t, result.NextDestIndices, 1)
+	require.Len(t, result.NextDestCaps, 1)
 }
 
 func TestGetAllCouriers(t *testing.T) {
@@ -990,24 +983,20 @@ func TestGetDistinctCouriersNotEnough(t *testing.T) {
 func TestTombstoneRangeNilArgs(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 
-	_, err := tc.TombstoneRange(nil, newTestMessageBoxIndex(t), 5)
+	_, err := tc.TombstoneRange(nil, 5)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "nil writeCap")
-
-	_, err = tc.TombstoneRange(newTestWriteCap(t), nil, 5)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "nil start index")
 }
 
 func TestTombstoneRangeZeroCount(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 
-	start := newTestMessageBoxIndex(t)
-	result, err := tc.TombstoneRange(newTestWriteCap(t), start, 0)
+	writeCap := newTestWriteCap(t)
+	result, err := tc.TombstoneRange(writeCap, 0)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Nil(t, result.Envelopes)
-	require.Equal(t, start, result.Next)
+	require.Equal(t, writeCap, result.NextCap)
 }
 
 func TestCBORRoundTrip(t *testing.T) {
@@ -1099,7 +1088,7 @@ func TestCreateCourierEnvelopesFromPayloadError(t *testing.T) {
 	}()
 
 	_, _, err := tc.CreateCourierEnvelopesFromPayload(
-		[]byte("data"), newTestWriteCap(t), newTestMessageBoxIndex(t), true, true)
+		[]byte("data"), newTestWriteCap(t), true, true)
 	require.Error(t, err)
 }
 
@@ -1121,7 +1110,7 @@ func TestCreateCourierEnvelopesFromMultiPayloadError(t *testing.T) {
 	}()
 
 	_, err := tc.CreateCourierEnvelopesFromMultiPayload(
-		[]DestinationPayload{{Payload: []byte("x"), WriteCap: newTestWriteCap(t), StartIndex: newTestMessageBoxIndex(t)}},
+		[]DestinationPayload{{Payload: []byte("x"), WriteCap: newTestWriteCap(t)}},
 		true, true, nil,
 	)
 	require.Error(t, err)
@@ -1177,7 +1166,7 @@ func TestNewKeypairConnectionStatusDuringWait(t *testing.T) {
 		})
 	}()
 
-	_, _, _, err = tc.NewKeypair(seed)
+	_, _, err = tc.NewKeypair(seed)
 	require.NoError(t, err)
 }
 
@@ -1205,7 +1194,7 @@ func TestInFlightResendTracking(t *testing.T) {
 	}()
 
 	_, err := tc.StartResendingEncryptedMessage(
-		nil, newTestWriteCap(t), nil, nil, nil, nil, envHash,
+		nil, newTestWriteCap(t), nil, nil, nil, envHash,
 	)
 	require.NoError(t, err)
 

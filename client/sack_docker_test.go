@@ -36,7 +36,7 @@ func TestSACKWriteReadRoundTrip(t *testing.T) {
 	_, err := rand.Reader.Read(seed)
 	require.NoError(t, err)
 
-	writeCap, readCap, firstIndex, err := alice.NewKeypair(seed)
+	writeCap, readCap, err := alice.NewKeypair(seed)
 	require.NoError(t, err)
 
 	// Size the payload to span a few boxes so the window (>1) is exercised.
@@ -51,7 +51,7 @@ func TestSACKWriteReadRoundTrip(t *testing.T) {
 
 	t.Logf("SACK write: %d bytes across %d boxes, window=%d", len(payload), expectedBoxes, window)
 	start := time.Now()
-	nextIndex, err := alice.WriteStream(writeCap, firstIndex, payload, window)
+	nextIndex, err := alice.WriteStream(writeCap, payload, window)
 	require.NoError(t, err)
 	require.NotNil(t, nextIndex)
 	writeElapsed := time.Since(start)
@@ -60,7 +60,7 @@ func TestSACKWriteReadRoundTrip(t *testing.T) {
 	// Read the payload back with the SACK read path.
 	t.Logf("SACK read: %d boxes, window=%d", expectedBoxes, window)
 	start = time.Now()
-	got, readNext, err := bob.ReadStream(readCap, firstIndex, uint32(expectedBoxes), window)
+	got, readNext, err := bob.ReadStream(readCap, uint32(expectedBoxes), window)
 	require.NoError(t, err)
 	require.NotNil(t, readNext)
 	readElapsed := time.Since(start)

@@ -2313,9 +2313,8 @@ func TestCreateCourierEnvelopesFromPayload_Success(t *testing.T) {
 	// Create a destination keypair
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
+	_, err = bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
-	destStartIndex := statefulWriter.GetCurrentMessageIndex()
 
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("envelope-query00"))
@@ -2325,12 +2324,11 @@ func TestCreateCourierEnvelopesFromPayload_Success(t *testing.T) {
 	request := &Request{
 		AppID: testAppID,
 		CreateCourierEnvelopesFromPayload: &thin.CreateCourierEnvelopesFromPayload{
-			QueryID:        queryID,
-			Payload:        payload,
-			DestWriteCap:   writeCap,
-			DestStartIndex: destStartIndex,
-			IsStart:        true,
-			IsLast:         true,
+			QueryID:      queryID,
+			Payload:      payload,
+			DestWriteCap: writeCap,
+			IsStart:      true,
+			IsLast:       true,
 		},
 	}
 
@@ -2341,7 +2339,7 @@ func TestCreateCourierEnvelopesFromPayload_Success(t *testing.T) {
 		require.NotNil(t, resp.CreateCourierEnvelopesFromPayloadReply)
 		require.Equal(t, thin.ThinClientSuccess, resp.CreateCourierEnvelopesFromPayloadReply.ErrorCode)
 		require.NotEmpty(t, resp.CreateCourierEnvelopesFromPayloadReply.Envelopes)
-		require.NotNil(t, resp.CreateCourierEnvelopesFromPayloadReply.NextDestIndex)
+		require.NotNil(t, resp.CreateCourierEnvelopesFromPayloadReply.DestWriteCap)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for response")
 	}
@@ -2355,12 +2353,11 @@ func TestCreateCourierEnvelopesFromPayload_NilWriteCap(t *testing.T) {
 	request := &Request{
 		AppID: testAppID,
 		CreateCourierEnvelopesFromPayload: &thin.CreateCourierEnvelopesFromPayload{
-			QueryID:        queryID,
-			Payload:        []byte("data"),
-			DestWriteCap:   nil,
-			DestStartIndex: nil,
-			IsStart:        true,
-			IsLast:         true,
+			QueryID:      queryID,
+			Payload:      []byte("data"),
+			DestWriteCap: nil,
+			IsStart:      true,
+			IsLast:       true,
 		},
 	}
 
@@ -2381,12 +2378,8 @@ func TestCreateCourierEnvelopesFromPayloads_Success(t *testing.T) {
 	// Create two destination keypairs
 	writeCap1, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	sw1, err := bacap.NewStatefulWriter(writeCap1, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
 
 	writeCap2, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	sw2, err := bacap.NewStatefulWriter(writeCap2, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 
 	queryID := &[thin.QueryIDLength]byte{}
@@ -2398,14 +2391,12 @@ func TestCreateCourierEnvelopesFromPayloads_Success(t *testing.T) {
 			QueryID: queryID,
 			Destinations: []thin.DestinationPayload{
 				{
-					Payload:    []byte("payload for channel 1"),
-					WriteCap:   writeCap1,
-					StartIndex: sw1.GetCurrentMessageIndex(),
+					Payload:  []byte("payload for channel 1"),
+					WriteCap: writeCap1,
 				},
 				{
-					Payload:    []byte("payload for channel 2"),
-					WriteCap:   writeCap2,
-					StartIndex: sw2.GetCurrentMessageIndex(),
+					Payload:  []byte("payload for channel 2"),
+					WriteCap: writeCap2,
 				},
 			},
 			IsStart: true,

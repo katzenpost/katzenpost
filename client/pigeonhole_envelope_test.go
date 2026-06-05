@@ -158,37 +158,31 @@ func TestValidateStartResendingRequest(t *testing.T) {
 
 func TestValidateEnvelopePayloadRequest(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		err := validateEnvelopePayloadRequest([]byte("data"), &dummyWriteCap, &dummyMessageBoxIndex, 100)
+		err := validateEnvelopePayloadRequest([]byte("data"), &dummyWriteCap, 100)
 		require.NoError(t, err)
 	})
 
 	t.Run("nil write cap", func(t *testing.T) {
-		err := validateEnvelopePayloadRequest([]byte("data"), nil, &dummyMessageBoxIndex, 100)
+		err := validateEnvelopePayloadRequest([]byte("data"), nil, 100)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "WriteCap")
 	})
 
-	t.Run("nil start index", func(t *testing.T) {
-		err := validateEnvelopePayloadRequest([]byte("data"), &dummyWriteCap, nil, 100)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "StartIndex")
-	})
-
 	t.Run("payload too large", func(t *testing.T) {
 		bigPayload := make([]byte, 11*1024*1024)
-		err := validateEnvelopePayloadRequest(bigPayload, &dummyWriteCap, &dummyMessageBoxIndex, 100)
+		err := validateEnvelopePayloadRequest(bigPayload, &dummyWriteCap, 100)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "exceeds maximum")
 	})
 
 	t.Run("invalid geometry", func(t *testing.T) {
-		err := validateEnvelopePayloadRequest([]byte("data"), &dummyWriteCap, &dummyMessageBoxIndex, 0)
+		err := validateEnvelopePayloadRequest([]byte("data"), &dummyWriteCap, 0)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "maxPayload")
 	})
 
 	t.Run("geometry too small", func(t *testing.T) {
-		err := validateEnvelopePayloadRequest([]byte("data"), &dummyWriteCap, &dummyMessageBoxIndex, 4)
+		err := validateEnvelopePayloadRequest([]byte("data"), &dummyWriteCap, 4)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "maxPayload")
 	})
