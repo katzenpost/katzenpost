@@ -570,8 +570,9 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	}
 
 	// Ensure that the descriptor is from an allowed peer.
-	if !s.state.isReplicaDescriptorAuthorized(desc) {
-		s.log.Errorf("Peer %s: Identity key hash '%x' not authorized", peerID, hash.Sum256(desc.IdentityKey))
+	if err := s.state.replicaAuthorizationError(desc); err != nil {
+		s.log.Errorf("Peer %s: rejecting replica descriptor name=%q ReplicaID=%d identity_hash=%x: %s",
+			peerID, desc.Name, desc.ReplicaID, hash.Sum256(desc.IdentityKey), err)
 		instrument.DescriptorRejected("replica", "unauthorized")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
@@ -698,8 +699,8 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 
 	// Ensure that the descriptor is from an allowed peer.
 	s.log.Debugf("onPostDescriptor: Checking authorization for node %s from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
-	if !s.state.isDescriptorAuthorized(desc) {
-		s.log.Errorf("onPostDescriptor: AUTHORIZATION FAILED for node %s from peer %s: identity key hash %x not authorized", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), hash.Sum256(desc.IdentityKey))
+	if err := s.state.descriptorAuthorizationError(desc); err != nil {
+		s.log.Errorf("onPostDescriptor: AUTHORIZATION FAILED for node %s from peer %s: %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), err)
 		instrument.DescriptorRejected("mix", "unauthorized")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp

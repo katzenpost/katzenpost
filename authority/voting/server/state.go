@@ -1880,67 +1880,75 @@ func staleEpochKeys(bkt *bolt.Bucket, cmpEpoch uint64) [][]byte {
 	return stale
 }
 
-func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool {
+// replicaAuthorizationError returns nil when desc is from a replica this
+// authority has pinned in its StorageReplicas configuration, or an error
+// describing the exact mismatch otherwise. Each message reports both the value
+// the authority pins and the value the descriptor announces, so that an
+// operator can see on a single line which side is wrong; the usual cause is a
+// replica running with a ReplicaID that does not match its pinned identity key.
+func (s *state) replicaAuthorizationError(desc *pki.ReplicaDescriptor) error {
 	pk := hash.Sum256(desc.IdentityKey)
 	replicaInfo, ok := s.authorizedReplicaNodes[pk]
 	if !ok {
-		s.log.Errorf("StorageReplica authentication failure: key hash %x not in map", pk)
-		return false
+		return fmt.Errorf("identity key hash %x is not pinned in this authority's StorageReplicas configuration", pk)
 	}
 	if replicaInfo.Identifier != desc.Name {
-		s.log.Errorf("StorageReplica authentication failure: name mismatch - map has '%s', descriptor has '%s'", replicaInfo.Identifier, desc.Name)
-		return false
+		return fmt.Errorf("name mismatch: authority pins name %q for this identity key, descriptor announces %q", replicaInfo.Identifier, desc.Name)
 	}
 	if replicaInfo.ReplicaID != desc.ReplicaID {
-		s.log.Errorf("StorageReplica authentication failure: ReplicaID mismatch - config has '%d', descriptor has '%d'", replicaInfo.ReplicaID, desc.ReplicaID)
+		return fmt.Errorf("ReplicaID mismatch: authority pins ReplicaID=%d for %q, descriptor announces ReplicaID=%d", replicaInfo.ReplicaID, replicaInfo.Identifier, desc.ReplicaID)
+	}
+	return nil
+}
+
+func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool {
+	if err := s.replicaAuthorizationError(desc); err != nil {
+		s.log.Errorf("StorageReplica authorization failure for descriptor name=%q ReplicaID=%d identity_hash=%x: %s",
+			desc.Name, desc.ReplicaID, hash.Sum256(desc.IdentityKey), err)
 		return false
 	}
-	s.log.Debugf("StorageReplica authentication OK: %s (ReplicaID=%d) with hash %x", replicaInfo.Identifier, replicaInfo.ReplicaID, pk)
+	s.log.Debugf("StorageReplica authentication OK: %s (ReplicaID=%d) with hash %x", desc.Name, desc.ReplicaID, hash.Sum256(desc.IdentityKey))
 	return true
 }
 
-func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
+// descriptorAuthorizationError returns nil when desc is from a mix, gateway or
+// service node this authority has pinned. It returns an error naming the
+// mismatch otherwise: an unpinned identity key, a name that disagrees with the
+// pinned one, or a descriptor that claims to be both a gateway and a service
+// node at once. As with replicas, the message reports both the pinned and the
+// announced value.
+func (s *state) descriptorAuthorizationError(desc *pki.MixDescriptor) error {
 	pk := hash.Sum256(desc.IdentityKey)
-	if !desc.IsGatewayNode && !desc.IsServiceNode {
-		name, ok := s.authorizedMixes[pk]
-		if !ok {
-			s.log.Errorf("Mix authentication failure: key hash %x not authorized", pk)
-			return false
-		}
-		if name != desc.Name {
-			s.log.Errorf("Mix name mismatch: expected %s, got %s", name, desc.Name)
-			return false
-		}
-		s.log.Debugf("Mix authentication OK: %s with hash %x", desc.Name, pk)
-		return true
+	var role string
+	var authorized map[[publicKeyHashSize]byte]string
+	switch {
+	case desc.IsGatewayNode && !desc.IsServiceNode:
+		role, authorized = "gateway", s.authorizedGatewayNodes
+	case desc.IsServiceNode && !desc.IsGatewayNode:
+		role, authorized = "service node", s.authorizedServiceNodes
+	case !desc.IsGatewayNode && !desc.IsServiceNode:
+		role, authorized = "mix", s.authorizedMixes
+	default:
+		return fmt.Errorf("descriptor %q has contradictory node-type flags: marked as both a gateway and a service node", desc.Name)
 	}
-	if desc.IsGatewayNode {
-		name, ok := s.authorizedGatewayNodes[pk]
-		if !ok {
-			s.log.Errorf("Gateway authentication failure: key hash %x not in map", pk)
-			return false
-		}
-		if name != desc.Name {
-			s.log.Errorf("Gateway authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
-			return false
-		}
-		s.log.Debugf("Gateway authentication OK: %s with hash %x", name, pk)
-		return true
+	pinned, ok := authorized[pk]
+	if !ok {
+		return fmt.Errorf("%s identity key hash %x is not pinned in this authority's configuration", role, pk)
 	}
-	if desc.IsServiceNode {
-		name, ok := s.authorizedServiceNodes[pk]
-		if !ok {
-			s.log.Errorf("ServiceNode authentication failure: key hash %x not in map", pk)
-			return false
-		}
-		if name != desc.Name {
-			s.log.Errorf("ServiceNode authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
-			return false
-		}
-		s.log.Debugf("ServiceNode authentication OK: %s with hash %x", name, pk)
-		return true
+	if pinned != desc.Name {
+		return fmt.Errorf("%s name mismatch: authority pins %q for this identity key, descriptor announces %q", role, pinned, desc.Name)
 	}
-	panic("impossible")
+	return nil
+}
+
+func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
+	if err := s.descriptorAuthorizationError(desc); err != nil {
+		s.log.Errorf("Node authorization failure for descriptor name=%q identity_hash=%x: %s",
+			desc.Name, hash.Sum256(desc.IdentityKey), err)
+		return false
+	}
+	s.log.Debugf("Node authentication OK: %s with hash %x", desc.Name, hash.Sum256(desc.IdentityKey))
+	return true
 }
 
 func (s *state) dupSig(sig commands.Sig) bool {
