@@ -248,6 +248,8 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 		return nil, err
 	}
 
+	s.logNodeIdentity()
+
 	// Ensure config defaults are set (tests may skip FixupAndValidate).
 	s.cfg.SetDefaultTimeouts()
 
@@ -343,6 +345,29 @@ func (s *Server) maybeStartupRebalance() {
 	if err := s.state.Rebalance("startup"); err != nil {
 		s.log.Errorf("failed to rebalance shares after startup: %s", err)
 	}
+}
+
+// logNodeIdentity emits a consolidated summary of this replica's identity and
+// the configuration an operator most often needs when a node is rejected from
+// consensus. Each of these fields is pinned by the directory authority, and a
+// disagreement on any one of them (a ReplicaID that does not match the
+// authority's pin, a stale identity or link key, the wrong advertised address,
+// or a swapped DataDir) is the usual cause of a node failing to appear in the
+// PKI document. Logging them in one place lets an operator confirm the running
+// node's identity from its own log rather than cross-referencing the
+// authorities.
+func (s *Server) logNodeIdentity() {
+	idPubKeyHash := hash.Sum256From(s.identityPublicKey)
+	linkPubKeyHash := hash.Sum256From(s.linkKey.Public())
+	s.log.Noticef("Replica node identity: Identifier=%q ReplicaID=%d", s.cfg.Identifier, s.cfg.ReplicaID)
+	s.log.Noticef("Replica identity public key hash: %x", idPubKeyHash[:])
+	s.log.Noticef("Replica link public key hash: %x", linkPubKeyHash[:])
+	s.log.Noticef("Replica schemes: PKISignature=%q WireKEM=%q ReplicaNIKE=%q",
+		s.cfg.PKISignatureScheme, s.cfg.WireKEMScheme, s.cfg.ReplicaNIKEScheme)
+	s.log.Noticef("Replica addresses: announce=%v bind=%v DataDir=%q",
+		s.cfg.Addresses, s.cfg.BindAddresses, s.cfg.DataDir)
+	s.log.Noticef("Replica storage limits: MaxStorageMiB=%d MinFreeStorageMiB=%d",
+		s.cfg.MaxStorageMiB, s.cfg.MinFreeStorageMiB)
 }
 
 // initIdentityKeys initializes the server's identity keypair
