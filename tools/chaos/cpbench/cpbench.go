@@ -102,7 +102,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		errorsByStage.With(map[string]string{"stage": "rand_seed"}).Inc()
 		return nil, fmt.Errorf("cpbench: dest seed: %w", err)
 	}
-	destWriteCap, bobReadCap, destFirstIndex, err := alice.NewKeypair(destSeed)
+	destWriteCap, bobReadCap, err := alice.NewKeypair(destSeed)
 	if err != nil {
 		errorsByStage.With(map[string]string{"stage": "alice_dest_keypair"}).Inc()
 		return nil, fmt.Errorf("cpbench: dest keypair: %w", err)
@@ -113,7 +113,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		errorsByStage.With(map[string]string{"stage": "rand_seed"}).Inc()
 		return nil, fmt.Errorf("cpbench: temp seed: %w", err)
 	}
-	tempWriteCap, _, tempFirstIndex, err := alice.NewKeypair(tempSeed)
+	tempWriteCap, _, err := alice.NewKeypair(tempSeed)
 	if err != nil {
 		errorsByStage.With(map[string]string{"stage": "alice_temp_keypair"}).Inc()
 		return nil, fmt.Errorf("cpbench: temp keypair: %w", err)
@@ -128,7 +128,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(randomData)))
 	copy(payload[4:], randomData)
 
-	chunks, _, err := alice.CreateCourierEnvelopesFromPayload(payload, destWriteCap, destFirstIndex, true, true)
+	chunks, _, err := alice.CreateCourierEnvelopesFromPayload(payload, destWriteCap, true, true)
 	if err != nil {
 		errorsByStage.With(map[string]string{"stage": "create_courier_envelopes"}).Inc()
 		return nil, fmt.Errorf("cpbench: CreateCourierEnvelopesFromPayload: %w", err)
@@ -144,7 +144,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	// byte at Bob.
 	start := time.Now()
 
-	tempCap := tempWriteCap.WithMessageBoxIndex(tempFirstIndex)
+	tempCap := tempWriteCap
 	replyIndex := uint8(0)
 	for i, chunk := range chunks {
 		select {
@@ -157,7 +157,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 			errorsByStage.With(map[string]string{"stage": "alice_encrypt_write_chunk"}).Inc()
 			return nil, fmt.Errorf("cpbench: encrypt write chunk %d: %w", i+1, err)
 		}
-		if _, err := alice.StartResendingEncryptedMessage(nil, tempCap, nil, &replyIndex, envDesc, ciphertext, envHash); err != nil {
+		if _, err := alice.StartResendingEncryptedMessage(nil, tempCap, &replyIndex, envDesc, ciphertext, envHash); err != nil {
 			errorsByStage.With(map[string]string{"stage": "alice_send_chunk"}).Inc()
 			return nil, fmt.Errorf("cpbench: send chunk %d: %w", i+1, err)
 		}
@@ -181,7 +181,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 
 	// Bob reconstructs the payload chunk by chunk until the length
 	// prefix says he is done.
-	bobCap := bobReadCap.WithMessageBoxIndex(destFirstIndex)
+	bobCap := bobReadCap
 	var reconstructed []byte
 	var expectedLength uint32
 	for {
@@ -190,18 +190,12 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 			return nil, ctx.Err()
 		default:
 		}
-		bobIndex := bobCap.GetMessageBoxIndex()
 		bobCt, bobEnvDesc, bobEnvHash, bobNextCap, err := bob.EncryptRead(bobCap)
 		if err != nil {
 			errorsByStage.With(map[string]string{"stage": "bob_encrypt_read"}).Inc()
 			return nil, fmt.Errorf("cpbench: bob encrypt read: %w", err)
 		}
-		bobIndexBytes, err := bobIndex.MarshalBinary()
-		if err != nil {
-			errorsByStage.With(map[string]string{"stage": "bob_marshal_index"}).Inc()
-			return nil, fmt.Errorf("cpbench: bob marshal index: %w", err)
-		}
-		result, err := bob.StartResendingEncryptedMessage(bobCap, nil, bobIndexBytes, &replyIndex, bobEnvDesc, bobCt, bobEnvHash)
+		result, err := bob.StartResendingEncryptedMessage(bobCap, nil, &replyIndex, bobEnvDesc, bobCt, bobEnvHash)
 		if err != nil {
 			errorsByStage.With(map[string]string{"stage": "bob_read"}).Inc()
 			return nil, fmt.Errorf("cpbench: bob read: %w", err)

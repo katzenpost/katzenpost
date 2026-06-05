@@ -47,17 +47,13 @@ func (d *Daemon) newKeypair(request *Request) {
 	}
 	readCap := writeCap.ReadCap()
 
-	// Get the first message index from the WriteCap
-	firstIndex := writeCap.GetMessageBoxIndex()
-
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		NewKeypairReply: &thin.NewKeypairReply{
-			QueryID:           request.NewKeypair.QueryID,
-			WriteCap:          writeCap,
-			ReadCap:           readCap,
-			FirstMessageIndex: firstIndex,
-			ErrorCode:         thin.ThinClientSuccess,
+			QueryID:   request.NewKeypair.QueryID,
+			WriteCap:  writeCap,
+			ReadCap:   readCap,
+			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
 }
@@ -391,12 +387,9 @@ func chunkPayload(payload []byte, maxChunkSize int) [][]byte {
 
 // validateEnvelopePayloadRequest validates inputs for createCourierEnvelopesFromPayload.
 // maxPlaintextPayloadLength is the geometry's MaxPlaintextPayloadLength.
-func validateEnvelopePayloadRequest(payload []byte, writeCap *bacap.WriteCap, startIndex *bacap.MessageBoxIndex, maxPlaintextPayloadLength int) error {
+func validateEnvelopePayloadRequest(payload []byte, writeCap *bacap.WriteCap, maxPlaintextPayloadLength int) error {
 	if writeCap == nil {
 		return fmt.Errorf("DestWriteCap is nil")
-	}
-	if startIndex == nil {
-		return fmt.Errorf("DestStartIndex is nil")
 	}
 	const maxPayloadSize = 10 * 1024 * 1024
 	if len(payload) > maxPayloadSize {
@@ -494,7 +487,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	}
 
 	req := request.CreateCourierEnvelopesFromPayload
-	if err := validateEnvelopePayloadRequest(req.Payload, req.DestWriteCap, req.DestStartIndex, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength); err != nil {
+	if err := validateEnvelopePayloadRequest(req.Payload, req.DestWriteCap, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength); err != nil {
 		d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
 		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
 		return
@@ -517,7 +510,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	statefulWriter.NextIndex = req.DestStartIndex
+	statefulWriter.NextIndex = req.DestWriteCap.GetMessageBoxIndex()
 
 	maxPayload := d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength - 4
 	chunks := chunkPayload(req.Payload, maxPayload)
@@ -571,10 +564,10 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadReply: &thin.CreateCourierEnvelopesFromPayloadReply{
-			QueryID:       req.QueryID,
-			Envelopes:     elements,
-			NextDestIndex: statefulWriter.NextIndex,
-			ErrorCode:     thin.ThinClientSuccess,
+			QueryID:      req.QueryID,
+			Envelopes:    elements,
+			DestWriteCap: req.DestWriteCap.WithMessageBoxIndex(statefulWriter.NextIndex),
+			ErrorCode:    thin.ThinClientSuccess,
 		},
 	})
 }
@@ -645,17 +638,12 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 	// Process all destinations and feed envelopes into the same encoder
 	var elements [][]byte
 	totalEnvelopes := 0
-	nextDestIndices := make([]*bacap.MessageBoxIndex, len(destinations))
+	nextDestCaps := make([]*bacap.WriteCap, len(destinations))
 
 	for destIdx, dest := range destinations {
 		// Validate destination
 		if dest.WriteCap == nil {
 			d.log.Errorf("createCourierEnvelopesFromPayloads: destination %d has nil WriteCap", destIdx)
-			d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInvalidRequest)
-			return
-		}
-		if dest.StartIndex == nil {
-			d.log.Errorf("createCourierEnvelopesFromPayloads: destination %d has nil StartIndex", destIdx)
 			d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInvalidRequest)
 			return
 		}
@@ -668,7 +656,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 			return
 		}
 
-		currentIndex := dest.StartIndex
+		currentIndex := dest.WriteCap.GetMessageBoxIndex()
 		statefulWriter, err := bacap.NewStatefulWriter(dest.WriteCap, []byte(constants.PIGEONHOLE_CTX))
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayloads: failed to create stateful writer: %v", err)
@@ -718,7 +706,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 				return
 			}
 		}
-		nextDestIndices[destIdx] = currentIndex
+		nextDestCaps[destIdx] = dest.WriteCap.WithMessageBoxIndex(currentIndex)
 	}
 
 	// Flush or return residual buffer
@@ -743,11 +731,11 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadsReply: &thin.CreateCourierEnvelopesFromPayloadsReply{
-			QueryID:         request.CreateCourierEnvelopesFromPayloads.QueryID,
-			Envelopes:       elements,
-			Buffer:          bufferBytes,
-			NextDestIndices: nextDestIndices,
-			ErrorCode:       thin.ThinClientSuccess,
+			QueryID:       request.CreateCourierEnvelopesFromPayloads.QueryID,
+			Envelopes:     elements,
+			Buffer:        bufferBytes,
+			DestWriteCaps: nextDestCaps,
+			ErrorCode:     thin.ThinClientSuccess,
 		},
 	})
 }
@@ -770,16 +758,10 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 	}
 
 	destWriteCap := request.CreateCourierEnvelopesFromTombstoneRange.DestWriteCap
-	destStartIndex := request.CreateCourierEnvelopesFromTombstoneRange.DestStartIndex
 	maxCount := request.CreateCourierEnvelopesFromTombstoneRange.MaxCount
 
 	if destWriteCap == nil {
 		d.log.Error("createCourierEnvelopesFromTombstoneRange: DestWriteCap is nil")
-		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
-	if destStartIndex == nil {
-		d.log.Error("createCourierEnvelopesFromTombstoneRange: DestStartIndex is nil")
 		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
@@ -788,9 +770,9 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 		conn.sendResponse(&Response{
 			AppID: request.AppID,
 			CreateCourierEnvelopesFromTombstoneRangeReply: &thin.CreateCourierEnvelopesFromTombstoneRangeReply{
-				QueryID:       request.CreateCourierEnvelopesFromTombstoneRange.QueryID,
-				NextDestIndex: destStartIndex,
-				ErrorCode:     thin.ThinClientSuccess,
+				QueryID:      request.CreateCourierEnvelopesFromTombstoneRange.QueryID,
+				DestWriteCap: destWriteCap,
+				ErrorCode:    thin.ThinClientSuccess,
 			},
 		})
 		return
@@ -810,7 +792,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 	}
 
 	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
-	cur := destStartIndex
+	cur := destWriteCap.GetMessageBoxIndex()
 	var courierEnvelopes []*pigeonhole.CourierEnvelope
 
 	for i := uint32(0); i < maxCount; i++ {
@@ -884,11 +866,11 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromTombstoneRangeReply: &thin.CreateCourierEnvelopesFromTombstoneRangeReply{
-			QueryID:       request.CreateCourierEnvelopesFromTombstoneRange.QueryID,
-			Envelopes:     elements,
-			Buffer:        bufferState,
-			NextDestIndex: cur,
-			ErrorCode:     thin.ThinClientSuccess,
+			QueryID:      request.CreateCourierEnvelopesFromTombstoneRange.QueryID,
+			Envelopes:    elements,
+			Buffer:       bufferState,
+			DestWriteCap: destWriteCap.WithMessageBoxIndex(cur),
+			ErrorCode:    thin.ThinClientSuccess,
 		},
 	})
 }
@@ -1164,16 +1146,15 @@ func (d *Daemon) arqSend(message *ARQMessage, envHashKey [32]byte) error {
 func (d *Daemon) logBoxIDForRequest(req *thin.StartResendingEncryptedMessage, isRead bool) {
 	boxIDHex := "<unknown>"
 	idx64Str := "<unknown>"
-	if len(req.MessageBoxIndex) > 0 {
-		if mbi, err := bacap.NewEmptyMessageBoxIndexFromBytes(req.MessageBoxIndex); err == nil {
-			idx64Str = fmt.Sprintf("%d", mbi.Idx64)
-			switch {
-			case isRead && req.ReadCap != nil:
-				boxIDHex = fmt.Sprintf("%x", req.ReadCap.DeriveBoxID(mbi).Bytes())
-			case !isRead && req.WriteCap != nil:
-				boxIDHex = fmt.Sprintf("%x", req.WriteCap.DeriveBoxID(mbi).Bytes())
-			}
-		}
+	switch {
+	case isRead && req.ReadCap != nil:
+		mbi := req.ReadCap.GetMessageBoxIndex()
+		idx64Str = fmt.Sprintf("%d", mbi.Idx64)
+		boxIDHex = fmt.Sprintf("%x", req.ReadCap.DeriveBoxID(mbi).Bytes())
+	case !isRead && req.WriteCap != nil:
+		mbi := req.WriteCap.GetMessageBoxIndex()
+		idx64Str = fmt.Sprintf("%d", mbi.Idx64)
+		boxIDHex = fmt.Sprintf("%x", req.WriteCap.DeriveBoxID(mbi).Bytes())
 	}
 	d.log.Debugf("startResendingEncryptedMessage: isRead=%v, Idx64=%s, boxID=%s, NoRetryOnBoxIDNotFound=%v, NoIdempotentBoxAlreadyExists=%v, EnvelopeHash=%x",
 		isRead, idx64Str, boxIDHex, req.NoRetryOnBoxIDNotFound, req.NoIdempotentBoxAlreadyExists, req.EnvelopeHash[:])
@@ -1203,6 +1184,18 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		return
 	}
 
+	// The replay path consumes the box index only on reads (see processReply),
+	// where it is taken from the read cap's embedded position.
+	var messageBoxIndexBytes []byte
+	if isRead {
+		messageBoxIndexBytes, err = req.ReadCap.GetMessageBoxIndex().MarshalBinary()
+		if err != nil {
+			d.log.Errorf("startResendingEncryptedMessage: failed to marshal message box index: %v", err)
+			d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+	}
+
 	message := &ARQMessage{
 		AppID:                        request.AppID,
 		QueryID:                      req.QueryID,
@@ -1214,7 +1207,7 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		IsRead:                       isRead,
 		State:                        ARQStateWaitingForACK,
 		ReadCap:                      req.ReadCap,
-		MessageBoxIndex:              req.MessageBoxIndex,
+		MessageBoxIndex:              messageBoxIndexBytes,
 		NoRetryOnBoxIDNotFound:       req.NoRetryOnBoxIDNotFound,
 		NoIdempotentBoxAlreadyExists: req.NoIdempotentBoxAlreadyExists,
 	}

@@ -218,11 +218,9 @@ type NewKeypairReply struct {
 	// WriteCap is the write capability that should be stored for channel
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
 	// ReadCap is the read capability that can be shared with others to allow
-	// them to read messages from this channel.
+	// them to read messages from this channel. The WriteCap embeds the first
+	// message box index, so no separate index is returned.
 	ReadCap *bacap.ReadCap `cbor:"read_cap"`
-	// FirstMessageIndex is the first message index that should be used when
-	// writing messages to the channel.
-	FirstMessageIndex *bacap.MessageBoxIndex `cbor:"first_message_index"`
 	// ErrorCode indicates the reason for a failure to create a new keypair if any.
 	// Otherwise it is set to zero for success.
 	ErrorCode uint8 `cbor:"error_code"`
@@ -345,9 +343,9 @@ type WriteStreamReply struct {
 	// ErrorCode is zero on success, or the failure reason otherwise.
 	ErrorCode uint8 `cbor:"error_code"`
 
-	// NextMessageBoxIndex is the box index immediately after the last box
-	// written, ready to seed a subsequent write on the same channel.
-	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
+	// WriteCap is the write cap advanced past the last box written, ready to
+	// seed a subsequent write on the same channel.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
 
 	// BoxCount is the number of boxes the payload spanned.
 	BoxCount uint32 `cbor:"box_count"`
@@ -373,8 +371,8 @@ type ReadStreamReply struct {
 	// Payload is the concatenation of the decrypted boxes, in order.
 	Payload []byte `cbor:"payload"`
 
-	// NextMessageBoxIndex is the box index immediately after the last box read.
-	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
+	// ReadCap is the read cap advanced past the last box read.
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
 
 	// BoxCount is the number of boxes read.
 	BoxCount uint32 `cbor:"box_count"`
@@ -540,10 +538,10 @@ type CreateCourierEnvelopesFromPayloadReply struct {
 	// Envelopes is a slice of serialized CopyStreamElements, one per chunk.
 	Envelopes [][]byte `cbor:"envelopes"`
 
-	// NextDestIndex is the next destination message box index after all boxes
-	// consumed by this call. Use this as DestStartIndex in subsequent calls
+	// DestWriteCap is the destination write cap advanced past all boxes
+	// consumed by this call. Use this as DestWriteCap in subsequent calls
 	// to continue writing to the same destination stream.
-	NextDestIndex *bacap.MessageBoxIndex `cbor:"next_dest_index"`
+	DestWriteCap *bacap.WriteCap `cbor:"dest_write_cap"`
 
 	// ErrorCode indicates the success or failure of the envelope creation.
 	// A value of ThinClientSuccess indicates successful creation.
@@ -573,11 +571,11 @@ type CreateCourierEnvelopesFromPayloadsReply struct {
 	// This can be persisted for crash recovery and restored via SetStreamBuffer.
 	Buffer []byte `cbor:"buffer"`
 
-	// NextDestIndices contains the next destination message box index for each
-	// destination, in the same order as the destinations in the request.
-	// Use these as StartIndex in subsequent calls to continue writing to the
-	// same destination streams.
-	NextDestIndices []*bacap.MessageBoxIndex `cbor:"next_dest_indices"`
+	// DestWriteCaps contains the destination write cap advanced past the last
+	// box written for each destination, in the same order as the destinations
+	// in the request. Use these as the WriteCap in subsequent calls to continue
+	// writing to the same destination streams.
+	DestWriteCaps []*bacap.WriteCap `cbor:"dest_write_caps"`
 
 	// ErrorCode indicates the success or failure of the envelope creation.
 	// A value of ThinClientSuccess indicates successful creation.
@@ -606,9 +604,9 @@ type CreateCourierEnvelopesFromTombstoneRangeReply struct {
 	// Nil when IsLast was true in the request.
 	Buffer []byte `cbor:"buffer"`
 
-	// NextDestIndex is the next destination message box index after all
-	// tombstones created by this call.
-	NextDestIndex *bacap.MessageBoxIndex `cbor:"next_dest_index"`
+	// DestWriteCap is the destination write cap advanced past all tombstones
+	// created by this call.
+	DestWriteCap *bacap.WriteCap `cbor:"dest_write_cap"`
 
 	// ErrorCode indicates the success or failure of the operation.
 	ErrorCode uint8 `cbor:"error_code"`

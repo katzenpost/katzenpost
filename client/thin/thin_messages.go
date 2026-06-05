@@ -278,10 +278,9 @@ type StartResendingEncryptedMessage struct {
 	ReadCap *bacap.ReadCap `cbor:"read_cap"`
 
 	// WriteCap is the write capability that grants access to the channel.
+	// Exactly one of ReadCap or WriteCap is set; the cap carries the position
+	// of the box being operated on.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
-
-	// MessageBoxIndex is the current message box index being operated on.
-	MessageBoxIndex []byte `cbor:"message_box_index"`
 
 	// ReplyIndex is the index of the reply that was actually used when processing.
 	// This field is optional - if nil, the daemon will use the default reply index.
@@ -323,12 +322,10 @@ type WriteStream struct {
 	// QueryID correlates this request with its WriteStreamReply.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
-	// WriteCap is the write capability for the destination channel.
+	// WriteCap is the write capability for the destination channel. The cap
+	// carries the message box index of the first box written; the daemon
+	// advances sequentially from there, one box per chunk.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
-
-	// StartIndex is the message box index of the first box written; the
-	// daemon advances sequentially from here, one box per chunk.
-	StartIndex *bacap.MessageBoxIndex `cbor:"start_index"`
 
 	// Payload is the cleartext to write. The daemon splits it into boxes.
 	Payload []byte `cbor:"payload"`
@@ -343,17 +340,15 @@ type WriteStream struct {
 // of WriteStream. The daemon keeps up to Window boxes in flight, retransmits
 // only the boxes whose payloads time out, decrypts each box, and reassembles
 // them in order into a single payload. The thin client supplies only the read
-// capability, the start index, and how many boxes to read.
+// capability (which carries the start position) and how many boxes to read.
 type ReadStream struct {
 	// QueryID correlates this request with its ReadStreamReply.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
-	// ReadCap is the read capability for the source channel.
+	// ReadCap is the read capability for the source channel. The cap carries
+	// the message box index of the first box read; the daemon advances
+	// sequentially from there.
 	ReadCap *bacap.ReadCap `cbor:"read_cap"`
-
-	// StartIndex is the message box index of the first box read; the daemon
-	// advances sequentially from here.
-	StartIndex *bacap.MessageBoxIndex `cbor:"start_index"`
 
 	// BoxCount is the number of sequential boxes to read.
 	BoxCount uint32 `cbor:"box_count"`
@@ -459,8 +454,8 @@ type GetPKIDocument struct {
 // a fresh encoder, encodes all envelopes, flushes, and returns. The caller controls
 // the copy stream boundaries via IsStart and IsLast flags.
 //
-// Multiple calls can target the same destination stream by using NextDestIndex from
-// the reply as the DestStartIndex for the next call.
+// Multiple calls can target the same destination stream by using DestWriteCap from
+// the reply as the DestWriteCap for the next call.
 type CreateCourierEnvelopesFromPayload struct {
 	// QueryID is used for correlating this thin client request with the
 	// thin client response.
@@ -470,10 +465,8 @@ type CreateCourierEnvelopesFromPayload struct {
 	Payload []byte `cbor:"payload"`
 
 	// DestWriteCap is the write capability for the destination channel.
+	// The cap carries the position to write from.
 	DestWriteCap *bacap.WriteCap `cbor:"dest_write_cap"`
-
-	// DestStartIndex is the starting index in the destination channel.
-	DestStartIndex *bacap.MessageBoxIndex `cbor:"dest_start_index"`
 
 	// IsStart indicates whether this is the first call in a multi-call sequence.
 	// When true, the first CopyStreamElement will have the IsStart flag set.
@@ -501,10 +494,8 @@ type CreateCourierEnvelopesFromTombstoneRange struct {
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// DestWriteCap is the write capability for the destination channel.
+	// The cap carries the position to write from.
 	DestWriteCap *bacap.WriteCap `cbor:"dest_write_cap"`
-
-	// DestStartIndex is the starting index in the destination channel.
-	DestStartIndex *bacap.MessageBoxIndex `cbor:"dest_start_index"`
 
 	// MaxCount is the number of tombstones to create.
 	MaxCount uint32 `cbor:"max_count"`
@@ -528,10 +519,8 @@ type DestinationPayload struct {
 	Payload []byte `cbor:"payload"`
 
 	// WriteCap is the write capability for the destination channel.
+	// The cap carries the position to write from.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
-
-	// StartIndex is the starting index in the destination channel.
-	StartIndex *bacap.MessageBoxIndex `cbor:"start_index"`
 }
 
 // CreateCourierEnvelopesFromPayloads creates CourierEnvelopes from multiple payloads

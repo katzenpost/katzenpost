@@ -162,7 +162,7 @@ func (d *Daemon) writeStream(request *Request) {
 	}
 
 	req := request.WriteStream
-	if req.QueryID == nil || req.WriteCap == nil || req.StartIndex == nil || len(req.Payload) == 0 {
+	if req.QueryID == nil || req.WriteCap == nil || len(req.Payload) == 0 {
 		d.sendWriteStreamError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
@@ -183,12 +183,13 @@ func (d *Daemon) writeStream(request *Request) {
 		return
 	}
 
-	boxes, nextIndex, err := d.prepareSACKBoxes(req.WriteCap, req.StartIndex, req.Payload, doc)
+	boxes, nextIndex, err := d.prepareSACKBoxes(req.WriteCap, req.WriteCap.GetMessageBoxIndex(), req.Payload, doc)
 	if err != nil {
 		d.log.Errorf("writeStream: %v", err)
 		d.sendWriteStreamError(request, thin.ThinClientErrorInternalError)
 		return
 	}
+	nextWriteCap := req.WriteCap.WithMessageBoxIndex(nextIndex)
 
 	window := req.Window
 	if window <= 0 {
@@ -213,10 +214,10 @@ func (d *Daemon) writeStream(request *Request) {
 		c.sendResponse(&Response{
 			AppID: appID,
 			WriteStreamReply: &thin.WriteStreamReply{
-				QueryID:             queryID,
-				ErrorCode:           sackErrorToCode(runErr),
-				NextMessageBoxIndex: nextIndex,
-				BoxCount:            boxCount,
+				QueryID:   queryID,
+				ErrorCode: sackErrorToCode(runErr),
+				WriteCap:  nextWriteCap,
+				BoxCount:  boxCount,
 			},
 		})
 	})
@@ -236,7 +237,7 @@ func (d *Daemon) readStream(request *Request) {
 	}
 
 	req := request.ReadStream
-	if req.QueryID == nil || req.ReadCap == nil || req.StartIndex == nil || req.BoxCount == 0 {
+	if req.QueryID == nil || req.ReadCap == nil || req.BoxCount == 0 {
 		d.sendReadStreamError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
@@ -258,12 +259,13 @@ func (d *Daemon) readStream(request *Request) {
 		return
 	}
 
-	boxes, nextIndex, err := d.prepareSACKReadBoxes(req.ReadCap, req.StartIndex, int(req.BoxCount), doc)
+	boxes, nextIndex, err := d.prepareSACKReadBoxes(req.ReadCap, req.ReadCap.GetMessageBoxIndex(), int(req.BoxCount), doc)
 	if err != nil {
 		d.log.Errorf("readStream: %v", err)
 		d.sendReadStreamError(request, thin.ThinClientErrorInternalError)
 		return
 	}
+	nextReadCap := req.ReadCap.WithMessageBoxIndex(nextIndex)
 
 	window := req.Window
 	if window <= 0 {
@@ -292,11 +294,11 @@ func (d *Daemon) readStream(request *Request) {
 		c.sendResponse(&Response{
 			AppID: appID,
 			ReadStreamReply: &thin.ReadStreamReply{
-				QueryID:             queryID,
-				ErrorCode:           sackErrorToCode(runErr),
-				Payload:             payload,
-				NextMessageBoxIndex: nextIndex,
-				BoxCount:            boxCount,
+				QueryID:   queryID,
+				ErrorCode: sackErrorToCode(runErr),
+				Payload:   payload,
+				ReadCap:   nextReadCap,
+				BoxCount:  boxCount,
 			},
 		})
 	})

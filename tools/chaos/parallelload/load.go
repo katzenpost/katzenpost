@@ -161,7 +161,7 @@ func driveClient(ctx context.Context, cfg Config, clientID string) int {
 			IterationFailed(clientID, "keypair", "rand_read")
 			continue
 		}
-		writeCap, readCap, firstIndex, err := client.NewKeypair(seed)
+		writeCap, readCap, err := client.NewKeypair(seed)
 		if err != nil {
 			IterationFailed(clientID, "keypair", "new_keypair")
 			continue
@@ -183,7 +183,7 @@ func driveClient(ctx context.Context, cfg Config, clientID string) int {
 			continue
 		}
 		replyIndex := uint8(0)
-		_, err = client.StartResendingEncryptedMessage(nil, writeCap, nil, &replyIndex, envDesc, ciphertext, envHash)
+		_, err = client.StartResendingEncryptedMessage(nil, writeCap, &replyIndex, envDesc, ciphertext, envHash)
 		if err != nil {
 			IterationFailed(clientID, "send_write", classify(err))
 			continue
@@ -196,12 +196,7 @@ func driveClient(ctx context.Context, cfg Config, clientID string) int {
 			IterationFailed(clientID, "encrypt_read", classify(err))
 			continue
 		}
-		firstIndexBytes, err := firstIndex.MarshalBinary()
-		if err != nil {
-			IterationFailed(clientID, "encrypt_read", "marshal_index")
-			continue
-		}
-		result, err := client.StartResendingEncryptedMessage(readCap, nil, firstIndexBytes, &replyIndex, readEnvDesc, readCt, readEnvHash)
+		result, err := client.StartResendingEncryptedMessage(readCap, nil, &replyIndex, readEnvDesc, readCt, readEnvHash)
 		if err != nil {
 			IterationFailed(clientID, "send_read", classify(err))
 			continue

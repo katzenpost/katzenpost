@@ -164,9 +164,9 @@ func errorCodeToSentinel(errorCode uint8) error {
 //   - seed: 32-byte seed used to derive the keypair
 //
 // Returns:
-//   - *bacap.WriteCap: Write capability for sending messages
+//   - *bacap.WriteCap: Write capability for sending messages. The cap embeds the
+//     first message box index, so it is ready to pass straight to EncryptWrite.
 //   - *bacap.ReadCap: Read capability that can be shared with recipients
-//   - *bacap.MessageBoxIndex: First message index to use when writing
 //   - error: Any error encountered during keypair creation
 //
 // Example:
@@ -177,16 +177,16 @@ func errorCodeToSentinel(errorCode uint8) error {
 //		log.Fatal(err)
 //	}
 //
-//	writeCap, readCap, firstIndex, err := client.NewKeypair(seed)
+//	writeCap, readCap, err := client.NewKeypair(seed)
 //	if err != nil {
 //		log.Fatal("Failed to create keypair:", err)
 //	}
 //
 //	// Share readCap with Bob so he can read messages
 //	// Store writeCap for sending messages
-func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap *bacap.ReadCap, firstMessageIndex *bacap.MessageBoxIndex, err error) {
+func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap *bacap.ReadCap, err error) {
 	if len(seed) != 32 {
-		return nil, nil, nil, errors.New("seed must be exactly 32 bytes")
+		return nil, nil, errors.New("seed must be exactly 32 bytes")
 	}
 
 	queryID := t.NewQueryID()
@@ -202,7 +202,7 @@ func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap 
 
 	err = t.writeMessage(req)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	for {
@@ -210,7 +210,7 @@ func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap 
 		select {
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, nil, errHalting
+			return nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -224,9 +224,9 @@ func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap 
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.WriteCap, v.ReadCap, v.FirstMessageIndex, nil
+			return v.WriteCap, v.ReadCap, nil
 		case *ConnectionStatusEvent:
 			// Update connection state but don't fail operations
 			t.setConnected(v.IsConnected)
@@ -433,9 +433,10 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap) (m
 //     the fully decrypted plaintext.
 //
 // Parameters:
-//   - readCap: Read capability (can be nil for write operations, required for reads)
-//   - writeCap: Write capability (can be nil for read operations, required for writes)
-//   - messageBoxIndex: Current message box index being operated on (required for reads)
+//   - readCap: Read capability (can be nil for write operations, required for reads).
+//     The cap carries the position of the box being operated on.
+//   - writeCap: Write capability (can be nil for read operations, required for writes).
+//     The cap carries the position of the box being operated on.
 //   - replyIndex: Index of the reply to use (typically 0 or 1)
 //   - envelopeDescriptor: Serialized envelope descriptor for MKEM decryption
 //   - messageCiphertext: MKEM-encrypted message to send (from EncryptRead or EncryptWrite)
@@ -463,7 +464,7 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap) (m
 // Example:
 //
 //	result, err := client.StartResendingEncryptedMessage(
-//		readCap, nil, nextIndex, &replyIdx, envDesc, ciphertext, envHash)
+//		readCap, nil, &replyIdx, envDesc, ciphertext, envHash)
 //	if err != nil {
 //		if errors.Is(err, thin.ErrBoxIDNotFound) {
 //			log.Println("Box not found - may be empty or expired")
@@ -472,8 +473,8 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap) (m
 //		}
 //	}
 //	fmt.Printf("Received: %s\n", result.Plaintext)
-func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, false)
+func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+	return t.startResendingEncryptedMessageImpl(readCap, writeCap, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, false)
 }
 
 // StartResendingEncryptedMessageNoRetry behaves exactly like
@@ -488,8 +489,8 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 //
 // As with StartResendingEncryptedMessage, an in-flight call may be
 // cancelled from another goroutine via CancelResendingEncryptedMessage.
-func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, true, false)
+func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+	return t.startResendingEncryptedMessageImpl(readCap, writeCap, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, true, false)
 }
 
 // StartResendingEncryptedMessageReturnBoxExists behaves exactly like
@@ -509,8 +510,8 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCa
 //
 // As with StartResendingEncryptedMessage, an in-flight call may be
 // cancelled from another goroutine via CancelResendingEncryptedMessage.
-func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, true)
+func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+	return t.startResendingEncryptedMessageImpl(readCap, writeCap, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, true)
 }
 
 // startResendingEncryptedMessageImpl is the shared implementation behind
@@ -523,7 +524,6 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *baca
 func (t *ThinClient) startResendingEncryptedMessageImpl(
 	readCap *bacap.ReadCap,
 	writeCap *bacap.WriteCap,
-	messageBoxIndex []byte,
 	replyIndex *uint8,
 	envelopeDescriptor []byte,
 	messageCiphertext []byte,
@@ -550,7 +550,6 @@ func (t *ThinClient) startResendingEncryptedMessageImpl(
 			QueryID:                      queryID,
 			ReadCap:                      readCap,
 			WriteCap:                     writeCap,
-			MessageBoxIndex:              messageBoxIndex,
 			ReplyIndex:                   replyIndex,
 			EnvelopeDescriptor:           envelopeDescriptor,
 			MessageCiphertext:            messageCiphertext,
@@ -633,14 +632,12 @@ func (t *ThinClient) startResendingEncryptedMessageImpl(
 // default derived from the send rate and round-trip time.
 //
 // It blocks until every box has been acknowledged (success) or the transfer
-// fails, returning the message box index immediately after the last box
-// written, ready to seed a subsequent write on the same channel.
-func (t *ThinClient) WriteStream(writeCap *bacap.WriteCap, startIndex *bacap.MessageBoxIndex, payload []byte, window int) (nextIndex *bacap.MessageBoxIndex, err error) {
+// fails, returning the write cap advanced past the last box written, ready to
+// seed a subsequent write on the same channel. The write position is taken from
+// the cap's own message box index.
+func (t *ThinClient) WriteStream(writeCap *bacap.WriteCap, payload []byte, window int) (nextWriteCap *bacap.WriteCap, err error) {
 	if writeCap == nil {
 		return nil, errors.New("writeCap cannot be nil")
-	}
-	if startIndex == nil {
-		return nil, errors.New("startIndex cannot be nil")
 	}
 	if len(payload) == 0 {
 		return nil, errors.New("payload cannot be empty")
@@ -649,11 +646,10 @@ func (t *ThinClient) WriteStream(writeCap *bacap.WriteCap, startIndex *bacap.Mes
 	queryID := t.NewQueryID()
 	req := &Request{
 		WriteStream: &WriteStream{
-			QueryID:    queryID,
-			WriteCap:   writeCap,
-			StartIndex: startIndex,
-			Payload:    payload,
-			Window:     window,
+			QueryID:  queryID,
+			WriteCap: writeCap,
+			Payload:  payload,
+			Window:   window,
 		},
 	}
 
@@ -681,7 +677,7 @@ func (t *ThinClient) WriteStream(writeCap *bacap.WriteCap, startIndex *bacap.Mes
 				return nil, errorCodeToSentinel(v.ErrorCode)
 			}
 			t.log.Debugf("WriteStream: complete, %d boxes written", v.BoxCount)
-			return v.NextMessageBoxIndex, nil
+			return v.WriteCap, nil
 		case *ConnectionStatusEvent:
 			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
@@ -700,14 +696,11 @@ func (t *ThinClient) WriteStream(writeCap *bacap.WriteCap, startIndex *bacap.Mes
 // default.
 //
 // It blocks until every box has been read (success) or the transfer fails,
-// returning the concatenated payload and the message box index immediately
-// after the last box read.
-func (t *ThinClient) ReadStream(readCap *bacap.ReadCap, startIndex *bacap.MessageBoxIndex, boxCount uint32, window int) (payload []byte, nextIndex *bacap.MessageBoxIndex, err error) {
+// returning the concatenated payload and the read cap advanced past the last
+// box read. The read position is taken from the cap's own message box index.
+func (t *ThinClient) ReadStream(readCap *bacap.ReadCap, boxCount uint32, window int) (payload []byte, nextReadCap *bacap.ReadCap, err error) {
 	if readCap == nil {
 		return nil, nil, errors.New("readCap cannot be nil")
-	}
-	if startIndex == nil {
-		return nil, nil, errors.New("startIndex cannot be nil")
 	}
 	if boxCount == 0 {
 		return nil, nil, errors.New("boxCount must be greater than zero")
@@ -716,11 +709,10 @@ func (t *ThinClient) ReadStream(readCap *bacap.ReadCap, startIndex *bacap.Messag
 	queryID := t.NewQueryID()
 	req := &Request{
 		ReadStream: &ReadStream{
-			QueryID:    queryID,
-			ReadCap:    readCap,
-			StartIndex: startIndex,
-			BoxCount:   boxCount,
-			Window:     window,
+			QueryID:  queryID,
+			ReadCap:  readCap,
+			BoxCount: boxCount,
+			Window:   window,
 		},
 	}
 
@@ -748,7 +740,7 @@ func (t *ThinClient) ReadStream(readCap *bacap.ReadCap, startIndex *bacap.Messag
 				return nil, nil, errorCodeToSentinel(v.ErrorCode)
 			}
 			t.log.Debugf("ReadStream: complete, %d boxes read", v.BoxCount)
-			return v.Payload, v.NextMessageBoxIndex, nil
+			return v.Payload, v.ReadCap, nil
 		case *ConnectionStatusEvent:
 			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
@@ -1260,9 +1252,10 @@ type CreateEnvelopesResult struct {
 	// Pass this to the next call to avoid wasting space in the last box.
 	Buffer []byte
 
-	// NextDestIndices contains the next destination message box index for each
-	// destination, in the same order as the destinations in the request.
-	NextDestIndices []*bacap.MessageBoxIndex
+	// NextDestCaps contains the destination write cap advanced past the last
+	// box written for each destination, in the same order as the destinations
+	// in the request.
+	NextDestCaps []*bacap.WriteCap
 }
 
 // CreateCourierEnvelopesFromPayload packs a payload of arbitrary
@@ -1284,32 +1277,27 @@ type CreateEnvelopesResult struct {
 //
 // Parameters:
 //   - payload: The data to be written (max 10MB)
-//   - destWriteCap: Write capability for the destination channel
-//   - destStartIndex: Starting index in the destination channel
+//   - destWriteCap: Write capability for the destination channel, at the position to write from
 //   - isStart: Whether this is the first call (sets IsStart flag on first element)
 //   - isLast: Whether this is the last call (sets IsFinal flag on last element)
 //
 // Returns:
 //   - [][]byte: Slice of CopyStreamElements ready to write to the copy stream
-//   - *bacap.MessageBoxIndex: Next destination index (use as destStartIndex in next call)
+//   - *bacap.WriteCap: The destination write cap advanced past the last box (use as destWriteCap in next call)
 //   - error: Any error encountered during envelope creation
-func (t *ThinClient) CreateCourierEnvelopesFromPayload(payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isStart bool, isLast bool) (envelopes [][]byte, nextDestIndex *bacap.MessageBoxIndex, err error) {
+func (t *ThinClient) CreateCourierEnvelopesFromPayload(payload []byte, destWriteCap *bacap.WriteCap, isStart bool, isLast bool) (envelopes [][]byte, nextDestCap *bacap.WriteCap, err error) {
 	if destWriteCap == nil {
 		return nil, nil, errors.New("destWriteCap cannot be nil")
-	}
-	if destStartIndex == nil {
-		return nil, nil, errors.New("destStartIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
 	req := &Request{
 		CreateCourierEnvelopesFromPayload: &CreateCourierEnvelopesFromPayload{
-			QueryID:        queryID,
-			Payload:        payload,
-			DestWriteCap:   destWriteCap,
-			DestStartIndex: destStartIndex,
-			IsStart:        isStart,
-			IsLast:         isLast,
+			QueryID:      queryID,
+			Payload:      payload,
+			DestWriteCap: destWriteCap,
+			IsStart:      isStart,
+			IsLast:       isLast,
 		},
 	}
 
@@ -1342,7 +1330,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(payload []byte, destWrite
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.Envelopes, v.NextDestIndex, nil
+			return v.Envelopes, v.DestWriteCap, nil
 		case *ConnectionStatusEvent:
 			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
@@ -1421,9 +1409,9 @@ func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(destinations []Desti
 				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
 			return &CreateEnvelopesResult{
-				Envelopes:       v.Envelopes,
-				Buffer:          v.Buffer,
-				NextDestIndices: v.NextDestIndices,
+				Envelopes:    v.Envelopes,
+				Buffer:       v.Buffer,
+				NextDestCaps: v.DestWriteCaps,
 			}, nil
 		case *ConnectionStatusEvent:
 			t.setConnected(v.IsConnected)
@@ -1517,53 +1505,52 @@ type TombstoneEnvelope struct {
 	MessageCiphertext  []byte
 	EnvelopeDescriptor []byte
 	EnvelopeHash       *[32]byte
-	BoxIndex           *bacap.MessageBoxIndex
+	// BoxCap is the write cap positioned at this tombstone's box, ready to
+	// dispatch via StartResendingEncryptedMessage.
+	BoxCap *bacap.WriteCap
 }
 
 type TombstoneRangeResult struct {
 	Envelopes []*TombstoneEnvelope
-	Next      *bacap.MessageBoxIndex
+	// NextCap is the write cap advanced one box past the last tombstone.
+	NextCap *bacap.WriteCap
 }
 
 // TombstoneRange prepares the encrypted envelopes needed to
 // tombstone a consecutive range of pigeonhole boxes beginning at the
-// supplied MessageBoxIndex. A tombstone is a signed empty payload
+// write cap's current position. A tombstone is a signed empty payload
 // that the replica recognises as a deletion marker; the daemon
 // constructs one by signing rather than encrypting whenever
 // EncryptWrite is invoked with an empty plaintext.
 //
 // This method does not itself touch the network: it returns the
 // envelopes for the caller to dispatch one by one, typically via
-// StartResendingEncryptedMessage. To tombstone a single box, pass
-// maxCount=1.
+// StartResendingEncryptedMessage using each envelope's BoxCap. To
+// tombstone a single box, pass maxCount=1.
 func (c *ThinClient) TombstoneRange(
 	writeCap *bacap.WriteCap,
-	start *bacap.MessageBoxIndex,
 	maxCount uint32,
 ) (result *TombstoneRangeResult, err error) {
 
 	if writeCap == nil {
 		return nil, fmt.Errorf("nil writeCap")
 	}
-	if start == nil {
-		return nil, fmt.Errorf("nil start index")
-	}
 	if maxCount == 0 {
-		return &TombstoneRangeResult{Envelopes: nil, Next: start}, nil
+		return &TombstoneRangeResult{Envelopes: nil, NextCap: writeCap}, nil
 	}
 
-	// EncryptWrite now carries the position inside the cap and returns the cap
-	// advanced one box, so re-base to start and walk the cap forward.
-	curCap := writeCap.WithMessageBoxIndex(start)
+	// EncryptWrite carries the position inside the cap and returns the cap
+	// advanced one box, so walk the cap forward from its current position.
+	curCap := writeCap
 	envelopes := make([]*TombstoneEnvelope, 0, maxCount)
 
 	for uint32(len(envelopes)) < maxCount {
-		boxIndex := curCap.GetMessageBoxIndex()
+		boxCap := curCap
 		messageCiphertext, envelopeDescriptor, envelopeHash, nextCap, err := c.EncryptWrite([]byte{}, curCap)
 		if err != nil {
 			return &TombstoneRangeResult{
 				Envelopes: envelopes,
-				Next:      boxIndex,
+				NextCap:   boxCap,
 			}, err
 		}
 
@@ -1571,7 +1558,7 @@ func (c *ThinClient) TombstoneRange(
 			MessageCiphertext:  messageCiphertext,
 			EnvelopeDescriptor: envelopeDescriptor,
 			EnvelopeHash:       envelopeHash,
-			BoxIndex:           boxIndex,
+			BoxCap:             boxCap,
 		})
 
 		curCap = nextCap
@@ -1579,7 +1566,7 @@ func (c *ThinClient) TombstoneRange(
 
 	return &TombstoneRangeResult{
 		Envelopes: envelopes,
-		Next:      curCap.GetMessageBoxIndex(),
+		NextCap:   curCap,
 	}, nil
 }
 
@@ -1595,8 +1582,7 @@ func (c *ThinClient) TombstoneRange(
 // nextBuffer to the next call.
 //
 // Parameters:
-//   - destWriteCap: Write capability for the destination channel
-//   - destStartIndex: Starting index in the destination channel
+//   - destWriteCap: Write capability for the destination channel, at the position to write from
 //   - maxCount: Number of tombstones to create
 //   - isStart: Whether this is the first call (sets IsStart flag on first element)
 //   - isLast: Whether this is the last call (sets IsFinal flag on last element)
@@ -1605,33 +1591,28 @@ func (c *ThinClient) TombstoneRange(
 // Returns:
 //   - [][]byte: Slice of CopyStreamElements ready to write to the copy stream
 //   - []byte: Residual buffer for next call (nil when isLast=true)
-//   - *bacap.MessageBoxIndex: Next destination index
+//   - *bacap.WriteCap: The destination write cap advanced past the last tombstone
 //   - error: Any error encountered
 func (t *ThinClient) CreateCourierEnvelopesFromTombstoneRange(
 	destWriteCap *bacap.WriteCap,
-	destStartIndex *bacap.MessageBoxIndex,
 	maxCount uint32,
 	isStart bool,
 	isLast bool,
 	buffer []byte,
-) (envelopes [][]byte, nextBuffer []byte, nextDestIndex *bacap.MessageBoxIndex, err error) {
+) (envelopes [][]byte, nextBuffer []byte, nextDestCap *bacap.WriteCap, err error) {
 	if destWriteCap == nil {
 		return nil, nil, nil, errors.New("destWriteCap cannot be nil")
-	}
-	if destStartIndex == nil {
-		return nil, nil, nil, errors.New("destStartIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
 	req := &Request{
 		CreateCourierEnvelopesFromTombstoneRange: &CreateCourierEnvelopesFromTombstoneRange{
-			QueryID:        queryID,
-			DestWriteCap:   destWriteCap,
-			DestStartIndex: destStartIndex,
-			MaxCount:       maxCount,
-			IsStart:        isStart,
-			IsLast:         isLast,
-			Buffer:         buffer,
+			QueryID:      queryID,
+			DestWriteCap: destWriteCap,
+			MaxCount:     maxCount,
+			IsStart:      isStart,
+			IsLast:       isLast,
+			Buffer:       buffer,
 		},
 	}
 
@@ -1664,7 +1645,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromTombstoneRange(
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.Envelopes, v.Buffer, v.NextDestIndex, nil
+			return v.Envelopes, v.Buffer, v.DestWriteCap, nil
 		case *ConnectionStatusEvent:
 			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
