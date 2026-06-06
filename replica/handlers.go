@@ -20,21 +20,16 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
-	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 // createReplicaMessageReply creates a ReplicaMessageReply with proper PigeonholeGeometry
 func (c *incomingConn) createReplicaMessageReply(nikeScheme string, errorCode uint8, envelopeHash *[32]byte, envelopeReply []byte, replicaID uint8) *commands.ReplicaMessageReply {
 	scheme := schemes.ByName(nikeScheme)
-	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, scheme)
-	if err != nil {
-		panic("we should always be able to derive a pigeonhole geometry object")
-	}
 
 	return &commands.ReplicaMessageReply{
 		Cmds:               commands.NewStorageReplicaCommands(c.geo, scheme),
-		PigeonholeGeometry: pigeonholeGeo,
+		PigeonholeGeometry: c.l.server.pigeonholeGeo,
 		ErrorCode:          errorCode,
 		EnvelopeHash:       envelopeHash,
 		EnvelopeReply:      envelopeReply,
@@ -212,13 +207,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 				ReadReply: readReply,
 			}
 			// Pad read reply so tombstone reads are indistinguishable from normal reads
-			nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-			pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
-			if err != nil {
-				c.log.Errorf("REPLICA_HANDLER: failed to compute pigeonhole geometry: %s", err)
-				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
-			}
-			replyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&replyInnerMessage, pigeonholeGeo)
+			replyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&replyInnerMessage, c.l.server.pigeonholeGeo)
 			if err != nil {
 				c.log.Errorf("REPLICA_HANDLER: failed to pad read reply: %s", err)
 				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
@@ -282,13 +271,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 				WriteReply:  writeReply,
 			}
 			// Pad write reply so writes are indistinguishable from reads
-			nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-			pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
-			if err != nil {
-				c.log.Errorf("REPLICA_HANDLER: failed to compute pigeonhole geometry: %s", err)
-				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
-			}
-			replyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&replyInnerMessage, pigeonholeGeo)
+			replyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&replyInnerMessage, c.l.server.pigeonholeGeo)
 			if err != nil {
 				c.log.Errorf("REPLICA_HANDLER: failed to pad write reply: %s", err)
 				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
@@ -382,18 +365,9 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 	if isTombstone {
 		reply = c.handleTombstone(replicaWrite)
 	} else {
-		// Validate payload size against geometry limits
-		nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-		pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
-		if err != nil {
-			c.log.Errorf("handleReplicaWrite failed to derive pigeonhole geometry: %v", err)
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorInternalError,
-			}
-		}
-
-		// The payload is BACAP ciphertext, which must be exactly the expected size
-		expectedCiphertextSize := pigeonholeGeo.CalculateBoxCiphertextLength()
+		// Validate payload size against geometry limits.
+		// The payload is BACAP ciphertext, which must be exactly the expected size.
+		expectedCiphertextSize := c.l.server.pigeonholeGeo.CalculateBoxCiphertextLength()
 		if len(replicaWrite.Payload) != expectedCiphertextSize {
 			c.log.Errorf("handleReplicaWrite invalid payload size: got %d bytes, expected exactly %d bytes",
 				len(replicaWrite.Payload), expectedCiphertextSize)
@@ -546,12 +520,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 	innerMessage := pigeonhole.ReplicaInnerMessage{
 		ReadMsg: replicaRead,
 	}
-	pigeonholeGeoForPad, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: failed to derive pigeonhole geometry: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
-	innerMessageBlob, err := pigeonhole.PadInnerMessageForEncryption(&innerMessage, pigeonholeGeoForPad)
+	innerMessageBlob, err := pigeonhole.PadInnerMessageForEncryption(&innerMessage, c.l.server.pigeonholeGeo)
 	if err != nil {
 		c.log.Errorf("proxyReadRequest: failed to pad inner message: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
@@ -634,13 +603,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		newReplyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 			ReadReply: replyInnerMessage.ReadReply,
 		}
-		nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-		pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
-		if err != nil {
-			c.log.Errorf("proxyReadRequest: failed to compute pigeonhole geometry: %s", err)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-		}
-		newReplyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&newReplyInnerMessage, pigeonholeGeo)
+		newReplyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&newReplyInnerMessage, c.l.server.pigeonholeGeo)
 		if err != nil {
 			c.log.Errorf("proxyReadRequest: failed to pad read reply: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
@@ -717,12 +680,7 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		MessageType: 1, // 1 = write
 		WriteMsg:    replicaWrite,
 	}
-	pigeonholeGeoForPad, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
-	if err != nil {
-		c.log.Errorf("proxyWriteRequest: failed to derive pigeonhole geometry: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
-	innerMessageBlob, err := pigeonhole.PadInnerMessageForEncryption(&innerMessage, pigeonholeGeoForPad)
+	innerMessageBlob, err := pigeonhole.PadInnerMessageForEncryption(&innerMessage, c.l.server.pigeonholeGeo)
 	if err != nil {
 		c.log.Errorf("proxyWriteRequest: failed to pad inner message: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
@@ -805,13 +763,7 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 			MessageType: 1,
 			WriteReply:  replyInnerMessage.WriteReply,
 		}
-		nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-		pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
-		if err != nil {
-			c.log.Errorf("proxyWriteRequest: failed to compute pigeonhole geometry: %s", err)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-		}
-		newReplyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&newReplyInnerMessage, pigeonholeGeo)
+		newReplyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&newReplyInnerMessage, c.l.server.pigeonholeGeo)
 		if err != nil {
 			c.log.Errorf("proxyWriteRequest: failed to pad write reply: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)

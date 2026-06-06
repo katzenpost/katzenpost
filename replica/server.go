@@ -28,6 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 	"github.com/katzenpost/katzenpost/replica/instrument"
@@ -73,6 +74,11 @@ type Server struct {
 	linkKey            kem.PrivateKey
 
 	envelopeKeys *EnvelopeKeys
+
+	// pigeonholeGeo is the Pigeonhole geometry derived once at startup
+	// from the Sphinx geometry and the configured replica NIKE scheme.
+	// The message handlers read it rather than re-deriving it per request.
+	pigeonholeGeo *pgeo.Geometry
 
 	// Proxy request manager for handling async proxy requests
 	proxyManager *ProxyRequestManager
@@ -252,6 +258,19 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 
 	// Ensure config defaults are set (tests may skip FixupAndValidate).
 	s.cfg.SetDefaultTimeouts()
+
+	// Derive the Pigeonhole geometry once from the Sphinx geometry and the
+	// configured replica NIKE scheme; the message handlers reuse it rather
+	// than re-deriving it on every request.
+	pigeonholeNIKE := nikeSchemes.ByName(s.cfg.ReplicaNIKEScheme)
+	if pigeonholeNIKE == nil {
+		return nil, fmt.Errorf("replica: invalid ReplicaNIKEScheme %q", s.cfg.ReplicaNIKEScheme)
+	}
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, pigeonholeNIKE)
+	if err != nil {
+		return nil, fmt.Errorf("replica: cannot derive Pigeonhole geometry: %w", err)
+	}
+	s.pigeonholeGeo = pigeonholeGeo
 
 	// Startup CTIDH self-check. Measures the per-core MKEM Decapsulate
 	// ops/sec rate on this host so ops teams have a concrete throughput
