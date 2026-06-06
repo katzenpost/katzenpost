@@ -171,7 +171,7 @@ func (d *Daemon) writeStream(request *Request) {
 		d.sendWriteStreamError(request, thin.ThinClientErrorPayloadTooLarge)
 		return
 	}
-	if d.cfg.PigeonholeGeometry == nil {
+	if d.cfg.PigeonholeGeometry() == nil {
 		d.log.Error("writeStream: PigeonholeGeometry is nil")
 		d.sendWriteStreamError(request, thin.ThinClientErrorInternalError)
 		return
@@ -240,12 +240,12 @@ func (d *Daemon) readStream(request *Request) {
 		d.sendReadStreamError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
-	if d.cfg.PigeonholeGeometry == nil {
+	if d.cfg.PigeonholeGeometry() == nil {
 		d.log.Error("readStream: PigeonholeGeometry is nil")
 		d.sendReadStreamError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	maxPlaintext := int64(d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength)
+	maxPlaintext := int64(d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength)
 	if limit := d.maxStreamPayload(); int64(req.BoxCount)*maxPlaintext > int64(limit) {
 		d.log.Errorf("readStream: %d boxes would exceed the %d byte stream limit", req.BoxCount, limit)
 		d.sendReadStreamError(request, thin.ThinClientErrorPayloadTooLarge)
@@ -351,7 +351,7 @@ func (d *Daemon) prepareSACKReadBox(readCap *bacap.ReadCap, idx *bacap.MessageBo
 			BoxID: *boxID,
 		},
 	}
-	courierEnvelope, envPrivKey, err := createEnvelopeFromMessageWithPadding(msg, doc, true, 0, d.cfg.PigeonholeGeometry)
+	courierEnvelope, envPrivKey, err := createEnvelopeFromMessageWithPadding(msg, doc, true, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create envelope: %w", err)
 	}
@@ -404,7 +404,7 @@ func (d *Daemon) prepareSACKBoxes(writeCap *bacap.WriteCap, startIndex *bacap.Me
 	}
 	statefulWriter.NextIndex = startIndex
 
-	maxPayload := d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength - 4
+	maxPayload := d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength - 4
 	chunks := chunkPayload(payload, maxPayload)
 	boxes := make([]*preparedBox, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -426,7 +426,7 @@ func (d *Daemon) prepareSACKBox(writer *bacap.StatefulWriter, doc *cpki.Document
 		return nil, err
 	}
 	msg := writeInnerMessage(boxID, ciphertext, sig)
-	courierEnvelope, envPrivKey, err := createEnvelopeFromMessageWithPadding(msg, doc, false, 0, d.cfg.PigeonholeGeometry)
+	courierEnvelope, envPrivKey, err := createEnvelopeFromMessageWithPadding(msg, doc, false, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create envelope: %w", err)
 	}

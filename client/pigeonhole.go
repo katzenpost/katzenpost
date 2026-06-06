@@ -142,7 +142,7 @@ func (d *Daemon) encryptRead(request *Request) {
 	}
 
 	// Create the envelope with padding so reads are indistinguishable from writes
-	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, true, 0, d.cfg.PigeonholeGeometry)
+	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, true, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to create envelope: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
@@ -243,7 +243,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 	}
 
 	// Validate PigeonholeGeometry
-	if d.cfg.PigeonholeGeometry == nil {
+	if d.cfg.PigeonholeGeometry() == nil {
 		d.log.Error("encryptWrite: PigeonholeGeometry is nil")
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 		return
@@ -269,15 +269,15 @@ func (d *Daemon) encryptWrite(request *Request) {
 		// Validate that the payload can fit within the geometry's MaxPlaintextPayloadLength
 		// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
 		minRequiredSize := len(plaintext) + 4
-		if minRequiredSize > d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4 {
+		if minRequiredSize > d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength+4 {
 			d.log.Errorf("encryptWrite: payload too large: %d bytes (+ 4 byte length prefix) exceeds MaxPlaintextPayloadLength + 4 of %d bytes",
-				len(plaintext), d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
+				len(plaintext), d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength+4)
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInvalidRequest)
 			return
 		}
 
 		// Pad the payload to the geometry's MaxPlaintextPayloadLength + 4
-		paddedPayload, err := pigeonhole.CreatePaddedPayload(plaintext, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(plaintext, d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength+4)
 		if err != nil {
 			d.log.Errorf("encryptWrite: failed to pad payload: %v", err)
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
@@ -319,7 +319,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 	}
 
 	// Create the envelope with padding so tombstones are indistinguishable from normal writes
-	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, false, 0, d.cfg.PigeonholeGeometry)
+	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, false, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to create envelope: %v", err)
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
@@ -444,7 +444,7 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 	if err != nil {
 		return nil, fmt.Errorf("failed to get intermediate replicas: %w", err)
 	}
-	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, d.cfg.PigeonholeGeometry)
+	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		return nil, fmt.Errorf("failed to pad inner message: %w", err)
 	}
@@ -472,7 +472,7 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 func (d *Daemon) encryptWriteChunk(writer *bacap.StatefulWriter, chunk []byte, advance bool) ([bacap.BoxIDSize]byte, []byte, [bacap.SignatureSize]byte, error) {
 	var zeroBox [bacap.BoxIDSize]byte
 	var zeroSig [bacap.SignatureSize]byte
-	paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength+4)
 	if err != nil {
 		return zeroBox, nil, zeroSig, fmt.Errorf("failed to pad payload: %w", err)
 	}
@@ -502,7 +502,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	}
 
 	req := request.CreateCourierEnvelopesFromPayload
-	if err := validateEnvelopePayloadRequest(req.Payload, req.DestWriteCap, req.DestStartIndex, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength); err != nil {
+	if err := validateEnvelopePayloadRequest(req.Payload, req.DestWriteCap, req.DestStartIndex, d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength); err != nil {
 		d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
 		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
 		return
@@ -527,7 +527,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	}
 	statefulWriter.NextIndex = req.DestStartIndex
 
-	maxPayload := d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength - 4
+	maxPayload := d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength - 4
 	chunks := chunkPayload(req.Payload, maxPayload)
 	envelopes := make([]*pigeonhole.CourierEnvelope, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -551,7 +551,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	// flush even the partial trailing element on !isLast. Callers that
 	// actually want multi-call buffer continuation use the Payloads
 	// variant instead.
-	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
+	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry())
 	if !req.IsStart {
 		encoder.SuppressStart()
 	}
@@ -617,7 +617,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 
 	// Calculate the maximum user payload size per envelope.
 	// We need to leave room for the 4-byte length prefix that CreatePaddedPayload adds.
-	maxPayload := d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength - 4
+	maxPayload := d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength - 4
 	if maxPayload <= 0 {
 		d.log.Error("createCourierEnvelopesFromPayloads: invalid geometry, maxPayload <= 0")
 		d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
@@ -638,7 +638,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 
 	// Create a fresh encoder and restore buffer from previous call if provided
-	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
+	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry())
 	if len(request.CreateCourierEnvelopesFromPayloads.Buffer) > 0 {
 		encoder.SetBuffer(&pigeonhole.CopyStreamEncoderState{
 			Buffer: request.CreateCourierEnvelopesFromPayloads.Buffer,
@@ -804,7 +804,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 		return
 	}
 
-	if d.cfg.PigeonholeGeometry == nil {
+	if d.cfg.PigeonholeGeometry() == nil {
 		d.log.Error("createCourierEnvelopesFromTombstoneRange: PigeonholeGeometry is nil")
 		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
 		return
@@ -848,7 +848,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 	// Encode via CopyStreamEncoder with stateless buffer continuation
 	isStart := request.CreateCourierEnvelopesFromTombstoneRange.IsStart
 	isLast := request.CreateCourierEnvelopesFromTombstoneRange.IsLast
-	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
+	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry())
 
 	// Restore buffer from previous call if provided
 	if len(request.CreateCourierEnvelopesFromTombstoneRange.Buffer) > 0 {

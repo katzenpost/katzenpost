@@ -47,13 +47,8 @@ func newTestThinClientNoConn(t *testing.T) *ThinClient {
 }
 
 func TestFromConfig(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	sphinxGeo := &geo.Geometry{UserForwardPayloadLength: 1000}
-	pigeonGeo := pigeonholeGeo.NewGeometry(1000, nikeScheme)
-
 	cfg := &config.Config{
-		SphinxGeometry:     sphinxGeo,
-		PigeonholeGeometry: pigeonGeo,
+		SphinxGeometry: &geo.Geometry{UserForwardPayloadLength: 1000},
 		Listen: &clienttransport.ListenConfig{
 			Tcp: &clienttransport.TcpListenConfig{Address: "127.0.0.1:12345"},
 		},
@@ -1296,4 +1291,3 @@ func TestEventSinkNoEviction(t *testing.T) {
 	}
 	require.Equal(t, n, received)
 }
-

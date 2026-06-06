@@ -29,7 +29,6 @@ import (
 	sphinxCommands "github.com/katzenpost/katzenpost/core/sphinx/commands"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/pigeonhole"
-	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/stretchr/testify/require"
 )
@@ -457,11 +456,6 @@ func TestDaemonEncryptWrite_Success(t *testing.T) {
 	require.NoError(t, err)
 	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
-	// Add PigeonholeGeometry for write operations
-	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
-		MaxPlaintextPayloadLength: 1000,
-		NIKEName:                  replicaCommon.NikeScheme.Name(),
-	}
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -919,11 +913,6 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	require.NoError(err)
 	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
-	// Add PigeonholeGeometry for write operations
-	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
-		MaxPlaintextPayloadLength: 1000,
-		NIKEName:                  replicaCommon.NikeScheme.Name(),
-	}
 
 	// A mock PKIClient is supplied so that, should the synchronous
 	// WaitForCurrentDocument -> updateDocument fallback ever be
@@ -1129,11 +1118,6 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 	require.NoError(err)
 	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
-	// Add PigeonholeGeometry for write operations
-	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
-		MaxPlaintextPayloadLength: 1000,
-		NIKEName:                  replicaCommon.NikeScheme.Name(),
-	}
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -2138,10 +2122,6 @@ func setupDaemonWithMockConn(t *testing.T) (*Daemon, *[AppIDLength]byte, chan *R
 	port, err := getFreePort()
 	require.NoError(t, err)
 	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
-	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
-		MaxPlaintextPayloadLength: 1000,
-		NIKEName:                  replicaCommon.NikeScheme.Name(),
-	}
 
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
@@ -2465,7 +2445,7 @@ func TestClientQueryPaddingIndistinguishable(t *testing.T) {
 
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
-	geo := cfg.PigeonholeGeometry
+	geo := cfg.PigeonholeGeometry()
 
 	readMsg := &pigeonhole.ReplicaInnerMessage{
 		MessageType: 0,

@@ -12,7 +12,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 // validListen returns a minimal non-empty ListenConfig suitable for
@@ -148,19 +147,10 @@ func TestFixupAndValidate(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("missing PigeonholeGeometry", func(t *testing.T) {
+	t.Run("PigeonholeGeometry is derived from SphinxGeometry", func(t *testing.T) {
 		raw := loadRawConfig(t)
-		raw.PigeonholeGeometry = nil
-		err := raw.FixupAndValidate()
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "PigeonholeGeometry")
-	})
-
-	t.Run("invalid PigeonholeGeometry", func(t *testing.T) {
-		raw := loadRawConfig(t)
-		raw.PigeonholeGeometry = &pigeonholeGeo.Geometry{} // empty = invalid
-		err := raw.FixupAndValidate()
-		require.Error(t, err)
+		require.NoError(t, raw.FixupAndValidate())
+		require.NotNil(t, raw.PigeonholeGeometry(), "derived from the Sphinx geometry")
 	})
 
 	t.Run("nil Logging gets default", func(t *testing.T) {
@@ -227,6 +217,15 @@ func TestLoad(t *testing.T) {
 	t.Run("empty toml fails validation", func(t *testing.T) {
 		_, err := Load([]byte(""))
 		require.Error(t, err)
+	})
+
+	t.Run("a [PigeonholeGeometry] table is rejected", func(t *testing.T) {
+		b, err := os.ReadFile("../testdata/client.toml")
+		require.NoError(t, err)
+		withTable := append(b, []byte("\n[PigeonholeGeometry]\n  MaxPlaintextPayloadLength = 1549\n")...)
+		_, err = Load(withTable)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "PigeonholeGeometry")
 	})
 }
 

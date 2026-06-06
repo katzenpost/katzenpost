@@ -173,7 +173,6 @@ type Katzenpost struct {
 	PkiSignatureScheme sign.Scheme
 	ReplicaNIKEScheme  nike.Scheme
 	SphinxGeometry     *geo.Geometry
-	PigeonholeGeometry *pigeonholeGeo.Geometry
 	VotingAuthConfigs  []*vConfig.Config
 	Authorities        map[[32]byte]*vConfig.Authority
 	AuthIdentity       sign.PublicKey
@@ -333,7 +332,8 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.SphinxGeometry = s.SphinxGeometry
-	cfg.PigeonholeGeometry = s.PigeonholeGeometry
+	// The Pigeonhole geometry is not written into the client config; the
+	// client derives it from the Sphinx geometry at load time.
 	// Docker-mixnet kpclientd reaches gateways and dirauths by
 	// container hostname through the compose-runtime's embedded
 	// DNS; opt in to hostname-permitting validation.
@@ -960,11 +960,11 @@ func SetupGeometry(s *Katzenpost, cfg *Config) error {
 
 	s.ReplicaNIKEScheme = replicaCommon.NikeScheme
 
-	// Generate pigeonhole geometry once for use in both client and thin client configs
-	var err error
-	s.PigeonholeGeometry, err = pigeonholeGeo.NewGeometryFromSphinx(s.SphinxGeometry, s.ReplicaNIKEScheme)
-	if err != nil {
-		return fmt.Errorf("failed to create pigeonhole geometry: %v", err)
+	// The Pigeonhole geometry is not emitted into any config file: the
+	// client, courier and replicas derive it from the Sphinx geometry.
+	// Fail early here if that Sphinx geometry is too small to yield one.
+	if _, err := pigeonholeGeo.NewGeometryFromSphinx(s.SphinxGeometry, s.ReplicaNIKEScheme); err != nil {
+		return fmt.Errorf("the Sphinx geometry cannot yield a Pigeonhole geometry: %w", err)
 	}
 
 	return nil

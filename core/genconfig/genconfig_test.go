@@ -17,7 +17,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 // testKatzenpost returns a minimally populated *Katzenpost suitable for
@@ -33,8 +32,6 @@ func testKatzenpost(t *testing.T) *Katzenpost {
 	require.NotNil(t, pkiScheme)
 
 	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 2000, false, 5)
-	pigeonGeo, err := pigeonholeGeo.NewGeometryFromSphinx(sphinxGeo, nikeScheme)
-	require.NoError(t, err)
 
 	return &Katzenpost{
 		OutDir:             t.TempDir(),
@@ -42,7 +39,6 @@ func testKatzenpost(t *testing.T) *Katzenpost {
 		WireKEMScheme:      "xwing",
 		PkiSignatureScheme: pkiScheme,
 		SphinxGeometry:     sphinxGeo,
-		PigeonholeGeometry: pigeonGeo,
 	}
 }
 
