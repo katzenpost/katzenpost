@@ -165,7 +165,7 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 			Err:                nil,
 			InstanceToken:      c.listener.instanceToken,
 			SphinxGeometry:     c.listener.client.cfg.SphinxGeometry,
-			PigeonholeGeometry: c.listener.client.cfg.PigeonholeGeometry,
+			PigeonholeGeometry: c.listener.client.cfg.PigeonholeGeometry(),
 		},
 	})
 }

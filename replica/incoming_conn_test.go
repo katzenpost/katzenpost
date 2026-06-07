@@ -105,10 +105,16 @@ func TestIncomingConn(t *testing.T) {
 		WorkerBase: pki.NewWorkerBase(nil, nil), // No PKI client needed for test
 	}
 
+	// newServerWithPKI derives this once at startup; this test builds the
+	// Server by hand, so derive it here for the handlers that read it.
+	serverPigeonholeGeo, err := pgeo.NewGeometryFromSphinx(geometry, replicaScheme)
+	require.NoError(t, err)
+
 	server := &Server{
 		identityPublicKey: pk,
 		cfg:               cfg,
 		PKIWorker:         pkiWorker,
+		pigeonholeGeo:     serverPigeonholeGeo,
 		proxySema:         make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 

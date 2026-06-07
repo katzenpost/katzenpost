@@ -25,7 +25,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/core/queue"
 )
@@ -170,10 +169,6 @@ func setupFullClient(t *testing.T) (*Daemon, *Client, *[AppIDLength]byte, chan *
 	port, err := getFreePort()
 	require.NoError(t, err)
 	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
-	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
-		MaxPlaintextPayloadLength: 1000,
-		NIKEName:                  replicaCommon.NikeScheme.Name(),
-	}
 
 	sphinxInstance, err := sphinx.FromGeometry(cfg.SphinxGeometry)
 	require.NoError(t, err)

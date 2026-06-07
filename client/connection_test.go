@@ -34,7 +34,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
@@ -144,9 +143,6 @@ func setupTestGateway(t *testing.T, gwAddr string, handler func(t *testing.T, wi
 	nikeScheme := schemes.ByName("x25519")
 	g := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 2000, false, 5)
 
-	pigeonholeGeometry, err := pigeonholeGeo.NewGeometryFromSphinx(g, nikeScheme)
-	require.NoError(t, err)
-
 	clientCfg := &config.Config{
 		Listen: &transport.ListenConfig{
 			Tcp: &transport.TcpListenConfig{Address: "127.0.0.1:0"},
@@ -154,7 +150,6 @@ func setupTestGateway(t *testing.T, gwAddr string, handler func(t *testing.T, wi
 		PKISignatureScheme: "ed25519",
 		WireKEMScheme:      "x25519",
 		SphinxGeometry:     g,
-		PigeonholeGeometry: pigeonholeGeometry,
 		Logging: &config.Logging{
 			Disable: false,
 			File:    "",
@@ -415,10 +410,6 @@ func TestConnection(t *testing.T) {
 	numMixNodes := 3
 	numStorageReplicas := 0
 
-	// Compute pigeonhole geometry from sphinx geometry for test
-	pigeonholeGeometry, err := pigeonholeGeo.NewGeometryFromSphinx(g, sphinxNikeScheme)
-	require.NoError(t, err)
-
 	clientCfg := &config.Config{
 		Listen: &transport.ListenConfig{
 			Tcp: &transport.TcpListenConfig{Address: "127.0.0.1:63445"},
@@ -426,7 +417,6 @@ func TestConnection(t *testing.T) {
 		PKISignatureScheme: "ed25519",
 		WireKEMScheme:      "x25519",
 		SphinxGeometry:     g,
-		PigeonholeGeometry: pigeonholeGeometry,
 		Logging: &config.Logging{
 			Disable: false,
 			File:    "",
@@ -936,9 +926,6 @@ func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, hand
 	require.NoError(t, err)
 	id := hash.Sum256From(idPubKey)
 
-	pigeonholeGeometry, err := pigeonholeGeo.NewGeometryFromSphinx(env.geo, env.nikeScheme)
-	require.NoError(t, err)
-
 	clientCfg := &config.Config{
 		Listen: &transport.ListenConfig{
 			Tcp: &transport.TcpListenConfig{Address: "127.0.0.1:0"},
@@ -946,7 +933,6 @@ func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, hand
 		PKISignatureScheme: "ed25519",
 		WireKEMScheme:      "x25519",
 		SphinxGeometry:     env.geo,
-		PigeonholeGeometry: pigeonholeGeometry,
 		Logging:            &config.Logging{Level: "DEBUG"},
 		UpstreamProxy:      &config.UpstreamProxy{},
 		Debug:              &config.Debug{EnableTimeSync: true},

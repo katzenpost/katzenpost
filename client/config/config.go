@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
 	"github.com/katzenpost/katzenpost/client/proxy"
 	"github.com/katzenpost/katzenpost/client/transport"
@@ -291,9 +292,6 @@ type Config struct {
 	// SphinxGeometry
 	SphinxGeometry *geo.Geometry
 
-	// PigeonholeGeometry
-	PigeonholeGeometry *pigeonholeGeo.Geometry
-
 	// MaxStreamPayloadBytes caps the plaintext a single WriteStream may write
 	// and the result a single ReadStream may return. When zero or unset the
 	// daemon uses DefaultMaxStreamPayloadBytes. The daemon clamps any value to
@@ -366,6 +364,20 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 	return c.upstreamProxy
 }
 
+// PigeonholeGeometry derives the Pigeonhole geometry from the Sphinx geometry,
+// the same derivation the courier and the storage replicas perform, so the
+// client can never carry a geometry at odds with theirs. It is not stored on
+// the config and is never read from the config file; a [PigeonholeGeometry]
+// table in the file is rejected at load time. FixupAndValidate proves the
+// derivation succeeds, so the panic here is unreachable for a loaded config.
+func (c *Config) PigeonholeGeometry() *pigeonholeGeo.Geometry {
+	derived, err := pigeonholeGeo.NewGeometryFromSphinx(c.SphinxGeometry, replicaCommon.NikeScheme)
+	if err != nil {
+		panic(fmt.Sprintf("config: cannot derive a Pigeonhole geometry from the SphinxGeometry: %v", err))
+	}
+	return derived
+}
+
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
@@ -389,12 +401,11 @@ func (c *Config) FixupAndValidate() error {
 	if err != nil {
 		return err
 	}
-	if c.PigeonholeGeometry == nil {
-		return errors.New("config: No PigeonholeGeometry block was present")
-	}
-	err = c.PigeonholeGeometry.Validate()
-	if err != nil {
-		return err
+	// Fail fast if the Sphinx geometry cannot yield a Pigeonhole geometry;
+	// the daemon derives the Pigeonhole geometry from it at runtime via the
+	// PigeonholeGeometry accessor.
+	if _, err = pigeonholeGeo.NewGeometryFromSphinx(c.SphinxGeometry, replicaCommon.NikeScheme); err != nil {
+		return fmt.Errorf("config: cannot derive a Pigeonhole geometry from the SphinxGeometry: %w", err)
 	}
 	// Handle missing sections if possible.
 	if c.Logging == nil {
@@ -455,14 +466,32 @@ func (c *Config) FixupAndValidate() error {
 func Load(b []byte) (*Config, error) {
 	cfg := new(Config)
 
-	err := toml.Unmarshal(b, cfg)
+	md, err := toml.Decode(string(b), cfg)
 	if err != nil {
+		return nil, err
+	}
+	if err := rejectPigeonholeGeometry(md); err != nil {
 		return nil, err
 	}
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// rejectPigeonholeGeometry refuses a config that carries a
+// [PigeonholeGeometry] table. The geometry is not a configuration field; it
+// is derived from the Sphinx geometry. A table in the file is the stale-config
+// failure mode that overflowed at send time, so it is refused outright rather
+// than quietly ignored.
+func rejectPigeonholeGeometry(md toml.MetaData) error {
+	for _, key := range md.Undecoded() {
+		if len(key) > 0 && key[0] == "PigeonholeGeometry" {
+			return errors.New("config: [PigeonholeGeometry] must not be set; " +
+				"it is derived from [SphinxGeometry]. Remove the [PigeonholeGeometry] table.")
+		}
+	}
+	return nil
 }
 
 // LoadFile loads, parses, and validates the provided file and returns the
