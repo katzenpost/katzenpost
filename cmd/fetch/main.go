@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -111,8 +112,7 @@ func runFetch(cfg Config) error {
 	}
 
 	if doc := client.PKIDocument(); doc != nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
-		fmt.Printf("%v", doc)
-		return nil
+		return printRawDocument(client, doc.Epoch)
 	}
 
 	// Wait for PKI document via event sink
@@ -129,12 +129,60 @@ func runFetch(cfg Config) error {
 			if !hasEnoughReplicas(docEvent.Document, cfg.MinReplicas) {
 				continue
 			}
-			fmt.Printf("%v", docEvent.Document)
-			return nil
+			return printRawDocument(client, docEvent.Document.Epoch)
 		case <-client.HaltCh():
 			return fmt.Errorf("connection closed before receiving PKI document")
 		}
 	}
+}
+
+// printRawDocument fetches the raw, signed PKI document for the given epoch
+// and prints both the document and the directory authorities that signed it.
+//
+// Unlike the stripped document the daemon pushes by default, the raw payload
+// retains every detached directory authority signature, so we may report the
+// identity-key fingerprint of each signer.
+func printRawDocument(client *thin.ThinClient, epoch uint64) error {
+	raw, gotEpoch, err := client.GetPKIDocumentRaw(epoch)
+	if err != nil {
+		return fmt.Errorf("failed to fetch raw PKI document for epoch %d: %v", epoch, err)
+	}
+
+	doc, err := cpki.ParseDocument(raw)
+	if err != nil {
+		return fmt.Errorf("failed to parse raw PKI document for epoch %d: %v", gotEpoch, err)
+	}
+
+	fmt.Printf("%v", doc)
+	printSigners(doc, gotEpoch)
+	return nil
+}
+
+// printSigners reports, in deterministic order, the identity-key fingerprint of
+// every directory authority that signed the document. The thin client config
+// carries no dirauth peer list, so we have nothing finer than the fingerprint
+// (the 256-bit hash of the signer's identity public key) to identify them by.
+func printSigners(doc *cpki.Document, epoch uint64) {
+	fingerprints := make([]string, 0, len(doc.Signatures))
+	for hash := range doc.Signatures {
+		fingerprints = append(fingerprints, fmt.Sprintf("%x", hash[:]))
+	}
+	sort.Strings(fingerprints)
+
+	fmt.Printf("\nPKI document for epoch %d signed by %d directory %s:\n",
+		epoch, len(fingerprints), authorityWord(len(fingerprints)))
+	for _, fp := range fingerprints {
+		fmt.Printf("  %s\n", fp)
+	}
+}
+
+// authorityWord yields the singular or plural noun so the surrounding sentence
+// reads "1 directory authority" but "3 directory authorities".
+func authorityWord(n int) string {
+	if n == 1 {
+		return "authority"
+	}
+	return "authorities"
 }
 
 // hasEnoughReplicas reports whether the given document satisfies the caller's

@@ -584,8 +584,7 @@ func (t *ThinClient) Disconnect() error {
 // This method performs a clean shutdown with the following actions.
 //    1. It sends  a close notification to the daemon.
 //    2. It closes the network connection.
-
-    3. It stops all background workers.
+//    3. It stops all background workers.
 //
 // After calling Close(), the ThinClient instance should not be used further.
 // Any ongoing operations will be interrupted and may return errors.

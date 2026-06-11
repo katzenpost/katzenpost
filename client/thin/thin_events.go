@@ -230,6 +230,7 @@ type NewKeypairReply struct {
 
 // String returns a string representation of the NewKeypairReply.
 func (e *NewKeypairReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("NewKeypairReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
 	return "NewKeypairReply: success"
