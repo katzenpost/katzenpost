@@ -54,8 +54,8 @@ type Connector struct {
 
 // retryCommand holds a command that needs to be retried when connections become available
 type retryCommand struct {
-	cmd       commands.Command
-	idHash    [32]byte
+	cmd    commands.Command
+	idHash [32]byte
 	// ident is a per-cmd fingerprint used for dedup. Zero and hasIdent=false
 	// for command types with no natural identity — those are never deduped.
 	ident     [32]byte
@@ -463,12 +463,12 @@ func (co *Connector) OnClosedConn(c *outgoingConn) {
 // New creates a new Connector.
 func newConnector(server *Server) *Connector {
 	co := &Connector{
-		server:        server,
-		log:           server.LogBackend().GetLogger("replica Connector"),
-		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
+		server:         server,
+		log:            server.LogBackend().GetLogger("replica Connector"),
+		conns:          make(map[[constants.NodeIDLength]byte]*outgoingConn),
 		replicationSem: make(chan struct{}, maxConcurrentReplications),
 		forceUpdateCh:  make(chan interface{}, 1), // See forceUpdate().
-		closeAllCh:    make(chan interface{}),
+		closeAllCh:     make(chan interface{}),
 	}
 
 	co.Go(co.worker)

@@ -30,7 +30,7 @@ const (
 // introduce an unbounded same-replica retry loop.
 func classifyReplicaErrorForCopyRead(code uint8) replicaErrorCategory {
 	switch code {
-	case pigeonhole.ReplicaErrorBoxIDNotFound,    // replication lag, or future write
+	case pigeonhole.ReplicaErrorBoxIDNotFound, // replication lag, or future write
 		pigeonhole.ReplicaErrorStorageFull,       // disk pressure may ease
 		pigeonhole.ReplicaErrorDatabaseFailure,   // DB momentarily unavailable
 		pigeonhole.ReplicaErrorInternalError,     // unspecified replica-side hiccup

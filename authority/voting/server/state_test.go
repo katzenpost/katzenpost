@@ -87,7 +87,7 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001,
+		Mu:      0.001,
 		LambdaP: 0.002,
 		LambdaL: 0.0005,
 		LambdaM: 0.2,
@@ -861,7 +861,7 @@ func TestReplicaDescriptorConsensus(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001,
+		Mu:      0.001,
 		LambdaP: 0.002,
 		LambdaL: 0.0005,
 		LambdaM: 0.2,
@@ -1325,7 +1325,7 @@ func TestConfiguredReplicaIdentityKeys(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001,
+		Mu:      0.001,
 		LambdaP: 0.002,
 		LambdaL: 0.0005,
 		LambdaM: 0.2,
@@ -1649,7 +1649,7 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001,
+		Mu:      0.001,
 		LambdaP: 0.002,
 		LambdaL: 0.0005,
 		LambdaM: 0.2,
@@ -2052,7 +2052,7 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001,
+		Mu:      0.001,
 		LambdaP: 0.002,
 		LambdaL: 0.0005,
 		LambdaM: 0.2,
@@ -2539,7 +2539,7 @@ func TestEmptyEnvelopeKeysWithConfiguredReplicas(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001,
+		Mu:      0.001,
 		LambdaP: 0.002,
 		LambdaL: 0.0005,
 		LambdaM: 0.2,
@@ -2824,7 +2824,7 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
 	parameters := &config.Parameters{
-		Mu: 0.001,
+		Mu:      0.001,
 		LambdaP: 0.002,
 		LambdaL: 0.0005,
 		LambdaM: 0.2,

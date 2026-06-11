@@ -22,19 +22,20 @@ func IntoThinResponse(r *Response) *thin.Response {
 		EncryptReadReply:                     r.EncryptReadReply,
 		EncryptWriteReply:                    r.EncryptWriteReply,
 		StartResendingEncryptedMessageReply:  r.StartResendingEncryptedMessageReply,
-		WriteStreamReply:                    r.WriteStreamReply,
-		ReadStreamReply:                     r.ReadStreamReply,
+		WriteStreamReply:                     r.WriteStreamReply,
+		ReadStreamReply:                      r.ReadStreamReply,
 		CancelResendingEncryptedMessageReply: r.CancelResendingEncryptedMessageReply,
 		StartResendingCopyCommandReply:       r.StartResendingCopyCommandReply,
 		CancelResendingCopyCommandReply:      r.CancelResendingCopyCommandReply,
 		NextMessageBoxIndexReply:             r.NextMessageBoxIndexReply,
 		GetMessageBoxIndexCounterReply:       r.GetMessageBoxIndexCounterReply,
 		GetPKIDocumentReply:                  r.GetPKIDocumentReply,
+		GetDirectoryAuthoritiesReply:         r.GetDirectoryAuthoritiesReply,
 
 		// Copy Channel API:
-		CreateCourierEnvelopesFromPayloadReply:          r.CreateCourierEnvelopesFromPayloadReply,
-		CreateCourierEnvelopesFromPayloadsReply:         r.CreateCourierEnvelopesFromPayloadsReply,
-		CreateCourierEnvelopesFromTombstoneRangeReply:   r.CreateCourierEnvelopesFromTombstoneRangeReply,
+		CreateCourierEnvelopesFromPayloadReply:        r.CreateCourierEnvelopesFromPayloadReply,
+		CreateCourierEnvelopesFromPayloadsReply:       r.CreateCourierEnvelopesFromPayloadsReply,
+		CreateCourierEnvelopesFromTombstoneRangeReply: r.CreateCourierEnvelopesFromTombstoneRangeReply,
 
 		// Contact Voucher API:
 		VoucherMintReply:         r.VoucherMintReply,
@@ -89,6 +90,8 @@ type Response struct {
 
 	GetPKIDocumentReply *thin.GetPKIDocumentReply
 
+	GetDirectoryAuthoritiesReply *thin.GetDirectoryAuthoritiesReply
+
 	// Copy Channel API:
 
 	CreateCourierEnvelopesFromPayloadReply *thin.CreateCourierEnvelopesFromPayloadReply
@@ -123,11 +126,12 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		NextMessageBoxIndex:             r.NextMessageBoxIndex,
 		GetMessageBoxIndexCounter:       r.GetMessageBoxIndexCounter,
 		GetPKIDocument:                  r.GetPKIDocument,
+		GetDirectoryAuthorities:         r.GetDirectoryAuthorities,
 
 		// Copy Channel API:
-		CreateCourierEnvelopesFromPayload:          r.CreateCourierEnvelopesFromPayload,
-		CreateCourierEnvelopesFromPayloads:         r.CreateCourierEnvelopesFromPayloads,
-		CreateCourierEnvelopesFromTombstoneRange:   r.CreateCourierEnvelopesFromTombstoneRange,
+		CreateCourierEnvelopesFromPayload:        r.CreateCourierEnvelopesFromPayload,
+		CreateCourierEnvelopesFromPayloads:       r.CreateCourierEnvelopesFromPayloads,
+		CreateCourierEnvelopesFromTombstoneRange: r.CreateCourierEnvelopesFromTombstoneRange,
 
 		// Contact Voucher API:
 		VoucherMint:         r.VoucherMint,
@@ -173,6 +177,8 @@ type Request struct {
 	GetMessageBoxIndexCounter *thin.GetMessageBoxIndexCounter
 
 	GetPKIDocument *thin.GetPKIDocument
+
+	GetDirectoryAuthorities *thin.GetDirectoryAuthorities
 
 	// Copy Channel API:
 

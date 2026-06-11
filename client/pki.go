@@ -336,9 +336,9 @@ func (p *pki) worker() {
 // rather than polling at recheckInterval, so it wakes only when there is
 // a fetch that could plausibly succeed.
 //
-//   till      time remaining in the current epoch.
-//   haveNow   the current epoch's document is cached.
-//   haveNext  the next epoch's document is cached.
+//	till      time remaining in the current epoch.
+//	haveNow   the current epoch's document is cached.
+//	haveNext  the next epoch's document is cached.
 //
 // With both cached, sleep across the boundary plus the publish-and-cache
 // window so the new now+1 is ready when we wake. With only the current

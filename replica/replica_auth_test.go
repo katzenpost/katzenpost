@@ -32,10 +32,16 @@ const (
 	testDialTimeout      = 100 * time.Millisecond
 )
 
-// setupServer creates a test server with the given configuration
+// setupServer creates a test server with the given configuration.
+//
+// The server is shut down when the test (and its subtests) finish. Without
+// this, New() leaves live listeners and connector goroutines running past the
+// test body; leaked across the rest of the package they cause port contention
+// and races, a recurring source of flakiness in this test.
 func setupServer(t *testing.T, cfg *config.Config) *Server {
 	s, err := New(cfg)
 	require.NoError(t, err)
+	t.Cleanup(s.Shutdown)
 	return s
 }
 

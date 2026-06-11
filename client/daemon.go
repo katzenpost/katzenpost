@@ -359,6 +359,7 @@ func isLocalRequest(r *Request) bool {
 		r.NextMessageBoxIndex != nil ||
 		r.GetMessageBoxIndexCounter != nil ||
 		r.GetPKIDocument != nil ||
+		r.GetDirectoryAuthorities != nil ||
 		r.CreateCourierEnvelopesFromPayload != nil ||
 		r.CreateCourierEnvelopesFromPayloads != nil ||
 		r.CreateCourierEnvelopesFromTombstoneRange != nil ||
@@ -414,6 +415,8 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.getMessageBoxIndexCounter(request)
 	case request.GetPKIDocument != nil:
 		d.getPKIDocument(request)
+	case request.GetDirectoryAuthorities != nil:
+		d.getDirectoryAuthorities(request)
 	case request.CreateCourierEnvelopesFromPayload != nil:
 		d.createCourierEnvelopesFromPayload(request)
 	case request.CreateCourierEnvelopesFromPayloads != nil:
@@ -603,7 +606,6 @@ func tryDecryptMKEMWithReplicas(
 	}
 	return nil, 0, errMKEMDecryptionFailed
 }
-
 
 func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
 	_, doc := d.client.CurrentDocument()
@@ -804,8 +806,6 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 
 	d.send(request)
 }
-
-
 
 // resendQueueFullBackoff is how long enqueueResend waits before re-arming
 // the ARQ timer when a client's resendCh is full. Must be short enough to
@@ -1166,4 +1166,3 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 	d.log.Infof("cleanupForAppID: cleaned %d ARQ, %d replies, %d decoys for App ID %x",
 		cleanedARQ, cleanedReplies, cleanedDecoys, appID[:])
 }
-

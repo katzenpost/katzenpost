@@ -419,7 +419,7 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 //
 // This is used for both read and write operations in the new Pigeonhole API.
 //
-// The daemon implements a finite state machine (FSM) for handling the stop-and-wait 
+// The daemon implements a finite state machine (FSM) for handling the stop-and-wait
 // ARQ protocol in the following cases.
 //   - For default write operations (writeCap != nil, readCap == nil,
 //     noIdempotentBoxAlreadyExists == false):
@@ -851,7 +851,7 @@ func (t *ThinClient) CancelResendingEncryptedMessage(envelopeHash *[32]byte) err
 // the reply is not received in time.
 //
 // The copy command instructs the courier to read from a temporary copy stream channel
-// and write the parsed envelopes to their destination channels. The courier performs 
+// and write the parsed envelopes to their destination channels. The courier performs
 // the following actions.
 //  1. Derives a ReadCap from the WriteCap.
 //  2. Reads boxes from the temporary channel.
@@ -1118,7 +1118,7 @@ func (t *ThinClient) CancelResendingCopyCommand(writeCapHash *[32]byte) error {
 // NextMessageBoxIndex increments a MessageBoxIndex using the BACAP NextIndex method.
 //
 // This method is used when sending multiple messages to different mailboxes using
-// the same WriteCap or ReadCap. It properly advances the cryptographic state with 
+// the same WriteCap or ReadCap. It properly advances the cryptographic state with
 // the following actions.
 //   - Incrementing the Idx64 counter.
 //   - Deriving new encryption and blinding keys using HKDF.

@@ -398,4 +398,3 @@ func SelfCheckResults(opsPerSecSolo, opsPerSecSaturated float64, numCPU int) {
 	selfCheckSphinxOpsPerSecSaturated.Set(opsPerSecSaturated)
 	selfCheckSphinxCores.Set(float64(numCPU))
 }
-

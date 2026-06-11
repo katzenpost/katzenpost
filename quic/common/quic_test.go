@@ -30,14 +30,14 @@ func TestQuicConnZeroValue(t *testing.T) {
 	// Test that zero value QuicConn would panic on method calls
 	// This demonstrates why the constructor is necessary
 	var qc QuicConn
-	
+
 	// These would panic with nil pointer dereference before our fix
 	defer func() {
 		if r := recover(); r == nil {
 			t.Errorf("Zero value QuicConn should panic on method calls")
 		}
 	}()
-	
+
 	// This should panic because Stream is nil
 	qc.Read(make([]byte, 10))
 }

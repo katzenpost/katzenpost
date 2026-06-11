@@ -54,9 +54,9 @@ func TestDaemonNewKeypair_Success(t *testing.T) {
 	defer listener.Shutdown()
 
 	d := &Daemon{
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
+		logbackend: logBackend,
+		log:        logBackend.GetLogger("test"),
+		listener:   listener,
 	}
 
 	// Generate a seed - just 32 random bytes
@@ -125,9 +125,9 @@ func TestDaemonNewKeypair_InvalidSeed(t *testing.T) {
 	defer listener.Shutdown()
 
 	d := &Daemon{
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
+		logbackend: logBackend,
+		log:        logBackend.GetLogger("test"),
+		listener:   listener,
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -223,17 +223,17 @@ func (m *mockIncomingConn) toIncomingConn(l *listener, logBackend *log.Backend) 
 			}
 			// Convert to Response and forward to channel
 			resp := &Response{
-				AppID:                                m.appID,
-				MessageSentEvent:                     thinResp.MessageSentEvent,
-				MessageReplyEvent:                    thinResp.MessageReplyEvent,
-				MessageIDGarbageCollected:            thinResp.MessageIDGarbageCollected,
-				NewKeypairReply:                      thinResp.NewKeypairReply,
-				EncryptReadReply:                     thinResp.EncryptReadReply,
-				EncryptWriteReply:                    thinResp.EncryptWriteReply,
-				StartResendingEncryptedMessageReply:  thinResp.StartResendingEncryptedMessageReply,
-				CancelResendingEncryptedMessageReply: thinResp.CancelResendingEncryptedMessageReply,
-				NextMessageBoxIndexReply:             thinResp.NextMessageBoxIndexReply,
-				GetMessageBoxIndexCounterReply:       thinResp.GetMessageBoxIndexCounterReply,
+				AppID:                                   m.appID,
+				MessageSentEvent:                        thinResp.MessageSentEvent,
+				MessageReplyEvent:                       thinResp.MessageReplyEvent,
+				MessageIDGarbageCollected:               thinResp.MessageIDGarbageCollected,
+				NewKeypairReply:                         thinResp.NewKeypairReply,
+				EncryptReadReply:                        thinResp.EncryptReadReply,
+				EncryptWriteReply:                       thinResp.EncryptWriteReply,
+				StartResendingEncryptedMessageReply:     thinResp.StartResendingEncryptedMessageReply,
+				CancelResendingEncryptedMessageReply:    thinResp.CancelResendingEncryptedMessageReply,
+				NextMessageBoxIndexReply:                thinResp.NextMessageBoxIndexReply,
+				GetMessageBoxIndexCounterReply:          thinResp.GetMessageBoxIndexCounterReply,
 				CreateCourierEnvelopesFromPayloadReply:  thinResp.CreateCourierEnvelopesFromPayloadReply,
 				CreateCourierEnvelopesFromPayloadsReply: thinResp.CreateCourierEnvelopesFromPayloadsReply,
 				StartResendingCopyCommandReply:          thinResp.StartResendingCopyCommandReply,
@@ -321,11 +321,11 @@ func TestDaemonEncryptRead_Success(t *testing.T) {
 	})
 
 	d := &Daemon{
-		cfg:                       cfg,
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
-		client:                    client,
+		cfg:        cfg,
+		logbackend: logBackend,
+		log:        logBackend.GetLogger("test"),
+		listener:   listener,
+		client:     client,
 	}
 
 	// Create a WriteCap and ReadCap for testing
@@ -402,10 +402,10 @@ func TestDaemonEncryptRead_NilReadCap(t *testing.T) {
 	defer listener.Shutdown()
 
 	d := &Daemon{
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
-		client:                    client,
+		logbackend: logBackend,
+		log:        logBackend.GetLogger("test"),
+		listener:   listener,
+		client:     client,
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -456,7 +456,6 @@ func TestDaemonEncryptWrite_Success(t *testing.T) {
 	require.NoError(t, err)
 	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
-
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
 	egressCh := make(chan *Request, 10)
@@ -479,11 +478,11 @@ func TestDaemonEncryptWrite_Success(t *testing.T) {
 	})
 
 	d := &Daemon{
-		cfg:                       cfg,
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
-		client:                    client,
+		cfg:        cfg,
+		logbackend: logBackend,
+		log:        logBackend.GetLogger("test"),
+		listener:   listener,
+		client:     client,
 	}
 
 	// Create a WriteCap for testing
@@ -562,11 +561,11 @@ func TestDaemonEncryptWrite_NilWriteCap(t *testing.T) {
 	defer listener.Shutdown()
 
 	d := &Daemon{
-		cfg:                       cfg,
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
-		client:                    client,
+		cfg:        cfg,
+		logbackend: logBackend,
+		log:        logBackend.GetLogger("test"),
+		listener:   listener,
+		client:     client,
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -609,10 +608,10 @@ func TestDaemonEncryptWrite_NilWriteCap(t *testing.T) {
 
 func TestARQCleanupOnAppDisconnect(t *testing.T) {
 	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
+		arqSurbIDMap: make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		replies:      make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:       make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		replyLock:    new(sync.Mutex),
 	}
 
 	logBackend, err := log.New("", "debug", false)
@@ -672,10 +671,10 @@ func TestARQCleanupOnAppDisconnect(t *testing.T) {
 
 func TestArqDoResendWithNilConnection(t *testing.T) {
 	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
+		arqSurbIDMap: make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		replies:      make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:       make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		replyLock:    new(sync.Mutex),
 	}
 
 	logBackend, err := log.New("", "debug", false)
@@ -738,10 +737,10 @@ func TestArqDoResendWithHighRetryCountAndNilConnection(t *testing.T) {
 	// This test verifies that the ARQ continues to work even after many retries
 	// since the new Pigeonhole ARQ retries forever until cancelled.
 	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
+		arqSurbIDMap: make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		replies:      make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:       make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		replyLock:    new(sync.Mutex),
 	}
 
 	logBackend, err := log.New("", "debug", false)
@@ -795,10 +794,10 @@ func TestArqDoResendWithHighRetryCountAndNilConnection(t *testing.T) {
 
 func TestRaceConditionARQResendAfterDisconnect(t *testing.T) {
 	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
+		arqSurbIDMap: make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		replies:      make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:       make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		replyLock:    new(sync.Mutex),
 	}
 
 	logBackend, err := log.New("", "debug", false)
@@ -913,7 +912,6 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	require.NoError(err)
 	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
-
 	// A mock PKIClient is supplied so that, should the synchronous
 	// WaitForCurrentDocument -> updateDocument fallback ever be
 	// reached (for example at an epoch boundary where the cached
@@ -942,11 +940,11 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	})
 
 	d := &Daemon{
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test-alice-bob"),
-		listener:                  listener,
-		client:                    client,
-		cfg:                       cfg,
+		logbackend: logBackend,
+		log:        logBackend.GetLogger("test-alice-bob"),
+		listener:   listener,
+		client:     client,
+		cfg:        cfg,
 	}
 
 	t.Log("=== Step 1: Alice creates WriteCap and derives ReadCap for Bob ===")
@@ -1118,7 +1116,6 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 	require.NoError(err)
 	cfg.Listen.Tcp.Address = fmt.Sprintf("127.0.0.1:%d", port)
 
-
 	client := &Client{cfg: cfg}
 	rates := &Rates{}
 	egressCh := make(chan *Request, 10)
@@ -1146,14 +1143,14 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 	})
 
 	d := &Daemon{
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test-multi-msg"),
-		listener:                  listener,
-		client:                    client,
-		cfg:                       cfg,
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		replyLock:                 new(sync.Mutex),
+		logbackend:         logBackend,
+		log:                logBackend.GetLogger("test-multi-msg"),
+		listener:           listener,
+		client:             client,
+		cfg:                cfg,
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replyLock:          new(sync.Mutex),
 	}
 
 	t.Log("=== Setup: Alice creates WriteCap and gives Bob the ReadCap ===")
@@ -1273,11 +1270,11 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 
 func TestArqDoResendWithNilListener(t *testing.T) {
 	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
-		listener:                  nil,
+		arqSurbIDMap: make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		replies:      make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:       make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		replyLock:    new(sync.Mutex),
+		listener:     nil,
 	}
 
 	logBackend, err := log.New("", "debug", false)
@@ -1392,15 +1389,15 @@ func TestARQSuccessWritePayload(t *testing.T) {
 	defer listener.Shutdown()
 
 	d := &Daemon{
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		client:                    client,
-		listener:                  listener,
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
+		logbackend:         logBackend,
+		log:                logBackend.GetLogger("test"),
+		client:             client,
+		listener:           listener,
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:             make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		replyLock:          new(sync.Mutex),
 	}
 
 	// Use pre-generated CTIDH keypair for the client envelope key
@@ -1631,13 +1628,13 @@ func TestStartResendingEncryptedMessage_ValidationErrors(t *testing.T) {
 	defer listener.Shutdown()
 
 	d := &Daemon{
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
-		client:                    client,
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		replyLock:                 new(sync.Mutex),
+		logbackend:         logBackend,
+		log:                logBackend.GetLogger("test"),
+		listener:           listener,
+		client:             client,
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replyLock:          new(sync.Mutex),
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -1827,13 +1824,13 @@ func TestCancelResendingEncryptedMessage(t *testing.T) {
 	defer listener.Shutdown()
 
 	d := &Daemon{
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
-		client:                    client,
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		replyLock:                 new(sync.Mutex),
+		logbackend:         logBackend,
+		log:                logBackend.GetLogger("test"),
+		listener:           listener,
+		client:             client,
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replyLock:          new(sync.Mutex),
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -2022,13 +2019,13 @@ func TestCancelResendingDuringARQRetry(t *testing.T) {
 	defer listener.Shutdown()
 
 	d := &Daemon{
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
-		client:                    client,
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
-		replyLock:                 new(sync.Mutex),
+		logbackend:         logBackend,
+		log:                logBackend.GetLogger("test"),
+		listener:           listener,
+		client:             client,
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replyLock:          new(sync.Mutex),
 	}
 
 	testAppID := &[AppIDLength]byte{}
@@ -2144,14 +2141,14 @@ func setupDaemonWithMockConn(t *testing.T) (*Daemon, *[AppIDLength]byte, chan *R
 	})
 
 	d := &Daemon{
-		cfg:                       cfg,
-		logbackend:                logBackend,
-		log:                       logBackend.GetLogger("test"),
-		listener:                  listener,
-		client:                    client,
-		replyLock:                 new(sync.Mutex),
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		cfg:                cfg,
+		logbackend:         logBackend,
+		log:                logBackend.GetLogger("test"),
+		listener:           listener,
+		client:             client,
+		replyLock:          new(sync.Mutex),
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 	}
 
 	testAppID := &[AppIDLength]byte{}

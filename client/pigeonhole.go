@@ -10,9 +10,12 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/mkem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
+	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/thin"
@@ -1039,6 +1042,67 @@ func (d *Daemon) sendGetPKIDocumentError(request *Request, epoch uint64, errorCo
 	})
 }
 
+// getDirectoryAuthorities returns the directory authority descriptors the
+// daemon is configured with, drawn from its voting authority peer list. A
+// thin client cannot see this configuration itself, yet may wish to map a
+// PKI document's signature fingerprints to authority identifiers.
+func (d *Daemon) getDirectoryAuthorities(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	if d.cfg.VotingAuthority == nil || len(d.cfg.VotingAuthority.Peers) == 0 {
+		d.sendGetDirectoryAuthoritiesError(request, thin.ThinClientErrorServiceUnavailable)
+		return
+	}
+
+	authorities := make([]*thin.DirectoryAuthority, 0, len(d.cfg.VotingAuthority.Peers))
+	for _, peer := range d.cfg.VotingAuthority.Peers {
+		authorities = append(authorities, dirauthDescriptor(peer))
+	}
+
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		GetDirectoryAuthoritiesReply: &thin.GetDirectoryAuthoritiesReply{
+			QueryID:     request.GetDirectoryAuthorities.QueryID,
+			Authorities: authorities,
+			ErrorCode:   thin.ThinClientSuccess,
+		},
+	})
+}
+
+// dirauthDescriptor projects a configured voting authority peer onto the
+// thin client's DirectoryAuthority view, encoding the keys as PEM so the
+// caller need not link a Go key type to interpret them.
+func dirauthDescriptor(peer *vServerConfig.Authority) *thin.DirectoryAuthority {
+	da := &thin.DirectoryAuthority{
+		Identifier:         peer.Identifier,
+		PKISignatureScheme: peer.PKISignatureScheme,
+		WireKEMScheme:      peer.WireKEMScheme,
+		Addresses:          peer.Addresses,
+	}
+	if peer.IdentityPublicKey != nil {
+		da.IdentityPublicKeyPem = signpem.ToPublicPEMString(peer.IdentityPublicKey)
+		da.IdentityKeyHash = hash.Sum256From(peer.IdentityPublicKey)
+	}
+	if peer.LinkPublicKey.PublicKey != nil {
+		da.LinkPublicKeyPem = kempem.ToPublicPEMString(peer.LinkPublicKey.PublicKey)
+	}
+	return da
+}
+
+func (d *Daemon) sendGetDirectoryAuthoritiesError(request *Request, errorCode uint8) {
+	d.sendError(request.AppID, &Response{
+		AppID: request.AppID,
+		GetDirectoryAuthoritiesReply: &thin.GetDirectoryAuthoritiesReply{
+			QueryID:   request.GetDirectoryAuthorities.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
 // createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
 func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	return createEnvelopeFromMessageWithPadding(msg, doc, isRead, replyIndex, nil)
@@ -1809,9 +1873,9 @@ func (d *Daemon) sendCancelResendingCopyCommandError(request *Request, errorCode
 type payloadErrorAction int
 
 const (
-	payloadActionReturnError      payloadErrorAction = iota
-	payloadActionRetry                               // Retry (BoxIDNotFound on read)
-	payloadActionIdempotentSuccess                   // Treat as success (BoxAlreadyExists on write)
+	payloadActionReturnError       payloadErrorAction = iota
+	payloadActionRetry                                // Retry (BoxIDNotFound on read)
+	payloadActionIdempotentSuccess                    // Treat as success (BoxAlreadyExists on write)
 )
 
 // determinePayloadErrorAction decides what to do with a decryption error
