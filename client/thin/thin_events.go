@@ -705,4 +705,3 @@ func (e *VoucherDeriveStreamReply) String() string {
 	}
 	return "VoucherDeriveStreamReply: success"
 }
-
