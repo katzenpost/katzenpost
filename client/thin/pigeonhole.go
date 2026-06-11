@@ -156,7 +156,7 @@ func errorCodeToSentinel(errorCode uint8) error {
 // NewKeypair creates a new keypair for use with the Pigeonhole protocol.
 //
 // This method generates a WriteCap and ReadCap from the provided seed using
-// the BACAP (Blinding-and-Capability) protocol. The WriteCap should be stored
+// the BACAP (blinding-and-capability) protocol. The WriteCap should be stored
 // securely for writing messages, while the ReadCap can be shared with others
 // to allow them to read messages.
 //
@@ -241,7 +241,7 @@ func (t *ThinClient) NewKeypair(seed []byte) (writeCap *bacap.WriteCap, readCap 
 // EncryptRead encrypts a read operation for a given read capability.
 //
 // This method prepares an encrypted read request that can be sent to the
-// courier service to retrieve a message from a pigeonhole box. The returned
+// courier service to retrieve a message from a Pigeonhole box. The returned
 // ciphertext should be sent via StartResendingEncryptedMessage.
 //
 // Parameters:
@@ -324,7 +324,7 @@ func (t *ThinClient) EncryptRead(readCap *bacap.ReadCap, messageBoxIndex *bacap.
 // EncryptWrite encrypts a write operation for a given write capability.
 //
 // This method prepares an encrypted write request that can be sent to the
-// courier service to store a message in a pigeonhole box. The returned
+// courier service to store a message in a Pigeonhole box. The returned
 // ciphertext should be sent via StartResendingEncryptedMessage.
 //
 // Parameters:
@@ -409,21 +409,22 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 
 // StartResendingEncryptedMessage sends an encrypted message via ARQ and blocks until completion.
 //
-// This method BLOCKS until a reply is received. CancelResendingEncryptedMessage is only
+// This method blocks until a reply is received. CancelResendingEncryptedMessage is only
 // useful when called from another goroutine to interrupt this blocking call.
 //
-// The message will be resent periodically until either:
-//   - A reply is received from the courier (this method returns)
-//   - The message is cancelled via CancelResendingEncryptedMessage (from another goroutine)
-//   - The client is shut down
+// The message will be resent periodically until until one of the following is true:
+//   - A reply is received from the courier (this method returns).
+//   - The message is canceled via CancelResendingEncryptedMessage (from another goroutine).
+//   - The client is shut down.
 //
 // This is used for both read and write operations in the new Pigeonhole API.
 //
-// The daemon implements a finite state machine (FSM) for handling the stop-and-wait ARQ protocol:
+// The daemon implements a finite state machine (FSM) for handling the stop-and-wait 
+// ARQ protocol in the following cases.
 //   - For default write operations (writeCap != nil, readCap == nil,
 //     noIdempotentBoxAlreadyExists == false):
 //     The method waits for an ACK from the courier and returns immediately.
-//     The ACK confirms the courier received the envelope and will dispatch it
+//     The ACK confirms that the courier received the envelope and will dispatch it
 //     to both shard replicas. This requires only a single round-trip through
 //     the mixnet.
 //   - For BoxAlreadyExists-aware writes (noIdempotentBoxAlreadyExists == true):
@@ -486,7 +487,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 //
 // Use it when polling a box that may not yet have been written, for
 // instance when a reader peeks ahead at a peer's next message before
-// that peer has produced it; the regular variant would block until
+// that peer has produced it. The regular variant would block until
 // the box appeared, which can be many round trips.
 //
 // As with StartResendingEncryptedMessage, an in-flight call may be
@@ -499,7 +500,7 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCa
 // StartResendingEncryptedMessage save that it returns
 // ErrBoxAlreadyExists when the replica reports that the destination
 // box has already been written, rather than swallowing the condition
-// as idempotent success. Use it when one needs to distinguish a
+// as idempotent success. Use it to distinguish a
 // fresh write from a repeat: for instance, when implementing
 // optimistic concurrency on top of the channel, or when establishing
 // whether a particular call actually caused a state change at the
@@ -635,7 +636,7 @@ func (t *ThinClient) startResendingEncryptedMessageImpl(
 // one round trip per box. A `window` of zero asks the daemon to choose a
 // default derived from the send rate and round-trip time.
 //
-// It blocks until every box has been acknowledged (success) or the transfer
+// WriteStrea blocks until every box has been acknowledged (success) or the transfer
 // fails, returning the message box index immediately after the last box
 // written, ready to seed a subsequent write on the same channel.
 func (t *ThinClient) WriteStream(writeCap *bacap.WriteCap, startIndex *bacap.MessageBoxIndex, payload []byte, window int) (nextIndex *bacap.MessageBoxIndex, err error) {
@@ -699,7 +700,7 @@ func (t *ThinClient) WriteStream(writeCap *bacap.WriteCap, startIndex *bacap.Mes
 // daemon's windowed selective-ack (SACK) ARQ, the read counterpart of
 // WriteStream. The daemon keeps up to `window` boxes in flight at once,
 // retransmitting only those whose payloads time out, decrypts each box, and
-// reassembles them in order. A `window` of zero asks the daemon to choose a
+// reassembles them in order. A `window` of zero causes the daemon to choose a
 // default.
 //
 // It blocks until every box has been read (success) or the transfer fails,
@@ -764,11 +765,11 @@ func (t *ThinClient) ReadStream(readCap *bacap.ReadCap, startIndex *bacap.Messag
 
 // CancelResendingEncryptedMessage cancels ARQ resending for an encrypted message.
 //
-// This method stops the automatic repeat request (ARQ) for a previously started
-// encrypted message transmission. This is useful when:
-//   - A reply has been received through another channel
-//   - The operation should be aborted
-//   - The message is no longer needed
+// This method stops the ARQ for a previously started
+// encrypted message transmission. This is useful in the following cases.
+//   - A reply has been received through another channel.
+//   - The operation should be aborted.
+//   - The message is no longer needed.
 //
 // Parameters:
 //   - envelopeHash: Hash of the courier envelope to cancel
@@ -845,17 +846,18 @@ func (t *ThinClient) CancelResendingEncryptedMessage(envelopeHash *[32]byte) err
 
 // StartResendingCopyCommand sends a copy command via ARQ and blocks until completion.
 //
-// This method BLOCKS until a reply is received. It uses the ARQ (Automatic Repeat reQuest)
+// This method blocks until a reply is received. It uses the ARQ
 // mechanism to reliably send copy commands to the courier, automatically retrying if
 // the reply is not received in time.
 //
 // The copy command instructs the courier to read from a temporary copy stream channel
-// and write the parsed envelopes to their destination channels. The courier:
-//  1. Derives a ReadCap from the WriteCap
-//  2. Reads boxes from the temporary channel
-//  3. Parses boxes into CourierEnvelopes
-//  4. Sends each envelope to intermediate replicas for replication
-//  5. Writes tombstones to clean up the temporary channel
+// and write the parsed envelopes to their destination channels. The courier performs 
+// the following actions.
+//  1. Derives a ReadCap from the WriteCap.
+//  2. Reads boxes from the temporary channel.
+//  3. Parses boxes into CourierEnvelopes.
+//  4. Sends each envelope to intermediate replicas for replication.
+//  5. Writes tombstones to clean up the temporary channel.
 //
 // Parameters:
 //   - writeCap: Write capability for the temporary copy stream channel
@@ -1034,11 +1036,11 @@ func (t *ThinClient) StartResendingCopyCommandWithCourier(
 
 // CancelResendingCopyCommand cancels ARQ resending for a copy command.
 //
-// This method stops the automatic repeat request (ARQ) for a previously started
+// This method stops the ARQ for a previously started
 // copy command. This is useful when:
-//   - A reply has been received through another channel
-//   - The operation should be aborted
-//   - The copy command is no longer needed
+//   - A reply has been received through another channel.
+//   - The operation should be aborted.
+//   - The copy command is no longer needed.
 //
 // Parameters:
 //   - writeCapHash: Hash of the serialized WriteCap to cancel
@@ -1116,10 +1118,11 @@ func (t *ThinClient) CancelResendingCopyCommand(writeCapHash *[32]byte) error {
 // NextMessageBoxIndex increments a MessageBoxIndex using the BACAP NextIndex method.
 //
 // This method is used when sending multiple messages to different mailboxes using
-// the same WriteCap or ReadCap. It properly advances the cryptographic state by:
-//   - Incrementing the Idx64 counter
-//   - Deriving new encryption and blinding keys using HKDF
-//   - Updating the HKDF state for the next iteration
+// the same WriteCap or ReadCap. It properly advances the cryptographic state with 
+// the following actions.
+//   - Incrementing the Idx64 counter.
+//   - Deriving new encryption and blinding keys using HKDF.
+//   - Updating the HKDF state for the next iteration.
 //
 // The client daemon handles the cryptographic operations using our BACAP library
 // documented here: https://pkg.go.dev/github.com/katzenpost/hpqc/bacap
@@ -1270,17 +1273,17 @@ type CreateEnvelopesResult struct {
 
 // CreateCourierEnvelopesFromPayload packs a payload of arbitrary
 // size (up to 10 MB) into properly sized CopyStreamElement chunks
-// for one destination channel. Each chunk is a serialised
+// for one destination channel. Each chunk is a serialized
 // CopyStreamElement, ready to be written to a box via EncryptWrite
-// followed by StartResendingEncryptedMessage; the caller marks the
+// followed by StartResendingEncryptedMessage. The caller marks the
 // boundaries of the stream with the isStart and isLast flags.
 //
-// This method is stateless: no daemon state is kept between calls,
+// This method is stateless: no daemon state is kept between calls, and
 // each invocation runs a fresh encoder and flushes before returning.
 // The 10 MB cap guards against accidental memory exhaustion.
 //
 // Once the chunks have been written to a temporary copy stream, a
-// copy command (StartResendingCopyCommand) is despatched to a
+// copy command (StartResendingCopyCommand) is dispatched to a
 // courier with the WriteCap for that temporary stream; the courier
 // reads the chunks back and dispatches each envelope to its
 // destination box.
@@ -1363,9 +1366,9 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(payload []byte, destWrite
 // because the shared encoder runs all envelopes together rather than
 // padding the final box of each destination independently.
 //
-// This method is stateless: the buffer argument carries any residual
+// This method is stateless; the buffer argument carries any residual
 // encoder state across calls in place of daemon-side bookkeeping.
-// Pass nil for buffer on the first call and the Buffer returned by
+// Pass nil for buffer on the first call and the buffer returned by
 // the previous call thereafter; set isLast on the final call so that
 // the encoder flushes its tail.
 //
@@ -1529,9 +1532,9 @@ type TombstoneRangeResult struct {
 }
 
 // TombstoneRange prepares the encrypted envelopes needed to
-// tombstone a consecutive range of pigeonhole boxes beginning at the
+// tombstone a consecutive range of Pigeonhole boxes beginning at the
 // supplied MessageBoxIndex. A tombstone is a signed empty payload
-// that the replica recognises as a deletion marker; the daemon
+// that the replica recognizes as a deletion marker; the daemon
 // constructs one by signing rather than encrypting whenever
 // EncryptWrite is invoked with an empty plaintext.
 //

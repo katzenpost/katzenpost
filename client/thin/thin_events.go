@@ -120,7 +120,7 @@ type MessageReplyEvent struct {
 	Payload []byte `cbor:"payload"`
 
 	// ReplyIndex is the index of the reply that was actually used when processing
-	// this message. This is particularly relevant for pigeonhole channel reads.
+	// this message. This is particularly relevant for Pigeonhole channel reads.
 	ReplyIndex *uint8 `cbor:"reply_index,omitempty"`
 
 	// ErrorCode indicates the success or failure of the message operation.
@@ -213,9 +213,9 @@ func (e *NewPKIDocumentEvent) String() string {
 
 // NewKeypairReply is the reply to a NewKeypair request.
 type NewKeypairReply struct {
-	// QueryID is used for correlating this reply with the NewKeypair request
+	// QueryID is used for correlating this reply with the NewKeypair request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-	// WriteCap is the write capability that should be stored for channel
+	// WriteCap is the write capability that should be stored for the channel.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
 	// ReadCap is the read capability that can be shared with others to allow
 	// them to read messages from this channel.
@@ -230,7 +230,6 @@ type NewKeypairReply struct {
 
 // String returns a string representation of the NewKeypairReply.
 func (e *NewKeypairReply) String() string {
-	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("NewKeypairReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
 	return "NewKeypairReply: success"
@@ -238,11 +237,11 @@ func (e *NewKeypairReply) String() string {
 
 // EncryptReadReply is the reply to an EncryptRead request.
 type EncryptReadReply struct {
-	// QueryID is used for correlating this reply with the EncryptRead request
+	// QueryID is used for correlating this reply with the EncryptRead request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// MessageCiphertext is the encrypted message ciphertext that should be sent
-	// to the Courier service.
+	// to the courier service.
 	MessageCiphertext []byte `cbor:"message_ciphertext"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
@@ -276,7 +275,7 @@ type EncryptWriteReply struct {
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// MessageCiphertext is the encrypted message ciphertext that should be sent
-	// to the Courier service.
+	// to the courier service.
 	MessageCiphertext []byte `cbor:"message_ciphertext"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
@@ -307,7 +306,7 @@ func (e *EncryptWriteReply) String() string {
 // StartResendingEncryptedMessageReply is the reply to a StartResendingEncryptedMessage request.
 type StartResendingEncryptedMessageReply struct {
 
-	// QueryID is used for correlating this reply with the StartResendingEncryptedMessage request
+	// QueryID is used for correlating this reply with the StartResendingEncryptedMessage request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// Plaintext is the plaintext message that was read from the channel.
@@ -406,17 +405,17 @@ func (e *CancelResendingEncryptedMessageReply) String() string {
 
 // StartResendingCopyCommandReply is the reply to a StartResendingCopyCommand request.
 type StartResendingCopyCommandReply struct {
-	// QueryID is used for correlating this reply with the StartResendingCopyCommand request
+	// QueryID is used for correlating this reply with the StartResendingCopyCommand request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ErrorCode indicates the reason for a failure to execute the copy command if any.
 	// Otherwise it is set to zero for success.
 	ErrorCode uint8 `cbor:"error_code"`
 
-	// ReplicaErrorCode is the pigeonhole replica ErrorCode that caused
+	// ReplicaErrorCode is the Pigeonhole replica ErrorCode that caused
 	// the Copy command to abort on the courier. Meaningful only when
 	// ErrorCode indicates a Copy failure and the courier identified a
-	// specific replica-side reason (e.g. ReplicaErrorBoxAlreadyExists).
+	// specific replica-side reason (e.g., ReplicaErrorBoxAlreadyExists).
 	ReplicaErrorCode uint8 `cbor:"replica_error_code,omitempty"`
 
 	// FailedEnvelopeIndex is the 1-based sequential position in the
@@ -453,7 +452,7 @@ func (e *CancelResendingCopyCommandReply) String() string {
 
 // NextMessageBoxIndexReply is the reply to a NextMessageBoxIndex request.
 type NextMessageBoxIndexReply struct {
-	// QueryID is used for correlating this reply with the NextMessageBoxIndex request
+	// QueryID is used for correlating this reply with the NextMessageBoxIndex request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// NextMessageBoxIndex is the incremented message box index.
