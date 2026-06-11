@@ -642,7 +642,6 @@ type ThinClose struct {
 
 // Response is the client daemon's response message to the thin client.
 type Response struct {
-
 	SessionTokenReply *SessionTokenReply `cbor:"session_token_reply"`
 
 	// ShutdownEvent is sent when the client daemon is shutting down.
@@ -734,7 +733,6 @@ type Response struct {
 // Request is the thin client's request message to the client daemon.
 // It can result in one or more Response messages being sent back to the thin client.
 type Request struct {
-
 	SessionToken *SessionToken `cbor:"session_token"`
 
 	// ThinClose is used to indicate that the thin client is disconnecting

@@ -90,7 +90,6 @@ func (c *Client) Shutdown() {
 	c.log.Infof("Client shutdown complete in %v", time.Since(shutdownStart))
 }
 
-
 func (c *Client) Start() error {
 	c.log.Info("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 

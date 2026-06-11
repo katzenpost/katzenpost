@@ -116,9 +116,9 @@ func TestTrunnelRoundTrip(t *testing.T) {
 				orig := &CourierQueryReply{
 					ReplyType: 1,
 					CopyCommandReply: &CopyCommandReply{
-						Status:               1,
-						ErrorCode:            0,
-						FailedEnvelopeIndex:  0,
+						Status:              1,
+						ErrorCode:           0,
+						FailedEnvelopeIndex: 0,
 					},
 				}
 				assertRoundTrip(t, orig.Bytes(), func(b []byte) ([]byte, error) {

@@ -95,12 +95,12 @@ type Options struct {
 // Result captures everything an invariant check or a PBT failure
 // report needs to inspect a single iteration.
 type Result struct {
-	IterationLabel  string
-	Started         time.Time
-	Finished        time.Time
-	Setup           StageResult
-	ApplyChaos      StageResult
-	TestSuite       StageResult
+	IterationLabel string
+	Started        time.Time
+	Finished       time.Time
+	Setup          StageResult
+	ApplyChaos     StageResult
+	TestSuite      StageResult
 	// PigeonholeCpRoundtrip captures the result of the
 	// pigeonhole-cp end-to-end file roundtrip when the orchestrator
 	// is configured with a script path. Empty Stage means the stage
@@ -133,18 +133,18 @@ type StageResult struct {
 // metrics the invariant checks need; everything else is preserved as
 // the raw Series map keyed by metric name.
 type Snapshot struct {
-	Taken                       time.Time
-	DroppedPacketsTotal         float64
-	DroppedInvalidTotal         float64
-	DroppedDeadlineBlownTotal   float64
-	DroppedRateLimitTotal       float64
-	DroppedOutgoingTotal        float64
-	ReplayedPacketsTotal        float64
-	KaetzchenDroppedMixPackets  float64
-	KaetzchenDroppedPackets     float64
-	KaetzchenDroppedRequests    float64
-	KaetzchenFailedRequests     float64
-	CancelledOutgoingConns      float64
+	Taken                      time.Time
+	DroppedPacketsTotal        float64
+	DroppedInvalidTotal        float64
+	DroppedDeadlineBlownTotal  float64
+	DroppedRateLimitTotal      float64
+	DroppedOutgoingTotal       float64
+	ReplayedPacketsTotal       float64
+	KaetzchenDroppedMixPackets float64
+	KaetzchenDroppedPackets    float64
+	KaetzchenDroppedRequests   float64
+	KaetzchenFailedRequests    float64
+	CancelledOutgoingConns     float64
 	// ReasonDrops is sum by (reason) for the labelled counter.
 	ReasonDrops map[string]float64
 	// CourierReasonDrops mirrors the above for the courier.

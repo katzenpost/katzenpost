@@ -65,11 +65,11 @@ func TestHandleSessionTokenNewClient(t *testing.T) {
 	token := [16]byte{10, 20, 30}
 
 	c := &incomingConn{
-		listener:       l,
-		appID:          appID,
-		sendWake:       make(chan struct{}, 1),
-		doneCh:         make(chan struct{}),
-		log:            l.logBackend.GetLogger("test"),
+		listener: l,
+		appID:    appID,
+		sendWake: make(chan struct{}, 1),
+		doneCh:   make(chan struct{}),
+		log:      l.logBackend.GetLogger("test"),
 	}
 
 	l.connsLock.Lock()
@@ -114,11 +114,11 @@ func TestHandleSessionTokenResume(t *testing.T) {
 
 	// New connection with a different appID
 	c := &incomingConn{
-		listener:       l,
-		appID:          newAppID,
-		sendWake:       make(chan struct{}, 1),
-		doneCh:         make(chan struct{}),
-		log:            l.logBackend.GetLogger("test"),
+		listener: l,
+		appID:    newAppID,
+		sendWake: make(chan struct{}, 1),
+		doneCh:   make(chan struct{}),
+		log:      l.logBackend.GetLogger("test"),
 	}
 
 	l.connsLock.Lock()
@@ -184,11 +184,11 @@ func TestHandleSessionTokenResumeFlushesQueuedReplies(t *testing.T) {
 
 	// Reconnect with new connection
 	c := &incomingConn{
-		listener:       l,
-		appID:          newAppID,
-		sendWake:       make(chan struct{}, 1),
-		doneCh:         make(chan struct{}),
-		log:            l.logBackend.GetLogger("test"),
+		listener: l,
+		appID:    newAppID,
+		sendWake: make(chan struct{}, 1),
+		doneCh:   make(chan struct{}),
+		log:      l.logBackend.GetLogger("test"),
 	}
 	l.connsLock.Lock()
 	l.conns[*newAppID] = c
@@ -234,13 +234,13 @@ func TestOnClosedConnExplicitClose(t *testing.T) {
 	token := [16]byte{10, 20, 30}
 
 	c := &incomingConn{
-		listener:       l,
-		appID:          appID,
-		sendWake:       make(chan struct{}, 1),
-		doneCh:         make(chan struct{}),
-		log:            l.logBackend.GetLogger("test"),
-		clientToken:    &token,
-		explicitClose:  true,
+		listener:      l,
+		appID:         appID,
+		sendWake:      make(chan struct{}, 1),
+		doneCh:        make(chan struct{}),
+		log:           l.logBackend.GetLogger("test"),
+		clientToken:   &token,
+		explicitClose: true,
 	}
 
 	// Register the token
@@ -287,13 +287,13 @@ func TestOnClosedConnUnintentionalDisconnect(t *testing.T) {
 	token := [16]byte{10, 20, 30}
 
 	c := &incomingConn{
-		listener:       l,
-		appID:          appID,
-		sendWake:       make(chan struct{}, 1),
-		doneCh:         make(chan struct{}),
-		log:            l.logBackend.GetLogger("test"),
-		clientToken:    &token,
-		explicitClose:  false, // unintentional disconnect
+		listener:      l,
+		appID:         appID,
+		sendWake:      make(chan struct{}, 1),
+		doneCh:        make(chan struct{}),
+		log:           l.logBackend.GetLogger("test"),
+		clientToken:   &token,
+		explicitClose: false, // unintentional disconnect
 	}
 
 	// Register the token
@@ -339,13 +339,13 @@ func TestGraceTimerExpiry(t *testing.T) {
 	token := [16]byte{10, 20, 30}
 
 	c := &incomingConn{
-		listener:       l,
-		appID:          appID,
-		sendWake:       make(chan struct{}, 1),
-		doneCh:         make(chan struct{}),
-		log:            l.logBackend.GetLogger("test"),
-		clientToken:    &token,
-		explicitClose:  false,
+		listener:      l,
+		appID:         appID,
+		sendWake:      make(chan struct{}, 1),
+		doneCh:        make(chan struct{}),
+		log:           l.logBackend.GetLogger("test"),
+		clientToken:   &token,
+		explicitClose: false,
 	}
 
 	l.clientTokensLock.Lock()
@@ -394,13 +394,13 @@ func TestGraceTimerCancelledOnResume(t *testing.T) {
 	token := [16]byte{10, 20, 30}
 
 	c := &incomingConn{
-		listener:       l,
-		appID:          appID,
-		sendWake:       make(chan struct{}, 1),
-		doneCh:         make(chan struct{}),
-		log:            l.logBackend.GetLogger("test"),
-		clientToken:    &token,
-		explicitClose:  false,
+		listener:      l,
+		appID:         appID,
+		sendWake:      make(chan struct{}, 1),
+		doneCh:        make(chan struct{}),
+		log:           l.logBackend.GetLogger("test"),
+		clientToken:   &token,
+		explicitClose: false,
 	}
 
 	l.clientTokensLock.Lock()
@@ -417,11 +417,11 @@ func TestGraceTimerCancelledOnResume(t *testing.T) {
 	// Immediately reconnect with new connection
 	newAppID := &[AppIDLength]byte{4, 5, 6}
 	c2 := &incomingConn{
-		listener:       l,
-		appID:          newAppID,
-		sendWake:       make(chan struct{}, 1),
-		doneCh:         make(chan struct{}),
-		log:            l.logBackend.GetLogger("test"),
+		listener: l,
+		appID:    newAppID,
+		sendWake: make(chan struct{}, 1),
+		doneCh:   make(chan struct{}),
+		log:      l.logBackend.GetLogger("test"),
 	}
 	l.connsLock.Lock()
 	l.conns[*newAppID] = c2
@@ -585,13 +585,13 @@ func TestOnClosedConnLegacyClient(t *testing.T) {
 
 	appID := &[AppIDLength]byte{1, 2, 3}
 	c := &incomingConn{
-		listener:       l,
-		appID:          appID,
-		sendWake:       make(chan struct{}, 1),
-		doneCh:         make(chan struct{}),
-		log:            l.logBackend.GetLogger("test"),
-		clientToken:    nil, // no token -- legacy client
-		explicitClose:  false,
+		listener:      l,
+		appID:         appID,
+		sendWake:      make(chan struct{}, 1),
+		doneCh:        make(chan struct{}),
+		log:           l.logBackend.GetLogger("test"),
+		clientToken:   nil, // no token -- legacy client
+		explicitClose: false,
 	}
 
 	l.connsLock.Lock()

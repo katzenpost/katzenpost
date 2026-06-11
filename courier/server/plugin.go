@@ -219,12 +219,12 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 	}
 
 	courier := &Courier{
-		server:          s,
-		log:             s.logBackend.GetLogger("courier"),
-		cmds:            cmds,
-		geo:             s.cfg.SphinxGeometry,
-		envelopeScheme:  scheme,
-		pigeonholeGeo:   pigeonholeGeo,
+		server:         s,
+		log:            s.logBackend.GetLogger("courier"),
+		cmds:           cmds,
+		geo:            s.cfg.SphinxGeometry,
+		envelopeScheme: scheme,
+		pigeonholeGeo:  pigeonholeGeo,
 		dedupCache:     make(map[[hash.HashSize]byte]*CourierBookKeeping),
 		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
 		copyDedupCache: make(map[[hash.HashSize]byte]*CopyCommandState),

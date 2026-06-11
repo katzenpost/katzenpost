@@ -125,8 +125,6 @@ func TestHashIdentityKey(t *testing.T) {
 	require.NotEqual(t, result, result3)
 }
 
-
-
 func newTestWriteCap(t *testing.T) *bacap.WriteCap {
 	t.Helper()
 	wc, err := bacap.NewWriteCap(rand.Reader)
@@ -429,13 +427,13 @@ func TestStartResendingEncryptedMessageWriteSuccess(t *testing.T) {
 	}()
 
 	result, err := tc.StartResendingEncryptedMessage(
-		nil,                 // readCap (nil = write)
-		newTestWriteCap(t),   // writeCap
-		nil,                 // nextMessageIndex
-		nil,                 // replyIndex
-		[]byte("desc"),      // envelopeDescriptor
-		[]byte("cipher"),    // messageCiphertext
-		envHash,             // envelopeHash
+		nil,                // readCap (nil = write)
+		newTestWriteCap(t), // writeCap
+		nil,                // nextMessageIndex
+		nil,                // replyIndex
+		[]byte("desc"),     // envelopeDescriptor
+		[]byte("cipher"),   // messageCiphertext
+		envHash,            // envelopeHash
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -465,13 +463,13 @@ func TestStartResendingEncryptedMessageReadSuccess(t *testing.T) {
 
 	replyIndex := uint8(0)
 	result, err := tc.StartResendingEncryptedMessage(
-		newTestReadCap(t),    // readCap (non-nil = read)
-		nil,                 // writeCap
-		[]byte("nextidx"),   // nextMessageIndex
-		&replyIndex,         // replyIndex
-		[]byte("desc"),      // envelopeDescriptor
-		[]byte("cipher"),    // messageCiphertext
-		envHash,             // envelopeHash
+		newTestReadCap(t), // readCap (non-nil = read)
+		nil,               // writeCap
+		[]byte("nextidx"), // nextMessageIndex
+		&replyIndex,       // replyIndex
+		[]byte("desc"),    // envelopeDescriptor
+		[]byte("cipher"),  // messageCiphertext
+		envHash,           // envelopeHash
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)

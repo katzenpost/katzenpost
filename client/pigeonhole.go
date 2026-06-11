@@ -1809,9 +1809,9 @@ func (d *Daemon) sendCancelResendingCopyCommandError(request *Request, errorCode
 type payloadErrorAction int
 
 const (
-	payloadActionReturnError      payloadErrorAction = iota
-	payloadActionRetry                               // Retry (BoxIDNotFound on read)
-	payloadActionIdempotentSuccess                   // Treat as success (BoxAlreadyExists on write)
+	payloadActionReturnError       payloadErrorAction = iota
+	payloadActionRetry                                // Retry (BoxIDNotFound on read)
+	payloadActionIdempotentSuccess                    // Treat as success (BoxAlreadyExists on write)
 )
 
 // determinePayloadErrorAction decides what to do with a decryption error

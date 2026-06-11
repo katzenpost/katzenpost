@@ -18,7 +18,6 @@ import (
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
-
 func TestSendLoopDecoyNoPKIDoc(t *testing.T) {
 	d, _, testAppID, _, _ := setupFullClient(t)
 

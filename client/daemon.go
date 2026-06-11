@@ -604,7 +604,6 @@ func tryDecryptMKEMWithReplicas(
 	return nil, 0, errMKEMDecryptionFailed
 }
 
-
 func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
@@ -804,8 +803,6 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 
 	d.send(request)
 }
-
-
 
 // resendQueueFullBackoff is how long enqueueResend waits before re-arming
 // the ARQ timer when a client's resendCh is full. Must be short enough to
@@ -1166,4 +1163,3 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 	d.log.Infof("cleanupForAppID: cleaned %d ARQ, %d replies, %d decoys for App ID %x",
 		cleanedARQ, cleanedReplies, cleanedDecoys, appID[:])
 }
-

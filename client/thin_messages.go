@@ -22,8 +22,8 @@ func IntoThinResponse(r *Response) *thin.Response {
 		EncryptReadReply:                     r.EncryptReadReply,
 		EncryptWriteReply:                    r.EncryptWriteReply,
 		StartResendingEncryptedMessageReply:  r.StartResendingEncryptedMessageReply,
-		WriteStreamReply:                    r.WriteStreamReply,
-		ReadStreamReply:                     r.ReadStreamReply,
+		WriteStreamReply:                     r.WriteStreamReply,
+		ReadStreamReply:                      r.ReadStreamReply,
 		CancelResendingEncryptedMessageReply: r.CancelResendingEncryptedMessageReply,
 		StartResendingCopyCommandReply:       r.StartResendingCopyCommandReply,
 		CancelResendingCopyCommandReply:      r.CancelResendingCopyCommandReply,
@@ -32,9 +32,9 @@ func IntoThinResponse(r *Response) *thin.Response {
 		GetPKIDocumentReply:                  r.GetPKIDocumentReply,
 
 		// Copy Channel API:
-		CreateCourierEnvelopesFromPayloadReply:          r.CreateCourierEnvelopesFromPayloadReply,
-		CreateCourierEnvelopesFromPayloadsReply:         r.CreateCourierEnvelopesFromPayloadsReply,
-		CreateCourierEnvelopesFromTombstoneRangeReply:   r.CreateCourierEnvelopesFromTombstoneRangeReply,
+		CreateCourierEnvelopesFromPayloadReply:        r.CreateCourierEnvelopesFromPayloadReply,
+		CreateCourierEnvelopesFromPayloadsReply:       r.CreateCourierEnvelopesFromPayloadsReply,
+		CreateCourierEnvelopesFromTombstoneRangeReply: r.CreateCourierEnvelopesFromTombstoneRangeReply,
 
 		// Contact Voucher API:
 		VoucherMintReply:         r.VoucherMintReply,
@@ -125,9 +125,9 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		GetPKIDocument:                  r.GetPKIDocument,
 
 		// Copy Channel API:
-		CreateCourierEnvelopesFromPayload:          r.CreateCourierEnvelopesFromPayload,
-		CreateCourierEnvelopesFromPayloads:         r.CreateCourierEnvelopesFromPayloads,
-		CreateCourierEnvelopesFromTombstoneRange:   r.CreateCourierEnvelopesFromTombstoneRange,
+		CreateCourierEnvelopesFromPayload:        r.CreateCourierEnvelopesFromPayload,
+		CreateCourierEnvelopesFromPayloads:       r.CreateCourierEnvelopesFromPayloads,
+		CreateCourierEnvelopesFromTombstoneRange: r.CreateCourierEnvelopesFromTombstoneRange,
 
 		// Contact Voucher API:
 		VoucherMint:         r.VoucherMint,

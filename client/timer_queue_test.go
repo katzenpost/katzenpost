@@ -14,8 +14,8 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/queue"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 func TestTimerQueueHalt(t *testing.T) {

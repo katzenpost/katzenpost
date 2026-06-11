@@ -181,29 +181,29 @@ type Katzenpost struct {
 	ReplicaNodeConfigs []*rConfig.Config
 	CourierConfigs     []*courierConfig.Config
 
-	BasePort        uint16
-	LastPort        uint16
-	LastReplicaPort uint16
-	ReplicaNodeIdx  int
-	BindAddr        string
-	NodeIdx         int
-	GatewayIdx      int
-	ServiceNodeIdx  int
-	NoClientDecoy         bool
-	NoCourierReplicaDecoy bool
-	NoMixDecoy            bool
-	NoGatewayDecoy        bool
+	BasePort                uint16
+	LastPort                uint16
+	LastReplicaPort         uint16
+	ReplicaNodeIdx          int
+	BindAddr                string
+	NodeIdx                 int
+	GatewayIdx              int
+	ServiceNodeIdx          int
+	NoClientDecoy           bool
+	NoCourierReplicaDecoy   bool
+	NoMixDecoy              bool
+	NoGatewayDecoy          bool
 	NoMetrics               bool
 	PyroscopeDirauth        bool
 	PyroscopeKpclientd      bool
 	KpclientdMetricsAddress string
-	EpochDuration     string
-	DebugConfig       *cConfig.Debug
-	SchedulerSlack    int
-	SchedulerMaxBurst int
-	SendSlack         int
-	UnwrapDelay       int
-	NumSphinxWorkers  int
+	EpochDuration           string
+	DebugConfig             *cConfig.Debug
+	SchedulerSlack          int
+	SchedulerMaxBurst       int
+	SendSlack               int
+	UnwrapDelay             int
+	NumSphinxWorkers        int
 	// SessionGracePeriod is written into the generated kpclientd
 	// client.toml so the daemon's per-app reap interval is tunable
 	// per docker invocation; zero means the daemon's compile-time
@@ -704,9 +704,9 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			WireKEMScheme:          s.WireKEMScheme,
 			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
 			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
-			Identifier:         authIdentifier,
-			Addresses:          []string{peerAddr(authIdentifier, s.LastPort)},
-			DataDir:            filepath.Join(s.BaseDir, authIdentifier),
+			Identifier:             authIdentifier,
+			Addresses:              []string{peerAddr(authIdentifier, s.LastPort)},
+			DataDir:                filepath.Join(s.BaseDir, authIdentifier),
 		}
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
 		s.LastPort += 1

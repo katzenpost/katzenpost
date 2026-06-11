@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/katzenpost/katzenpost/core/queue"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTimerQueuePeekPopLen(t *testing.T) {

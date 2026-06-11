@@ -223,7 +223,7 @@ func TestApplyRuntimeDefaults_SchedulerMaxBurst(t *testing.T) {
 	// anti-monopolisation property on very fast Sphinx hosts.
 	tests := []struct {
 		name               string
-		preset             int     // operator's TOML value; 0 = auto-derive
+		preset             int // operator's TOML value; 0 = auto-derive
 		numCPU             int
 		saturatedOpsPerSec float64
 		wantMaxBurst       int
