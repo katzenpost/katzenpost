@@ -10,7 +10,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -95,6 +98,53 @@ func TestGetPKIDocumentRawUnknownEpoch(t *testing.T) {
 	require.Nil(t, raw)
 	require.Equal(t, ancientEpoch, gotEpoch,
 		"daemon should echo the requested epoch on a miss")
+}
+
+// TestGetDirectoryAuthorities exercises the thin client's
+// GetDirectoryAuthorities request against a running docker mixnet. It
+// confirms the daemon surfaces its configured directory authority
+// descriptors, that each descriptor's advertised identity-key fingerprint
+// matches its PEM-encoded identity key, and crucially that every signature on
+// the current signed PKI document resolves to one of the returned authorities,
+// so a caller may name every signer.
+func TestGetDirectoryAuthorities(t *testing.T) {
+	t.Parallel()
+
+	client := setupThinClient(t)
+	defer client.Close()
+
+	authorities, err := client.GetDirectoryAuthorities()
+	require.NoError(t, err)
+	require.NotEmpty(t, authorities, "daemon should report its configured directory authorities")
+
+	names := make(map[[32]byte]string, len(authorities))
+	for _, auth := range authorities {
+		require.NotEmpty(t, auth.Identifier, "every authority must have an identifier")
+		require.NotEmpty(t, auth.PKISignatureScheme)
+		require.NotEmpty(t, auth.IdentityPublicKeyPem)
+
+		scheme := signSchemes.ByName(auth.PKISignatureScheme)
+		require.NotNil(t, scheme, "unknown PKI signature scheme %q", auth.PKISignatureScheme)
+		idPub, err := signpem.FromPublicPEMString(auth.IdentityPublicKeyPem, scheme)
+		require.NoError(t, err)
+		require.Equal(t, hash.Sum256From(idPub), auth.IdentityKeyHash,
+			"advertised IdentityKeyHash must match the identity public key for %q", auth.Identifier)
+
+		names[auth.IdentityKeyHash] = auth.Identifier
+	}
+
+	// Every signer of the live signed document must be a known authority.
+	raw, epoch, err := client.GetPKIDocumentRaw(0)
+	require.NoError(t, err)
+	parsed, err := cpki.ParseDocument(raw)
+	require.NoError(t, err)
+	require.NotEmpty(t, parsed.Signatures)
+	for fp := range parsed.Signatures {
+		name, ok := names[fp]
+		require.True(t, ok, "signature fingerprint %x for epoch %d has no matching authority", fp[:], epoch)
+		require.NotEmpty(t, name)
+		t.Logf("epoch %d signed by %s (%x)", epoch, name, fp[:])
+	}
 }
 
 // verifyAgainstDirauths checks the raw signed payload using the daemon

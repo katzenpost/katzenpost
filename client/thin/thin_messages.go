@@ -455,6 +455,52 @@ type GetPKIDocument struct {
 	Epoch uint64 `cbor:"epoch"`
 }
 
+// DirectoryAuthority is the daemon's view of a single directory authority
+// peer, as drawn from the client daemon's configuration. It mirrors the
+// public fields the daemon holds for a voting authority peer; the dirauth's
+// private listener bindings are not a client-side concern and so are absent.
+//
+// The keys travel as PEM strings so that consumers need not link a Go key
+// type to interpret them. IdentityKeyHash is the BLAKE2b-256 hash of the
+// identity public key, supplied for convenience: it is the very value by
+// which a PKI document's signatures are keyed, so a caller may map a
+// signature straight to its signing authority without re-deriving the hash.
+type DirectoryAuthority struct {
+	// Identifier is the human readable identifier for the authority (eg: FQDN).
+	Identifier string `cbor:"identifier"`
+
+	// PKISignatureScheme names the authority's identity signature scheme.
+	PKISignatureScheme string `cbor:"pki_signature_scheme"`
+
+	// WireKEMScheme names the authority's wire protocol KEM scheme.
+	WireKEMScheme string `cbor:"wire_kem_scheme"`
+
+	// Addresses are the authority's reachable listener addresses.
+	Addresses []string `cbor:"addresses"`
+
+	// IdentityPublicKeyPem is the authority's identity public key in PEM format.
+	IdentityPublicKeyPem string `cbor:"identity_public_key_pem"`
+
+	// LinkPublicKeyPem is the authority's link public key in PEM format.
+	LinkPublicKeyPem string `cbor:"link_public_key_pem"`
+
+	// IdentityKeyHash is the BLAKE2b-256 hash of the identity public key,
+	// matching the key by which PKI document signatures are indexed.
+	IdentityKeyHash [32]byte `cbor:"identity_key_hash"`
+}
+
+// GetDirectoryAuthorities requests the daemon to return the directory
+// authority descriptors it is configured with. A thin client holds only
+// its dial transport configuration and never sees the daemon's voting
+// authority peer list; this request surfaces it, so a thin client may, for
+// instance, map a PKI document's signature fingerprints to authority names.
+// The reply type is GetDirectoryAuthoritiesReply.
+type GetDirectoryAuthorities struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+}
+
 // CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
 // The payload is automatically chunked and each chunk is wrapped in a CourierEnvelope.
 // Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
@@ -703,6 +749,11 @@ type Response struct {
 	// document, with directory authority signatures intact.
 	GetPKIDocumentReply *GetPKIDocumentReply `cbor:"get_pki_document_reply"`
 
+	// GetDirectoryAuthoritiesReply is sent in response to a
+	// GetDirectoryAuthorities request and carries the directory authority
+	// descriptors the daemon is configured with.
+	GetDirectoryAuthoritiesReply *GetDirectoryAuthoritiesReply `cbor:"get_directory_authorities_reply"`
+
 	// Copy Channel API:
 
 	// CreateCourierEnvelopesFromPayloadReply is sent when the client daemon successfully creates courier envelopes from a payload.
@@ -785,6 +836,10 @@ type Request struct {
 	// PKI document for an epoch, with every directory authority
 	// signature intact.
 	GetPKIDocument *GetPKIDocument `cbor:"get_pki_document"`
+
+	// GetDirectoryAuthorities asks the daemon for the directory authority
+	// descriptors it is configured with.
+	GetDirectoryAuthorities *GetDirectoryAuthorities `cbor:"get_directory_authorities"`
 
 	// CreateCourierEnvelopesFromPayload is used to create multiple CourierEnvelopes from a payload of any size.
 	CreateCourierEnvelopesFromPayload *CreateCourierEnvelopesFromPayload `cbor:"create_courier_envelopes_from_payload"`

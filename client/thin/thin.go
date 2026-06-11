@@ -975,6 +975,12 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
+	case message.GetDirectoryAuthoritiesReply != nil:
+		select {
+		case t.eventSink <- message.GetDirectoryAuthoritiesReply:
+		case <-t.HaltCh():
+			return false
+		}
 
 		/**  Copy Channel API **/
 
@@ -1498,6 +1504,66 @@ func (t *ThinClient) GetPKIDocumentRaw(epoch uint64) ([]byte, uint64, error) {
 				return nil, v.Epoch, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
 			return v.Payload, v.Epoch, nil
+		case *ConnectionStatusEvent:
+			t.setConnected(v.IsConnected)
+		case *NewDocumentEvent:
+			// Ignore PKI document updates while we wait for our reply.
+		default:
+			// Ignore other events.
+		}
+	}
+}
+
+// GetDirectoryAuthorities returns the directory authority descriptors the
+// client daemon is configured with.
+//
+// A thin client holds only its dial transport configuration and never sees
+// the daemon's voting authority peer list. This method surfaces it, so a
+// caller may, for instance, map a PKI document's signature fingerprints (the
+// keys of its Signatures map) to human-readable authority identifiers via
+// each descriptor's IdentityKeyHash.
+//
+// Returns:
+//   - []*DirectoryAuthority: the configured directory authority descriptors.
+//   - error: any error encountered (notably if the daemon has no voting
+//     authority peers configured).
+func (t *ThinClient) GetDirectoryAuthorities() ([]*DirectoryAuthority, error) {
+	queryID := t.NewQueryID()
+	req := &Request{
+		GetDirectoryAuthorities: &GetDirectoryAuthorities{
+			QueryID: queryID,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	if err := t.writeMessage(req); err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *GetDirectoryAuthoritiesReply:
+			if v.QueryID == nil {
+				t.log.Debugf("GetDirectoryAuthorities: reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("GetDirectoryAuthorities: reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.Authorities, nil
 		case *ConnectionStatusEvent:
 			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:

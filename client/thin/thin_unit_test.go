@@ -1291,3 +1291,64 @@ func TestEventSinkNoEviction(t *testing.T) {
 	}
 	require.Equal(t, n, received)
 }
+
+func TestDispatchGetDirectoryAuthoritiesReply(t *testing.T) {
+	tc := newTestThinClientNoConn(t)
+	queryID := &[QueryIDLength]byte{9, 8, 7}
+	msg := &Response{
+		GetDirectoryAuthoritiesReply: &GetDirectoryAuthoritiesReply{
+			QueryID:   queryID,
+			ErrorCode: ThinClientSuccess,
+			Authorities: []*DirectoryAuthority{
+				{Identifier: "annares", IdentityKeyHash: [32]byte{1}},
+			},
+		},
+	}
+	ok := tc.dispatchMessage(msg)
+	require.True(t, ok)
+
+	event := <-tc.eventSink
+	reply, isReply := event.(*GetDirectoryAuthoritiesReply)
+	require.True(t, isReply)
+	require.Equal(t, queryID, reply.QueryID)
+	require.Len(t, reply.Authorities, 1)
+	require.Equal(t, "annares", reply.Authorities[0].Identifier)
+}
+
+// TestGetDirectoryAuthoritiesCBORRoundTrip locks the wire tags for the new
+// request/reply pair: a thin client and the daemon must agree on them, and the
+// Rust and Python ports follow this same CBOR contract.
+func TestGetDirectoryAuthoritiesCBORRoundTrip(t *testing.T) {
+	queryID := &[QueryIDLength]byte{4, 2}
+
+	req := &Request{
+		GetDirectoryAuthorities: &GetDirectoryAuthorities{QueryID: queryID},
+	}
+	reqBlob, err := cbor.Marshal(req)
+	require.NoError(t, err)
+	var gotReq Request
+	require.NoError(t, cbor.Unmarshal(reqBlob, &gotReq))
+	require.NotNil(t, gotReq.GetDirectoryAuthorities)
+	require.Equal(t, queryID, gotReq.GetDirectoryAuthorities.QueryID)
+
+	reply := &GetDirectoryAuthoritiesReply{
+		QueryID:   queryID,
+		ErrorCode: ThinClientSuccess,
+		Authorities: []*DirectoryAuthority{
+			{
+				Identifier:           "annares",
+				PKISignatureScheme:   "Ed25519 Sphincs+",
+				WireKEMScheme:        "KYBER768-X25519",
+				Addresses:            []string{"tcp://192.0.2.1:1984"},
+				IdentityPublicKeyPem: "-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----\n...\n-----END ED25519 SPHINCS+ PUBLIC KEY-----\n",
+				LinkPublicKeyPem:     "-----BEGIN KYBER768-X25519 PUBLIC KEY-----\n...\n-----END KYBER768-X25519 PUBLIC KEY-----\n",
+				IdentityKeyHash:      [32]byte{0xde, 0xad, 0xbe, 0xef},
+			},
+		},
+	}
+	replyBlob, err := cbor.Marshal(reply)
+	require.NoError(t, err)
+	var gotReply GetDirectoryAuthoritiesReply
+	require.NoError(t, cbor.Unmarshal(replyBlob, &gotReply))
+	require.Equal(t, reply, &gotReply)
+}

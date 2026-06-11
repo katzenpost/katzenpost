@@ -526,6 +526,31 @@ func (e *GetPKIDocumentReply) String() string {
 	return fmt.Sprintf("GetPKIDocumentReply: epoch=%d payloadLen=%d", e.Epoch, len(e.Payload))
 }
 
+// GetDirectoryAuthoritiesReply is the reply to a GetDirectoryAuthorities
+// request. The Authorities field carries the directory authority descriptors
+// the daemon is configured with, drawn from its voting authority peer list.
+type GetDirectoryAuthoritiesReply struct {
+	// QueryID is used for correlating this reply with the
+	// GetDirectoryAuthorities request.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Authorities is the list of directory authority descriptors, or nil
+	// on failure.
+	Authorities []*DirectoryAuthority `cbor:"authorities"`
+
+	// ErrorCode indicates the reason for a failure to return the directory
+	// authorities if any. Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the GetDirectoryAuthoritiesReply.
+func (e *GetDirectoryAuthoritiesReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("GetDirectoryAuthoritiesReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("GetDirectoryAuthoritiesReply: %d authorities", len(e.Authorities))
+}
+
 // Copy Channel API:
 
 // CreateCourierEnvelopesFromPayloadReply is sent in response to a CreateCourierEnvelopesFromPayload request.
