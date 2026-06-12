@@ -142,13 +142,17 @@ func (c *Client) WaitForCurrentDocument() {
 	if _, doc := c.pki.currentDocument(); doc != nil {
 		return
 	}
+	var lastErr error
 	for attempt := 1; attempt <= waitForCurrentDocumentAttempts; attempt++ {
 		epoch, _, _ := epochtime.Now()
 		if err := c.pki.updateDocument(epoch); err == nil {
 			return
-		} else if c.log != nil {
-			c.log.Debugf("WaitForCurrentDocument: attempt %d/%d failed: %s",
-				attempt, waitForCurrentDocumentAttempts, err.Error())
+		} else {
+			lastErr = err
+			if c.log != nil {
+				c.log.Debugf("WaitForCurrentDocument: attempt %d/%d failed: %s",
+					attempt, waitForCurrentDocumentAttempts, err.Error())
+			}
 		}
 		if attempt == waitForCurrentDocumentAttempts {
 			break
@@ -160,8 +164,18 @@ func (c *Client) WaitForCurrentDocument() {
 		}
 	}
 	if c.log != nil {
-		c.log.Errorf("WaitForCurrentDocument: gave up after %d attempts",
-			waitForCurrentDocumentAttempts)
+		// Not being connected to a gateway yet is the normal startup case:
+		// the connect loop is still bringing the link up and will refetch
+		// once it succeeds. Only a genuine failure (a connected gateway
+		// that still will not serve the current consensus) warrants raising
+		// the alarm.
+		if errors.Is(lastErr, ErrNotConnected) {
+			c.log.Debugf("WaitForCurrentDocument: gateway link not up yet after %d attempts; will retry once connected",
+				waitForCurrentDocumentAttempts)
+		} else {
+			c.log.Warningf("WaitForCurrentDocument: gave up after %d attempts: %v",
+				waitForCurrentDocumentAttempts, lastErr)
+		}
 	}
 }
 
@@ -405,7 +419,16 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, []byte, *c
 		p.log.Debugf("getDocument [%v]: ErrNoDocument", epoch)
 		return nil, nil, nil, err
 	default:
-		p.log.Errorf("getDocument [%v]: %s", epoch, err.Error())
+		// ErrNotConnected (the gateway link is not up yet, normal at
+		// startup and during reconnects) and errGetConsensusCanceled
+		// (shutdown) are routine: the caller retries on the next tick.
+		// Logging them at error level reads as a failure when the daemon
+		// is merely still connecting, so keep them at debug.
+		if errors.Is(err, ErrNotConnected) || errors.Is(err, errGetConsensusCanceled) {
+			p.log.Debugf("getDocument [%v]: %s (will retry once connected)", epoch, err.Error())
+		} else {
+			p.log.Errorf("getDocument [%v]: %s", epoch, err.Error())
+		}
 		return nil, nil, nil, err
 	}
 
