@@ -115,11 +115,14 @@ func runFetch(cfg Config) error {
 	// reported by identifier rather than by opaque fingerprint.
 	signerNames := loadAuthorityNames(client)
 
-	if doc := client.PKIDocument(); doc != nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
-		return printRawDocument(client, doc.Epoch, signerNames)
+	// Try the daemon's current signed document straight away.
+	if doc, err := fetchSignedDocument(client, 0); err == nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
+		printDocument(doc, signerNames)
+		return nil
 	}
 
-	// Wait for PKI document via event sink
+	// Otherwise wait, via the event sink, for a consensus that satisfies the
+	// replica requirement, then fetch its signed form for that epoch.
 	eventSink := client.EventSink()
 	defer client.StopEventSink(eventSink)
 
@@ -133,7 +136,12 @@ func runFetch(cfg Config) error {
 			if !hasEnoughReplicas(docEvent.Document, cfg.MinReplicas) {
 				continue
 			}
-			return printRawDocument(client, docEvent.Document.Epoch, signerNames)
+			doc, err := fetchSignedDocument(client, docEvent.Document.Epoch)
+			if err != nil {
+				return err
+			}
+			printDocument(doc, signerNames)
+			return nil
 		case <-client.HaltCh():
 			return fmt.Errorf("connection closed before receiving PKI document")
 		}
@@ -161,26 +169,32 @@ func loadAuthorityNames(client *thin.ThinClient) map[[32]byte]string {
 	return names
 }
 
-// printRawDocument fetches the raw, signed PKI document for the given epoch
-// and prints both the document and the directory authorities that signed it.
+// fetchSignedDocument retrieves and parses the raw, signed PKI document for the
+// given epoch (0 for the daemon's current epoch).
 //
 // Unlike the stripped document the daemon pushes by default, the raw payload
-// retains every detached directory authority signature, so we may report each
-// signer, by name where the fingerprint is known and by fingerprint otherwise.
-func printRawDocument(client *thin.ThinClient, epoch uint64, signerNames map[[32]byte]string) error {
+// retains every detached directory authority signature, whose fingerprints we
+// map to names. The daemon has already verified the signatures as a condition
+// of accepting the consensus, so fetch does not re-verify them; it only labels
+// each signer.
+func fetchSignedDocument(client *thin.ThinClient, epoch uint64) (*cpki.Document, error) {
 	raw, gotEpoch, err := client.GetPKIDocumentRaw(epoch)
 	if err != nil {
-		return fmt.Errorf("failed to fetch raw PKI document for epoch %d: %v", epoch, err)
+		return nil, fmt.Errorf("failed to fetch raw PKI document for epoch %d: %v", epoch, err)
 	}
 
 	doc, err := cpki.ParseDocument(raw)
 	if err != nil {
-		return fmt.Errorf("failed to parse raw PKI document for epoch %d: %v", gotEpoch, err)
+		return nil, fmt.Errorf("failed to parse raw PKI document for epoch %d: %v", gotEpoch, err)
 	}
+	return doc, nil
+}
 
+// printDocument prints the document followed by the directory authorities that
+// signed it, by name where the fingerprint is known and by fingerprint otherwise.
+func printDocument(doc *cpki.Document, signerNames map[[32]byte]string) {
 	fmt.Printf("%v", doc)
-	printSigners(doc, gotEpoch, signerNames)
-	return nil
+	printSigners(doc, doc.Epoch, signerNames)
 }
 
 // printSigners reports, in deterministic order, every directory authority that
