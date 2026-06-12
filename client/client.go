@@ -91,8 +91,8 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) Start() error {
-	c.log.Info("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
-
+	// The pre-alpha banner is emitted once at daemon startup
+	// (see Daemon logging setup); avoid logging it a second time here.
 	c.conn = newConnection(c)
 
 	_, pkilinkKey, err := c.wireKEMScheme.GenerateKeyPair()
