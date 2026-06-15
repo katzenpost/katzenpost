@@ -114,14 +114,17 @@ func (l *listener) worker() {
 			continue
 		}
 
-		// If no PKI document has been loaded yet, we cannot validate
-		// any incoming peer credentials at IsPeerValid time and would
-		// produce spurious handshake failures on the initiator side
-		// during the boot convergence window. Refuse the connection
-		// at the TCP layer instead and let the initiator's Connector
-		// retry on its existing backoff once both sides have converged.
-		if _, perr := l.glue.PKI().CurrentDocument(); perr != nil {
-			l.log.Debugf("Refusing connection from %v: no PKI document loaded yet", conn.RemoteAddr())
+		// If we hold no usable PKI document in the valid epoch window, we
+		// cannot validate any incoming peer credentials at IsPeerValid time
+		// and would produce spurious handshake failures on the initiator side
+		// during the boot convergence window. Refuse the connection at the TCP
+		// layer instead and let the initiator's Connector retry on its existing
+		// backoff once both sides have converged. We accept on any document in
+		// the window, not just the current epoch's, so a client can still be
+		// served from the previous document during the gap after an epoch
+		// rollover but before the new consensus has been fetched.
+		if !l.glue.PKI().HasUsableDocument() {
+			l.log.Debugf("Refusing connection from %v: no usable PKI document", conn.RemoteAddr())
 			conn.Close()
 			handshakeinstrument.IncomingRefusedNoPKIDoc()
 			continue

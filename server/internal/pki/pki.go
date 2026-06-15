@@ -858,6 +858,18 @@ func (p *pki) CurrentDocument() (*cpki.Document, error) {
 	return nil, cpki.ErrNoDocument
 }
 
+// HasUsableDocument reports whether we hold at least one PKI document in the
+// valid epoch window [now+1 .. now-(NumMixKeys-1)]. This is the condition under
+// which the node can authenticate peers and serve clients, including the window
+// after an epoch rollover but before the new consensus has been fetched, when
+// only the previous epoch's document is cached. It is deliberately more lenient
+// than CurrentDocument(), which requires the document for the current epoch
+// specifically.
+func (p *pki) HasUsableDocument() bool {
+	docs, _, _, _ := p.documentsForAuthentication()
+	return len(docs) > 0
+}
+
 func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 	if ok, err := p.getFailedFetch(epoch); ok {
 		p.log.Debugf("GetRawConsensus failure: no cached PKI document for epoch %v: %v", epoch, err)

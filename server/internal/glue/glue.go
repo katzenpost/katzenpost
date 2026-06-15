@@ -70,6 +70,7 @@ type PKI interface {
 	AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool)
 	GetRawConsensus(uint64) ([]byte, error)
 	CurrentDocument() (*pki.Document, error)
+	HasUsableDocument() bool
 }
 
 type Gateway interface {

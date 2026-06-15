@@ -11,8 +11,36 @@ package pki
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 )
+
+// TestHasUsableDocument verifies the admission predicate the incoming listener
+// relies on: a gateway with no document at all refuses connections (the boot
+// case), but a gateway holding the previous epoch's document accepts them, so a
+// client may still be served during the window after an epoch rollover but
+// before the new consensus has been fetched.
+func TestHasUsableDocument(t *testing.T) {
+	now, _, _ := epochtime.Now()
+
+	p := &pki{docs: make(map[uint64]*pkicache.Entry)}
+
+	if p.HasUsableDocument() {
+		t.Fatal("no cached document: expected not usable (boot case)")
+	}
+
+	p.docs[now-1] = &pkicache.Entry{}
+	if !p.HasUsableDocument() {
+		t.Fatal("previous-epoch document cached: expected usable")
+	}
+
+	delete(p.docs, now-1)
+	p.docs[now] = &pkicache.Entry{}
+	if !p.HasUsableDocument() {
+		t.Fatal("current-epoch document cached: expected usable")
+	}
+}
 
 func TestMakeDescAddrMapBracketsIPv6(t *testing.T) {
 	m, err := makeDescAddrMap([]string{"tcp://[2a02:898:246:64::34:78]:4242"})
