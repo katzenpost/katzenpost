@@ -424,6 +424,18 @@ func (e *Courier) getCurrentEpoch() uint64 {
 	return 0
 }
 
+// pkiDocForSharding returns the current epoch's document, or the most recently
+// cached one during the window after an epoch rotation before the new document
+// has been fetched. Shard membership is stable across adjacent epochs, so a
+// one-epoch-stale document yields the shards every peer computes.
+func (e *Courier) pkiDocForSharding() *cpki.Document {
+	doc := e.server.PKI.PKIDocument()
+	if doc == nil {
+		doc = e.server.PKI.LastCachedPKIDocument()
+	}
+	return doc
+}
+
 // logFinalCacheState logs the final state of the cache entry
 func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 	finalEntry := e.dedupCache[*reply.EnvelopeHash]
@@ -1091,7 +1103,7 @@ func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDS
 func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole.ReplicaReadReply, uint8, error) {
 	e.log.Debugf("readBoxFromShardReplicas: Reading box %x", boxID[:8])
 
-	doc := e.server.PKI.PKIDocument()
+	doc := e.pkiDocForSharding()
 	if doc == nil {
 		return nil, 0, fmt.Errorf("PKI document is nil")
 	}
@@ -1259,7 +1271,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 	}
 
 	// Get PKI document for replica selection
-	doc := e.server.PKI.PKIDocument()
+	doc := e.pkiDocForSharding()
 	if doc == nil {
 		e.log.Errorf("writeTombstonesToTempChannel: PKI document is nil")
 		instrument.DroppedByReason("tombstone_nil_pki")
