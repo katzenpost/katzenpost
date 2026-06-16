@@ -56,7 +56,7 @@ type replicaError struct {
 }
 
 func (e *replicaError) Error() string {
-	return fmt.Sprintf("replica error code: %d", e.code)
+	return fmt.Sprintf("%s (replica error code %d)", pigeonhole.ReplicaErrorToString(e.code), e.code)
 }
 
 type gcReply struct {

@@ -1919,13 +1919,16 @@ func mapDecryptionErrorToCode(err error) uint8 {
 func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply *pigeonhole.CourierEnvelopeReply, conn *incomingConn) {
 	plaintext, err := d.decryptPigeonholeReply(arqMessage, courierEnvelopeReply)
 	if err != nil {
-		d.log.Errorf("handlePayloadReply: failed to decrypt reply: %s", err)
-
+		// The reply did not yield plaintext. This covers several distinct
+		// conditions, not all of them failures and not all of them decryption
+		// errors: a replica status such as box-not-found (no ciphertext
+		// exists), box-already-exists, or a genuine ciphertext that would not
+		// decrypt. Each branch below logs the condition it actually is.
 		action := determinePayloadErrorAction(err, arqMessage.IsRead, arqMessage.NoRetryOnBoxIDNotFound, arqMessage.NoIdempotentBoxAlreadyExists)
 
 		switch action {
 		case payloadActionRetry:
-			d.log.Debugf("handlePayloadReply: BoxIDNotFound for read operation, scheduling retry (attempt %d)",
+			d.log.Debugf("handlePayloadReply: box does not exist yet for read, scheduling retry (attempt %d)",
 				arqMessage.Retransmissions+1)
 
 			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
@@ -2000,7 +2003,12 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		d.replyLock.Unlock()
 
 		errorCode := mapDecryptionErrorToCode(err)
-		d.log.Debugf("handlePayloadReply: returning error code %d", errorCode)
+		var re *replicaError
+		if errors.As(err, &re) {
+			d.log.Errorf("handlePayloadReply: replica returned error: %s", err)
+		} else {
+			d.log.Errorf("handlePayloadReply: failed to decrypt reply: %s", err)
+		}
 
 		d.finishARQMessage(arqMessage, conn, errorCode, nil)
 		return
