@@ -155,10 +155,10 @@ func (s *Server) LogBackend() *log.Backend {
 
 func (s *Server) initLogging() error {
 	p := s.cfg.Logging.File
-	if !s.cfg.Logging.Disable && s.cfg.Logging.File != "" {
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(s.cfg.DataDir, p)
-		}
+	if p == "" {
+		p = filepath.Join(s.cfg.DataDir, "courier.log")
+	} else if !filepath.IsAbs(p) {
+		p = filepath.Join(s.cfg.DataDir, p)
 	}
 
 	var err error
