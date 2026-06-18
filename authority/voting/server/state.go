@@ -2500,114 +2500,108 @@ func (s *state) restorePersistence() error {
 		}
 
 		if b := bkt.Get([]byte(versionKey)); b != nil {
-			// Well it looks like we loaded as opposed to created.
-			storedVersion := string(b)
-			currentVersion := versioninfo.Short()
-			if storedVersion != currentVersion {
-				s.log.Warningf("Software version changed (%s -> %s), ignoring persisted state", storedVersion, currentVersion)
-			} else {
-				// Figure out which epochs to restore for.
-				now, _, _ := epochtime.Now()
-				epochs := []uint64{now - 1, now, now + 1}
+			// The database was previously initialised; restore persisted state.
+			// Figure out which epochs to restore for.
+			now, _, _ := epochtime.Now()
+			epochs := []uint64{now - 1, now, now + 1}
 
-				// Restore the replica descriptors.
-				for _, epoch := range epochs {
-					epochBytes := epochToBytes(epoch)
-					eDescsBkt := replicaDescsBkt.Bucket(epochBytes)
-					if eDescsBkt == nil {
-						s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+			// Restore the replica descriptors.
+			for _, epoch := range epochs {
+				epochBytes := epochToBytes(epoch)
+				eDescsBkt := replicaDescsBkt.Bucket(epochBytes)
+				if eDescsBkt == nil {
+					s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+					continue
+				}
+				c := eDescsBkt.Cursor()
+				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
+					if len(wantHash) != publicKeyHashSize {
+						panic("stored hash should be 32 bytes")
+					}
+					desc := new(pki.ReplicaDescriptor)
+					err := desc.Unmarshal(rawDesc)
+					if err != nil {
+						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
 					}
-					c := eDescsBkt.Cursor()
-					for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
-						if len(wantHash) != publicKeyHashSize {
-							panic("stored hash should be 32 bytes")
-						}
-						desc := new(pki.ReplicaDescriptor)
-						err := desc.Unmarshal(rawDesc)
-						if err != nil {
-							s.log.Errorf("Failed to validate persisted descriptor: %v", err)
-							continue
-						}
-						idHash := hash.Sum256(desc.IdentityKey)
-						if !hmac.Equal(wantHash, idHash[:]) {
-							s.log.Errorf("Discarding persisted descriptor: key mismatch")
-							continue
-						}
-
-						if !s.isReplicaDescriptorAuthorized(desc) {
-							s.log.Warningf("Discarding persisted descriptor: %v", desc)
-							continue
-						}
-
-						_, ok := s.replicaDescriptors[epoch]
-						if !ok {
-							s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
-						}
-
-						s.replicaDescriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
-						s.log.Debugf("Restored replica descriptor for epoch %v: %+v", epoch, desc)
-					}
-				}
-
-				for _, epoch := range epochs {
-					epochBytes := epochToBytes(epoch)
-					if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
-						_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
-						if err != nil {
-							s.log.Errorf("Failed to verify threshold on restored document")
-							break
-						}
-						doc, err := s.doParseDocument(rawDoc)
-						if err != nil {
-							s.log.Errorf("Failed to validate persisted document: %v", err)
-						} else if doc.Epoch != epoch {
-							s.log.Errorf("Persisted document has unexpected epoch: %v", doc.Epoch)
-						} else {
-							s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
-							s.documents[epoch] = doc
-						}
-					}
-
-					eDescsBkt := descsBkt.Bucket(epochBytes)
-					if eDescsBkt == nil {
-						s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+					idHash := hash.Sum256(desc.IdentityKey)
+					if !hmac.Equal(wantHash, idHash[:]) {
+						s.log.Errorf("Discarding persisted descriptor: key mismatch")
 						continue
 					}
 
-					c := eDescsBkt.Cursor()
-					for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
-						if len(wantHash) != publicKeyHashSize {
-							panic("stored hash should be 32 bytes")
-						}
-						desc := new(pki.MixDescriptor)
-						err := desc.UnmarshalBinary(rawDesc)
-						if err != nil {
-							s.log.Errorf("Failed to validate persisted descriptor: %v", err)
-							continue
-						}
-						idHash := hash.Sum256(desc.IdentityKey)
-						if !hmac.Equal(wantHash, idHash[:]) {
-							s.log.Errorf("Discarding persisted descriptor: key mismatch")
-							continue
-						}
-
-						if !s.isDescriptorAuthorized(desc) {
-							s.log.Warningf("Discarding persisted descriptor: %v", desc)
-							continue
-						}
-
-						_, ok := s.descriptors[epoch]
-						if !ok {
-							s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
-						}
-
-						s.descriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
-						s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
+					if !s.isReplicaDescriptorAuthorized(desc) {
+						s.log.Warningf("Discarding persisted descriptor: %v", desc)
+						continue
 					}
+
+					_, ok := s.replicaDescriptors[epoch]
+					if !ok {
+						s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
+					}
+
+					s.replicaDescriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
+					s.log.Debugf("Restored replica descriptor for epoch %v: %+v", epoch, desc)
 				}
-				return nil
 			}
+
+			for _, epoch := range epochs {
+				epochBytes := epochToBytes(epoch)
+				if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
+					_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
+					if err != nil {
+						s.log.Errorf("Failed to verify threshold on restored document")
+						break
+					}
+					doc, err := s.doParseDocument(rawDoc)
+					if err != nil {
+						s.log.Errorf("Failed to validate persisted document: %v", err)
+					} else if doc.Epoch != epoch {
+						s.log.Errorf("Persisted document has unexpected epoch: %v", doc.Epoch)
+					} else {
+						s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
+						s.documents[epoch] = doc
+					}
+				}
+
+				eDescsBkt := descsBkt.Bucket(epochBytes)
+				if eDescsBkt == nil {
+					s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+					continue
+				}
+
+				c := eDescsBkt.Cursor()
+				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
+					if len(wantHash) != publicKeyHashSize {
+						panic("stored hash should be 32 bytes")
+					}
+					desc := new(pki.MixDescriptor)
+					err := desc.UnmarshalBinary(rawDesc)
+					if err != nil {
+						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
+						continue
+					}
+					idHash := hash.Sum256(desc.IdentityKey)
+					if !hmac.Equal(wantHash, idHash[:]) {
+						s.log.Errorf("Discarding persisted descriptor: key mismatch")
+						continue
+					}
+
+					if !s.isDescriptorAuthorized(desc) {
+						s.log.Warningf("Discarding persisted descriptor: %v", desc)
+						continue
+					}
+
+					_, ok := s.descriptors[epoch]
+					if !ok {
+						s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
+					}
+
+					s.descriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
+					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
+				}
+			}
+			return nil
 		}
 
 		return bkt.Put([]byte(versionKey), []byte(versioninfo.Short()))
