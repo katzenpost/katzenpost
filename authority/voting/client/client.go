@@ -468,23 +468,6 @@ type postSummary struct {
 	errs                []error
 }
 
-func postInitialTimeout(round int) time.Duration {
-	// Start at 10% of the legacy one-minute handshake timeout, then approach
-	// the old maximum on later best-effort completion rounds.
-	switch {
-	case round <= 0:
-		return 6 * time.Second
-	case round == 1:
-		return 12 * time.Second
-	case round == 2:
-		return 24 * time.Second
-	case round == 3:
-		return 48 * time.Second
-	default:
-		return 60 * time.Second
-	}
-}
-
 func descriptorPostRetryDelay(cfg *Config, attempts int) time.Duration {
 	// Descriptor POST completion rounds need a real per-authority sleep timer.
 	//
@@ -658,7 +641,7 @@ func (p *connector) runPostRound(
 
 	for _, state := range states {
 		state := state
-		timeout := clampTimeoutToContext(ctx, postInitialTimeout(state.attempts))
+		timeout := clampTimeoutToContext(ctx, time.Duration(p.cfg.HandshakeTimeoutSec)*time.Second)
 		w.Go(func() {
 			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, state.peer, state.attempts, timeout)
 		})
