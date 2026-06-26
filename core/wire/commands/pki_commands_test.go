@@ -307,3 +307,22 @@ func TestSigStatus(t *testing.T) {
 	d := c.(*SigStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
+
+// TestPKINoOpUnpadded guards the fix for the 50 MB NoOp: PKI sessions set
+// shouldPad false, so a NoOp must serialize to its bare cmdOverhead rather than
+// being padded out to NewPKICommands' multi-megabyte MaxMessageLen, which is
+// only an upper bound for the size check, not a padding target.
+func TestPKINoOpUnpadded(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	cmds := NewPKICommands(testCertScheme)
+	b := (&NoOp{Cmds: cmds}).ToBytes()
+
+	require.Len(b, cmdOverhead, "PKI NoOp must not be padded")
+	require.Less(len(b), cmds.MaxMessageLenClientToServer)
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "PKI NoOp: FromBytes() failed")
+	require.IsType(&NoOp{}, c)
+}
