@@ -1263,43 +1263,82 @@ func generateMixDescriptorForPostTest(
 	return desc, identityPrivateKey, identityPublicKey
 }
 
-func TestSessionTimeoutsClampToContext(t *testing.T) {
+// TestInitSessionCancelledByContext verifies that cancelling the caller's
+// context interrupts an in-flight handshake promptly, rather than blocking for
+// the full configured handshake timeout. A black-hole server accepts the TCP
+// connection but never speaks the wire protocol, so the initiator would
+// otherwise block in io.ReadFull until HandshakeTimeoutSec, set very high here.
+func TestInitSessionCancelledByContext(t *testing.T) {
 	require := require.New(t)
 
-	cfg := &Config{
-		DialTimeoutSec:      10,
-		HandshakeTimeoutSec: 180,
-		ResponseTimeoutSec:  90,
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(err)
+	defer listener.Close()
+
+	// Accept connections and hold them open without ever responding.
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close()
+		}
+	}()
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	_, clientLinkPrivKey, err := benchKEMScheme.GenerateKeyPair()
+	require.NoError(err)
+	serverLinkPubKey, _, err := benchKEMScheme.GenerateKeyPair()
+	require.NoError(err)
+	serverIDPubKey, _, err := benchSignScheme.GenerateKey()
+	require.NoError(err)
+
+	peer := &config.Authority{
+		Identifier:         "blackhole",
+		IdentityPublicKey:  serverIDPubKey,
+		LinkPublicKey:      config.LinkPublicKey{PublicKey: serverLinkPubKey},
+		PKISignatureScheme: benchSignScheme.Name(),
+		WireKEMScheme:      benchKEMScheme.Name(),
+		Addresses:          []string{fmt.Sprintf("tcp://%s", listener.Addr().String())},
 	}
 
-	// No deadline on the context: the configured values pass through unchanged.
-	// This is the consensus-fetch case.
-	dial, handshake, response := sessionTimeouts(cfg, context.Background())
-	require.Equal(10*time.Second, dial)
-	require.Equal(180*time.Second, handshake)
-	require.Equal(90*time.Second, response)
+	cfg := &Config{
+		KEMScheme:           benchKEMScheme,
+		PKISignatureScheme:  benchSignScheme,
+		LinkKey:             clientLinkPrivKey,
+		LogBackend:          logBackend,
+		Authorities:         []*config.Authority{peer},
+		Geo:                 benchGeometry,
+		DialTimeoutSec:      10,
+		HandshakeTimeoutSec: 3600, // would block ~forever absent ctx cancellation
+		ResponseTimeoutSec:  90,
+	}
+	conn := newConnector(cfg)
 
-	// A window shorter than every configured value clamps all three to what
-	// remains. This is a descriptor-post attempt late in the upload window.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
-	dial, handshake, response = sessionTimeouts(cfg, ctx)
-	require.LessOrEqual(dial, 5*time.Second)
-	require.LessOrEqual(handshake, 5*time.Second)
-	require.LessOrEqual(response, 5*time.Second)
-	require.Greater(dial, 4*time.Second) // clamped, not collapsed
 
-	// A window between the response and handshake timeouts clamps the larger
-	// handshake timeout but leaves response at its own configured value. This is
-	// the exact distinction the old timeoutOverride flattened, response must not
-	// inherit the handshake's clamped value.
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel2()
-	dial, handshake, response = sessionTimeouts(cfg, ctx2)
-	require.Equal(10*time.Second, dial)          // 10s < 120s window: unchanged
-	require.LessOrEqual(handshake, 120*time.Second) // 180s clamped down to the window
-	require.Greater(handshake, 118*time.Second)
-	require.Equal(90*time.Second, response)      // 90s < 120s window: unchanged
+	done := make(chan error, 1)
+	go func() {
+		c, err := conn.initSession(ctx, clientLinkPrivKey, nil, peer)
+		if c != nil {
+			c.Close()
+		}
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(err, "handshake should fail once the context is cancelled")
+		// The dial and session setup succeeded; the failure must come from the
+		// interrupted handshake, not a misconfiguration.
+		require.Contains(err.Error(), "handshake")
+	case <-time.After(10 * time.Second):
+		t.Fatal("initSession did not return after context cancellation: the watcher failed to interrupt the handshake")
+	}
 }
 
 func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {

@@ -258,7 +258,7 @@ func runConcurrentHandshakes(
 				return
 			}
 
-			c.conn.Close()
+			c.Close()
 		}(c)
 	}
 
@@ -377,7 +377,7 @@ func BenchmarkHandshakeLatencyDistribution(b *testing.B) {
 			b.Fatalf("handshake failed: %v", err)
 		}
 
-		c.conn.Close()
+		c.Close()
 		connWg.Wait() // Wait for server-side handshake to complete
 	}
 }
