@@ -171,12 +171,22 @@ func newConnector(cfg *Config) *connector {
 	}
 }
 
+// sessionTimeouts returns the dial, handshake and response timeouts for a PKI
+// client session: each configured value clamped to the deadline carried by ctx,
+// so a single attempt never outruns the caller's window. A ctx with no deadline
+// leaves the configured values untouched.
+func sessionTimeouts(cfg *Config, ctx context.Context) (dial, handshake, response time.Duration) {
+	dial = clampTimeoutToContext(ctx, time.Duration(cfg.DialTimeoutSec)*time.Second)
+	handshake = clampTimeoutToContext(ctx, time.Duration(cfg.HandshakeTimeoutSec)*time.Second)
+	response = clampTimeoutToContext(ctx, time.Duration(cfg.ResponseTimeoutSec)*time.Second)
+	return
+}
+
 func (p *connector) initSession(
 	ctx context.Context,
 	linkKey kem.PrivateKey,
 	signingKey sign.PublicKey,
 	peer *config.Authority,
-	timeoutOverride time.Duration,
 ) (*connection, error) {
 	var conn net.Conn
 	var err error
@@ -186,14 +196,7 @@ func (p *connector) initSession(
 		return fmt.Sprintf("peer %s (%s)", peer.Identifier, strings.Join(peer.Addresses, ","))
 	}
 
-	dialTimeout := time.Duration(p.cfg.DialTimeoutSec) * time.Second
-	handshakeTimeout := time.Duration(p.cfg.HandshakeTimeoutSec) * time.Second
-	responseTimeout := time.Duration(p.cfg.ResponseTimeoutSec) * time.Second
-	if timeoutOverride > 0 {
-		dialTimeout = timeoutOverride
-		handshakeTimeout = timeoutOverride
-		responseTimeout = timeoutOverride
-	}
+	dialTimeout, handshakeTimeout, responseTimeout := sessionTimeouts(p.cfg, ctx)
 
 	p.log.Debugf("Client timeouts: dial=%v, handshake=%v, response=%v", dialTimeout, handshakeTimeout, responseTimeout)
 
@@ -345,7 +348,7 @@ func (p *connector) initSessionWithRetry(
 			}
 		}
 
-		conn, err := p.initSession(ctx, linkKey, signingKey, peer, 0)
+		conn, err := p.initSession(ctx, linkKey, signingKey, peer)
 		if err == nil {
 			if attempt > 0 {
 				p.log.Noticef("authority %s: connected after %d retries", peer.Identifier, attempt)
@@ -528,20 +531,16 @@ func (p *connector) postAuthorityOnce(
 	cmd commands.Command,
 	peer *config.Authority,
 	round int,
-	timeout time.Duration,
 ) postAttemptResult {
 	start := time.Now()
-	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
-	conn, err := p.initSession(attemptCtx, linkKey, signingKey, peer, timeout)
+	conn, err := p.initSession(ctx, linkKey, signingKey, peer)
 	if err != nil {
 		elapsed := time.Since(start)
 		p.log.Warningf(
-			"post authority %s: attempt failed after %v timeout=%v: %v",
+			"post authority %s: attempt failed after %v: %v",
 			peer.Identifier,
 			elapsed,
-			timeout,
 			err,
 		)
 		return postAttemptResult{
@@ -558,10 +557,9 @@ func (p *connector) postAuthorityOnce(
 	if err != nil {
 		elapsed := time.Since(start)
 		p.log.Warningf(
-			"post authority %s: round trip failed after %v timeout=%v: %v",
+			"post authority %s: round trip failed after %v: %v",
 			peer.Identifier,
 			elapsed,
-			timeout,
 			err,
 		)
 		return postAttemptResult{
@@ -641,9 +639,8 @@ func (p *connector) runPostRound(
 
 	for _, state := range states {
 		state := state
-		timeout := clampTimeoutToContext(ctx, time.Duration(p.cfg.HandshakeTimeoutSec)*time.Second)
 		w.Go(func() {
-			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, state.peer, state.attempts, timeout)
+			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, state.peer, state.attempts)
 		})
 	}
 

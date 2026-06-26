@@ -250,7 +250,7 @@ func runConcurrentHandshakes(
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			c, err := connectors[idx].initSession(ctx, clientLinkPrivKey, nil, peer, 30*time.Second)
+			c, err := connectors[idx].initSession(ctx, clientLinkPrivKey, nil, peer)
 			durations[idx] = time.Since(start)
 
 			if err != nil {
@@ -370,7 +370,7 @@ func BenchmarkHandshakeLatencyDistribution(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		c, err := conn.initSession(ctx, clientLinkPrivKey, nil, peer, 30*time.Second)
+		c, err := conn.initSession(ctx, clientLinkPrivKey, nil, peer)
 		cancel()
 
 		if err != nil {

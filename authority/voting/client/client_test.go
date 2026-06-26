@@ -737,7 +737,7 @@ func TestHandshakeDebugErrorOnEOF(t *testing.T) {
 	_, linkKey, err := testingScheme.GenerateKeyPair()
 	require.NoError(err)
 
-	_, err = conn.initSession(ctx, linkKey, nil, peer, time.Duration(cfg.HandshakeTimeoutSec)*time.Second)
+	_, err = conn.initSession(ctx, linkKey, nil, peer)
 	require.Error(err)
 
 	debugOutput := wire.GetDebugError(err)
@@ -1261,6 +1261,45 @@ func generateMixDescriptorForPostTest(
 	}
 
 	return desc, identityPrivateKey, identityPublicKey
+}
+
+func TestSessionTimeoutsClampToContext(t *testing.T) {
+	require := require.New(t)
+
+	cfg := &Config{
+		DialTimeoutSec:      10,
+		HandshakeTimeoutSec: 180,
+		ResponseTimeoutSec:  90,
+	}
+
+	// No deadline on the context: the configured values pass through unchanged.
+	// This is the consensus-fetch case.
+	dial, handshake, response := sessionTimeouts(cfg, context.Background())
+	require.Equal(10*time.Second, dial)
+	require.Equal(180*time.Second, handshake)
+	require.Equal(90*time.Second, response)
+
+	// A window shorter than every configured value clamps all three to what
+	// remains. This is a descriptor-post attempt late in the upload window.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	dial, handshake, response = sessionTimeouts(cfg, ctx)
+	require.LessOrEqual(dial, 5*time.Second)
+	require.LessOrEqual(handshake, 5*time.Second)
+	require.LessOrEqual(response, 5*time.Second)
+	require.Greater(dial, 4*time.Second) // clamped, not collapsed
+
+	// A window between the response and handshake timeouts clamps the larger
+	// handshake timeout but leaves response at its own configured value. This is
+	// the exact distinction the old timeoutOverride flattened, response must not
+	// inherit the handshake's clamped value.
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel2()
+	dial, handshake, response = sessionTimeouts(cfg, ctx2)
+	require.Equal(10*time.Second, dial)          // 10s < 120s window: unchanged
+	require.LessOrEqual(handshake, 120*time.Second) // 180s clamped down to the window
+	require.Greater(handshake, 118*time.Second)
+	require.Equal(90*time.Second, response)      // 90s < 120s window: unchanged
 }
 
 func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
