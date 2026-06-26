@@ -452,6 +452,15 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	doPublishEpoch := currentEpoch + 1
+
+	// Test "already published" before "window closed". Once the descriptor for
+	// this epoch is posted there is nothing left to do, and reporting the upload
+	// window as closed here would wrongly suggest it never went out.
+	if p.lastPublishedEpoch >= doPublishEpoch {
+		p.log.Debugf("publishDescriptorIfNeeded: not needed (published: %d target: %d current: %d)", p.lastPublishedEpoch, doPublishEpoch, currentEpoch)
+		return nil
+	}
+
 	if elapsed >= uploadDeadline {
 		p.log.Noticef(
 			"DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: upload window closed; waiting for next epoch",
@@ -462,11 +471,6 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			descriptorUploadSafety,
 			till,
 		)
-		return nil
-	}
-
-	if p.lastPublishedEpoch >= doPublishEpoch {
-		p.log.Debugf("publishDescriptorIfNeeded: not needed (published: %d target: %d current: %d)", p.lastPublishedEpoch, doPublishEpoch, currentEpoch)
 		return nil
 	}
 
