@@ -184,6 +184,12 @@ func (c *Commands) calcMaxMessageLenClientToServer() int {
 
 // padToMaxCommandSize takes a slice of bytes representing a serialized command and pads it to maxCommandSize.
 func (c *Commands) padToMaxCommandSize(data []byte, isUpstream bool) []byte {
+	// PKI sessions set shouldPad false: their MaxMessageLen is only an upper
+	// bound for the size check (Vote/Consensus may be large), not a padding
+	// target. Padding a NoOp to it would ship tens of megabytes per handshake.
+	if !c.shouldPad {
+		return data
+	}
 	var maxMessageLen int
 	if isUpstream {
 		maxMessageLen = c.MaxMessageLenClientToServer
