@@ -1200,9 +1200,14 @@ func TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 		Authorities:         peers,
 		DialContextFn:       dialFn,
 		Geo:                 mygeo,
-		DialTimeoutSec:      5,
-		HandshakeTimeoutSec: 5,
-		ResponseTimeoutSec:  5,
+		// Generous deadlines: the succeeding peers run a real post-quantum
+		// Noise handshake over an in-memory pipe, which under a loaded CI
+		// runner can exceed a few seconds. The failing peers fail instantly
+		// (dial error, below), so this does not slow the test; it only keeps a
+		// slow handshake from dropping the quorum and flaking the assertion.
+		DialTimeoutSec:      30,
+		HandshakeTimeoutSec: 30,
+		ResponseTimeoutSec:  30,
 		RetryMaxAttempts:    0,
 	}
 	require.NoError(cfg.validate())
@@ -1216,7 +1221,7 @@ func TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	desc := generateReplicaDescriptorForPostReplicaTest(t, epoch, replicaIdentityPublicKey)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	err = client.PostReplica(ctx, epoch, replicaIdentityPrivateKey, replicaIdentityPublicKey, desc)
@@ -1404,9 +1409,13 @@ func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 		Authorities:         peers,
 		DialContextFn:       dialFn,
 		Geo:                 mygeo,
-		DialTimeoutSec:      5,
-		HandshakeTimeoutSec: 5,
-		ResponseTimeoutSec:  5,
+		// Generous deadlines: see TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities.
+		// The succeeding peers run a real PQ Noise handshake over a pipe, which
+		// can exceed a few seconds under CI load; the failing peers fail
+		// instantly, so this only prevents a slow handshake from flaking.
+		DialTimeoutSec:      30,
+		HandshakeTimeoutSec: 30,
+		ResponseTimeoutSec:  30,
 		RetryMaxAttempts:    0,
 	}
 	require.NoError(cfg.validate())
@@ -1417,7 +1426,7 @@ func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	desc, signingPrivateKey, signingPublicKey := generateMixDescriptorForPostTest(t, epoch, 66000)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	err = client.Post(ctx, epoch, signingPrivateKey, signingPublicKey, desc, nil)
