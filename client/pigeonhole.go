@@ -1406,6 +1406,31 @@ func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, er
 	})
 }
 
+// courierEnvelopeErrorToThinError maps a courier EnvelopeError code (see
+// pigeonhole/errors.go) into the thin-client error namespace. The courier's
+// codes 1-4 share wire values with the replica error codes the client reads in
+// the same reply field, so passing them through unmapped would surface a
+// courier rejection as, for example, a replica database failure. The
+// thin-client targets all sit at >= 12, clear of the replica range (1-11).
+func courierEnvelopeErrorToThinError(code uint8) uint8 {
+	switch code {
+	case pigeonhole.EnvelopeErrorSuccess:
+		return thin.ThinClientSuccess
+	case pigeonhole.EnvelopeErrorInvalidEnvelope:
+		return thin.ThinClientErrorCourierInvalidEnvelope
+	case pigeonhole.EnvelopeErrorCacheCorruption:
+		return thin.ThinClientErrorCourierCacheCorruption
+	case pigeonhole.EnvelopeErrorPropagationError:
+		return thin.ThinClientPropagationError
+	case pigeonhole.EnvelopeErrorInvalidEpoch:
+		return thin.ThinClientErrorCourierInvalidEpoch
+	default:
+		// An unknown courier code must still stay out of the replica range so it
+		// cannot be misread as a replica error; flag it as a malformed envelope.
+		return thin.ThinClientErrorCourierInvalidEnvelope
+	}
+}
+
 func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxReply) {
 	conn := d.listener.getConnection(arqMessage.AppID)
 	if conn == nil {
@@ -1452,15 +1477,22 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	courierEnvelopeReply := courierQueryReply.EnvelopeReply
 
+	// The courier reports failures in its own EnvelopeError namespace, whose
+	// values 1-4 collide with the replica error codes the client interprets in
+	// this same field (e.g. EnvelopeErrorInvalidEpoch == ReplicaErrorDatabaseFailure
+	// == 4). Remap into the thin-client namespace (>= 12) so a courier rejection
+	// is never mistaken for a replica error.
+	thinErrorCode := courierEnvelopeErrorToThinError(courierEnvelopeReply.ErrorCode)
+
 	// Log all state for debugging
-	d.log.Debugf("handlePigeonholeARQReply: EnvelopeHash=%x, State=%d, ReplyType=%d, PayloadLen=%d, ErrorCode=%d, IsRead=%v",
-		arqMessage.EnvelopeHash[:], arqMessage.State, courierEnvelopeReply.ReplyType, courierEnvelopeReply.PayloadLen, courierEnvelopeReply.ErrorCode, arqMessage.IsRead)
+	d.log.Debugf("handlePigeonholeARQReply: EnvelopeHash=%x, State=%d, ReplyType=%d, PayloadLen=%d, CourierErrorCode=%d, ThinErrorCode=%d, IsRead=%v",
+		arqMessage.EnvelopeHash[:], arqMessage.State, courierEnvelopeReply.ReplyType, courierEnvelopeReply.PayloadLen, courierEnvelopeReply.ErrorCode, thinErrorCode, arqMessage.IsRead)
 
 	// Use the pure FSM to determine the action
 	transition := computeARQStateTransition(
 		arqMessage.State,
 		courierEnvelopeReply.ReplyType,
-		courierEnvelopeReply.ErrorCode,
+		thinErrorCode,
 		arqMessage.IsRead,
 		arqMessage.NoIdempotentBoxAlreadyExists,
 	)

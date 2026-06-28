@@ -151,6 +151,20 @@ const (
 	// ThinClientErrorVoucherSealOpenFailed indicates that a sealed Contact
 	// Voucher reply could not be opened with the joiner's voucher secret key.
 	ThinClientErrorVoucherSealOpenFailed uint8 = 30
+
+	// ThinClientErrorCourierInvalidEnvelope indicates that the courier rejected
+	// the CourierEnvelope as malformed (pigeonhole.EnvelopeErrorInvalidEnvelope).
+	// It lives in the thin-client namespace, deliberately above the replica
+	// error range (1-11), so it cannot be confused with a replica error: the
+	// courier and the replica are different components with different stores.
+	ThinClientErrorCourierInvalidEnvelope uint8 = 31
+
+	// ThinClientErrorCourierInvalidEpoch indicates that the courier rejected the
+	// CourierEnvelope because its declared replica epoch fell outside the
+	// courier's tolerance window (pigeonhole.EnvelopeErrorInvalidEpoch). This is
+	// a courier-side staleness signal, NOT a replica database failure, even
+	// though the two share wire value 4 in their respective source namespaces.
+	ThinClientErrorCourierInvalidEpoch uint8 = 32
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -226,6 +240,10 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "Voucher signed please-add did not verify"
 	case ThinClientErrorVoucherSealOpenFailed:
 		return "Voucher sealed reply could not be opened"
+	case ThinClientErrorCourierInvalidEnvelope:
+		return "Courier rejected the envelope as malformed"
+	case ThinClientErrorCourierInvalidEpoch:
+		return "Courier rejected the envelope: replica epoch outside tolerance window"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}

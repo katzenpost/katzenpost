@@ -89,6 +89,12 @@ func TestErrorCodeToSentinel(t *testing.T) {
 		{"BACAPDecryptionFailed", ThinClientErrorBACAPDecryptionFailed, ErrBACAPDecryptionFailed, false, true},
 		{"StartResendingCancelled", ThinClientErrorStartResendingCancelled, ErrStartResendingCancelled, false, true},
 		{"InvalidTombstoneSig", ThinClientErrorInvalidTombstoneSig, ErrInvalidTombstoneSignature, false, true},
+		// Courier envelope errors live above the replica range so they never
+		// collide with replica codes 1-4 (e.g. CourierInvalidEpoch != DatabaseFailure).
+		{"CourierCacheCorruption", ThinClientErrorCourierCacheCorruption, ErrCacheCorruption, false, true},
+		{"CourierPropagationError", ThinClientPropagationError, ErrPropagationError, false, true},
+		{"CourierInvalidEnvelope", ThinClientErrorCourierInvalidEnvelope, ErrInvalidEnvelope, false, true},
+		{"CourierInvalidEpoch", ThinClientErrorCourierInvalidEpoch, ErrCourierInvalidEpoch, false, true},
 	}
 
 	for _, tt := range tests {
