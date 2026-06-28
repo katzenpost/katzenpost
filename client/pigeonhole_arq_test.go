@@ -8,8 +8,34 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 )
+
+func TestCourierEnvelopeErrorToThinError(t *testing.T) {
+	// Every courier envelope error must map clear of the replica error range
+	// (1-11), so a courier rejection is never read as a replica error.
+	cases := map[uint8]uint8{
+		pigeonhole.EnvelopeErrorSuccess:          thin.ThinClientSuccess,
+		pigeonhole.EnvelopeErrorInvalidEnvelope:  thin.ThinClientErrorCourierInvalidEnvelope,
+		pigeonhole.EnvelopeErrorCacheCorruption:  thin.ThinClientErrorCourierCacheCorruption,
+		pigeonhole.EnvelopeErrorPropagationError: thin.ThinClientPropagationError,
+		pigeonhole.EnvelopeErrorInvalidEpoch:     thin.ThinClientErrorCourierInvalidEpoch,
+	}
+	for courierCode, want := range cases {
+		got := courierEnvelopeErrorToThinError(courierCode)
+		require.Equal(t, want, got, "courier code %d", courierCode)
+		if courierCode != pigeonhole.EnvelopeErrorSuccess {
+			require.Greater(t, got, uint8(11), "courier code %d mapped into replica range", courierCode)
+		}
+	}
+	// The collision we are guarding against: courier InvalidEpoch and replica
+	// DatabaseFailure share source value 4, but must not share the wire code.
+	require.NotEqual(t, pigeonhole.ReplicaErrorDatabaseFailure,
+		courierEnvelopeErrorToThinError(pigeonhole.EnvelopeErrorInvalidEpoch))
+	// Unknown courier codes also stay out of the replica range.
+	require.Greater(t, courierEnvelopeErrorToThinError(200), uint8(11))
+}
 
 func TestComputeARQStateTransition(t *testing.T) {
 	tests := []struct {
