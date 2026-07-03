@@ -163,14 +163,23 @@ var (
 	// Pigeonhole writes are immutable - once a box has been written, it cannot be overwritten.
 	ErrBoxAlreadyExists = errors.New("box already exists")
 
-	// ErrInvalidEnvelope indicates that the courier envelope format is invalid.
-	ErrInvalidEnvelope = errors.New("invalid envelope")
+	// ErrInvalidEnvelope indicates that the courier rejected the envelope as
+	// malformed. This is a courier-side condition, distinct from any replica error.
+	ErrInvalidEnvelope = errors.New("courier rejected envelope as malformed")
 
-	// ErrCacheCorruption indicates that cache data corruption was detected.
-	ErrCacheCorruption = errors.New("cache corruption")
+	// ErrCacheCorruption indicates that the courier detected cache corruption.
+	ErrCacheCorruption = errors.New("courier cache corruption")
 
-	// ErrPropagationError indicates an error propagating the request to replicas.
-	ErrPropagationError = errors.New("propagation error")
+	// ErrPropagationError indicates the courier could not propagate the request
+	// to the replicas. This is a courier-side condition, not a replica error.
+	ErrPropagationError = errors.New("courier propagation error")
+
+	// ErrCourierInvalidEpoch indicates that the courier rejected the envelope
+	// because its declared replica epoch was outside the courier's tolerance
+	// window. This is a courier staleness signal, NOT a replica database failure
+	// (the two collide on wire value 4 in their source namespaces, which is why
+	// the daemon remaps courier errors into the thin-client namespace).
+	ErrCourierInvalidEpoch = errors.New("courier rejected envelope: replica epoch outside tolerance window")
 
 	// ErrInternalError indicates an internal client error.
 	ErrInternalError = errors.New("internal error")

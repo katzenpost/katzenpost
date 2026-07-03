@@ -737,7 +737,7 @@ func TestHandshakeDebugErrorOnEOF(t *testing.T) {
 	_, linkKey, err := testingScheme.GenerateKeyPair()
 	require.NoError(err)
 
-	_, err = conn.initSession(ctx, linkKey, nil, peer, time.Duration(cfg.HandshakeTimeoutSec)*time.Second)
+	_, err = conn.initSession(ctx, linkKey, nil, peer)
 	require.Error(err)
 
 	debugOutput := wire.GetDebugError(err)
@@ -1200,9 +1200,14 @@ func TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 		Authorities:         peers,
 		DialContextFn:       dialFn,
 		Geo:                 mygeo,
-		DialTimeoutSec:      5,
-		HandshakeTimeoutSec: 5,
-		ResponseTimeoutSec:  5,
+		// Generous deadlines: the succeeding peers run a real post-quantum
+		// Noise handshake over an in-memory pipe, which under a loaded CI
+		// runner can exceed a few seconds. The failing peers fail instantly
+		// (dial error, below), so this does not slow the test; it only keeps a
+		// slow handshake from dropping the quorum and flaking the assertion.
+		DialTimeoutSec:      30,
+		HandshakeTimeoutSec: 30,
+		ResponseTimeoutSec:  30,
 		RetryMaxAttempts:    0,
 	}
 	require.NoError(cfg.validate())
@@ -1216,7 +1221,7 @@ func TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	desc := generateReplicaDescriptorForPostReplicaTest(t, epoch, replicaIdentityPublicKey)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	err = client.PostReplica(ctx, epoch, replicaIdentityPrivateKey, replicaIdentityPublicKey, desc)
@@ -1261,6 +1266,84 @@ func generateMixDescriptorForPostTest(
 	}
 
 	return desc, identityPrivateKey, identityPublicKey
+}
+
+// TestInitSessionCancelledByContext verifies that cancelling the caller's
+// context interrupts an in-flight handshake promptly, rather than blocking for
+// the full configured handshake timeout. A black-hole server accepts the TCP
+// connection but never speaks the wire protocol, so the initiator would
+// otherwise block in io.ReadFull until HandshakeTimeoutSec, set very high here.
+func TestInitSessionCancelledByContext(t *testing.T) {
+	require := require.New(t)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(err)
+	defer listener.Close()
+
+	// Accept connections and hold them open without ever responding.
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close()
+		}
+	}()
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	_, clientLinkPrivKey, err := benchKEMScheme.GenerateKeyPair()
+	require.NoError(err)
+	serverLinkPubKey, _, err := benchKEMScheme.GenerateKeyPair()
+	require.NoError(err)
+	serverIDPubKey, _, err := benchSignScheme.GenerateKey()
+	require.NoError(err)
+
+	peer := &config.Authority{
+		Identifier:         "blackhole",
+		IdentityPublicKey:  serverIDPubKey,
+		LinkPublicKey:      config.LinkPublicKey{PublicKey: serverLinkPubKey},
+		PKISignatureScheme: benchSignScheme.Name(),
+		WireKEMScheme:      benchKEMScheme.Name(),
+		Addresses:          []string{fmt.Sprintf("tcp://%s", listener.Addr().String())},
+	}
+
+	cfg := &Config{
+		KEMScheme:           benchKEMScheme,
+		PKISignatureScheme:  benchSignScheme,
+		LinkKey:             clientLinkPrivKey,
+		LogBackend:          logBackend,
+		Authorities:         []*config.Authority{peer},
+		Geo:                 benchGeometry,
+		DialTimeoutSec:      10,
+		HandshakeTimeoutSec: 3600, // would block ~forever absent ctx cancellation
+		ResponseTimeoutSec:  90,
+	}
+	conn := newConnector(cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		c, err := conn.initSession(ctx, clientLinkPrivKey, nil, peer)
+		if c != nil {
+			c.Close()
+		}
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(err, "handshake should fail once the context is cancelled")
+		// The dial and session setup succeeded; the failure must come from the
+		// interrupted handshake, not a misconfiguration.
+		require.Contains(err.Error(), "handshake")
+	case <-time.After(10 * time.Second):
+		t.Fatal("initSession did not return after context cancellation: the watcher failed to interrupt the handshake")
+	}
 }
 
 func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
@@ -1326,9 +1409,13 @@ func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 		Authorities:         peers,
 		DialContextFn:       dialFn,
 		Geo:                 mygeo,
-		DialTimeoutSec:      5,
-		HandshakeTimeoutSec: 5,
-		ResponseTimeoutSec:  5,
+		// Generous deadlines: see TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities.
+		// The succeeding peers run a real PQ Noise handshake over a pipe, which
+		// can exceed a few seconds under CI load; the failing peers fail
+		// instantly, so this only prevents a slow handshake from flaking.
+		DialTimeoutSec:      30,
+		HandshakeTimeoutSec: 30,
+		ResponseTimeoutSec:  30,
 		RetryMaxAttempts:    0,
 	}
 	require.NoError(cfg.validate())
@@ -1339,7 +1426,7 @@ func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	desc, signingPrivateKey, signingPublicKey := generateMixDescriptorForPostTest(t, epoch, 66000)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	err = client.Post(ctx, epoch, signingPrivateKey, signingPublicKey, desc, nil)

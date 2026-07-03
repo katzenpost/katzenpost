@@ -91,12 +91,17 @@ func TestListenerRefusesWithoutUsableDocument(t *testing.T) {
 		closeAllCh: make(chan interface{}),
 	}
 
-	go l.worker()
-	defer gl.Close()
-
+	// Set the read deadline before starting the gate. A fast rejection closes
+	// the pipe, and SetReadDeadline on a closed net.Pipe end returns an error;
+	// setting it first keeps that safety-net deadline from racing the close. The
+	// gate is expected to close the connection well before the deadline fires.
 	if err := clientConn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
+
+	go l.worker()
+	defer gl.Close()
+
 	if _, err := clientConn.Read(make([]byte, 1)); err == nil {
 		t.Fatal("expected the gate to close the connection when no usable document is cached")
 	}

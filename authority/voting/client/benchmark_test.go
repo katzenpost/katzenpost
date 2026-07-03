@@ -250,7 +250,7 @@ func runConcurrentHandshakes(
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			c, err := connectors[idx].initSession(ctx, clientLinkPrivKey, nil, peer, 30*time.Second)
+			c, err := connectors[idx].initSession(ctx, clientLinkPrivKey, nil, peer)
 			durations[idx] = time.Since(start)
 
 			if err != nil {
@@ -258,7 +258,7 @@ func runConcurrentHandshakes(
 				return
 			}
 
-			c.conn.Close()
+			c.Close()
 		}(c)
 	}
 
@@ -370,14 +370,14 @@ func BenchmarkHandshakeLatencyDistribution(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		c, err := conn.initSession(ctx, clientLinkPrivKey, nil, peer, 30*time.Second)
+		c, err := conn.initSession(ctx, clientLinkPrivKey, nil, peer)
 		cancel()
 
 		if err != nil {
 			b.Fatalf("handshake failed: %v", err)
 		}
 
-		c.conn.Close()
+		c.Close()
 		connWg.Wait() // Wait for server-side handshake to complete
 	}
 }

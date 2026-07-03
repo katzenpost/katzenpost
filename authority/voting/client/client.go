@@ -157,6 +157,15 @@ func (cfg *Config) validate() error {
 type connection struct {
 	conn    net.Conn
 	session *wire.Session
+	watch   *connWatcher
+}
+
+// Close stops the context watcher, if any, and closes the connection.
+func (c *connection) Close() {
+	if c.watch != nil {
+		c.watch.stop()
+	}
+	c.conn.Close()
 }
 
 type connector struct {
@@ -171,12 +180,36 @@ func newConnector(cfg *Config) *connector {
 	}
 }
 
+// connWatcher closes a connection when its context is cancelled, interrupting an
+// in-flight handshake or round trip the moment the caller cancels or the upload
+// window deadline elapses. It is stopped, without closing the connection, once
+// the exchange completes normally and ownership passes to the caller.
+type connWatcher struct {
+	stopCh chan struct{}
+	once   sync.Once
+}
+
+func watchConn(ctx context.Context, conn net.Conn) *connWatcher {
+	w := &connWatcher{stopCh: make(chan struct{})}
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-w.stopCh:
+		}
+	}()
+	return w
+}
+
+func (w *connWatcher) stop() {
+	w.once.Do(func() { close(w.stopCh) })
+}
+
 func (p *connector) initSession(
 	ctx context.Context,
 	linkKey kem.PrivateKey,
 	signingKey sign.PublicKey,
 	peer *config.Authority,
-	timeoutOverride time.Duration,
 ) (*connection, error) {
 	var conn net.Conn
 	var err error
@@ -186,14 +219,13 @@ func (p *connector) initSession(
 		return fmt.Sprintf("peer %s (%s)", peer.Identifier, strings.Join(peer.Addresses, ","))
 	}
 
+	// Each phase gets its full configured timeout, applied right before the
+	// phase it bounds: dial via the dialer below, handshake and round trip via
+	// SetDeadline. The caller's context is enforced separately by watchConn, so
+	// no phase is silently shrunk by a window that began before it started.
 	dialTimeout := time.Duration(p.cfg.DialTimeoutSec) * time.Second
 	handshakeTimeout := time.Duration(p.cfg.HandshakeTimeoutSec) * time.Second
 	responseTimeout := time.Duration(p.cfg.ResponseTimeoutSec) * time.Second
-	if timeoutOverride > 0 {
-		dialTimeout = timeoutOverride
-		handshakeTimeout = timeoutOverride
-		responseTimeout = timeoutOverride
-	}
 
 	p.log.Debugf("Client timeouts: dial=%v, handshake=%v, response=%v", dialTimeout, handshakeTimeout, responseTimeout)
 
@@ -275,6 +307,19 @@ func (p *connector) initSession(
 		return nil, fmt.Errorf("%s: failed to create PKI session: %v", peerInfo(), err)
 	}
 
+	// Watch the caller's context across the handshake and the subsequent round
+	// trip: cancelling ctx, or its upload-window deadline elapsing, closes the
+	// connection and unblocks the in-flight Read/Write. On any failure the
+	// deferred stop tears the watcher down; on success it is handed to the
+	// returned connection, whose Close stops it.
+	watch := watchConn(ctx, conn)
+	sessionReady := false
+	defer func() {
+		if !sessionReady {
+			watch.stop()
+		}
+	}()
+
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
 	if err = s.Initialize(conn); err != nil {
@@ -324,7 +369,8 @@ func (p *connector) initSession(
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
 	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), handshakeElapsed)
 	conn.SetDeadline(time.Now().Add(responseTimeout))
-	return &connection{conn: conn, session: s}, nil
+	sessionReady = true
+	return &connection{conn: conn, session: s, watch: watch}, nil
 }
 
 func (p *connector) initSessionWithRetry(
@@ -345,7 +391,7 @@ func (p *connector) initSessionWithRetry(
 			}
 		}
 
-		conn, err := p.initSession(ctx, linkKey, signingKey, peer, 0)
+		conn, err := p.initSession(ctx, linkKey, signingKey, peer)
 		if err == nil {
 			if attempt > 0 {
 				p.log.Noticef("authority %s: connected after %d retries", peer.Identifier, attempt)
@@ -402,7 +448,7 @@ func (p *connector) allPeersRoundTrip(
 				responseCh <- PeerResponse{Peer: peer, Error: err}
 				return
 			}
-			defer conn.conn.Close()
+			defer conn.Close()
 
 			resp, err := p.roundTrip(conn.session, cmd)
 			if err != nil {
@@ -528,20 +574,16 @@ func (p *connector) postAuthorityOnce(
 	cmd commands.Command,
 	peer *config.Authority,
 	round int,
-	timeout time.Duration,
 ) postAttemptResult {
 	start := time.Now()
-	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
-	conn, err := p.initSession(attemptCtx, linkKey, signingKey, peer, timeout)
+	conn, err := p.initSession(ctx, linkKey, signingKey, peer)
 	if err != nil {
 		elapsed := time.Since(start)
 		p.log.Warningf(
-			"post authority %s: attempt failed after %v timeout=%v: %v",
+			"post authority %s: attempt failed after %v: %v",
 			peer.Identifier,
 			elapsed,
-			timeout,
 			err,
 		)
 		return postAttemptResult{
@@ -552,16 +594,15 @@ func (p *connector) postAuthorityOnce(
 			elapsed: elapsed,
 		}
 	}
-	defer conn.conn.Close()
+	defer conn.Close()
 
 	resp, err := p.roundTrip(conn.session, cmd)
 	if err != nil {
 		elapsed := time.Since(start)
 		p.log.Warningf(
-			"post authority %s: round trip failed after %v timeout=%v: %v",
+			"post authority %s: round trip failed after %v: %v",
 			peer.Identifier,
 			elapsed,
-			timeout,
 			err,
 		)
 		return postAttemptResult{
@@ -641,9 +682,8 @@ func (p *connector) runPostRound(
 
 	for _, state := range states {
 		state := state
-		timeout := clampTimeoutToContext(ctx, time.Duration(p.cfg.HandshakeTimeoutSec)*time.Second)
 		w.Go(func() {
-			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, state.peer, state.attempts, timeout)
+			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, state.peer, state.attempts)
 		})
 	}
 
@@ -772,17 +812,6 @@ func remainingContextBudget(ctx context.Context) time.Duration {
 		return 0
 	}
 	return time.Until(deadline)
-}
-
-func clampTimeoutToContext(ctx context.Context, timeout time.Duration) time.Duration {
-	remaining := remainingContextBudget(ctx)
-	if remaining <= 0 {
-		return timeout
-	}
-	if remaining < timeout {
-		return remaining
-	}
-	return timeout
 }
 
 func logPostAttemptResult(
@@ -1061,7 +1090,7 @@ func (p *connector) fetchConsensus(
 	if err != nil {
 		return nil, fmt.Errorf("peer %s: connection failed: %v", auth.Identifier, err)
 	}
-	defer conn.conn.Close()
+	defer conn.Close()
 
 	cmd := &commands.GetConsensus{
 		Epoch:              epoch,

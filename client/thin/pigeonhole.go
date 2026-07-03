@@ -53,6 +53,14 @@ func thinClientErrorCodeToSentinel(errorCode uint8) error {
 		return ErrCopyCommandFailed
 	case ThinClientErrorPayloadTooLarge:
 		return ErrPayloadTooLarge
+	case ThinClientErrorCourierCacheCorruption:
+		return ErrCacheCorruption
+	case ThinClientPropagationError:
+		return ErrPropagationError
+	case ThinClientErrorCourierInvalidEnvelope:
+		return ErrInvalidEnvelope
+	case ThinClientErrorCourierInvalidEpoch:
+		return ErrCourierInvalidEpoch
 	default:
 		return errors.New(ThinClientErrorToString(errorCode))
 	}
@@ -146,6 +154,17 @@ func errorCodeToSentinel(errorCode uint8) error {
 		return ErrInvalidTombstoneSignature
 	case ThinClientErrorPayloadTooLarge:
 		return ErrPayloadTooLarge
+
+	// Courier envelope error codes (remapped into the thin-client namespace by
+	// the daemon so they no longer collide with replica codes 1-4).
+	case ThinClientErrorCourierCacheCorruption:
+		return ErrCacheCorruption
+	case ThinClientPropagationError:
+		return ErrPropagationError
+	case ThinClientErrorCourierInvalidEnvelope:
+		return ErrInvalidEnvelope
+	case ThinClientErrorCourierInvalidEpoch:
+		return ErrCourierInvalidEpoch
 
 	default:
 		// For other error codes (thin client errors, etc.), return a generic error
