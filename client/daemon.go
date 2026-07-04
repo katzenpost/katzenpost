@@ -902,6 +902,27 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 }
 
+// scheduleARQFollowUp routes the next round of an in-flight ARQ exchange (the
+// second-round read after a courier ACK, or a retry after BoxIDNotFound) onto
+// the owning client's resend queue, so the Poisson scheduler releases it on a
+// tick rather than the reply handler dispatching it inline. Sending the
+// follow-up inline would couple its departure to the inbound reply that
+// prompted it, letting the gateway or a passive network observer tell a
+// multi-round read apart from single-round decoy traffic by that reaction. The
+// caller must already have set arqMessage.State to the state the follow-up's
+// reply should be answered in; enqueueResend hands the current SURB ID to the
+// scheduler, and arqDoResend rotates it to a fresh one when the tick arrives.
+func (d *Daemon) scheduleARQFollowUp(arqMessage *ARQMessage) {
+	d.lockReply()
+	surbID := arqMessage.SURBID
+	d.replyLock.Unlock()
+	if surbID == nil {
+		d.log.Debugf("scheduleARQFollowUp: nil SURB ID, nothing to schedule")
+		return
+	}
+	d.enqueueResend(surbID)
+}
+
 // dropARQMessage deletes both map entries for arqMessage under replyLock.
 // Used by handler early-bail paths that cannot rotate or retry, e.g.
 // a malformed reply, to prevent map-entry leaks now that handleReply
