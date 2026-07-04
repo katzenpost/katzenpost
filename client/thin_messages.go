@@ -22,8 +22,6 @@ func IntoThinResponse(r *Response) *thin.Response {
 		EncryptReadReply:                     r.EncryptReadReply,
 		EncryptWriteReply:                    r.EncryptWriteReply,
 		StartResendingEncryptedMessageReply:  r.StartResendingEncryptedMessageReply,
-		WriteStreamReply:                     r.WriteStreamReply,
-		ReadStreamReply:                      r.ReadStreamReply,
 		CancelResendingEncryptedMessageReply: r.CancelResendingEncryptedMessageReply,
 		StartResendingCopyCommandReply:       r.StartResendingCopyCommandReply,
 		CancelResendingCopyCommandReply:      r.CancelResendingCopyCommandReply,
@@ -73,10 +71,6 @@ type Response struct {
 	EncryptWriteReply *thin.EncryptWriteReply
 
 	StartResendingEncryptedMessageReply *thin.StartResendingEncryptedMessageReply
-
-	WriteStreamReply *thin.WriteStreamReply
-
-	ReadStreamReply *thin.ReadStreamReply
 
 	CancelResendingEncryptedMessageReply *thin.CancelResendingEncryptedMessageReply
 
@@ -142,9 +136,6 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		SessionToken: r.SessionToken,
 		SendMessage:  r.SendMessage,
 		ThinClose:    r.ThinClose,
-
-		WriteStream: r.WriteStream,
-		ReadStream:  r.ReadStream,
 	}
 }
 
@@ -217,16 +208,4 @@ type Request struct {
 	// resends travel through the same fair, Poisson-gated path as fresh
 	// sends. egressWorker routes it to arqDoResend.
 	ResendARQ *[sphinxConstants.SURBIDLength]byte
-
-	// WriteStream requests a windowed SACK write of a whole multi-box payload.
-	WriteStream *thin.WriteStream
-
-	// ReadStream requests a windowed SACK read of many sequential boxes.
-	ReadStream *thin.ReadStream
-
-	// SACKBoxSend carries one box of a SACK write through the Poisson-gated
-	// egress path. Emitted by the SACK controller (never from a thin client),
-	// so each box send is rate-limited like any other send. egressWorker
-	// routes it to sackDoBoxSend.
-	SACKBoxSend *sackBoxSend
 }

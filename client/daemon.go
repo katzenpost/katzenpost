@@ -104,13 +104,6 @@ type Daemon struct {
 	// Cryptographically secure random number generator
 	secureRand *mrand.Rand
 
-	// sackWindowMu guards the per-epoch cache of the computed SACK window
-	// (the bandwidth-delay-product default used when a WriteStream or
-	// ReadStream request leaves Window unset).
-	sackWindowMu     sync.Mutex
-	sackWindowEpoch  uint64
-	sackWindowCached int
-
 	haltOnce sync.Once
 }
 
@@ -363,8 +356,6 @@ func isLocalRequest(r *Request) bool {
 		r.CreateCourierEnvelopesFromPayload != nil ||
 		r.CreateCourierEnvelopesFromPayloads != nil ||
 		r.CreateCourierEnvelopesFromTombstoneRange != nil ||
-		r.WriteStream != nil ||
-		r.ReadStream != nil ||
 		r.VoucherMint != nil ||
 		r.VoucherInduct != nil ||
 		r.VoucherOpen != nil ||
@@ -423,10 +414,6 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.createCourierEnvelopesFromPayloads(request)
 	case request.CreateCourierEnvelopesFromTombstoneRange != nil:
 		d.createCourierEnvelopesFromTombstoneRange(request)
-	case request.WriteStream != nil:
-		d.writeStream(request)
-	case request.ReadStream != nil:
-		d.readStream(request)
 	case request.VoucherMint != nil:
 		d.voucherMint(request)
 	case request.VoucherInduct != nil:
@@ -457,8 +444,6 @@ func (d *Daemon) dispatchMixnet(request *Request) {
 		d.startResendingEncryptedMessage(request)
 	case request.StartResendingCopyCommand != nil:
 		d.startResendingCopyCommand(request)
-	case request.SACKBoxSend != nil:
-		d.sackDoBoxSend(request.SACKBoxSend)
 	default:
 		d.log.Errorf("dispatchMixnet: dropping request with no recognised mixnet variant (appID %x)",
 			requestAppID(request))

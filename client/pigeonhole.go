@@ -1385,15 +1385,9 @@ func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, erro
 // - ACKReceived: ACK received, for reads we need to send another SURB for payload
 // - PayloadReceived: Terminal state for reads after receiving payload
 // finishARQMessage delivers the terminal outcome of an ARQ operation to its
-// owner. A SACK-controlled box notifies its controller through OnComplete
-// (plaintext nil for writes, the decrypted box payload for reads); a
-// standalone StartResendingEncryptedMessage gets its per-message thin reply.
-// The map cleanup has already been done by the caller.
+// owner: a standalone StartResendingEncryptedMessage gets its per-message thin
+// reply. The map cleanup has already been done by the caller.
 func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, errorCode uint8, plaintext []byte) {
-	if arqMessage.OnComplete != nil {
-		arqMessage.OnComplete(errorCode, plaintext)
-		return
-	}
 	conn.sendResponse(&Response{
 		AppID: arqMessage.AppID,
 		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
