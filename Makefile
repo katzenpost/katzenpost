@@ -24,7 +24,7 @@ genconfig:
 	cd cmd/genconfig; go build
 
 ping:
-	cd cmd/ping; go build
+	cd cmd/ping; go build -trimpath -ldflags "-s -w"
 
 courier:
 	cd cmd/courier; go build
