@@ -132,11 +132,11 @@ const (
 	// sentinel mapping is driven entirely by this code.
 	ThinClientErrorCopyCommandFailed uint8 = 26
 
-	// ThinClientErrorPayloadTooLarge indicates that a WriteStream plaintext or
-	// a ReadStream result would exceed the daemon's configured maximum stream
-	// payload size. The daemon reports it as a clean per-request reply rather
-	// than tearing down the connection, so the caller can match it with
-	// errors.Is(err, ErrPayloadTooLarge) and retry with a smaller payload.
+	// ThinClientErrorPayloadTooLarge indicates that a request's payload would
+	// exceed the daemon's configured maximum payload size. The daemon reports
+	// it as a clean per-request reply rather than tearing down the connection,
+	// so the caller can match it with errors.Is(err, ErrPayloadTooLarge) and
+	// retry with a smaller payload.
 	ThinClientErrorPayloadTooLarge uint8 = 27
 
 	// ThinClientErrorVoucherHashMismatch indicates that a Contact Voucher
@@ -331,58 +331,6 @@ type StartResendingEncryptedMessage struct {
 	// as success (the write already happened). Set to true to return BoxAlreadyExists
 	// as an error instead.
 	NoIdempotentBoxAlreadyExists bool `cbor:"no_idempotent_box_already_exists,omitempty"`
-}
-
-// WriteStream requests the daemon to write a whole payload, of any size,
-// across as many BACAP boxes as it spans, using a windowed selective-ack
-// (SACK) ARQ. Unlike the per-box StartResendingEncryptedMessage, the daemon
-// keeps up to Window boxes in flight at once and retransmits only the boxes
-// whose acknowledgements time out, so a multi-box payload is no longer
-// serialised one round trip per box. The daemon does all chunking and
-// encryption; the thin client supplies only the cleartext payload and the
-// destination capability.
-type WriteStream struct {
-	// QueryID correlates this request with its WriteStreamReply.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// WriteCap is the write capability for the destination channel.
-	WriteCap *bacap.WriteCap `cbor:"write_cap"`
-
-	// StartIndex is the message box index of the first box written; the
-	// daemon advances sequentially from here, one box per chunk.
-	StartIndex *bacap.MessageBoxIndex `cbor:"start_index"`
-
-	// Payload is the cleartext to write. The daemon splits it into boxes.
-	Payload []byte `cbor:"payload"`
-
-	// Window is the maximum number of boxes in flight at once. Zero asks
-	// the daemon to choose a default derived from the send rate and RTT.
-	Window int `cbor:"window,omitempty"`
-}
-
-// ReadStream requests the daemon to read BoxCount sequential boxes from a
-// channel using the windowed selective-ack (SACK) ARQ, the read counterpart
-// of WriteStream. The daemon keeps up to Window boxes in flight, retransmits
-// only the boxes whose payloads time out, decrypts each box, and reassembles
-// them in order into a single payload. The thin client supplies only the read
-// capability, the start index, and how many boxes to read.
-type ReadStream struct {
-	// QueryID correlates this request with its ReadStreamReply.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// ReadCap is the read capability for the source channel.
-	ReadCap *bacap.ReadCap `cbor:"read_cap"`
-
-	// StartIndex is the message box index of the first box read; the daemon
-	// advances sequentially from here.
-	StartIndex *bacap.MessageBoxIndex `cbor:"start_index"`
-
-	// BoxCount is the number of sequential boxes to read.
-	BoxCount uint32 `cbor:"box_count"`
-
-	// Window is the maximum number of boxes in flight at once. Zero asks the
-	// daemon to choose a default derived from the send rate and RTT.
-	Window int `cbor:"window,omitempty"`
 }
 
 // CancelResendingEncryptedMessage requests the daemon to cancel resending an encrypted message.
@@ -740,12 +688,6 @@ type Response struct {
 	// StartResendingEncryptedMessageReply is sent when the client daemon successfully starts resending an encrypted message.
 	StartResendingEncryptedMessageReply *StartResendingEncryptedMessageReply `cbor:"start_resending_encrypted_message_reply"`
 
-	// WriteStreamReply is sent when a windowed SACK payload write completes.
-	WriteStreamReply *WriteStreamReply `cbor:"write_stream_reply"`
-
-	// ReadStreamReply is sent when a windowed SACK payload read completes.
-	ReadStreamReply *ReadStreamReply `cbor:"read_stream_reply"`
-
 	// CancelResendingEncryptedMessageReply is sent when the client daemon successfully cancels resending an encrypted message.
 	CancelResendingEncryptedMessageReply *CancelResendingEncryptedMessageReply `cbor:"cancel_resending_encrypted_message_reply"`
 
@@ -828,12 +770,6 @@ type Request struct {
 
 	// StartResendingEncryptedMessage is used to start resending an encrypted message.
 	StartResendingEncryptedMessage *StartResendingEncryptedMessage `cbor:"start_resending_encrypted_message"`
-
-	// WriteStream is used to write a whole multi-box payload via the windowed SACK ARQ.
-	WriteStream *WriteStream `cbor:"write_stream"`
-
-	// ReadStream is used to read many sequential boxes via the windowed SACK ARQ.
-	ReadStream *ReadStream `cbor:"read_stream"`
 
 	// CancelResendingEncryptedMessage is used to cancel resending an encrypted message.
 	CancelResendingEncryptedMessage *CancelResendingEncryptedMessage `cbor:"cancel_resending_encrypted_message"`

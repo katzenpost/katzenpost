@@ -334,58 +334,6 @@ func (e *StartResendingEncryptedMessageReply) String() string {
 	return fmt.Sprintf("StartResendingEncryptedMessageReply: %d bytes plaintext, courier=%x", len(e.Plaintext), e.CourierIdentityHash)
 }
 
-// WriteStreamReply is the reply to a WriteStream request, sent once every
-// box of the payload has been acknowledged or the transfer has failed.
-type WriteStreamReply struct {
-	// QueryID correlates this reply with its WriteStream request.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// ErrorCode is zero on success, or the failure reason otherwise.
-	ErrorCode uint8 `cbor:"error_code"`
-
-	// NextMessageBoxIndex is the box index immediately after the last box
-	// written, ready to seed a subsequent write on the same channel.
-	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
-
-	// BoxCount is the number of boxes the payload spanned.
-	BoxCount uint32 `cbor:"box_count"`
-}
-
-// String returns a string representation of the WriteStreamReply.
-func (e *WriteStreamReply) String() string {
-	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("WriteStreamReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
-	}
-	return fmt.Sprintf("WriteStreamReply: %d boxes written", e.BoxCount)
-}
-
-// ReadStreamReply is the reply to a ReadStream request, sent once every box
-// has been read and reassembled or the transfer has failed.
-type ReadStreamReply struct {
-	// QueryID correlates this reply with its ReadStream request.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// ErrorCode is zero on success, or the failure reason otherwise.
-	ErrorCode uint8 `cbor:"error_code"`
-
-	// Payload is the concatenation of the decrypted boxes, in order.
-	Payload []byte `cbor:"payload"`
-
-	// NextMessageBoxIndex is the box index immediately after the last box read.
-	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
-
-	// BoxCount is the number of boxes read.
-	BoxCount uint32 `cbor:"box_count"`
-}
-
-// String returns a string representation of the ReadStreamReply.
-func (e *ReadStreamReply) String() string {
-	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("ReadStreamReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
-	}
-	return fmt.Sprintf("ReadStreamReply: %d boxes, %d bytes", e.BoxCount, len(e.Payload))
-}
-
 // CancelResendingEncryptedMessageReply is the reply to a CancelResendingEncryptedMessage request.
 type CancelResendingEncryptedMessageReply struct {
 	// QueryID is used for correlating this reply with the CancelResendingEncryptedMessage request

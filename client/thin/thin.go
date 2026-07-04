@@ -210,8 +210,8 @@ var (
 	// diagnostic detail when present.
 	ErrCopyCommandFailed = errors.New("copy command failed")
 
-	// ErrPayloadTooLarge indicates that a WriteStream plaintext or a ReadStream
-	// result would exceed the daemon's configured maximum stream payload size.
+	// ErrPayloadTooLarge indicates that a request's payload would exceed the
+	// daemon's configured maximum payload size.
 	ErrPayloadTooLarge = errors.New("payload too large")
 )
 
@@ -933,18 +933,6 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 	case message.StartResendingEncryptedMessageReply != nil:
 		select {
 		case t.eventSink <- message.StartResendingEncryptedMessageReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.WriteStreamReply != nil:
-		select {
-		case t.eventSink <- message.WriteStreamReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.ReadStreamReply != nil:
-		select {
-		case t.eventSink <- message.ReadStreamReply:
 		case <-t.HaltCh():
 			return false
 		}
