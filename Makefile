@@ -1,5 +1,5 @@
 
-.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica install-replica-deps
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica install-replica-deps install-replica-deps-root rocksdb-local replica-local
 
 .PHONY: update-go-deps
 update-go-deps:
@@ -24,7 +24,7 @@ genconfig:
 	cd cmd/genconfig; go build
 
 ping:
-	cd cmd/ping; go build
+	cd cmd/ping; go build -trimpath -ldflags "-s -w"
 
 courier:
 	cd cmd/courier; go build
@@ -53,7 +53,13 @@ kpclientd:
 sphinx:
 	cd cmd/sphinx; go build
 
+# Privilege escalation for the system-wide RocksDB install. Defaults to sudo;
+# install-replica-deps-root clears it to run the recipe as root directly.
+SUDO ?= sudo
+
 ROCKSDB_VERSION = 10.2.1
+# Per-user RocksDB prefix used by the rocksdb-local / replica-local targets.
+ROCKSDB_LOCAL_PREFIX ?= $(HOME)/.cache/katzenpost/rocksdb-$(ROCKSDB_VERSION)
 
 install-replica-deps:
 	@set -e; \
@@ -64,15 +70,15 @@ install-replica-deps:
 	else \
 		if [ "$$installed_ver" != "none" ]; then \
 			echo "RocksDB $$installed_ver found, need $(ROCKSDB_VERSION) — removing old version..."; \
-			sudo rm -f /usr/local/lib/librocksdb.*; \
-			sudo rm -rf /usr/local/include/rocksdb; \
-			sudo rm -f /usr/local/lib/pkgconfig/rocksdb.pc; \
-			sudo ldconfig; \
+			$(SUDO) rm -f /usr/local/lib/librocksdb.*; \
+			$(SUDO) rm -rf /usr/local/include/rocksdb; \
+			$(SUDO) rm -f /usr/local/lib/pkgconfig/rocksdb.pc; \
+			$(SUDO) ldconfig; \
 		else \
 			echo "RocksDB not found"; \
 		fi; \
 		echo "Installing build dependencies..."; \
-		sudo apt-get install -y \
+		$(SUDO) apt-get install -y \
 			cmake build-essential pkg-config gcc-14 g++-14 \
 			libsnappy-dev libzstd-dev liblz4-dev \
 			zlib1g-dev libbz2-dev liburing-dev libgflags-dev; \
@@ -83,8 +89,8 @@ install-replica-deps:
 		cd rocksdb; \
 		env CC=gcc-14 CXX=g++-14 make shared_lib -j$$(nproc); \
 		echo "Installing RocksDB $(ROCKSDB_VERSION)..."; \
-		sudo env CC=gcc-14 CXX=g++-14 make install-shared; \
-		sudo ldconfig; \
+		$(SUDO) env CC=gcc-14 CXX=g++-14 make install-shared; \
+		$(SUDO) ldconfig; \
 		rm -rf "$$tmpdir"; \
 		echo "RocksDB $(ROCKSDB_VERSION) installed successfully!"; \
 	fi
@@ -94,6 +100,48 @@ install-replica-deps:
 replica: install-replica-deps
 	cd cmd/replica; CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath -ldflags "-X github.com/carlmjohnson/versioninfo.Revision=$$(git rev-parse --short HEAD)"
 
+
+# RocksDB built into a per-user prefix; lets the replica be built without root
+# or sudo. Requires the compression dev libraries (install-replica-deps-root).
+rocksdb-local:
+	@set -e; \
+	prefix="$(ROCKSDB_LOCAL_PREFIX)"; \
+	if [ -e "$$prefix/lib/librocksdb.so" ]; then \
+		echo "RocksDB $(ROCKSDB_VERSION) already present at $$prefix"; \
+		exit 0; \
+	fi; \
+	command -v gcc-14 >/dev/null || { echo "gcc-14 not found; run: make install-replica-deps-root"; exit 1; }; \
+	missing=""; \
+	for lib in snappy zstd lz4 z bz2 uring; do \
+		printf 'int main(void){return 0;}\n' | gcc-14 -x c - -l$$lib -o /dev/null 2>/dev/null || missing="$$missing $$lib"; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "Missing compression libraries:$$missing"; \
+		echo "Install the build dependencies once as root: make install-replica-deps-root"; \
+		exit 1; \
+	fi; \
+	echo "Building RocksDB $(ROCKSDB_VERSION) into $$prefix ..."; \
+	tmpdir="$$(mktemp -d)"; \
+	cd "$$tmpdir"; \
+	git clone --depth 1 --branch v$(ROCKSDB_VERSION) https://github.com/facebook/rocksdb.git; \
+	cd rocksdb; \
+	env CC=gcc-14 CXX=g++-14 make shared_lib -j$$(nproc); \
+	env CC=gcc-14 CXX=g++-14 make install-shared INSTALL_PATH="$$prefix"; \
+	rm -rf "$$tmpdir"; \
+	echo "RocksDB $(ROCKSDB_VERSION) installed at $$prefix"
+
+# Build the replica against the per-user RocksDB prefix; no root, no sudo. The
+# prefix is baked in as an rpath so the binary runs without LD_LIBRARY_PATH.
+replica-local: rocksdb-local
+	cd cmd/replica; CC=gcc-14 CGO_ENABLED=1 \
+		CGO_CFLAGS="-I$(ROCKSDB_LOCAL_PREFIX)/include" \
+		CGO_LDFLAGS="-L$(ROCKSDB_LOCAL_PREFIX)/lib -Wl,-rpath,$(ROCKSDB_LOCAL_PREFIX)/lib -lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" \
+		go build -v -trimpath -ldflags "-X github.com/carlmjohnson/versioninfo.Revision=$$(git rev-parse --short HEAD)"
+
+# Install the replica build dependencies system-wide. Run this once as root
+# (no sudo needed); then build with `make replica` as your normal user.
+install-replica-deps-root:
+	$(MAKE) install-replica-deps SUDO=
 
 clean:
 	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping \
