@@ -33,7 +33,7 @@ echo-plugin:
 	cd cmd/echo-plugin; go build
 
 fetch:
-	cd cmd/fetch; go build
+	cd cmd/fetch; go build -trimpath -ldflags "-s -w"
 
 genkeypair:
 	cd cmd/genkeypair; go build
