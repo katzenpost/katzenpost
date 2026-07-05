@@ -1385,15 +1385,9 @@ func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, erro
 // - ACKReceived: ACK received, for reads we need to send another SURB for payload
 // - PayloadReceived: Terminal state for reads after receiving payload
 // finishARQMessage delivers the terminal outcome of an ARQ operation to its
-// owner. A SACK-controlled box notifies its controller through OnComplete
-// (plaintext nil for writes, the decrypted box payload for reads); a
-// standalone StartResendingEncryptedMessage gets its per-message thin reply.
-// The map cleanup has already been done by the caller.
+// owner: a standalone StartResendingEncryptedMessage gets its per-message thin
+// reply. The map cleanup has already been done by the caller.
 func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, errorCode uint8, plaintext []byte) {
-	if arqMessage.OnComplete != nil {
-		arqMessage.OnComplete(errorCode, plaintext)
-		return
-	}
 	conn.sendResponse(&Response{
 		AppID: arqMessage.AppID,
 		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
@@ -1531,64 +1525,9 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	case ARQActionSendNewSURB:
 		arqMessage.State = transition.NewState
-		d.log.Debugf("handlePigeonholeARQReply: sending new SURB (isRead=%v, state=%d)",
+		d.log.Debugf("handlePigeonholeARQReply: scheduling follow-up read via the Poisson queue (isRead=%v, state=%d)",
 			arqMessage.IsRead, arqMessage.State)
-
-		newSurbID := &[sphinxConstants.SURBIDLength]byte{}
-		_, err := rand.Reader.Read(newSurbID[:])
-		if err != nil {
-			d.log.Errorf("handlePigeonholeARQReply: failed to generate SURB ID: %s", err)
-			return
-		}
-
-		pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
-			DestinationIdHash: arqMessage.DestinationIdHash,
-			RecipientQueueID:  arqMessage.RecipientQueueID,
-			Payload:           arqMessage.Payload,
-		}, newSurbID)
-		if err != nil {
-			d.log.Errorf("handlePigeonholeARQReply: failed to compose packet, rescheduling: %s", err)
-			d.rescheduleARQAfterComposeFailure(arqMessage)
-			return
-		}
-
-		oldSurbID := arqMessage.SURBID
-
-		d.lockReply()
-		// Abort if a concurrent cancel has already cleared this
-		// arqMessage. Rotating here would silently un-cancel the
-		// operation.
-		if oldSurbID == nil {
-			d.replyLock.Unlock()
-			d.log.Debugf("handlePigeonholeARQReply: arqMessage has nil SURBID, aborting rotation")
-			return
-		}
-		if existing, ok := d.arqSurbIDMap[*oldSurbID]; !ok || existing != arqMessage {
-			d.replyLock.Unlock()
-			d.log.Debugf("handlePigeonholeARQReply: arqMessage no longer tracked (cancelled), aborting rotation for EnvelopeHash %x", arqMessage.EnvelopeHash[:])
-			return
-		}
-		if d.listener.getConnection(arqMessage.AppID) == nil {
-			d.replyLock.Unlock()
-			d.log.Debugf("handlePigeonholeARQReply: connection gone for AppID %x, dropping ARQ for EnvelopeHash %x", arqMessage.AppID[:], arqMessage.EnvelopeHash[:])
-			return
-		}
-		d.rotateARQSurbIDLocked(arqMessage, newSurbID, surbKey, rtt)
-		d.replyLock.Unlock()
-
-		if oldSurbID != nil {
-			d.arqTimerQueue.Cancel(oldSurbID)
-		}
-
-		myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
-		myRtt = myRtt.Add(RoundTripTimeSlop)
-		priority := uint64(myRtt.UnixNano())
-		d.arqTimerQueue.Push(priority, newSurbID)
-
-		err = d.client.SendPacket(pkt)
-		if err != nil {
-			d.log.Errorf("handlePigeonholeARQReply: failed to send packet: %s", err)
-		}
+		d.scheduleARQFollowUp(arqMessage)
 		return
 
 	case ARQActionIgnore:
@@ -1960,60 +1899,10 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 
 		switch action {
 		case payloadActionRetry:
-			d.log.Debugf("handlePayloadReply: box does not exist yet for read, scheduling retry (attempt %d)",
+			d.log.Debugf("handlePayloadReply: box does not exist yet for read, scheduling Poisson-gated retry (attempt %d)",
 				arqMessage.Retransmissions+1)
-
-			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
-			_, err := rand.Reader.Read(newSurbID[:])
-			if err != nil {
-				d.log.Errorf("handlePayloadReply: failed to generate SURB ID for retry: %s", err)
-				break // fall through to error handling
-			}
-
-			pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
-				DestinationIdHash: arqMessage.DestinationIdHash,
-				RecipientQueueID:  arqMessage.RecipientQueueID,
-				Payload:           arqMessage.Payload,
-			}, newSurbID)
-			if err != nil {
-				d.log.Errorf("handlePayloadReply: failed to compose packet for retry, rescheduling: %s", err)
-				d.rescheduleARQAfterComposeFailure(arqMessage)
-				return
-			}
-
-			oldSurbID := arqMessage.SURBID
-
-			d.lockReply()
-			// Abort if a concurrent cancel has already cleared this
-			// arqMessage.
-			if oldSurbID == nil {
-				d.replyLock.Unlock()
-				d.log.Debugf("handlePayloadReply: arqMessage has nil SURBID, aborting retry")
-				return
-			}
-			if existing, ok := d.arqSurbIDMap[*oldSurbID]; !ok || existing != arqMessage {
-				d.replyLock.Unlock()
-				d.log.Debugf("handlePayloadReply: arqMessage no longer tracked (cancelled), aborting retry for EnvelopeHash %x", arqMessage.EnvelopeHash[:])
-				return
-			}
-			d.rotateARQSurbIDLocked(arqMessage, newSurbID, surbKey, rtt)
 			arqMessage.State = ARQStateWaitingForACK
-			d.replyLock.Unlock()
-
-			if oldSurbID != nil {
-				d.arqTimerQueue.Cancel(oldSurbID)
-			}
-
-			myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
-			myRtt = myRtt.Add(RoundTripTimeSlop)
-			priority := uint64(myRtt.UnixNano())
-			d.arqTimerQueue.Push(priority, newSurbID)
-
-			err = d.client.SendPacket(pkt)
-			if err != nil {
-				d.log.Errorf("handlePayloadReply: failed to send retry packet: %s", err)
-			}
-			d.log.Debugf("handlePayloadReply: Sent retry for BoxIDNotFound, attempt %d", arqMessage.Retransmissions)
+			d.scheduleARQFollowUp(arqMessage)
 			return
 
 		case payloadActionIdempotentSuccess:
