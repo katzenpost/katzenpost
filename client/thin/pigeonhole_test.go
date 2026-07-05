@@ -11,6 +11,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
@@ -150,6 +151,37 @@ func setupTestThinClient(t *testing.T) *ThinClient {
 		drainRemove: make(chan chan Event),
 		pkiDocCache: make(map[uint64]*cpki.Document),
 	}
+}
+
+func TestGetAllCouriers(t *testing.T) {
+	tc := setupTestThinClient(t)
+	tc.pkidocMutex.Lock()
+	tc.pkidoc = &cpki.Document{
+		Epoch: 1,
+		ServiceNodes: []*cpki.MixDescriptor{
+			{
+				IdentityKey: []byte("courier-identity-1"),
+				Kaetzchen: map[string]map[string]interface{}{
+					"courier": {"endpoint": "courier-queue-1"},
+				},
+			},
+			{
+				IdentityKey: []byte("courier-identity-2"),
+				Kaetzchen: map[string]map[string]interface{}{
+					"courier": {"endpoint": "courier-queue-2"},
+				},
+			},
+		},
+	}
+	tc.pkidocMutex.Unlock()
+
+	couriers, err := tc.GetAllCouriers()
+	require.NoError(t, err)
+	require.Len(t, couriers, 2)
+
+	expectedHash1 := hash.Sum256([]byte("courier-identity-1"))
+	require.Equal(t, expectedHash1, *couriers[0].IdentityHash)
+	require.Equal(t, []byte("courier-queue-1"), couriers[0].QueueID)
 }
 
 func TestNewKeypairSeedValidation(t *testing.T) {

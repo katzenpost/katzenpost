@@ -1226,6 +1226,37 @@ func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(destinations []Desti
 	}
 }
 
+// CourierDescriptor identifies a courier service by its identity-key hash
+// and recipient queue ID.
+type CourierDescriptor struct {
+	IdentityHash *[32]byte
+	QueueID      []byte
+}
+
+// GetAllCouriers returns every courier service advertised in the current PKI
+// document, each described by an (identity-hash, queue-id) pair. The list
+// reflects only the couriers that the current consensus regards as serving.
+func (t *ThinClient) GetAllCouriers() (couriers []CourierDescriptor, err error) {
+	services, err := t.GetServices("courier")
+	if err != nil {
+		return nil, err
+	}
+	couriers = make([]CourierDescriptor, len(services))
+	for i, svc := range services {
+		idHash := hashIdentityKey(svc.MixDescriptor.IdentityKey)
+		couriers[i] = CourierDescriptor{
+			IdentityHash: &idHash,
+			QueueID:      svc.RecipientQueueID,
+		}
+	}
+	return couriers, nil
+}
+
+// hashIdentityKey computes the hash of an identity key.
+func hashIdentityKey(key []byte) [32]byte {
+	return hash.Sum256(key)
+}
+
 type TombstoneEnvelope struct {
 	MessageCiphertext  []byte
 	EnvelopeDescriptor []byte
