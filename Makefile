@@ -15,7 +15,7 @@ endif
 all: server dirauth genconfig ping courier replica echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd sphinx
 
 server:
-	cd cmd/server; go build
+	cd cmd/server; go build -trimpath -ldflags "-s -w"
 
 dirauth:
 	cd cmd/dirauth; go build -trimpath -ldflags "-s -w"
