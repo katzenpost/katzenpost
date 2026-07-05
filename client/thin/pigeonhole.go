@@ -10,7 +10,6 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/rand"
 )
 
 // StartResendingResult is returned by StartResendingEncryptedMessage and its variants.
@@ -820,104 +819,6 @@ func (t *ThinClient) StartResendingCopyCommand(writeCap *bacap.WriteCap) error {
 	}
 }
 
-// StartResendingCopyCommandWithCourier behaves exactly like
-// StartResendingCopyCommand save that it dispatches the copy command
-// to a courier the caller has chosen, rather than to one selected at
-// random from the current PKI document. The courier is identified by
-// the (identity-hash, queue-id) pair returned by GetAllCouriers or
-// GetDistinctCouriers.
-//
-// This is the building block for nested copy commands, in which the
-// outer command is sent to one courier and the inner commands carried
-// inside it reference a different courier. Staggering the two layers
-// across distinct couriers reduces the chance that any single
-// compromised courier observes both halves of the copy transaction
-// and can therefore link them.
-//
-// Parameters:
-//   - writeCap: Write capability for the temporary copy stream channel
-//   - courierIdentityHash: Hash of the courier's identity key
-//   - courierQueueID: Queue ID for the courier service
-//
-// Returns:
-//   - error: Any error encountered during the operation
-func (t *ThinClient) StartResendingCopyCommandWithCourier(
-	writeCap *bacap.WriteCap,
-	courierIdentityHash *[32]byte,
-	courierQueueID []byte,
-) error {
-	if writeCap == nil {
-		return errors.New("writeCap cannot be nil")
-	}
-	if courierIdentityHash == nil {
-		return errors.New("courierIdentityHash cannot be nil")
-	}
-	if len(courierQueueID) == 0 {
-		return errors.New("courierQueueID cannot be empty")
-	}
-
-	// Compute WriteCapHash for in-flight tracking (matches daemon-side hash)
-	writeCapBytes, err := writeCap.MarshalBinary()
-	if err != nil {
-		return fmt.Errorf("failed to marshal WriteCap: %w", err)
-	}
-	writeCapHash := hash.Sum256(writeCapBytes)
-
-	queryID := t.NewQueryID()
-	req := &Request{
-		StartResendingCopyCommand: &StartResendingCopyCommand{
-			QueryID:             queryID,
-			WriteCap:            writeCap,
-			CourierIdentityHash: courierIdentityHash,
-			CourierQueueID:      courierQueueID,
-		},
-	}
-
-	// Track in-flight request for replay on reconnect to new daemon instance
-	t.inFlightResends.Store(writeCapHash, req)
-	defer t.inFlightResends.Delete(writeCapHash)
-
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
-
-	err = t.writeMessage(req)
-	if err != nil {
-		return err
-	}
-
-	for {
-		var event Event
-		select {
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return errHalting
-		}
-
-		switch v := event.(type) {
-		case *StartResendingCopyCommandReply:
-			if v.QueryID == nil {
-				t.log.Debugf("StartResendingCopyCommandWithCourier: Received reply with nil QueryID, ignoring")
-				continue
-			}
-			if !bytes.Equal(v.QueryID[:], queryID[:]) {
-				t.log.Debugf("StartResendingCopyCommandWithCourier: Received reply with mismatched QueryID, ignoring")
-				continue
-			}
-			if v.ErrorCode != ThinClientSuccess {
-				return thinClientErrorCodeToSentinel(v.ErrorCode)
-			}
-			t.log.Debugf("StartResendingCopyCommandWithCourier: Copy command completed successfully")
-			return nil
-		case *ConnectionStatusEvent:
-			t.setConnected(v.IsConnected)
-		case *NewDocumentEvent:
-			// Ignore PKI document updates
-		default:
-			// Ignore other events
-		}
-	}
-}
-
 // CancelResendingCopyCommand cancels ARQ resending for a copy command.
 //
 // This method stops the ARQ for a previously started
@@ -1323,84 +1224,6 @@ func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(destinations []Desti
 			// Ignore other events
 		}
 	}
-}
-
-// Copy Channel API:
-
-// SendCopyCommand sends a Copy command to the courier service.
-//
-// The Copy command instructs the client daemon to send a Copy command to the
-// courier. This Copy command sent to the courier instructs it to read encrypted
-// write operations from a temporary copy stream (identified by tempWriteCap)
-// and execute them atomically. This provides all-or-nothing retransmission
-// to prevent correlation attacks.
-//
-// The workflow is:
-// 1. Create temporary copy stream channel using NewKeypair
-// 2. Call CreateCourierEnvelopesFromPayload many times until finished.
-// 3. Write envelopes to copy stream using EncryptWrite + StartResendingEncryptedMessage
-// 4. Send Copy command with WriteCap using StartResendingCopyCommand
-
-// CourierDescriptor identifies a specific courier service for routing copy commands.
-type CourierDescriptor struct {
-	IdentityHash *[32]byte
-	QueueID      []byte
-}
-
-// GetAllCouriers returns every courier service advertised in the
-// current PKI document, each described by an (identity-hash,
-// queue-id) pair. The list reflects only the couriers that the
-// current consensus regards as serving.
-//
-// The principal caller is the nested-copy-command machinery, which
-// needs to choose particular couriers rather than accept the random
-// draw made on the caller's behalf by StartResendingCopyCommand; for
-// simple cases where any courier will do, the default routing path
-// is usually preferable.
-func (t *ThinClient) GetAllCouriers() (couriers []CourierDescriptor, err error) {
-	services, err := t.GetServices("courier")
-	if err != nil {
-		return nil, err
-	}
-	couriers = make([]CourierDescriptor, len(services))
-	for i, svc := range services {
-		idHash := hashIdentityKey(svc.MixDescriptor.IdentityKey)
-		couriers[i] = CourierDescriptor{
-			IdentityHash: &idHash,
-			QueueID:      svc.RecipientQueueID,
-		}
-	}
-	return couriers, nil
-}
-
-// GetDistinctCouriers draws n couriers uniformly at random from the
-// list returned by GetAllCouriers, without replacement, so that no
-// two entries in the returned slice refer to the same courier. This
-// is the usual building block for a nested copy command, every layer
-// of which must be carried by a different courier.
-//
-// Returns an error if the current PKI document advertises fewer than
-// n couriers.
-func (t *ThinClient) GetDistinctCouriers(n int) (couriers []CourierDescriptor, err error) {
-	couriers, err = t.GetAllCouriers()
-	if err != nil {
-		return nil, err
-	}
-	if len(couriers) < n {
-		return nil, errors.New("not enough couriers available")
-	}
-	// Shuffle and take first N
-	perm := rand.NewMath().Perm(len(couriers))
-	result := make([]CourierDescriptor, n)
-	for i := 0; i < n; i++ {
-		result[i] = couriers[perm[i]]
-	}
-	return result, nil
-}
-
-// hashIdentityKey computes the hash of an identity key
-func hashIdentityKey(key []byte) [32]byte {
-	return hash.Sum256(key)
 }
 
 type TombstoneEnvelope struct {
