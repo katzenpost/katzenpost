@@ -18,7 +18,7 @@ server:
 	cd cmd/server; go build
 
 dirauth:
-	cd cmd/dirauth; go build
+	cd cmd/dirauth; go build -trimpath -ldflags "-s -w"
 
 genconfig:
 	cd cmd/genconfig; go build
