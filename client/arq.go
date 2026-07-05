@@ -214,13 +214,4 @@ type ARQMessage struct {
 	// for write operations. When true, BoxAlreadyExists is returned as an error.
 	// When false (default), BoxAlreadyExists is treated as success (the write already happened).
 	NoIdempotentBoxAlreadyExists bool
-
-	// OnComplete, when non-nil, is invoked exactly once when this ARQ
-	// operation reaches a terminal reply (success or a fatal error code) in
-	// place of sending a per-message thin-client reply. For a write the
-	// plaintext is nil; for a read it carries the decrypted box payload. The
-	// windowed SACK controller supplies it so a box's completion notifies the
-	// controller rather than answering the thin client directly; standalone
-	// sends leave it nil.
-	OnComplete func(errorCode uint8, plaintext []byte)
 }
