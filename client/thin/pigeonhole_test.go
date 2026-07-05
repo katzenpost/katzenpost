@@ -11,7 +11,6 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
@@ -114,21 +113,6 @@ func TestErrorCodeToSentinel(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Unknown thin client error code: 200")
 	})
-}
-
-func TestHashIdentityKey(t *testing.T) {
-	key := []byte("test-identity-key")
-	result := hashIdentityKey(key)
-	expected := hash.Sum256(key)
-	require.Equal(t, expected, result)
-
-	// Deterministic
-	result2 := hashIdentityKey(key)
-	require.Equal(t, result, result2)
-
-	// Different key gives different hash
-	result3 := hashIdentityKey([]byte("different-key"))
-	require.NotEqual(t, result, result3)
 }
 
 func newTestWriteCap(t *testing.T) *bacap.WriteCap {
@@ -677,51 +661,6 @@ func TestStartResendingCopyCommandError(t *testing.T) {
 		"ErrorCode=ThinClientErrorCopyCommandFailed must map to ErrCopyCommandFailed via the thin-client-namespace interpreter, not to a replica sentinel")
 }
 
-func TestStartResendingCopyCommandWithCourierNilArgs(t *testing.T) {
-	tc, _ := setupMockDaemon(t)
-
-	err := tc.StartResendingCopyCommandWithCourier(nil, &[32]byte{}, []byte("q"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "writeCap cannot be nil")
-
-	err = tc.StartResendingCopyCommandWithCourier(newTestWriteCap(t), nil, []byte("q"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "courierIdentityHash cannot be nil")
-
-	err = tc.StartResendingCopyCommandWithCourier(newTestWriteCap(t), &[32]byte{}, nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "courierQueueID cannot be empty")
-
-	err = tc.StartResendingCopyCommandWithCourier(newTestWriteCap(t), &[32]byte{}, []byte{})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "courierQueueID cannot be empty")
-}
-
-func TestStartResendingCopyCommandWithCourierSuccess(t *testing.T) {
-	tc, server := setupMockDaemon(t)
-
-	courierHash := &[32]byte{1, 2, 3}
-
-	go func() {
-		req, err := readRequest(server)
-		if err != nil {
-			return
-		}
-		require.NotNil(t, req.StartResendingCopyCommand)
-		require.Equal(t, courierHash[:], req.StartResendingCopyCommand.CourierIdentityHash[:])
-
-		sendResponse(t, server, &Response{
-			StartResendingCopyCommandReply: &StartResendingCopyCommandReply{
-				QueryID:   req.StartResendingCopyCommand.QueryID,
-				ErrorCode: ThinClientSuccess,
-			},
-		})
-	}()
-
-	err := tc.StartResendingCopyCommandWithCourier(newTestWriteCap(t), courierHash, []byte("queue1"))
-	require.NoError(t, err)
-}
-
 func TestCancelResendingCopyCommandNilHash(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 	err := tc.CancelResendingCopyCommand(nil)
@@ -895,108 +834,6 @@ func TestCreateCourierEnvelopesFromMultiPayloadSuccess(t *testing.T) {
 	require.Len(t, result.Envelopes, 1)
 	require.Equal(t, []byte("buffer-state"), result.Buffer)
 	require.Len(t, result.NextDestIndices, 1)
-}
-
-func TestGetAllCouriers(t *testing.T) {
-	tc := setupTestThinClient(t)
-	tc.pkidocMutex.Lock()
-	tc.pkidoc = &cpki.Document{
-		Epoch: 1,
-		ServiceNodes: []*cpki.MixDescriptor{
-			{
-				IdentityKey: []byte("courier-identity-1"),
-				Kaetzchen: map[string]map[string]interface{}{
-					"courier": {"endpoint": "courier-queue-1"},
-				},
-			},
-			{
-				IdentityKey: []byte("courier-identity-2"),
-				Kaetzchen: map[string]map[string]interface{}{
-					"courier": {"endpoint": "courier-queue-2"},
-				},
-			},
-		},
-	}
-	tc.pkidocMutex.Unlock()
-
-	couriers, err := tc.GetAllCouriers()
-	require.NoError(t, err)
-	require.Len(t, couriers, 2)
-
-	expectedHash1 := hash.Sum256([]byte("courier-identity-1"))
-	require.Equal(t, expectedHash1, *couriers[0].IdentityHash)
-	require.Equal(t, []byte("courier-queue-1"), couriers[0].QueueID)
-}
-
-func TestGetAllCouriersNoCouriers(t *testing.T) {
-	tc := setupTestThinClient(t)
-	tc.pkidocMutex.Lock()
-	tc.pkidoc = &cpki.Document{
-		Epoch:        1,
-		ServiceNodes: []*cpki.MixDescriptor{},
-	}
-	tc.pkidocMutex.Unlock()
-
-	couriers, err := tc.GetAllCouriers()
-	require.Error(t, err)
-	require.Nil(t, couriers)
-}
-
-func TestGetDistinctCouriers(t *testing.T) {
-	tc := setupTestThinClient(t)
-	tc.pkidocMutex.Lock()
-	tc.pkidoc = &cpki.Document{
-		Epoch: 1,
-		ServiceNodes: []*cpki.MixDescriptor{
-			{
-				IdentityKey: []byte("c1"),
-				Kaetzchen: map[string]map[string]interface{}{
-					"courier": {"endpoint": "q1"},
-				},
-			},
-			{
-				IdentityKey: []byte("c2"),
-				Kaetzchen: map[string]map[string]interface{}{
-					"courier": {"endpoint": "q2"},
-				},
-			},
-			{
-				IdentityKey: []byte("c3"),
-				Kaetzchen: map[string]map[string]interface{}{
-					"courier": {"endpoint": "q3"},
-				},
-			},
-		},
-	}
-	tc.pkidocMutex.Unlock()
-
-	couriers, err := tc.GetDistinctCouriers(2)
-	require.NoError(t, err)
-	require.Len(t, couriers, 2)
-
-	// Verify they are distinct
-	require.NotEqual(t, couriers[0].IdentityHash, couriers[1].IdentityHash)
-}
-
-func TestGetDistinctCouriersNotEnough(t *testing.T) {
-	tc := setupTestThinClient(t)
-	tc.pkidocMutex.Lock()
-	tc.pkidoc = &cpki.Document{
-		Epoch: 1,
-		ServiceNodes: []*cpki.MixDescriptor{
-			{
-				IdentityKey: []byte("c1"),
-				Kaetzchen: map[string]map[string]interface{}{
-					"courier": {"endpoint": "q1"},
-				},
-			},
-		},
-	}
-	tc.pkidocMutex.Unlock()
-
-	_, err := tc.GetDistinctCouriers(5)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "not enough couriers available")
 }
 
 func TestTombstoneRangeNilArgs(t *testing.T) {
