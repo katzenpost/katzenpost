@@ -2409,6 +2409,11 @@ func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) comma
 	}
 }
 
+var (
+	errConflictingDescriptor = errors.New("Conflicting descriptor")
+	errLateUpload            = errors.New("Late descriptor upload")
+)
+
 func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
 	s.uploadMu.Lock()
 	defer s.uploadMu.Unlock()
@@ -2441,7 +2446,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 			}
 			if !hmac.Equal(serialized, uploaded) {
 				s.RUnlock()
-				return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
+				return fmt.Errorf("state: node %s (%x): %w for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), errConflictingDescriptor, epoch)
 			}
 			// Redundant uploads that don't change are harmless.
 			s.RUnlock()
@@ -2452,7 +2457,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	// Check if document already exists (late upload)
 	if s.documents[epoch] != nil {
 		s.RUnlock()
-		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
+		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
 	}
 	s.RUnlock()
 
@@ -2526,7 +2531,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 			}
 			if !hmac.Equal(serialized, uploaded) {
 				s.RUnlock()
-				return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
+				return fmt.Errorf("state: node %s (%x): %w for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), errConflictingDescriptor, epoch)
 			}
 			// Redundant uploads that don't change are harmless.
 			s.RUnlock()
@@ -2537,7 +2542,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	// Check if document already exists (late upload)
 	if s.documents[epoch] != nil {
 		s.RUnlock()
-		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
+		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
 	}
 	s.RUnlock()
 
