@@ -207,7 +207,7 @@ type ARQMessage struct {
 
 	// NoRetryOnBoxIDNotFound disables automatic retries on BoxIDNotFound for read operations.
 	// When true, BoxIDNotFound is returned immediately. When false (default), reads retry
-	// up to 10 times to handle replication lag.
+	// without bound until the box is written or the operation is cancelled.
 	NoRetryOnBoxIDNotFound bool
 
 	// NoIdempotentBoxAlreadyExists disables treating BoxAlreadyExists as idempotent success
