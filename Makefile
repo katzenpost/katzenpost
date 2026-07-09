@@ -21,7 +21,7 @@ dirauth:
 	cd cmd/dirauth; go build -trimpath -ldflags "-s -w"
 
 genconfig:
-	cd cmd/genconfig; go build
+	cd cmd/genconfig; go build -trimpath -ldflags "-s -w"
 
 ping:
 	cd cmd/ping; go build -trimpath -ldflags "-s -w"
@@ -36,22 +36,22 @@ fetch:
 	cd cmd/fetch; go build -trimpath -ldflags "-s -w"
 
 genkeypair:
-	cd cmd/genkeypair; go build
+	cd cmd/genkeypair; go build -trimpath -ldflags "-s -w"
 
 geometry:
-	cd cmd/geometry; go build
+	cd cmd/geometry; go build -trimpath -ldflags "-s -w"
 
 http-proxy-client:
-	cd cmd/http-proxy-client; go build
+	cd cmd/http-proxy-client; go build -trimpath -ldflags "-s -w"
 
 http-proxy-server:
-	cd cmd/http-proxy-server; go build
+	cd cmd/http-proxy-server; go build -trimpath -ldflags "-s -w"
 
 kpclientd:
 	cd cmd/kpclientd; go build
 
 sphinx:
-	cd cmd/sphinx; go build
+	cd cmd/sphinx; go build -trimpath -ldflags "-s -w"
 
 # Privilege escalation for the system-wide RocksDB install. Defaults to sudo;
 # install-replica-deps-root clears it to run the recipe as root directly.
