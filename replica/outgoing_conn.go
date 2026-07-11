@@ -431,7 +431,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.egressWorker(w, outCh, egressDoneCh)
+		c.egressWorker(w, conn, outCh, egressDoneCh)
 	}()
 
 	// Start the reauthenticate ticker.
@@ -480,7 +480,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 // egressWorker reads commands from the sender output channel and sends them
 // over the wire session. It handles responses and signals errors back.
-func (c *outgoingConn) egressWorker(w wire.SessionInterface, outCh chan commands.Command, doneCh <-chan struct{}) {
+func (c *outgoingConn) egressWorker(w wire.SessionInterface, conn net.Conn, outCh chan commands.Command, doneCh <-chan struct{}) {
 	for {
 		select {
 		case <-doneCh:
@@ -488,13 +488,13 @@ func (c *outgoingConn) egressWorker(w wire.SessionInterface, outCh chan commands
 			for {
 				select {
 				case cmd := <-outCh:
-					c.sendAndRecv(w, cmd)
+					c.sendAndRecv(w, conn, cmd)
 				default:
 					return
 				}
 			}
 		case cmd := <-outCh:
-			if !c.sendAndRecv(w, cmd) {
+			if !c.sendAndRecv(w, conn, cmd) {
 				return
 			}
 		}
@@ -503,7 +503,7 @@ func (c *outgoingConn) egressWorker(w wire.SessionInterface, outCh chan commands
 
 // sendAndRecv sends a command and processes the response.
 // Returns false if the connection should be closed.
-func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command) bool {
+func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, conn net.Conn, cmd commands.Command) bool {
 	_, isDecoy := cmd.(*commands.ReplicaDecoy)
 	if err := w.SendCommand(cmd); err != nil {
 		if !isDecoy {
@@ -518,6 +518,17 @@ func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command
 		return false
 	}
 
+	// Bound the reply wait. A peer may take up to ProxyRequestTimeout to answer
+	// a proxied read, so allow generously more than that, but never wait
+	// forever: a peer that accepts the connection and then goes silent would
+	// otherwise park this egress goroutine indefinitely (stalling all
+	// replication/proxy dispatch to it) and deadlock shutdown, since the
+	// supervising loop wg.Wait()s on this goroutine before the deferred close.
+	recvTimeout := time.Duration(2*c.co.Server().cfg.ProxyRequestTimeout) * time.Second
+	if recvTimeout <= 0 {
+		recvTimeout = time.Minute
+	}
+	conn.SetReadDeadline(time.Now().Add(recvTimeout))
 	response, err := w.RecvCommand()
 	if err != nil {
 		if !isDecoy {
