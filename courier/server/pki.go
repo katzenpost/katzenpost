@@ -157,17 +157,17 @@ func (p *PKIWorker) worker() {
 
 // fetchDocuments fetches PKI documents for required epochs
 func (p *PKIWorker) fetchDocuments(pkiCtx context.Context, isCanceled func() bool) bool {
-	// If we don't have a current PKI document, be more aggressive about retrying
+	// If we don't have a current PKI document, re-fetch the CURRENT epoch
+	// aggressively: its consensus may simply have been published late, so
+	// clearing a stale "gone" mark lets the next cycle try again. Do NOT clear
+	// the marks for now-1/now-2: those are past epochs the authorities have
+	// permanently garbage-collected, and re-requesting them every cycle is
+	// wasted work that only widens the window for a slow fetch to stall the
+	// worker. Mark-gone-once for past epochs, like the mix-server PKI worker.
 	currentEpoch, _, _ := epochtime.Now()
 	if p.EntryForEpoch(currentEpoch) == nil {
-		p.GetLogger().Debugf("No current PKI document for epoch %v, clearing failed fetches to force retry", currentEpoch)
+		p.GetLogger().Debugf("No current PKI document for epoch %v, clearing its failed-fetch mark to force a retry", currentEpoch)
 		p.ClearFailedFetch(currentEpoch)
-		// Also clear failed fetches for recent epochs to allow retries
-		for i := uint64(0); i < 3; i++ {
-			if currentEpoch >= i {
-				p.ClearFailedFetch(currentEpoch - i)
-			}
-		}
 	}
 
 	results := p.FetchDocuments(pkiCtx, isCanceled)
