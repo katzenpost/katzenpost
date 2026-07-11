@@ -23,6 +23,6 @@ func (c *WsDialConfig) Dial() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	netConn := websocket.NetConn(ctx, conn, websocket.MessageText)
+	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
 	return netConn, nil
 }

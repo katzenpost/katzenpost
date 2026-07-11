@@ -93,7 +93,7 @@ func (c *WsListenConfig) Listen() (net.Listener, error) {
 		if err != nil {
 			return
 		}
-		netConn := websocket.NetConn(context.Background(), conn, websocket.MessageText)
+		netConn := websocket.NetConn(context.Background(), conn, websocket.MessageBinary)
 
 		select {
 		case listener.connections <- netConn:
