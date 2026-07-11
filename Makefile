@@ -27,10 +27,10 @@ ping:
 	cd cmd/ping; go build -trimpath -ldflags "-s -w"
 
 courier:
-	cd cmd/courier; go build
+	cd cmd/courier; go build -trimpath -ldflags "-s -w"
 
 echo-plugin:
-	cd cmd/echo-plugin; go build
+	cd cmd/echo-plugin; go build -trimpath -ldflags "-s -w"
 
 fetch:
 	cd cmd/fetch; go build -trimpath -ldflags "-s -w"
@@ -48,7 +48,7 @@ http-proxy-server:
 	cd cmd/http-proxy-server; go build -trimpath -ldflags "-s -w"
 
 kpclientd:
-	cd cmd/kpclientd; go build
+	cd cmd/kpclientd; go build -trimpath -ldflags "-s -w"
 
 sphinx:
 	cd cmd/sphinx; go build -trimpath -ldflags "-s -w"
