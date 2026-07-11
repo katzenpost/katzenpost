@@ -263,6 +263,10 @@ func thinDialConfigFor(network, addr string) (*thinTransport.DialConfig, error) 
 		return &thinTransport.DialConfig{
 			Tcp: &thinTransport.TcpDialConfig{Address: addr, Network: network},
 		}, nil
+	case "ws":
+		return &thinTransport.DialConfig{
+			Ws: &thinTransport.WsDialConfig{Address: addr},
+		}, nil
 	default:
 		return nil, fmt.Errorf("genconfig: unknown thin-client dial network %q (expected one of: unix, tcp, tcp4, tcp6)", network)
 	}
@@ -280,6 +284,10 @@ func clientListenConfigFor(network, addr string) (*clientTransport.ListenConfig,
 	case "tcp", "tcp4", "tcp6":
 		return &clientTransport.ListenConfig{
 			Tcp: &clientTransport.TcpListenConfig{Address: addr, Network: network},
+		}, nil
+	case "ws":
+		return &clientTransport.ListenConfig{
+			Ws: &clientTransport.WsListenConfig{Address: addr},
 		}, nil
 	default:
 		return nil, fmt.Errorf("genconfig: unknown kpclientd listen network %q (expected one of: unix, tcp, tcp4, tcp6)", network)

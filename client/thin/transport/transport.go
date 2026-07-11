@@ -27,6 +27,7 @@ type Dialer interface {
 type DialConfig struct {
 	Unix *UnixDialConfig `toml:"Unix,omitempty"`
 	Tcp  *TcpDialConfig  `toml:"Tcp,omitempty"`
+	Ws   *WsDialConfig   `toml:"Ws,omitempty"`
 }
 
 // ErrNoTransport is returned when a DialConfig has no inner config
@@ -50,6 +51,9 @@ func (c *DialConfig) Validate() error {
 	if c.Tcp != nil {
 		n++
 	}
+	if c.Ws != nil {
+		n++
+	}
 	switch n {
 	case 0:
 		return ErrNoTransport
@@ -71,6 +75,8 @@ func (c *DialConfig) Resolve() (Dialer, error) {
 		return c.Unix, nil
 	case c.Tcp != nil:
 		return c.Tcp, nil
+	case c.Ws != nil:
+		return c.Ws, nil
 	}
 	return nil, ErrNoTransport
 }

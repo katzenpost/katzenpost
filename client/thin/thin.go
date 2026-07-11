@@ -374,6 +374,10 @@ func FromConfig(cfg *config.Config) *Config {
 			Address: cfg.Listen.Tcp.Address,
 			Network: cfg.Listen.Tcp.Network,
 		}
+	case cfg.Listen.Ws != nil:
+		dial.Ws = &transport.WsDialConfig{
+			Address: cfg.Listen.Ws.Address,
+		}
 	default:
 		panic("Listen has no transport configured")
 	}

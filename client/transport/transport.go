@@ -28,6 +28,7 @@ type Listener interface {
 type ListenConfig struct {
 	Unix *UnixListenConfig `toml:"Unix,omitempty"`
 	Tcp  *TcpListenConfig  `toml:"Tcp,omitempty"`
+	Ws   *WsListenConfig   `toml:"Ws,omitempty"`
 }
 
 // ErrNoTransport is returned when a ListenConfig has no inner config
@@ -49,6 +50,9 @@ func (c *ListenConfig) Validate() error {
 		n++
 	}
 	if c.Tcp != nil {
+		n++
+	}
+	if c.Ws != nil {
 		n++
 	}
 	switch n {
@@ -73,6 +77,8 @@ func (c *ListenConfig) Listen() (Listener, error) {
 		return c.Unix.Listen()
 	case c.Tcp != nil:
 		return c.Tcp.Listen()
+	case c.Ws != nil:
+		return c.Ws.Listen()
 	}
 	return nil, ErrNoTransport
 }
