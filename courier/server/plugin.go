@@ -284,8 +284,16 @@ func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
 	e.copyCacheLock.RUnlock()
 
 	if isCopy {
-		// Send reply to waiting goroutine for copy command processing
-		ch <- reply
+		// Hand the reply to the waiting copy-command goroutine. The channel is
+		// buffered to the expected number of replies, so a non-blocking send
+		// suffices; if a replica sends a duplicate/extra reply for the same
+		// envelope (buffer full, waiter already satisfied or gone) we drop it
+		// rather than block this connection's event loop forever.
+		select {
+		case ch <- reply:
+		default:
+			e.log.Debugf("HandleReply: copy reply channel for %x full, dropping extra reply", reply.EnvelopeHash[:8])
+		}
 		return
 	}
 	e.CacheReply(reply)
