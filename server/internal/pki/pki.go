@@ -216,8 +216,14 @@ func (p *pki) worker() {
 			p.log.Errorf("❌ PKI UPLOAD FAILURE: Check detailed error messages above for specific failure reasons")
 		}
 
-		// Fetch the PKI documents as required.
+		// Fetch the PKI documents as required. Bound the whole fetch pass:
+		// pkiCtx only cancels on halt, so a GetPKIDocumentForEpoch that returns
+		// solely on cancellation (an unreachable or retrying dirauth during a
+		// consensus gap) would otherwise park this worker behind the current
+		// epoch, serving stale descriptors until an operator restart. Mirrors
+		// core/pki.WorkerBase.FetchDocuments.
 		var didUpdate bool
+		fetchCtx, cancelFetch := context.WithTimeout(pkiCtx, cpki.FetchTimeout)
 		for _, epoch := range p.documentsToFetch() {
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
@@ -227,9 +233,10 @@ func (p *pki) worker() {
 				continue
 			}
 
-			d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(pkiCtx, epoch)
+			d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(fetchCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
+				cancelFetch()
 				p.log.Debug("Canceled mid-fetch")
 				return
 			}
@@ -271,6 +278,7 @@ func (p *pki) worker() {
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
 		}
+		cancelFetch()
 
 		p.pruneFailures()
 
