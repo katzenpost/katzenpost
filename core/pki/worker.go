@@ -23,6 +23,14 @@ var (
 	recheckInterval          = epochtime.Period / 32
 )
 
+// FetchTimeout bounds a single fetch cycle (every epoch in DocumentsToFetch).
+// A healthy consensus fetch races all authorities and returns on the first
+// valid reply in seconds, so this comfortably exceeds the normal case; it
+// exists only to cap the pathological case where an unreachable or retrying
+// authority would otherwise stall the cycle forever and wedge the worker
+// behind the current epoch. A package var so tests can shrink it.
+var FetchTimeout = 3 * time.Minute
+
 // WorkerBase provides common PKI worker functionality shared between courier and replica
 type WorkerBase struct {
 	log     *logging.Logger
@@ -201,8 +209,17 @@ func (w *WorkerBase) FetchDocuments(pkiCtx context.Context, isCanceled func() bo
 		return nil
 	}
 
+	// Bound the whole fetch cycle. pkiCtx only cancels on halt, so without
+	// this deadline a fetch that returns solely on cancellation — an
+	// unreachable or retrying dirauth during a consensus gap — parks the
+	// worker forever, leaving it stuck behind the current epoch (with stale
+	// replica descriptors) until the process restarts. The deadline
+	// guarantees the loop reaches epochtime.Now() again and advances.
+	ctx, cancel := context.WithTimeout(pkiCtx, FetchTimeout)
+	defer cancel()
+
 	return w.fetcher.FetchDocuments(
-		pkiCtx,
+		ctx,
 		epochs,
 		isCanceled,
 		w.GetFailedFetch,
