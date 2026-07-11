@@ -480,7 +480,9 @@ func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
 				}
 				return
 			}
-			c.log.Debugf("Received command from replica: %T", rawCmd)
+			if !isReplicaDecoy(rawCmd) {
+				c.log.Debugf("Received command from replica: %T", rawCmd)
+			}
 			select {
 			case <-c.HaltCh():
 				return
@@ -590,9 +592,19 @@ func (c *outgoingConn) handleOutgoingCommand(cmd commands.Command, cmdCh chan co
 	}
 }
 
+// isReplicaDecoy reports whether cmd is fixed-throughput decoy padding. The
+// courier-replica link is kept at a constant rate with ReplicaDecoy commands,
+// so at DEBUG they drown out the real replies; the per-command traces skip them.
+func isReplicaDecoy(cmd interface{}) bool {
+	_, ok := cmd.(*commands.ReplicaDecoy)
+	return ok
+}
+
 // processIncomingReply processes replies from the peer
 func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Command {
-	c.log.Debugf("Processing reply from receiveCmdCh: %T", replyCmd)
+	if !isReplicaDecoy(replyCmd) {
+		c.log.Debugf("Processing reply from receiveCmdCh: %T", replyCmd)
+	}
 	switch cmdOrErr := replyCmd.(type) {
 	case commands.Command:
 		return cmdOrErr
@@ -606,7 +618,9 @@ func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Comma
 
 // handleCommand processes received commands from the storage replicas
 func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
-	c.log.Debugf("Handling response command: %T", rawCmd)
+	if !isReplicaDecoy(rawCmd) {
+		c.log.Debugf("Handling response command: %T", rawCmd)
+	}
 	switch replycmd := rawCmd.(type) {
 	case *commands.NoOp:
 	case *commands.Disconnect:
