@@ -440,6 +440,13 @@ func (c *connection) onNetConn(conn net.Conn) {
 		AdditionalData:    c.queueID,
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
+		// The Session now enforces these itself, so the manual SetDeadline
+		// dance below is gone. ReadTimeout reproduces the old sliding
+		// readIdleTimeout (re-armed on every RecvCommand); the write path,
+		// previously left unbounded, is now bounded by the default so a gateway
+		// that stops reading cannot wedge the client's send loop forever.
+		HandshakeTimeout: handshakeTimeout,
+		ReadTimeout:      readIdleTimeout,
 	}
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
@@ -451,10 +458,10 @@ func (c *connection) onNetConn(conn net.Conn) {
 	}
 	defer w.Close()
 
-	// Bind the session to the conn, handshake, authenticate.
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	// Bind the session to the conn, handshake, authenticate. The Session
+	// enforces the handshake deadline (HandshakeTimeout) itself.
 	handshakeStart := time.Now()
-	if err = w.Initialize(conn); err != nil {
+	if err = w.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -473,11 +480,6 @@ func (c *connection) onNetConn(conn net.Conn) {
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
 	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
-	// Writes remain unbounded ("client can take however long it wants");
-	// reads are rearmed for readIdleTimeout after every command the peer
-	// reader successfully receives (see onWireConn).
-	conn.SetWriteDeadline(time.Time{})
-	conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
 	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
 	c.onWireConn(conn, w)
@@ -520,7 +522,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 	c.Go(func() {
 		defer close(cmdCh)
 		for {
-			rawCmd, err := w.RecvCommand()
+			rawCmd, err := w.RecvCommand(context.Background())
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
 				//14:49:09.849 DEBU client/conn: Failed to receive command:
@@ -531,11 +533,8 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				}
 				return
 			}
-			// Re-arm the read deadline now that we have evidence
-			// the peer is alive. A subsequent RecvCommand that
-			// blocks beyond readIdleTimeout will fail and tear the
-			// connection down for reconnect rather than wedging.
-			_ = conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
+			// The Session re-arms its read idle deadline (ReadTimeout) on every
+			// RecvCommand, so a peer that goes silent tears the link down.
 			atomic.StoreInt64(&c.retryDelay, int64(2*time.Second))
 			select {
 			case <-c.HaltCh():
@@ -569,7 +568,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 					Cmds:  w.GetCommands(),
 					Epoch: ctx.epoch,
 				}
-				wireErr = w.SendCommand(cmd)
+				wireErr = w.SendCommand(context.Background(), cmd)
 				ctx.doneFn(wireErr)
 				if wireErr != nil {
 					c.log.Debugf("Failed to send GetConsensus: %v", wireErr)
@@ -582,7 +581,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				SphinxPacket: ctx.pkt,
 				Cmds:         w.GetCommands(),
 			}
-			wireErr = w.SendCommand(cmd)
+			wireErr = w.SendCommand(context.Background(), cmd)
 			ctx.doneFn(wireErr)
 			if wireErr != nil {
 				c.log.Debugf("Failed to send SendPacket: %v", wireErr)
@@ -656,7 +655,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 					Sequence: seqCopy,
 					Cmds:     w.GetCommands(),
 				}
-				if err := w.SendCommand(ack); err != nil {
+				if err := w.SendCommand(context.Background(), ack); err != nil {
 					c.log.Debugf("Failed to send MessageDelivered for Message seq %d: %v", seqCopy, err)
 					forceCloseConn(err)
 				}

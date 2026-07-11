@@ -397,6 +397,7 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 		AdditionalData:    []byte{},
 		AuthenticationKey: c.co.Server().linkPrivKey,
 		RandomReader:      rand.Reader,
+		HandshakeTimeout:  time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond,
 	}
 
 	envelopeScheme := nikeSchemes.ByName(c.cfg.EnvelopeScheme)
@@ -409,9 +410,8 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond
-	conn.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
-	if err = w.Initialize(conn); err != nil {
+	if err = w.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -460,7 +460,6 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 	}
 	handshakeinstrument.HandshakeDuration("outgoing", "success", time.Since(handshakeStart))
 	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
-	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 	return w, nil
 }
@@ -471,7 +470,7 @@ func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
 	c.Go(func() {
 		defer close(receiveCmdCh)
 		for {
-			rawCmd, err := w.RecvCommand()
+			rawCmd, err := w.RecvCommand(context.Background())
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
 				select {
@@ -506,7 +505,7 @@ func (c *outgoingConn) startCommandSender(w *wire.Session) (chan commands.Comman
 				return
 			}
 
-			if err := w.SendCommand(cmd); err != nil {
+			if err := w.SendCommand(context.Background(), cmd); err != nil {
 				c.log.Debugf("SendCommand failed: %v", err)
 				instrument.DroppedByReason("send_command_failed")
 				return

@@ -4,6 +4,7 @@
 package wire
 
 import (
+	"context"
 	"crypto/rand"
 	"io"
 	"net"
@@ -68,7 +69,7 @@ func TestHandshakeErrorWrapping_EOF(t *testing.T) {
 		defer connAlice.Close()
 
 		// Try to initialize - this will fail because Bob closes immediately
-		handshakeErr = sAlice.Initialize(connAlice)
+		handshakeErr = sAlice.Initialize(context.Background(), connAlice)
 	}()
 
 	// Bob immediately closes connection to simulate EOF
@@ -157,7 +158,7 @@ func TestHandshakeErrorWrapping_ProtocolVersion(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		defer connBob.Close()
-		handshakeErr = sBob.Initialize(connBob)
+		handshakeErr = sBob.Initialize(context.Background(), connBob)
 	}()
 
 	// Send invalid protocol version (wrong first byte)
@@ -256,7 +257,7 @@ func TestHandshakeErrorWrapping_AuthFailure(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		defer connAlice.Close()
-		aliceErr = sAlice.Initialize(connAlice)
+		aliceErr = sAlice.Initialize(context.Background(), connAlice)
 	}()
 
 	wg.Add(1)
@@ -264,7 +265,7 @@ func TestHandshakeErrorWrapping_AuthFailure(t *testing.T) {
 		defer wg.Done()
 		defer connBob.Close()
 		// Bob's handshake - we don't care about the result
-		_ = sBob.Initialize(connBob)
+		_ = sBob.Initialize(context.Background(), connBob)
 	}()
 
 	wg.Wait()

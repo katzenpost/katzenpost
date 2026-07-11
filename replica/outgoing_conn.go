@@ -337,6 +337,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.co.Server().linkKey,
 		RandomReader:      rand.Reader,
+		HandshakeTimeout:  time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond,
+		// A peer may take up to ProxyRequestTimeout to answer a proxied read, so
+		// allow generously more. This replaces the per-recv SetReadDeadline that
+		// used to live inline in sendAndRecv.
+		ReadTimeout: time.Duration(2*c.co.Server().cfg.ProxyRequestTimeout) * time.Second,
 	}
 	envelopeScheme := nikeschemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
 	isInitiator := true
@@ -349,9 +354,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond
-	conn.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
-	if err = w.Initialize(conn); err != nil {
+	if err = w.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -400,7 +404,6 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
 	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
-	conn.SetDeadline(time.Time{})
 
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 
@@ -431,7 +434,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.egressWorker(w, conn, outCh, egressDoneCh)
+		c.egressWorker(w, outCh, egressDoneCh)
 	}()
 
 	// Start the reauthenticate ticker.
@@ -480,7 +483,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 // egressWorker reads commands from the sender output channel and sends them
 // over the wire session. It handles responses and signals errors back.
-func (c *outgoingConn) egressWorker(w wire.SessionInterface, conn net.Conn, outCh chan commands.Command, doneCh <-chan struct{}) {
+func (c *outgoingConn) egressWorker(w wire.SessionInterface, outCh chan commands.Command, doneCh <-chan struct{}) {
 	for {
 		select {
 		case <-doneCh:
@@ -488,13 +491,13 @@ func (c *outgoingConn) egressWorker(w wire.SessionInterface, conn net.Conn, outC
 			for {
 				select {
 				case cmd := <-outCh:
-					c.sendAndRecv(w, conn, cmd)
+					c.sendAndRecv(w, cmd)
 				default:
 					return
 				}
 			}
 		case cmd := <-outCh:
-			if !c.sendAndRecv(w, conn, cmd) {
+			if !c.sendAndRecv(w, cmd) {
 				return
 			}
 		}
@@ -503,9 +506,9 @@ func (c *outgoingConn) egressWorker(w wire.SessionInterface, conn net.Conn, outC
 
 // sendAndRecv sends a command and processes the response.
 // Returns false if the connection should be closed.
-func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, conn net.Conn, cmd commands.Command) bool {
+func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command) bool {
 	_, isDecoy := cmd.(*commands.ReplicaDecoy)
-	if err := w.SendCommand(cmd); err != nil {
+	if err := w.SendCommand(context.Background(), cmd); err != nil {
 		if !isDecoy {
 			c.log.Debugf("SendCommand failed: %v, queuing for retry", err)
 			idHash := hash.Sum256(c.dst.IdentityKey)
@@ -518,18 +521,10 @@ func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, conn net.Conn, cmd c
 		return false
 	}
 
-	// Bound the reply wait. A peer may take up to ProxyRequestTimeout to answer
-	// a proxied read, so allow generously more than that, but never wait
-	// forever: a peer that accepts the connection and then goes silent would
-	// otherwise park this egress goroutine indefinitely (stalling all
-	// replication/proxy dispatch to it) and deadlock shutdown, since the
-	// supervising loop wg.Wait()s on this goroutine before the deferred close.
-	recvTimeout := time.Duration(2*c.co.Server().cfg.ProxyRequestTimeout) * time.Second
-	if recvTimeout <= 0 {
-		recvTimeout = time.Minute
-	}
-	conn.SetReadDeadline(time.Now().Add(recvTimeout))
-	response, err := w.RecvCommand()
+	// The Session bounds this receive itself (ReadTimeout, set to generously
+	// more than ProxyRequestTimeout when the session was created), so a peer
+	// that goes silent tears the link down instead of parking this goroutine.
+	response, err := w.RecvCommand(context.Background())
 	if err != nil {
 		if !isDecoy {
 			c.log.Debugf("Failed to receive command: %v, queuing for retry", err)

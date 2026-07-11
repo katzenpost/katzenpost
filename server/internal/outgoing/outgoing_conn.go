@@ -305,6 +305,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.co.glue.LinkKey(),
 		RandomReader:      rand.Reader,
+		HandshakeTimeout:  time.Duration(c.co.glue.Config().Debug.HandshakeTimeout) * time.Millisecond,
 	}
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
@@ -315,9 +316,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
-	conn.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
-	if err = w.Initialize(conn); err != nil {
+	if err = w.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -368,7 +368,6 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
 	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
-	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 
 	// Since outgoing connections have no reverse traffic, read from the
@@ -403,7 +402,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 				SphinxPacket: pkt.Raw,
 				Cmds:         w.GetCommands(),
 			}
-			if err := w.SendCommand(&cmd); err != nil {
+			if err := w.SendCommand(context.Background(), &cmd); err != nil {
 				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.ID, err)
 				instrument.PacketsDropped()
 				instrument.PacketsDroppedByReason("outgoing_send_command_failed")

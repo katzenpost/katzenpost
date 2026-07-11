@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -36,15 +37,15 @@ type MockSession struct {
 	pk kem.PublicKey
 }
 
-func (m *MockSession) Initialize(conn net.Conn) error {
+func (m *MockSession) Initialize(ctx context.Context, conn net.Conn) error {
 	return nil
 }
 
-func (m *MockSession) SendCommand(cmd commands.Command) error {
+func (m *MockSession) SendCommand(ctx context.Context, cmd commands.Command) error {
 	return nil
 }
 
-func (m *MockSession) RecvCommand() (commands.Command, error) {
+func (m *MockSession) RecvCommand(ctx context.Context) (commands.Command, error) {
 	return new(commands.ReplicaMessageReply), nil
 }
 

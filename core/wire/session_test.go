@@ -17,6 +17,7 @@
 package wire
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"net"
@@ -140,7 +141,7 @@ func TestSessionIntegration(t *testing.T) {
 		defer wg.Done()
 
 		t.Log("before Alice Initialize")
-		err := s.Initialize(conn)
+		err := s.Initialize(context.Background(), conn)
 		require.NoError(err, "Integration: Alice Initialize()")
 
 		t.Logf("ClockSkew: %v", s.ClockSkew())
@@ -153,11 +154,11 @@ func TestSessionIntegration(t *testing.T) {
 			SphinxPacket: []byte(testPayload1),
 			Cmds:         s.GetCommands(),
 		}
-		err = s.SendCommand(cmd)
+		err = s.SendCommand(context.Background(), cmd)
 		require.NoError(err, "Integration: Alice SendCommand() 1")
 
 		cmd.SphinxPacket = []byte(testPayload2)
-		err = s.SendCommand(cmd)
+		err = s.SendCommand(context.Background(), cmd)
 		require.NoError(err, "Integration: Alice SendCommand() 2")
 	}(sAlice, connAlice)
 
@@ -168,7 +169,7 @@ func TestSessionIntegration(t *testing.T) {
 		defer s.Close()
 		defer wg.Done()
 
-		err := s.Initialize(conn)
+		err := s.Initialize(context.Background(), conn)
 		require.NoError(err, "Integration: Bob Initialize()")
 
 		assert.Panics(func() { s.ClockSkew() }, "Integration: Bob ClockSkew()")
@@ -177,11 +178,11 @@ func TestSessionIntegration(t *testing.T) {
 		require.Equal(credsAlice.AdditionalData, creds.AdditionalData, "Integration: Bob PeerCredentials")
 		require.True(credsAlice.PublicKey.Equal(creds.PublicKey), "Integration: BobPeerCredentials")
 
-		cmd, err := s.RecvCommand()
+		cmd, err := s.RecvCommand(context.Background())
 		require.NoError(err, "Integration: Bob RecvCommand() 1")
 		requireSendPktEq(cmd, []byte(testPayload1))
 
-		cmd, err = s.RecvCommand()
+		cmd, err = s.RecvCommand(context.Background())
 		require.NoError(err, "Integration: Bob RecvCommand() 2")
 		requireSendPktEq(cmd, []byte(testPayload2))
 	}(sBob, connBob)

@@ -298,6 +298,11 @@ func (p *connector) initSession(
 		AdditionalData:     ad,
 		AuthenticationKey:  linkKey,
 		RandomReader:       rand.Reader,
+		// The Session enforces these itself now; watchConn below still provides
+		// caller-context cancellation and is harmless alongside it.
+		HandshakeTimeout: handshakeTimeout,
+		ReadTimeout:      responseTimeout,
+		WriteTimeout:     responseTimeout,
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
@@ -322,7 +327,7 @@ func (p *connector) initSession(
 
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
-	if err = s.Initialize(conn); err != nil {
+	if err = s.Initialize(ctx, conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -412,11 +417,11 @@ func (p *connector) initSessionWithRetry(
 
 func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
 	sendStart := time.Now()
-	if err := s.SendCommand(cmd); err != nil {
+	if err := s.SendCommand(context.Background(), cmd); err != nil {
 		return nil, err
 	}
 	p.log.Debugf("Sent %s in %v", cmd, time.Since(sendStart))
-	return s.RecvCommand()
+	return s.RecvCommand(context.Background())
 }
 
 type PeerResponse struct {
