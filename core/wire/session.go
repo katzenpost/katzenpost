@@ -74,22 +74,18 @@ const (
 // Default per-operation timeouts. They are the fallback when a SessionConfig
 // leaves the corresponding field zero, and they exist so that no Session I/O can
 // ever block forever, even when a caller passes a context with no deadline.
-// Callers should set role-appropriate values on SessionConfig; these are
-// deliberately generous so they never fire on a healthy, fixed-throughput link.
+// Callers should set role-appropriate values on SessionConfig.
 var (
 	// DefaultHandshakeTimeout bounds the entire handshake, including the
 	// finalization NoOp exchange.
-	DefaultHandshakeTimeout = 1 * time.Minute
+	DefaultHandshakeTimeout = 3 * time.Second
 
 	// DefaultReadTimeout bounds a single RecvCommand: the longest a peer may
-	// take to deliver the next full command before the link is torn down. It
-	// must exceed the largest legitimate inter-command gap; on a fixed-throughput
-	// link decoy traffic keeps the gap small, so a link idle this long is a dead
-	// peer.
-	DefaultReadTimeout = 5 * time.Minute
+	// take to deliver the next full command before the link is torn down.
+	DefaultReadTimeout = 2 * time.Minute
 
 	// DefaultWriteTimeout bounds a single SendCommand's write.
-	DefaultWriteTimeout = 2 * time.Minute
+	DefaultWriteTimeout = 1 * time.Minute
 )
 
 // timeoutOr returns v if it is positive, else def.

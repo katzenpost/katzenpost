@@ -118,10 +118,10 @@ func (cfg *Config) validate() error {
 		cfg.DialTimeoutSec = 30
 	}
 	if cfg.HandshakeTimeoutSec == 0 {
-		cfg.HandshakeTimeoutSec = 60
+		cfg.HandshakeTimeoutSec = 3
 	}
 	if cfg.ResponseTimeoutSec == 0 {
-		cfg.ResponseTimeoutSec = 90
+		cfg.ResponseTimeoutSec = 30
 	}
 	if cfg.RetryMaxAttempts <= 0 {
 		cfg.RetryMaxAttempts = retry.DefaultMaxAttempts

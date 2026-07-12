@@ -411,11 +411,10 @@ type Server struct {
 	// DialTimeoutSec is the timeout for TCP connection establishment (default: 30)
 	DialTimeoutSec int
 
-	// HandshakeTimeoutSec is the timeout for wire protocol handshake completion (default: 180)
-	// Increased for post-quantum crypto operations (KYBER768-X25519 + Ed25519 Sphincs+)
+	// HandshakeTimeoutSec is the timeout for wire protocol handshake completion (default: 3)
 	HandshakeTimeoutSec int
 
-	// ResponseTimeoutSec is the timeout for command send/receive operations (default: 90)
+	// ResponseTimeoutSec is the timeout for command send/receive operations (default: 30)
 	ResponseTimeoutSec int
 
 	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
@@ -484,10 +483,10 @@ func (sCfg *Server) validate() error {
 		sCfg.DialTimeoutSec = 30
 	}
 	if sCfg.HandshakeTimeoutSec == 0 {
-		sCfg.HandshakeTimeoutSec = 60
+		sCfg.HandshakeTimeoutSec = 3
 	}
 	if sCfg.ResponseTimeoutSec == 0 {
-		sCfg.ResponseTimeoutSec = 90
+		sCfg.ResponseTimeoutSec = 30
 	}
 	if sCfg.CloseDelaySec == 0 {
 		sCfg.CloseDelaySec = 10
