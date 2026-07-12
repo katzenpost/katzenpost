@@ -701,3 +701,54 @@ func TestReplicaPublishDescriptorUsesBoundedUploadContext(t *testing.T) {
 	require.Len(t, mockClient.ctxErrs, 1)
 	require.NoError(t, mockClient.ctxErrs[0])
 }
+
+func TestReplicaPublishDescriptorAdvertisesPreviousEpochKey(t *testing.T) {
+	mockClient := &mockReplicaPKIClient{}
+	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
+	defer cleanup()
+
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	require.NoError(t, pkiWorker.server.envelopeKeys.Generate(replicaEpoch-1))
+
+	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+	require.NoError(t, err)
+
+	epochs, descriptors := mockClient.posts()
+	if len(epochs) == 0 {
+		return
+	}
+
+	require.Len(t, descriptors, 1)
+	keys := descriptors[0].EnvelopeKeys
+	require.Len(t, keys, 3)
+	require.Contains(t, keys, replicaEpoch-1)
+	require.Contains(t, keys, replicaEpoch)
+	require.Contains(t, keys, replicaEpoch+1)
+
+	prev, err := pkiWorker.server.envelopeKeys.GetKeypair(replicaEpoch - 1)
+	require.NoError(t, err)
+	require.Equal(t, prev.PublicKey.Bytes(), keys[replicaEpoch-1])
+}
+
+func TestReplicaPublishDescriptorFreshInstallOmitsPreviousEpochKey(t *testing.T) {
+	mockClient := &mockReplicaPKIClient{}
+	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
+	defer cleanup()
+
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+
+	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+	require.NoError(t, err)
+
+	epochs, descriptors := mockClient.posts()
+	if len(epochs) == 0 {
+		return
+	}
+
+	require.Len(t, descriptors, 1)
+	keys := descriptors[0].EnvelopeKeys
+	require.Len(t, keys, 2)
+	require.Contains(t, keys, replicaEpoch)
+	require.Contains(t, keys, replicaEpoch+1)
+	require.NotContains(t, keys, replicaEpoch-1)
+}

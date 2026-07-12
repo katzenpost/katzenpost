@@ -403,6 +403,14 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	envelopeKeys[replicaEpoch] = key1.PublicKey.Bytes()
 	envelopeKeys[replicaEpoch+1] = key2.PublicKey.Bytes()
 
+	// Advertise the previous epoch's key while it is retained, so clients
+	// can decrypt replies to envelopes sent before the epoch transition.
+	if replicaEpoch > 0 {
+		if prev, err := p.server.envelopeKeys.GetKeypair(replicaEpoch - 1); err == nil {
+			envelopeKeys[replicaEpoch-1] = prev.PublicKey.Bytes()
+		}
+	}
+
 	desc := &cpki.ReplicaDescriptor{
 		Name:         p.server.cfg.Identifier,
 		ReplicaID:    p.server.cfg.ReplicaID,
