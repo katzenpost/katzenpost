@@ -942,7 +942,6 @@ func TestReplicaDescriptorConsensus(t *testing.T) {
 		st.signatures[st.votingEpoch] = make(map[[hash.HashSize]byte]*cert.Signature)
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-		st.cachedReplicaEnvelopeKeys = make(map[uint8]map[uint64][]byte)
 		stateAuthority[i] = st
 		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
 		require.NoError(err)
@@ -1298,10 +1297,10 @@ func TestReplicaDescriptorConsensus(t *testing.T) {
 		}
 		require.True(foundReplica2, "replica-2 should be in consensus - it had 3/3 votes")
 
-		// Verify: ReplicaEnvelopeKeys should only contain keys from replica2
-		for replicaID := range doc.ReplicaEnvelopeKeys {
-			require.NotEqual(uint8(1), replicaID,
-				"ReplicaEnvelopeKeys should not contain keys for replica-1")
+		// Verify: envelope keys should only come from replica2's descriptor
+		for _, rd := range doc.StorageReplicas {
+			require.NotEqual(uint8(1), rd.ReplicaID,
+				"consensus should not carry a descriptor for replica-1")
 		}
 
 		if consensusDoc == nil {
@@ -1413,7 +1412,6 @@ func TestConfiguredReplicaIdentityKeys(t *testing.T) {
 		st.signatures[st.votingEpoch] = make(map[[hash.HashSize]byte]*cert.Signature)
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-		st.cachedReplicaEnvelopeKeys = make(map[uint8]map[uint64][]byte)
 		stateAuthority[i] = st
 		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
 		require.NoError(err)
@@ -1639,8 +1637,8 @@ func TestConfiguredReplicaIdentityKeys(t *testing.T) {
 }
 
 // TestNoReplicasAchieveConsensus verifies that when no replica descriptors achieve
-// threshold consensus, both StorageReplicas and ReplicaEnvelopeKeys are empty,
-// but ConfiguredReplicaIdentityKeys still lists the configured replicas.
+// threshold consensus, StorageReplicas is empty, but
+// ConfiguredReplicaIdentityKeys still lists the configured replicas.
 func TestNoReplicasAchieveConsensus(t *testing.T) {
 	require := require.New(t)
 
@@ -1732,7 +1730,6 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 		st.signatures[st.votingEpoch] = make(map[[hash.HashSize]byte]*cert.Signature)
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-		st.cachedReplicaEnvelopeKeys = make(map[uint8]map[uint64][]byte)
 		stateAuthority[i] = st
 		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
 		require.NoError(err)
@@ -2024,12 +2021,11 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 		s.Unlock()
 		require.NoError(err)
 
-		t.Logf("Authority-%d consensus: StorageReplicas=%d, ReplicaEnvelopeKeys=%d, ConfiguredReplicaIdentityKeys=%d",
-			i, len(doc.StorageReplicas), len(doc.ReplicaEnvelopeKeys), len(doc.ConfiguredReplicaIdentityKeys))
+		t.Logf("Authority-%d consensus: StorageReplicas=%d, ConfiguredReplicaIdentityKeys=%d",
+			i, len(doc.StorageReplicas), len(doc.ConfiguredReplicaIdentityKeys))
 
 		// No replicas should have achieved consensus (each had only 1/3 votes)
 		require.Len(doc.StorageReplicas, 0, "StorageReplicas should be empty when no replicas achieve consensus")
-		require.Len(doc.ReplicaEnvelopeKeys, 0, "ReplicaEnvelopeKeys should be empty when no replicas achieve consensus")
 
 		// But ConfiguredReplicaIdentityKeys should still list the 2 configured replicas
 		require.Len(doc.ConfiguredReplicaIdentityKeys, 2, "ConfiguredReplicaIdentityKeys should still list configured replicas")
@@ -2037,7 +2033,6 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 
 	t.Log("SUCCESS: No replicas achieve consensus test passed")
 	t.Log("- StorageReplicas is empty (no consensus)")
-	t.Log("- ReplicaEnvelopeKeys is empty (no consensus)")
 	t.Log("- ConfiguredReplicaIdentityKeys still contains configured replicas")
 }
 
@@ -2128,7 +2123,6 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 		st.signatures[st.votingEpoch] = make(map[[hash.HashSize]byte]*cert.Signature)
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-		st.cachedReplicaEnvelopeKeys = make(map[uint8]map[uint64][]byte)
 		stateAuthority[i] = st
 		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
 		require.NoError(err)
@@ -2404,11 +2398,11 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 		// Verify replica is in consensus
 		require.Len(doc.StorageReplicas, 1, "Should have 1 replica")
 
-		// Verify ReplicaEnvelopeKeys contains all 3 epochs for replica-1
-		require.Contains(doc.ReplicaEnvelopeKeys, uint8(1), "Should have keys for ReplicaID 1")
+		// Verify the descriptor carries all 3 epochs for replica-1
+		require.Equal(uint8(1), doc.StorageReplicas[0].ReplicaID, "Should have descriptor for ReplicaID 1")
 
-		replicaKeys := doc.ReplicaEnvelopeKeys[1]
-		t.Logf("Authority-%d: ReplicaEnvelopeKeys for replica-1 contains %d epochs", i, len(replicaKeys))
+		replicaKeys := doc.StorageReplicas[0].EnvelopeKeys
+		t.Logf("Authority-%d: descriptor EnvelopeKeys for replica-1 contains %d epochs", i, len(replicaKeys))
 		for epoch := range replicaKeys {
 			t.Logf("  - Replica epoch %d", epoch)
 		}
@@ -2427,104 +2421,6 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 
 	t.Log("SUCCESS: Multiple envelope keys per replica test passed")
 	t.Log("- All 3 envelope keys (previous, current, next epochs) included in consensus")
-}
-
-// TestEnvelopeKeyPruning verifies that old envelope keys (older than previous epoch)
-// are pruned from the cache and not included in the document.
-func TestEnvelopeKeyPruning(t *testing.T) {
-	require := require.New(t)
-
-	// Get current replica epoch
-	currentReplicaEpoch, _, _ := replicaCommon.ReplicaNow()
-
-	// Create a minimal state to test buildReplicaEnvelopeKeys directly
-	st := new(state)
-	st.cachedReplicaEnvelopeKeys = make(map[uint8]map[uint64][]byte)
-
-	// Set up a proper logger with a file backend
-	tmpDir, err := os.MkdirTemp("", "test-pruning")
-	require.NoError(err)
-	defer os.RemoveAll(tmpDir)
-	logFile := filepath.Join(tmpDir, "test.log")
-	logBackend, err := log.New(logFile, "DEBUG", false)
-	require.NoError(err)
-	st.log = logBackend.GetLogger("test")
-
-	// Pre-populate cache with keys for various epochs
-	oldKey := make([]byte, 32)
-	rand.Reader.Read(oldKey)
-	prevKey := make([]byte, 32)
-	rand.Reader.Read(prevKey)
-	currKey := make([]byte, 32)
-	rand.Reader.Read(currKey)
-	nextKey := make([]byte, 32)
-	rand.Reader.Read(nextKey)
-	futureKey := make([]byte, 32)
-	rand.Reader.Read(futureKey)
-
-	var minEpoch uint64
-	if currentReplicaEpoch > 1 {
-		minEpoch = currentReplicaEpoch - 1
-	}
-	var veryOldEpoch uint64
-	if currentReplicaEpoch > 10 {
-		veryOldEpoch = currentReplicaEpoch - 10
-	}
-
-	st.cachedReplicaEnvelopeKeys[1] = map[uint64][]byte{
-		veryOldEpoch:            oldKey,    // very old - should be pruned
-		minEpoch:                prevKey,   // previous - should be kept
-		currentReplicaEpoch:     currKey,   // current - should be kept
-		currentReplicaEpoch + 1: nextKey,   // next - should be kept
-		currentReplicaEpoch + 5: futureKey, // far future - kept in cache but not in doc
-	}
-
-	t.Logf("Initial cache has %d keys", len(st.cachedReplicaEnvelopeKeys[1]))
-	t.Logf("Current replica epoch: %d, valid range: [%d, %d]",
-		currentReplicaEpoch, minEpoch, currentReplicaEpoch+1)
-
-	// Call buildReplicaEnvelopeKeys with empty tallied descriptors
-	// This will use only the cached keys
-	result := st.buildReplicaEnvelopeKeys([]*pki.ReplicaDescriptor{}, currentReplicaEpoch)
-
-	// Verify result only contains keys in valid range
-	if len(result) > 0 {
-		replicaKeys := result[1]
-		t.Logf("Result has %d keys for replica 1", len(replicaKeys))
-
-		// Should have exactly 3 keys (previous, current, next)
-		require.Len(replicaKeys, 3, "Should have 3 keys in valid epoch range")
-
-		// Verify old key is NOT in result
-		_, hasOld := replicaKeys[veryOldEpoch]
-		require.False(hasOld, "Very old key should not be in result")
-
-		// Verify far future key is NOT in result
-		_, hasFuture := replicaKeys[currentReplicaEpoch+5]
-		require.False(hasFuture, "Far future key should not be in result (kept in cache only)")
-
-		// Verify valid keys ARE in result
-		require.Contains(replicaKeys, minEpoch, "Previous epoch key should be in result")
-		require.Contains(replicaKeys, currentReplicaEpoch, "Current epoch key should be in result")
-		require.Contains(replicaKeys, currentReplicaEpoch+1, "Next epoch key should be in result")
-	}
-
-	// Verify cache was pruned
-	cacheKeys := st.cachedReplicaEnvelopeKeys[1]
-	t.Logf("Cache now has %d keys", len(cacheKeys))
-
-	// Old key should be pruned from cache
-	_, hasOldInCache := cacheKeys[veryOldEpoch]
-	require.False(hasOldInCache, "Very old key should be pruned from cache")
-
-	// Future key should still be in cache (not pruned, just not included in doc)
-	_, hasFutureInCache := cacheKeys[currentReplicaEpoch+5]
-	require.True(hasFutureInCache, "Far future key should still be in cache")
-
-	t.Log("SUCCESS: Envelope key pruning test passed")
-	t.Log("- Very old keys are pruned from cache")
-	t.Log("- Far future keys are kept in cache but not in document")
-	t.Log("- Only keys in valid range [prev, current, next] appear in document")
 }
 
 // TestEmptyEnvelopeKeysWithConfiguredReplicas verifies that when replicas are configured
@@ -2612,7 +2508,6 @@ func TestEmptyEnvelopeKeysWithConfiguredReplicas(t *testing.T) {
 		st.signatures[st.votingEpoch] = make(map[[hash.HashSize]byte]*cert.Signature)
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-		st.cachedReplicaEnvelopeKeys = make(map[uint8]map[uint64][]byte)
 		stateAuthority[i] = st
 		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
 		require.NoError(err)
@@ -2796,21 +2691,16 @@ func TestEmptyEnvelopeKeysWithConfiguredReplicas(t *testing.T) {
 		// Verify replica is in StorageReplicas (it achieved consensus)
 		require.Len(myVote.StorageReplicas, 1, "Replica should be in StorageReplicas")
 
-		// But ReplicaEnvelopeKeys should be empty (no keys provided)
-		if len(myVote.ReplicaEnvelopeKeys) > 0 {
-			replicaKeys, hasKeys := myVote.ReplicaEnvelopeKeys[1]
-			if hasKeys {
-				require.Len(replicaKeys, 0, "Replica should have no envelope keys (empty map)")
-			}
-		}
+		// But its descriptor should carry no envelope keys (none provided)
+		require.Len(myVote.StorageReplicas[0].EnvelopeKeys, 0,
+			"Replica should have no envelope keys (empty map)")
 
-		t.Logf("Vote has %d StorageReplicas and %d ReplicaEnvelopeKeys entries",
-			len(myVote.StorageReplicas), len(myVote.ReplicaEnvelopeKeys))
+		t.Logf("Vote has %d StorageReplicas", len(myVote.StorageReplicas))
 	}
 
 	t.Log("SUCCESS: Empty EnvelopeKeys test passed")
 	t.Log("- Replica with empty EnvelopeKeys still achieves consensus")
-	t.Log("- ReplicaEnvelopeKeys is empty for that replica (bad-acting behavior)")
+	t.Log("- Its descriptor carries no envelope keys (bad-acting behavior)")
 }
 
 // TestEnvelopeKeyPartitionResolvedByMajority verifies that when authorities have
@@ -2905,7 +2795,6 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 		st.signatures[st.votingEpoch] = make(map[[hash.HashSize]byte]*cert.Signature)
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-		st.cachedReplicaEnvelopeKeys = make(map[uint8]map[uint64][]byte)
 		stateAuthority[i] = st
 		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
 		require.NoError(err)
@@ -3177,8 +3066,8 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 		// The envelope key should be from the majority (first descriptor to win tally)
 		// Note: The actual key depends on which descriptor is processed first during tallying
 		// In practice, with 2/3 majority, the majority key should dominate
-		if len(doc.ReplicaEnvelopeKeys) > 0 && len(doc.ReplicaEnvelopeKeys[1]) > 0 {
-			consensusKey := doc.ReplicaEnvelopeKeys[1][currentReplicaEpoch]
+		if len(doc.StorageReplicas[0].EnvelopeKeys) > 0 {
+			consensusKey := doc.StorageReplicas[0].EnvelopeKeys[currentReplicaEpoch]
 			t.Logf("Authority-%d consensus has envelope key for replica epoch %d", i, currentReplicaEpoch)
 
 			// The key should match one of the partition keys
@@ -3199,4 +3088,398 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 	t.Log("SUCCESS: Envelope key partition test passed")
 	t.Log("- Network partition scenario: different authorities have different envelope keys")
 	t.Log("- Consensus resolves to one of the partition's keys (based on tallying)")
+}
+
+// TestConsensusIdenticalAfterAuthorityRestart pins the invariant whose
+// violation caused the 2026-07-12 namenlos outage: the consensus document
+// must be a pure function of voted data, so an authority rebuilt from
+// scratch mid-flight (a process restart) must produce a certificate
+// byte-identical to its long-lived peers.
+func TestConsensusIdenticalAfterAuthorityRestart(t *testing.T) {
+	require := require.New(t)
+
+	authNum := 3
+	votingEpoch, _, _ := epochtime.Now()
+	votingEpoch += 5
+	round2Epoch := votingEpoch + 1
+	parameters := &config.Parameters{
+		Mu:      0.001,
+		LambdaP: 0.002,
+		LambdaL: 0.0005,
+		LambdaM: 0.2,
+	}
+
+	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
+	require.NoError(err)
+
+	reverseHash := make(map[[publicKeyHashSize]byte]sign.PublicKey)
+	authorityNames := make(map[[publicKeyHashSize]byte]string)
+	for i := range peerKeys {
+		pk := hash.Sum256From(peerKeys[i].idPubKey)
+		reverseHash[pk] = peerKeys[i].idPubKey
+		authorityNames[pk] = authCfgs[i].Server.Identifier
+	}
+
+	replicaAIdPubKey, _, err := testSignatureScheme.GenerateKey()
+	require.NoError(err)
+	replicaBIdPubKey, _, err := testSignatureScheme.GenerateKey()
+	require.NoError(err)
+	replicaAIdBytes, err := replicaAIdPubKey.MarshalBinary()
+	require.NoError(err)
+	replicaBIdBytes, err := replicaBIdPubKey.MarshalBinary()
+	require.NoError(err)
+	reverseHash[hash.Sum256(replicaAIdBytes)] = replicaAIdPubKey
+	reverseHash[hash.Sum256(replicaBIdBytes)] = replicaBIdPubKey
+
+	authorities := make([]*config.Authority, 0)
+	for i, aCfg := range authCfgs {
+		authorities = append(authorities, &config.Authority{
+			Addresses:          aCfg.Server.Addresses,
+			WireKEMScheme:      testingSchemeName,
+			PKISignatureScheme: testSignatureScheme.Name(),
+			IdentityPublicKey:  peerKeys[i].idPubKey,
+			LinkPublicKey:      config.LinkPublicKey{PublicKey: peerKeys[i].linkKey.Public()},
+		})
+	}
+	votingPKI := &sConfig.PKI{Voting: &sConfig.Voting{Authorities: authorities}}
+
+	idKeys := make([]*identityKey, 0)
+	mixCfgs := make([]*sConfig.Config, 0)
+	port := uint16(31000)
+	for i := 0; i < 6; i++ {
+		idKey, c, err := genMixConfig(fmt.Sprintf("restart-node-%d", i), votingPKI, port)
+		require.NoError(err)
+		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
+		port++
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
+	}
+	topology := config.Topology{Layers: make([]config.Layer, 3)}
+	for layer := 0; layer < 3; layer++ {
+		topology.Layers[layer].Nodes = []config.Node{
+			{IdentityPublicKeyPem: idKeys[2*layer].identityPublicKeyPem},
+			{IdentityPublicKeyPem: idKeys[2*layer+1].identityPublicKeyPem},
+		}
+	}
+	for i := 0; i < authNum; i++ {
+		authCfgs[i].Topology = &topology
+	}
+	for i := 0; i < 2; i++ {
+		idKey, c, err := genGatewayConfig(fmt.Sprintf("restart-gateway-%d", i), votingPKI, port)
+		require.NoError(err)
+		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
+		port++
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
+	}
+	for i := 0; i < 2; i++ {
+		idKey, c, err := genServiceNodeConfig(fmt.Sprintf("restart-serviceNode-%d", i), votingPKI, port)
+		require.NoError(err)
+		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
+		port++
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
+	}
+
+	// Config-derived authorization maps, shared by all authority instances.
+	authorizedMixes := make(map[[hash.HashSize]byte]string)
+	authorizedGateways := make(map[[hash.HashSize]byte]string)
+	authorizedServices := make(map[[hash.HashSize]byte]string)
+	for i := range mixCfgs {
+		idkeyblob, err := idKeys[i].pubKey.MarshalBinary()
+		require.NoError(err)
+		h := hash.Sum256(idkeyblob)
+		switch {
+		case mixCfgs[i].Server.IsServiceNode:
+			authorizedServices[h] = mixCfgs[i].Server.Identifier
+		case mixCfgs[i].Server.IsGatewayNode:
+			authorizedGateways[h] = mixCfgs[i].Server.Identifier
+		default:
+			authorizedMixes[h] = mixCfgs[i].Server.Identifier
+		}
+	}
+
+	// newAuthorityState builds an authority purely from configuration,
+	// exactly what a process restart yields.
+	newAuthorityState := func(i int) *state {
+		st := new(state)
+		st.votingEpoch = votingEpoch
+		cfg := authCfgs[i]
+		st.verifiers = make(map[[publicKeyHashSize]byte]sign.PublicKey)
+		for j := range peerKeys {
+			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
+		}
+		st.threshold = len(st.verifiers)/2 + 1
+		st.dissenters = len(cfg.Authorities)/2 - 1
+
+		s := &Server{
+			cfg:                cfg,
+			identityPrivateKey: peerKeys[i].idKey,
+			identityPublicKey:  peerKeys[i].idPubKey,
+			fatalErrCh:         make(chan error),
+			haltedCh:           make(chan interface{}),
+		}
+		go func() {
+			for {
+				select {
+				case err := <-s.fatalErrCh:
+					require.NoError(err)
+				case _, ok := <-s.haltedCh:
+					if !ok {
+						return
+					}
+				}
+			}
+		}()
+		st.s = s
+		s.logBackend, err = log.New(cfg.Logging.File, s.cfg.Logging.Level, s.cfg.Logging.Disable)
+		require.NoError(err)
+		st.log = s.logBackend.GetLogger(fmt.Sprintf("restart-state%d", i))
+		s.log = s.logBackend.GetLogger("authority")
+
+		st.documents = make(map[uint64]*pki.Document)
+		st.myconsensus = make(map[uint64]*pki.Document)
+		st.descriptors = make(map[uint64]map[[hash.HashSize]byte]*pki.MixDescriptor)
+		st.replicaDescriptors = make(map[uint64]map[[hash.HashSize]byte]*pki.ReplicaDescriptor)
+		st.votes = make(map[uint64]map[[hash.HashSize]byte]*pki.Document)
+		st.certificates = make(map[uint64]map[[hash.HashSize]byte]*pki.Document)
+		st.commits = make(map[uint64]map[[hash.HashSize]byte][]byte)
+		st.reveals = make(map[uint64]map[[hash.HashSize]byte][]byte)
+		st.signatures = make(map[uint64]map[[hash.HashSize]byte]*cert.Signature)
+		st.reverseHash = reverseHash
+		st.authorityNames = authorityNames
+
+		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
+		require.NoError(err)
+		db, err := bolt.Open(filepath.Join(tmpDir, "persistence.db"), 0600, nil)
+		require.NoError(err)
+		st.db = db
+		require.NoError(st.restorePersistence())
+
+		st.authorizedMixes = authorizedMixes
+		st.authorizedGatewayNodes = authorizedGateways
+		st.authorizedServiceNodes = authorizedServices
+		st.authorizedReplicaNodes = map[[publicKeyHashSize]byte]*authorizedReplicaInfo{
+			hash.Sum256(replicaAIdBytes): {Identifier: "replica-a", ReplicaID: 1},
+			hash.Sum256(replicaBIdBytes): {Identifier: "replica-b", ReplicaID: 2},
+		}
+		return st
+	}
+
+	stateAuthority := make([]*state, authNum)
+	for i := 0; i < authNum; i++ {
+		stateAuthority[i] = newAuthorityState(i)
+	}
+
+	makeMixDescs := func(epoch uint64) []*pki.MixDescriptor {
+		descs := make([]*pki.MixDescriptor, 0, len(mixCfgs))
+		for i := 0; i < len(mixCfgs); i++ {
+			linkPubKey, _, err := testingScheme.GenerateKeyPair()
+			require.NoError(err)
+			linkBlob, err := linkPubKey.MarshalBinary()
+			require.NoError(err)
+			idkeyblob, err := idKeys[i].pubKey.MarshalBinary()
+			require.NoError(err)
+			descs = append(descs, &pki.MixDescriptor{
+				Name:          mixCfgs[i].Server.Identifier,
+				Epoch:         epoch,
+				IdentityKey:   idkeyblob,
+				LinkKey:       linkBlob,
+				MixKeys:       genMixKeys(epoch),
+				IsGatewayNode: mixCfgs[i].Server.IsGatewayNode,
+				IsServiceNode: mixCfgs[i].Server.IsServiceNode,
+				Addresses:     map[string][]string{pki.TransportTCPv4: {"tcp4://127.0.0.1:1234"}},
+			})
+		}
+		return descs
+	}
+
+	replicaALinkPubKey, _, err := testingScheme.GenerateKeyPair()
+	require.NoError(err)
+	replicaALinkBlob, err := replicaALinkPubKey.MarshalBinary()
+	require.NoError(err)
+	replicaBLinkPubKey, _, err := testingScheme.GenerateKeyPair()
+	require.NoError(err)
+	replicaBLinkBlob, err := replicaBLinkPubKey.MarshalBinary()
+	require.NoError(err)
+
+	envelopeKeyA := make([]byte, 32)
+	rand.Reader.Read(envelopeKeyA)
+	envelopeKeyB1 := make([]byte, 32)
+	rand.Reader.Read(envelopeKeyB1)
+	envelopeKeyB2 := make([]byte, 32)
+	rand.Reader.Read(envelopeKeyB2)
+
+	makeReplicaDesc := func(name string, id uint8, idBytes, linkBlob []byte, epoch uint64, envKeys map[uint64][]byte) *pki.ReplicaDescriptor {
+		return &pki.ReplicaDescriptor{
+			Name:         name,
+			ReplicaID:    id,
+			Epoch:        epoch,
+			IdentityKey:  idBytes,
+			LinkKey:      linkBlob,
+			EnvelopeKeys: envKeys,
+			Addresses:    map[string][]string{pki.TransportTCPv4: {"tcp4://127.0.0.1:5000"}},
+		}
+	}
+
+	// runRound drives one full vote/reveal/certificate/signature exchange
+	// and returns each authority's certificate document.
+	runRound := func(epoch uint64, replicaDescs []*pki.ReplicaDescriptor) []*pki.Document {
+		mixDescs := makeMixDescs(epoch)
+		for _, st := range stateAuthority {
+			st.votingEpoch = epoch
+			st.votes[epoch] = make(map[[hash.HashSize]byte]*pki.Document)
+			st.certificates[epoch] = make(map[[hash.HashSize]byte]*pki.Document)
+			st.signatures[epoch] = make(map[[hash.HashSize]byte]*cert.Signature)
+			st.descriptors[epoch] = make(map[[hash.HashSize]byte]*pki.MixDescriptor)
+			st.replicaDescriptors[epoch] = make(map[[hash.HashSize]byte]*pki.ReplicaDescriptor)
+			for _, d := range mixDescs {
+				st.descriptors[epoch][hash.Sum256(d.IdentityKey)] = d
+			}
+			for _, d := range replicaDescs {
+				st.replicaDescriptors[epoch][hash.Sum256(d.IdentityKey)] = d
+			}
+		}
+
+		commits := make(map[uint64]map[[hash.HashSize]byte][]byte)
+		commits[epoch] = make(map[[hash.HashSize]byte][]byte)
+		for _, st := range stateAuthority {
+			reveals := make(map[uint64]map[[hash.HashSize]byte][]byte)
+			reveals[epoch] = make(map[[hash.HashSize]byte][]byte)
+			srv := new(pki.SharedRandom)
+			commit, err := srv.Commit(epoch)
+			require.NoError(err)
+			signedCommit, err := cert.Sign(st.s.identityPrivateKey, st.s.identityPublicKey, commit, epoch+1)
+			require.NoError(err)
+			commits[epoch][hash.Sum256From(st.s.identityPublicKey)] = signedCommit
+			st.commits = commits
+			reveal := srv.Reveal()
+			signedReveal, err := cert.Sign(st.s.identityPrivateKey, st.s.identityPublicKey, reveal, epoch+1)
+			require.NoError(err)
+			reveals[epoch][hash.Sum256From(st.s.identityPublicKey)] = signedReveal
+			st.reveals = reveals
+		}
+
+		for i, st := range stateAuthority {
+			myVote, err := st.getVote(epoch)
+			require.NoError(err)
+			require.NotNil(myVote)
+			st.state = stateAcceptVote
+			for j, a := range stateAuthority {
+				if j == i {
+					continue
+				}
+				a.Lock()
+				a.votes[epoch][hash.Sum256From(st.s.identityPublicKey)] = myVote
+				a.Unlock()
+			}
+		}
+
+		for i, st := range stateAuthority {
+			st.state = stateAcceptReveal
+			c := st.reveal(epoch)
+			for j, a := range stateAuthority {
+				if j == i {
+					continue
+				}
+				a.Lock()
+				a.reveals[epoch][hash.Sum256From(st.s.identityPublicKey)] = c
+				a.Unlock()
+			}
+		}
+
+		certs := make([]*pki.Document, len(stateAuthority))
+		for i, st := range stateAuthority {
+			st.Lock()
+			st.state = stateAcceptCert
+			myCertificate, err := st.getCertificate(epoch)
+			require.NoError(err)
+			certs[i] = myCertificate
+			_, err = pki.SignDocument(st.s.identityPrivateKey, st.s.identityPublicKey, myCertificate)
+			require.NoError(err)
+			for j, a := range stateAuthority {
+				if j == i {
+					continue
+				}
+				a.Lock()
+				a.certificates[epoch][hash.Sum256From(st.s.identityPublicKey)] = myCertificate
+				a.Unlock()
+			}
+			st.Unlock()
+		}
+
+		for _, st := range stateAuthority {
+			st.Lock()
+			_, err := st.getMyConsensus(epoch)
+			st.Unlock()
+			require.NoError(err)
+		}
+
+		for i, st := range stateAuthority {
+			st.state = stateAcceptSignature
+			id := hash.Sum256From(st.s.identityPublicKey)
+			mySignature, ok := st.myconsensus[epoch].Signatures[id]
+			require.True(ok)
+			for j, a := range stateAuthority {
+				if j == i {
+					continue
+				}
+				a.Lock()
+				a.signatures[epoch][hash.Sum256From(st.s.identityPublicKey)] = &mySignature
+				a.Unlock()
+			}
+		}
+
+		for _, st := range stateAuthority {
+			st.Lock()
+			_, err := st.getThresholdConsensus(epoch)
+			st.Unlock()
+			require.NoError(err)
+		}
+		return certs
+	}
+
+	// Round 1: both replicas submit descriptors to every authority.
+	round1Descs := []*pki.ReplicaDescriptor{
+		makeReplicaDesc("replica-a", 1, replicaAIdBytes, replicaALinkBlob, votingEpoch,
+			map[uint64][]byte{100: envelopeKeyA}),
+		makeReplicaDesc("replica-b", 2, replicaBIdBytes, replicaBLinkBlob, votingEpoch,
+			map[uint64][]byte{100: envelopeKeyB1, 101: envelopeKeyB2}),
+	}
+	runRound(votingEpoch, round1Descs)
+
+	// Simulate a process restart of authority 2 between rounds: rebuild it
+	// from configuration, then seed only what a real restart restores from
+	// persistence (the prior consensus document).
+	round1Doc := stateAuthority[2].documents[votingEpoch]
+	require.NotNil(round1Doc)
+	restarted := newAuthorityState(2)
+	restarted.documents[votingEpoch] = round1Doc
+	stateAuthority[2] = restarted
+
+	// Round 2: only replica-b submits a descriptor.
+	round2Descs := []*pki.ReplicaDescriptor{
+		makeReplicaDesc("replica-b", 2, replicaBIdBytes, replicaBLinkBlob, round2Epoch,
+			map[uint64][]byte{100: envelopeKeyB1, 101: envelopeKeyB2}),
+	}
+	certs := runRound(round2Epoch, round2Descs)
+
+	// The exact property whose violation broke namenlos: every authority,
+	// long-lived or freshly restarted, signs byte-identical content.
+	certBytes := make([][]byte, len(certs))
+	for i, c := range certs {
+		docCopy := *c
+		docCopy.Signatures = nil
+		b, err := docCopy.MarshalCertificate()
+		require.NoError(err)
+		certBytes[i] = b
+	}
+	require.Equal(certBytes[0], certBytes[1], "long-lived authorities disagree")
+	require.Equal(certBytes[0], certBytes[2], "restarted authority diverged from long-lived peers")
+
+	for i, c := range certs {
+		require.Len(c.StorageReplicas, 1, "authority-%d round 2 must carry only replica-b", i)
+		require.Equal(uint8(2), c.StorageReplicas[0].ReplicaID)
+		require.Len(c.StorageReplicas[0].EnvelopeKeys, 2)
+	}
 }

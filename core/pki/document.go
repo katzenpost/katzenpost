@@ -45,11 +45,13 @@ const (
 	SharedRandomValueLength = 32
 
 	// DocumentVersion identifies the document format version.
-	// v1 introduced LambdaR, ConfiguredReplicaIdentityKeys, and
-	// ReplicaEnvelopeKeys, which were not present in v0 documents. v1
-	// also drops the six *MaxDelay companion fields that previously
-	// accompanied Mu/LambdaP/LambdaL/LambdaM/LambdaG/LambdaR; sampling
-	// safety caps are derived programmatically inside the library now.
+	// v1 introduced LambdaR and ConfiguredReplicaIdentityKeys, which
+	// were not present in v0 documents. v1 also drops the six *MaxDelay
+	// companion fields that previously accompanied
+	// Mu/LambdaP/LambdaL/LambdaM/LambdaG/LambdaR; sampling safety caps
+	// are derived programmatically inside the library now. The optional
+	// v1 ReplicaEnvelopeKeys field was later removed: per-descriptor
+	// EnvelopeKeys in StorageReplicas are the sole carrier.
 	DocumentVersion = "v1"
 )
 
@@ -151,12 +153,6 @@ type Document struct {
 	// go offline. It is used for consistent hashing to determine shard assignments.
 	ConfiguredReplicaIdentityKeys [][]byte `cbor:"ConfiguredReplicaIdentityKeys,omitempty"`
 
-	// ReplicaEnvelopeKeys contains envelope public keys for all configured replicas,
-	// indexed by ReplicaID and then by replica epoch. This map includes keys from
-	// replicas that are temporarily offline, using cached values from previous epochs.
-	// It contains keys for the previous, current, and next replica epochs.
-	ReplicaEnvelopeKeys map[uint8]map[uint64][]byte `cbor:"ReplicaEnvelopeKeys,omitempty"`
-
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
 
@@ -217,16 +213,6 @@ func (d *Document) String() string {
 	s += "}\n"
 	s += fmt.Sprintf("StorageReplicas:[]{%v}", d.StorageReplicas)
 	s += "}}\n"
-
-	s += "ReplicaEnvelopeKeys:{\n"
-	for replicaID, epochKeys := range d.ReplicaEnvelopeKeys {
-		s += fmt.Sprintf("  ReplicaID %d: {", replicaID)
-		for epoch, key := range epochKeys {
-			s += fmt.Sprintf(" epoch %d: %x,", epoch, key[:min(8, len(key))])
-		}
-		s += "}\n"
-	}
-	s += "}\n"
 
 	for id, signedCommit := range d.SharedRandomCommit {
 		commit, err := cert.GetCertified(signedCommit)
