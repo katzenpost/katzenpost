@@ -2,6 +2,7 @@ package wire
 
 import (
 	"bytes"
+	"context"
 	"crypto/subtle"
 	"net"
 	"sync"
@@ -253,7 +254,7 @@ func BenchmarkPQNoiseSessionTCP(b *testing.B) {
 			}
 			defer session.Close()
 
-			if err := session.Initialize(conn); err != nil {
+			if err := session.Initialize(context.Background(), conn); err != nil {
 				serverErr = err
 				return
 			}
@@ -287,7 +288,7 @@ func BenchmarkPQNoiseSessionTCP(b *testing.B) {
 			}
 			defer session.Close()
 
-			if err := session.Initialize(conn); err != nil {
+			if err := session.Initialize(context.Background(), conn); err != nil {
 				clientErr = err
 				return
 			}
@@ -361,7 +362,7 @@ func BenchmarkPQNoiseSessionPipe(b *testing.B) {
 			}
 			defer session.Close()
 
-			if err := session.Initialize(serverConn); err != nil {
+			if err := session.Initialize(context.Background(), serverConn); err != nil {
 				serverErr = err
 				return
 			}
@@ -389,7 +390,7 @@ func BenchmarkPQNoiseSessionPipe(b *testing.B) {
 			}
 			defer session.Close()
 
-			if err := session.Initialize(clientConn); err != nil {
+			if err := session.Initialize(context.Background(), clientConn); err != nil {
 				clientErr = err
 				return
 			}
@@ -468,7 +469,7 @@ func BenchmarkPQNoiseSessionPipeDetailed(b *testing.B) {
 			}
 			defer session.Close()
 
-			if err := session.Initialize(serverConn); err != nil {
+			if err := session.Initialize(context.Background(), serverConn); err != nil {
 				serverErr = err
 				return
 			}
@@ -497,7 +498,7 @@ func BenchmarkPQNoiseSessionPipeDetailed(b *testing.B) {
 			defer session.Close()
 
 			start := time.Now()
-			if err := session.Initialize(clientConn); err != nil {
+			if err := session.Initialize(context.Background(), clientConn); err != nil {
 				clientErr = err
 				return
 			}

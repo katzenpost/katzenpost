@@ -18,6 +18,7 @@ package incoming
 
 import (
 	"container/list"
+	"context"
 	"fmt"
 	"math"
 	"net"
@@ -230,6 +231,7 @@ func (c *incomingConn) worker() {
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.l.glue.LinkKey(),
 		RandomReader:      rand.Reader,
+		HandshakeTimeout:  time.Duration(c.l.glue.Config().Debug.HandshakeTimeout) * time.Millisecond,
 	}
 	var err error
 	c.w, err = wire.NewSession(cfg, false)
@@ -239,11 +241,11 @@ func (c *incomingConn) worker() {
 	}
 	defer c.w.Close()
 
-	// Bind the session to the conn, handshake, authenticate.
+	// Bind the session to the conn, handshake, authenticate. The Session
+	// enforces the handshake and steady-state deadlines itself.
 	timeoutMs := time.Duration(c.l.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
-	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
-	if err = c.w.Initialize(c.c); err != nil {
+	if err = c.w.Initialize(context.Background(), c.c); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -286,7 +288,6 @@ func (c *incomingConn) worker() {
 		c.c.RemoteAddr(),
 		handshakeElapsed,
 	)
-	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 
 	// Spawn the push-delivery sender for client connections. The
@@ -335,7 +336,7 @@ func (c *incomingConn) worker() {
 	go func() {
 		defer close(commandCh)
 		for {
-			rawCmd, err := c.w.RecvCommand()
+			rawCmd, err := c.w.RecvCommand(context.Background())
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
 				return
@@ -490,7 +491,7 @@ func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 	default: // Covers errNotCached
 		respCmd.ErrorCode = commands.ConsensusNotFound
 	}
-	return c.w.SendCommand(respCmd)
+	return c.w.SendCommand(context.Background(), respCmd)
 }
 
 func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
@@ -523,7 +524,7 @@ func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
 			ChunkTotal: 1,
 			Payload:    []byte{},
 		}
-		return c.w.SendCommand(respCmd)
+		return c.w.SendCommand(context.Background(), respCmd)
 	}
 
 	chunkSize := cmd.Cmds.MaxMessageLenServerToClient
@@ -543,7 +544,7 @@ func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
 			ChunkTotal: uint32(len(chunks)),
 			Payload:    chunk,
 		}
-		if err := c.w.SendCommand(chunkCmd); err != nil {
+		if err := c.w.SendCommand(context.Background(), chunkCmd); err != nil {
 			return err
 		}
 	}
@@ -575,7 +576,7 @@ func (c *incomingConn) onSendRetrievePacket(cmd *commands.SendRetrievePacket) er
 		SURBID:  surbIDar,
 		Payload: msg,
 	}
-	return c.w.SendCommand(respCmd)
+	return c.w.SendCommand(context.Background(), respCmd)
 }
 
 // senderWorker pushes Message commands to a connected client as
@@ -606,7 +607,7 @@ func (c *incomingConn) senderWorker() {
 			return
 		case <-heartbeat.C:
 			cmd := &commands.NoOp{Cmds: commands.NewMixnetCommands(c.geo)}
-			if err := c.w.SendCommand(cmd); err != nil {
+			if err := c.w.SendCommand(context.Background(), cmd); err != nil {
 				c.log.Debugf("senderWorker: NoOp send failed: %v", err)
 				return
 			}
@@ -671,7 +672,7 @@ func (c *incomingConn) senderWorker() {
 			default:
 			}
 
-			if err := c.w.SendCommand(cmd); err != nil {
+			if err := c.w.SendCommand(context.Background(), cmd); err != nil {
 				c.log.Debugf("senderWorker: SendCommand failed: %v", err)
 				return
 			}

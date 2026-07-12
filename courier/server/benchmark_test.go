@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -76,7 +77,7 @@ func benchReplicaServer(listener net.Listener, serverLinkPrivKey kem.PrivateKey,
 			defer session.Close()
 
 			c.SetDeadline(time.Now().Add(30 * time.Second))
-			session.Initialize(c)
+			session.Initialize(context.Background(), c)
 		}(conn)
 	}
 }
@@ -228,7 +229,7 @@ func runCourierConcurrentHandshakes(addr string, courierKeys []kem.PrivateKey, c
 			defer conn.Close()
 
 			conn.SetDeadline(time.Now().Add(30 * time.Second))
-			if err = sessions[idx].Initialize(conn); err != nil {
+			if err = sessions[idx].Initialize(context.Background(), conn); err != nil {
 				errors[idx] = err
 				durations[idx] = time.Since(start)
 				return
@@ -385,7 +386,7 @@ func runParallelReplicaConnections(servers []*replicaServer, courierLinkPrivKey 
 
 			if sessions[idx] != nil {
 				conn.SetDeadline(time.Now().Add(30 * time.Second))
-				sessions[idx].Initialize(conn)
+				sessions[idx].Initialize(context.Background(), conn)
 			}
 		}(i)
 	}

@@ -5,6 +5,7 @@ package replica
 
 import (
 	"container/list"
+	"context"
 	"crypto/hmac"
 	"errors"
 	"fmt"
@@ -177,7 +178,7 @@ func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) 
 		return
 	}
 	_, isDecoy := cmd.(*commands.ReplicaDecoy)
-	if err := session.SendCommand(cmd); err != nil {
+	if err := session.SendCommand(context.Background(), cmd); err != nil {
 		c.log.Debugf("Failed to send response: %v", err)
 	} else if !isDecoy {
 		c.log.Debugf("Sent response: %T", cmd)
@@ -195,6 +196,7 @@ func (c *incomingConn) initializeSession() (*wire.Session, error) {
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.l.server.linkKey,
 		RandomReader:      rand.Reader,
+		HandshakeTimeout:  time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond,
 	}
 	var err error
 	c.l.Lock()
@@ -241,9 +243,8 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 		remoteAddr = c.c.RemoteAddr().String()
 	}
 
-	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
-	if err := session.Initialize(c.c); err != nil {
+	if err := session.Initialize(context.Background(), c.c); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -286,7 +287,6 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 		time.Since(handshakeStart),
 	)
 
-	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 
 	creds, err := session.PeerCredentials()
@@ -365,7 +365,7 @@ func (c *incomingConn) startCommandReader(session *wire.Session) (chan commands.
 	go func() {
 		defer close(commandCh)
 		for {
-			rawCmd, err := session.RecvCommand()
+			rawCmd, err := session.RecvCommand(context.Background())
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
 				return

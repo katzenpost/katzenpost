@@ -17,6 +17,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"net"
 	"strconv"
@@ -84,6 +85,9 @@ func (s *Server) onConn(conn net.Conn) {
 		AdditionalData:     keyHash[:],
 		AuthenticationKey:  s.linkKey,
 		RandomReader:       rand.Reader,
+		HandshakeTimeout:   time.Duration(s.cfg.Server.HandshakeTimeoutSec) * time.Second,
+		ReadTimeout:        time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second,
+		WriteTimeout:       time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second,
 	}
 
 	wireConn, err := wire.NewPKISession(cfg, false)
@@ -130,7 +134,7 @@ func (s *Server) onConn(conn net.Conn) {
 		handshakeTimeout,
 	)
 
-	if err = wireConn.Initialize(conn); err != nil {
+	if err = wireConn.Initialize(context.Background(), conn); err != nil {
 		// Try to identify the peer from the handshake error.
 		peerID := rAddr.String()
 		if he, ok := wire.GetHandshakeError(err); ok && he.PeerCredentials != nil {
@@ -214,7 +218,7 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Receive a command.
 	recvStart := time.Now()
-	cmd, err := wireConn.RecvCommand()
+	cmd, err := wireConn.RecvCommand(context.Background())
 	if err != nil {
 		phaseNow, remainingNow := s.state.PhaseInfo()
 		s.log.Debugf(
@@ -299,7 +303,7 @@ func (s *Server) onConn(conn net.Conn) {
 			time.Since(acceptedAt),
 		)
 
-		if err = wireConn.SendCommand(resp); err != nil {
+		if err = wireConn.SendCommand(context.Background(), resp); err != nil {
 			phaseNow, remainingNow := s.state.PhaseInfo()
 			s.log.Warningf(
 				"Peer %s: Failed to send response command=%T response=%T local=%v remote=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s total_since_accept=%v: %v",

@@ -1118,6 +1118,9 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
+		HandshakeTimeout:  handshakeTimeout,
+		ReadTimeout:       responseTimeout,
+		WriteTimeout:      responseTimeout,
 	}
 	session, err := wire.NewPKISession(cfg, true)
 	if err != nil {
@@ -1127,7 +1130,7 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
-	if err = session.Initialize(conn); err != nil {
+	if err = session.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -1150,12 +1153,12 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, handshakeElapsed)
 
 	conn.SetDeadline(time.Now().Add(responseTimeout))
-	err = session.SendCommand(cmd)
+	err = session.SendCommand(context.Background(), cmd)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := session.RecvCommand()
+	resp, err := session.RecvCommand(context.Background())
 	if err != nil {
 		return nil, err
 	}

@@ -324,14 +324,14 @@ func (d *mockDialer) mockServer(
 	defer session.Close()
 
 	d.Lock()
-	err = session.Initialize(d.netMap[address].serverConn)
+	err = session.Initialize(context.Background(), d.netMap[address].serverConn)
 	d.Unlock()
 	if err != nil {
 		d.log.Errorf("mockServer session Initialize failure: %s", err)
 		return
 	}
 
-	cmd, err := session.RecvCommand()
+	cmd, err := session.RecvCommand(context.Background())
 	if err != nil {
 		d.log.Errorf("mockServer session RecvCommand failure: %s", err)
 		return
@@ -357,7 +357,7 @@ func (d *mockDialer) mockServer(
 			Payload:   rawDoc,
 		}
 
-		err = session.SendCommand(reply)
+		err = session.SendCommand(context.Background(), reply)
 		if err != nil {
 			d.log.Errorf("SendCommand failure: %s", err)
 			return
@@ -1074,14 +1074,14 @@ func (d *mockDialer) mockPostServer(
 	defer session.Close()
 
 	d.Lock()
-	err = session.Initialize(d.netMap[address].serverConn)
+	err = session.Initialize(context.Background(), d.netMap[address].serverConn)
 	d.Unlock()
 	if err != nil {
 		d.log.Errorf("mockPostServer session Initialize failure: %s", err)
 		return
 	}
 
-	cmd, err := session.RecvCommand()
+	cmd, err := session.RecvCommand(context.Background())
 	if err != nil {
 		d.log.Errorf("mockPostServer session RecvCommand failure: %s", err)
 		return
@@ -1092,7 +1092,7 @@ func (d *mockDialer) mockPostServer(
 		return
 	}
 
-	if err := session.SendCommand(reply); err != nil {
+	if err := session.SendCommand(context.Background(), reply); err != nil {
 		d.log.Errorf("mockPostServer SendCommand failure: %s", err)
 		return
 	}
@@ -1194,12 +1194,12 @@ func TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 	require.NoError(err)
 
 	cfg := &Config{
-		KEMScheme:           testingScheme,
-		LogBackend:          logBackend,
-		LinkKey:             clientLinkKey,
-		Authorities:         peers,
-		DialContextFn:       dialFn,
-		Geo:                 mygeo,
+		KEMScheme:     testingScheme,
+		LogBackend:    logBackend,
+		LinkKey:       clientLinkKey,
+		Authorities:   peers,
+		DialContextFn: dialFn,
+		Geo:           mygeo,
 		// Generous deadlines: the succeeding peers run a real post-quantum
 		// Noise handshake over an in-memory pipe, which under a loaded CI
 		// runner can exceed a few seconds. The failing peers fail instantly
@@ -1403,12 +1403,12 @@ func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 	require.NoError(err)
 
 	cfg := &Config{
-		KEMScheme:           testingScheme,
-		LogBackend:          logBackend,
-		LinkKey:             clientLinkKey,
-		Authorities:         peers,
-		DialContextFn:       dialFn,
-		Geo:                 mygeo,
+		KEMScheme:     testingScheme,
+		LogBackend:    logBackend,
+		LinkKey:       clientLinkKey,
+		Authorities:   peers,
+		DialContextFn: dialFn,
+		Geo:           mygeo,
 		// Generous deadlines: see TestPostReplicaAcceptsQuorumSuccessWithFailingAuthorities.
 		// The succeeding peers run a real PQ Noise handshake over a pipe, which
 		// can exceed a few seconds under CI load; the failing peers fail
