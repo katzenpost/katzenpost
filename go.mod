@@ -8,12 +8,14 @@ require (
 	github.com/carlmjohnson/versioninfo v0.22.5
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/fang v1.0.0
+	github.com/coder/websocket v1.8.15
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20poly1305 v0.0.1
 	github.com/katzenpost/hpqc v0.0.84-0.20260603082753-be60338910ec
 	github.com/katzenpost/nyquist v0.0.13
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
+	github.com/leanovate/gopter v0.2.11
 	github.com/linxGnu/grocksdb v1.10.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/quic-go/quic-go v0.59.0
@@ -29,6 +31,7 @@ require (
 	golang.org/x/net v0.53.0
 	golang.org/x/text v0.37.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -59,7 +62,6 @@ require (
 	github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520215053-47e926d8264d // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/leanovate/gopter v0.2.11 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
@@ -87,6 +89,5 @@ require (
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
