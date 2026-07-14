@@ -25,6 +25,7 @@ import (
 var (
 	errGetConsensusCanceled = errors.New("client/pki: consensus fetch canceled")
 	errConsensusNotFound    = errors.New("client/pki: consensus not ready yet")
+	errBadConsensus         = errors.New("client/pki: consensus from gateway failed to decode")
 	PublishDeadline         = vServer.PublishConsensusDeadline
 	mixServerCacheDelay     = epochtime.Period / 16
 	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
@@ -323,10 +324,8 @@ func (p *pki) worker() {
 			// we shouldn't do this before we are connected:
 			err := p.updateDocument(epoch)
 			if err != nil {
-				switch err {
-				case cpki.ErrNoDocument:
+				if err == cpki.ErrDocumentGone {
 					p.failedFetches[epoch] = err
-				default:
 				}
 				// Other errors (including a deadline-expired
 				// errGetConsensusCanceled or a transient
@@ -472,7 +471,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, []byte, *c
 	switch resp.ErrorCode {
 	case commands.ConsensusOk:
 	case commands.ConsensusGone:
-		return nil, nil, nil, cpki.ErrNoDocument
+		return nil, nil, nil, cpki.ErrDocumentGone
 	case commands.ConsensusNotFound:
 		return nil, nil, nil, errConsensusNotFound
 	default:
@@ -485,11 +484,11 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, []byte, *c
 	d, err = p.c.PKIClient.Deserialize(resp.Payload)
 	if err != nil {
 		p.log.Errorf("Failed to deserialize consensus received from Gateway: %v", err)
-		return nil, nil, nil, cpki.ErrNoDocument
+		return nil, nil, nil, errBadConsensus
 	}
 	if d == nil {
 		p.log.Error("Failed to deserialize consensus received from Gateway")
-		return nil, nil, nil, cpki.ErrNoDocument
+		return nil, nil, nil, errBadConsensus
 	}
 
 	if d.Epoch != epoch {
