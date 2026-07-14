@@ -376,6 +376,10 @@ type StartResendingCopyCommandReply struct {
 // String returns a string representation of the StartResendingCopyCommandReply.
 func (e *StartResendingCopyCommandReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
+		if e.ReplicaErrorCode != 0 || e.FailedEnvelopeIndex != 0 {
+			return fmt.Sprintf("StartResendingCopyCommandReply (error: %s, replica error code: %d, failed envelope index: %d)",
+				ThinClientErrorToString(e.ErrorCode), e.ReplicaErrorCode, e.FailedEnvelopeIndex)
+		}
 		return fmt.Sprintf("StartResendingCopyCommandReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
 	return "StartResendingCopyCommandReply: success"
