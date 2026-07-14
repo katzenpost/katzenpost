@@ -661,6 +661,34 @@ func TestStartResendingCopyCommandError(t *testing.T) {
 		"ErrorCode=ThinClientErrorCopyCommandFailed must map to ErrCopyCommandFailed via the thin-client-namespace interpreter, not to a replica sentinel")
 }
 
+func TestCopyCommandErrorDetail(t *testing.T) {
+	// Replica-identified abort: both sentinels match, index surfaced.
+	err := copyCommandError(&StartResendingCopyCommandReply{
+		ErrorCode:           ThinClientErrorCopyCommandFailed,
+		ReplicaErrorCode:    10, // ReplicaErrorBoxAlreadyExists
+		FailedEnvelopeIndex: 3,
+	})
+	require.True(t, errors.Is(err, ErrCopyCommandFailed))
+	require.True(t, errors.Is(err, ErrBoxAlreadyExists))
+	require.Contains(t, err.Error(), "failed envelope index 3")
+
+	// Courier-side abort (no replica reply): index still surfaced.
+	err = copyCommandError(&StartResendingCopyCommandReply{
+		ErrorCode:           ThinClientErrorCopyCommandFailed,
+		FailedEnvelopeIndex: 1,
+	})
+	require.True(t, errors.Is(err, ErrCopyCommandFailed))
+	require.Contains(t, err.Error(), "no replica reply")
+	require.Contains(t, err.Error(), "failed envelope index 1")
+
+	// Non-Copy codes pass through the thin-client interpreter.
+	err = copyCommandError(&StartResendingCopyCommandReply{
+		ErrorCode: ThinClientErrorInternalError,
+	})
+	require.False(t, errors.Is(err, ErrCopyCommandFailed))
+	require.Error(t, err)
+}
+
 func TestCancelResendingCopyCommandNilHash(t *testing.T) {
 	tc, _ := setupMockDaemon(t)
 	err := tc.CancelResendingCopyCommand(nil)

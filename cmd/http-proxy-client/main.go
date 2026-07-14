@@ -28,13 +28,13 @@ import (
 	"net/http/httputil"
 	"time"
 
-	"github.com/carlmjohnson/versioninfo"
 	cbor "github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/hash"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/thin"
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/quic/proxy/common"
 )
 
@@ -145,7 +145,7 @@ func main() {
 	defer client.Close()
 
 	clientLog := client.GetLogger("http_proxy")
-	clientLog.Noticef("Katzenpost http-proxy-client version: %s", versioninfo.Short())
+	clientLog.Noticef("Katzenpost http-proxy-client version: %s", kpcommon.Version())
 	clientLog.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
 	addr := fmt.Sprintf(":%d", *port)

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -23,6 +22,7 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -33,9 +33,6 @@ import (
 	"github.com/katzenpost/katzenpost/replica/config"
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
-
-// GitCommit is the git commit hash, set at build time via -ldflags
-var GitCommit = "unknown"
 
 // ErrGenerateOnly is the error returned when the server initialization
 // terminates due to the `GenerateOnly` debug config option.
@@ -141,8 +138,7 @@ func (s *Server) initLogging() error {
 	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
 	if err == nil {
 		s.log = s.logBackend.GetLogger("replica")
-		s.log.Noticef("Katzenpost replica version: %s", versioninfo.Short())
-		s.log.Noticef("Katzenpost replica git revision: %s", GitCommit)
+		s.log.Noticef("Katzenpost replica version: %s", kpcommon.Version())
 		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err

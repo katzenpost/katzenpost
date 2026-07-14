@@ -65,6 +65,23 @@ func thinClientErrorCodeToSentinel(errorCode uint8) error {
 	}
 }
 
+// copyCommandError converts a failed StartResendingCopyCommandReply
+// into an error. A Copy failure keeps the courier-reported detail:
+// the replica error that aborted the Copy (when the courier identified
+// one) and the 1-based position of the copy-stream envelope that could
+// not be completed. Both sentinels stay matchable via errors.Is.
+func copyCommandError(v *StartResendingCopyCommandReply) error {
+	if v.ErrorCode != ThinClientErrorCopyCommandFailed {
+		return thinClientErrorCodeToSentinel(v.ErrorCode)
+	}
+	if v.ReplicaErrorCode != 0 {
+		return fmt.Errorf("%w: %w (failed envelope index %d)",
+			ErrCopyCommandFailed, replicaErrorCodeToSentinel(v.ReplicaErrorCode), v.FailedEnvelopeIndex)
+	}
+	return fmt.Errorf("%w: no replica reply (failed envelope index %d)",
+		ErrCopyCommandFailed, v.FailedEnvelopeIndex)
+}
+
 // replicaErrorCodeToSentinel maps codes from the PIGEONHOLE REPLICA error
 // namespace (see pigeonhole/errors.go — ReplicaSuccess + ReplicaErrorXxx)
 // to sentinel errors. It MUST NOT be called with values that originated
@@ -774,7 +791,7 @@ func (t *ThinClient) StartResendingCopyCommand(writeCap *bacap.WriteCap) error {
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return thinClientErrorCodeToSentinel(v.ErrorCode)
+				return copyCommandError(v)
 			}
 			t.log.Debugf("StartResendingCopyCommand: Copy command completed successfully")
 			return nil

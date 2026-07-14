@@ -127,6 +127,32 @@ func (e *ExpDist) UpdateConnectionStatus(isConnected bool) {
 	}
 }
 
+// applyOp folds one control operation into the worker state and
+// returns the updated connection status.
+func (e *ExpDist) applyOp(qo interface{}, isConnected bool) bool {
+	switch op := qo.(type) {
+	case opConnStatusChanged:
+		return op.isConnected
+	case opExpNewRate:
+		e.averageRate = op.averageRate
+		// Derive the safety cap from the mean rate so the
+		// tail of the exponential is not truncated within
+		// any honest measurement window. lambda (events/ms)
+		// is the reciprocal of the mean delay; SafetyCap
+		// expects lambda. If averageRate is zero the worker
+		// is treated as disabled and the cap value is
+		// immaterial.
+		if e.averageRate != 0 {
+			e.maxDelay = SafetyCap(1.0 / float64(e.averageRate))
+		} else {
+			e.maxDelay = 0
+		}
+		return isConnected
+	default:
+		panic(fmt.Sprintf("BUG: Worker received nonsensical op: %T", op))
+	}
+}
+
 func (e *ExpDist) worker() {
 	const maxDuration = math.MaxInt64
 
@@ -153,39 +179,25 @@ func (e *ExpDist) worker() {
 		case qo = <-e.opCh:
 		}
 
-		if qo != nil {
-			switch op := qo.(type) {
-			case opConnStatusChanged:
-				isConnected = op.isConnected
-				mustResetTimer = true
-			case opExpNewRate:
-				e.averageRate = op.averageRate
-				// Derive the safety cap from the mean rate so the
-				// tail of the exponential is not truncated within
-				// any honest measurement window. lambda (events/ms)
-				// is the reciprocal of the mean delay; SafetyCap
-				// expects lambda. If averageRate is zero the worker
-				// is treated as disabled and the cap value is
-				// immaterial.
-				if e.averageRate != 0 {
-					e.maxDelay = SafetyCap(1.0 / float64(e.averageRate))
-				} else {
-					e.maxDelay = 0
-				}
-				mustResetTimer = true
-			default:
-				panic(fmt.Sprintf("BUG: Worker received nonsensical op: %T", op))
-			} // end of switch
-		} else {
-			if isConnected {
-				if rateFired {
-					select {
-					case <-e.HaltCh():
-						return
-					case e.outCh <- struct{}{}:
-					}
-				}
+		if qo == nil && rateFired && isConnected {
+			// Deliver the tick without starving opCh: the consumer may
+			// be gone for good (e.g. a torn-down connection between
+			// wire sessions), and UpdateRate/UpdateConnectionStatus
+			// must never block behind an undeliverable tick, or the
+			// caller deadlocks against this worker. If an op arrives
+			// first the tick is dropped; ticks are pure pacing and the
+			// op resets the timer anyway.
+			select {
+			case <-e.HaltCh():
+				return
+			case e.outCh <- struct{}{}:
+			case qo = <-e.opCh:
 			}
+		}
+
+		if qo != nil {
+			isConnected = e.applyOp(qo, isConnected)
+			mustResetTimer = true
 		}
 
 		// Always recalculate the interval and reset timer when needed

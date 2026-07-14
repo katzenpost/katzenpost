@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/carlmjohnson/versioninfo"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
@@ -21,7 +20,7 @@ func ExecuteWithFang(cmd *cobra.Command) {
 	if err := fang.Execute(
 		context.Background(),
 		cmd,
-		fang.WithVersion(versioninfo.Short()),
+		fang.WithVersion(Version()),
 		fang.WithErrorHandler(ErrorHandlerWithUsage(cmd)),
 	); err != nil {
 		os.Exit(1)
