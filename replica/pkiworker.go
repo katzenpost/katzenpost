@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
@@ -221,4 +222,25 @@ func (p *PKIWorker) ForceFetchPKI() error {
 func (p *PKIWorker) HasCurrentPKIDocument() bool {
 	epoch, _, _ := epochtime.Now()
 	return p.documentForEpoch(epoch) != nil
+}
+
+// ReplyJitterBound returns the uniform per-reply delay upper bound
+// derived from the consensus LambdaR (see replyJitterFromLambdaR).
+// During the epoch-rotation gap the most recently cached document is
+// consulted; only when no document exists at all (or it carries an
+// unusable LambdaR) does the code fall back to fallbackReplyJitter.
+func (p *PKIWorker) ReplyJitterBound() time.Duration {
+	epoch, _, _ := epochtime.Now()
+	doc := p.documentForEpoch(epoch)
+	if doc == nil {
+		doc = p.LastCachedPKIDocument()
+	}
+	if doc == nil {
+		return fallbackReplyJitter
+	}
+	bound, err := replyJitterFromLambdaR(doc.LambdaR)
+	if err != nil {
+		return fallbackReplyJitter
+	}
+	return bound
 }

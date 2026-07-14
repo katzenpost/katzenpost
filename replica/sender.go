@@ -42,39 +42,55 @@ func (s *senderRequest) command() commands.Command {
 	return nil
 }
 
-// replyJitterMax bounds the per-reply uniform random delay applied by
-// delayedReplyEmitter on incoming connections. This generalises §5.4 of
-// the Echomix paper ("Each reply is independently delayed, with delays
-// sampled from a uniform distribution") to all replies, so that
-// per-reply latency hides processing-time variance and the wire stays
-// at a constant Poisson rate driven by the peer's command rate.
+// fallbackReplyJitter is the uniform reply-delay bound used only while
+// no PKI document is available. The operative bound is derived from
+// the consensus LambdaR (see replyJitterFromLambdaR); timescales come
+// from the PKI document, not from code.
+const fallbackReplyJitter = 50 * time.Millisecond
+
+// replyJitterFromLambdaR returns the per-reply uniform delay bound J
+// applied by delayedReplyEmitter on incoming connections: one mean
+// link slot, J = 1/LambdaR. This generalises §5.4 of the Echomix paper
+// ("Each reply is independently delayed, with delays sampled from a
+// uniform distribution") to all replies, so that per-reply latency
+// hides processing-time variance and the wire stays at a constant
+// Poisson rate driven by the peer's command rate.
 //
-// Expected steady-state TimerQueue depth per connection by Little's
-// Law is LambdaR * replyJitterMax / 2, which at the docker default
-// LambdaR = 0.005 (5 events/s per pair) is about 0.125 items.
-const replyJitterMax = 50 * time.Millisecond
+// With J = 1/LambdaR the expected steady-state TimerQueue depth per
+// connection by Little's Law is LambdaR * J / 2 = 1/2 item at any
+// rate.
+func replyJitterFromLambdaR(lambdaR float64) (time.Duration, error) {
+	ms, err := common.LambdaRateToMs(lambdaR)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(ms) * time.Millisecond, nil
+}
 
 // delayedReplyEmitter takes the place of the older paced "sender" on
 // the responder side of every incoming connection. processCommands
 // calls Enqueue for each reply (real or decoy-in-response-to-peer-decoy),
-// the emitter draws an i.i.d. delay from Uniform[0, replyJitterMax]
-// and pushes the reply into a TimerQueue keyed by ready-at time.
-// The TimerQueue's worker emits each reply to the egress channel when
-// its delay elapses. There is no LambdaR-paced consumer here; the
-// reply rate equals the peer's command rate by 1:1 correspondence and
-// no fresh decoys are generated on this side.
+// the emitter draws an i.i.d. delay from Uniform[0, J] where J comes
+// from jitterBound (the PKI document's LambdaR; see
+// replyJitterFromLambdaR) and pushes the reply into a TimerQueue keyed
+// by ready-at time. The TimerQueue's worker emits each reply to the
+// egress channel when its delay elapses. There is no LambdaR-paced
+// consumer here; the reply rate equals the peer's command rate by 1:1
+// correspondence and no fresh decoys are generated on this side.
 type delayedReplyEmitter struct {
-	log      *logging.Logger
-	out      chan *senderRequest
-	tq       *queue.TimerQueue
-	peerName string
+	log         *logging.Logger
+	out         chan *senderRequest
+	tq          *queue.TimerQueue
+	peerName    string
+	jitterBound func() time.Duration
 }
 
-func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, peerName string) *delayedReplyEmitter {
+func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, peerName string, jitterBound func() time.Duration) *delayedReplyEmitter {
 	e := &delayedReplyEmitter{
-		log:      logBackend.GetLogger("replica/delayedReplyEmitter"),
-		out:      out,
-		peerName: peerName,
+		log:         logBackend.GetLogger("replica/delayedReplyEmitter"),
+		out:         out,
+		peerName:    peerName,
+		jitterBound: jitterBound,
 	}
 	e.tq = queue.NewTimerQueue(func(v interface{}) {
 		req := v.(*senderRequest)
@@ -97,7 +113,7 @@ func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, pe
 }
 
 // Enqueue schedules a reply for emission after a Uniform[0,
-// replyJitterMax] delay. Safe for concurrent use.
+// jitterBound()] delay. Safe for concurrent use.
 func (e *delayedReplyEmitter) Enqueue(reply *senderRequest) {
 	// The per-reply delay defends §5.4 unlinkability: an adversary
 	// must not be able to predict it. A time-seeded math/rand stream
@@ -105,10 +121,14 @@ func (e *delayedReplyEmitter) Enqueue(reply *senderRequest) {
 	// cryptographic source instead, as the shard selector does. On
 	// the rare reader error, fall back to zero delay (emit now)
 	// rather than a predictable or panicking path.
-	delayNs, err := pigeonhole.CryptoRandIndex(int(replyJitterMax))
-	if err != nil {
-		e.log.Errorf("delayedReplyEmitter: crypto rand failed, emitting without jitter: %v", err)
-		delayNs = 0
+	var delayNs int
+	if bound := e.jitterBound(); bound > 0 {
+		var err error
+		delayNs, err = pigeonhole.CryptoRandIndex(int(bound))
+		if err != nil {
+			e.log.Errorf("delayedReplyEmitter: crypto rand failed, emitting without jitter: %v", err)
+			delayNs = 0
+		}
 	}
 	readyAt := uint64(time.Now().UnixNano() + int64(delayNs))
 	e.tq.Push(readyAt, reply)
