@@ -235,11 +235,11 @@ func TestAuthentication(t *testing.T) {
 	replica1PKI.updateReplicas(doc)
 	replica2PKI.updateReplicas(doc)
 
-	// Initialize envelope keys for both replicas
-	replica1Server.envelopeKeys, err = NewEnvelopeKeys(schemes.Replica, replica1Server.log, replica1Server.cfg.DataDir, replicaEpoch)
-	require.NoError(t, err)
-	replica2Server.envelopeKeys, err = NewEnvelopeKeys(schemes.Replica, replica2Server.log, replica2Server.cfg.DataDir, replicaEpoch)
-	require.NoError(t, err)
+	// The servers created their own envelope keys for the current
+	// replica epoch at construction time (newServerWithPKI), before any
+	// worker goroutines started. Reassigning server.envelopeKeys here
+	// would race with the running PKI worker's
+	// publishDescriptorIfNeeded, which reads the field concurrently.
 
 	// Test 1: Courier Authentication
 	t.Run("CourierAuthentication", func(t *testing.T) {
