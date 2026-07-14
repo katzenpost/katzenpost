@@ -686,7 +686,7 @@ func TestPKIGetDocumentConsensusGone(t *testing.T) {
 	ctx := context.TODO()
 
 	_, _, doc, err := p.getDocument(ctx, epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.ErrorIs(t, err, cpki.ErrDocumentGone)
 	require.Nil(t, doc)
 }
 
@@ -730,11 +730,8 @@ func TestPKIFailedFetchesCachesConsensusGone(t *testing.T) {
 
 	epoch, _, _ := epochtime.Now()
 
-	// Simulate what the worker loop does: fetch, then cache ErrNoDocument.
 	err = p.updateDocument(epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
-
-	// Worker caches ErrNoDocument errors.
+	require.ErrorIs(t, err, cpki.ErrDocumentGone)
 	p.failedFetches[epoch] = err
 
 	// pruneFailures should keep the entry for the current epoch.
@@ -763,16 +760,9 @@ func TestPKIFailedFetchesDoesNotCacheConsensusNotFound(t *testing.T) {
 
 	epoch, _, _ := epochtime.Now()
 
-	// ConsensusNotFound returns errConsensusNotFound, not ErrNoDocument.
-	// The worker loop only caches ErrNoDocument, so this should not be cached.
 	err = p.updateDocument(epoch)
 	require.ErrorIs(t, err, errConsensusNotFound)
-
-	// Simulate the worker's switch: only ErrNoDocument is cached.
-	if err == cpki.ErrNoDocument {
-		p.failedFetches[epoch] = err
-	}
-	require.NotContains(t, p.failedFetches, epoch)
+	require.NotErrorIs(t, err, cpki.ErrDocumentGone)
 }
 
 func TestPKIRecoveryAfterConsensusGone(t *testing.T) {
@@ -800,9 +790,8 @@ func TestPKIRecoveryAfterConsensusGone(t *testing.T) {
 	p := newPKI(c)
 	p.consensusGetter = mock
 
-	// Current epoch is gone — worker would cache this.
 	err = p.updateDocument(epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.ErrorIs(t, err, cpki.ErrDocumentGone)
 	p.failedFetches[epoch] = err
 
 	// Next epoch should succeed (mock returns ConsensusOk by default).
@@ -910,7 +899,9 @@ func TestPKIGetDocumentDeserializeFails(t *testing.T) {
 	ctx := context.TODO()
 
 	_, _, doc, err := p.getDocument(ctx, epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, cpki.ErrNoDocument)
+	require.NotErrorIs(t, err, cpki.ErrDocumentGone)
 	require.Nil(t, doc)
 }
 
@@ -934,7 +925,9 @@ func TestPKIGetDocumentDeserializeReturnsNil(t *testing.T) {
 	ctx := context.TODO()
 
 	_, _, doc, err := p.getDocument(ctx, epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, cpki.ErrNoDocument)
+	require.NotErrorIs(t, err, cpki.ErrDocumentGone)
 	require.Nil(t, doc)
 }
 
