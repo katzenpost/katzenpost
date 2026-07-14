@@ -522,21 +522,15 @@ func (c *outgoingConn) startReauthTicker() *time.Ticker {
 	return time.NewTicker(reauthMs)
 }
 
-// runEventLoop handles the main event processing loop
+// runEventLoop handles the main event processing loop.
+//
+// Sends are never gated on replies: the sender's LambdaR-paced ExpDist
+// is the sole pacing authority, keeping the link fixed-throughput and
+// independent of replica processing latency. Replies are demultiplexed
+// by EnvelopeHash (HandleReply), so no ordering between commands and
+// replies is required.
 func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, reauth *time.Ticker, cmdCh chan commands.Command, cmdCloseCh chan error, receiveCmdCh chan interface{}) bool {
-	// waitingForReply gates sending: after sending a command we must
-	// receive the replica's response before sending another, so the
-	// courier never outpaces the replica's send rate.
-	waitingForReply := false
-
 	for {
-		// Only accept the next outgoing command when we're not
-		// waiting for a reply from the replica.
-		var outCh <-chan *courierSenderRequest
-		if !waitingForReply {
-			outCh = c.sender.out
-		}
-
 		select {
 		case <-c.HaltCh():
 			return false
@@ -546,17 +540,13 @@ func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, re
 			if !c.handleReauth(w) {
 				return false
 			}
-			continue
-		case req := <-outCh:
+		case req := <-c.sender.out:
 			if c.handleOutgoingCommand(req.command(), cmdCh, closeCh) {
 				return true
 			}
-			waitingForReply = true
-			continue
 		case <-cmdCloseCh:
 			return false
 		case replyCmd := <-receiveCmdCh:
-			waitingForReply = false
 			rawCmd := c.processIncomingReply(replyCmd)
 			if !c.handleCommand(rawCmd) {
 				return false
