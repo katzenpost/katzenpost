@@ -35,6 +35,29 @@ import (
 
 var outgoingConnID uint64
 
+// reauthGraceLimit is how many consecutive reauthentication failures a
+// live session survives before being torn down. Descriptor churn during
+// staggered upgrades and dirauth wobble transiently drops a healthy peer
+// from the newest document; the peer was authenticated at handshake, so
+// severing on the first miss orphans in-flight work for no gain.
+const reauthGraceLimit = 3
+
+// reauthOutcome folds one reauthentication result into the consecutive
+// failure counter and reports whether the session should stay up.
+func (c *outgoingConn) reauthOutcome(valid bool) bool {
+	if valid {
+		c.reauthFailures = 0
+		return true
+	}
+	c.reauthFailures++
+	if c.reauthFailures >= reauthGraceLimit {
+		c.log.Warningf("Disconnecting %s, peer reauthentication failed %d consecutive times.", c.dst.Name, c.reauthFailures)
+		return false
+	}
+	c.log.Warningf("Peer %s reauthentication failed (%d/%d), keeping session.", c.dst.Name, c.reauthFailures, reauthGraceLimit)
+	return true
+}
+
 type outgoingConn struct {
 	scheme kem.Scheme
 	geo    *geo.Geometry
@@ -47,6 +70,10 @@ type outgoingConn struct {
 	// unknownCmdSeen dedups unhandled-command warnings per type.
 	// Touched only by the egress goroutine.
 	unknownCmdSeen map[string]bool
+
+	// reauthFailures counts consecutive reauthentication failures.
+	// Touched only by the connection worker goroutine.
+	reauthFailures int
 
 	id          uint64
 	retryDelay  time.Duration
@@ -474,8 +501,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 				wg.Wait()
 				return
 			}
-			if !c.IsPeerValid(creds) {
-				c.log.Debugf("replica outgoingConn: Disconnecting, peer reauthenticate failed.")
+			if !c.reauthOutcome(c.IsPeerValid(creds)) {
 				sender.UpdateConnectionStatus(false)
 				sender.Halt()
 				close(egressDoneCh)

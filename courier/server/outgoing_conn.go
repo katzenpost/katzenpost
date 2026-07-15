@@ -79,6 +79,10 @@ type outgoingConn struct {
 	// unknownCmdSeen dedups unhandled-command warnings per type.
 	// Touched only by the event loop goroutine.
 	unknownCmdSeen map[string]bool
+
+	// reauthFailures counts consecutive reauthentication failures.
+	// Touched only by the event loop goroutine.
+	reauthFailures int
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -585,6 +589,14 @@ func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, re
 	}
 }
 
+// reauthGraceLimit is how many consecutive reauthentication failures a
+// live session survives before being torn down. Descriptor churn during
+// staggered upgrades and dirauth wobble transiently drops a healthy peer
+// from the newest document; severing the link on the first miss orphans
+// in-flight replies for no security gain, since the peer was
+// authenticated at handshake and the key material has not changed.
+const reauthGraceLimit = 3
+
 // handleReauth processes reauthentication events
 func (c *outgoingConn) handleReauth(w *wire.Session) bool {
 	creds, err := w.PeerCredentials()
@@ -592,10 +604,22 @@ func (c *outgoingConn) handleReauth(w *wire.Session) bool {
 		c.log.Debugf("Session fail: %s", err)
 		return false
 	}
-	if !c.IsPeerValid(creds) {
-		c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+	return c.reauthOutcome(c.IsPeerValid(creds))
+}
+
+// reauthOutcome folds one reauthentication result into the consecutive
+// failure counter and reports whether the session should stay up.
+func (c *outgoingConn) reauthOutcome(valid bool) bool {
+	if valid {
+		c.reauthFailures = 0
+		return true
+	}
+	c.reauthFailures++
+	if c.reauthFailures >= reauthGraceLimit {
+		c.log.Warningf("Disconnecting %s, peer reauthentication failed %d consecutive times.", c.dst.Name, c.reauthFailures)
 		return false
 	}
+	c.log.Warningf("Peer %s reauthentication failed (%d/%d), keeping session.", c.dst.Name, c.reauthFailures, reauthGraceLimit)
 	return true
 }
 
