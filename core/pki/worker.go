@@ -172,6 +172,39 @@ func (w *WorkerBase) LastCachedPKIDocument() *Document {
 	return doc
 }
 
+// epochMismatch reports the newest cached epoch, whether any document is
+// cached, and whether that newest epoch lies more than one epoch from the
+// clock-derived epoch.
+func (w *WorkerBase) epochMismatch(clockEpoch uint64) (latest uint64, haveAny, mismatched bool) {
+	w.lock.RLock()
+	for epoch := range w.docs {
+		if !haveAny || epoch > latest {
+			latest = epoch
+			haveAny = true
+		}
+	}
+	w.lock.RUnlock()
+
+	if !haveAny {
+		return 0, false, false
+	}
+	diff := int64(latest) - int64(clockEpoch)
+	return latest, true, diff < -1 || diff > 1
+}
+
+// WarnIfEpochMismatch logs a CRITICAL line when no cached document lies
+// within one epoch of the clock-derived epoch. That means either the
+// dirauths have not published for this component in over an epoch or the
+// local clock is wrong; both leave the node unable to authenticate peers
+// and were behind the 2026-07 pigeonhole outages. It stays quiet before
+// the first document is ever fetched (cold start).
+func (w *WorkerBase) WarnIfEpochMismatch(clockEpoch uint64) {
+	latest, haveAny, mismatched := w.epochMismatch(clockEpoch)
+	if haveAny && mismatched && w.log != nil {
+		w.log.Errorf("CRITICAL: newest cached PKI document is epoch %d but the clock says epoch %d (off by %d); check this host's clock and the dirauths. Peer authentication will fail.", latest, clockEpoch, int64(latest)-int64(clockEpoch))
+	}
+}
+
 // UpdateTimer updates the timer for the next PKI worker wake-up
 func (w *WorkerBase) UpdateTimer(timer *time.Timer) {
 	now, elapsed, till := epochtime.Now()

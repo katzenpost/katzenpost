@@ -114,6 +114,7 @@ func (p *PKIWorker) worker() {
 			elapsed,
 			till,
 		)
+		p.WarnIfEpochMismatch(currentEpoch)
 
 		// Check to see if we need to publish the descriptor first.
 		//

@@ -151,6 +151,9 @@ func (p *PKIWorker) worker() {
 			return
 		}
 
+		currentEpoch, _, _ := epochtime.Now()
+		p.WarnIfEpochMismatch(currentEpoch)
+
 		didUpdate := p.fetchDocuments(pkiCtx, isCanceled)
 		p.processDocuments(didUpdate)
 		p.updateCurrentEpoch(&lastUpdateEpoch)
