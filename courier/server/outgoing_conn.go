@@ -537,13 +537,30 @@ func (c *outgoingConn) startCommandSender(w *wire.Session) (chan commands.Comman
 
 			if err := w.SendCommand(context.Background(), cmd); err != nil {
 				c.log.Debugf("SendCommand failed: %v", err)
-				instrument.DroppedByReason("send_command_failed")
+				c.requeueUnsent(cmd)
 				return
 			}
 		}
 	}()
 
 	return cmdCh, cmdCloseCh
+}
+
+// requeueUnsent returns a real command whose wire send failed to the
+// sender FIFO so the next session delivers it; decoys are pacing, not
+// payload, and are simply dropped.
+func (c *outgoingConn) requeueUnsent(cmd commands.Command) {
+	mesg, ok := cmd.(*commands.ReplicaMessage)
+	if !ok {
+		return
+	}
+	req := &courierSenderRequest{ReplicaMessage: mesg, EnqueuedAt: time.Now()}
+	select {
+	case c.sender.in <- req:
+		c.log.Debugf("Re-queued unsent ReplicaMessage for next session")
+	default:
+		instrument.DroppedByReason("send_command_failed")
+	}
 }
 
 // startReauthTicker starts the reauthentication ticker
