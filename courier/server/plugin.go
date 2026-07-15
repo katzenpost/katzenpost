@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -654,8 +655,8 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// path above, so a legitimately-waiting reader keeps riding out
 	// BoxIDNotFound and is unaffected.
 	if len(payload) == 0 && time.Since(cacheEntry.CreatedAt) > ReadUnservedDeadline {
-		e.log.Warningf("handleOldMessage: envelope %x unserved after %s; replica tier could not serve the read, returning PropagationError",
-			envHash[:8], time.Since(cacheEntry.CreatedAt).Round(time.Second))
+		e.log.Warningf("handleOldMessage: envelope %x unserved after %s by replicas [%s]; returning PropagationError",
+			envHash[:8], time.Since(cacheEntry.CreatedAt).Round(time.Second), e.describeIntermediaries(cacheEntry))
 		instrument.DroppedByReason("read_unserved_deadline")
 		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorPropagationError, courierMessage.ReplyIndex)
 	}
@@ -793,6 +794,36 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	}
 	e.log.Debugf("cacheHandleCourierEnvelope: found cached entry for %x, calling handleOldMessage", envHash)
 	return e.handleOldMessage(cacheEntry, envHash, courierMessage)
+}
+
+// describeIntermediaries renders the two intermediary replicas of a
+// bookkeeping entry as "name(reply-state)" for a diagnostic log line,
+// resolving replica IDs to names via the PKI document. Reply state is
+// "silent" (no reply), "err=N", or "ok".
+func (e *Courier) describeIntermediaries(entry *CourierBookKeeping) string {
+	var doc *cpki.Document
+	if e.server != nil && e.server.PKI != nil {
+		doc = e.server.PKI.PKIDocument()
+	}
+	parts := make([]string, 0, len(entry.IntermediateReplicas))
+	for i, id := range entry.IntermediateReplicas {
+		name := fmt.Sprintf("replicaID=%d", id)
+		if doc != nil {
+			if desc, err := doc.GetReplicaNodeByReplicaID(id); err == nil {
+				name = desc.Name
+			}
+		}
+		state := "silent"
+		if reply := entry.EnvelopeReplies[i]; reply != nil {
+			if reply.ErrorCode == 0 {
+				state = "ok"
+			} else {
+				state = fmt.Sprintf("err=%d", reply.ErrorCode)
+			}
+		}
+		parts = append(parts, fmt.Sprintf("%s(%s)", name, state))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // redispatchGrace is how long an envelope with no replica replies at all
