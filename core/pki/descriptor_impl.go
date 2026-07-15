@@ -101,8 +101,6 @@ func (s *SignedUpload) Verify(pubKey sign.PublicKey) bool {
 	return pubKey.Scheme().Verify(pubKey, blob, s.Signature.Payload, nil)
 }
 
-type mixdescriptor MixDescriptor
-
 func (d *MixDescriptor) UnmarshalMixKeyAsNike(epoch uint64, g *geo.Geometry) (nike.PublicKey, error) {
 	s := schemes.ByName(g.NIKEName)
 	if s == nil {
@@ -129,16 +127,6 @@ func (d *MixDescriptor) String() string {
 	s := fmt.Sprintf("{%s %x %v", d.Name, id, d.Addresses)
 	s += kaetzchen + d.AuthenticationType + "}"
 	return s
-}
-
-// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
-func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
-	return cbor.Unmarshal(data, (*mixdescriptor)(d))
-}
-
-// MarshalBinary implmements encoding.BinaryMarshaler
-func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
-	return ccbor.Marshal((*mixdescriptor)(d))
 }
 
 func (d *MixDescriptor) GetRawCourierLinkKey() (string, error) {
@@ -202,16 +190,6 @@ LinkKey: %s
 EnvelopeKeys: %v
 Addresses: %s
 `, d.Name, d.ReplicaID, d.Epoch, idKey, linkKey, envelopeKeys, d.Addresses)
-}
-
-// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
-func (d *ReplicaDescriptor) Unmarshal(data []byte) error {
-	return cbor.Unmarshal(data, d)
-}
-
-// MarshalBinary implmements encoding.BinaryMarshaler
-func (d *ReplicaDescriptor) Marshal() ([]byte, error) {
-	return ccbor.Marshal(d)
 }
 
 type SignedReplicaUpload struct {

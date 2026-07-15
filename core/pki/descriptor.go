@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/url"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
@@ -77,6 +78,18 @@ type MixDescriptor struct {
 	// Version uniquely identifies the descriptor format as being for the
 	// specified version so that it can be rejected if the format changes.
 	Version string
+}
+
+type mixdescriptor MixDescriptor
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
+func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
+	return cbor.Unmarshal(data, (*mixdescriptor)(d))
+}
+
+// MarshalBinary implmements encoding.BinaryMarshaler
+func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
+	return ccbor.Marshal((*mixdescriptor)(d))
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive
@@ -217,6 +230,16 @@ type ReplicaDescriptor struct {
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
 	Addresses map[string][]string
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
+func (d *ReplicaDescriptor) Unmarshal(data []byte) error {
+	return cbor.Unmarshal(data, d)
+}
+
+// MarshalBinary implmements encoding.BinaryMarshaler
+func (d *ReplicaDescriptor) Marshal() ([]byte, error) {
+	return ccbor.Marshal(d)
 }
 
 // IsReplicaDescriptorWellFormed validates the descriptor and returns a descriptive
