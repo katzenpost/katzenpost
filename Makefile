@@ -227,8 +227,20 @@ bench-handshake:
 	@echo "All wire handshake benchmarks completed successfully!"
 
 # Legacy test target (kept for backwards compatibility)
-test:
+test: prune-docker-cache
 	go test -v -race -timeout 0 ./...
+
+# The docker build populates docker/cache/go/pkg/mod with a module cache
+# inside the repo tree. A legacy (pre-modules) dependency there has no
+# go.mod of its own, so `go test ./...` walks into it and fails the whole
+# pattern with "outside main module or its selected dependencies". Dropping
+# a sink go.mod makes Go treat docker/cache as a separate nested module and
+# prune it (and everything beneath it) from ./... . docker/cache is
+# gitignored, so this file is never committed; the target recreates it.
+.PHONY: prune-docker-cache
+prune-docker-cache:
+	@mkdir -p docker/cache
+	@printf 'module katzenpost-docker-cache-sink\n\ngo 1.26\n' > docker/cache/go.mod
 
 act-clean:
 	@echo "Cleaning up docker mixnet environment..."
