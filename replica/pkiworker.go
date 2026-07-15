@@ -175,6 +175,29 @@ func (p *PKIWorker) documentForEpoch(epoch uint64) *pki.Document {
 	return p.EntryForEpoch(epoch)
 }
 
+// replicaDescriptorsForAuth returns every descriptor for nodeID across
+// the cached documents for the previous, current, and next epochs.
+// Authenticating against this window keeps healthy links alive when the
+// dirauths publish late or a peer's descriptor churns during staggered
+// upgrades; each descriptor still binds the identity to its published
+// link key.
+func (p *PKIWorker) replicaDescriptorsForAuth(nodeID *[32]byte) []*pki.ReplicaDescriptor {
+	epoch, _, _ := epochtime.Now()
+	var out []*pki.ReplicaDescriptor
+	for _, e := range []uint64{epoch, epoch - 1, epoch + 1} {
+		doc := p.documentForEpoch(e)
+		if doc == nil {
+			continue
+		}
+		desc, err := doc.GetReplicaNodeByKeyHash(nodeID)
+		if err != nil {
+			continue
+		}
+		out = append(out, desc)
+	}
+	return out
+}
+
 // ForceFetchPKI forces the PKI worker to fetch a new PKI document for the current epoch.
 // This is useful for integration tests where you want to ensure the replica has the latest
 // PKI document without waiting for the normal fetch cycle.

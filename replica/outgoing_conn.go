@@ -117,16 +117,21 @@ func (c *outgoingConn) validateLinkKey(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-// validateReplicaInPKI verifies the replica is in the current PKI document
+// validateReplicaInPKI verifies the replica is in the current PKI
+// document, or in a cached document for the previous or next epoch
+// (grace for late dirauth publication and staggered-upgrade churn).
 func (c *outgoingConn) validateReplicaInPKI(creds *wire.PeerCredentials) bool {
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], creds.AdditionalData)
-	_, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
-	if !isReplica {
-		c.log.Debug("OutgoingConn: PKI authentication failed - replica not found")
-		return false
+	if _, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID); isReplica {
+		return true
 	}
-	return true
+	if descs := c.co.Server().PKIWorker.replicaDescriptorsForAuth(&nodeID); len(descs) > 0 {
+		c.log.Noticef("OutgoingConn: authenticated %s via cached-document grace window", descs[0].Name)
+		return true
+	}
+	c.log.Debug("OutgoingConn: PKI authentication failed - replica not found")
+	return false
 }
 
 func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
