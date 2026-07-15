@@ -156,29 +156,13 @@ func (c *outgoingConn) worker() {
 
 	defer func() {
 		c.log.Debugf("Halting connect worker.")
-		// Drain any pending commands from the channel and queue them for retry
-		// before closing. This prevents losing commands when connections fail.
-		idHash := hash.Sum256(c.dst.IdentityKey)
-		pendingCount := 0
-		for {
-			select {
-			case cmd := <-c.ch:
-				c.co.QueueForRetry(cmd, idHash)
-				pendingCount++
-			default:
-				// Channel is empty
-				if pendingCount > 0 {
-					c.log.Debugf("Queued %d pending commands for retry after connection closed", pendingCount)
-				}
-				goto done
-			}
-		}
-	done:
-		// c.ch is deliberately never closed: OnClosedConn removes the
-		// conn from the connector map, but a concurrent dispatcher may
-		// still hold the old pointer, and a send on a closed channel
-		// panics where a send on an abandoned one merely takes the
-		// dispatch fallback. The garbage collector reclaims it.
+		// Drain pending commands into the retry queue so nothing is
+		// lost with the conn. c.ch is deliberately never closed:
+		// OnClosedConn removes the conn from the connector map, but a
+		// concurrent dispatcher may still hold the old pointer, and a
+		// send on a closed channel panics where a send on an abandoned
+		// one merely takes the dispatch fallback.
+		c.drainToRetryQueue()
 		c.co.OnClosedConn(c)
 	}()
 
@@ -214,9 +198,31 @@ func (c *outgoingConn) getDestinationAddresses() []string {
 	return dstAddrs
 }
 
+// drainToRetryQueue moves any commands parked in the per-peer FIFO into
+// the connector retry queue, whose TTL and dedup bound their staleness.
+// Called between failed session attempts: while no session is up nothing
+// else drains the FIFO, and a command must not sit there unbounded.
+func (c *outgoingConn) drainToRetryQueue() {
+	idHash := hash.Sum256(c.dst.IdentityKey)
+	drained := 0
+	for {
+		select {
+		case cmd := <-c.ch:
+			c.co.QueueForRetry(cmd, idHash)
+			drained++
+		default:
+			if drained > 0 {
+				c.log.Debugf("Queued %d parked commands for retry while disconnected", drained)
+			}
+			return
+		}
+	}
+}
+
 // attemptConnectionToAddresses tries to connect to each address with retry logic
 func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx context.Context, dialer net.Dialer, retryIncrement, maxRetryDelay time.Duration) bool {
 	for _, addr := range dstAddrs {
+		c.drainToRetryQueue()
 		select {
 		case <-time.After(c.retryDelay):
 			// Back off incrementally on reconnects.
