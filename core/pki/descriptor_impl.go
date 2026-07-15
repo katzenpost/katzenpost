@@ -117,18 +117,6 @@ func (d *MixDescriptor) UnmarshalMixKeyAsKEM(epoch uint64, g *geo.Geometry) (kem
 	return k.UnmarshalBinaryPublicKey(d.MixKeys[epoch])
 }
 
-// String returns a human readable MixDescriptor suitable for terse logging.
-func (d *MixDescriptor) String() string {
-	kaetzchen := ""
-	if len(d.Kaetzchen) > 0 {
-		kaetzchen = fmt.Sprintf("%v", d.Kaetzchen)
-	}
-	id := hash.Sum256(d.IdentityKey)
-	s := fmt.Sprintf("{%s %x %v", d.Name, id, d.Addresses)
-	s += kaetzchen + d.AuthenticationType + "}"
-	return s
-}
-
 func (d *MixDescriptor) GetRawCourierLinkKey() (string, error) {
 	courierData, ok := d.KaetzchenAdvertizedData["courier"]
 	if !ok {
@@ -235,11 +223,4 @@ func (s *SignedReplicaUpload) Verify(pubKey sign.PublicKey) bool {
 	}
 
 	return pubKey.Scheme().Verify(pubKey, blob, s.Signature.Payload, nil)
-}
-
-func (d *ReplicaDescriptor) String() string {
-	if d == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("{%s %x %v}", d.Name, d.IdentityKey, d.Addresses)
 }

@@ -25,6 +25,7 @@ import (
 	"net/url"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
@@ -78,6 +79,18 @@ type MixDescriptor struct {
 	// Version uniquely identifies the descriptor format as being for the
 	// specified version so that it can be rejected if the format changes.
 	Version string
+}
+
+// String returns a human readable MixDescriptor suitable for terse logging.
+func (d *MixDescriptor) String() string {
+	kaetzchen := ""
+	if len(d.Kaetzchen) > 0 {
+		kaetzchen = fmt.Sprintf("%v", d.Kaetzchen)
+	}
+	id := hash.Sum256(d.IdentityKey)
+	s := fmt.Sprintf("{%s %x %v", d.Name, id, d.Addresses)
+	s += kaetzchen + d.AuthenticationType + "}"
+	return s
 }
 
 type mixdescriptor MixDescriptor
@@ -240,6 +253,13 @@ func (d *ReplicaDescriptor) Unmarshal(data []byte) error {
 // MarshalBinary implmements encoding.BinaryMarshaler
 func (d *ReplicaDescriptor) Marshal() ([]byte, error) {
 	return ccbor.Marshal(d)
+}
+
+func (d *ReplicaDescriptor) String() string {
+	if d == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("{%s %x %v}", d.Name, d.IdentityKey, d.Addresses)
 }
 
 // IsReplicaDescriptorWellFormed validates the descriptor and returns a descriptive
