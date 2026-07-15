@@ -103,6 +103,14 @@ func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
 	case c.ch <- cmd:
 		instrument.OutgoingQueueLength(c.dst.Name, len(c.ch))
 	case <-c.co.CloseAllCh():
+	default:
+		// A full per-peer queue means the peer is not draining. Never
+		// block the dispatching goroutine on it (proxy handlers
+		// dispatch before arming their own timeout); park the command
+		// in the connector retry queue instead.
+		idHash := hash.Sum256(c.dst.IdentityKey)
+		c.log.Warningf("Outgoing queue for %s full, queueing %T for retry", c.dst.Name, cmd)
+		c.co.QueueForRetry(cmd, idHash)
 	}
 }
 
