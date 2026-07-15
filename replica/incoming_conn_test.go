@@ -193,7 +193,7 @@ func TestIncomingConn(t *testing.T) {
 	require.Equal(t, len(ids), 0)
 
 	dummyOut := make(chan *senderRequest, 10)
-	dummyEmitter := newDelayedReplyEmitter(dummyOut, server.logBackend, "test")
+	dummyEmitter := newDelayedReplyEmitter(dummyOut, server.logBackend, "test", func() time.Duration { return fallbackReplyJitter })
 	defer dummyEmitter.Halt()
 	replyCommand, ok := inConn.onReplicaCommand(new(commands.NoOp), dummyEmitter)
 	require.True(t, ok)

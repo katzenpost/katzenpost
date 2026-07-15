@@ -388,6 +388,12 @@ func (co *Connector) worker() {
 func (co *Connector) spawnNewConns() {
 	newPeerMap := co.server.PKIWorker.ReplicasCopy()
 
+	// Our own descriptor is in the PKI document's replica set too;
+	// never dial ourselves. Local writes are stored directly and
+	// doReplication skips self, so no code path needs a self-link.
+	selfID := hash.Sum256From(co.server.identityPublicKey)
+	delete(newPeerMap, selfID)
+
 	// Traverse the connection table, to figure out which peers are actually
 	// new.  Each outgoingConn object is responsible for determining when
 	// the connection is stale.

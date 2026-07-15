@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -119,7 +120,7 @@ func (c *incomingConn) worker() {
 	// bounded inbound queue and an explicit outbound queue: the
 	// TimerQueue inside the emitter is the only buffer.
 	outCh := make(chan *senderRequest, c.l.server.cfg.IncomingQueueSize)
-	emitter := newDelayedReplyEmitter(outCh, c.l.server.logBackend, fmt.Sprintf("%d", c.id))
+	emitter := newDelayedReplyEmitter(outCh, c.l.server.logBackend, fmt.Sprintf("%d", c.id), c.l.server.PKIWorker.ReplyJitterBound)
 
 	// Channel to signal egress sender to drain and exit
 	egressDoneCh := make(chan struct{})
@@ -186,6 +187,43 @@ func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) 
 }
 
 // initializeSession creates and configures the wire session
+// noIdleReadTimeout effectively disables the wire session's idle read
+// deadline. Used when decoy traffic is off: an idle inbound link is
+// then legitimate, and dead peers are detected by the listener's TCP
+// keepalive rather than by protocol silence.
+const noIdleReadTimeout = 24 * 365 * time.Hour
+
+// linkReadTimeout derives the wire ReadTimeout for an inbound
+// courier-replica or replica-replica link from the PKI document. With
+// decoy traffic on, the initiating peer keeps the link at a constant
+// Poisson rate LambdaR, so the (1-1e-12) quantile of the exponential
+// inter-arrival distribution (SafetyCap) is the dead-peer bound;
+// timescales come from the consensus, not from code. With decoys off
+// there is no expected traffic and no idle deadline is imposed. Zero
+// (the wire default) is returned only while no consensus is known.
+func (c *incomingConn) linkReadTimeout() time.Duration {
+	if c.l.server.cfg.DisableDecoyTraffic {
+		return noIdleReadTimeout
+	}
+	pkiWorker := c.l.server.PKIWorker
+	if pkiWorker == nil {
+		return 0
+	}
+	epoch, _, _ := epochtime.Now()
+	doc := pkiWorker.documentForEpoch(epoch)
+	if doc == nil {
+		doc = pkiWorker.LastCachedPKIDocument()
+	}
+	if doc == nil {
+		return 0
+	}
+	capMs := common.SafetyCap(doc.LambdaR)
+	if capMs == 0 {
+		return 0
+	}
+	return time.Duration(capMs) * time.Millisecond
+}
+
 func (c *incomingConn) initializeSession() (*wire.Session, error) {
 	// Allocate the session struct.
 	identityHash := hash.Sum256From(c.l.server.identityPublicKey)
@@ -197,6 +235,7 @@ func (c *incomingConn) initializeSession() (*wire.Session, error) {
 		AuthenticationKey: c.l.server.linkKey,
 		RandomReader:      rand.Reader,
 		HandshakeTimeout:  time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond,
+		ReadTimeout:       c.linkReadTimeout(),
 	}
 	var err error
 	c.l.Lock()

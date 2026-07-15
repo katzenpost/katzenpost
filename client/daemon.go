@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -27,6 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/profiling"
 	"github.com/katzenpost/katzenpost/client/thin"
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/queue"
@@ -158,7 +158,7 @@ func (d *Daemon) initLogging() error {
 	d.logbackend, err = log.New(f, d.cfg.Logging.Level, d.cfg.Logging.Disable)
 	if err == nil {
 		d.log = d.logbackend.GetLogger("katzenpost/client")
-		d.log.Noticef("Katzenpost client daemon version: %s", versioninfo.Short())
+		d.log.Noticef("Katzenpost client daemon version: %s", kpcommon.Version())
 		d.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err

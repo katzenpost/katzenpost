@@ -28,7 +28,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/carlmjohnson/versioninfo"
 	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
@@ -43,6 +42,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	"github.com/katzenpost/katzenpost/authority/voting/server/profiling"
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -262,7 +262,7 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
-	s.log.Noticef("Katzenpost directory authority version: %s", versioninfo.Short())
+	s.log.Noticef("Katzenpost directory authority version: %s", kpcommon.Version())
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")

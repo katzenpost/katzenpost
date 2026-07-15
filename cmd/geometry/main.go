@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
-	"github.com/carlmjohnson/versioninfo"
 	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 
@@ -18,6 +17,7 @@ import (
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	sphinxgeo "github.com/katzenpost/katzenpost/core/sphinx/geo"
 	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -33,7 +33,7 @@ func main() {
 	if err := fang.Execute(
 		context.Background(),
 		rootCmd,
-		fang.WithVersion(versioninfo.Short()),
+		fang.WithVersion(kpcommon.Version()),
 	); err != nil {
 		os.Exit(1)
 	}

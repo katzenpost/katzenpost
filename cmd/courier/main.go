@@ -8,8 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/carlmjohnson/versioninfo"
-
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
 	"github.com/katzenpost/katzenpost/courier/server"
 	"github.com/katzenpost/katzenpost/courier/server/config"
@@ -27,7 +26,7 @@ func main() {
 	flag.Parse()
 
 	if printVersion {
-		fmt.Fprintln(os.Stdout, versioninfo.Short())
+		fmt.Fprintln(os.Stdout, kpcommon.Version())
 		os.Exit(0)
 	}
 

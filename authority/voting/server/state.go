@@ -38,7 +38,6 @@ import (
 
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
-	"github.com/carlmjohnson/versioninfo"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
@@ -53,6 +52,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -2508,7 +2508,7 @@ func (s *state) restorePersistence() error {
 			return nil
 		}
 
-		return bkt.Put([]byte(versionKey), []byte(versioninfo.Short()))
+		return bkt.Put([]byte(versionKey), []byte(kpcommon.Version()))
 	})
 }
 
