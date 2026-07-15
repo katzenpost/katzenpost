@@ -50,8 +50,9 @@ func (d *Daemon) newKeypair(request *Request) {
 	}
 	readCap := writeCap.ReadCap()
 
-	// Get the first message index from the WriteCap
-	firstIndex := writeCap.GetFirstMessageBoxIndex()
+	// Get the first message index from the WriteCap. For a freshly minted
+	// cap the current index is the first, so GetMessageBoxIndex returns it.
+	firstIndex := writeCap.GetMessageBoxIndex()
 
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
