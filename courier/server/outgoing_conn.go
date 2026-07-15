@@ -581,6 +581,10 @@ func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, re
 			return false
 		case replyCmd := <-receiveCmdCh:
 			rawCmd := c.processIncomingReply(replyCmd)
+			if rawCmd == nil {
+				// Wire error (already logged); tear the session down.
+				return false
+			}
 			if !c.handleCommand(rawCmd) {
 				return false
 			}
