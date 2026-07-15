@@ -137,7 +137,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return isValid
 }
 
-func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) {
+func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) error {
 	req := &courierSenderRequest{
 		ReplicaMessage: mesg,
 		EnqueuedAt:     time.Now(),
@@ -146,7 +146,15 @@ func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) {
 	case c.sender.in <- req:
 		instrument.EnqueueTotal(c.dst.Name)
 		instrument.QueueLength(c.dst.Name, len(c.sender.in))
+		return nil
 	case <-c.HaltCh():
+		return fmt.Errorf("dispatch to %s: halted", c.dst.Name)
+	default:
+		// A full queue to a disconnected peer must never block the
+		// caller: the synchronous copy path dispatches before it
+		// arms its own reply timeout.
+		instrument.DroppedByReason("dispatch_queue_full")
+		return fmt.Errorf("dispatch to %s: queue full", c.dst.Name)
 	}
 }
 

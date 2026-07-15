@@ -84,8 +84,7 @@ func (co *Connector) DispatchMessage(dest uint8, message *commands.ReplicaMessag
 		return errors.New("connection not found")
 	}
 	co.RUnlock()
-	c.dispatchMessage(message)
-	return nil
+	return c.dispatchMessage(message)
 }
 
 func (co *Connector) Halt() {
