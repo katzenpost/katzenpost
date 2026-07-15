@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (C) 2026 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//go:build !thinclient || !wasm
+//go:build !wasm
 
 package transport
 
