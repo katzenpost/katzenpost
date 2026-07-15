@@ -346,47 +346,6 @@ type Config struct {
 	Dial *transport.DialConfig
 }
 
-// FromConfig creates a thin client Config from a client daemon config.Config.
-//
-// This function extracts the daemon's listen address and creates a thin
-// client configuration that can connect to that daemon. Geometry is no
-// longer copied here: the daemon delivers it over the handshake.
-//
-// Parameters:
-//   - cfg: The client daemon configuration
-//
-// Returns:
-//   - *Config: A thin client configuration compatible with the daemon
-//
-// Panics:
-//   - If cfg.Listen is nil
-func FromConfig(cfg *config.Config) *Config {
-	if cfg.Listen == nil {
-		panic("Listen cannot be nil")
-	}
-
-	dial := &transport.DialConfig{}
-	switch {
-	case cfg.Listen.Unix != nil:
-		dial.Unix = &transport.UnixDialConfig{Address: cfg.Listen.Unix.Address}
-	case cfg.Listen.Tcp != nil:
-		dial.Tcp = &transport.TcpDialConfig{
-			Address: cfg.Listen.Tcp.Address,
-			Network: cfg.Listen.Tcp.Network,
-		}
-	case cfg.Listen.Ws != nil:
-		dial.Ws = &transport.WsDialConfig{
-			Address: cfg.Listen.Ws.Address,
-		}
-	default:
-		panic("Listen has no transport configured")
-	}
-
-	return &Config{
-		Dial: dial,
-	}
-}
-
 // LoadFile loads a thin client configuration from a TOML file.
 //
 // The TOML file should contain only the network connection parameters
