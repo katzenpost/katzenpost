@@ -119,7 +119,7 @@ func TestEncryptWriteNilPlaintext(t *testing.T) {
 
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	firstIdx := writeCap.GetFirstMessageBoxIndex()
+	firstIdx := writeCap.GetMessageBoxIndex()
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("encwrit-nil-pt00"))
 
@@ -147,7 +147,7 @@ func TestEncryptWriteTombstone(t *testing.T) {
 
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	firstIdx := writeCap.GetFirstMessageBoxIndex()
+	firstIdx := writeCap.GetMessageBoxIndex()
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("encwrit-tombst00"))
 
@@ -177,7 +177,7 @@ func TestEncryptWritePayloadTooLarge(t *testing.T) {
 
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	firstIdx := writeCap.GetFirstMessageBoxIndex()
+	firstIdx := writeCap.GetMessageBoxIndex()
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("encwrit-toolrg00"))
 
@@ -503,7 +503,7 @@ func TestEncryptWriteNoPKIDoc(t *testing.T) {
 
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	firstIdx := writeCap.GetFirstMessageBoxIndex()
+	firstIdx := writeCap.GetMessageBoxIndex()
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("encwrit-nopki000"))
 
@@ -534,7 +534,7 @@ func TestEncryptReadNoPKIDoc(t *testing.T) {
 	readCap := createTestReadCap(t)
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	mbi := writeCap.GetFirstMessageBoxIndex()
+	mbi := writeCap.GetMessageBoxIndex()
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("encread-nopki000"))
 
