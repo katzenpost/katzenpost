@@ -477,6 +477,37 @@ func (c *incomingConn) handleTombstone(replicaWrite *pigeonhole.ReplicaWrite) *p
 	}
 }
 
+// buildRepairWrite synthesizes a wire ReplicaWrite from a successfully
+// proxied read reply. BACAP boxes are self-authenticating (the signature
+// verifies against the BoxID), so replaying one as a write is safe.
+func buildRepairWrite(readReply *pigeonhole.ReplicaReadReply, cmds *commands.Commands) *commands.ReplicaWrite {
+	boxID := &[32]byte{}
+	copy(boxID[:], readReply.BoxID[:])
+	signature := &[64]byte{}
+	copy(signature[:], readReply.Signature[:])
+	return &commands.ReplicaWrite{
+		Cmds:      cmds,
+		BoxID:     boxID,
+		Signature: signature,
+		Payload:   readReply.Payload,
+	}
+}
+
+// readRepair replicates a successfully proxied box to the shard holders
+// that failed to serve it. The connector's retry queue provides delivery
+// with dedup once a holder returns; on a fixed-throughput mesh link the
+// repair write displaces a decoy, so the traffic shape is unchanged.
+func (c *incomingConn) readRepair(readReply *pigeonhole.ReplicaReadReply, holders []*pki.ReplicaDescriptor) {
+	scheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+	cmds := commands.NewStorageReplicaCommands(c.l.server.cfg.SphinxGeometry, scheme)
+	write := buildRepairWrite(readReply, cmds)
+	for _, holder := range holders {
+		idHash := blake2b.Sum256(holder.IdentityKey)
+		c.log.Noticef("Read-repair: replicating box %x to %s after failed proxy", write.BoxID[:8], holder.Name)
+		c.l.server.connector.DispatchCommand(write, &idHash)
+	}
+}
+
 // proxyShardOrder returns the shard holders reordered so the randomly
 // chosen candidate leads and the remaining holders follow as failover
 // targets, preserving their relative order.
@@ -594,6 +625,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		mkemPrivateKey    nike.PrivateKey
 		targetEnvelopeKey nike.PublicKey
 		targetShard       *pki.ReplicaDescriptor
+		failedShards      []*pki.ReplicaDescriptor
 	)
 	for _, candidate := range proxyShardOrder(shards, idx) {
 		reply, mkemPrivateKey, targetEnvelopeKey, err = c.proxyToShard(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
@@ -601,6 +633,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 			targetShard = candidate
 			break
 		}
+		failedShards = append(failedShards, candidate)
 		c.log.Errorf("proxyReadRequest: proxy to %s failed: %v", candidate.Name, err)
 	}
 	if reply == nil {
@@ -632,6 +665,12 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		if replyInnerMessage.ReadReply == nil {
 			c.log.Error("proxyReadRequest: proxy reply does not contain read reply")
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+		}
+
+		// Read-repair: a holder that failed the proxy may also have
+		// missed this box's replication; heal it opportunistically.
+		if len(failedShards) > 0 && replyInnerMessage.ReadReply.ErrorCode == pigeonhole.ReplicaSuccess {
+			c.readRepair(replyInnerMessage.ReadReply, failedShards)
 		}
 
 		// Now re-encrypt the read reply data for the original client
