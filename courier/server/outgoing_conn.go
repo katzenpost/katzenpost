@@ -75,6 +75,10 @@ type outgoingConn struct {
 
 	id         uint64
 	retryDelay time.Duration
+
+	// unknownCmdSeen dedups unhandled-command warnings per type.
+	// Touched only by the event loop goroutine.
+	unknownCmdSeen map[string]bool
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -645,11 +649,26 @@ func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
 		c.courier.HandleReply(replycmd)
 	case *commands.ReplicaDecoy:
 	default:
-		c.log.Errorf("BUG, Received unexpected command from replica peer: %s", rawCmd)
-		return false
+		// A staggered fleet means a newer replica may legitimately send
+		// command types this build does not handle yet. Tolerate them:
+		// tearing the session down would orphan every in-flight reply.
+		c.warnUnknownCommandOnce(rawCmd)
 	}
 
 	return true
+}
+
+// warnUnknownCommandOnce logs an unhandled-but-decodable command type once
+// per type for this connection. Only called from the event loop goroutine.
+func (c *outgoingConn) warnUnknownCommandOnce(cmd commands.Command) {
+	name := fmt.Sprintf("%T", cmd)
+	if c.unknownCmdSeen == nil {
+		c.unknownCmdSeen = make(map[string]bool)
+	}
+	if !c.unknownCmdSeen[name] {
+		c.unknownCmdSeen[name] = true
+		c.log.Warningf("Ignoring unhandled command type %s from replica peer %s (newer peer?)", name, c.dst.Name)
+	}
 }
 
 func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *config.Config, courier *Courier) *outgoingConn {

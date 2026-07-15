@@ -44,6 +44,10 @@ type outgoingConn struct {
 	dst *cpki.ReplicaDescriptor
 	ch  chan commands.Command
 
+	// unknownCmdSeen dedups unhandled-command warnings per type.
+	// Touched only by the egress goroutine.
+	unknownCmdSeen map[string]bool
+
 	id          uint64
 	retryDelay  time.Duration
 	egressErrCh chan struct{}
@@ -587,14 +591,25 @@ func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command
 			c.log.Debugf("replica outgoingConn: ReplicaMessageReply not handled by proxy manager")
 		}
 	default:
-		c.log.Errorf("replica outgoingConn: BUG, Received unexpected command from replica peer: %s", responseCmd)
-		select {
-		case c.egressErrCh <- struct{}{}:
-		default:
-		}
-		return false
+		// A staggered fleet means a newer peer may legitimately send
+		// command types this build does not handle yet. Tolerate them:
+		// tearing the session down would orphan every in-flight reply.
+		c.warnUnknownCommandOnce(responseCmd)
 	}
 	return true
+}
+
+// warnUnknownCommandOnce logs an unhandled-but-decodable command type once
+// per type for this connection. Only called from the egress goroutine.
+func (c *outgoingConn) warnUnknownCommandOnce(cmd commands.Command) {
+	name := fmt.Sprintf("%T", cmd)
+	if c.unknownCmdSeen == nil {
+		c.unknownCmdSeen = make(map[string]bool)
+	}
+	if !c.unknownCmdSeen[name] {
+		c.unknownCmdSeen[name] = true
+		c.log.Warningf("Ignoring unhandled command type %s from peer %s (newer peer?)", name, c.dst.Name)
+	}
 }
 
 func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, geo *geo.Geometry, scheme kem.Scheme) *outgoingConn {

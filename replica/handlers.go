@@ -98,10 +98,26 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 		}()
 		return nil, true
 	default:
-		c.log.Errorf("Received unexpected command type: %T", cmd)
-		return nil, false
+		// A staggered fleet means a newer peer may legitimately send
+		// command types this build does not handle yet. Tolerate them:
+		// tearing the session down would orphan every in-flight reply.
+		c.warnUnknownCommandOnce(cmd)
+		return nil, true
 	}
 	// not reached
+}
+
+// warnUnknownCommandOnce logs an unhandled-but-decodable command type once
+// per type for this connection. Only called from the command loop goroutine.
+func (c *incomingConn) warnUnknownCommandOnce(cmd commands.Command) {
+	name := fmt.Sprintf("%T", cmd)
+	if c.unknownCmdSeen == nil {
+		c.unknownCmdSeen = make(map[string]bool)
+	}
+	if !c.unknownCmdSeen[name] {
+		c.unknownCmdSeen[name] = true
+		c.log.Warningf("Ignoring unhandled command type %s from peer (newer peer?)", name)
+	}
 }
 
 // replicaMessage's are sent from the courier to the replica storage servers

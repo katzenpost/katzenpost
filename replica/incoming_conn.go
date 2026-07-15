@@ -56,6 +56,10 @@ type incomingConn struct {
 
 	isInitialized bool // Set by listener.
 
+	// unknownCmdSeen dedups unhandled-command warnings per type.
+	// Touched only by the command loop goroutine.
+	unknownCmdSeen map[string]bool
+
 	closeConnectionCh chan bool
 
 	// Mutex to protect session access
