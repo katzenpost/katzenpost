@@ -446,6 +446,12 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 
+	// Any exit of this session fast-fails proxy requests waiting on
+	// this peer, so their failover proceeds immediately instead of
+	// burning the full ProxyRequestTimeout against a dead session.
+	peerIDHash := hash.Sum256(c.dst.IdentityKey)
+	defer c.co.Server().proxyManager.FailPeer(peerIDHash)
+
 	// Set up the outgoing sender for fixed-throughput traffic.
 	// On each tick of the uniform random timer, send a real command
 	// if the queue has one, otherwise send a decoy.

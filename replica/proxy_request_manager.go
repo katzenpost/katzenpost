@@ -22,6 +22,8 @@ type ProxyRequest struct {
 	TargetPublicKey nike.PublicKey
 	OriginalRequest *commands.ReplicaMessage
 	Timestamp       time.Time
+	PeerIDHash      [32]byte
+	PeerName        string
 }
 
 // ProxyRequestManager manages pending proxy requests
@@ -61,7 +63,7 @@ func NewProxyRequestManager(log *logging.Logger, requestTimeout time.Duration) *
 }
 
 // RegisterProxyRequest registers a new proxy request and returns a response channel
-func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPrivateKey nike.PrivateKey, targetPublicKey nike.PublicKey, originalRequest *commands.ReplicaMessage) chan *commands.ReplicaMessageReply {
+func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPrivateKey nike.PrivateKey, targetPublicKey nike.PublicKey, originalRequest *commands.ReplicaMessage, peerIDHash [32]byte, peerName string) chan *commands.ReplicaMessageReply {
 	p.Lock()
 	defer p.Unlock()
 
@@ -73,11 +75,31 @@ func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPr
 		TargetPublicKey: targetPublicKey,
 		OriginalRequest: originalRequest,
 		Timestamp:       time.Now(),
+		PeerIDHash:      peerIDHash,
+		PeerName:        peerName,
 	}
 
-	p.log.Debugf("Registered proxy request for envelope hash: %x", envelopeHash)
+	p.log.Debugf("Registered proxy request to %s for envelope hash: %x", peerName, envelopeHash)
 
 	return responseCh
+}
+
+// FailPeer fails every pending proxy request targeting the given peer.
+// Called when the peer's connection dies so waiters fail over to the
+// other shard holder immediately instead of burning the full
+// ProxyRequestTimeout against a dead session.
+func (p *ProxyRequestManager) FailPeer(peerIDHash [32]byte) {
+	p.Lock()
+	defer p.Unlock()
+
+	for hash, request := range p.pendingRequests {
+		if request.PeerIDHash != peerIDHash {
+			continue
+		}
+		p.log.Warningf("Failing pending proxy request to %s (connection died): envelope hash %x", request.PeerName, hash)
+		close(request.ResponseCh)
+		delete(p.pendingRequests, hash)
+	}
 }
 
 // HandleReply processes an incoming reply and routes it to the waiting request
