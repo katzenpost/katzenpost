@@ -415,7 +415,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		instrument.PeerConnected(c.dst.Name, false)
 	}()
 
-	receiveCmdCh := c.startPeerReader(w)
+	sessionDoneCh := make(chan struct{})
+	defer close(sessionDoneCh)
+	receiveCmdCh := c.startPeerReader(w, sessionDoneCh)
 	cmdCh, cmdCloseCh := c.startCommandSender(w)
 	defer close(cmdCh)
 
@@ -502,9 +504,14 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 	return w, nil
 }
 
-// startPeerReader starts a goroutine to read commands from the peer
-func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
-	receiveCmdCh := make(chan interface{})
+// startPeerReader starts a goroutine to read commands from the peer.
+// Every send also selects on sessionDoneCh: when the event loop has
+// already returned for another reason (reauth failure, sender death,
+// Disconnect), nobody consumes this channel and outgoingConn.Halt is
+// never called on per-session teardown, so a bare send here leaked one
+// goroutine per reconnect.
+func (c *outgoingConn) startPeerReader(w *wire.Session, sessionDoneCh <-chan struct{}) chan interface{} {
+	receiveCmdCh := make(chan interface{}, 1)
 	c.Go(func() {
 		defer close(receiveCmdCh)
 		for {
@@ -513,6 +520,7 @@ func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
 				c.log.Debugf("Failed to receive command: %v", err)
 				select {
 				case <-c.HaltCh():
+				case <-sessionDoneCh:
 				case receiveCmdCh <- err:
 				}
 				return
@@ -522,6 +530,8 @@ func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
 			}
 			select {
 			case <-c.HaltCh():
+				return
+			case <-sessionDoneCh:
 				return
 			case receiveCmdCh <- rawCmd:
 			}
