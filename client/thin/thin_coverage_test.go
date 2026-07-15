@@ -165,7 +165,7 @@ func TestTombstoneRangeSuccess(t *testing.T) {
 
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	firstIdx := writeCap.GetFirstMessageBoxIndex()
+	firstIdx := writeCap.GetMessageBoxIndex()
 
 	// Compute expected next indices so the mock replies return them
 	secondIdx, err := firstIdx.NextIndex()
@@ -224,7 +224,7 @@ func TestEncryptReadIgnoresConnectionStatus(t *testing.T) {
 	readCap := createReadCap(t)
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	mbi := writeCap.GetFirstMessageBoxIndex()
+	mbi := writeCap.GetMessageBoxIndex()
 
 	go func() {
 		req, err := readRequest(server)
