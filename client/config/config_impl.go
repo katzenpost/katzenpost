@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (C) 2018-2023  Yawning Angel, David Stainton.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//go:build !wasm
+//go:build !thinclient
 
 // Package config implements the configuration for the Katzenpost client.
 package config

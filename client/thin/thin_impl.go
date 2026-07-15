@@ -64,7 +64,7 @@
 //   - Pigeonhole geometry parameters
 //
 
-//go:build !wasm
+//go:build !thinclient
 
 // See the testdata/thinclient.toml file for an example configuration.
 package thin
