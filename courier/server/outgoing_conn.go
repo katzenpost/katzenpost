@@ -293,10 +293,19 @@ func (c *outgoingConn) attemptConnections(dialCtx *workerContext, dialer *net.Di
 			return true
 		}
 
-		// Connection died, check if we should impose retry delay
+		// Connection died. Sessions that die young escalate the
+		// backoff even though the handshake succeeded, so a peer
+		// that accepts and immediately kills sessions cannot hold
+		// us in a synchronized reconnect storm; long-lived sessions
+		// earn a fresh start.
 		c.log.Debugf("Connection terminated, will reconnect.")
 		if time.Since(start) < retryIncrement {
-			c.retryDelay = retryIncrement
+			c.retryDelay += retryIncrement
+			if c.retryDelay > maxRetryDelay {
+				c.retryDelay = maxRetryDelay
+			}
+		} else {
+			c.retryDelay = 0
 		}
 		break
 	}
@@ -306,7 +315,7 @@ func (c *outgoingConn) attemptConnections(dialCtx *workerContext, dialer *net.Di
 // handleRetryDelay manages the retry delay logic and returns true if canceled
 func (c *outgoingConn) handleRetryDelay(dialCtx *workerContext, retryIncrement, maxRetryDelay time.Duration) bool {
 	select {
-	case <-time.After(c.retryDelay):
+	case <-time.After(kpcommon.JitterDelay(c.retryDelay)):
 		// Back off incrementally on reconnects.
 		c.retryDelay += retryIncrement
 		if c.retryDelay > maxRetryDelay {

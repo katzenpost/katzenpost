@@ -224,7 +224,7 @@ func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx c
 	for _, addr := range dstAddrs {
 		c.drainToRetryQueue()
 		select {
-		case <-time.After(c.retryDelay):
+		case <-time.After(common.JitterDelay(c.retryDelay)):
 			// Back off incrementally on reconnects.
 			//
 			// This maybe should be tracked per address, but whatever. I
@@ -240,7 +240,7 @@ func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx c
 			return true
 		}
 
-		if c.dialAndHandleConnection(addr, dialCtx, dialer, retryIncrement) {
+		if c.dialAndHandleConnection(addr, dialCtx, dialer, retryIncrement, maxRetryDelay) {
 			return true // Connection was canceled or we should exit
 		}
 	}
@@ -248,7 +248,7 @@ func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx c
 }
 
 // dialAndHandleConnection handles dialing to a single address and managing the connection
-func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Context, dialer net.Dialer, retryIncrement time.Duration) bool {
+func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Context, dialer net.Dialer, retryIncrement, maxRetryDelay time.Duration) bool {
 	// Dial.
 	u, err := url.Parse(addr)
 	if err != nil {
@@ -288,12 +288,18 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 		return true
 	}
 
-	// That's odd, the connection died, reconnect.
+	// Connection died. Sessions that die young escalate the backoff
+	// even though the handshake succeeded, so a peer that accepts and
+	// immediately kills sessions cannot hold us in a synchronized
+	// reconnect storm; long-lived sessions earn a fresh start.
 	c.log.Debugf("Connection terminated, will reconnect.")
 	if time.Since(start) < retryIncrement {
-		// If the connection was not alive for a sensible amount of
-		// time, re-impose a reconnect delay.
-		c.retryDelay = retryIncrement
+		c.retryDelay += retryIncrement
+		if c.retryDelay > maxRetryDelay {
+			c.retryDelay = maxRetryDelay
+		}
+	} else {
+		c.retryDelay = 0
 	}
 	return false // Continue to next address
 }
