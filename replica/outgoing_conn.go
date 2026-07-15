@@ -174,8 +174,12 @@ func (c *outgoingConn) worker() {
 			}
 		}
 	done:
+		// c.ch is deliberately never closed: OnClosedConn removes the
+		// conn from the connector map, but a concurrent dispatcher may
+		// still hold the old pointer, and a send on a closed channel
+		// panics where a send on an abandoned one merely takes the
+		// dispatch fallback. The garbage collector reclaims it.
 		c.co.OnClosedConn(c)
-		close(c.ch)
 	}()
 
 	dialCtx, cancelFn, dialer, dialCheckCreds := c.initializeConnection()
