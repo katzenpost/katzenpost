@@ -46,30 +46,19 @@ const KeepAliveInterval = 3 * time.Minute
 // keepalive rather than by protocol silence.
 const noIdleReadTimeout = 24 * 365 * time.Hour
 
-// linkReadTimeout derives the wire ReadTimeout for a courier-replica
-// link from the PKI document. With decoy traffic on, the link is
-// fixed-throughput at LambdaR, so the (1-1e-12) quantile of the
-// exponential inter-arrival distribution (SafetyCap) is the dead-peer
-// bound; timescales come from the consensus, not from code. With
-// decoys off there is no expected traffic and no idle deadline is
-// imposed. Zero (the wire default) is returned only while no
-// consensus is known at all.
+// linkReadTimeout picks the wire ReadTimeout for a courier-replica
+// link. Reply loss on these links is permanent (a reply that dies
+// with its session is never re-dispatched), so a short statistical
+// deadline trades resilience for detection speed at terrible odds: a
+// responder stalled past it loses every in-flight reply. With decoys
+// on we therefore keep the generous wire default (return 0) rather
+// than a SafetyCap(LambdaR) bound; with decoys off an idle link is
+// legitimate and no idle deadline is imposed at all.
 func (c *outgoingConn) linkReadTimeout() time.Duration {
 	if c.cfg.DisableDecoyTraffic {
 		return noIdleReadTimeout
 	}
-	doc := c.co.Server().PKI.PKIDocument()
-	if doc == nil {
-		doc = c.co.Server().PKI.LastCachedPKIDocument()
-	}
-	if doc == nil {
-		return 0
-	}
-	capMs := kpcommon.SafetyCap(doc.LambdaR)
-	if capMs == 0 {
-		return 0
-	}
-	return time.Duration(capMs) * time.Millisecond
+	return 0
 }
 
 type outgoingConn struct {
