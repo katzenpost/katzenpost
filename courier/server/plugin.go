@@ -202,16 +202,6 @@ func copyFailedReply(replicaErr uint8, failedEnvelopeIndex uint64) *pigeonhole.C
 // envelope, short enough that dedupCache size stays bounded under load.
 const DedupCacheTTL = 5 * time.Minute
 
-// ReadUnservedDeadline bounds how long a read may sit unserved, no payload
-// and no forwardable reply from the replica tier, before the courier stops
-// ACKing it and returns a PropagationError. Within this window an empty
-// reply is treated as transient replication lag and the client keeps polling
-// (ride-out); past it the replica tier is deemed unable to serve the read and
-// the client's read ARQ is allowed to terminate with a visible error instead
-// of polling forever. Kept well under DedupCacheTTL so the bookkeeping entry
-// still exists when the deadline fires.
-const ReadUnservedDeadline = 3 * time.Minute
-
 // maxConcurrentReplicaDispatch caps the number of replica-dispatch
 // goroutines running at once. Each does only two SendMessage calls
 // (which enqueue into per-replica bounded sender queues), so a
@@ -638,23 +628,15 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		}
 	}
 
-	// An empty payload means no servable reply is available: either no
-	// replica reply has arrived yet, or an intermediate returned a transport
-	// error with no forwardable ciphertext. Ride out transient replication
-	// lag by ACKing (the client re-polls). But once the read has stayed
-	// unservable past ReadUnservedDeadline, the replica tier cannot serve it;
-	// return a PropagationError so the client's read ARQ terminates with a
-	// visible error rather than polling forever. This never fires for a box
-	// that merely hasn't been written yet: a reachable replica answers
-	// BoxIDNotFound as a non-empty (encrypted) reply that takes the payload
-	// path above, so a legitimately-waiting reader keeps riding out
-	// BoxIDNotFound and is unaffected.
-	if len(payload) == 0 && time.Since(cacheEntry.CreatedAt) > ReadUnservedDeadline {
-		e.log.Warningf("handleOldMessage: envelope %x unserved after %s; replica tier could not serve the read, returning PropagationError",
-			envHash[:8], time.Since(cacheEntry.CreatedAt).Round(time.Second))
-		instrument.DroppedByReason("read_unserved_deadline")
-		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorPropagationError, courierMessage.ReplyIndex)
-	}
+	// An empty payload means no servable reply is available yet: either no
+	// replica reply has arrived, or an intermediate returned a transport
+	// error with no forwardable ciphertext. ACK it and let the client
+	// re-poll. The courier imposes no give-up deadline of its own: the
+	// client daemon owns the read ARQ and retries uncapped, so it, not a
+	// fixed courier-side clock, decides when a read is hopeless. A
+	// courier-side deadline here terminated reads that were merely riding
+	// out real replication lag or a slow replica, which broke pigeonhole
+	// on higher-latency networks.
 
 	// Determine reply type based on whether there's actual payload data
 	var replyType uint8
