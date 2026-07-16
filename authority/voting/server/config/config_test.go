@@ -46,8 +46,8 @@ func TestServerApplyRetryDefaults(t *testing.T) {
 	s := &Server{}
 	s.applyRetryDefaults()
 
-	require.Equal(retry.DefaultMaxAttempts, s.PeerRetryMaxAttempts,
-		"PeerRetryMaxAttempts should default to retry.DefaultMaxAttempts (%d)", retry.DefaultMaxAttempts)
+	require.Equal(0, s.PeerRetryMaxAttempts,
+		"PeerRetryMaxAttempts should stay unset, meaning retry until the phase deadline")
 
 	require.Equal(retry.DefaultBaseDelay, s.PeerRetryBaseDelay,
 		"PeerRetryBaseDelay should default to retry.DefaultBaseDelay (%v)", retry.DefaultBaseDelay)
