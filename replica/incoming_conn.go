@@ -25,7 +25,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
-	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -188,41 +187,12 @@ func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) 
 
 // initializeSession creates and configures the wire session
 // noIdleReadTimeout effectively disables the wire session's idle read
-// deadline. Used when decoy traffic is off: an idle inbound link is
-// then legitimate, and dead peers are detected by the listener's TCP
-// keepalive rather than by protocol silence.
+// deadline on inbound links. A slow peer is not a dead peer: deriving a
+// deadline from SafetyCap(LambdaR) severed healthy courier-replica and
+// replica-replica sessions whenever the initiator's decoy fill lapsed,
+// which broke the replica mesh. Dead peers are detected by the
+// listener's TCP keepalive, not by protocol silence.
 const noIdleReadTimeout = 24 * 365 * time.Hour
-
-// linkReadTimeout derives the wire ReadTimeout for an inbound
-// courier-replica or replica-replica link from the PKI document. With
-// decoy traffic on, the initiating peer keeps the link at a constant
-// Poisson rate LambdaR, so the (1-1e-12) quantile of the exponential
-// inter-arrival distribution (SafetyCap) is the dead-peer bound;
-// timescales come from the consensus, not from code. With decoys off
-// there is no expected traffic and no idle deadline is imposed. Zero
-// (the wire default) is returned only while no consensus is known.
-func (c *incomingConn) linkReadTimeout() time.Duration {
-	if c.l.server.cfg.DisableDecoyTraffic {
-		return noIdleReadTimeout
-	}
-	pkiWorker := c.l.server.PKIWorker
-	if pkiWorker == nil {
-		return 0
-	}
-	epoch, _, _ := epochtime.Now()
-	doc := pkiWorker.documentForEpoch(epoch)
-	if doc == nil {
-		doc = pkiWorker.LastCachedPKIDocument()
-	}
-	if doc == nil {
-		return 0
-	}
-	capMs := common.SafetyCap(doc.LambdaR)
-	if capMs == 0 {
-		return 0
-	}
-	return time.Duration(capMs) * time.Millisecond
-}
 
 func (c *incomingConn) initializeSession() (*wire.Session, error) {
 	// Allocate the session struct.
@@ -235,7 +205,7 @@ func (c *incomingConn) initializeSession() (*wire.Session, error) {
 		AuthenticationKey: c.l.server.linkKey,
 		RandomReader:      rand.Reader,
 		HandshakeTimeout:  time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond,
-		ReadTimeout:       c.linkReadTimeout(),
+		ReadTimeout:       noIdleReadTimeout,
 	}
 	var err error
 	c.l.Lock()

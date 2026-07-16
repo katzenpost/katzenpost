@@ -338,10 +338,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		AuthenticationKey: c.co.Server().linkKey,
 		RandomReader:      rand.Reader,
 		HandshakeTimeout:  time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond,
-		// A peer may take up to ProxyRequestTimeout to answer a proxied read, so
-		// allow generously more. This replaces the per-recv SetReadDeadline that
-		// used to live inline in sendAndRecv.
-		ReadTimeout: time.Duration(2*c.co.Server().cfg.ProxyRequestTimeout) * time.Second,
+		// No idle read deadline: a slow peer is not a dead peer, and a
+		// proxied read can take arbitrarily long under a deep CTIDH
+		// queue. Dead peers are detected by TCP keepalive, as on the
+		// inbound link.
+		ReadTimeout: noIdleReadTimeout,
 	}
 	envelopeScheme := nikeschemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
 	isInitiator := true
