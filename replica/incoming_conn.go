@@ -187,11 +187,7 @@ func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) 
 
 // initializeSession creates and configures the wire session
 // noIdleReadTimeout effectively disables the wire session's idle read
-// deadline on inbound links. A slow peer is not a dead peer: deriving a
-// deadline from SafetyCap(LambdaR) severed healthy courier-replica and
-// replica-replica sessions whenever the initiator's decoy fill lapsed,
-// which broke the replica mesh. Dead peers are detected by the
-// listener's TCP keepalive, not by protocol silence.
+// deadline; dead peers are detected by TCP keepalive.
 const noIdleReadTimeout = 24 * 365 * time.Hour
 
 func (c *incomingConn) initializeSession() (*wire.Session, error) {

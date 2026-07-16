@@ -41,11 +41,7 @@ var outgoingConnID uint64
 const KeepAliveInterval = 3 * time.Minute
 
 // noIdleReadTimeout effectively disables the wire session's idle read
-// deadline on the courier-replica link. A slow replica is not a dead
-// replica: deriving a deadline from SafetyCap(LambdaR) severed healthy
-// links whenever the replica's decoy fill lapsed, losing every
-// in-flight reply. Dead peers are detected by the dialer's TCP
-// keepalive, not by protocol silence.
+// deadline; dead peers are detected by TCP keepalive.
 const noIdleReadTimeout = 24 * 365 * time.Hour
 
 type outgoingConn struct {
