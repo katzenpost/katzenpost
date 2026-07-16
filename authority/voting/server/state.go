@@ -1070,7 +1070,14 @@ func (s *state) peerRetryDelay(attempt int) time.Duration {
 
 // sendCommandToPeerWithDeadline sends with retry but respects deadline.
 func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd commands.Command, deadline time.Time) (commands.Command, error) {
-	return s.sendCommandToPeerUntil(peer, cmd, deadline, math.MaxInt)
+	return s.sendCommandToPeerUntil(peer, cmd, deadline, s.maxPeerAttempts(math.MaxInt))
+}
+
+func (s *state) maxPeerAttempts(unset int) int {
+	if n := s.s.cfg.Server.PeerRetryMaxAttempts; n > 0 {
+		return n
+	}
+	return unset
 }
 
 func tooEarly(resp commands.Command) bool {
@@ -3082,7 +3089,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 			if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 				continue
 			}
-			resp, err := s.sendCommandToPeerUntil(peer, cmd, deadline, s.s.cfg.Server.PeerRetryMaxAttempts)
+			resp, err := s.sendCommandToPeerUntil(peer, cmd, deadline, s.maxPeerAttempts(retry.DefaultMaxAttempts))
 			if err != nil {
 				s.log.Debugf("backgroundFetchConsensus: %s: %v", peer.Identifier, err)
 				continue

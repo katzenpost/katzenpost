@@ -407,9 +407,6 @@ type Server struct {
 
 // applyRetryDefaults sets default values for retry configuration
 func (sCfg *Server) applyRetryDefaults() {
-	if sCfg.PeerRetryMaxAttempts == 0 {
-		sCfg.PeerRetryMaxAttempts = retry.DefaultMaxAttempts
-	}
 	if sCfg.PeerRetryBaseDelay == 0 {
 		sCfg.PeerRetryBaseDelay = retry.DefaultBaseDelay
 	}
