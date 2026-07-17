@@ -191,14 +191,7 @@ func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) 
 
 // initializeSession creates and configures the wire session
 // noIdleReadTimeout effectively disables the wire session's idle read
-// deadline on inbound links. The responder's read stream is fed by the
-// INITIATOR's decoy posture, which this side cannot know from its own
-// config: arming a SafetyCap(LambdaR) deadline here against a peer
-// that sends no decoy fill kills every session ~1.4s after its last
-// command and silently severs the replica mesh (the 2026-07-14
-// namenlos outage). Inbound links therefore never impose a protocol
-// idle deadline; dead peers are detected by the listener's TCP
-// keepalive, and initiators own their side's liveness bounds.
+// deadline; dead peers are detected by TCP keepalive.
 const noIdleReadTimeout = 24 * 365 * time.Hour
 
 func (c *incomingConn) initializeSession() (*wire.Session, error) {

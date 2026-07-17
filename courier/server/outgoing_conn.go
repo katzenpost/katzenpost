@@ -41,25 +41,8 @@ var outgoingConnID uint64
 const KeepAliveInterval = 3 * time.Minute
 
 // noIdleReadTimeout effectively disables the wire session's idle read
-// deadline. Used when decoy traffic is off: an idle link is then
-// legitimate, and dead peers are detected by the dialer's TCP
-// keepalive rather than by protocol silence.
+// deadline; dead peers are detected by TCP keepalive.
 const noIdleReadTimeout = 24 * 365 * time.Hour
-
-// linkReadTimeout picks the wire ReadTimeout for a courier-replica
-// link. Reply loss on these links is permanent (a reply that dies
-// with its session is never re-dispatched), so a short statistical
-// deadline trades resilience for detection speed at terrible odds: a
-// responder stalled past it loses every in-flight reply. With decoys
-// on we therefore keep the generous wire default (return 0) rather
-// than a SafetyCap(LambdaR) bound; with decoys off an idle link is
-// legitimate and no idle deadline is imposed at all.
-func (c *outgoingConn) linkReadTimeout() time.Duration {
-	if c.cfg.DisableDecoyTraffic {
-		return noIdleReadTimeout
-	}
-	return 0
-}
 
 type outgoingConn struct {
 	worker.Worker
@@ -446,7 +429,7 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 		AuthenticationKey: c.co.Server().linkPrivKey,
 		RandomReader:      rand.Reader,
 		HandshakeTimeout:  time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond,
-		ReadTimeout:       c.linkReadTimeout(),
+		ReadTimeout:       noIdleReadTimeout,
 	}
 
 	envelopeScheme := nikeSchemes.ByName(c.cfg.EnvelopeScheme)

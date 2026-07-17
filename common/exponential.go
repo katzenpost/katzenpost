@@ -28,6 +28,9 @@ const safetyCapEps = 1e-12
 // distribution is indistinguishable from the unclamped exponential in
 // any finite measurement window.
 //
+// Use it only to clamp a lambda rate in an active queue management
+// sampler, and for nothing else.
+//
 // Lambda is in events per millisecond, matching the PKI document's
 // LambdaP, LambdaL, LambdaM, LambdaG, LambdaR and Mu fields. Callers
 // that previously consumed an operator-supplied *MaxDelay companion
