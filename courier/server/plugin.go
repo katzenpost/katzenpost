@@ -117,6 +117,12 @@ type Courier struct {
 // cache stays bounded in memory.
 const CopyDedupCacheTTL = 30 * time.Minute
 
+// unservedReadWarnAfter is purely observability: a read still unserved
+// past this age logs a WARNING naming each intermediary replica's state
+// (ok, err=N, or silent). It imposes no deadline; the reply is still an
+// ACK and the client's ARQ keeps polling.
+const unservedReadWarnAfter = 3 * time.Minute
+
 const (
 	// maxCopyReadTransientAttempts is how many times a single shard
 	// replica is re-queried on a temporary error (per the classifier)
@@ -642,6 +648,10 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// courier-side deadline here terminated reads that were merely riding
 	// out real replication lag or a slow replica, which broke pigeonhole
 	// on higher-latency networks.
+	if len(payload) == 0 && time.Since(cacheEntry.CreatedAt) > unservedReadWarnAfter {
+		e.log.Warningf("handleOldMessage: envelope %x unserved after %s by replicas [%s]",
+			envHash[:8], time.Since(cacheEntry.CreatedAt).Round(time.Second), e.describeIntermediaries(cacheEntry))
+	}
 
 	// Determine reply type based on whether there's actual payload data
 	var replyType uint8
