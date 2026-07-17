@@ -41,36 +41,8 @@ var outgoingConnID uint64
 const KeepAliveInterval = 3 * time.Minute
 
 // noIdleReadTimeout effectively disables the wire session's idle read
-// deadline. Used when decoy traffic is off: an idle link is then
-// legitimate, and dead peers are detected by the dialer's TCP
-// keepalive rather than by protocol silence.
+// deadline; dead peers are detected by TCP keepalive.
 const noIdleReadTimeout = 24 * 365 * time.Hour
-
-// linkReadTimeout derives the wire ReadTimeout for a courier-replica
-// link from the PKI document. With decoy traffic on, the link is
-// fixed-throughput at LambdaR, so the (1-1e-12) quantile of the
-// exponential inter-arrival distribution (SafetyCap) is the dead-peer
-// bound; timescales come from the consensus, not from code. With
-// decoys off there is no expected traffic and no idle deadline is
-// imposed. Zero (the wire default) is returned only while no
-// consensus is known at all.
-func (c *outgoingConn) linkReadTimeout() time.Duration {
-	if c.cfg.DisableDecoyTraffic {
-		return noIdleReadTimeout
-	}
-	doc := c.co.Server().PKI.PKIDocument()
-	if doc == nil {
-		doc = c.co.Server().PKI.LastCachedPKIDocument()
-	}
-	if doc == nil {
-		return 0
-	}
-	capMs := kpcommon.SafetyCap(doc.LambdaR)
-	if capMs == 0 {
-		return 0
-	}
-	return time.Duration(capMs) * time.Millisecond
-}
 
 type outgoingConn struct {
 	worker.Worker
@@ -430,7 +402,7 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 		AuthenticationKey: c.co.Server().linkPrivKey,
 		RandomReader:      rand.Reader,
 		HandshakeTimeout:  time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond,
-		ReadTimeout:       c.linkReadTimeout(),
+		ReadTimeout:       noIdleReadTimeout,
 	}
 
 	envelopeScheme := nikeSchemes.ByName(c.cfg.EnvelopeScheme)

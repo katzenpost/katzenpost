@@ -873,7 +873,17 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 	conn := d.listener.getConnection(message.AppID)
 	if conn == nil {
-		d.log.Debugf("enqueueResend: no live connection for AppID %x, dropping SURB ID %x", message.AppID[:], surbID[:])
+		// No live thin-client connection for this AppID right now. Re-arm
+		// rather than drop: this may be a transient reconnect gap, and
+		// dropping here would orphan an in-flight ARQ entry that never
+		// completes. If the app is truly gone, the per-AppID disconnect
+		// cleanup deletes this entry and cancels its timer, so the next
+		// fire finds it absent and stops re-arming.
+		retryAt := time.Now().Add(resendQueueFullBackoff)
+		d.log.Debugf("enqueueResend: no live connection for AppID %x, re-arming SURB ID %x at %v", message.AppID[:], surbID[:], retryAt)
+		if d.arqTimerQueue != nil {
+			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
+		}
 		return
 	}
 	select {
