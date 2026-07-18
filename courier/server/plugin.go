@@ -127,12 +127,26 @@ const (
 	// maxCopyReadTransientAttempts is how many times a single shard
 	// replica is re-queried on a temporary error (per the classifier)
 	// before the read path fails over to the shard peer.
-	maxCopyReadTransientAttempts = 8
+	//
+	// The copy read shares the fixed-throughput, LambdaR-paced
+	// courier-replica link with all other traffic, so under load a
+	// query can wait in the per-replica sender queue before it is even
+	// put on the wire. copyReadReplyTimeout is measured from enqueue,
+	// so slicing the budget into many short attempts abandons a reply
+	// that is merely queued behind the deadline: the retry re-enqueues,
+	// waits behind the same backlog, and times out again, so a slow
+	// but live replica is never caught. Fewer, longer attempts keep the
+	// same overall budget while giving a queued reply time to arrive.
+	maxCopyReadTransientAttempts = 4
 
 	// copyReadReplyTimeout bounds how long the courier waits for a
-	// reply from one shard replica during a Copy read. A stuck replica
-	// cannot pin the background Copy goroutine for longer than this.
-	copyReadReplyTimeout = 20 * time.Second
+	// reply from one shard replica during a Copy read, measured from
+	// enqueue onto the paced sender. A stuck replica cannot pin the
+	// background Copy goroutine for longer than this. It must comfortably
+	// exceed the worst-case queue wait plus replica processing plus the
+	// paced return trip, or a reply that is only queued gets abandoned
+	// (see maxCopyReadTransientAttempts).
+	copyReadReplyTimeout = 40 * time.Second
 
 	// maxCopyWriteAttempts is how many times the courier tries to
 	// dispatch a single copy-stream envelope to its intermediate
