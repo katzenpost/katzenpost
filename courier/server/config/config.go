@@ -66,6 +66,12 @@ type Config struct {
 	// reauthenticated in milliseconds.
 	ReauthInterval int
 
+	// WriteTimeout bounds a single wire send to a replica, in
+	// milliseconds. It is a fault-detection bound: a send stalled past
+	// it tears the session down so the dial loop reconnects. Zero uses
+	// the wire default of one minute.
+	WriteTimeout int
+
 	// MaxQueueSize specifies the maximum number of messages that can be queued
 	// for an outgoing connection before blocking.
 	MaxQueueSize int

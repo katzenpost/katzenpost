@@ -430,6 +430,7 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 		RandomReader:      rand.Reader,
 		HandshakeTimeout:  time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond,
 		ReadTimeout:       noIdleReadTimeout,
+		WriteTimeout:      time.Duration(c.co.Server().cfg.WriteTimeout) * time.Millisecond,
 	}
 
 	envelopeScheme := nikeSchemes.ByName(c.cfg.EnvelopeScheme)
