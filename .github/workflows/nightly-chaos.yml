@@ -1,0 +1,158 @@
+name: Nightly Chaos
+
+# Recovery-after-fault coverage that is too heavy for the PR gate. Nothing
+# here runs on pull_request; it is a scheduled/manual companion to the PR
+# workflows and never lengthens them.
+on:
+  schedule:
+    # 4 AM UTC daily
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      cycles:
+        description: "partition/heal cycles in the recovery lane"
+        required: false
+        default: "3"
+      pbt_iterations:
+        description: "property-based chaos iterations"
+        required: false
+        default: "3"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # End-to-end recovery lane against a real mixnet. Two fault shapes:
+  #  - a surgical courier<->replica blackhole that keeps the replicas in
+  #    consensus (a write's reply is cut, so reads block until healed), and
+  #  - a severe 100% replica loss that also drops the replicas from consensus.
+  # After each, a pigeonhole round trip must succeed and the courier mesh must
+  # be fully reconnected, with no process restart. The precise session-death
+  # deadlock is covered deterministically by the unit and integration tests;
+  # this lane guards the whole path through the real network.
+  chaos-recovery:
+    runs-on: ubuntu-latest
+    env:
+      warped: true
+      no_mixdecoy: true
+      no_decoy: true          # runner CPU cannot sustain decoy traffic
+      no_metrics: false       # prometheus needed for the recovery assertion
+      epoch_duration: 3m      # keep replicas comfortably in consensus
+      serviceNodes: 2
+      storageNodes: 3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and start the mixnet
+        run: cd docker && make start wait
+
+      - name: Wait for the network to route
+        run: |
+          cd docker
+          for i in $(seq 1 30); do
+            if make run-ping 2>&1 | grep -q "Success rate is 100 percent"; then
+              echo "mixnet routing"; exit 0
+            fi
+            sleep 15
+          done
+          echo "mixnet never reached 100% ping"; exit 1
+
+      - name: Baseline pigeonhole round trip
+        run: cd client && make dockertest_new_pigeonhole_alice_sends_bob
+
+      - name: Surgical partition / heal / recovery cycles
+        timeout-minutes: 30
+        run: |
+          cd docker
+          CYCLES="${{ github.event.inputs.cycles || '3' }}"
+          for c in $(seq 1 "$CYCLES"); do
+            echo "=== recovery cycle $c/$CYCLES ==="
+            make chaos-replica-partition-on
+            # The round trip writes a box (its data still reaches the replicas
+            # over the forward path) and then blocks on the read, whose reply
+            # is blackholed. It only completes after we heal below. A recovery
+            # regression makes the read hang until the step timeout, failing.
+            ( cd ../client && make dockertest_new_pigeonhole_alice_sends_bob ) &
+            workload=$!
+            sleep 45   # let the write land and the read genuinely block
+            make chaos-replica-partition-off
+            wait "$workload"
+            sleep 20   # settle + one prometheus scrape
+            ./chaos_assert_metrics.sh 6
+          done
+
+      - name: Severe cycle (100% replica loss, exercises de-consensus + rejoin)
+        timeout-minutes: 20
+        run: |
+          cd docker
+          make pumba-loss pumba_loss_pct=100 pumba_targets='re2:^replica[0-9]+$' pumba_duration=90s
+          sleep 100
+          make pumba-stop
+          # Replicas must rejoin consensus, then a round trip must succeed.
+          for i in $(seq 1 20); do
+            if ( cd ../client && make dockertest_new_pigeonhole_alice_sends_bob ); then
+              echo "recovered after severe cycle"; break
+            fi
+            sleep 15
+          done
+          sleep 20
+          ./chaos_assert_metrics.sh 6
+
+      - name: Collect logs
+        if: always()
+        run: |
+          cd docker
+          make client-logs-snapshot || true
+          for r in voting_mixnet/replica*/; do echo "=== $r ===" && tail -40 "${r}katzenpost.log" 2>&1 || true; done
+          for s in voting_mixnet/servicenode*/courier/courier.log; do echo "=== $s ===" && tail -60 "$s" 2>&1 || true; done
+
+      - name: Stop the mixnet
+        if: always()
+        run: cd docker && make stop
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: nightly-chaos-recovery-${{ github.run_id }}
+          path: |
+            docker/voting_mixnet/*/*.log
+            docker/voting_mixnet/servicenode*/courier/courier.log
+          retention-days: 30
+
+  # Randomized property-based chaos: each iteration brings up a fresh mixnet,
+  # applies a generated netem/pause profile, runs the pigeonhole suite, and
+  # tears it down. Independent runner from chaos-recovery, so no CPU contention.
+  chaos-pbt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: false
+
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Run property-based chaos
+        timeout-minutes: 300
+        env:
+          CHAOS_PBT_ITERATIONS: ${{ github.event.inputs.pbt_iterations || '3' }}
+        run: |
+          go test -tags chaos_pbt -v -timeout 300m -count=1 \
+            -run TestChaosProperties ./tools/chaos/pbt/
