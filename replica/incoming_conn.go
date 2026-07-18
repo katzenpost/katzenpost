@@ -56,6 +56,10 @@ type incomingConn struct {
 
 	isInitialized bool // Set by listener.
 
+	// unknownCmdSeen dedups unhandled-command warnings per type.
+	// Touched only by the command loop goroutine.
+	unknownCmdSeen map[string]bool
+
 	closeConnectionCh chan bool
 
 	// Mutex to protect session access
@@ -486,8 +490,17 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], creds.AdditionalData)
 
-	// Get replica descriptor from the replica map
+	// Get replica descriptor from the replica map, falling back to the
+	// cached-document grace window (late dirauth publication or
+	// staggered-upgrade descriptor churn must not sever the mesh).
 	replicaDesc, isReplica := c.l.server.PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
+	if !isReplica {
+		for _, desc := range c.l.server.PKIWorker.replicaDescriptorsForAuth(&nodeID) {
+			replicaDesc, isReplica = desc, true
+			c.log.Noticef("replica/incoming: authenticated %s via cached-document grace window", desc.Name)
+			break
+		}
+	}
 	if !isReplica {
 		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: node ID %x not found in replica list", nodeID)
 		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: node_id=%x, link_key=%s",

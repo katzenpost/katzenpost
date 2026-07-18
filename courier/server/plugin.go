@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,10 @@ type CourierBookKeeping struct {
 	QueryType            uint8
 	IntermediateReplicas [2]uint8 // Store the replica IDs that were contacted
 	EnvelopeReplies      [2]*commands.ReplicaMessageReply
+
+	// RedispatchAttempts bounds how many times a client poll may
+	// trigger a fresh dispatch to the replicas for this envelope.
+	RedispatchAttempts int
 }
 
 // CopyCommandState tracks the state of a copy command for idempotency.
@@ -111,6 +116,12 @@ type Courier struct {
 // reconnecting client that missed earlier polls, short enough that the
 // cache stays bounded in memory.
 const CopyDedupCacheTTL = 30 * time.Minute
+
+// unservedReadWarnAfter is purely observability: a read still unserved
+// past this age logs a WARNING naming each intermediary replica's state
+// (ok, err=N, or silent). It imposes no deadline; the reply is still an
+// ACK and the client's ARQ keeps polling.
+const unservedReadWarnAfter = 3 * time.Minute
 
 const (
 	// maxCopyReadTransientAttempts is how many times a single shard
@@ -637,6 +648,10 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// courier-side deadline here terminated reads that were merely riding
 	// out real replication lag or a slow replica, which broke pigeonhole
 	// on higher-latency networks.
+	if len(payload) == 0 && time.Since(cacheEntry.CreatedAt) > unservedReadWarnAfter {
+		e.log.Warningf("handleOldMessage: envelope %x unserved after %s by replicas [%s]",
+			envHash[:8], time.Since(cacheEntry.CreatedAt).Round(time.Second), e.describeIntermediaries(cacheEntry))
+	}
 
 	// Determine reply type based on whether there's actual payload data
 	var replyType uint8
@@ -751,29 +766,79 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	}
 	e.dedupCacheLock.Unlock()
 
-	// Cache hit. If every reply that has arrived so far is an error
-	// (e.g. BoxIDNotFound while data is still propagating), schedule a
-	// bounded re-dispatch so the cache can refresh for the client's
-	// next ARQ retry. The cached error is still returned immediately
-	// via handleOldMessage so that NoRetry clients stop; the inFlight
-	// guard keeps repeated client retries from stacking dispatches.
-	if e.cacheEntryHasOnlyErrors(cacheEntry) {
-		e.log.Debugf("cacheHandleCourierEnvelope: cached entry for %x has only errors, scheduling re-dispatch", envHash[:8])
+	// Cache hit. If every reply so far is an error (e.g. BoxIDNotFound
+	// while data is still propagating), or no reply has arrived at all
+	// past the grace age (the original dispatch died with a session),
+	// schedule a bounded re-dispatch so the cache can refresh for the
+	// client's next ARQ retry. The cached state is still returned
+	// immediately via handleOldMessage so that NoRetry clients stop;
+	// the inFlight guard keeps repeated client retries from stacking
+	// dispatches, and RedispatchAttempts bounds the total.
+	e.dedupCacheLock.Lock()
+	redispatch := e.cacheEntryNeedsRedispatch(cacheEntry)
+	if redispatch {
+		cacheEntry.RedispatchAttempts++
+	}
+	e.dedupCacheLock.Unlock()
+	if redispatch {
+		e.log.Debugf("cacheHandleCourierEnvelope: cached entry for %x needs re-dispatch (attempt %d)", envHash[:8], cacheEntry.RedispatchAttempts)
 		e.scheduleReplicaDispatch(envHash, courierMessage)
 	}
 	e.log.Debugf("cacheHandleCourierEnvelope: found cached entry for %x, calling handleOldMessage", envHash)
 	return e.handleOldMessage(cacheEntry, envHash, courierMessage)
 }
 
-// cacheEntryHasOnlyErrors returns true when every replica reply that has arrived so far
-// has a non-zero error code. It returns false when at least one reply is absent
-// (still in flight) or successful.
-//
-// When true, the courier triggers an async re-dispatch to replicas so the cache
-// gets refreshed. This handles transient errors like BoxIDNotFound that resolve
-// when data propagates.
-func (e *Courier) cacheEntryHasOnlyErrors(entry *CourierBookKeeping) bool {
+// describeIntermediaries renders the two intermediary replicas of a
+// bookkeeping entry as "name(reply-state)" for a diagnostic log line,
+// resolving replica IDs to names via the PKI document. Reply state is
+// "silent" (no reply), "err=N", or "ok".
+func (e *Courier) describeIntermediaries(entry *CourierBookKeeping) string {
+	var doc *cpki.Document
+	if e.server != nil && e.server.PKI != nil {
+		doc = e.server.PKI.PKIDocument()
+	}
+	parts := make([]string, 0, len(entry.IntermediateReplicas))
+	for i, id := range entry.IntermediateReplicas {
+		name := fmt.Sprintf("replicaID=%d", id)
+		if doc != nil {
+			if desc, err := doc.GetReplicaNodeByReplicaID(id); err == nil {
+				name = desc.Name
+			}
+		}
+		state := "silent"
+		if reply := entry.EnvelopeReplies[i]; reply != nil {
+			if reply.ErrorCode == 0 {
+				state = "ok"
+			} else {
+				state = fmt.Sprintf("err=%d", reply.ErrorCode)
+			}
+		}
+		parts = append(parts, fmt.Sprintf("%s(%s)", name, state))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// redispatchGrace is how long an envelope with no replica replies at all
+// may age before a client poll triggers a fresh dispatch. Young entries
+// are simply still in flight; old silent ones mean the original dispatch
+// (or its replies) died with a session and will never arrive on their own.
+const redispatchGrace = 30 * time.Second
+
+// maxRedispatchAttempts caps client-poll-triggered dispatches per
+// envelope so an aggressive ARQ cannot amplify replica load unboundedly.
+const maxRedispatchAttempts = 5
+
+// cacheEntryNeedsRedispatch reports whether a client poll should trigger
+// a fresh dispatch to the replicas: either every reply that has arrived
+// is an error (e.g. BoxIDNotFound while data propagates), or no reply
+// has arrived at all and the entry has aged past redispatchGrace (pure
+// in-flight loss: the replies died with a session). A successful reply
+// or an exhausted attempt budget means no re-dispatch.
+func (e *Courier) cacheEntryNeedsRedispatch(entry *CourierBookKeeping) bool {
 	if entry == nil {
+		return false
+	}
+	if entry.RedispatchAttempts >= maxRedispatchAttempts {
 		return false
 	}
 	hasAny := false
@@ -786,7 +851,10 @@ func (e *Courier) cacheEntryHasOnlyErrors(entry *CourierBookKeeping) bool {
 		}
 		hasAny = true
 	}
-	return hasAny
+	if hasAny {
+		return true
+	}
+	return time.Since(entry.CreatedAt) > redispatchGrace
 }
 
 // handleCopyCommand is the dispatch layer for an incoming Copy command.
