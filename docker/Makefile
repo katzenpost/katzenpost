@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop chaos-replica-partition-on chaos-replica-partition-off selfcheck-cache-restore
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -28,6 +28,8 @@ help:
 	@echo " pumba-pause        - freeze a single container for pumba_pause_duration"
 	@echo " pumba-status       - show all running pumba chaos containers"
 	@echo " pumba-stop         - stop every katzenpost_pumba_* chaos container"
+	@echo " chaos-replica-partition-on  - surgically sever replica<->courier links (replicas stay in consensus)"
+	@echo " chaos-replica-partition-off - heal the surgical replica<->courier partition"
 	@echo " status             - show testnet consensus status"
 	@echo " show-latest-vote   - does what it says"
 	@echo " run-ping           - send a ping over the testnet"
@@ -504,6 +506,43 @@ pumba-stop:
 		$(docker) rm $(i_if_podman) $$c 2>/dev/null || true; \
 	done
 	@echo "Pumba chaos cleared."
+
+# Surgical courier<->replica partition. Unlike pumba-loss (which blackholes
+# all replica egress and so also starves replica->dirauth uploads, dropping
+# the replicas from consensus), this blackholes only the routes from each
+# replica to the courier-hosting service nodes. Replica->dirauth is untouched,
+# so the replicas stay in consensus and only the courier<->replica session
+# layer is severed. Applied from the host via nsenter because the containers
+# lack CAP_NET_ADMIN (same mechanism pumba's privileged sidecar uses).
+#
+#   chaos_partition_targets   container-name prefix to partition (default replica)
+#   chaos_partition_couriers  container-name prefix hosting couriers (default servicenode)
+chaos_partition_targets?=replica
+chaos_partition_couriers?=servicenode
+
+chaos-replica-partition-on:
+	@echo "Partitioning $(chaos_partition_targets)* from $(chaos_partition_couriers)* couriers"
+	@courier_ips=$$(for s in $$($(docker) ps --format '{{.Names}}' | grep -E '^$(chaos_partition_couriers)[0-9]+$$'); do \
+		$(docker) inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $$s; done); \
+	for r in $$($(docker) ps --format '{{.Names}}' | grep -E '^$(chaos_partition_targets)[0-9]+$$'); do \
+		pid=$$($(docker) inspect -f '{{.State.Pid}}' $$r); \
+		for ip in $$courier_ips; do \
+			sudo nsenter -t $$pid -n ip route replace blackhole $$ip; \
+		done; \
+		echo "  $$r partitioned from: $$courier_ips"; \
+	done
+
+chaos-replica-partition-off:
+	@echo "Healing $(chaos_partition_targets)* <-> $(chaos_partition_couriers)* couriers"
+	@courier_ips=$$(for s in $$($(docker) ps --format '{{.Names}}' | grep -E '^$(chaos_partition_couriers)[0-9]+$$'); do \
+		$(docker) inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $$s; done); \
+	for r in $$($(docker) ps --format '{{.Names}}' | grep -E '^$(chaos_partition_targets)[0-9]+$$'); do \
+		pid=$$($(docker) inspect -f '{{.State.Pid}}' $$r); \
+		for ip in $$courier_ips; do \
+			sudo nsenter -t $$pid -n ip route del blackhole $$ip 2>/dev/null || true; \
+		done; \
+		echo "  $$r healed"; \
+	done
 
 ps:
 	cd $(net_name); $(docker_compose) ps
