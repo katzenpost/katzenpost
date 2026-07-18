@@ -503,7 +503,7 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 // Disconnect), nobody consumes this channel and outgoingConn.Halt is
 // never called on per-session teardown, so a bare send here leaked one
 // goroutine per reconnect.
-func (c *outgoingConn) startPeerReader(w *wire.Session, sessionDoneCh <-chan struct{}) chan interface{} {
+func (c *outgoingConn) startPeerReader(w wire.SessionInterface, sessionDoneCh <-chan struct{}) chan interface{} {
 	receiveCmdCh := make(chan interface{}, 1)
 	c.Go(func() {
 		defer close(receiveCmdCh)
@@ -534,7 +534,7 @@ func (c *outgoingConn) startPeerReader(w *wire.Session, sessionDoneCh <-chan str
 }
 
 // startCommandSender starts a goroutine to send commands to the peer
-func (c *outgoingConn) startCommandSender(w *wire.Session) (chan commands.Command, chan error) {
+func (c *outgoingConn) startCommandSender(w wire.SessionInterface) (chan commands.Command, chan error) {
 	cmdCh := make(chan commands.Command)
 	cmdCloseCh := make(chan error)
 
@@ -587,7 +587,7 @@ func (c *outgoingConn) startReauthTicker() *time.Ticker {
 // independent of replica processing latency. Replies are demultiplexed
 // by EnvelopeHash (HandleReply), so no ordering between commands and
 // replies is required.
-func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, reauth *time.Ticker, cmdCh chan commands.Command, cmdCloseCh chan error, receiveCmdCh chan interface{}) bool {
+func (c *outgoingConn) runEventLoop(w wire.SessionInterface, closeCh <-chan struct{}, reauth *time.Ticker, cmdCh chan commands.Command, cmdCloseCh chan error, receiveCmdCh chan interface{}) bool {
 	for {
 		select {
 		case <-c.HaltCh():
@@ -627,7 +627,7 @@ func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, re
 const reauthGraceLimit = 3
 
 // handleReauth processes reauthentication events
-func (c *outgoingConn) handleReauth(w *wire.Session) bool {
+func (c *outgoingConn) handleReauth(w wire.SessionInterface) bool {
 	creds, err := w.PeerCredentials()
 	if err != nil {
 		c.log.Debugf("Session fail: %s", err)

@@ -4,6 +4,8 @@
 package server
 
 import (
+	"context"
+	"net"
 	"testing"
 	"time"
 
@@ -11,8 +13,23 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
+
+// noopSession is a wire.SessionInterface that never sends, receives, or
+// closes anything real. It stands in for a live session in event-loop
+// unit tests that only drive the loop's channel plumbing.
+type noopSession struct{}
+
+func (noopSession) Initialize(context.Context, net.Conn) error         { return nil }
+func (noopSession) SendCommand(context.Context, commands.Command) error { return nil }
+func (noopSession) RecvCommand(context.Context) (commands.Command, error) {
+	return nil, nil
+}
+func (noopSession) Close()                                        {}
+func (noopSession) PeerCredentials() (*wire.PeerCredentials, error) { return nil, nil }
+func (noopSession) ClockSkew() time.Duration                      { return 0 }
 
 // The command-sender goroutine dying (wire write deadline during a
 // partition) while the event loop holds a paced command must not wedge
@@ -83,7 +100,7 @@ func TestRunEventLoopSenderDeathUnblocks(t *testing.T) {
 	cmdCh := make(chan commands.Command) // no reader: command sender is dead
 	cmdCloseCh := make(chan error)
 	receiveCmdCh := make(chan interface{}, 1)
-	reauth := time.NewTicker(time.Hour) // never fires; nil session is never touched
+	reauth := time.NewTicker(time.Hour) // never fires; the noop session is never touched
 	defer reauth.Stop()
 
 	msg := &commands.ReplicaMessage{}
@@ -91,7 +108,7 @@ func TestRunEventLoopSenderDeathUnblocks(t *testing.T) {
 
 	resCh := make(chan bool, 1)
 	go func() {
-		resCh <- c.runEventLoop(nil, closeCh, reauth, cmdCh, cmdCloseCh, receiveCmdCh)
+		resCh <- c.runEventLoop(noopSession{}, closeCh, reauth, cmdCh, cmdCloseCh, receiveCmdCh)
 	}()
 
 	// Wait until the loop has dequeued the paced request and is therefore
