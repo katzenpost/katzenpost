@@ -598,8 +598,9 @@ func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, re
 				return false
 			}
 		case req := <-c.sender.out:
-			if c.handleOutgoingCommand(req.command(), cmdCh, closeCh) {
-				return true
+			done, halted := c.handleOutgoingCommand(req.command(), cmdCh, closeCh, cmdCloseCh)
+			if done {
+				return halted
 			}
 		case <-cmdCloseCh:
 			return false
@@ -650,15 +651,31 @@ func (c *outgoingConn) reauthOutcome(valid bool) bool {
 	return true
 }
 
-// handleOutgoingCommand processes commands from the outgoing channel
-func (c *outgoingConn) handleOutgoingCommand(cmd commands.Command, cmdCh chan commands.Command, closeCh <-chan struct{}) bool {
+// handleOutgoingCommand hands one paced command to the command-sender
+// goroutine. It must also watch cmdCloseCh: the sender goroutine exits
+// (closing cmdCloseCh) when a wire write fails, and with an unbuffered
+// cmdCh the send would otherwise block forever, since closeCh only
+// fires on connector-wide shutdown, never on per-session death. That
+// wedged the event loop and permanently orphaned the replica: the
+// connector resweep skips peers already present in its conn table.
+//
+// done reports that the event loop must return; halted is the value it
+// must return (true means the worker exits, false means redial).
+func (c *outgoingConn) handleOutgoingCommand(cmd commands.Command, cmdCh chan commands.Command, closeCh <-chan struct{}, cmdCloseCh <-chan error) (done, halted bool) {
 	select {
 	case <-c.HaltCh():
-		return true
+		return true, true
 	case <-closeCh:
-		return true
+		return true, true
 	case cmdCh <- cmd:
-		return false
+		return false, false
+	case <-cmdCloseCh:
+		// The sender died with this command still in hand; requeue it
+		// for the next session (requeueUnsent drops decoys) and tear
+		// the session down so the dial loop reconnects.
+		c.log.Debugf("Command sender died with a command in hand; tearing down session")
+		c.requeueUnsent(cmd)
+		return true, false
 	}
 }
 
