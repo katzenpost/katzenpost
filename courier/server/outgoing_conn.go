@@ -53,7 +53,16 @@ type outgoingConn struct {
 	co         GenericConnector
 	log        *logging.Logger
 
-	dst    *cpki.ReplicaDescriptor
+	// dst is rewritten by the connection worker on every reconnect
+	// (validateAndUpdateDescriptor). It must only be read on that same
+	// goroutine. Cross-goroutine readers (dispatchMessage runs on the
+	// dispatch workers) use the immutable name below instead.
+	dst *cpki.ReplicaDescriptor
+
+	// name is the replica's stable identity name, captured once at
+	// construction so the concurrent dispatch path never reads dst.
+	name string
+
 	sender *sender
 
 	id         uint64
@@ -127,17 +136,17 @@ func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) error {
 	}
 	select {
 	case c.sender.in <- req:
-		instrument.EnqueueTotal(c.dst.Name)
-		instrument.QueueLength(c.dst.Name, len(c.sender.in))
+		instrument.EnqueueTotal(c.name)
+		instrument.QueueLength(c.name, len(c.sender.in))
 		return nil
 	case <-c.HaltCh():
-		return fmt.Errorf("dispatch to %s: halted", c.dst.Name)
+		return fmt.Errorf("dispatch to %s: halted", c.name)
 	default:
 		// A full queue to a disconnected peer must never block the
 		// caller: the synchronous copy path dispatches before it
 		// arms its own reply timeout.
 		instrument.DroppedByReason("dispatch_queue_full")
-		return fmt.Errorf("dispatch to %s: queue full", c.dst.Name)
+		return fmt.Errorf("dispatch to %s: queue full", c.name)
 	}
 }
 
@@ -750,6 +759,7 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *conf
 		courier:    courier,
 		co:         co,
 		dst:        dst,
+		name:       dst.Name,
 		id:         atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("courier outgoing:%d", c.id))
