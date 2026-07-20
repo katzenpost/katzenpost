@@ -1165,6 +1165,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		// Convert milliseconds to seconds for PKI client timeouts.
 		DialTimeoutSec:      glue.Config().Debug.ConnectTimeout / 1000,
 		HandshakeTimeoutSec: glue.Config().Debug.HandshakeTimeout / 1000,
+		LocalAddresses:      glue.Config().Server.Addresses,
 	}
 
 	p.impl, err = vClient.New(pkiCfg)
