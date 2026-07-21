@@ -632,7 +632,6 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			wireErr = newProtocolError("peer send Disconnect")
 			return
 		case *commands.Message:
-			c.log.Debugf("Received pushed Message: %v", cmd.Sequence)
 			seqCopy := cmd.Sequence
 			payload := cmd.Payload
 			id := cmd.SURBID
