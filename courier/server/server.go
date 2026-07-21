@@ -166,6 +166,11 @@ func (s *Server) initLogging() error {
 	if err == nil {
 		s.log = s.logBackend.GetLogger("courier server")
 		s.log.Noticef("Katzenpost courier version: %s", kpcommon.Version())
+		if s.cfg.DisableDecoyTraffic {
+			s.log.Notice("Decoy traffic is DISABLED")
+		} else {
+			s.log.Notice("Decoy traffic is enabled")
+		}
 		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err

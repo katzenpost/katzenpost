@@ -151,6 +151,9 @@ func (p *PKIWorker) worker() {
 			return
 		}
 
+		currentEpoch, _, _ := epochtime.Now()
+		p.WarnIfEpochMismatch(currentEpoch)
+
 		didUpdate := p.fetchDocuments(pkiCtx, isCanceled)
 		p.processDocuments(didUpdate)
 		p.updateCurrentEpoch(&lastUpdateEpoch)
@@ -220,19 +223,45 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 	}
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
-	replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID)
-	if !isReplica {
-		return nil, false
-	}
 	blob, err := c.PublicKey.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
-	if !hmac.Equal(replicaDesc.LinkKey, blob) {
-		// TODO could be link key from prev/next epoch too?
-		return nil, false
+	if replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID); isReplica {
+		if hmac.Equal(replicaDesc.LinkKey, blob) {
+			return replicaDesc, true
+		}
 	}
-	return replicaDesc, true
+	// Grace window: the dirauths may be late publishing, or the peer's
+	// descriptor may churn during staggered upgrades. Any cached
+	// document for the previous, current, or next epoch that binds
+	// this identity to this link key still authenticates the peer.
+	for _, desc := range p.replicaDescriptorsForAuth(&nodeID) {
+		if hmac.Equal(desc.LinkKey, blob) {
+			p.GetLogger().Noticef("Authenticated replica %s via cached-document grace window", desc.Name)
+			return desc, true
+		}
+	}
+	return nil, false
+}
+
+// replicaDescriptorsForAuth returns every descriptor for nodeID across
+// the cached documents for the previous, current, and next epochs.
+func (p *PKIWorker) replicaDescriptorsForAuth(nodeID *[32]byte) []*pki.ReplicaDescriptor {
+	epoch, _, _ := epochtime.Now()
+	var out []*pki.ReplicaDescriptor
+	for _, e := range []uint64{epoch, epoch - 1, epoch + 1} {
+		doc := p.EntryForEpoch(e)
+		if doc == nil {
+			continue
+		}
+		desc, err := doc.GetReplicaNodeByKeyHash(nodeID)
+		if err != nil {
+			continue
+		}
+		out = append(out, desc)
+	}
+	return out
 }
 
 // SetDocumentForEpoch sets a PKI document for a specific epoch; for testing only.

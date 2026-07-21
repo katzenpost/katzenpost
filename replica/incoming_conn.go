@@ -56,6 +56,21 @@ type incomingConn struct {
 
 	isInitialized bool // Set by listener.
 
+	// peerIsReplica is true when the authenticated peer on this
+	// connection is another replica (its AdditionalData carries a node
+	// ID) rather than a courier (empty AdditionalData). Set once in
+	// processCommands after the handshake, read-only thereafter. A
+	// ReplicaMessage that arrives from a replica peer is already a
+	// proxied request, so it must be served locally (or answered
+	// not-found) instead of being proxied again: that caps proxy depth
+	// at one hop and prevents the re-proxy chains and cycles that can
+	// form when replicas transiently disagree on a box's shard set.
+	peerIsReplica bool
+
+	// unknownCmdSeen dedups unhandled-command warnings per type.
+	// Touched only by the command loop goroutine.
+	unknownCmdSeen map[string]bool
+
 	closeConnectionCh chan bool
 
 	// Mutex to protect session access
@@ -319,6 +334,13 @@ func (c *incomingConn) closeOldConnections() error {
 
 // processCommands handles the main command processing loop
 func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCredentials, emitter *delayedReplyEmitter) {
+	// Record whether the authenticated peer is a replica (node-ID-length
+	// AdditionalData) or a courier (empty). A ReplicaMessage from a
+	// replica peer is an already-proxied request and must not be proxied
+	// again. Set before the command loop so the async ReplicaMessage
+	// handlers observe it.
+	c.peerIsReplica = len(creds.AdditionalData) == sConstants.NodeIDLength
+
 	// Start the reauthenticate ticker.
 	reauthMs := time.Duration(c.l.server.cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
@@ -486,8 +508,17 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], creds.AdditionalData)
 
-	// Get replica descriptor from the replica map
+	// Get replica descriptor from the replica map, falling back to the
+	// cached-document grace window (late dirauth publication or
+	// staggered-upgrade descriptor churn must not sever the mesh).
 	replicaDesc, isReplica := c.l.server.PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
+	if !isReplica {
+		for _, desc := range c.l.server.PKIWorker.replicaDescriptorsForAuth(&nodeID) {
+			replicaDesc, isReplica = desc, true
+			c.log.Noticef("replica/incoming: authenticated %s via cached-document grace window", desc.Name)
+			break
+		}
+	}
 	if !isReplica {
 		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: node ID %x not found in replica list", nodeID)
 		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: node_id=%x, link_key=%s",
