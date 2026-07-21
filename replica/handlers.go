@@ -214,9 +214,20 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			}
 		}
 
-		if isShard {
-			// This replica is in the shard - read locally
-			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x - reading locally", myCmd.BoxID)
+		// Serve the read locally when this replica is a shard for the box,
+		// OR when the request was already proxied to us by another replica.
+		// In the latter case the proxying replica chose us as the holder;
+		// honour that decision and never re-proxy a proxied request, which
+		// would permit unbounded proxy depth and cycles across replicas
+		// with divergent shard views. A non-holder that is proxied to
+		// simply returns not-found, and the proxying replica fails over to
+		// the other holder (or the client retries once views converge).
+		if isShard || c.peerIsReplica {
+			if isShard {
+				c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x - reading locally", myCmd.BoxID)
+			} else {
+				c.log.Debugf("REPLICA_HANDLER: Proxied read from a replica peer for BoxID %x - reading locally, not re-proxying", myCmd.BoxID)
+			}
 			readReply := c.handleReplicaRead(myCmd)
 			// Always encrypt the reply (success or error) so the client can decrypt and see the error code
 			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
@@ -232,7 +243,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
 				c.log.Debugf("REPLICA_HANDLER: Found data locally for BoxID %x", myCmd.BoxID)
 			} else {
-				c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x but data not found locally (error code: %d)", myCmd.BoxID, readReply.ErrorCode)
+				c.log.Debugf("REPLICA_HANDLER: data not found locally for BoxID %x (error code: %d)", myCmd.BoxID, readReply.ErrorCode)
 			}
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID)
 		}

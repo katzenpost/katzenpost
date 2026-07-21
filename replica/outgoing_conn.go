@@ -398,7 +398,22 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		AuthenticationKey: c.co.Server().linkKey,
 		RandomReader:      rand.Reader,
 		HandshakeTimeout:  time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond,
-		ReadTimeout:       noIdleReadTimeout,
+		// A peer may take up to ProxyRequestTimeout to answer a proxied
+		// read, so allow generously more (2x) before treating the peer as
+		// wedged. This bound is load-bearing: without it (noIdleReadTimeout),
+		// a peer that accepts our command but never replies — because its
+		// own incoming handler is blocked re-proxying, or it is otherwise
+		// wedged at the application layer while TCP stays up — parks
+		// egressWorker on RecvCommand indefinitely. The session then never
+		// dies, so the reconnect loop never redials and FailPeer never fires,
+		// and every subsequent proxy read AND replication write queued for
+		// this peer times out forever. A finite bound lets the wedged session
+		// die, the reconnect loop redial, and pending proxy requests fail
+		// over. (2a0aae66 dropped this bound to noIdleReadTimeout on the
+		// theory that TCP keepalive catches dead peers; it does not catch an
+		// application-layer wedge on a live TCP connection. The separate
+		// inbound SafetyCap-deadline removal from that commit is kept.)
+		ReadTimeout: time.Duration(2*c.co.Server().cfg.ProxyRequestTimeout) * time.Second,
 	}
 	envelopeScheme := nikeschemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
 	isInitiator := true
