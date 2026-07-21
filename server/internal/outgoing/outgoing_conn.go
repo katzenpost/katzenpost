@@ -38,7 +38,6 @@ import (
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -214,13 +213,7 @@ func (c *outgoingConn) worker() {
 		}
 
 		// Flatten the lists of addresses to Dial to.
-		var dstAddrs []string
-		for _, t := range cpki.InternalTransports {
-			if v, ok := c.dst.Addresses[t]; ok {
-				dstAddrs = append(dstAddrs, v...)
-			}
-		}
-		dstAddrs = retry.FilterByLocalAddresses(c.co.glue.Config().Server.Addresses, dstAddrs)
+		dstAddrs := dialAddresses(c.co.glue.Config().Server.Addresses, c.dst)
 		if len(dstAddrs) == 0 {
 			// Should *NEVER* happen because descriptors currently MUST have
 			// at least once `tcp4` address to be considered valid.
