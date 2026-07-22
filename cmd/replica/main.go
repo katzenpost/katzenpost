@@ -169,10 +169,7 @@ func runReplicaServer(cfg Config) error {
 	}()
 
 	// Rotate server logs upon SIGHUP.
-	go func() {
-		<-rotateCh
-		svr.RotateLog()
-	}()
+	go common.RotateOnSignal(rotateCh, svr.RotateLog)
 
 	// Wait for the server to explode or be terminated.
 	svr.Wait()
