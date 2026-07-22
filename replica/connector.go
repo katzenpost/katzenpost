@@ -211,37 +211,49 @@ func (co *Connector) pruneRetryQueueLocked() {
 
 // processRetryQueue attempts to dispatch queued commands when connections become available
 func (co *Connector) processRetryQueue() {
+	// Under retryQueueMu, take the commands whose peer now has a connection
+	// out of the queue, but DISPATCH them only after releasing the lock.
+	// Dispatching while holding retryQueueMu deadlocks: a full per-peer
+	// channel makes dispatchCommand fall through to QueueForRetry, which
+	// locks retryQueueMu again in this same goroutine (sync.Mutex is not
+	// reentrant), wedging the connector's retry path forever.
 	co.retryQueueMu.Lock()
-	defer co.retryQueueMu.Unlock()
-
 	co.pruneRetryQueueLocked()
 
 	if len(co.retryQueue) == 0 {
+		co.retryQueueMu.Unlock()
 		instrument.RetryQueueSize(0)
 		return
 	}
 
 	co.log.Debugf("Processing retry queue with %d commands", len(co.retryQueue))
 
-	// Process retry queue in reverse order to safely remove items
-	for i := len(co.retryQueue) - 1; i >= 0; i-- {
-		retryCmd := co.retryQueue[i]
-
-		// Check if connection is now available
+	type pendingRetry struct {
+		conn *outgoingConn
+		cmd  commands.Command
+	}
+	var ready []pendingRetry
+	kept := co.retryQueue[:0]
+	for _, retryCmd := range co.retryQueue {
 		co.RLock()
 		c, ok := co.conns[retryCmd.idHash]
 		co.RUnlock()
-
 		if ok {
-			// Connection available - dispatch the command
 			co.log.Debugf("Retrying %T for peer %x ident %x after %d attempts", retryCmd.cmd, retryCmd.idHash[:8], retryCmd.ident[:8], retryCmd.attempts)
-			c.dispatchCommand(retryCmd.cmd)
-
-			// Remove from retry queue
-			co.retryQueue = append(co.retryQueue[:i], co.retryQueue[i+1:]...)
+			ready = append(ready, pendingRetry{c, retryCmd.cmd})
+		} else {
+			kept = append(kept, retryCmd)
 		}
 	}
+	co.retryQueue = kept
 	instrument.RetryQueueSize(len(co.retryQueue))
+	co.retryQueueMu.Unlock()
+
+	// A command whose channel is still full is re-queued by
+	// dispatchCommand -> QueueForRetry, which can now take retryQueueMu.
+	for _, p := range ready {
+		p.conn.dispatchCommand(p.cmd)
+	}
 }
 
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {

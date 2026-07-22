@@ -9,7 +9,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/hash"
+
 	"github.com/katzenpost/katzenpost/core/log"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
@@ -165,4 +169,50 @@ func TestPruneRetryQueueDropsExpired(t *testing.T) {
 	// All expired entries pruned on the next QueueForRetry; only new entry remains.
 	require.Len(t, co.retryQueue, 1)
 	require.Equal(t, byte(3), co.retryQueue[0].ident[0])
+}
+
+// TestProcessRetryQueueFullChannelNoDeadlock is the regression guard for the
+// connector self-deadlock that took the namenlos replicas out of consensus.
+// processRetryQueue must not dispatch while holding retryQueueMu: when the
+// peer's per-peer channel is full, dispatchCommand falls through to
+// QueueForRetry, which re-locks retryQueueMu in the same goroutine. Holding
+// the lock across the dispatch wedged the connector's retry path forever, and
+// through the synchronous pki_change Rebalance it wedged the PKI worker, so the
+// replica stopped publishing its descriptor and aged out of the consensus.
+// On the buggy code this test times out; with the fix it returns promptly.
+func TestProcessRetryQueueFullChannelNoDeadlock(t *testing.T) {
+	co := newTestConnector(t)
+	co.conns = make(map[[constants.NodeIDLength]byte]*outgoingConn)
+
+	identityKey := []byte("peer-identity-key")
+	idHash := hash.Sum256(identityKey)
+
+	// A connected peer whose per-peer channel is already full, so any dispatch
+	// to it falls through to QueueForRetry.
+	c := &outgoingConn{
+		co:  co,
+		log: co.log,
+		dst: &cpki.ReplicaDescriptor{Name: "peer", IdentityKey: identityKey},
+		ch:  make(chan commands.Command, 1),
+	}
+	c.ch <- writeCmd(0xEE)
+	co.conns[idHash] = c
+
+	co.QueueForRetry(writeCmd(0x11), idHash)
+
+	done := make(chan struct{})
+	go func() {
+		co.processRetryQueue()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Returned without deadlocking.
+	case <-time.After(5 * time.Second):
+		t.Fatal("processRetryQueue deadlocked: it dispatched to a full peer channel while holding retryQueueMu")
+	}
+
+	// The channel was full, so the command must have been re-queued, not lost.
+	require.Len(t, co.retryQueue, 1)
 }
