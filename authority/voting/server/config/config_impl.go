@@ -152,6 +152,13 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 }
 
 // Validate parses and checks the Server configuration.
+func (sCfg *Server) keyPath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(sCfg.DataDir, p)
+}
+
 func (sCfg *Server) validate() error {
 	// Set timeout defaults if not specified
 	if sCfg.DialTimeoutSec == 0 {
@@ -324,7 +331,7 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		}
 		idMap[v.Identifier] = v
 
-		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), pkiSignatureScheme)
+		identityKey, err = signpem.FromPublicPEMFile(cfg.Server.keyPath(v.IdentityPublicKeyPem), pkiSignatureScheme)
 		if err != nil {
 			return err
 		}
@@ -354,7 +361,7 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		}
 		replicaIDSet[v.ReplicaID] = v
 
-		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), pkiSignatureScheme)
+		identityKey, err = signpem.FromPublicPEMFile(cfg.Server.keyPath(v.IdentityPublicKeyPem), pkiSignatureScheme)
 		if err != nil {
 			return err
 		}
