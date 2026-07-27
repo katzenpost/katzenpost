@@ -48,3 +48,25 @@ func TestDeprecatedIdentityPublicKeyPem(t *testing.T) {
 	require.True(t, (&Config{Topology: &Topology{Layers: []Layer{{Nodes: []Node{*old}}}}}).DeprecatedIdentityPublicKeyPem())
 	require.False(t, (&Config{Topology: &Topology{Layers: []Layer{{Nodes: []Node{*current}}}}}).DeprecatedIdentityPublicKeyPem())
 }
+
+func TestDeprecatedIdentityPublicKeyPemOnlyWithoutNewName(t *testing.T) {
+	cases := []struct {
+		name, file, pem string
+		warn            bool
+	}{
+		{"new only", "a.pem", "", false},
+		{"old only", "", "a.pem", true},
+		{"both equal", "a.pem", "a.pem", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			n := Node{Identifier: "n", IdentityPublicKeyFile: c.file, IdentityPublicKeyPem: c.pem}
+			r := StorageReplicaNode{Identifier: "r", IdentityPublicKeyFile: c.file, IdentityPublicKeyPem: c.pem}
+			require.Equal(t, c.warn, (&Config{Mixes: []*Node{&n}}).DeprecatedIdentityPublicKeyPem())
+			require.Equal(t, c.warn, (&Config{GatewayNodes: []*Node{&n}}).DeprecatedIdentityPublicKeyPem())
+			require.Equal(t, c.warn, (&Config{ServiceNodes: []*Node{&n}}).DeprecatedIdentityPublicKeyPem())
+			require.Equal(t, c.warn, (&Config{StorageReplicas: []*StorageReplicaNode{&r}}).DeprecatedIdentityPublicKeyPem())
+			require.Equal(t, c.warn, (&Config{Topology: &Topology{Layers: []Layer{{Nodes: []Node{n}}}}}).DeprecatedIdentityPublicKeyPem())
+		})
+	}
+}

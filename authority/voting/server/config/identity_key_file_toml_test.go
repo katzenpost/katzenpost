@@ -51,6 +51,17 @@ func TestLoadTOMLWithIdentityPublicKeyFile(t *testing.T) {
 		require.True(t, cfg.DeprecatedIdentityPublicKeyPem())
 	})
 
+	t.Run("both names equal", func(t *testing.T) {
+		f := newFixture(t)
+		cfg, err := Load([]byte(rewrite(f, func(n string) string {
+			return `IdentityPublicKeyPem = "` + n + `.pem"` + "\n" + `IdentityPublicKeyFile = "` + n + `.pem"`
+		})), false)
+		require.NoError(t, err)
+		require.False(t, cfg.DeprecatedIdentityPublicKeyPem())
+		require.Equal(t, "mix1.pem", cfg.Mixes[0].KeyFile())
+		require.Equal(t, "rep1.pem", cfg.StorageReplicas[0].KeyFile())
+	})
+
 	t.Run("both names differ", func(t *testing.T) {
 		f := newFixture(t)
 		_, err := Load([]byte(rewrite(f, func(n string) string {
