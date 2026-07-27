@@ -331,14 +331,14 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		}
 		idMap[v.Identifier] = v
 
-		identityKey, err = signpem.FromPublicPEMFile(cfg.Server.keyPath(v.IdentityPublicKeyPem), pkiSignatureScheme)
+		identityKey, err = signpem.FromPublicPEMFile(cfg.Server.keyPath(v.KeyFile()), pkiSignatureScheme)
 		if err != nil {
 			return err
 		}
 
 		tmp := hash.Sum256From(identityKey)
 		if _, ok := pkMap[tmp]; ok {
-			return fmt.Errorf("config: Nodes: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
+			return fmt.Errorf("config: Nodes: identity key '%v' is present more than once", v.KeyFile())
 		}
 		pkMap[tmp] = v
 	}
@@ -361,14 +361,14 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		}
 		replicaIDSet[v.ReplicaID] = v
 
-		identityKey, err = signpem.FromPublicPEMFile(cfg.Server.keyPath(v.IdentityPublicKeyPem), pkiSignatureScheme)
+		identityKey, err = signpem.FromPublicPEMFile(cfg.Server.keyPath(v.KeyFile()), pkiSignatureScheme)
 		if err != nil {
 			return err
 		}
 
 		tmp := hash.Sum256From(identityKey)
 		if _, ok := replicaPkMap[tmp]; ok {
-			return fmt.Errorf("config: Storage Replica Node: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
+			return fmt.Errorf("config: Storage Replica Node: identity key '%v' is present more than once", v.KeyFile())
 		}
 		replicaPkMap[tmp] = v
 	}

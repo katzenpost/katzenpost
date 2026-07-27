@@ -249,9 +249,32 @@ type Node struct {
 	// the node is a Provider.
 	Identifier string
 
+	IdentityPublicKeyFile string
+
 	// IdentityPublicKeyPem is the node's public signing key also known
 	// as the identity key.
 	IdentityPublicKeyPem string
+}
+
+func (n *Node) KeyFile() string {
+	return keyFile(n.IdentityPublicKeyFile, n.IdentityPublicKeyPem)
+}
+
+func keyFile(file, pem string) string {
+	if file != "" {
+		return file
+	}
+	return pem
+}
+
+func checkKeyFile(file, pem string) error {
+	if file == "" && pem == "" {
+		return errors.New("missing IdentityPublicKeyFile")
+	}
+	if file != "" && pem != "" && file != pem {
+		return errors.New("IdentityPublicKeyFile and deprecated IdentityPublicKeyPem differ")
+	}
+	return nil
 }
 
 func (n *Node) validate(isProvider bool) error {
@@ -263,8 +286,8 @@ func (n *Node) validate(isProvider bool) error {
 	if err != nil {
 		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
 	}
-	if n.IdentityPublicKeyPem == "" {
-		return errors.New("config: Node is missing IdentityPublicKeyPem")
+	if err := checkKeyFile(n.IdentityPublicKeyFile, n.IdentityPublicKeyPem); err != nil {
+		return fmt.Errorf("config: Node %s: %w", n.Identifier, err)
 	}
 	return nil
 }
@@ -274,6 +297,8 @@ type StorageReplicaNode struct {
 	// Identifier is the human readable node identifier.
 	Identifier string
 
+	IdentityPublicKeyFile string
+
 	// IdentityPublicKeyPem is the node's public signing key also known
 	// as the identity key.
 	IdentityPublicKeyPem string
@@ -281,6 +306,10 @@ type StorageReplicaNode struct {
 	// ReplicaID is the static uint8 identifier for this replica.
 	// All dirauths must agree on this value for each replica.
 	ReplicaID uint8
+}
+
+func (n *StorageReplicaNode) KeyFile() string {
+	return keyFile(n.IdentityPublicKeyFile, n.IdentityPublicKeyPem)
 }
 
 func (n *StorageReplicaNode) validate() error {
@@ -292,8 +321,8 @@ func (n *StorageReplicaNode) validate() error {
 	if err != nil {
 		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
 	}
-	if n.IdentityPublicKeyPem == "" {
-		return errors.New("config: StorageReplicaNode is missing IdentityPublicKeyPem")
+	if err := checkKeyFile(n.IdentityPublicKeyFile, n.IdentityPublicKeyPem); err != nil {
+		return fmt.Errorf("config: StorageReplicaNode %s: %w", n.Identifier, err)
 	}
 	return nil
 }
@@ -456,6 +485,32 @@ type Topology struct {
 // ValidateAuthorities takes as an argument the dirauth server's own public key
 // and tries to find a match in the dirauth peers. Returns an error if no
 // match is found. Dirauths must be their own peer.
+func (cfg *Config) DeprecatedIdentityPublicKeyPem() bool {
+	old := func(file, pem string) bool { return file == "" && pem != "" }
+	for _, nodes := range [][]*Node{cfg.Mixes, cfg.GatewayNodes, cfg.ServiceNodes} {
+		for _, n := range nodes {
+			if old(n.IdentityPublicKeyFile, n.IdentityPublicKeyPem) {
+				return true
+			}
+		}
+	}
+	for _, n := range cfg.StorageReplicas {
+		if old(n.IdentityPublicKeyFile, n.IdentityPublicKeyPem) {
+			return true
+		}
+	}
+	if cfg.Topology != nil {
+		for _, l := range cfg.Topology.Layers {
+			for _, n := range l.Nodes {
+				if old(n.IdentityPublicKeyFile, n.IdentityPublicKeyPem) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
 	match := false
 	for i := 0; i < len(cfg.Authorities); i++ {
