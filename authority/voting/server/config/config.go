@@ -433,10 +433,10 @@ type Server struct {
 	// permitted.
 	AllowHostnameAddresses bool
 
-	IdentityPrivateKeyFile string
-	IdentityPublicKeyFile  string
-	LinkPrivateKeyFile     string
-	LinkPublicKeyFile      string
+	IdentityPrivateKeyFile string `toml:",omitempty"`
+	IdentityPublicKeyFile  string `toml:",omitempty"`
+	LinkPrivateKeyFile     string `toml:",omitempty"`
+	LinkPublicKeyFile      string `toml:",omitempty"`
 }
 
 // applyRetryDefaults sets default values for retry configuration
