@@ -1,5 +1,5 @@
 FROM docker.io/alpine:3.21
-
+ARG TARGETARCH
 ARG ROCKSDB_VERSION=10.2.1
 ARG GO_VERSION=1.26.2
 
@@ -29,6 +29,6 @@ RUN apk del git cmake linux-headers
 RUN echo "/lib:/usr/local/lib:/usr/lib" > /etc/ld-musl-x86_64.path
 
 # Install Go
-RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xzf - && \
+RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz | tar -C /usr/local -xzf - && \
     ln -s /usr/local/go/bin/go /usr/bin/go && \
     ln -s /usr/local/go/bin/gofmt /usr/bin/gofmt
