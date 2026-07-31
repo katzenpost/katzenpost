@@ -621,7 +621,8 @@ clean-local-dryrun:
 	git clean -n -x $(net_name)
 
 clean: clean-images clean-local
-	rm -rfv $(cache_dir)
+	# we do this rm in a container because rootless containers can contain files we can't otherwise delete
+	$(docker) run -v $(shell readlink -f .)/$(cache_dir):/cache --rm -it docker.io/$(distro):latest rm -rfv /cache/*
 	-$(docker) ps -a|grep katzenpost|cat
 	-$(docker) images|grep katzenpost|cat
 
