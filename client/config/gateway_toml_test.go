@@ -14,13 +14,17 @@ import (
 )
 
 func gatewayTOML(t *testing.T) map[string]interface{} {
-	idPub, _, err := signSchemes.ByName("Ed25519").GenerateKey()
+	return gatewayTOMLWithScheme(t, "Ed25519")
+}
+
+func gatewayTOMLWithScheme(t *testing.T, scheme string) map[string]interface{} {
+	idPub, _, err := signSchemes.ByName(scheme).GenerateKey()
 	require.NoError(t, err)
 	linkPub, _, err := kemschemes.ByName("xwing").GenerateKeyPair()
 	require.NoError(t, err)
 	return map[string]interface{}{
 		"Name":               "gateway1",
-		"PKISignatureScheme": "Ed25519",
+		"PKISignatureScheme": scheme,
 		"IdentityKey":        signpem.ToPublicPEMString(idPub),
 		"WireKEMScheme":      "xwing",
 		"LinkKey":            kempem.ToPublicPEMString(linkPub),
@@ -33,6 +37,14 @@ func TestGatewayUnmarshalTOML(t *testing.T) {
 	require.NoError(t, gw.UnmarshalTOML(gatewayTOML(t)))
 	require.Equal(t, "gateway1", gw.Name)
 	require.NotNil(t, gw.IdentityKey)
+}
+
+func TestGatewayUnmarshalTOMLHybridScheme(t *testing.T) {
+	gw := new(Gateway)
+	require.NoError(t, gw.UnmarshalTOML(gatewayTOMLWithScheme(t, testSchemeName)))
+	require.Equal(t, "gateway1", gw.Name)
+	require.NotNil(t, gw.IdentityKey)
+	require.Equal(t, testSchemeName, gw.IdentityKey.Scheme().Name())
 }
 
 func TestGatewayUnmarshalTOMLRejectsBadFields(t *testing.T) {
