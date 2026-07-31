@@ -532,13 +532,18 @@ debian_base.stamp:
 	$(docker) rm katzenpost_debian_base
 	touch $@
 
-alpine_base_image?=ghcr.io/katzenpost/alpine-base:rocksdb-10.2.1
+#alpine_base_image?=ghcr.io/katzenpost/alpine-base:rocksdb-10.2.1
 
+#alpine_base.stamp:
+#	$(docker) pull $(alpine_base_image) \
+#	|| $(docker) build -t $(alpine_base_image) -f Dockerfile.alpine-base . \
+#	&& ($(docker) push $(alpine_base_image) || true)
+#	$(docker) tag $(alpine_base_image) katzenpost-alpine_base
+#	touch $@
+
+alpine_base_image?=docker.io/alpine:3.24
 alpine_base.stamp:
-	$(docker) pull $(alpine_base_image) \
-	|| $(docker) build -t $(alpine_base_image) -f Dockerfile.alpine-base . \
-	&& ($(docker) push $(alpine_base_image) || true)
-	$(docker) tag $(alpine_base_image) katzenpost-alpine_base
+	$(docker) build -t katzenpost-alpine_base  -f Dockerfile.alpine-base .
 	touch $@
 
 go-mod-tidy: $(distro)_base.stamp | $(net_name) $(cache_dir)
