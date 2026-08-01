@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
 
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 )
@@ -37,6 +39,23 @@ func newServedDocsState(t *testing.T) (*state, uint64, uint64) {
 
 func TestDocumentForEpochServesTheCachedBytes(t *testing.T) {
 	require := require.New(t)
+	st, old, cur := newServedDocsState(t)
+	for _, e := range []uint64{old, cur} {
+		first, err := st.documentForEpoch(e)
+		require.NoError(err)
+		again, err := st.documentForEpoch(e)
+		require.NoError(err)
+		require.Equal(first, again)
+		require.Equal(first, st.serializedDocs[e])
+	}
+}
+
+func TestDocumentForEpochServesTheCachedBytesHybridScheme(t *testing.T) {
+	require := require.New(t)
+	saved := testSignatureScheme
+	testSignatureScheme = signSchemes.ByName(testSchemeName)
+	defer func() { testSignatureScheme = saved }()
+
 	st, old, cur := newServedDocsState(t)
 	for _, e := range []uint64{old, cur} {
 		first, err := st.documentForEpoch(e)
