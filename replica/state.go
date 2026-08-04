@@ -280,9 +280,12 @@ func (s *state) initDB() {
 		panic(err)
 	}
 
-	// On the first Pebble-backed boot, migrate any legacy RocksDB data
-	// into the Pebble databases exactly once.
-	if _, err := s.migrateLegacyRocksDB(); err != nil {
+	// The RocksDB era is over. Remove the legacy database now that the
+	// migration marker is present, and refuse to start if unmigrated
+	// legacy data is still on disk (see state_legacy.go). initDB runs
+	// before any worker goroutines start, so there is no concurrent
+	// access to the Pebble databases.
+	if err := s.cleanupLegacyDatabase(); err != nil {
 		panic(err)
 	}
 	s.log.Debug("state: Database initialized successfully")

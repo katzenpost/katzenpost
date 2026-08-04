@@ -26,7 +26,7 @@ import (
 )
 
 // setupImmutabilityTestState spins up a replica state backed by a real
-// RocksDB instance in a temp directory, suitable for exercising
+// (Pebble) database in a temp directory, suitable for exercising
 // handleReplicaWrite concurrency.
 func setupImmutabilityTestState(t *testing.T) *state {
 	t.Helper()

@@ -184,7 +184,7 @@ func TestStateClosedDatabaseGuards(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dataDir)
 
-	st := newMigrateTestState(t, dataDir)
+	st := newTestState(t, dataDir)
 	st.initDB()
 	st.Close()
 
@@ -212,7 +212,7 @@ func TestStateReadCorruptedValue(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dataDir)
 
-	st := newMigrateTestState(t, dataDir)
+	st := newTestState(t, dataDir)
 	st.initDB()
 	defer st.Close()
 
@@ -229,7 +229,7 @@ func TestHandleReplicaWriteRejectsWhenStorageFull(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dataDir)
 
-	st := newMigrateTestState(t, dataDir)
+	st := newTestState(t, dataDir)
 	st.initDB()
 	defer st.Close()
 
@@ -245,7 +245,7 @@ func TestRebalanceSkipsMalformedKey(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dataDir)
 
-	st := newMigrateTestState(t, dataDir)
+	st := newTestState(t, dataDir)
 	st.initDB()
 	defer st.Close()
 
@@ -261,7 +261,7 @@ func TestDBOnDiskBytes(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dataDir)
 
-	st := newMigrateTestState(t, dataDir)
+	st := newTestState(t, dataDir)
 	st.initDB()
 
 	n, ok := st.dbOnDiskBytes()
@@ -279,7 +279,7 @@ func TestRefreshStorageFullQuota(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dataDir)
 
-	st := newMigrateTestState(t, dataDir)
+	st := newTestState(t, dataDir)
 	st.initDB()
 	defer st.Close()
 
