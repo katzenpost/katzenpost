@@ -341,7 +341,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 // fingerprint records that we have already rebalanced against the
 // storage-replica set advertised by the current PKI document. The
 // guard exists to spare a process that crashed and restarted, or that
-// was administratively bounced, the cost of a full RocksDB scan when
+// was administratively bounced, the cost of a full database scan when
 // the network membership has not in fact changed.
 func (s *Server) maybeStartupRebalance() {
 	doc := s.PKIWorker.LastCachedPKIDocument()

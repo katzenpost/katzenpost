@@ -228,8 +228,9 @@ Source: `replica/config/config.go`.
   `net.SplitHostPort` so a bridge-network service may bind on its
   docker-compose hostname).
 - **Added** `MaxStorageMiB` (int64). Optional hard quota on the
-  replica database's on-disk size in mebibytes (RocksDB live SST
-  footprint). Writes that would exceed it are rejected with
+  replica database's on-disk size in mebibytes (Pebble disk-space
+  usage, including WAL and obsolete tables). Writes that would exceed
+  it are rejected with
   `ReplicaErrorStorageFull`. Defaults to `0`, meaning no database-size
   quota; only the filesystem reserve below applies. Must not be
   negative. (Renamed from `MaxStorageBytes` during the v0.0.71→main

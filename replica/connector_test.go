@@ -18,7 +18,7 @@ import (
 )
 
 // newTestConnector builds a bare Connector with just the fields the retry-queue
-// methods touch. No PKI, no network, no RocksDB.
+// methods touch. No PKI, no network, no database.
 func newTestConnector(t *testing.T) *Connector {
 	t.Helper()
 	lb, err := log.New("", "ERROR", false)
