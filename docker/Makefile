@@ -606,7 +606,7 @@ clean-bin: stop
 
 clean-local: clean-bin
 	# Clean up replica data files (preserve .toml configs)
-	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
+	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/replica-boxes.db $(net_name)/replica*/replica-metadata.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
 	# Clean up courier data files (preserve .toml configs)
 	rm -rfv $(net_name)/servicenode*/courier/*.log $(net_name)/servicenode*/courier/*.db $(net_name)/servicenode*/courier/link.*.pem
 	git clean -f -x $(net_name)

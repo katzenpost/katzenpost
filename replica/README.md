@@ -19,6 +19,11 @@ the rest of Katzenpost because of the dependency on a slightly older
 version of RocksDB in order to maintain compatibility with the golang
 bindings.
 
+RocksDB is still currently required: it is used only to read the
+legacy `<DataDir>/replica.db` database so that it can be migrated to
+Pebble on startup. It will be removed in a future release once
+existing deployments have been migrated.
+
 ## building / running
 
 Install the `RocksDB` dependencies on your host system.
@@ -59,6 +64,21 @@ go build
 ```
 
 ## Debugging (as replica operator)
+
+Box records now live in a Pebble database at `<DataDir>/replica-boxes.db`
+(with a small `<DataDir>/replica-metadata.db` for bookkeeping such as the
+rebalance fingerprint). The legacy RocksDB `<DataDir>/replica.db` is
+retained only as the migration source during the intermediate release and
+is removed in a later release.
+
+```shell
+# Pebble's CLI can inspect the box keyspace. It opens the database
+# read-write and therefore takes the same lock as a running replica, so
+# stop the replica first:
+for i in {1..5}; do echo "Replica $i"; go run github.com/cockroachdb/pebble/cmd/pebble@v1.1.5 db scan voting_mixnet/replica${i}/replica-boxes.db; done
+```
+
+For a pre-migration deployment that still has a RocksDB `replica.db`:
 
 ```shell
 apt install rocksdb-tools/testing
