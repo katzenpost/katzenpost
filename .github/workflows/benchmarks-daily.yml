@@ -40,9 +40,6 @@ jobs:
             ${{ runner.os }}-go-bench-
             ${{ runner.os }}-go-
 
-      - name: Install RocksDB dependencies
-        run: make install-replica-deps
-
       - name: Generate mixnet configuration
         run: |
           cd cmd/genconfig
@@ -75,7 +72,6 @@ jobs:
           echo "" | tee -a benchmark-results.txt
           echo "=== Replica Benchmarks ===" | tee -a benchmark-results.txt
           (cd replica && \
-            CC=gcc-14 CGO_ENABLED=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" \
             go test -bench=. -benchmem -run='^$' ./... 2>&1) | tee -a benchmark-results.txt
 
       - name: Ensure benchmark cache dir exists

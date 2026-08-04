@@ -324,3 +324,57 @@ func (m *mockConnector) ConnectionCount() int {
 	// Mock implementation: return 0 for testing purposes
 	return 0
 }
+
+// newTestState constructs a minimal state over dataDir WITHOUT opening
+// any database, so a test can seed on-disk state first (e.g. a legacy
+// replica.db to exercise the cleanup path) and then trigger opening via
+// initDB.
+func newTestState(t *testing.T, dataDir string) *state {
+	t.Helper()
+
+	nike := ecdh.Scheme(rand.Reader)
+	geom := geo.GeometryFromUserForwardPayloadLength(nike, 1234, true, 5)
+	require.NotNil(t, geom)
+
+	pkiScheme := signschemes.ByName("ed25519")
+	pk, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	cfg := &config.Config{
+		ReplicaNIKEScheme: "X25519",
+		DataDir:           dataDir,
+		SphinxGeometry:    geom,
+		Logging: &config.Logging{
+			// FIXME: core/log's disabled backend (discardCloser) embeds a nil
+			// io.WriteCloser and never overrides Write, so any Error-level log
+			// write through a Disable:true backend panics with a nil dereference.
+			// Log to /dev/null instead of Disable:true as a workaround.
+			//
+			// FIXME: use this log config instead of logging to DevNull if/when
+			// core/log stops making Error logs panic:
+			//
+			//	Disable: true,
+			//	Level:   "ERROR",
+			Disable: false,
+			Level:   "ERROR",
+			File:    os.DevNull,
+		},
+	}
+	cfg.SetDefaultTimeouts()
+
+	pkiWorker := &PKIWorker{
+		replicas:   replicaCommon.NewReplicaMap(),
+		WorkerBase: pki.NewWorkerBase(nil, nil),
+	}
+	s := &Server{
+		identityPublicKey: pk,
+		cfg:               cfg,
+		PKIWorker:         pkiWorker,
+		proxySema:         make(chan struct{}, cfg.ProxyWorkerCount),
+	}
+	require.NoError(t, s.initLogging())
+	pkiWorker.server = s
+	s.connector = new(mockConnector)
+
+	return &state{server: s, log: s.LogBackend().GetLogger("state")}
+}
