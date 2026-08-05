@@ -534,7 +534,9 @@ debian_base.stamp:
 	$(docker) rm katzenpost_debian_base
 	touch $@
 
-#alpine_base_image?=ghcr.io/katzenpost/alpine-base:rocksdb-10.2.1
+# The alpine base image is now built locally from Dockerfile.alpine-base
+# (see alpine_base.stamp below); the pull/push recipe and its image tag
+# variable above were retired.
 
 #alpine_base.stamp:
 #	$(docker) pull $(alpine_base_image) \
@@ -613,7 +615,7 @@ clean-bin: stop
 
 clean-local: clean-bin
 	# Clean up replica data files (preserve .toml configs)
-	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
+	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/replica-boxes.db $(net_name)/replica*/replica-metadata.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
 	# Clean up courier data files (preserve .toml configs)
 	rm -rfv $(net_name)/servicenode*/courier/*.log $(net_name)/servicenode*/courier/*.db $(net_name)/servicenode*/courier/link.*.pem
 	git clean -f -x $(net_name)

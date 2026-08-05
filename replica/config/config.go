@@ -135,11 +135,11 @@ type Config struct {
 
 	// MaxStorageMiB, when greater than zero, is a hard quota on the
 	// replica database's on-disk size, expressed in mebibytes (1 MiB =
-	// 1024*1024 bytes). The quota is enforced against RocksDB's live
-	// SST footprint. Writes that would grow the store past this are
-	// rejected with ReplicaErrorStorageFull. Zero (the default) leaves
-	// the database size unbounded except by the filesystem reserve
-	// below.
+	// 1024*1024 bytes). The quota is enforced against Pebble's disk
+	// usage (WAL, obsolete tables, and manifest included). Writes that
+	// would grow the store past this are rejected with
+	// ReplicaErrorStorageFull. Zero (the default) leaves the database
+	// size unbounded except by the filesystem reserve below.
 	MaxStorageMiB int64
 
 	// MinFreeStorageMiB is the filesystem free-space reserve on the

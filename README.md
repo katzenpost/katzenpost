@@ -149,7 +149,7 @@ katzenpost/
 ├── courier/                   # Pigeonhole courier service plugin
 │   └── server/                # Plugin host, replica fan-out, copy state
 │
-├── replica/                   # Pigeonhole storage replica (RocksDB)
+├── replica/                   # Pigeonhole storage replica (Pebble)
 │   ├── common/                # Shared types (envelope keys, sharding)
 │   ├── config/                # Replica TOML schema
 │   ├── handlers.go            # Read/write/proxy/replication handlers
@@ -196,7 +196,7 @@ The root Makefile provides several build targets for different components:
 ### Standard Components
 
 Most Katzenpost components require Go and basic build tools.
-To build all standard server and client components (excluding replica), use:
+To build all components, use:
 
 **Debian/Ubuntu users** should first install build essentials:
 ```bash
@@ -236,22 +236,16 @@ make genconfig   # Build just the config generator
 # ... etc for any component
 ```
 
-### Replica Component (Special Requirements)
+### Replica Component
 
-**⚠️ The replica component requires RocksDB and cannot be built with standard `go build` commands.**
-
-RocksDB is a C++ library that must be compiled and installed system-wide before building the replica. Due to CGO linking requirements, the replica build requires specific compiler flags and environment variables. This is why we provide dedicated Makefile targets:
+The replica uses Pebble for storage and is a standard pure-Go
+component, so it builds with the same commands as everything else:
 
 ```bash
-make install-replica-deps  # Install RocksDB and dependencies (requires sudo)
 make replica               # Build the replica executable
 make test-replica          # Run replica unit tests
 make bench-replica         # Run replica benchmarks
 ```
-
-The `make replica` target will automatically run `install-replica-deps` if RocksDB is not found.
-
-**Note:** These targets require sudo privileges to install system dependencies and take several minutes to compile RocksDB from source.
 
 ### Cleaning Built Binaries
 To remove all built executables:

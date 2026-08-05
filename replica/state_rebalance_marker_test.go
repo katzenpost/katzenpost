@@ -110,6 +110,38 @@ func TestLastRebalanceFingerprintRoundtrip(t *testing.T) {
 	require.Equal(t, dataDir, st.server.cfg.DataDir)
 }
 
+func TestLoadLastRebalanceFingerprintEdgeBranches(t *testing.T) {
+	st, cleanup := newMarkerTestState(t)
+	defer cleanup()
+
+	// Empty value is treated as absent.
+	require.NoError(t, st.metaDB.Set(lastRebalanceReplicasKey, []byte{}, nil))
+	fp, ok, err := st.loadLastRebalanceFingerprint()
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Zero(t, fp)
+
+	// A malformed (wrong-length) value is discarded.
+	require.NoError(t, st.metaDB.Set(lastRebalanceReplicasKey, []byte("short"), nil))
+	fp, ok, err = st.loadLastRebalanceFingerprint()
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Zero(t, fp)
+
+	// A missing record reports (zero, false, nil).
+	require.NoError(t, st.metaDB.Delete(lastRebalanceReplicasKey, nil))
+	fp, ok, err = st.loadLastRebalanceFingerprint()
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Zero(t, fp)
+
+	// Closed databases produce an error rather than a stale answer.
+	st.Close()
+	_, _, err = st.loadLastRebalanceFingerprint()
+	require.ErrorContains(t, err, errDatabaseClosed)
+	require.ErrorContains(t, st.storeLastRebalanceFingerprint([32]byte{}), errDatabaseClosed)
+}
+
 func TestMaybeStartupRebalanceSkipsWhenFingerprintMatches(t *testing.T) {
 	srv, _, cc, _, cleanup := newRebalanceServer(t)
 	defer cleanup()
