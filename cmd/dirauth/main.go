@@ -133,6 +133,9 @@ func runAuthority(cfg Config) error {
 	rotateCh := make(chan os.Signal, 1)
 	signal.Notify(rotateCh, syscall.SIGHUP)
 
+	reloadCh := make(chan os.Signal, 1)
+	notifyReload(reloadCh)
+
 	// Start up the authority.
 	svr, err := server.New(authorityCfg)
 	if err != nil {
@@ -151,6 +154,12 @@ func runAuthority(cfg Config) error {
 
 	// Rotate server logs upon SIGHUP.
 	go common.RotateOnSignal(rotateCh, svr.RotateLog)
+
+	go func() {
+		for range reloadCh {
+			svr.ReloadNodesFromFile(cfg.ConfigFile)
+		}
+	}()
 
 	// Wait for the authority to explode or be terminated.
 	svr.Wait()
