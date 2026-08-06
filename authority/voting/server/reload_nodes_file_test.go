@@ -122,3 +122,18 @@ func TestWireAuthenticatorFollowsReload(t *testing.T) {
 	require.False(t, valid(a))
 	require.True(t, valid(b))
 }
+
+func TestReloadNodesRefusesMissingReplicaKey(t *testing.T) {
+	srv, cfg, _, logFile := reloadFileFixture(t)
+	st := srv.state
+	a := newReloadNode(t, cfg.Server.DataDir, "mixa")
+	cfg.Mixes = []*config.Node{a.mix()}
+	require.NoError(t, srv.ReloadNodes(cfg))
+
+	cfg.StorageReplicas = []*config.StorageReplicaNode{{Identifier: "ghost", IdentityPublicKeyPem: "ghost-replica.pem", ReplicaID: 1}}
+	require.Error(t, srv.ReloadNodes(cfg))
+	require.NoError(t, st.descriptorAuthorizationError(a.desc(t)))
+	out, err := os.ReadFile(logFile)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "ghost-replica.pem")
+}
