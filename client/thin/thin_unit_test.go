@@ -67,7 +67,7 @@ func TestLoadFile(t *testing.T) {
 	require.NotNil(t, cfg)
 	require.NotNil(t, cfg.Dial)
 	require.NotNil(t, cfg.Dial.Tcp)
-	require.Equal(t, "localhost:64331", cfg.Dial.Tcp.Address)
+	require.Equal(t, "localhost:32000", cfg.Dial.Tcp.Address)
 }
 
 func TestLoadFileNonexistent(t *testing.T) {

@@ -109,7 +109,10 @@ else
 endif
 # Universal escape hatch: make base_image=my/registry:tag start wait
 base_image?=$(distro_base_image)
-GO_VERSION?=1.26.2
+# Single source of truth for the Go toolchain: the go directive in the
+# repo's go.mod. The base Dockerfiles keep the same value as an ARG
+# default only so `podman build` works standalone.
+GO_VERSION?=$(shell grep '^go ' ../go.mod | cut -d' ' -f2)
 wirekem=xwing
 net_name=voting_mixnet
 base_port=30000
@@ -168,7 +171,11 @@ endif
 
 ifeq ($(kpclientd_metrics),true)
   kpclientd_metrics_tags=kpclientd_metrics
-  kpclientdMetricsFlag=--kpclientdMetricsAddress 127.0.0.1:30099
+  # The --kpclientdMetricsAddress flag gates enablement only; genconfig
+  # derives the listener port from base_port (base_port+2004) so it stays
+  # in lockstep with the prometheus scrape target. The port passed here is
+  # documented for clarity but ignored.
+  kpclientdMetricsFlag=--kpclientdMetricsAddress 127.0.0.1:$(shell expr $(base_port) + 2004)
 endif
 
 # Combine kpclientd build tags. Two `-tags ...` invocations on a single go
@@ -222,8 +229,12 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 #   pumba_duration        how long to apply netem chaos (default 1h)
 #   pumba_targets         pumba target spec; default re2 regex matches
 #                         every mix/gateway/servicenode/replica/kpclientd
-#                         container by predictable name. Override with a
-#                         narrower regex or a space-separated list.
+#                         container of the current network. genconfig no
+#                         longer sets container_name, so compose names the
+#                         containers <net_name>-<service>-<n>; the regex
+#                         anchors on the project prefix to avoid touching
+#                         parallel networks. Override with a narrower
+#                         regex or a space-separated list.
 #   pumba_container       name of the chaos container. Override per lane
 #                         (e.g. katzenpost_pumba_slowreplica) when
 #                         stacking asymmetric chaos; `pumba-stop` removes
@@ -237,9 +248,9 @@ pumba_loss_pct?=5
 pumba_loss_corr_pct?=
 pumba_corrupt_pct?=0.01
 pumba_pause_duration?=30s
-pumba_pause_target?=replica1
+pumba_pause_target?=$(net_name)-replica1-1
 pumba_duration?=1h
-pumba_targets?=re2:^(mix[0-9]+|gateway[0-9]+|servicenode[0-9]+|replica[0-9]+|kpclientd)$$
+pumba_targets?=re2:^$(net_name)-(mix[0-9]+|gateway[0-9]+|servicenode[0-9]+|replica[0-9]+|kpclientd)-[0-9]+$$
 pumba_image?=docker.io/gaiaadm/pumba:latest
 pumba_tc_image?=docker.io/gaiadocker/iproute2
 pumba_container?=katzenpost_pumba_chaos
@@ -468,10 +479,10 @@ start-with-client-metrics:
 	$(MAKE) start no_metrics=false kpclientd_metrics=true
 
 print-url-grafana:
-	@echo "Grafana is provisioned at http://127.0.0.1:3000 (default admin/admin on first run)."
+	@echo "Grafana is provisioned at http://127.0.0.1:$(shell expr $(base_port) + 2002) (default admin/admin on first run)."
 
 print-url-prometheus:
-	@echo "Prometheus is provisioned at http://127.0.0.1:9090."
+	@echo "Prometheus is provisioned at http://127.0.0.1:$(shell expr $(base_port) + 2001)."
 
 # Pumba chaos. Each start target launches a single chaos container with
 # a distinct name; multiple lanes can run side-by-side by passing
@@ -675,9 +686,9 @@ run-parallel-load: $(net_name)/parallel-load.$(distro) $(net_name)/running.stamp
             -payload-bytes $(payload) -metrics 0.0.0.0:$(parallel_load_metrics_port)
 
 # Generate the bridge-network thinclient config the first time it is needed.
-# The host-network thinclient.toml points at localhost:64331 (kpclientd is
-# exposed on the host via rootlessport); the bridge-network variant uses
-# the compose service name kpclientd:64331 directly.
+# The host-network thinclient.toml dials localhost:base_port+2000 (kpclientd
+# is published on the host via the compose port forward); the bridge-network
+# variant uses the compose service name kpclientd:64331 directly.
 $(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
 	@echo '[Dial]'                                       >  $@
 	@echo '  [Dial.Tcp]'                                 >> $@

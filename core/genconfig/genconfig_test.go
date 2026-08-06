@@ -42,6 +42,25 @@ func testKatzenpost(t *testing.T) *Katzenpost {
 	}
 }
 
+// TestKatzenpostDerivedPublishedPorts asserts the published host-port
+// band follows base_port. GenerateClientConfigurations and
+// GenDockerCompose derive the thin-client dial address, the kpclientd
+// metrics listener port, and the prometheus scrape target from
+// base_port, so parallel networks with distinct base_port values never
+// collide on the host and the daemon's listener always matches the
+// scrape target.
+func TestKatzenpostDerivedPublishedPorts(t *testing.T) {
+	s := testKatzenpost(t)
+	s.BasePort = 30000
+
+	require.Equal(t, "localhost:32000", s.thinClientDialAddress())
+	require.Equal(t, uint16(32004), s.kpclientdMetricsPort())
+
+	s.BasePort = 42000
+	require.Equal(t, "localhost:44000", s.thinClientDialAddress())
+	require.Equal(t, uint16(44004), s.kpclientdMetricsPort())
+}
+
 // TestGenClient2ThinCfgEmitsDialSubtable asserts that GenClient2ThinCfg
 // writes the V1 [Dial.Tcp] subtable to the thin-client config file,
 // and that the resulting TOML round-trips into a thin.Config whose

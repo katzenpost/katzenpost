@@ -67,13 +67,58 @@ const (
 	WritingLogFormat       = "writing %s"
 
 	// DockerNetwork is the bridge network the generated docker-compose puts
-	// every katzenpost service on. Each service has a stable container_name
-	// matching its identifier, so peers can address each other by DNS name
-	// (e.g. tcp://mix1:30030). This lets per-container chaos tools such as
-	// pumba install tc qdiscs in each service's own net namespace; the
-	// previous host-networked layout had no such namespaces to scope to.
+	// every katzenpost service on. Each service declares a hostname equal
+	// to its identifier, so peers can address each other by DNS name
+	// (e.g. tcp://mix1:30030) via the compose runtime's embedded DNS. This
+	// lets per-container chaos tools such as pumba install tc qdiscs in
+	// each service's own net namespace; the previous host-networked layout
+	// had no such namespaces to scope to. No service sets container_name,
+	// so the compose project prefix scopes the runtime container names and
+	// several parallel networks can run on one host without clashing.
 	DockerNetwork = "katzenpost-net"
 )
+
+// Published host-port band. Every service that is exposed to the host or
+// scraped by prometheus gets a port derived from base_port (the base that
+// dirauth/mix/service-node listeners already start from) so that several
+// parallel test networks with different base_port values can run on the
+// same host without colliding on published ports. Only the host side of
+// each publish moves; the in-bridge ports stay fixed (64331, 9090, 3000,
+// 4040, and the kpclientd metrics listener).
+const (
+	// kpclientdPublishedPortOffset publishes the kpclientd thin-client
+	// port (64331 in-bridge) to the host as base_port+2000. Thin clients
+	// running with --network=host dial localhost:<base_port+2000>.
+	kpclientdPublishedPortOffset = 2000
+	// metricsPublishedPortOffset publishes prometheus (9090 in-bridge)
+	// to the host as base_port+2001.
+	metricsPublishedPortOffset = 2001
+	// grafanaPublishedPortOffset publishes grafana (3000 in-bridge) to
+	// the host as base_port+2002.
+	grafanaPublishedPortOffset = 2002
+	// pyroscopePublishedPortOffset publishes pyroscope (4040 in-bridge)
+	// to the host as base_port+2003.
+	pyroscopePublishedPortOffset = 2003
+	// kpclientdMetricsPortOffset is the in-bridge port kpclientd serves
+	// its /metrics endpoint on, base_port+2004. It is never published to
+	// the host; prometheus scrapes it as kpclientd:<base_port+2004> over
+	// the bridge.
+	kpclientdMetricsPortOffset = 2004
+)
+
+// thinClientDialAddress returns the host-side address thin clients use to
+// reach kpclientd through the docker port publish. The daemon itself
+// listens on kpclientd:64331 inside the bridge.
+func (s *Katzenpost) thinClientDialAddress() string {
+	return fmt.Sprintf("localhost:%d", s.BasePort+kpclientdPublishedPortOffset)
+}
+
+// kpclientdMetricsPort returns the in-bridge port kpclientd serves its
+// /metrics endpoint on. It is derived from base_port so the client.toml
+// listener address and the prometheus scrape target stay in lockstep.
+func (s *Katzenpost) kpclientdMetricsPort() uint16 {
+	return s.BasePort + kpclientdMetricsPortOffset
+}
 
 // peerAddr returns the tcp:// URL another container should dial to reach the
 // named service on the bridge network. Both endpoints resolve the hostname
@@ -376,16 +421,17 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	// Production builds of kpclientd ignore this field entirely
 	// because the listener is gated behind a build tag.
 	//
-	// Under bridge networking we discard whatever host portion was
-	// passed in and bind to the kpclientd container's own private
-	// bridge IP (reached via its `kpclientd` hostname). The prometheus
-	// container scrapes it as `kpclientd:<port>` over the same bridge.
+	// Under bridge networking we bind to the kpclientd container's own
+	// private bridge IP (reached via its `kpclientd` hostname). The port
+	// is derived from base_port (base_port+2004) so parallel networks do
+	// not collide and so the prometheus scrape target, which GenPrometheus
+	// derives the same way, always matches. The address passed on the
+	// command line only gates enablement; its host and port are ignored.
 	if s.KpclientdMetricsAddress != "" {
-		port, err := splitHostPortPort(s.KpclientdMetricsAddress)
-		if err != nil {
+		if _, err := splitHostPortPort(s.KpclientdMetricsAddress); err != nil {
 			return err
 		}
-		cfg.MetricsAddress = metricsScrapeAddr("kpclientd", uint16(port))
+		cfg.MetricsAddress = metricsScrapeAddr("kpclientd", s.kpclientdMetricsPort())
 	}
 
 	gateways := make([]*cConfig.Gateway, 0)
@@ -902,6 +948,11 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	// failure aborts replica startup and yields flaky CI runs. Holding
 	// the replica band beneath 32768 avoids that race.
 	s.LastReplicaPort = s.BasePort + 1000
+	// The published host-port band (kpclientd, prometheus, grafana,
+	// pyroscope, and the kpclientd metrics listener) is derived from
+	// base_port as base_port+2000..+2004; see the constants declared next
+	// to DockerNetwork. Keeping it at +2000+ leaves the +1000 replica
+	// range untouched.
 	s.BindAddr = cfg.BindAddr
 	s.LogLevel = cfg.LogLevel
 	s.DebugConfig = &cConfig.Debug{
@@ -1078,16 +1129,16 @@ func SaveConfigurations(s *Katzenpost, cfg *Config) error {
 // The kpclientd daemon and the thin clients that talk to it sit at
 // opposite ends of the docker-compose port publish, so they need
 // different addresses. The daemon binds to its own private bridge IP
-// (reached via its `kpclientd` hostname), and the docker port publish
-// forwards host:64331 to that same bridge address. The thin clients
-// (ping, fetch) run on the host with --network=host and dial
-// localhost:64331 over the published port; the host's /etc/hosts
-// resolves localhost to 127.0.0.1 and the published forward picks it
-// up.
+// (reached via its `kpclientd` hostname) on the fixed in-bridge port
+// 64331, and the docker port publish forwards host:base_port+2000 to
+// that same bridge address. The thin clients (ping, fetch) run on the
+// host with --network=host and dial localhost:base_port+2000 over the
+// published port; the host's /etc/hosts resolves localhost to
+// 127.0.0.1 and the published forward picks it up.
 func GenerateClientConfigurations(s *Katzenpost) error {
 	clientDaemonNetwork := "tcp"
 	clientDaemonListenAddress := "kpclientd:64331"
-	clientDaemonDialAddress := "localhost:64331"
+	clientDaemonDialAddress := s.thinClientDialAddress()
 
 	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonListenAddress)
 	if err != nil {
@@ -1302,15 +1353,14 @@ scrape_configs:
 `, cfg.Server.Identifier, cfg.Server.MetricsAddress)
 	}
 	if s.KpclientdMetricsAddress != "" {
-		port, err := splitHostPortPort(s.KpclientdMetricsAddress)
-		if err != nil {
+		if _, err := splitHostPortPort(s.KpclientdMetricsAddress); err != nil {
 			return err
 		}
 		Write(f, `- job_name: kpclientd
   scrape_interval: 1s
   static_configs:
   - targets: ['%s']
-`, metricsScrapeAddr("kpclientd", uint16(port)))
+`, metricsScrapeAddr("kpclientd", s.kpclientdMetricsPort()))
 	}
 	// parallel-load is an opt-in ad-hoc container launched by `make
 	// run-parallel-load`; the host name `parallel-load` resolves only
@@ -2535,24 +2585,25 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 	}
 
 	// writeKatzenpostService emits the common scaffolding for a service
-	// built from the katzenpost base image: container_name and hostname
-	// match the identifier so peers can address it as
-	// `tcp://<name>:<port>` via the bridge's embedded DNS, the source
-	// tree is mounted read-write for log persistence, and the service
-	// joins the single katzenpost bridge network. The caller appends
-	// depends_on/ports/environment as needed.
+	// built from the katzenpost base image: a hostname matching the
+	// identifier so peers can address it as `tcp://<name>:<port>` via the
+	// bridge's embedded DNS, the source tree mounted read-write for log
+	// persistence, and the service joining the single katzenpost bridge
+	// network. No container_name is set, so the compose project prefix
+	// namespaces the runtime containers and parallel networks stay
+	// independent. The caller appends depends_on/ports/environment as
+	// needed.
 	writeKatzenpostService := func(name, command string) {
 		Write(f, `
   %s:
     restart: "no"
-    container_name: %s
     hostname: %s
     image: %s
     volumes:
       - ./:%s
     command: %s
     networks:
-      - %s`, name, name, name, dockerImage, s.BaseDir, command, DockerNetwork)
+      - %s`, name, name, dockerImage, s.BaseDir, command, DockerNetwork)
 	}
 
 	writeDependsOnAuths := func() {
@@ -2617,13 +2668,13 @@ services:
 	}
 
 	if !s.NoMetrics {
-		// Prometheus and grafana publish to host loopback so the operator
-		// can browse them. Their scrape paths into the katzenpost
-		// services run entirely on the bridge.
+		// Prometheus and grafana publish to host loopback at
+		// base_port+2001/+2002 so the operator can browse them and so
+		// parallel networks do not collide. Their scrape paths into the
+		// katzenpost services run entirely on the bridge.
 		Write(f, `
   metrics:
     restart: "no"
-    container_name: metrics
     hostname: metrics
     image: docker.io/prom/prometheus
     pull_policy: if_not_present
@@ -2633,13 +2684,12 @@ services:
     networks:
       - %s
     ports:
-      - "127.0.0.1:9090:9090"
-`, s.BaseDir, s.BaseDir, DockerNetwork)
+      - "127.0.0.1:%d:9090"
+`, s.BaseDir, s.BaseDir, DockerNetwork, s.BasePort+metricsPublishedPortOffset)
 
 		Write(f, `
   grafana:
     restart: "no"
-    container_name: grafana
     hostname: grafana
     image: docker.io/grafana/grafana:latest
     pull_policy: if_not_present
@@ -2655,37 +2705,36 @@ services:
     networks:
       - %s
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:%d:3000"
     depends_on:
       - metrics
-`, DockerNetwork)
+`, DockerNetwork, s.BasePort+grafanaPublishedPortOffset)
 	}
 
 	if s.PyroscopeDirauth || s.PyroscopeKpclientd {
 		Write(f, `
   pyroscope:
     restart: "no"
-    container_name: pyroscope
     hostname: pyroscope
     image: docker.io/grafana/pyroscope:latest
     pull_policy: if_not_present
     networks:
       - %s
     ports:
-      - "127.0.0.1:4040:4040"
-`, DockerNetwork)
+      - "127.0.0.1:%d:4040"
+`, DockerNetwork, s.BasePort+pyroscopePublishedPortOffset)
 	}
 
-	// kpclientd publishes its thin-client port (64331) on the host so
-	// external thin clients (ping, fetch) running with --network=host
-	// can dial 127.0.0.1:64331. Inside the bridge it is reachable as
+	// kpclientd publishes its thin-client port (64331) on the host at
+	// base_port+2000 so external thin clients (ping, fetch) running with
+	// --network=host can dial it. Inside the bridge it is reachable as
 	// kpclientd:64331 via compose DNS, which is how prometheus scrapes
 	// it when kpclientd_metrics is enabled.
 	cmd := fmt.Sprintf("%s/kpclientd%s -c %s/client/client.toml", s.BaseDir, s.BinSuffix, s.BaseDir)
 	writeKatzenpostService("kpclientd", cmd)
 	Write(f, `
     ports:
-      - "127.0.0.1:64331:64331"`)
+      - "127.0.0.1:%d:64331"`, s.BasePort+kpclientdPublishedPortOffset)
 	writeEnv("kpclientd")
 	Write(f, `
 `)
