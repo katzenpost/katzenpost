@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore
+.PHONY: clean clean-data clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -34,7 +34,8 @@ help:
 	@echo " clean-bin          - stop, and delete compiled binaries"
 	@echo " clean-local        - stop, and delete data and binaries"
 	@echo " clean-local-dryrun - show what clean-local would delete"
-	@echo " clean              - the above, plus cleans includes go_deps images"
+	@echo " clean-data         - stop, and wipe the testnet state directory (keeps the build cache)"
+	@echo " clean              - clean-data, plus wipes base images and the build cache"
 	@echo
 
 warped?=true
@@ -94,43 +95,39 @@ net_name=voting_mixnet
 base_port=30000
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
-sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
+# bash is installed in every base image (alpine, debian, ubuntu), so a
+# single shell covers all distros.
+sh?=bash
 cache_dir=cache
 
+# genconfig_args is shared by the docker-compose generation inside the
+# base image and the host-side config-only target. Bools and tunables
+# are always passed with explicit values so the operator's intent is
+# never swallowed by a cobra default; 0/empty means "library default"
+# (e.g. --schedulerSlack 0, --sessionGracePeriod 0). The `=` assignment
+# (not `:=`) keeps command-line overrides (make mixes=10 gateways=2 ...)
+# flowing through to this expansion.
+#
 # no_decoy is a master toggle covering clients, couriers, and replicas.
 # no_client_decoy and no_courier_replica_decoy allow selective disabling
-# when no_decoy=false. no_mixdecoy controls mix node decoys independently.
-# Always pass explicit values for --noMixDecoy and --noGatewayDecoy so
-# the operator's choice reaches genconfig irrespective of the cobra
-# default. Both flags default to true in cobra; without the explicit
-# value, setting `no_mixdecoy=false` or `no_gatewaydecoy=false` in the
-# Makefile would emit no flag, the cobra default would take over, and
-# the operator's intent to enable decoys would be silently ignored.
-noMixDecoy=--noMixDecoy=$(no_mixdecoy)
-noGatewayDecoy=--noGatewayDecoy=$(no_gatewaydecoy)
-
+# when no_decoy=false. no_mixdecoy controls mix node decoys
+# independently. The presence flags below are emitted only when true
+# (their cobra defaults are false); --noMixDecoy/--noGatewayDecoy
+# default true in cobra, so they are always passed explicitly.
 ifeq ($(no_decoy),true)
-  noDecoy=--noDecoy
+  noDecoyFlag=--noDecoy
 endif
 
 ifeq ($(no_client_decoy),true)
-  noClientDecoy=--noClientDecoy
+  noClientDecoyFlag=--noClientDecoy
 endif
 
 ifeq ($(no_courier_replica_decoy),true)
-  noCourierReplicaDecoy=--noCourierReplicaDecoy
+  noCourierReplicaDecoyFlag=--noCourierReplicaDecoy
 endif
 
 ifeq ($(no_metrics),true)
   noMetricsFlag=--noMetrics
-endif
-
-ifneq ($(epoch_duration),)
-  epochDurationFlag=--epochDuration $(epoch_duration)
-endif
-
-ifneq ($(session_grace_period),)
-  sessionGracePeriodFlag=--sessionGracePeriod $(session_grace_period)
 endif
 
 ifeq ($(pyroscope_dirauth),true)
@@ -155,25 +152,17 @@ ifneq ($(kpclientd_build_tags),)
   kpclientd_tags_flag=-tags "$(kpclientd_build_tags)"
 endif
 
-ifneq ($(schedulerSlack),0)
-  schedulerSlackFlag=--schedulerSlack $(schedulerSlack)
-endif
-
-ifneq ($(schedulerMaxBurst),0)
-  schedulerMaxBurstFlag=--schedulerMaxBurst $(schedulerMaxBurst)
-endif
-
-ifneq ($(sendSlack),0)
-  sendSlackFlag=--sendSlack $(sendSlack)
-endif
-
-ifneq ($(unwrapDelay),0)
-  unwrapDelayFlag=--unwrapDelay $(unwrapDelay)
-endif
-
-ifneq ($(numSphinxWorkers),0)
-  numSphinxWorkersFlag=--numSphinxWorkers $(numSphinxWorkers)
-endif
+genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --nodes $(mixes) \
+	--gateways $(gateways) --serviceNodes $(serviceNodes) --storageNodes $(storageNodes) \
+	--mu $(mu) --lambdaP $(lP) --lambdaL $(lL) --lambdaM $(lM) --lambdaR $(lR) \
+	--nike "$(nike)" --kem "$(kem)" \
+	--noMixDecoy=$(no_mixdecoy) --noGatewayDecoy=$(no_gatewaydecoy) \
+	$(noDecoyFlag) $(noClientDecoyFlag) $(noCourierReplicaDecoyFlag) $(noMetricsFlag) \
+	--epochDuration "$(epoch_duration)" --sessionGracePeriod $(or $(session_grace_period),0) \
+	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
+	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
+	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
+	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 
 # Pumba network chaos. Off by default; invoke `make pumba-latency` or
 # `make pumba-loss` to start a sidecar that applies `tc netem` qdiscs in
@@ -230,7 +219,11 @@ pumba_tc_image?=docker.io/gaiadocker/iproute2
 pumba_container?=katzenpost_pumba_chaos
 pumba_prefix=katzenpost_pumba_
 
-pumba_sock_mount=$(shell if echo ${docker}|grep -q podman; then echo "-v $$XDG_RUNTIME_DIR/podman/podman.sock:/var/run/docker.sock"; else echo "-v /var/run/docker.sock:/var/run/docker.sock"; fi)
+ifeq ($(docker),podman)
+  pumba_sock_mount=-v $$XDG_RUNTIME_DIR/podman/podman.sock:/var/run/docker.sock
+else
+  pumba_sock_mount=-v /var/run/docker.sock:/var/run/docker.sock
+endif
 
 ifneq ($(pumba_correlation_pct),)
   pumba_correlation_flag=--correlation $(pumba_correlation_pct)
@@ -243,24 +236,48 @@ endif
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=DEBUG
 
-docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
+# Runtime backend. Defaults to podman when it is on PATH, so `docker` is
+# only used when explicitly requested (make docker=docker ...).
+docker?=$(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 
 ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
-docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
+ifeq ($(docker),podman)
+  # Rootless podman maps container uid 0 to the invoking user, so build
+  # and compose artifacts stay user-owned and host `rm -rf`/`git clean`
+  # can delete them directly (see the `clean`/`clean-data` targets).
+  docker_user=0:0
+  replace_name= --replace --name
+  i_if_podman= -i
+else
+  # Rootful docker: run build containers as the invoking user so cache
+  # files are not left root-owned.
+  docker_user=$(uid):$(gid)
+  replace_name= --name
+  i_if_podman=
+endif
 docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache -e GOPATH=/go --pids-limit 4096
 
-replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
-i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
 docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
-docker_compose?= DOCKER_USER=$(docker_user) $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose; else echo $(docker_compose_v1_or_v2); fi)
+ifeq ($(docker),podman)
+  docker_compose= DOCKER_USER=$(docker_user) DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose
+else
+  docker_compose= DOCKER_USER=$(docker_user) $(docker_compose_v1_or_v2)
+endif
 
-make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user) kpclientd_metrics=$(kpclientd_metrics) pyroscope_kpclientd=$(pyroscope_kpclientd) pyroscope_dirauth=$(pyroscope_dirauth) no_metrics=$(no_metrics) no_decoy=$(no_decoy) no_mixdecoy=$(no_mixdecoy) no_gatewaydecoy=$(no_gatewaydecoy)
+# Recursive `$(MAKE)` invocations inherit these instead of re-deriving
+# them from a hardcoded argument list.
+export docker docker_user docker_args distro sh warped net_name cache_dir mount_net_name
+export no_decoy no_client_decoy no_courier_replica_decoy no_mixdecoy no_gatewaydecoy
+export no_metrics pyroscope_dirauth pyroscope_kpclientd kpclientd_metrics
+export wirekem nike kem mixes auths gateways serviceNodes storageNodes
+export mu lP lL lM lR UserForwardPayloadLength log_level
+export kpclientd_build_tags kpclientd_tags_flag pyroscope_dirauth_tags pyroscope_kpclientd_tags
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 
@@ -277,34 +294,21 @@ $(cache_dir)/go:
 $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
 		$(sh) -c 'cd cmd/genconfig && go build && cd ../../docker \
-		&& ../cmd/genconfig/genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
-		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
+		&& ../cmd/genconfig/genconfig $(genconfig_args) \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
-		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
-		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
-		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
-		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
+		--dockerImage katzenpost-$(distro)_base'
 
 # Generate configuration files only (without docker containers)
 # This is useful for tests that depend on config files existing (e.g., client/testdata symlinks)
 config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
-	cd ../cmd/genconfig && go build && ./genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
-		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
-		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
-		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
-		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
-		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
-		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
+	cd ../cmd/genconfig && go build && ./genconfig $(genconfig_args) \
+		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port)
 	@echo "Configuration files generated in ./$(net_name)/"
 	@echo "Tests can now use the symlinked configs (e.g., client/testdata/client.toml -> ../../docker/$(net_name)/client/client.toml)"
 
 $(net_name)/running.stamp:
-	make $(make_args) start
+	$(MAKE) start
 
 # Restore committed self-check sidecars into each daemon's DataDir
 # before docker compose up. The replica's CTIDH self-check costs
@@ -339,12 +343,12 @@ start_debug: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	touch $(net_name)/running.stamp
 
 stop:
-	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp voting_mixnet/servicenode*/courier/*.socket
+	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp $(net_name)/servicenode*/courier/*.socket
 
 client-restart:
 	@echo "Cleaning and rebuilding kpclientd daemon..."
 	rm -fv $(net_name)/kpclientd.$(distro)
-	make $(make_args) $(net_name)/kpclientd.$(distro)
+	$(MAKE) $(net_name)/kpclientd.$(distro)
 	@echo "Restarting kpclientd daemon..."
 	cd $(net_name) && $(docker_compose) stop kpclientd
 	cd $(net_name) && $(docker_compose) up -d kpclientd
@@ -359,19 +363,19 @@ client-logs-snapshot:
 
 courier-restart:
 	@echo "Stopping courier plugin via thwack management interface..."
-	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock' || true
+	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode1/management_sock' || true
 	@sleep 1
 	@echo "Cleaning and rebuilding courier binary..."
 	rm -fv $(net_name)/courier.$(distro)
-	make $(make_args) $(net_name)/courier.$(distro)
+	$(MAKE) $(net_name)/courier.$(distro)
 	@echo "Starting courier plugin via thwack management interface..."
-	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock'
+	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode1/management_sock'
 	@echo "Courier service restarted with updated code"
 
 replica-restart:
 	@echo "Cleaning and rebuilding replica binary..."
 	rm -fv $(net_name)/replica.$(distro)
-	make $(make_args) $(net_name)/replica.$(distro)
+	$(MAKE) $(net_name)/replica.$(distro)
 	@echo "Restarting replica containers..."
 	@cd $(net_name) && for i in $$(seq 1 $(storageNodes)); do $(docker_compose) restart replica$$i; done
 	@echo "Replica containers restarted with updated binary"
@@ -379,7 +383,7 @@ replica-restart:
 servicenode-restart:
 	@echo "Cleaning and rebuilding courier binary..."
 	rm -fv $(net_name)/courier.$(distro)
-	make $(make_args) $(net_name)/courier.$(distro)
+	$(MAKE) $(net_name)/courier.$(distro)
 	@echo "Restarting servicenode1 container..."
 	cd $(net_name) && $(docker_compose) restart servicenode1
 	@echo "Servicenode restarted with updated courier binary"
@@ -520,7 +524,7 @@ status:
 		done|grep . || (echo "(no consensus yet; exiting with error)" && false)
 
 show-latest-vote:
-	@grep -A30 'Ready to send' voting_mixnet/auth1/katzenpost.log |tail -30|sed /Sending/q
+	@grep -A30 'Ready to send' $(net_name)/auth1/katzenpost.log |tail -30|sed /Sending/q
 
 wait: $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
@@ -559,47 +563,43 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 			$(sh) -c 'go get -d -u ./... && go mod tidy'
 
 $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/server ; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
+		$(docker_run_sh) 'cd cmd/server ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/server.$(distro)'
 
 $(net_name)/courier.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/courier ; go build -trimpath -ldflags ${ldflags} && mv courier /$(net_name)/courier.$(distro)'
+		$(docker_run_sh) 'cd cmd/courier ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/courier.$(distro)'
 
 $(net_name)/replica.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/replica ; go build -trimpath -ldflags ${ldflags} && mv replica /$(net_name)/replica.$(distro)'
+		$(docker_run_sh) 'cd cmd/replica ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/replica.$(distro)'
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/http-proxy-client; go build -trimpath -ldflags ${ldflags} && mv http-proxy-client /$(net_name)/proxy_client.$(distro)'
+		$(docker_run_sh) 'cd cmd/http-proxy-client; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/proxy_client.$(distro)'
 
 $(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/http-proxy-server; go build -trimpath -ldflags ${ldflags} && mv http-proxy-server /$(net_name)/proxy_server.$(distro)'
+		$(docker_run_sh) 'cd cmd/http-proxy-server; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/proxy_server.$(distro)'
 
 $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} && mv echo-plugin /$(net_name)/echo_server.$(distro)'
+		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/echo_server.$(distro)'
 
 $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath -ldflags ${ldflags} && mv dirauth /$(net_name)/dirauth.$(distro) && \
-			cd ../fetch && go build -trimpath -ldflags ${ldflags} && mv fetch /$(net_name)/fetch.$(distro)'
+		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath -ldflags ${ldflags} -o /$(net_name)/dirauth.$(distro) && \
+			cd ../fetch && go build -trimpath -ldflags ${ldflags} -o /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/ping && go mod verify && go build -ldflags ${ldflags} && \
-			mv ping /$(net_name)/ping.$(distro)'
+		$(docker_run_sh) 'cd cmd/ping && go mod verify && go build -ldflags ${ldflags} -o /$(net_name)/ping.$(distro)'
 
 $(net_name)/parallel-load.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd tools/chaos/cmd/parallel-load && go build -ldflags ${ldflags} && \
-			mv parallel-load /$(net_name)/parallel-load.$(distro)'
+		$(docker_run_sh) 'cd tools/chaos/cmd/parallel-load && go build -ldflags ${ldflags} -o /$(net_name)/parallel-load.$(distro)'
 
 $(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd tools/chaos/cmd/cp-bench && go build -ldflags ${ldflags} && \
-			mv cp-bench /$(net_name)/cp-bench.$(distro)'
+		$(docker_run_sh) 'cd tools/chaos/cmd/cp-bench && go build -ldflags ${ldflags} -o /$(net_name)/cp-bench.$(distro)'
 
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} && \
-			mv kpclientd /$(net_name)/kpclientd.$(distro)'
+		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} -o /$(net_name)/kpclientd.$(distro)'
 
 clean-images: stop
 	@-for distro in $(DISTROS); do \
-		make $(make_args) distro=$$distro clean-container-$${distro}_base; \
-		make $(make_args) distro=$$distro clean-image-$${distro}_base; \
+		$(MAKE) distro=$$distro clean-container-$${distro}_base; \
+		$(MAKE) distro=$$distro clean-image-$${distro}_base; \
 	done \
 
 clean-container-%:
@@ -624,9 +624,19 @@ clean-local: clean-bin
 clean-local-dryrun:
 	git clean -n -x $(net_name)
 
+# Light clean for the iteration loop: tear down the testnet and wipe the
+# state directory, but keep the go module/build cache. The cgo components
+# (highctidh) are slow to rebuild, so use this between most iterations and
+# reserve `clean` for full from-scratch verification.
+clean-data: stop clean-local
+
 clean: clean-images clean-local
-	# we do this rm in a container because rootless containers can contain files we can't otherwise delete
-	$(docker) run -v $(shell readlink -f .)/$(cache_dir):/cache --rm -it docker.io/$(distro):latest sh -c 'rm -rfv /cache/*'
+	# The go module cache is intentionally written read-only (dirs 0555,
+	# files 0444), so only a root-capable process can wipe it: even the
+	# owning host user cannot delete files inside read-only directories.
+	# Run the wipe in a throwaway alpine container (rootless podman maps
+	# its uid 0 to the invoking user with full capabilities in-namespace).
+	$(docker) run --rm -v $(shell readlink -f .)/$(cache_dir):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
 	-$(docker) ps -a|grep katzenpost|cat
 	-$(docker) images|grep katzenpost|cat
 
@@ -644,7 +654,7 @@ step?=90s
 payload?=256
 parallel_load_metrics_port?=9101
 run-parallel-load: $(net_name)/parallel-load.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=voting_mixnet_katzenpost-net --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	$(docker) run --network=$(net_name)_katzenpost-net --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/parallel-load.$(distro) \
             -config /$(net_name)/client/thinclient-bridge.toml \
             -clients $(clients) -duration $(duration) -sweep "$(sweep)" -step $(step) \
@@ -668,7 +678,7 @@ cp_sweep?=
 cp_propagation?=30s
 cp_metrics_port?=9102
 run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=voting_mixnet_katzenpost-net --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	$(docker) run --network=$(net_name)_katzenpost-net --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/cp-bench.$(distro) \
             -config /$(net_name)/client/thinclient-bridge.toml \
             -payload $(cp_payload) -sweep "$(cp_sweep)" -propagation $(cp_propagation) \
@@ -684,7 +694,7 @@ rootshell: $(distro)_base.stamp
 	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost-$(distro)_base $(sh)
 
 test: wait
-	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
+	$(MAKE) -C ../client testargs=$(testargs) dockerdockertest
 
 check-go-version:
 	podman run --rm katzenpost-alpine_base go version

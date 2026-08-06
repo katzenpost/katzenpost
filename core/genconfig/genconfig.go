@@ -72,8 +72,7 @@ const (
 	// (e.g. tcp://mix1:30030). This lets per-container chaos tools such as
 	// pumba install tc qdiscs in each service's own net namespace; the
 	// previous host-networked layout had no such namespaces to scope to.
-	DockerNetwork    = "katzenpost-net"
-	DockerProjectTag = "voting_mixnet"
+	DockerNetwork = "katzenpost-net"
 )
 
 // peerAddr returns the tcp:// URL another container should dial to reach the
