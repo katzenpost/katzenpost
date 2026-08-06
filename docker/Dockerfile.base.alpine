@@ -1,4 +1,6 @@
-FROM docker.io/alpine:3.21
+ARG BASE_IMAGE=docker.io/alpine:3.21
+FROM ${BASE_IMAGE}
+
 ARG TARGETARCH
 ARG GO_VERSION=1.26.2
 

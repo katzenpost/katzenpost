@@ -1,4 +1,4 @@
-.PHONY: clean clean-data clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore
+.PHONY: clean clean-data clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test test-distros rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -36,6 +36,7 @@ help:
 	@echo " clean-local-dryrun - show what clean-local would delete"
 	@echo " clean-data         - stop, and wipe the testnet state directory (keeps the build cache)"
 	@echo " clean              - clean-data, plus wipes base images and the build cache"
+	@echo " test-distros       - bring up and tear down the testnet on every DISTRO"
 	@echo
 
 warped?=true
@@ -88,8 +89,27 @@ nike=x25519
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
 
-DISTROS=alpine debian
+DISTROS=alpine debian-trixie debian-testing ubuntu-25.10 ubuntu-26.04
 distro=alpine
+
+# Distro strings are "<family>" (alpine) or "<family>-<version>" (e.g.
+# debian-trixie, ubuntu-25.10). The base image is derived uniformly:
+# alpine -> alpine_base_image?=, any debian-<tag> -> docker.io/debian:<tag>,
+# any ubuntu-<tag> -> docker.io/ubuntu:<tag>. Adding a new version is
+# purely a new FROM tag: `make distro=ubuntu-26.04 start wait` just works.
+distro_family=$(firstword $(subst -, ,$(distro)))
+distro_version=$(patsubst $(distro_family)-%,%,$(distro))
+ifeq ($(distro_family),alpine)
+  base_dockerfile=Dockerfile.base.alpine
+  alpine_base_image?=docker.io/alpine:3.21
+  distro_base_image=$(alpine_base_image)
+else
+  base_dockerfile=Dockerfile.base.apt
+  distro_base_image=docker.io/$(distro_family):$(distro_version)
+endif
+# Universal escape hatch: make base_image=my/registry:tag start wait
+base_image?=$(distro_base_image)
+GO_VERSION?=1.26.2
 wirekem=xwing
 net_name=voting_mixnet
 base_port=30000
@@ -99,6 +119,12 @@ docker_compose_yml=$(net_name)/docker-compose.yml
 # single shell covers all distros.
 sh?=bash
 cache_dir=cache
+# The go module cache (source content, read-only) is shared across distros.
+# The go build cache holds compiled archives that are sensitive to the C
+# library (musl vs glibc, and glibc versions), and Go's cache key does not
+# capture that, so the build cache is scoped per distro.
+go_mod_cache=$(cache_dir)/go
+go_build_cache=$(cache_dir)/go-build-$(distro)
 
 # genconfig_args is shared by the docker-compose generation inside the
 # base image and the host-side config-only target. Bools and tunables
@@ -259,7 +285,10 @@ else
   replace_name= --name
   i_if_podman=
 endif
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache -e GOPATH=/go --pids-limit 4096
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost \
+	-v $(shell readlink -f .)/$(go_mod_cache):/go/ \
+	-v $(shell readlink -f .)/$(go_build_cache):/gocache/ \
+	-e GOCACHE=/gocache -e GOPATH=/go --pids-limit 4096
 
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
@@ -286,10 +315,13 @@ testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro
 $(net_name):
 	mkdir -vp $(net_name)
 
-$(cache_dir): $(cache_dir)/go
+$(cache_dir): $(cache_dir)/go $(go_build_cache)
 
 $(cache_dir)/go:
 	mkdir -vp $(cache_dir)/go
+
+$(go_build_cache):
+	mkdir -vp $(go_build_cache)
 
 $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
@@ -530,28 +562,10 @@ wait: $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient.toml -r 2
 
-debian_base_image?=docker.io/golang:bullseye
-
-debian_base.stamp:
-	$(docker) run $(replace_name) katzenpost_debian_base $(debian_base_image) $(sh) -c "echo -e 'deb https://deb.debian.org/debian bullseye main\ndeb https://deb.debian.org/debian bullseye-updates main\ndeb https://deb.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list && cat /etc/apt/sources.list && apt update && apt upgrade -y && apt install -y pv && adduser katzenpost --gecos '' --disabled-password && apt update && apt upgrade -y"
-	$(docker) commit katzenpost_debian_base katzenpost-debian_base
-	$(docker) rm katzenpost_debian_base
-	touch $@
-
-# The alpine base image is now built locally from Dockerfile.alpine-base
-# (see alpine_base.stamp below); the pull/push recipe and its image tag
-# variable above were retired.
-
-#alpine_base.stamp:
-#	$(docker) pull $(alpine_base_image) \
-#	|| $(docker) build -t $(alpine_base_image) -f Dockerfile.alpine-base . \
-#	&& ($(docker) push $(alpine_base_image) || true)
-#	$(docker) tag $(alpine_base_image) katzenpost-alpine_base
-#	touch $@
-
-alpine_base_image?=docker.io/alpine:3.24
-alpine_base.stamp:
-	$(docker) build -t katzenpost-alpine_base  -f Dockerfile.alpine-base .
+$(distro)_base.stamp: $(base_dockerfile)
+	$(docker) build -t katzenpost-$(distro)_base \
+		--build-arg BASE_IMAGE=$(base_image) --build-arg GO_VERSION=$(GO_VERSION) \
+		-f $(base_dockerfile) .
 	touch $@
 
 go-mod-tidy: $(distro)_base.stamp | $(net_name) $(cache_dir)
@@ -696,5 +710,13 @@ rootshell: $(distro)_base.stamp
 test: wait
 	$(MAKE) -C ../client testargs=$(testargs) dockerdockertest
 
+# Bring the testnet up on every supported distro in turn (uses the shared
+# build cache). This is what the DISTROS list exists for.
+test-distros:
+	@for d in $(DISTROS); do \
+		echo "=== distro=$$d ==="; \
+		$(MAKE) distro=$$d start wait stop; \
+	done
+
 check-go-version:
-	podman run --rm katzenpost-alpine_base go version
+	$(docker) run --rm katzenpost-$(distro)_base go version
