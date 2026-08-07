@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 David Stainton
 # SPDX-License-Identifier: AGPL-3.0-only
 
-# Rust build image for the pigeonhole-cp thin-client tool (Part 5 of the
-# docker rework). Built FROM the per-distro katzenpost base image so the
+# Rust build image for the pigeonhole-cp thin-client tool. Built FROM the
+# per-distro katzenpost base image so the
 # compiled binary links against the same C library as the runtime base
 # image (musl on alpine, glibc on debian/ubuntu), which keeps the per-distro
 # cargo caches consistent with the toolchain. The katzenpost base images

@@ -6,7 +6,10 @@ ARG BASE_IMAGE=docker.io/debian:trixie
 FROM ${BASE_IMAGE}
 
 ARG TARGETARCH
-ARG GO_VERSION=1.26.2
+# GO_VERSION is supplied by the Makefile, which reads it from ../go.mod as
+# the single source of truth for the toolchain version. It is intentionally
+# not defaulted here so a direct build fails rather than pinning a stale Go.
+ARG GO_VERSION
 
 RUN useradd -m -s /bin/bash katzenpost
 
@@ -19,6 +22,8 @@ RUN apt-get update && apt-get upgrade -y && \
         bash perl coreutils git
 
 # Install Go
-RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz | tar -C /usr/local -xzf - && \
-    ln -s /usr/local/go/bin/go /usr/bin/go && \
+RUN set -eu; \
+    test -n "$GO_VERSION" || { echo "GO_VERSION build-arg is required (the Makefile passes it from go.mod)" >&2; exit 1; }; \
+    curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz | tar -C /usr/local -xzf -; \
+    ln -s /usr/local/go/bin/go /usr/bin/go; \
     ln -s /usr/local/go/bin/gofmt /usr/bin/gofmt
