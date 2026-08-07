@@ -1,4 +1,4 @@
-.PHONY: clean clean-data clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test test-distros rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore
+.PHONY: clean clean-data clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test test-distros rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -30,6 +30,10 @@ help:
 	@echo " pumba-stop         - stop every katzenpost_pumba_* chaos container"
 	@echo " status             - show testnet consensus status"
 	@echo " show-latest-vote   - does what it says"
+	@echo " thin-client-sync   - clone/update docker/thin_client at thin_client_ref"
+	@echo " \$(net_name)/pigeonhole-cp.\$(distro) - build pigeonhole-cp (rust) into \$(net_name)/"
+	@echo " pigeonhole-cp-genkey - print a fresh pigeonhole channel keypair"
+	@echo " pigeonhole-cp-roundtrip - round-trip a file through a pigeonhole channel"
 	@echo " run-ping           - send a ping over the testnet"
 	@echo " clean-bin          - stop, and delete compiled binaries"
 	@echo " clean-local        - stop, and delete data and binaries"
@@ -128,6 +132,20 @@ cache_dir=cache
 # capture that, so the build cache is scoped per distro.
 go_mod_cache=$(cache_dir)/go
 go_build_cache=$(cache_dir)/go-build-$(distro)
+
+# Part 5: thin_client / pigeonhole-cp (rust). thin-client-sync clones the
+# pinned ref into docker/thin_client; thin_client_dir?= overrides that with
+# an existing checkout (devs, and thin_client's own CI, which must build
+# the exact code under test rather than a re-clone). The rust build image
+# is built FROM the per-distro base image so binary and runtime share a C
+# library; the cargo home and target dirs are cached per distro the same
+# way the go build cache is.
+thin_client_ref?=0.0.23
+thin_client_dir?=thin_client
+thin_client_mount=-v $(shell readlink -f $(thin_client_dir)):/go/thin_client:ro
+cargo_home=$(cache_dir)/cargo-home-$(distro)
+cargo_target=$(cache_dir)/cargo-target-$(distro)
+roundtrip_size?=65536
 
 # genconfig_args is shared by the docker-compose generation inside the
 # base image and the host-side config-only target. Bools and tunables
@@ -326,13 +344,19 @@ testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro
 $(net_name):
 	mkdir -vp $(net_name)
 
-$(cache_dir): $(cache_dir)/go $(go_build_cache)
+$(cache_dir): $(cache_dir)/go $(go_build_cache) $(cargo_home) $(cargo_target)
 
 $(cache_dir)/go:
 	mkdir -vp $(cache_dir)/go
 
 $(go_build_cache):
 	mkdir -vp $(go_build_cache)
+
+$(cargo_home):
+	mkdir -vp $(cargo_home)
+
+$(cargo_target):
+	mkdir -vp $(cargo_target)
 
 $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
@@ -579,6 +603,15 @@ $(distro)_base.stamp: $(base_dockerfile)
 		-f $(base_dockerfile) .
 	touch $@
 
+# Rust build image for pigeonhole-cp, layered on the per-distro base image
+# (same C library as the runtime, per-distro cargo caches). Only the
+# pigeonhole-cp targets build this; `start`/`wait` stay rust-free.
+$(distro)_rust.stamp: Dockerfile.rust $(distro)_base.stamp
+	$(docker) build -t katzenpost-$(distro)_rust \
+		--build-arg BASE_IMAGE=katzenpost-$(distro)_base \
+		-f Dockerfile.rust .
+	touch $@
+
 go-mod-tidy: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} katzenpost-$(distro)_base \
 			$(sh) -c "go mod tidy"
@@ -708,6 +741,61 @@ run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp $(net_nam
             -config /$(net_name)/client/thinclient-bridge.toml \
             -payload $(cp_payload) -sweep "$(cp_sweep)" -propagation $(cp_propagation) \
             -metrics 0.0.0.0:$(cp_metrics_port)
+
+# ---------------------------------------------------------------------
+# thin_client / pigeonhole-cp (rust). These targets are the only ones
+# that touch the thin_client checkout; `start`/`wait` and everything
+# else stay rust-free, so katzenqt and thin_client CI calling
+# `make start wait` never pay for the rust toolchain.
+#
+# thin-client-sync clones github.com/katzenpost/thin_client at
+# thin_client_ref into docker/thin_client (gitignored). It refuses to
+# touch an overridden thin_client_dir (dev checkouts, and thin_client's
+# own CI pointing at the checkout under test). The fetch is best-effort
+# so an already-synced offline checkout still builds.
+thin-client-sync:
+	@if [ "$(thin_client_dir)" != "thin_client" ]; then \
+		echo "thin_client_dir=$(thin_client_dir) is overridden; thin-client-sync skipped (will not touch your checkout)."; \
+	elif [ -d thin_client/.git ]; then \
+		git -C thin_client fetch --tags --depth 1 origin || true; \
+		git -C thin_client checkout $(thin_client_ref); \
+	else \
+		git clone --depth 1 --branch $(thin_client_ref) https://github.com/katzenpost/thin_client.git thin_client; \
+	fi
+
+# Build the pigeonhole-cp binary with cargo inside the rust image and
+# copy it into $(net_name)/pigeonhole-cp.$(distro), mirroring the naming
+# of the go binaries. thin-client-sync is a phony prerequisite on
+# purpose: cargo is incremental, so an unchanged source tree is a fast
+# no-op, and the copy always picks up whatever cargo produced.
+$(net_name)/pigeonhole-cp.$(distro): $(distro)_rust.stamp thin-client-sync | $(net_name) $(cache_dir)
+	@if [ ! -f $(thin_client_dir)/Cargo.toml ]; then \
+		echo "error: no Cargo.toml at $(thin_client_dir). Set thin_client_dir to a thin_client checkout or run 'make thin-client-sync'."; exit 1; \
+	fi
+	$(docker) run --rm ${docker_args} ${thin_client_mount} \
+		-v $(shell readlink -f .)/$(cargo_home):/cargo-home \
+		-v $(shell readlink -f .)/$(cargo_target):/cargo-target \
+		-e CARGO_HOME=/cargo-home \
+		katzenpost-$(distro)_rust \
+		bash -c "cd /go/thin_client && cargo build --release --bin pigeonhole-cp --features cli --target-dir /cargo-target"
+	cp $(cargo_target)/release/pigeonhole-cp $@
+	@echo "pigeonhole-cp built at $@"
+
+# Generate a fresh Pigeonhole channel keypair. Prints the read/write
+# capabilities and first index; wire them into the send/receive
+# targets' variables.
+pigeonhole-cp-genkey: $(net_name)/pigeonhole-cp.$(distro)
+	$(docker) run --network=host --rm $(mount_net_name) katzenpost-$(distro)_base \
+		/$(net_name)/pigeonhole-cp.$(distro) genkey -c /$(net_name)/client/thinclient.toml
+
+# End-to-end round-trip of a random $(roundtrip_size)-byte file through a
+# pigeonhole channel, using the pigeonhole_cp_roundtrip.sh wrapper, the
+# make-built binary, and the generated config (whose dial address carries
+# the Part 3 base_port band). Runs on --network=host inside the base image
+# so the binary's C library always matches, whatever the distro.
+pigeonhole-cp-roundtrip: $(net_name)/pigeonhole-cp.$(distro)
+	$(docker) run --network=host --rm ${docker_args} $(mount_net_name) katzenpost-$(distro)_base \
+		$(sh) -c '/go/katzenpost/tools/chaos/scripts/pigeonhole_cp_roundtrip.sh $(roundtrip_size) /$(net_name)/client/thinclient.toml /$(net_name)/pigeonhole-cp.$(distro)'
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)

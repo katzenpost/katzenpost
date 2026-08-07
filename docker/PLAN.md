@@ -42,7 +42,7 @@
 
 - **5a. Pinned auto-checkout**: `make thin-client-sync` clones `github.com/katzenpost/thin_client` at `thin_client_ref?=` (tag like `0.0.23`/commit) into gitignored `docker/thin_client/` (visible to the build container via the repo mount).
 - **5b. `thin_client_dir?=` override**: devs point at their own checkout; thin_client's own CI sets it to its checkout-under-test (avoids a nested clone, tests the exact code under test).
-- **5c. Build in-container**: rust toolchain added to the base images; `cargo build --release --bin pigeonhole-cp --features cli`, cache under `cache/cargo`.
+- **5c. Build in-container**: rust toolchain in a separate `Dockerfile.rust` layered on the per-distro base image (base images stay rust-free); `cargo build --release --bin pigeonhole-cp --features cli`, caches under `cache/cargo-home-$(distro)` / `cache/cargo-target-$(distro)`; the build target is the file `$(net_name)/pigeonhole-cp.$(distro)` (`.$(distro)` suffix like the go binaries).
 - **5d. Scope**: only `pigeonhole-cp-*`/`thin-client-sync` targets depend on thin_client; `start`/`wait` and all existing targets stay thin_client-free (thin_client CI and katzenqt CI call `make start wait`).
 - **5e. Runtime**: targets run the binary against `$(net_name)/client/thinclient.toml` (dial address carries the 3b port). Extend `tools/chaos/scripts/pigeonhole_cp_roundtrip.sh`, treating thin_client's build as the source of truth (that script currently references a different pigeonhole-cp, per your correction).
 - **5f. Pin-sync table**: docker Makefile pins thin_client; cross-repo features now bump four cells in lockstep.

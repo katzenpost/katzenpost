@@ -8,8 +8,10 @@ docker/alpine_base.stamp
 docker/alpine_go_mod.stamp
 docker/debian_base.stamp
 docker/debian_go_mod.stamp
+docker/*_rust.stamp
 docker/cache
 docker/voting_mixnet
+docker/thin_client
 cmd/genconfig/genconfig
 cmd/server/server
 cmd/dirauth/dirauth

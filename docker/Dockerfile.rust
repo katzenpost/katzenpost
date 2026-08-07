@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 David Stainton
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Rust build image for the pigeonhole-cp thin-client tool (Part 5 of the
+# docker rework). Built FROM the per-distro katzenpost base image so the
+# compiled binary links against the same C library as the runtime base
+# image (musl on alpine, glibc on debian/ubuntu), which keeps the per-distro
+# cargo caches consistent with the toolchain. The katzenpost base images
+# themselves stay free of Rust so `make start wait` never pays for it.
+#
+# The katzenpost base image already ships gcc, make, bash, curl and git,
+# which is everything cargo needs (rusqlite is built with the bundled
+# sqlite). Rustup installs into /root; build containers run as uid 0
+# (rootless podman maps that to the invoking user), so /root is writable.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG RUST_PROFILE=minimal
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --profile ${RUST_PROFILE} --default-toolchain stable --no-modify-path
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN rustc --version && cargo --version

@@ -17,17 +17,22 @@
 #   pigeonhole_cp_roundtrip.sh [size-bytes] [thinclient.toml] [pigeonhole-cp]
 #
 # Default size is 65536 bytes. Default thinclient.toml is the
-# docker-mixnet's generated path; default binary is the release build at
-# ~/thin_client/target/release/pigeonhole-cp.
+# docker-mixnet's generated path; default binary is the pigeonhole-cp that
+# the docker Makefile builds (make docker=podman
+# <net_name>/pigeonhole-cp.<distro>), which is the source of truth for the
+# tool rather than a separate checkout.
 set -euo pipefail
 
+script_dir=$(cd "$(dirname "$0")" && pwd)
+repo_root=$(cd "$script_dir/../../.." && pwd)
+
 size="${1:-65536}"
-config="${2:-/home/human/katzenpost/docker/voting_mixnet/client/thinclient.toml}"
-binary="${3:-/home/human/thin_client/target/release/pigeonhole-cp}"
+config="${2:-$repo_root/docker/voting_mixnet/client/thinclient.toml}"
+binary="${3:-$repo_root/docker/voting_mixnet/pigeonhole-cp.alpine}"
 
 if [ ! -x "$binary" ]; then
     echo "pigeonhole_cp_roundtrip: $binary is not executable; build it first via:" >&2
-    echo "  cd ~/thin_client && cargo build --release --bin pigeonhole-cp --features cli" >&2
+    echo "  (cd $repo_root/docker && make docker=podman voting_mixnet/pigeonhole-cp.alpine)" >&2
     exit 2
 fi
 if [ ! -f "$config" ]; then
