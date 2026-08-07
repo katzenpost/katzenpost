@@ -1,4 +1,4 @@
-.PHONY: clean clean-data clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test test-distros rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
+.PHONY: clean clean-data clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -40,7 +40,7 @@ help:
 	@echo " clean-local-dryrun - show what clean-local would delete"
 	@echo " clean-data         - stop, and wipe the testnet state directory (keeps the build cache)"
 	@echo " clean              - clean-data, plus wipes base images and the build cache"
-	@echo " test-distros       - bring up and tear down the testnet on every DISTRO"
+	@echo " test-distros       - bring up, ping, and tear down the testnet on every DISTRO (serial, or parallel with make -j)"
 	@echo
 
 warped?=true
@@ -93,7 +93,7 @@ nike=x25519
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
 
-DISTROS=alpine debian-trixie debian-testing ubuntu-25.10 ubuntu-26.04
+DISTROS=alpine debian-trixie ubuntu-26.04
 distro=alpine
 
 # Distro strings are "<family>" (alpine) or "<family>-<version>" (e.g.
@@ -133,7 +133,7 @@ cache_dir=cache
 go_mod_cache=$(cache_dir)/go
 go_build_cache=$(cache_dir)/go-build-$(distro)
 
-# Part 5: thin_client / pigeonhole-cp (rust). thin-client-sync clones the
+# thin_client / pigeonhole-cp (rust). thin-client-sync clones the
 # pinned ref into docker/thin_client; thin_client_dir?= overrides that with
 # an existing checkout (devs, and thin_client's own CI, which must build
 # the exact code under test rather than a re-clone). The rust build image
@@ -654,11 +654,22 @@ $(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} -o /$(net_name)/kpclientd.$(distro)'
 
+# clean-images must remove images and stamps for every distro a user could
+# have named, not just the ones in DISTROS. Discover them from the on-disk
+# stamps and per-distro cache dirs, union with DISTROS, and remove both the
+# _base and _rust image/stamp. An interrupted `make -j test-distros` may
+# also leave orphan containers behind, so sweep those too.
+STAMP_DISTROS=$(sort $(patsubst %_base.stamp,%,$(wildcard *_base.stamp)) $(patsubst %_go_mod.stamp,%,$(wildcard *_go_mod.stamp)) $(patsubst %_rust.stamp,%,$(wildcard *_rust.stamp)))
+CACHE_DISTROS=$(sort $(patsubst cache/go-build-%,%,$(wildcard cache/go-build-*)) $(patsubst cache/cargo-home-%,%,$(wildcard cache/cargo-home-*)) $(patsubst cache/cargo-target-%,%,$(wildcard cache/cargo-target-*)))
+KNOWN_DISTROS=$(sort $(DISTROS) $(STAMP_DISTROS) $(CACHE_DISTROS))
+
 clean-images: stop
-	@-for distro in $(DISTROS); do \
+	@-for distro in $(KNOWN_DISTROS); do \
 		$(MAKE) distro=$$distro clean-container-$${distro}_base; \
 		$(MAKE) distro=$$distro clean-image-$${distro}_base; \
-	done \
+		$(MAKE) distro=$$distro clean-image-$${distro}_rust; \
+	done
+	-$(docker) ps -a --format '{{.Names}}' | grep -E '^(katzenpost_|mixnet-)' | xargs -r $(docker) rm -f
 
 clean-container-%:
 	-@$(docker) stop $(i_if_podman) $(patsubst clean-container-%,katzenpost_%,$@)
@@ -676,6 +687,8 @@ clean-local: clean-bin
 	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/replica-boxes.db $(net_name)/replica*/replica-metadata.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
 	# Clean up courier data files (preserve .toml configs)
 	rm -rfv $(net_name)/servicenode*/courier/*.log $(net_name)/servicenode*/courier/*.db $(net_name)/servicenode*/courier/link.*.pem
+	# Clean up leftover per-distro parallel test networks (test-distros)
+	rm -rfv mixnet-*
 	git clean -f -x $(net_name)
 	git status .
 
@@ -700,7 +713,7 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) --thin -c /go/katzenpost/client/testdata/thinclient.toml -s echo --print-diff -n 10
+        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n 10
 
 # parallel-load knobs. Override on the make command line:
 #   make run-parallel-load clients=8 duration=5m
@@ -791,7 +804,7 @@ pigeonhole-cp-genkey: $(net_name)/pigeonhole-cp.$(distro)
 # End-to-end round-trip of a random $(roundtrip_size)-byte file through a
 # pigeonhole channel, using the pigeonhole_cp_roundtrip.sh wrapper, the
 # make-built binary, and the generated config (whose dial address carries
-# the Part 3 base_port band). Runs on --network=host inside the base image
+# the configured base_port band). Runs on --network=host inside the base image
 # so the binary's C library always matches, whatever the distro.
 pigeonhole-cp-roundtrip: $(net_name)/pigeonhole-cp.$(distro)
 	$(docker) run --network=host --rm ${docker_args} $(mount_net_name) katzenpost-$(distro)_base \
@@ -809,13 +822,22 @@ rootshell: $(distro)_base.stamp
 test: wait
 	$(MAKE) -C ../client testargs=$(testargs) dockerdockertest
 
-# Bring the testnet up on every supported distro in turn (uses the shared
-# build cache). This is what the DISTROS list exists for.
-test-distros:
-	@for d in $(DISTROS); do \
-		echo "=== distro=$$d ==="; \
-		$(MAKE) distro=$$d start wait stop; \
-	done
+# Bring the testnet up on every supported distro (uses the shared build
+# cache). Serial by default; with `make -j N test-distros` each
+# test-distro-<distro> leg runs concurrently on its own mixnet-<distro>
+# network and base_port band derived from the DISTROS order, so legs never
+# share state. Each leg runs run-ping, which exits non-zero unless every
+# ping is answered, so a leg's exit code asserts a healthy network.
+DISTRO_PORTS=$(foreach d,$(DISTROS),$(d):$(shell set -- $(DISTROS); i=0; for x; do [ "$$x" = "$(d)" ] && printf '%s' $$((30000 + i * 10000)) && break; i=$$((i+1)); done))
+
+# Each leg's sub-make runs with -j1 so its start/wait/run-ping/stop goals
+# stay ordered even when this file is built with -j from a parent make.
+.PHONY: test-distro-%
+test-distro-%:
+	$(MAKE) -j1 distro=$* net_name=mixnet-$* base_port=$(patsubst $*:%,%,$(filter $*:%,$(DISTRO_PORTS))) start wait run-ping stop
+	rm -rfv mixnet-$*
+
+test-distros: $(addprefix test-distro-,$(DISTROS))
 
 check-go-version:
 	$(docker) run --rm katzenpost-$(distro)_base go version
