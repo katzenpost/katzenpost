@@ -89,6 +89,16 @@ var (
 // probing on every write) keeps the hot path a single atomic load.
 const storageCheckInterval = 30 * time.Second
 
+// Pebble value lifetimes: a value returned by db.Get is valid only until
+// its Closer is closed, and a key or value returned by an iterator only
+// until the next positioning call. This file passes those borrowed
+// slices straight to pigeonhole.BoxFromBytes and keeps the resulting Box
+// well past the borrow, Rebalance most of all, since it hands the
+// payload to another goroutine. That is sound only because Box.Parse
+// copies every field it produces, a property pinned by
+// TestParseBoxDoesNotAliasInput in the pigeonhole package. Any new code
+// that retains a Pebble-owned slice without passing through that copy
+// must clone it first.
 type state struct {
 	worker.Worker
 
@@ -96,9 +106,15 @@ type state struct {
 	db     *pebble.DB
 	// metaDB holds small replica-local bookkeeping records that are
 	// not box data, e.g. the storage-replica-set fingerprint used to
-	// decide whether a startup rebalance is necessary.
+	// decide whether a startup rebalance is necessary. It is a
+	// separate database rather than a reserved key prefix within db so
+	// that the GC's DeleteRange over the box keyspace (state_gc.go)
+	// can never reach it.
 	metaDB *pebble.DB
-	log    *logging.Logger
+	// cache is the block cache shared by db and metaDB. state holds one
+	// reference to it and each database holds its own until closed.
+	cache *pebble.Cache
+	log   *logging.Logger
 
 	// locksMu protects boxLocks and every boxLock's refCount. Held only
 	// briefly during a map lookup / refCount adjustment, not across
@@ -173,6 +189,10 @@ func (s *state) Close() {
 	if s.db != nil {
 		s.db.Close()
 		s.db = nil
+	}
+	if s.cache != nil {
+		s.cache.Unref()
+		s.cache = nil
 	}
 }
 
@@ -270,12 +290,16 @@ func (s *state) refreshStorageFull() {
 func (s *state) initDB() {
 	s.log.Debug("state: Initializing database")
 
+	// One cache serves both databases; pebbleOptions is called per Open
+	// because Pebble retains the Options value it is given.
+	s.cache = pebble.NewCache(pebbleBlockCacheSize)
+
 	var err error
-	s.db, err = pebble.Open(s.boxesDBPath(), &pebble.Options{})
+	s.db, err = pebble.Open(s.boxesDBPath(), s.pebbleOptions(s.cache))
 	if err != nil {
 		panic(err)
 	}
-	s.metaDB, err = pebble.Open(s.metadataDBPath(), &pebble.Options{})
+	s.metaDB, err = pebble.Open(s.metadataDBPath(), s.pebbleOptions(s.cache))
 	if err != nil {
 		panic(err)
 	}
@@ -310,6 +334,7 @@ func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pi
 			s.log.Errorf("state: Failed to read from database: %s", err)
 			return nil, ErrFailedDBRead
 		}
+		// value is borrowed until closer.Close(); BoxFromBytes copies.
 		box, err := pigeonhole.BoxFromBytes(value)
 		closer.Close()
 		if err != nil {
@@ -365,6 +390,8 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 			s.log.Errorf("state: Failed to check existing entry for BoxID %x: %s", replicaWrite.BoxID, err)
 			return fmt.Errorf("failed to check existing entry: %w", err)
 		}
+		// existing is borrowed until closer.Close(); BoxFromBytes copies,
+		// so storedBox stays valid for the comparison below.
 		storedBox, perr := pigeonhole.BoxFromBytes(existing)
 		closer.Close()
 		if perr == nil &&
@@ -529,6 +556,10 @@ func (s *state) Rebalance(trigger string) error {
 			boxID := make([]byte, 32)
 			copy(boxID, key[boxIDOffset:boxIDOffset+32])
 
+			// it.Value() is borrowed until the next it.Next();
+			// replicaWriteFromBlob parses through BoxFromBytes, which
+			// copies, so writeCmd owns its payload and may outlive this
+			// loop in the connector's queue.
 			writeCmd, err := s.replicaWriteFromBlob(it.Value())
 			if err != nil {
 				s.log.Errorf("state: Failed to create ReplicaWrite from blob: %s", err)
