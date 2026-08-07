@@ -36,7 +36,7 @@
 
 ### Part 4 — Docs
 
-- **4a.** Rewrite `docker/README.rst`: dead targets, bridge-network layout, per-network (`net_name=`/`base_port=`), multi-distro incl. drop-in versions + `test-distros`, per-binary dev-restart, thin_client targets. (This PLAN.md replaces it as the source of truth for the redesign; README gets the user-facing usage.)
+- **4a.** Rewrite `docker/README.rst`: dead targets, bridge-network layout, per-network (`net_name=`/`base_port=`), multi-distro incl. drop-in versions + `test-distros`, per-binary dev-restart, thin_client targets. (This PLAN.md replaces it as the source of truth for the redesign; README gets the user-facing usage.) **Implemented**: README rewritten ground-up (requirements/podman socket, quick start, port band, multi-distro, dev loop, metrics, pumba, rust targets, caches, clean semantics, docker integration tests); the dead `test` target (`dockerdockertest`) rewired to `dockertest-all` + `dockertest_pki_raw`; `dockertest_pki_raw` now also matches `TestGetDirectoryAuthorities`. Probes (August 2026): `start wait`, `dockertest-all`, `dockertest_pki_raw` all PASS — no exclusion notes needed.
 
 ### Part 5 — thin_client / pigeonhole-cp dependency (rust)
 
