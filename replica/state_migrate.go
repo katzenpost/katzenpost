@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/linxGnu/grocksdb"
@@ -52,10 +54,20 @@ import (
 //     total-sst-files-size (live SSTs only). For a "reject writes before the
 //     disk fills" guard that errs safe.
 //
-//   - Simpler iterator code. Pebble iterators own their key/value slices, so
-//     the pervasive key.Free()/value.Free() dance grocksdb required is gone.
+//   - Simpler iterator code. Pebble manages the memory behind the keys and
+//     values it hands out, so the pervasive key.Free()/value.Free() dance
+//     grocksdb required is gone. Note that this is not a licence to retain
+//     them: they are borrowed, not given. A value from DB.Get is valid only
+//     until its Closer is closed and an iterator's key or value only until
+//     the next positioning call, because Pebble reuses the buffers. See the
+//     "Pebble value lifetimes" note above the state struct in state.go for
+//     what the read and rebalance paths rely on.
 //
-//   - Pure-Go storage build, once Phase 2 lands: no cgo, no librocksdb.
+//   - Pure-Go storage, once Phase 2 lands: no librocksdb link, no RocksDB
+//     version pin, no C++ toolchain in the storage path. This does not make
+//     the replica a cgo-free binary: highctidh, falcon, sphincsplus and
+//     sqisign all require cgo, so cmd/replica cannot build with
+//     CGO_ENABLED=0 whatever the database is written in.
 //
 // Phase 2 — remove RocksDB. Phase 1 (this file, plus the Pebble conversion of
 // state.go, state_gc.go, and state_rebalance_marker.go) is implemented and
@@ -133,6 +145,13 @@ func (s *state) migrateLegacyRocksDB() (migrated bool, err error) {
 		return false, err
 	}
 
+	// The copy runs while the legacy database is still on disk, so the
+	// data directory needs room for a second copy of it. Fail here
+	// rather than partway through the copy on a full disk.
+	if err := s.checkMigrationFreeSpace(); err != nil {
+		return false, err
+	}
+
 	// Open the legacy database read-only. errorIfWalFileExists is false
 	// so an uncleanly closed RocksDB database still migrates.
 	opts := grocksdb.NewDefaultOptions()
@@ -198,7 +217,60 @@ func (s *state) migrateLegacyRocksDB() (migrated bool, err error) {
 	if err := s.recordMigrationDone(); err != nil {
 		return false, err
 	}
+
+	// From here on the legacy database is frozen: nothing writes to it
+	// again. Operators need to know that rolling back is not free.
+	s.log.Warningf("state: %s is now stale and is retained only as a rollback source. "+
+		"Reverting to a RocksDB build will serve pre-migration data, and re-upgrading afterwards will not "+
+		"recover anything written in the meantime, because the migration marker is already recorded.",
+		s.dbPath())
 	return true, nil
+}
+
+// checkMigrationFreeSpace reports whether the filesystem backing the
+// data directory has room for a second copy of the legacy database.
+// The source size is a lower bound on what the copy needs: the Pebble
+// databases use comparable compression but also write a WAL. A probe
+// failure is not fatal, since refusing to start on an unreadable statfs
+// would be worse than attempting the migration.
+func (s *state) checkMigrationFreeSpace() error {
+	needed, err := dirSizeBytes(s.dbPath())
+	if err != nil {
+		return fmt.Errorf("state: cannot size legacy database %s: %w", s.dbPath(), err)
+	}
+	avail, ok := availableBytes(s.server.cfg.DataDir)
+	if !ok {
+		s.log.Warningf("state: cannot determine free space for %s, attempting migration anyway", s.server.cfg.DataDir)
+		return nil
+	}
+	if avail < needed {
+		return fmt.Errorf("state: insufficient free space to migrate: copying %s needs at least %d bytes, %s has %d available",
+			s.dbPath(), needed, s.server.cfg.DataDir, avail)
+	}
+	s.log.Debugf("state: migration free-space check passed: need at least %d bytes, %d available", needed, avail)
+	return nil
+}
+
+// dirSizeBytes returns the combined size of the regular files under path.
+func dirSizeBytes(path string) (uint64, error) {
+	var total uint64
+	err := filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			total += uint64(info.Size())
+		}
+		return nil
+	})
+	return total, err
 }
 
 // legacyMigrationDone reports whether the legacy RocksDB database has
@@ -277,8 +349,11 @@ func (s *state) copyColumnFamily(rocksDB *grocksdb.DB, ro *grocksdb.ReadOptions,
 // byte-for-byte, and returns the number of records verified. The byte
 // check confirms nothing is altered; the returned count, compared by the
 // caller against the source count, confirms nothing is missing or extra.
-// It returns an error on the first key missing from the source or value
-// mismatch.
+// It returns an error on the first value mismatch. A key absent from the
+// source does not surface as an error from GetCF, which reports a missing
+// key as an empty value with a nil error; it is caught by the value
+// comparison, since no stored record is empty, and by the caller's count
+// check.
 func (s *state) verifyColumnFamily(rocksDB *grocksdb.DB, ro *grocksdb.ReadOptions, cf *grocksdb.ColumnFamilyHandle, target *pebble.DB) (int64, error) {
 	it, err := target.NewIter(&pebble.IterOptions{})
 	if err != nil {

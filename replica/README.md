@@ -24,6 +24,24 @@ legacy `<DataDir>/replica.db` database so that it can be migrated to
 Pebble on startup. It will be removed in a future release once
 existing deployments have been migrated.
 
+### Migrating to Pebble
+
+The migration runs once, on the first boot of a Pebble-backed replica,
+and is recorded by a marker in the metadata database. Two things are
+worth knowing before you upgrade:
+
+- **Free space.** The copy runs while `replica.db` is still on disk, so
+  the data directory needs room for a second copy of it. The replica
+  checks this before starting the migration and refuses to proceed if
+  the space is not there.
+- **Rolling back is not free.** After a successful migration nothing
+  writes to `replica.db` again. Reverting to a RocksDB build will serve
+  the data as it stood at migration time, and re-upgrading afterwards
+  will not recover anything written during the rollback window, because
+  the migration marker is already recorded and the migration will not
+  run a second time. If you need to roll back and keep the intervening
+  writes, take a copy of the Pebble databases first.
+
 ## building / running
 
 Install the `RocksDB` dependencies on your host system.
