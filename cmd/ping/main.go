@@ -125,7 +125,10 @@ full client mode where this ping tool starts it's own client daemon.`,
 				os.Exit(0)
 			}()
 
-			executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff)
+			failed := executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff)
+			if failed > 0 {
+				return fmt.Errorf("ping success rate below 100%%: %d/%d pings failed", failed, cfg.Count)
+			}
 			return nil
 		},
 	}
@@ -210,14 +213,14 @@ func initializeFullClient(configFile string, logPath string, logLevel string) (*
 	return thinClient, daemon
 }
 
-// executePing performs the ping operation
-func executePing(thinClient *thin.ThinClient, service string, count, concurrency int, printDiff bool) {
+// executePing performs the ping operation and returns how many pings failed.
+func executePing(thinClient *thin.ThinClient, service string, count, concurrency int, printDiff bool) uint64 {
 	desc, err := thinClient.GetService(service)
 	if err != nil {
 		panic(err)
 	}
 
-	sendPings(thinClient, desc, count, concurrency, printDiff)
+	return sendPings(thinClient, desc, count, concurrency, printDiff)
 }
 
 // cleanup closes the thin client connection and shuts down the daemon if running
