@@ -421,6 +421,16 @@ func (p *pki) updateTimer(timer *time.Timer) {
 
 	p.log.Debugf("serverpki woke %v into epoch %v with %v remaining", elapsed, now, till)
 
+	// Reflect the current epoch's document in the readiness gauges on every
+	// wake, not just inside the descriptor-upload window. Without this a
+	// node that restarts mid-epoch with persisted mix keys leaves the gauge
+	// at its boot value of 0 until the next epoch boundary, even though the
+	// current consensus is served and its keys match; updateReadiness also
+	// records ready=false when no current-epoch document is cached yet, so
+	// the loop re-polls at recheckInterval and flips ready as soon as one
+	// arrives.
+	p.updateReadiness(now)
+
 	// Wake at the next epoch boundary when the descriptor upload window has
 	// already closed. This avoids repeatedly posting a descriptor that every
 	// authority will reject as Conflict/Late for the next epoch.
@@ -451,12 +461,10 @@ func (p *pki) updateTimer(timer *time.Timer) {
 		// No document for current epoch.
 		if p.entryForEpoch(now) == nil {
 			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval)
-			instrument.SetNodeReady(false, now)
 			timer.Reset(recheckInterval)
 		} else {
 			interval := vServer.PublishConsensusDeadline - elapsed
 			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, interval)
-			p.updateReadiness(now)
 			timer.Reset(interval)
 		}
 	}
