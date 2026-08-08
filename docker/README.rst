@@ -213,9 +213,8 @@ supplied.
 .. code-block:: console
 
    make stop            # compose down; containers stop, images and data stay
-   make clean-data      # stop + wipe ./voting_mixnet/ state (keeps the build cache)
+   make clean-local     # stop + wipe ./voting_mixnet/ state and binaries (keeps the build cache)
    make clean           # everything: images, stamps, caches, data, orphan containers
-   make clean-local     # stop + delete data and binaries (the everyday "reset to clean tree")
    make clean-local-dryrun  # preview clean-local
 
 ``clean`` discovers every distro a user could have named from the on-disk

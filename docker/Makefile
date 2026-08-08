@@ -1,4 +1,4 @@
-.PHONY: clean clean-data clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -39,8 +39,7 @@ help:
 	@echo " clean-bin          - stop, and delete compiled binaries"
 	@echo " clean-local        - stop, and delete data and binaries"
 	@echo " clean-local-dryrun - show what clean-local would delete"
-	@echo " clean-data         - stop, and wipe the testnet state directory (keeps the build cache)"
-	@echo " clean              - clean-data, plus wipes base images and the build cache"
+	@echo " clean              - the above, plus wipes base images and the build cache"
 	@echo " test-distros       - bring up, ping, and tear down the testnet on every DISTRO (serial, or parallel with make -j)"
 	@echo
 
@@ -304,7 +303,7 @@ gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 ifeq ($(docker),podman)
   # Rootless podman maps container uid 0 to the invoking user, so build
   # and compose artifacts stay user-owned and host `rm -rf`/`git clean`
-  # can delete them directly (see the `clean`/`clean-data` targets).
+  # can delete them directly (see the `clean`/`clean-local` targets).
   docker_user=0:0
   replace_name= --replace --name
   i_if_podman= -i
@@ -683,6 +682,10 @@ clean-image-%:
 clean-bin: stop
 	rm -vf ./$(net_name)/*.$(distro)
 
+# Light clean for the iteration loop: tear down the testnet and wipe the
+# state directory, but keep the go module/build cache. The cgo components
+# (highctidh) are slow to rebuild, so use this between most iterations and
+# reserve `clean` for full from-scratch verification.
 clean-local: clean-bin
 	# Clean up replica data files (preserve .toml configs)
 	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/replica-boxes.db $(net_name)/replica*/replica-metadata.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
@@ -695,12 +698,6 @@ clean-local: clean-bin
 
 clean-local-dryrun:
 	git clean -n -x $(net_name)
-
-# Light clean for the iteration loop: tear down the testnet and wipe the
-# state directory, but keep the go module/build cache. The cgo components
-# (highctidh) are slow to rebuild, so use this between most iterations and
-# reserve `clean` for full from-scratch verification.
-clean-data: stop clean-local
 
 clean: clean-images clean-local
 	# The go module cache is intentionally written read-only (dirs 0555,
