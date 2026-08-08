@@ -136,22 +136,41 @@ func runFetch(cfg Config) error {
 	signerNames := loadAuthorityNames(client)
 
 	// Try the daemon's current signed document straight away. Under
-	// --require-ready, skip this shortcut: readiness must be gated on the
-	// current epoch's consensus, which we only reliably get via the event
-	// sink.
-	if !cfg.RequireReady {
-		if doc, err := fetchSignedDocument(client, 0); err == nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
-			printDocument(doc, signerNames)
-			return nil
+	// --require-ready the waitForReady gate re-checks the live readiness
+	// gauges against the current expected epochs on every poll, so this
+	// document only supplies the node inventory; using the daemon's
+	// current (possibly previous-epoch) document does not weaken the
+	// gate. Dial() consumes the connect-time document without forwarding
+	// it to the event sink, so skipping this shortcut would otherwise
+	// stall readiness checks until the daemon's next PKI broadcast at the
+	// next epoch boundary.
+	if doc, err := fetchSignedDocument(client, 0); err == nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
+		if err := waitForReady(cfg, doc); err != nil {
+			return err
 		}
+		printDocument(doc, signerNames)
+		return nil
 	}
 
-	// Otherwise wait, via the event sink, for a consensus that satisfies the
-	// replica requirement, then fetch its signed form for that epoch.
 	eventSink := client.EventSink()
 	defer client.StopEventSink(eventSink)
 
+	// Under --require-ready, re-try the daemon's current document every few
+	// seconds in addition to reacting to broadcasts. Without the poll a
+	// connect that lands before the daemon caches a current document would
+	// idle in the event sink until the next epoch boundary. The event arm
+	// remains for the (unobserved) case where the daemon only delivers the
+	// document by broadcast.
 	for {
+		if cfg.RequireReady {
+			if doc, err := fetchSignedDocument(client, 0); err == nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
+				if err := waitForReady(cfg, doc); err != nil {
+					return err
+				}
+				printDocument(doc, signerNames)
+				return nil
+			}
+		}
 		select {
 		case event := <-eventSink:
 			docEvent, ok := event.(*thin.NewDocumentEvent)
@@ -172,6 +191,7 @@ func runFetch(cfg Config) error {
 			return nil
 		case <-client.HaltCh():
 			return fmt.Errorf("connection closed before receiving PKI document")
+		case <-time.After(2 * time.Second):
 		}
 	}
 }
