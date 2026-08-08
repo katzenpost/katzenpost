@@ -597,9 +597,9 @@ status:
 show-latest-vote:
 	@grep -A30 'Ready to send' $(net_name)/auth1/katzenpost.log |tail -30|sed /Sending/q
 
-wait: $(net_name)/running.stamp | $(cache_dir)
-	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient.toml -r 2
+wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
+	$(docker) run --network=$(net_name)_katzenpost-net ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready
 
 $(distro)_base.stamp: $(base_dockerfile)
 	$(docker) build -t katzenpost-$(distro)_base \

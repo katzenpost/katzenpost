@@ -130,6 +130,18 @@ var (
 			Help: "Number of DispatchReplication goroutines currently blocked acquiring a replicationSem slot. The cap is the package-level const maxConcurrentReplications (256) in replica/connector.go. Sustained values above zero would indicate the cap is acting as a constraint and a config field should be reconsidered; in practice the bounded work is sub-millisecond per goroutine so this gauge should stay at zero. Sibling of katzenpost_courier_dispatch_sem_waiters on the courier side.",
 		},
 	)
+	replicaReady = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_ready",
+			Help: "1 iff this replica's descriptor in the current consensus document carries the same per-replica-epoch envelope key this instance holds. 0 otherwise (including while booting or waiting for a current-epoch document).",
+		},
+	)
+	replicaCurrentEpoch = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_current_epoch",
+			Help: "The replica epoch whose consensus the replica_ready gauge was last computed against.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -154,6 +166,8 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(selfCheckOpsPerSecSaturated)
 		prometheus.MustRegister(selfCheckCores)
 		prometheus.MustRegister(replicationSemWaiters)
+		prometheus.MustRegister(replicaReady)
+		prometheus.MustRegister(replicaCurrentEpoch)
 	})
 
 	if address != "" {
@@ -262,4 +276,18 @@ func ReplicationSemWaitStart() {
 // slot obtained or shutdown).
 func ReplicationSemWaitEnd() {
 	replicationSemWaiters.Dec()
+}
+
+// SetReplicaReady sets the replica_ready gauge based on whether the
+// descriptor this replica published in the current consensus carries the
+// same per-replica-epoch envelope key this instance holds. Anything else
+// (no current-epoch document cached, mismatched keys) is 0, so a restart
+// is never reported ready until the consensus actually matches.
+func SetReplicaReady(ready bool, epoch uint64) {
+	if ready {
+		replicaReady.Set(1)
+	} else {
+		replicaReady.Set(0)
+	}
+	replicaCurrentEpoch.Set(float64(epoch))
 }
