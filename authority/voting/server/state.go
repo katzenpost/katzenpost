@@ -707,7 +707,6 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	return consensusOfOne, nil
 }
 
-// getThresholdConsensus returns a *pki.Document iff a threshold consensus is reached or error
 func (s *state) authorityName(pk [publicKeyHashSize]byte) string {
 	if name, ok := s.authorityNames[pk]; ok {
 		return name
@@ -715,6 +714,7 @@ func (s *state) authorityName(pk [publicKeyHashSize]byte) string {
 	return fmt.Sprintf("%x", pk)
 }
 
+// getThresholdConsensus returns a *pki.Document iff a threshold consensus is reached or error
 func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	// range over the certificates we have collected and see if we can collect enough signatures to make a consensus
 	if s.TryLock() {
