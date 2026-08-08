@@ -20,6 +20,7 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/courier/server/instrument"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -102,6 +103,15 @@ func (p *PKIWorker) HasCurrentPKIDocument() bool {
 	return p.EntryForEpoch(epoch) != nil
 }
 
+// updateReadiness refreshes the courier readiness gauges. A courier is
+// ready when it holds a PKI document for the current mixnet epoch; a
+// restarted courier starts at 0 and only reports ready once its worker
+// has fetched and cached the current consensus.
+func (p *PKIWorker) updateReadiness() {
+	epoch, _, _ := epochtime.Now()
+	instrument.SetCourierReady(p.HasCurrentPKIDocument(), epoch)
+}
+
 // ForceFetchPKI forces the PKI worker to fetch a new PKI document for the current epoch.
 // This is useful for integration tests where you want to ensure the courier has the latest
 // PKI document without waiting for the normal fetch cycle.
@@ -131,6 +141,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 	// Store the document and update replicas
 	p.StoreDocument(epoch, d, rawDoc)
 	p.replicas.UpdateFromPKIDoc(d)
+	p.updateReadiness()
 
 	p.GetLogger().Debugf("Successfully force fetched PKI document for epoch %v", epoch)
 	return nil
@@ -157,6 +168,7 @@ func (p *PKIWorker) worker() {
 		didUpdate := p.fetchDocuments(pkiCtx, isCanceled)
 		p.processDocuments(didUpdate)
 		p.updateCurrentEpoch(&lastUpdateEpoch)
+		p.updateReadiness()
 		p.UpdateTimer(timer)
 	}
 }
