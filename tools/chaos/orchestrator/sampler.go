@@ -65,7 +65,10 @@ func dumpContainerLogs(ctx context.Context, runtime string, repoRoot string, per
 	if runtime == "" {
 		runtime = "podman"
 	}
-	composeFile := filepath.Join(repoRoot, "docker", "voting_mixnet", "docker-compose.yml")
+	// FIXME: the compose path is hardcoded to the default distro's
+	// network dir; make dumpContainerLogs receive the network name (and
+	// thus distro) externally so it works for any net_name.
+	composeFile := filepath.Join(repoRoot, "docker", "mixnet-alpine", "docker-compose.yml")
 	listCmd := exec.CommandContext(ctx, runtime, "compose", "-f", composeFile, "ps", "--format", "{{.Name}}")
 	out, err := listCmd.Output()
 	if err != nil {

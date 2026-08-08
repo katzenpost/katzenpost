@@ -1,4 +1,4 @@
-DataDir = "/voting_mixnet/replica1"
+DataDir = "/mixnet-alpine/replica1"
 Identifier = "replica1"
 ReplicaID = 0
 WireKEMScheme = "xwing"
