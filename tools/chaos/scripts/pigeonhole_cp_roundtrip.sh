@@ -14,56 +14,49 @@
 # end-to-end signal that the existing Go integration tests cannot.
 #
 # Usage:
-#   pigeonhole_cp_roundtrip.sh [-n net_name] [size-bytes] [thinclient.toml] [pigeonhole-cp]
+#   pigeonhole_cp_roundtrip.sh [-s size-bytes] <thinclient.toml> <pigeonhole-cp>
 #
-# Default size is 65536 bytes. Default net_name is mixnet-alpine, and the
-# default thinclient.toml and binary are derived from it: docker/<net_name>/
-# client/thinclient.toml and docker/<net_name>/pigeonhole-cp.<distro>, where
-# the distro is taken as the net_name suffix after "mixnet-" (so
-# -n mixnet-debian-trixie selects the debian-trixie network and binary).
-# Explicit config/binary arguments always override the defaults. The default
-# binary is the pigeonhole-cp that the docker Makefile builds (make docker=podman
-# <net_name>/pigeonhole-cp.<distro>), which is the source of truth for the
-# tool rather than a separate checkout.
+# The config and binary are explicit caller-supplied paths; the script has
+# no knowledge of any particular network layout. That keeps it usable
+# against the docker testnet (the `make pigeonhole-cp-roundtrip` target in
+# docker/ supplies the generated config and make-built binary) or any other
+# mixnet deployment, real-world included. The default size is 65536 bytes.
 set -euo pipefail
-
-script_dir=$(cd "$(dirname "$0")" && pwd)
-repo_root=$(cd "$script_dir/../../.." && pwd)
 
 usage() {
     cat >&2 <<EOF
-Usage: $0 [-n net_name] [size-bytes] [thinclient.toml] [pigeonhole-cp]
+Usage: $0 [-s size-bytes] <thinclient.toml> <pigeonhole-cp>
 
-  -n net_name        network directory under docker/ (default: mixnet-alpine);
-                     derives the default config and binary from it
-  size-bytes         default 65536
-  thinclient.toml    default $repo_root/docker/<net_name>/client/thinclient.toml
-  pigeonhole-cp      default $repo_root/docker/<net_name>/pigeonhole-cp.<distro>
+  -s size-bytes      size of the random file to round-trip (default: 65536)
+  thinclient.toml    path to the thin-client config for the target mixnet
+  pigeonhole-cp      path to the pigeonhole-cp binary (must be executable)
 EOF
 }
 
-net_name="mixnet-alpine"
-while getopts "n:h" opt; do
+size=65536
+while getopts "s:h" opt; do
     case "$opt" in
-        n) net_name="$OPTARG" ;;
+        s) size="$OPTARG" ;;
         h) usage; exit 0 ;;
         *) usage; exit 2 ;;
     esac
 done
 shift $((OPTIND - 1))
 
-distro="${net_name#mixnet-}"
-size="${1:-65536}"
-config="${2:-$repo_root/docker/$net_name/client/thinclient.toml}"
-binary="${3:-$repo_root/docker/$net_name/pigeonhole-cp.$distro}"
+if [ "$#" -lt 2 ]; then
+    echo "pigeonhole_cp_roundtrip: config and binary are required" >&2
+    usage
+    exit 2
+fi
+config="$1"
+binary="$2"
 
 if [ ! -x "$binary" ]; then
-    echo "pigeonhole_cp_roundtrip: $binary is not executable; build it first via:" >&2
-    echo "  (cd $repo_root/docker && make docker=podman $net_name/pigeonhole-cp.$distro)" >&2
+    echo "pigeonhole_cp_roundtrip: $binary is not executable" >&2
     exit 2
 fi
 if [ ! -f "$config" ]; then
-    echo "pigeonhole_cp_roundtrip: $config not found; bring up the docker mixnet first" >&2
+    echo "pigeonhole_cp_roundtrip: $config not found" >&2
     exit 2
 fi
 

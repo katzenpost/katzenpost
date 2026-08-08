@@ -829,7 +829,7 @@ pigeonhole-cp-genkey: $(net_name)/pigeonhole-cp.$(distro)
 # so the binary's C library always matches, whatever the distro.
 pigeonhole-cp-roundtrip: $(net_name)/pigeonhole-cp.$(distro)
 	$(docker) run --network=host --rm ${docker_args} $(mount_net_name) katzenpost-$(distro)_base \
-		$(sh) -c '/go/katzenpost/tools/chaos/scripts/pigeonhole_cp_roundtrip.sh $(roundtrip_size) /$(net_name)/client/thinclient.toml /$(net_name)/pigeonhole-cp.$(distro)'
+		$(sh) -c '/go/katzenpost/tools/chaos/scripts/pigeonhole_cp_roundtrip.sh -s $(roundtrip_size) /$(net_name)/client/thinclient.toml /$(net_name)/pigeonhole-cp.$(distro)'
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)
