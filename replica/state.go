@@ -89,6 +89,11 @@ var (
 // probing on every write) keeps the hot path a single atomic load.
 const storageCheckInterval = 30 * time.Second
 
+// availableBytesFn indirects availableBytes so tests can simulate a
+// filesystem that is full, or one whose free space cannot be probed as
+// on Windows. Every free-space check in this package goes through it.
+var availableBytesFn = availableBytes
+
 // Pebble value lifetimes: a value returned by db.Get is valid only until
 // its Closer is closed, and a key or value returned by an iterator only
 // until the next positioning call. This file passes those borrowed
@@ -273,7 +278,7 @@ func (s *state) refreshStorageFull() {
 
 	if !full && cfg.MinFreeStorageMiB > 0 {
 		reserve := uint64(cfg.MinFreeStorageMiB) * bytesPerMiB
-		if avail, ok := availableBytes(s.server.cfg.DataDir); ok && avail < reserve {
+		if avail, ok := availableBytesFn(s.server.cfg.DataDir); ok && avail < reserve {
 			full = true
 			reason = fmt.Sprintf("free space %d bytes < MinFreeStorageMiB reserve %d MiB (%d bytes)", avail, cfg.MinFreeStorageMiB, reserve)
 		}

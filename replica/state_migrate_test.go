@@ -331,6 +331,110 @@ func TestMigrationVerifyRejectsBadCopy(t *testing.T) {
 	require.Error(t, err, "a record absent from the source must fail verification")
 }
 
+// TestMigrateLegacyRocksDBInsufficientFreeSpace asserts that the
+// migration refuses to start when the data directory cannot hold a
+// second copy of the legacy database, and that refusing leaves nothing
+// behind: no records copied and no marker, so freeing space and
+// restarting retries cleanly against the untouched source.
+func TestMigrateLegacyRocksDBInsufficientFreeSpace(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "replica-migrate-nospace-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	cur := currentReplicaEpoch()
+	var boxID [bacap.BoxIDSize]byte
+	_, err = rand.Reader.Read(boxID[:])
+	require.NoError(t, err)
+	seedLegacyRocksDB(t, dataDir, map[uint64][bacap.BoxIDSize]byte{cur: boxID}, [32]byte{})
+
+	// One byte free is never enough for a second copy of the source.
+	orig := availableBytesFn
+	availableBytesFn = func(string) (uint64, bool) { return 1, true }
+	defer func() { availableBytesFn = orig }()
+
+	st := newMigrateTestState(t, dataDir)
+
+	// initDB panics on a migration error, so open the Pebble databases
+	// directly and drive the migration itself.
+	st.db, err = pebble.Open(st.boxesDBPath(), &pebble.Options{})
+	require.NoError(t, err)
+	st.metaDB, err = pebble.Open(st.metadataDBPath(), &pebble.Options{})
+	require.NoError(t, err)
+	defer st.Close()
+
+	migrated, err := st.migrateLegacyRocksDB()
+	require.Error(t, err)
+	require.False(t, migrated)
+	require.ErrorContains(t, err, "insufficient free space")
+
+	done, err := st.legacyMigrationDone()
+	require.NoError(t, err)
+	require.False(t, done, "a refused migration must not record the marker")
+
+	_, closer, err := st.db.Get(boxKey(cur, boxID[:]))
+	if err == nil {
+		closer.Close()
+	}
+	require.ErrorIs(t, err, pebble.ErrNotFound,
+		"the space check runs before the copy, so no record may have been written")
+}
+
+// TestMigrateLegacyRocksDBProceedsWhenFreeSpaceUnknown pins the
+// deliberate asymmetry in checkMigrationFreeSpace: an unreadable probe
+// is not treated as "no space". availableBytes reports (0, false) on
+// Windows, where there is no portable statfs, and refusing to migrate
+// there would be worse than migrating unchecked.
+func TestMigrateLegacyRocksDBProceedsWhenFreeSpaceUnknown(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "replica-migrate-nospaceprobe-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	cur := currentReplicaEpoch()
+	var boxID [bacap.BoxIDSize]byte
+	_, err = rand.Reader.Read(boxID[:])
+	require.NoError(t, err)
+	seedLegacyRocksDB(t, dataDir, map[uint64][bacap.BoxIDSize]byte{cur: boxID}, [32]byte{})
+
+	orig := availableBytesFn
+	availableBytesFn = func(string) (uint64, bool) { return 0, false }
+	defer func() { availableBytesFn = orig }()
+
+	st := newMigrateTestState(t, dataDir)
+	st.initDB() // must not panic
+	defer st.Close()
+
+	done, err := st.legacyMigrationDone()
+	require.NoError(t, err)
+	require.True(t, done)
+
+	readBox, err := st.stateHandleReplicaRead(&pigeonhole.ReplicaRead{BoxID: boxID})
+	require.NoError(t, err)
+	require.Equal(t, boxID, readBox.BoxID)
+}
+
+func TestDirSizeBytes(t *testing.T) {
+	dir, err := os.MkdirTemp("", "replica-dirsize-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a"), make([]byte, 100), 0600))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "sub"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "b"), make([]byte, 200), 0600))
+
+	n, err := dirSizeBytes(dir)
+	require.NoError(t, err)
+	require.EqualValues(t, 300, n, "sizes must sum across subdirectories")
+
+	// A plain file must size too: a corrupt legacy replica.db can be a
+	// regular file rather than a RocksDB directory.
+	n, err = dirSizeBytes(filepath.Join(dir, "a"))
+	require.NoError(t, err)
+	require.EqualValues(t, 100, n)
+
+	_, err = dirSizeBytes(filepath.Join(dir, "does-not-exist"))
+	require.Error(t, err)
+}
+
 func TestMigrateLegacyRocksDBOpenFailure(t *testing.T) {
 	dataDir, err := os.MkdirTemp("", "replica-migrate-open-*")
 	require.NoError(t, err)

@@ -238,7 +238,7 @@ func (s *state) checkMigrationFreeSpace() error {
 	if err != nil {
 		return fmt.Errorf("state: cannot size legacy database %s: %w", s.dbPath(), err)
 	}
-	avail, ok := availableBytes(s.server.cfg.DataDir)
+	avail, ok := availableBytesFn(s.server.cfg.DataDir)
 	if !ok {
 		s.log.Warningf("state: cannot determine free space for %s, attempting migration anyway", s.server.cfg.DataDir)
 		return nil
