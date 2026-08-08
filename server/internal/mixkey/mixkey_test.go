@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -85,6 +86,48 @@ func TestCreateMixKey(t *testing.T) {
 		isReplay := k.IsReplay(tag[:])
 		assert.False(isReplay, "IsReplay() new: %v", hex.EncodeToString(tag[:]))
 	}
+}
+
+func TestMixKeyPersistRoundtrip(t *testing.T) {
+	require := require.New(t)
+
+	dir, err := os.MkdirTemp("", "mixkey_persist")
+	require.NoError(err, "MkdirTemp()")
+	defer os.RemoveAll(dir)
+
+	mynike := x25519.Scheme(rand.Reader)
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	k, err := New(testEpoch, geo)
+	require.NoError(err, "New()")
+	defer k.Deref()
+
+	wantPub := k.PublicBytes()
+	require.NoError(k.Persist(dir), "Persist()")
+
+	// No key file yet for an epoch that was never persisted.
+	_, found, err := Load(testEpoch+1, geo, dir)
+	require.NoError(err, "Load(missing) err")
+	require.False(found, "Load(missing) found")
+
+	// Load returns the same public key for the persisted epoch.
+	loaded, found, err := Load(testEpoch, geo, dir)
+	require.NoError(err, "Load() err")
+	require.True(found, "Load() found")
+	defer loaded.Deref()
+	require.Equal(wantPub, loaded.PublicBytes(), "public key preserved across Persist/Load")
+
+	// A corrupt file fails loudly instead of being silently loaded.
+	require.NoError(os.WriteFile(filepath.Join(dir, "mixkey-0.bin"), []byte("garbage"), 0600))
+	_, found, err = Load(0, geo, dir)
+	require.Error(err, "Load(corrupt) err")
+	require.False(found, "Load(corrupt) found")
+
+	// Remove deletes the persisted file.
+	Remove(testEpoch, dir)
+	_, found, err = Load(testEpoch, geo, dir)
+	require.NoError(err, "Load(after Remove) err")
+	require.False(found, "Load(after Remove) found")
 }
 
 func BenchmarkMixKey(b *testing.B) {

@@ -603,6 +603,12 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// production parity is maintained (operators never use genconfig
 	// to produce production configs).
 	cfg.Server.AllowHostnameAddresses = true
+	// Testnet node dirs are bind-mounted onto the host, so the dirauths'
+	// consensus survives a `make stop`/`make start` cycle; persist the mix
+	// keys across that clean shutdown so a restart doesn't leave the new
+	// instance's fresh keys mismatched with the retained consensus (which
+	// surfaces as first-hop MAC failures until the next epoch).
+	cfg.Server.PersistMixKeysOnShutdown = true
 	if isGateway {
 		cfg.Management = new(sConfig.Management)
 		cfg.Management.Enable = true
