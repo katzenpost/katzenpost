@@ -421,6 +421,39 @@ func buildBox() *Box {
 	return b
 }
 
+// TestParseBoxDoesNotAliasInput pins the property the replica's storage
+// path depends on: a parsed Box owns every one of its fields and shares
+// no memory with the buffer it was parsed from.
+//
+// replica/state.go hands ParseBox byte slices that Pebble owns and may
+// recycle. A DB.Get value is valid only until its Closer is closed and
+// an Iterator value only until the next positioning call, yet the
+// replica passes them straight in and keeps the resulting Box well past
+// that point; the rebalance path in particular dispatches the payload to
+// another goroutine. That is safe only because Parse copies. A future
+// generator change to a zero-copy parse would turn those sites into
+// use-after-free rather than fail anything there, so the property is
+// pinned here, in the package that provides it.
+func TestParseBoxDoesNotAliasInput(t *testing.T) {
+	want := buildBox()
+	blob := want.Bytes()
+
+	got, err := ParseBox(blob)
+	require.NoError(t, err)
+	require.Equal(t, want.BoxID, got.BoxID)
+	require.Equal(t, want.Payload, got.Payload)
+	require.Equal(t, want.Signature, got.Signature)
+
+	// Scribble over the whole source buffer. Any field that aliased it
+	// would change with it.
+	for i := range blob {
+		blob[i] = 0xFF
+	}
+	require.Equal(t, want.BoxID, got.BoxID, "BoxID must not alias the parse input")
+	require.Equal(t, want.Payload, got.Payload, "Payload must not alias the parse input")
+	require.Equal(t, want.Signature, got.Signature, "Signature must not alias the parse input")
+}
+
 func buildCopyCommand() *CopyCommand {
 	cap := []byte("test-write-capability-bytes")
 	return &CopyCommand{

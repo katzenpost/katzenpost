@@ -6,9 +6,10 @@ package replica
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"testing"
 
-	"github.com/linxGnu/grocksdb"
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
@@ -48,19 +49,20 @@ func putRawBox(t *testing.T, st *state, epoch uint64, boxID [bacap.BoxIDSize]byt
 		Payload:    payload,
 		Signature:  sig,
 	}
-	wo := grocksdb.NewDefaultWriteOptions()
-	defer wo.Destroy()
-	require.NoError(t, st.db.Put(wo, boxKey(epoch, boxID[:]), box.Bytes()))
+	require.NoError(t, st.db.Set(boxKey(epoch, boxID[:]), box.Bytes(), nil))
 }
 
 func boxPresent(t *testing.T, st *state, epoch uint64, boxID [bacap.BoxIDSize]byte) bool {
 	t.Helper()
-	ro := grocksdb.NewDefaultReadOptions()
-	defer ro.Destroy()
-	v, err := st.db.Get(ro, boxKey(epoch, boxID[:]))
-	require.NoError(t, err)
-	defer v.Free()
-	return v.Size() > 0
+	_, closer, err := st.db.Get(boxKey(epoch, boxID[:]))
+	if err != nil {
+		if errors.Is(err, pebble.ErrNotFound) {
+			return false
+		}
+		require.NoError(t, err)
+	}
+	defer closer.Close()
+	return true
 }
 
 func TestWipeStaleBoxes(t *testing.T) {

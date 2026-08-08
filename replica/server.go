@@ -532,6 +532,13 @@ func (s *Server) startServices(pkiClient pki.ReplicaNodeClient) error {
 	// so the worker's first iteration (which may call into Rebalance,
 	// reading s.PKIWorker) sees the assignment.
 	s.PKIWorker = pkiWorker
+
+	// Start the outgoing connection worker. The connector must be created
+	// before the PKI worker's goroutine is launched because
+	// handleDocumentUpdates reads p.server.connector.
+	s.log.Notice("start connector worker")
+	s.connector = newConnector(s)
+
 	pkiWorker.Start()
 
 	// Bring the listener(s) online.
@@ -545,10 +552,6 @@ func (s *Server) startServices(pkiClient pki.ReplicaNodeClient) error {
 		}
 		s.listeners = append(s.listeners, l)
 	}
-
-	// Start the outgoing connection worker
-	s.log.Notice("start connector worker")
-	s.connector = newConnector(s)
 
 	return nil
 }

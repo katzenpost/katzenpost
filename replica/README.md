@@ -19,6 +19,29 @@ the rest of Katzenpost because of the dependency on a slightly older
 version of RocksDB in order to maintain compatibility with the golang
 bindings.
 
+RocksDB is still currently required: it is used only to read the
+legacy `<DataDir>/replica.db` database so that it can be migrated to
+Pebble on startup. It will be removed in a future release once
+existing deployments have been migrated.
+
+### Migrating to Pebble
+
+The migration runs once, on the first boot of a Pebble-backed replica,
+and is recorded by a marker in the metadata database. Two things are
+worth knowing before you upgrade:
+
+- **Free space.** The copy runs while `replica.db` is still on disk, so
+  the data directory needs room for a second copy of it. The replica
+  checks this before starting the migration and refuses to proceed if
+  the space is not there.
+- **Rolling back is not free.** After a successful migration nothing
+  writes to `replica.db` again. Reverting to a RocksDB build will serve
+  the data as it stood at migration time, and re-upgrading afterwards
+  will not recover anything written during the rollback window, because
+  the migration marker is already recorded and the migration will not
+  run a second time. If you need to roll back and keep the intervening
+  writes, take a copy of the Pebble databases first.
+
 ## building / running
 
 Install the `RocksDB` dependencies on your host system.
@@ -59,6 +82,21 @@ go build
 ```
 
 ## Debugging (as replica operator)
+
+Box records now live in a Pebble database at `<DataDir>/replica-boxes.db`
+(with a small `<DataDir>/replica-metadata.db` for bookkeeping such as the
+rebalance fingerprint). The legacy RocksDB `<DataDir>/replica.db` is
+retained only as the migration source during the intermediate release and
+is removed in a later release.
+
+```shell
+# Pebble's CLI can inspect the box keyspace. It opens the database
+# read-write and therefore takes the same lock as a running replica, so
+# stop the replica first:
+for i in {1..5}; do echo "Replica $i"; go run github.com/cockroachdb/pebble/cmd/pebble@v1.1.5 db scan voting_mixnet/replica${i}/replica-boxes.db; done
+```
+
+For a pre-migration deployment that still has a RocksDB `replica.db`:
 
 ```shell
 apt install rocksdb-tools/testing

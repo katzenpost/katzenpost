@@ -9,12 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/linxGnu/grocksdb"
+	"github.com/cockroachdb/pebble"
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
@@ -37,14 +36,6 @@ const (
 
 	// boxIDOffset is where the BoxID begins inside an on-disk storage key.
 	boxIDOffset = keyEpochSize
-
-	// defaultCFName is RocksDB's implicit column family. Box records live here.
-	defaultCFName = "default"
-
-	// metadataCFName holds small replica-local bookkeeping records that
-	// are not box data, e.g. the storage-replica-set fingerprint used to
-	// decide whether a startup rebalance is necessary.
-	metadataCFName = "metadata"
 )
 
 func epochPrefix(epoch uint64) []byte {
@@ -98,16 +89,37 @@ var (
 // probing on every write) keeps the hot path a single atomic load.
 const storageCheckInterval = 30 * time.Second
 
+// availableBytesFn indirects availableBytes so tests can simulate a
+// filesystem that is full, or one whose free space cannot be probed as
+// on Windows. Every free-space check in this package goes through it.
+var availableBytesFn = availableBytes
+
+// Pebble value lifetimes: a value returned by db.Get is valid only until
+// its Closer is closed, and a key or value returned by an iterator only
+// until the next positioning call. This file passes those borrowed
+// slices straight to pigeonhole.BoxFromBytes and keeps the resulting Box
+// well past the borrow, Rebalance most of all, since it hands the
+// payload to another goroutine. That is sound only because Box.Parse
+// copies every field it produces, a property pinned by
+// TestParseBoxDoesNotAliasInput in the pigeonhole package. Any new code
+// that retains a Pebble-owned slice without passing through that copy
+// must clone it first.
 type state struct {
 	worker.Worker
 
 	server *Server
-	db     *grocksdb.DB
-	// metaCF references the metadata column family. Box reads and
-	// writes go through the default CF via the un-suffixed Get/Put/
-	// iterator helpers, so metaCF is only consulted for bookkeeping.
-	metaCF *grocksdb.ColumnFamilyHandle
-	log    *logging.Logger
+	db     *pebble.DB
+	// metaDB holds small replica-local bookkeeping records that are
+	// not box data, e.g. the storage-replica-set fingerprint used to
+	// decide whether a startup rebalance is necessary. It is a
+	// separate database rather than a reserved key prefix within db so
+	// that the GC's DeleteRange over the box keyspace (state_gc.go)
+	// can never reach it.
+	metaDB *pebble.DB
+	// cache is the block cache shared by db and metaDB. state holds one
+	// reference to it and each database holds its own until closed.
+	cache *pebble.Cache
+	log   *logging.Logger
 
 	// locksMu protects boxLocks and every boxLock's refCount. Held only
 	// briefly during a map lookup / refCount adjustment, not across
@@ -175,13 +187,17 @@ func newState(s *Server) *state {
 func (s *state) Close() {
 	s.log.Debug("state: Closing state")
 	s.Worker.Halt()
-	if s.metaCF != nil {
-		s.metaCF.Destroy()
-		s.metaCF = nil
+	if s.metaDB != nil {
+		s.metaDB.Close()
+		s.metaDB = nil
 	}
 	if s.db != nil {
 		s.db.Close()
 		s.db = nil
+	}
+	if s.cache != nil {
+		s.cache.Unref()
+		s.cache = nil
 	}
 }
 
@@ -189,6 +205,16 @@ func (s *state) dbPath() string {
 	path := filepath.Join(s.server.cfg.DataDir, "replica.db")
 	s.log.Debugf("state: Database path: %s", path)
 	return path
+}
+
+// boxesDBPath is the Pebble database holding box records.
+func (s *state) boxesDBPath() string {
+	return filepath.Join(s.server.cfg.DataDir, "replica-boxes.db")
+}
+
+// metadataDBPath is the Pebble database holding metadata records.
+func (s *state) metadataDBPath() string {
+	return filepath.Join(s.server.cfg.DataDir, "replica-metadata.db")
 }
 
 // startStorageWatcher launches the periodic storage-pressure sampler.
@@ -217,19 +243,15 @@ func (s *state) storageWatcher() {
 	}
 }
 
-// dbOnDiskBytes returns RocksDB's live SST footprint, or (0, false) if
-// the property is unavailable.
+// dbOnDiskBytes returns the Pebble databases' live on-disk footprint,
+// or (0, false) if the databases are not open.
 func (s *state) dbOnDiskBytes() (uint64, bool) {
 	if s.db == nil {
 		return 0, false
 	}
-	v := s.db.GetProperty("rocksdb.total-sst-files-size")
-	if v == "" {
-		return 0, false
-	}
-	n, err := strconv.ParseUint(v, 10, 64)
-	if err != nil {
-		return 0, false
+	n := s.db.Metrics().DiskSpaceUsage()
+	if s.metaDB != nil {
+		n += s.metaDB.Metrics().DiskSpaceUsage()
 	}
 	return n, true
 }
@@ -256,7 +278,7 @@ func (s *state) refreshStorageFull() {
 
 	if !full && cfg.MinFreeStorageMiB > 0 {
 		reserve := uint64(cfg.MinFreeStorageMiB) * bytesPerMiB
-		if avail, ok := availableBytes(s.server.cfg.DataDir); ok && avail < reserve {
+		if avail, ok := availableBytesFn(s.server.cfg.DataDir); ok && avail < reserve {
 			full = true
 			reason = fmt.Sprintf("free space %d bytes < MinFreeStorageMiB reserve %d MiB (%d bytes)", avail, cfg.MinFreeStorageMiB, reserve)
 		}
@@ -272,52 +294,25 @@ func (s *state) refreshStorageFull() {
 
 func (s *state) initDB() {
 	s.log.Debug("state: Initializing database")
-	opts := grocksdb.NewDefaultOptions()
-	opts.SetCreateIfMissing(true)
-	opts.SetCreateIfMissingColumnFamilies(true)
 
-	// Discover the column families already on disk. ListColumnFamilies
-	// errors when the database does not yet exist; in that case we are
-	// creating from scratch and need only the default family in the
-	// initial open list (the metadata CF is appended below).
-	existing, err := grocksdb.ListColumnFamilies(opts, s.dbPath())
-	if err != nil {
-		s.log.Debugf("state: ListColumnFamilies returned %s, treating as fresh database", err)
-		existing = []string{defaultCFName}
-	}
+	// One cache serves both databases; pebbleOptions is called per Open
+	// because Pebble retains the Options value it is given.
+	s.cache = pebble.NewCache(pebbleBlockCacheSize)
 
-	hasMeta := false
-	for _, name := range existing {
-		if name == metadataCFName {
-			hasMeta = true
-			break
-		}
-	}
-	cfNames := append([]string(nil), existing...)
-	if !hasMeta {
-		cfNames = append(cfNames, metadataCFName)
-	}
-
-	cfOpts := make([]*grocksdb.Options, len(cfNames))
-	for i := range cfNames {
-		cfOpts[i] = opts
-	}
-
-	db, handles, err := grocksdb.OpenDbColumnFamilies(opts, s.dbPath(), cfNames, cfOpts)
+	var err error
+	s.db, err = pebble.Open(s.boxesDBPath(), s.pebbleOptions(s.cache))
 	if err != nil {
 		panic(err)
 	}
-	s.db = db
-	for i, name := range cfNames {
-		switch name {
-		case metadataCFName:
-			s.metaCF = handles[i]
-		default:
-			handles[i].Destroy()
-		}
+	s.metaDB, err = pebble.Open(s.metadataDBPath(), s.pebbleOptions(s.cache))
+	if err != nil {
+		panic(err)
 	}
-	if s.metaCF == nil {
-		panic("state: metadata column family handle missing after open")
+
+	// On the first Pebble-backed boot, migrate any legacy RocksDB data
+	// into the Pebble databases exactly once.
+	if _, err := s.migrateLegacyRocksDB(); err != nil {
+		panic(err)
 	}
 	s.log.Debug("state: Database initialized successfully")
 }
@@ -331,27 +326,22 @@ func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pi
 		return nil, ErrDBClosed
 	}
 
-	ro := grocksdb.NewDefaultReadOptions()
-	defer ro.Destroy()
-
 	// Storage is bucketed by replica epoch; a tombstone written in a
 	// later epoch must shadow an earlier box, so we consult the kept
 	// window newest-first and return the first hit.
 	for _, ep := range keptEpochs(currentReplicaEpoch()) {
 		key := boxKey(ep, replicaRead.BoxID[:])
-		value, err := s.db.Get(ro, key)
+		value, closer, err := s.db.Get(key)
 		if err != nil {
+			if errors.Is(err, pebble.ErrNotFound) {
+				continue
+			}
 			s.log.Errorf("state: Failed to read from database: %s", err)
 			return nil, ErrFailedDBRead
 		}
-		if value.Size() == 0 {
-			value.Free()
-			continue
-		}
-		data := make([]byte, value.Size())
-		copy(data, value.Data())
-		value.Free()
-		box, err := pigeonhole.BoxFromBytes(data)
+		// value is borrowed until closer.Close(); BoxFromBytes copies.
+		box, err := pigeonhole.BoxFromBytes(value)
+		closer.Close()
 		if err != nil {
 			s.log.Errorf("state: Failed to deserialize box: %s", err)
 			return nil, ErrFailedToDeserialize
@@ -389,8 +379,6 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	bl := s.acquireBoxLock(replicaWrite.BoxID)
 	defer s.releaseBoxLock(bl, replicaWrite.BoxID)
 
-	ro := grocksdb.NewDefaultReadOptions()
-	defer ro.Destroy()
 	cur := currentReplicaEpoch()
 
 	// Writes are immutable; a duplicate by content within the retention
@@ -399,17 +387,18 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	// is rejected. We consult both retained epochs because a prior
 	// write may have landed just before an epoch boundary.
 	for _, ep := range keptEpochs(cur) {
-		existing, err := s.db.Get(ro, boxKey(ep, replicaWrite.BoxID[:]))
+		existing, closer, err := s.db.Get(boxKey(ep, replicaWrite.BoxID[:]))
 		if err != nil {
+			if errors.Is(err, pebble.ErrNotFound) {
+				continue
+			}
 			s.log.Errorf("state: Failed to check existing entry for BoxID %x: %s", replicaWrite.BoxID, err)
 			return fmt.Errorf("failed to check existing entry: %w", err)
 		}
-		if existing.Size() == 0 {
-			existing.Free()
-			continue
-		}
-		storedBox, perr := pigeonhole.BoxFromBytes(existing.Data())
-		existing.Free()
+		// existing is borrowed until closer.Close(); BoxFromBytes copies,
+		// so storedBox stays valid for the comparison below.
+		storedBox, perr := pigeonhole.BoxFromBytes(existing)
+		closer.Close()
 		if perr == nil &&
 			bytes.Equal(storedBox.Payload, replicaWrite.Payload) &&
 			storedBox.Signature == *replicaWrite.Signature {
@@ -420,8 +409,6 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		return ErrBoxAlreadyExists
 	}
 
-	wo := grocksdb.NewDefaultWriteOptions()
-	defer wo.Destroy()
 	box := &pigeonhole.Box{
 		PayloadLen: uint32(len(replicaWrite.Payload)),
 		Payload:    replicaWrite.Payload,
@@ -429,7 +416,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	copy(box.BoxID[:], replicaWrite.BoxID[:])
 	copy(box.Signature[:], replicaWrite.Signature[:])
 	s.log.Debugf("state: Attempting to write %d bytes to database at replica epoch %d", len(box.Bytes()), cur)
-	if err := s.db.Put(wo, boxKey(cur, box.BoxID[:]), box.Bytes()); err != nil {
+	if err := s.db.Set(boxKey(cur, box.BoxID[:]), box.Bytes(), nil); err != nil {
 		s.log.Errorf("state: Failed to write to database: %s", err)
 		return err
 	}
@@ -456,9 +443,6 @@ func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) err
 	bl := s.acquireBoxLock(&boxIDArr)
 	defer s.releaseBoxLock(bl, &boxIDArr)
 
-	wo := grocksdb.NewDefaultWriteOptions()
-	defer wo.Destroy()
-
 	// Store the tombstone as a Box with empty payload
 	box := &pigeonhole.Box{
 		PayloadLen: 0,
@@ -469,7 +453,7 @@ func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) err
 
 	cur := currentReplicaEpoch()
 	s.log.Debugf("state: Writing tombstone to database for BoxID: %x at replica epoch %d", boxID, cur)
-	if err := s.db.Put(wo, boxKey(cur, box.BoxID[:]), box.Bytes()); err != nil {
+	if err := s.db.Set(boxKey(cur, box.BoxID[:]), box.Bytes(), nil); err != nil {
 		s.log.Errorf("state: Failed to write tombstone for BoxID %x to database: %s", boxID, err)
 		return err
 	}
@@ -552,36 +536,36 @@ func (s *state) Rebalance(trigger string) error {
 		return fmt.Errorf(errDatabaseClosed)
 	}
 
-	ro := grocksdb.NewDefaultReadOptions()
-	ro.SetFillCache(false)
-	defer ro.Destroy()
-
-	it := s.db.NewIterator(ro)
+	// Read-only forward scan. SetFillCache(false) had no Pebble
+	// equivalent at migration time; if a future scan ever needs
+	// sequential-read prefetch, consider IterOptions{OnlyReadAhead: true}.
+	it, err := s.db.NewIter(&pebble.IterOptions{})
+	if err != nil {
+		return err
+	}
 	defer it.Close()
 
 	// Iterate only the kept epochs; anything outside the window is
 	// about to be GCed and need not be replicated again.
 	for _, ep := range keptEpochs(currentReplicaEpoch()) {
 		prefix := epochPrefix(ep)
-		for it.Seek(prefix); it.Valid(); it.Next() {
+		for it.SeekGE(prefix); it.Valid(); it.Next() {
 			key := it.Key()
-			rawKey := key.Data()
-			if !bytes.HasPrefix(rawKey, prefix) {
-				key.Free()
+			if !bytes.HasPrefix(key, prefix) {
 				break
 			}
-			if len(rawKey) < boxIDOffset+32 {
-				s.log.Errorf("state: malformed key (size %d) at epoch %d, skipping", len(rawKey), ep)
-				key.Free()
+			if len(key) < boxIDOffset+32 {
+				s.log.Errorf("state: malformed key (size %d) at epoch %d, skipping", len(key), ep)
 				continue
 			}
 			boxID := make([]byte, 32)
-			copy(boxID, rawKey[boxIDOffset:boxIDOffset+32])
-			key.Free()
+			copy(boxID, key[boxIDOffset:boxIDOffset+32])
 
-			value := it.Value()
-			writeCmd, err := s.replicaWriteFromBlob(value.Data())
-			value.Free()
+			// it.Value() is borrowed until the next it.Next();
+			// replicaWriteFromBlob parses through BoxFromBytes, which
+			// copies, so writeCmd owns its payload and may outlive this
+			// loop in the connector's queue.
+			writeCmd, err := s.replicaWriteFromBlob(it.Value())
 			if err != nil {
 				s.log.Errorf("state: Failed to create ReplicaWrite from blob: %s", err)
 				return err
@@ -597,6 +581,10 @@ func (s *state) Rebalance(trigger string) error {
 				s.server.connector.DispatchCommand(writeCmd, &idHash)
 			}
 		}
+	}
+	if err := it.Error(); err != nil {
+		s.log.Errorf("state: rebalance iterator failed: %s", err)
+		return err
 	}
 
 	s.log.Noticef("state: rebalance completed (trigger=%s, duration=%s)", trigger, time.Since(start))

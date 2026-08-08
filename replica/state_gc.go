@@ -7,8 +7,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/linxGnu/grocksdb"
-
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -35,15 +33,9 @@ func (s *state) WipeStaleBoxes() error {
 	start := epochPrefix(0)
 	end := epochPrefix(cutoff)
 
-	cf := s.db.GetDefaultColumnFamily()
-	defer cf.Destroy()
-
-	wo := grocksdb.NewDefaultWriteOptions()
-	defer wo.Destroy()
-
 	s.log.Noticef("state: wiping stored boxes for replica epochs < %d", cutoff)
-	if err := s.db.DeleteRangeCF(wo, cf, start, end); err != nil {
-		s.log.Errorf("state: DeleteRangeCF failed during GC: %s", err)
+	if err := s.db.DeleteRange(start, end, nil); err != nil {
+		s.log.Errorf("state: DeleteRange failed during GC: %s", err)
 		return err
 	}
 	return nil

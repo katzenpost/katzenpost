@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"bytes"
 	"os"
 	"testing"
 
@@ -176,4 +177,124 @@ func TestState(t *testing.T) {
 	t.Log("BEFORE Rebalance")
 	st.Rebalance("test")
 	t.Log("AFTER Rebalance")
+}
+
+func TestStateClosedDatabaseGuards(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "replica-closed-guards-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	st := newMigrateTestState(t, dataDir)
+	st.initDB()
+	st.Close()
+
+	var boxID [32]byte
+	var sig [64]byte
+
+	_, err = st.stateHandleReplicaRead(&pigeonhole.ReplicaRead{BoxID: boxID})
+	require.ErrorIs(t, err, ErrDBClosed)
+
+	err = st.handleReplicaWrite(&commands.ReplicaWrite{BoxID: &boxID, Signature: &sig, Payload: []byte("x")})
+	require.ErrorContains(t, err, errDatabaseClosed)
+
+	err = st.handleReplicaTombstone(boxID, sig)
+	require.ErrorContains(t, err, errDatabaseClosed)
+
+	err = st.WipeStaleBoxes()
+	require.ErrorContains(t, err, errDatabaseClosed)
+
+	err = st.Rebalance("test")
+	require.ErrorContains(t, err, errDatabaseClosed)
+
+	_, _, err = st.loadLastRebalanceFingerprint()
+	require.ErrorContains(t, err, errDatabaseClosed)
+
+	require.ErrorContains(t, st.storeLastRebalanceFingerprint([32]byte{}), errDatabaseClosed)
+}
+
+func TestStateReadCorruptedValue(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "replica-corrupt-read-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	st := newMigrateTestState(t, dataDir)
+	st.initDB()
+	defer st.Close()
+
+	var boxID [32]byte
+	boxID[0] = 0x42
+	require.NoError(t, st.db.Set(boxKey(currentReplicaEpoch(), boxID[:]), []byte("not a serialized box"), nil))
+
+	_, err = st.stateHandleReplicaRead(&pigeonhole.ReplicaRead{BoxID: boxID})
+	require.ErrorIs(t, err, ErrFailedToDeserialize)
+}
+
+func TestHandleReplicaWriteRejectsWhenStorageFull(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "replica-storage-full-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	st := newMigrateTestState(t, dataDir)
+	st.initDB()
+	defer st.Close()
+
+	st.storageFull.Store(true)
+	var boxID [32]byte
+	var sig [64]byte
+	err = st.handleReplicaWrite(&commands.ReplicaWrite{BoxID: &boxID, Signature: &sig, Payload: []byte("payload")})
+	require.ErrorIs(t, err, ErrStorageFull)
+}
+
+func TestRebalanceSkipsMalformedKey(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "replica-rebalance-malformed-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	st := newMigrateTestState(t, dataDir)
+	st.initDB()
+	defer st.Close()
+
+	// A key shorter than a BoxID prefix must be skipped, not crash the
+	// rebalance scan. With no valid boxes and no cached PKI document the
+	// scan has nothing else to do, so success proves the skip path.
+	require.NoError(t, st.db.Set(epochPrefix(currentReplicaEpoch()), []byte("x"), nil))
+	require.NoError(t, st.Rebalance("test"))
+}
+
+func TestDBOnDiskBytes(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "replica-disk-bytes-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	st := newMigrateTestState(t, dataDir)
+	st.initDB()
+
+	n, ok := st.dbOnDiskBytes()
+	require.True(t, ok)
+	require.Greater(t, n, uint64(0), "an open database must report disk usage")
+
+	st.Close()
+	n, ok = st.dbOnDiskBytes()
+	require.False(t, ok)
+	require.Zero(t, n)
+}
+
+func TestRefreshStorageFullQuota(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "replica-storage-quota-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	st := newMigrateTestState(t, dataDir)
+	st.initDB()
+	defer st.Close()
+
+	require.False(t, st.storageFull.Load())
+
+	st.server.cfg.MaxStorageMiB = 1
+	// Write well over the 1 MiB quota so the disk-usage branch trips.
+	big := bytes.Repeat([]byte{0xAB}, 2<<20)
+	require.NoError(t, st.db.Set(boxKey(currentReplicaEpoch(), make([]byte, 32)), big, nil))
+
+	st.refreshStorageFull()
+	require.True(t, st.storageFull.Load(), "exceeding MaxStorageMiB must mark the replica full")
 }
