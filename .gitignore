@@ -8,7 +8,7 @@ docker/*_base.stamp
 docker/*_go_mod.stamp
 docker/*_rust.stamp
 docker/cache
-docker/voting_mixnet
+docker/mixnet-*
 docker/thin_client
 cmd/genconfig/genconfig
 cmd/server/server

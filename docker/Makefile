@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -37,10 +37,11 @@ help:
 	@echo " run-ping           - send a ping over the testnet"
 	@echo " test               - run every component's docker integration tests (requires the testnet to be up)"
 	@echo " clean-bin          - stop, and delete compiled binaries"
-	@echo " clean-local        - stop, and delete data and binaries"
+	@echo " clean-local        - stop the current network, and wipe its state (keeps the build cache)"
 	@echo " clean-local-dryrun - show what clean-local would delete"
-	@echo " clean              - the above, plus wipes base images and the build cache"
-	@echo " test-distros       - bring up, ping, and tear down the testnet on every DISTRO (serial, or parallel with make -j)"
+	@echo " stop-all           - stop every network, one per distro inferred from build stamps"
+	@echo " clean              - stop all networks, wipe all state, plus base images and the build cache"
+	@echo " test-distros       - bring up and ping the testnet on every DISTRO, leaving them running (serial, or parallel with make -j)"
 	@echo
 
 warped?=true
@@ -118,7 +119,10 @@ base_image?=$(distro_base_image)
 # default only so `podman build` works standalone.
 GO_VERSION?=$(shell grep '^go ' ../go.mod | cut -d' ' -f2)
 wirekem=xwing
-net_name=voting_mixnet
+# Network directory under docker/. Defaults to the current distro's network
+# (e.g. mixnet-alpine), so `make distro=foo start` targets mixnet-foo just
+# like the test-distros legs. A custom net_name= still overrides it.
+net_name=mixnet-$(distro)
 base_port=30000
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
@@ -679,27 +683,46 @@ clean-image-%:
 	-$(docker) rmi $(patsubst clean-image-%,katzenpost-%,$@)
 	-rm -fv $(patsubst clean-image-%,%,$@).stamp
 
+# Stop every network, one per distro inferred from the on-disk build
+# stamps, so `make clean` tears down everything even when the last-used
+# distro differs. `make distro=foo stop` still stops only foo's network;
+# `stop`'s `[ -e $(net_name) ]` guard makes this a no-op for any distro
+# that was never started.
+stop-all:
+	@for d in $(STAMP_DISTROS); do $(MAKE) distro=$$d stop; done
+
+# Wipe the network directory of every distro ever built (stamp-inferred).
+# Called by `clean` only; clean-local deliberately touches just the current
+# net_name. `git clean` exits 0 even for a pathspec that matches nothing.
+clean-testnets:
+	@for d in $(STAMP_DISTROS); do git clean -fdx mixnet-$$d; done
+
 clean-bin: stop
 	rm -vf ./$(net_name)/*.$(distro)
 
-# Light clean for the iteration loop: tear down the testnet and wipe the
-# state directory, but keep the go module/build cache. The cgo components
+# Light clean for the iteration loop: tear down the current testnet and
+# wipe its state, but keep the go module/build cache. The cgo components
 # (highctidh) are slow to rebuild, so use this between most iterations and
-# reserve `clean` for full from-scratch verification.
-clean-local: clean-bin
-	# Clean up replica data files (preserve .toml configs)
-	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/replica-boxes.db $(net_name)/replica*/replica-metadata.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
-	# Clean up courier data files (preserve .toml configs)
-	rm -rfv $(net_name)/servicenode*/courier/*.log $(net_name)/servicenode*/courier/*.db $(net_name)/servicenode*/courier/link.*.pem
-	# Clean up leftover per-distro parallel test networks (test-distros)
-	rm -rfv mixnet-*
+# reserve `clean` for full from-scratch verification. Only affects the
+# current net_name/distro; the compiled binaries are wiped by the git
+# clean, so this depends on `stop` (not `clean-bin`) to avoid a redundant
+# rm.
+clean-local: stop
 	git clean -f -x $(net_name)
 	git status .
 
 clean-local-dryrun:
 	git clean -n -x $(net_name)
 
-clean: clean-images clean-local
+clean: stop-all
+	$(MAKE) clean-local
+	$(MAKE) clean-testnets
+	# Legacy: keep removing the pre-mixnet-* default network directory
+	# until leftover checkouts and stale config symlinks no longer matter.
+	# It is no longer gitignored, so -d is required to remove it as a
+	# plain untracked directory.
+	git clean -fdx voting_mixnet
+	$(MAKE) clean-images
 	# The go module cache is intentionally written read-only (dirs 0555,
 	# files 0444), so only a root-capable process can wipe it: even the
 	# owning host user cannot delete files inside read-only directories.
@@ -821,7 +844,7 @@ rootshell: $(distro)_base.stamp
 # running network. Only ./client defines docker tests today (memspool,
 # catshadow, stream and bench, the other historical owners of such
 # targets, are gone). Every client target below was probed against a
-# healthy voting_mixnet and passes; if a target starts failing it is NOT
+# healthy mixnet-alpine and passes; if a target starts failing it is NOT
 # fixed here - it is dropped and the failure documented above the
 # exclusion so `make test` stays green by construction.
 #
@@ -841,15 +864,16 @@ test: wait
 # test-distro-<distro> leg runs concurrently on its own mixnet-<distro>
 # network and base_port band derived from the DISTROS order, so legs never
 # share state. Each leg runs run-ping, which exits non-zero unless every
-# ping is answered, so a leg's exit code asserts a healthy network.
+# ping is answered, so a leg's exit code asserts a healthy network. Legs
+# deliberately leave their networks running; tear everything down with
+# `make clean` (or one `make distro=<d> stop` per network).
 DISTRO_PORTS=$(foreach d,$(DISTROS),$(d):$(shell set -- $(DISTROS); i=0; for x; do [ "$$x" = "$(d)" ] && printf '%s' $$((30000 + i * 10000)) && break; i=$$((i+1)); done))
 
-# Each leg's sub-make runs with -j1 so its start/wait/run-ping/stop goals
+# Each leg's sub-make runs with -j1 so its start/wait/run-ping goals
 # stay ordered even when this file is built with -j from a parent make.
 .PHONY: test-distro-%
 test-distro-%:
-	$(MAKE) -j1 distro=$* net_name=mixnet-$* base_port=$(patsubst $*:%,%,$(filter $*:%,$(DISTRO_PORTS))) start wait run-ping stop
-	rm -rfv mixnet-$*
+	$(MAKE) -j1 distro=$* base_port=$(patsubst $*:%,%,$(filter $*:%,$(DISTRO_PORTS))) start wait run-ping
 
 test-distros: $(addprefix test-distro-,$(DISTROS))
 
