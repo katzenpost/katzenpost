@@ -14,11 +14,15 @@
 # end-to-end signal that the existing Go integration tests cannot.
 #
 # Usage:
-#   pigeonhole_cp_roundtrip.sh [size-bytes] [thinclient.toml] [pigeonhole-cp]
+#   pigeonhole_cp_roundtrip.sh [-n net_name] [size-bytes] [thinclient.toml] [pigeonhole-cp]
 #
-# Default size is 65536 bytes. Default thinclient.toml is the
-# docker-mixnet's generated path; default binary is the pigeonhole-cp that
-# the docker Makefile builds (make docker=podman
+# Default size is 65536 bytes. Default net_name is mixnet-alpine, and the
+# default thinclient.toml and binary are derived from it: docker/<net_name>/
+# client/thinclient.toml and docker/<net_name>/pigeonhole-cp.<distro>, where
+# the distro is taken as the net_name suffix after "mixnet-" (so
+# -n mixnet-debian-trixie selects the debian-trixie network and binary).
+# Explicit config/binary arguments always override the defaults. The default
+# binary is the pigeonhole-cp that the docker Makefile builds (make docker=podman
 # <net_name>/pigeonhole-cp.<distro>), which is the source of truth for the
 # tool rather than a separate checkout.
 set -euo pipefail
@@ -26,13 +30,36 @@ set -euo pipefail
 script_dir=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$script_dir/../../.." && pwd)
 
+usage() {
+    cat >&2 <<EOF
+Usage: $0 [-n net_name] [size-bytes] [thinclient.toml] [pigeonhole-cp]
+
+  -n net_name        network directory under docker/ (default: mixnet-alpine);
+                     derives the default config and binary from it
+  size-bytes         default 65536
+  thinclient.toml    default $repo_root/docker/<net_name>/client/thinclient.toml
+  pigeonhole-cp      default $repo_root/docker/<net_name>/pigeonhole-cp.<distro>
+EOF
+}
+
+net_name="mixnet-alpine"
+while getopts "n:h" opt; do
+    case "$opt" in
+        n) net_name="$OPTARG" ;;
+        h) usage; exit 0 ;;
+        *) usage; exit 2 ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+distro="${net_name#mixnet-}"
 size="${1:-65536}"
-config="${2:-$repo_root/docker/voting_mixnet/client/thinclient.toml}"
-binary="${3:-$repo_root/docker/voting_mixnet/pigeonhole-cp.alpine}"
+config="${2:-$repo_root/docker/$net_name/client/thinclient.toml}"
+binary="${3:-$repo_root/docker/$net_name/pigeonhole-cp.$distro}"
 
 if [ ! -x "$binary" ]; then
     echo "pigeonhole_cp_roundtrip: $binary is not executable; build it first via:" >&2
-    echo "  (cd $repo_root/docker && make docker=podman voting_mixnet/pigeonhole-cp.alpine)" >&2
+    echo "  (cd $repo_root/docker && make docker=podman $net_name/pigeonhole-cp.$distro)" >&2
     exit 2
 fi
 if [ ! -f "$config" ]; then
