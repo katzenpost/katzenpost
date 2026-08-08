@@ -97,6 +97,18 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 	)
+	courierReady = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_courier_ready",
+			Help: "1 when the courier holds a PKI document for the current mixnet epoch, 0 otherwise.",
+		},
+	)
+	courierCurrentEpoch = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_courier_current_epoch",
+			Help: "The mixnet epoch the readiness gauges refer to.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -116,6 +128,8 @@ func StartPrometheusListener(address string, log *logging.Logger) {
 		prometheus.MustRegister(dispatchSemWaiters)
 		prometheus.MustRegister(copyShardReadCompute)
 		prometheus.MustRegister(copyShardReadTotal)
+		prometheus.MustRegister(courierReady)
+		prometheus.MustRegister(courierCurrentEpoch)
 	})
 
 	if address == "" {
@@ -205,4 +219,16 @@ func CopyShardReadCompute(d time.Duration) {
 // component.
 func CopyShardReadTotal(d time.Duration) {
 	copyShardReadTotal.Observe(d.Seconds())
+}
+
+// SetCourierReady sets the courier_ready gauge based on whether the
+// courier holds a PKI document for the current mixnet epoch, along with
+// the epoch the value refers to.
+func SetCourierReady(ready bool, epoch uint64) {
+	if ready {
+		courierReady.Set(1)
+	} else {
+		courierReady.Set(0)
+	}
+	courierCurrentEpoch.Set(float64(epoch))
 }

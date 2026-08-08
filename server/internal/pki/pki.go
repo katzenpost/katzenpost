@@ -18,6 +18,7 @@
 package pki
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"errors"
@@ -450,13 +451,33 @@ func (p *pki) updateTimer(timer *time.Timer) {
 		// No document for current epoch.
 		if p.entryForEpoch(now) == nil {
 			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval)
+			instrument.SetNodeReady(false, now)
 			timer.Reset(recheckInterval)
 		} else {
 			interval := vServer.PublishConsensusDeadline - elapsed
 			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, interval)
+			p.updateReadiness(now)
 			timer.Reset(interval)
 		}
 	}
+}
+
+// updateReadiness sets the node_ready gauge based on whether the descriptor
+// published in the current-epoch consensus carries the same per-epoch mix key
+// this instance currently holds. When they diverge — a restart that
+// regenerated the mix keys while the dirauths retained the old consensus, or
+// simply no current-epoch document yet — the gauge reads 0 and wait tooling
+// keeps polling instead of sending traffic into a first-hop MAC mismatch.
+func (p *pki) updateReadiness(epoch uint64) {
+	ready := false
+	if ent := p.entryForEpoch(epoch); ent != nil {
+		if self := ent.Self(); self != nil {
+			if local, ok := p.glue.MixKeys().Get(epoch); ok {
+				ready = bytes.Equal(self.MixKeys[epoch], local)
+			}
+		}
+	}
+	instrument.SetNodeReady(ready, epoch)
 }
 
 func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
