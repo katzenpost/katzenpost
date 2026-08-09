@@ -70,6 +70,9 @@ gateways=1
 serviceNodes=3
 storageNodes=5
 
+# number of pings sent by run-ping target
+npings?=10
+
 # Parameters. Sampling safety caps for each rate are derived inside the
 # library (common.SafetyCap) from the rate itself, so no MaxDelay knobs
 # are passed to genconfig.
@@ -734,7 +737,7 @@ clean: stop-all
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n 10
+        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings)
 
 # parallel-load knobs. Override on the make command line:
 #   make run-parallel-load clients=8 duration=5m
