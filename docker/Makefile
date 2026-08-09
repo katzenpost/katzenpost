@@ -10,7 +10,7 @@ help:
 	@echo " courier-restart    - restart courier plugin via thwack interface"
 	@echo " servicenode-restart - restart servicenode container (heavier)"
 	@echo " replica-restart    - rebuild replica binary and restart all replica containers"
-	@echo " wait               - wait for testnet to have consensus and at least 2 storage replicas"
+	@echo " wait               - wait until every node reports ready against the current consensus"
 	@echo " watch              - tail -F all logs"
 	@echo " watch-replicas     - monitor all replica logs"
 	@echo " watch-auth         - monitor all directory authority logs"

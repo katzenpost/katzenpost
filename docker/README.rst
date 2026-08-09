@@ -35,7 +35,7 @@ the pumba chaos containers.
    git clone https://github.com/katzenpost/katzenpost.git
    cd katzenpost/docker
    make start        # generate configs + binaries, boot the network in the background
-   make wait         # wait until the authorities reach consensus and replicas are up
+   make wait         # wait until every node reports ready against the current consensus
    make run-ping     # send pings through the network; exits non-zero unless all pass
    make stop         # tear the network down
 
@@ -290,5 +290,10 @@ Notes
 * The network is always a **voting** mixnet; ``run-nonvoting-testnet`` and the
   ``docker network prune`` dance that used to be required when switching modes
   are obsolete. ``docker compose down`` removes the network it created.
-* ``make wait`` exits non-zero if the network has not reached consensus with at
-  least two live storage replicas, so it is safe to gate CI on it.
+* ``make wait`` waits until every node — gateway, mixes, servicenodes
+  (with their courier plugins), and storage replicas — reports ready
+  against the current consensus, i.e. each node's live per-epoch keys
+  match its descriptor in the fetched document (all 15 testnet nodes by
+  default). It retries until all report ready or ``--ready-timeout``
+  (default 8m) elapses, prints per-node diagnostics on failure, and
+  exits non-zero, so it is safe to gate CI on it.
