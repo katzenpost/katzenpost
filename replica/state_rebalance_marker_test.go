@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"bytes"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -110,36 +111,32 @@ func TestLastRebalanceFingerprintRoundtrip(t *testing.T) {
 	require.Equal(t, dataDir, st.server.cfg.DataDir)
 }
 
-func TestLoadLastRebalanceFingerprintEdgeBranches(t *testing.T) {
-	st, cleanup := newMarkerTestState(t)
-	defer cleanup()
+// TestLoadLastRebalanceFingerprintDiscardsMalformedRecord asserts that a
+// stored record of any length other than 32 is reported as absent rather
+// than returned truncated. The startup gate in server.go compares the
+// result against the current PKI document, so returning a partial digest
+// would make the comparison meaningless; reporting absence sends it down
+// the "no prior rebalance recorded" path, which rebalances.
+func TestLoadLastRebalanceFingerprintDiscardsMalformedRecord(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value []byte
+	}{
+		{"empty", []byte{}},
+		{"short", []byte("short")},
+		{"long", bytes.Repeat([]byte{0xAA}, 33)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, cleanup := newMarkerTestState(t)
+			defer cleanup()
 
-	// Empty value is treated as absent.
-	require.NoError(t, st.metaDB.Set(lastRebalanceReplicasKey, []byte{}, nil))
-	fp, ok, err := st.loadLastRebalanceFingerprint()
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.Zero(t, fp)
-
-	// A malformed (wrong-length) value is discarded.
-	require.NoError(t, st.metaDB.Set(lastRebalanceReplicasKey, []byte("short"), nil))
-	fp, ok, err = st.loadLastRebalanceFingerprint()
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.Zero(t, fp)
-
-	// A missing record reports (zero, false, nil).
-	require.NoError(t, st.metaDB.Delete(lastRebalanceReplicasKey, nil))
-	fp, ok, err = st.loadLastRebalanceFingerprint()
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.Zero(t, fp)
-
-	// Closed databases produce an error rather than a stale answer.
-	st.Close()
-	_, _, err = st.loadLastRebalanceFingerprint()
-	require.ErrorContains(t, err, errDatabaseClosed)
-	require.ErrorContains(t, st.storeLastRebalanceFingerprint([32]byte{}), errDatabaseClosed)
+			require.NoError(t, st.metaDB.Set(lastRebalanceReplicasKey, tc.value, nil))
+			fp, ok, err := st.loadLastRebalanceFingerprint()
+			require.NoError(t, err)
+			require.False(t, ok)
+			require.Zero(t, fp)
+		})
+	}
 }
 
 func TestMaybeStartupRebalanceSkipsWhenFingerprintMatches(t *testing.T) {

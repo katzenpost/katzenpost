@@ -68,9 +68,9 @@ func (s *state) loadLastRebalanceFingerprint() ([32]byte, bool, error) {
 		return zero, false, err
 	}
 	defer closer.Close()
-	if len(value) == 0 {
-		return zero, false, nil
-	}
+	// A record of any length but 32 is unusable, including an empty one.
+	// Pebble reports an absent key as ErrNotFound above, so reaching here
+	// with a short value means the record is corrupt, not merely missing.
 	if len(value) != 32 {
 		s.log.Warningf("state: discarding malformed rebalance-fingerprint record of size %d", len(value))
 		instrument.DroppedByReason("malformed_rebalance_fingerprint")

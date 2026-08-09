@@ -205,6 +205,11 @@ func TestStateClosedDatabaseGuards(t *testing.T) {
 
 	err = st.Rebalance("test")
 	require.ErrorContains(t, err, errDatabaseClosed)
+
+	_, _, err = st.loadLastRebalanceFingerprint()
+	require.ErrorContains(t, err, errDatabaseClosed)
+
+	require.ErrorContains(t, st.storeLastRebalanceFingerprint([32]byte{}), errDatabaseClosed)
 }
 
 func TestStateReadCorruptedValue(t *testing.T) {
