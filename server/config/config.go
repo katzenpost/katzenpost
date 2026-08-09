@@ -115,6 +115,17 @@ type Server struct {
 	// resolver. Onion addresses are always permitted because Tor
 	// resolves them inside its local proxy, not via DNS.
 	AllowHostnameAddresses bool
+
+	// PersistMixKeysOnShutdown, when true, writes every live mix key to
+	// the DataDir on clean shutdown and reloads it on the next boot. A
+	// clean restart (e.g. a software upgrade) then keeps the keypairs
+	// that were already published in the consensus, so clients keep
+	// unwrapping across the restart instead of failing the first-hop MAC
+	// check until the next epoch. A crash never reaches the shutdown
+	// path, so mix keys still rotate on a hard failure. The default is
+	// false to preserve fresh-per-boot forward secrecy unless an operator
+	// opts in.
+	PersistMixKeysOnShutdown bool
 }
 
 func (sCfg *Server) validate() error {

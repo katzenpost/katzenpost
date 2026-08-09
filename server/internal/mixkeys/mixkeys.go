@@ -17,6 +17,7 @@
 package mixkeys
 
 import (
+	"path/filepath"
 	"sync"
 
 	"gopkg.in/op/go-logging.v1"
@@ -42,6 +43,12 @@ type mixKeys struct {
 
 	nike nike.Scheme
 	kem  kem.Scheme
+
+	// persistOnShutdown, when enabled, writes every live mix key to
+	// keyStoreDir on clean shutdown and reloads them on boot, so a clean
+	// restart keeps the keypairs already published in the consensus.
+	persistOnShutdown bool
+	keyStoreDir       string
 }
 
 func (m *mixKeys) init() error {
@@ -70,16 +77,32 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 		}
 
 		didGenerate = true
-		k, err := mixkey.New(e, m.geo)
-		if err != nil {
-			// Clean up whatever keys that may have succeeded.
-			for ee := baseEpoch; ee < baseEpoch+constants.NumMixKeys; ee++ {
-				if kk, ok := m.keys[ee]; ok {
-					kk.Deref()
-					delete(m.keys, ee)
-				}
+		var (
+			k     *mixkey.MixKey
+			found bool
+			err   error
+		)
+		if m.persistOnShutdown {
+			k, found, err = mixkey.Load(e, m.geo, m.keyStoreDir)
+			if err != nil {
+				m.log.Warningf("Failed to load persisted mix key for epoch %d: %v", e, err)
+				k = nil
+			} else if found {
+				m.log.Debugf("Loaded persisted mix key for epoch %d", e)
 			}
-			return false, err
+		}
+		if k == nil {
+			k, err = mixkey.New(e, m.geo)
+			if err != nil {
+				// Clean up whatever keys that may have succeeded.
+				for ee := baseEpoch; ee < baseEpoch+constants.NumMixKeys; ee++ {
+					if kk, ok := m.keys[ee]; ok {
+						kk.Deref()
+						delete(m.keys, ee)
+					}
+				}
+				return false, err
+			}
 		}
 		k.SetUnlinkIfExpired(true)
 		m.keys[e] = k
@@ -100,6 +123,9 @@ func (m *mixKeys) Prune() bool {
 			m.log.Debugf("Purging expired key for epoch: %v", idx)
 			v.Deref()
 			delete(m.keys, idx)
+			if m.persistOnShutdown {
+				mixkey.Remove(idx, m.keyStoreDir)
+			}
 			didPrune = true
 		}
 	}
@@ -143,6 +169,13 @@ func (m *mixKeys) Halt() {
 	defer m.Unlock()
 
 	for k, v := range m.keys {
+		if m.persistOnShutdown {
+			if err := v.Persist(m.keyStoreDir); err != nil {
+				m.log.Warningf("Failed to persist mix key for epoch %d on shutdown: %v", v.Epoch(), err)
+			} else {
+				m.log.Noticef("Persisted mix key for epoch %d to %s", v.Epoch(), m.keyStoreDir)
+			}
+		}
 		v.Deref()
 		delete(m.keys, k)
 	}
@@ -154,6 +187,11 @@ func NewMixKeys(glue glue.Glue, geo *geo.Geometry) (glue.MixKeys, error) {
 		glue: glue,
 		log:  glue.LogBackend().GetLogger("mixkeys"),
 		keys: make(map[uint64]*mixkey.MixKey),
+	}
+
+	if glue.Config().Server.PersistMixKeysOnShutdown {
+		m.persistOnShutdown = true
+		m.keyStoreDir = filepath.Join(glue.Config().Server.DataDir, "mixkeys")
 	}
 
 	if err := m.init(); err != nil {
