@@ -53,7 +53,6 @@ kpclientd:
 sphinx:
 	cd cmd/sphinx; go build -trimpath -ldflags "-s -w"
 
-# Build replica (pure-Go storage; no RocksDB dependency)
 replica:
 	cd cmd/replica; go build -v -trimpath -ldflags "-X github.com/carlmjohnson/versioninfo.Revision=$$(git rev-parse --short HEAD)"
 
