@@ -58,6 +58,7 @@ var defaultDialer = &net.Dialer{}
 
 // authorityAuthenticator implements the PeerAuthenticator interface.
 type authorityAuthenticator struct {
+	name              string
 	IdentityPublicKey sign.PublicKey
 	LinkPublicKey     kem.PublicKey
 	log               *logging.Logger
@@ -71,11 +72,15 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 	identityHash := hash.Sum256From(a.IdentityPublicKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
-		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
+		a.log.Warningf("authority %q: identity key hash mismatch (expected=%x, received=%x)", a.name, identityHash[:], creds.AdditionalData[:hash.HashSize])
 		return false
 	}
-	if !a.LinkPublicKey.Equal(creds.PublicKey) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch")
+	if creds.PublicKey == nil || !a.LinkPublicKey.Equal(creds.PublicKey) {
+		var got [hash.HashSize]byte
+		if creds.PublicKey != nil {
+			got = hash.Sum256From(creds.PublicKey)
+		}
+		a.log.Warningf("authority %q: link key mismatch (expected=%x, received=%x)", a.name, hash.Sum256From(a.LinkPublicKey), got)
 		return false
 	}
 	return true
@@ -346,6 +351,7 @@ func (p *connector) initSession(
 	}
 
 	peerAuthenticator := &authorityAuthenticator{
+		name:              peer.Identifier,
 		IdentityPublicKey: peer.IdentityPublicKey,
 		LinkPublicKey:     peer.LinkPublicKey,
 		log:               p.log,
