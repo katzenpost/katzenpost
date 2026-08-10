@@ -134,7 +134,9 @@ type Server struct {
 	// It is only consulted when PersistMixKeysOnShutdown is true; when
 	// empty, the daemon uses a per-node subdirectory of /dev/shm (tmpfs)
 	// derived from a hash of the node's long-term identity key, so key
-	// material never touches durable storage. Deployments that need the
+	// material never touches durable storage. Windows has no tmpfs, so
+	// this must be set explicitly there when the feature is enabled.
+	// Deployments that need the
 	// keys to survive a host reboot or container recreation (e.g. a
 	// docker testnet whose node dirs are bind-mounted volumes) should
 	// point this at the node's DataDir. Specifying a directory without

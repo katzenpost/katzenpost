@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"sync"
 
@@ -270,8 +271,13 @@ func NewMixKeys(glue glue.Glue, geo *geo.Geometry) (glue.MixKeys, error) {
 // from a hash of the node's long-term identity key, so key material
 // survives a clean daemon restart but never touches durable storage.
 // Persist on shutdown and the consume-on-read boot reload then only span
-// the daemon's own lifetime.
+// the daemon's own lifetime. The default is unix-only: Windows has no
+// tmpfs, so this panics there and operators must set
+// PersistMixKeysOnShutdownDir explicitly.
 func defaultKeyStoreDir(idKey sign.PublicKey) string {
+	if runtime.GOOS == "windows" {
+		panic("mixkeys: the /dev/shm default mix key store is not available on windows; set PersistMixKeysOnShutdownDir")
+	}
 	idKeyHash := hash.Sum256From(idKey)
 	return filepath.Join("/dev/shm", fmt.Sprintf("katzenpost-mixkeys-%x", idKeyHash))
 }
