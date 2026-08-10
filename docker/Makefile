@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -10,6 +10,7 @@ help:
 	@echo " courier-restart    - restart courier plugin via thwack interface"
 	@echo " servicenode-restart - restart servicenode container (heavier)"
 	@echo " replica-restart    - rebuild replica binary and restart all replica containers"
+	@echo " replica-test       - run the replica unit tests in a container (same invocation as the CI workflow)"
 	@echo " wait               - wait for testnet to have consensus and at least 2 storage replicas"
 	@echo " watch              - tail -F all logs"
 	@echo " watch-replicas     - monitor all replica logs"
@@ -775,6 +776,22 @@ run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp $(net_nam
             -config /$(net_name)/client/thinclient-bridge.toml \
             -payload $(cp_payload) -sweep "$(cp_sweep)" -propagation $(cp_propagation) \
             -metrics 0.0.0.0:$(cp_metrics_port)
+
+# Run the replica unit tests in a container, using the same invocation as
+# .github/workflows/replica-tests.yml. The tests link highctidh's CTIDH
+# implementation, which needs a large stack; the production binaries get it
+# from -Wl,-z,stack-size in the ldflags variable above, and the test binary
+# needs the same. (On glibc the default cgo thread stack happens to be big
+# enough, which is why this only bites in the musl container image.)
+# Override REPLICA_TEST_GORACE, REPLICA_TEST_LDFLAGS or REPLICA_TEST_FLAGS on
+# the make command line to tweak the run
+# (e.g. REPLICA_TEST_FLAGS="-race -v -run TestMigrate").
+REPLICA_TEST_GORACE?=history_size=7
+REPLICA_TEST_LDFLAGS?=-extldflags=-Wl,-z,stack-size=0x1F40000
+REPLICA_TEST_FLAGS?=-coverprofile=coverage.out -race -v -failfast -timeout 30m
+replica-test: $(distro)_base.stamp | $(net_name) $(cache_dir)
+	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base \
+		$(sh) -c 'cd /go/katzenpost/replica && GORACE=$(REPLICA_TEST_GORACE) go test -ldflags "$(REPLICA_TEST_LDFLAGS)" $(REPLICA_TEST_FLAGS) ./...'
 
 # ---------------------------------------------------------------------
 # thin_client / pigeonhole-cp (rust). These targets are the only ones
