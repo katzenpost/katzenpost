@@ -204,6 +204,14 @@ type Config struct {
 	// thin_close. Parsed from a Go duration string ("30s", "10m");
 	// zero means use the compile-time default in client/listener.go.
 	SessionGracePeriod time.Duration
+
+	// PersistMixKeysOnShutdownDir, when non-empty, enables mix key
+	// persistence in generated server configs: every live mix key is
+	// written on clean shutdown to this subdirectory of each node's
+	// DataDir and reloaded on the next boot, so a clean restart keeps
+	// the keypairs already published in the consensus. Empty leaves
+	// persistence off in generated configs.
+	PersistMixKeysOnShutdownDir string
 }
 
 type Katzenpost struct {
@@ -253,6 +261,12 @@ type Katzenpost struct {
 	// per docker invocation; zero means the daemon's compile-time
 	// default applies.
 	SessionGracePeriod time.Duration
+
+	// PersistMixKeysOnShutdownDir is a per-node subdirectory of the
+	// node's DataDir that mix keys are persisted to on clean shutdown
+	// and reloaded from on boot; when empty, mix key persistence is
+	// left off in generated server configs.
+	PersistMixKeysOnShutdownDir string
 }
 
 type AuthById []*vConfig.Authority
@@ -604,11 +618,16 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// to produce production configs).
 	cfg.Server.AllowHostnameAddresses = true
 	// Testnet node dirs are bind-mounted onto the host, so the dirauths'
-	// consensus survives a `make stop`/`make start` cycle; persist the mix
-	// keys across that clean shutdown so a restart doesn't leave the new
-	// instance's fresh keys mismatched with the retained consensus (which
-	// surfaces as first-hop MAC failures until the next epoch).
-	cfg.Server.PersistMixKeysOnShutdown = true
+	// consensus survives a `make stop`/`make start` cycle; when the
+	// operator enables mix key persistence, write the live keys on clean
+	// shutdown to a subdirectory of the node's DataDir so a restart
+	// doesn't leave the new instance's fresh keys mismatched with the
+	// retained consensus (which surfaces as first-hop MAC failures until
+	// the next epoch).
+	if s.PersistMixKeysOnShutdownDir != "" {
+		cfg.Server.PersistMixKeysOnShutdown = true
+		cfg.Server.PersistMixKeysOnShutdownDir = filepath.Join(cfg.Server.DataDir, s.PersistMixKeysOnShutdownDir)
+	}
 	if isGateway {
 		cfg.Management = new(sConfig.Management)
 		cfg.Management.Enable = true
@@ -982,6 +1001,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.UnwrapDelay = cfg.UnwrapDelay
 	s.NumSphinxWorkers = cfg.NumSphinxWorkers
 	s.SessionGracePeriod = cfg.SessionGracePeriod
+	s.PersistMixKeysOnShutdownDir = cfg.PersistMixKeysOnShutdownDir
 
 	return s
 }

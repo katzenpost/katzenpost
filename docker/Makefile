@@ -184,6 +184,14 @@ ifeq ($(no_metrics),true)
   noMetricsFlag=--noMetrics
 endif
 
+# Mix key persistence across clean restarts. The testnet's dirauth
+# consensus survives `make stop`/`make start` because node dirs are
+# bind-mounted onto the host; persist the mix keys to each node's DataDir
+# on clean shutdown and reload them on the next boot so a restart doesn't
+# leave the fresh keys mismatched with the retained consensus (surfaces
+# as first-hop MAC failures until the next epoch). Always passed with an
+# explicit value; empty disables persistence in generated configs.
+persistMixKeysOnShutdownDir ?= mixkeys
 ifeq ($(pyroscope_dirauth),true)
   pyroscope_dirauth_tags=-tags pyroscope
   pyroscopeDirauthFlag=--pyroscopeDirauth
@@ -220,6 +228,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
+	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
 	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 
 # Pumba network chaos. Off by default; invoke `make pumba-latency` or

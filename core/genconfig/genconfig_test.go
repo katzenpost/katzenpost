@@ -15,6 +15,7 @@ import (
 	"github.com/katzenpost/hpqc/nike/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -97,4 +98,47 @@ func TestGenClient2ThinCfgEmitsDialSubtable(t *testing.T) {
 	require.NotNil(t, cfg.Dial.Tcp, "Dial.Tcp must be populated for a tcp config")
 	require.Equal(t, "localhost:64331", cfg.Dial.Tcp.Address)
 	require.NoError(t, cfg.Dial.Validate())
+}
+
+// TestGenNodeConfigPersistMixKeysOnShutdownDir asserts that a configured
+// PersistMixKeysOnShutdownDir enables mix key persistence and resolves the
+// directory under each node's DataDir, while leaving the field empty keeps
+// persistence off (there must be no hardcoded enable).
+func TestGenNodeConfigPersistMixKeysOnShutdownDir(t *testing.T) {
+	newFixture := func(t *testing.T) *Katzenpost {
+		t.Helper()
+		s := testKatzenpost(t)
+		s.BaseDir = t.TempDir()
+		s.LastPort = 30000
+		s.LogLevel = "DEBUG"
+		parameters := &vConfig.Parameters{Mu: 0.005, LambdaP: 0.001}
+		require.NoError(t, s.GenVotingAuthoritiesCfg(1, parameters, 5, s.WireKEMScheme))
+		return s
+	}
+
+	t.Run("enabled", func(t *testing.T) {
+		require := require.New(t)
+		s := newFixture(t)
+		s.PersistMixKeysOnShutdownDir = "mixkeys"
+
+		require.NoError(s.GenNodeConfig(false, false, true))
+
+		require.Len(s.NodeConfigs, 1)
+		cfg := s.NodeConfigs[0]
+		require.True(cfg.Server.PersistMixKeysOnShutdown,
+			"persistence must be enabled when PersistMixKeysOnShutdownDir is set")
+		require.Equal(filepath.Join(s.BaseDir, cfg.Server.Identifier, "mixkeys"),
+			cfg.Server.PersistMixKeysOnShutdownDir)
+	})
+
+	t.Run("disabled by default", func(t *testing.T) {
+		require := require.New(t)
+		s := newFixture(t)
+
+		require.NoError(s.GenNodeConfig(false, false, true))
+
+		require.Len(s.NodeConfigs, 1)
+		require.False(s.NodeConfigs[0].Server.PersistMixKeysOnShutdown,
+			"persistence must default to off")
+	})
 }

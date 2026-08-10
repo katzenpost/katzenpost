@@ -117,15 +117,30 @@ type Server struct {
 	AllowHostnameAddresses bool
 
 	// PersistMixKeysOnShutdown, when true, writes every live mix key to
-	// the DataDir on clean shutdown and reloads it on the next boot. A
-	// clean restart (e.g. a software upgrade) then keeps the keypairs
-	// that were already published in the consensus, so clients keep
-	// unwrapping across the restart instead of failing the first-hop MAC
-	// check until the next epoch. A crash never reaches the shutdown
-	// path, so mix keys still rotate on a hard failure. The default is
-	// false to preserve fresh-per-boot forward secrecy unless an operator
-	// opts in.
+	// the mix key store on clean shutdown and reloads it on the next
+	// boot. A clean restart (e.g. a software upgrade) then keeps the
+	// keypairs that were already published in the consensus, so clients
+	// keep unwrapping across the restart instead of failing the first-hop
+	// MAC check until the next epoch. A crash never reaches the shutdown
+	// path, so mix keys still rotate on a hard failure. Key files are
+	// deleted as soon as they are loaded on the next boot, so key
+	// material exists on the filesystem only between a clean shutdown and the
+	// immediately following boot. The default is false to preserve
+	// fresh-per-boot forward secrecy unless an operator opts in.
 	PersistMixKeysOnShutdown bool
+
+	// PersistMixKeysOnShutdownDir is the directory mix keys are
+	// persisted to on clean shutdown and loaded from on the next boot.
+	// It is only consulted when PersistMixKeysOnShutdown is true; when
+	// empty, the daemon uses a per-node subdirectory of /dev/shm (tmpfs)
+	// derived from a hash of the node's long-term identity key, so key
+	// material never touches durable storage. Deployments that need the
+	// keys to survive a host reboot or container recreation (e.g. a
+	// docker testnet whose node dirs are bind-mounted volumes) should
+	// point this at the node's DataDir. Specifying a directory without
+	// enabling PersistMixKeysOnShutdown is a configuration error, since
+	// the directory would silently have no effect.
+	PersistMixKeysOnShutdownDir string
 }
 
 func (sCfg *Server) validate() error {
@@ -179,6 +194,12 @@ func (sCfg *Server) validate() error {
 
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
+	}
+	if sCfg.PersistMixKeysOnShutdownDir != "" && !sCfg.PersistMixKeysOnShutdown {
+		return errors.New("config: Server: PersistMixKeysOnShutdownDir is set but PersistMixKeysOnShutdown is not enabled")
+	}
+	if sCfg.PersistMixKeysOnShutdownDir != "" && !filepath.IsAbs(sCfg.PersistMixKeysOnShutdownDir) {
+		return fmt.Errorf("config: Server: PersistMixKeysOnShutdownDir '%v' is not an absolute path", sCfg.PersistMixKeysOnShutdownDir)
 	}
 	if sCfg.MetricsAddress != "" {
 		if _, _, err := net.SplitHostPort(sCfg.MetricsAddress); err != nil {
