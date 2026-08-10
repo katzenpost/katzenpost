@@ -182,7 +182,7 @@ func runServer(cfg Config) error {
 	// Halt the server gracefully on SIGINT/SIGTERM.
 	go func() {
 		<-haltCh
-		svr.Shutdown()
+		svr.ShutdownGracefully()
 	}()
 
 	// Rotate server logs upon SIGHUP.

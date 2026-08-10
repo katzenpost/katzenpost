@@ -257,6 +257,15 @@ func TestPersistMixKeysOnShutdownDirValidation(t *testing.T) {
 		cfg.PersistMixKeysOnShutdownDir = filepath.Join(t.TempDir(), "mixkeys")
 		require.NoError(cfg.validate())
 	})
+
+	t.Run("consensus withdrawal and key persistence are mutually exclusive", func(t *testing.T) {
+		require := require.New(t)
+		cfg := base(t)
+		cfg.WaitForConsensusExitOnShutdown = true
+		cfg.PersistMixKeysOnShutdown = true
+		require.EqualError(cfg.validate(),
+			"config: Server: WaitForConsensusExitOnShutdown and PersistMixKeysOnShutdown are mutually exclusive")
+	})
 }
 
 func TestApplyRuntimeDefaults_SchedulerMaxBurst(t *testing.T) {
