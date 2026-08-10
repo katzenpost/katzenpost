@@ -192,9 +192,17 @@ func New(epoch uint64, g *geo.Geometry) (*MixKey, error) {
 // Load returns the mix key persisted for the given epoch, if any. The bool
 // reports whether a key was found and loaded; a nil error with a false bool
 // means no key file exists (the caller should generate a fresh key). Any
-// other error means a key file exists but could not be loaded, because it is
-// corrupt or was written for a different scheme; the caller should log it and
-// fall back to generating a fresh key.
+// other error means a key file exists but could not be loaded or consumed;
+// the caller should log it and refuse to start, since silently generating a
+// fresh key would leave the node's keypairs out of sync with the consensus
+// already published by the authorities.
+//
+// Load is consume-on-read: the persisted key file is deleted as soon as it
+// has been successfully loaded, so key material exists on the filesystem only between
+// a clean shutdown and the immediately following boot. A file that fails to
+// load, or that cannot be unlinked after loading, is left in place and is
+// reported as an error so the daemon does not start with unexpected private
+// key material on the filesystem.
 func Load(epoch uint64, g *geo.Geometry, keyStoreDir string) (*MixKey, bool, error) {
 	blob, err := os.ReadFile(keyPath(epoch, keyStoreDir))
 	if err != nil {
@@ -234,6 +242,15 @@ func Load(epoch uint64, g *geo.Geometry, keyStoreDir string) (*MixKey, bool, err
 		}
 	default:
 		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d was written for a different scheme", epoch)
+	}
+
+	// Consume the file so key material is on the filesystem only until the next
+	// clean shutdown. A key that cannot be consumed must not be used:
+	// silently leaving private key material on the filesystem (or
+	// continuing as if persistence were trustworthy) would defeat the
+	// purpose of the feature, so this is reported as a startup error.
+	if err := os.Remove(keyPath(epoch, keyStoreDir)); err != nil {
+		return nil, false, fmt.Errorf("mixkey: failed to consume persisted key file for epoch %d: %v", epoch, err)
 	}
 
 	return k, true, nil

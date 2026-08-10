@@ -17,13 +17,19 @@
 package mixkeys
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"sync"
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -31,6 +37,10 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 )
+
+// keyFileRe matches persisted mix key file names written by the mixkey
+// package, capturing the epoch.
+var keyFileRe = regexp.MustCompile(`^mixkey-(\d+)\.bin$`)
 
 type mixKeys struct {
 	sync.Mutex
@@ -58,8 +68,52 @@ func (m *mixKeys) init() error {
 	// if the current time is in the clock skew grace period.  But it may not
 	// matter much in practice.
 	epoch, _, _ := epochtime.Now()
+	if err := m.purgeStaleKeyFiles(epoch); err != nil {
+		return err
+	}
 	if _, err := m.Generate(epoch); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// purgeStaleKeyFiles removes persisted mix key files for epochs that are no
+// longer part of the current generation window. With a durable keyStoreDir
+// (e.g. a docker testnet bind-mount), files written by a clean shutdown can
+// outlive their usefulness when the node comes back up many epochs later.
+// Prune only removes files for keys that are still live in m.keys, so the
+// sweep happens here on boot. Consume-on-read in mixkey.Load already removes
+// in-window files the moment they are loaded; everything else that matches
+// the key file pattern and predates the window is stale.
+func (m *mixKeys) purgeStaleKeyFiles(baseEpoch uint64) error {
+	if !m.persistOnShutdown {
+		return nil
+	}
+
+	entries, err := os.ReadDir(m.keyStoreDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, ent := range entries {
+		name := ent.Name()
+		sub := keyFileRe.FindStringSubmatch(name)
+		if sub == nil {
+			continue
+		}
+		e, err := strconv.ParseUint(sub[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		if e < baseEpoch || e >= baseEpoch+constants.NumMixKeys {
+			m.log.Noticef("Purging stale persisted mix key for epoch %d", e)
+			if err := os.Remove(filepath.Join(m.keyStoreDir, name)); err != nil {
+				m.log.Warningf("Failed to purge stale persisted mix key for epoch %d: %v", e, err)
+			}
+		}
 	}
 
 	return nil
@@ -85,8 +139,14 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 		if m.persistOnShutdown {
 			k, found, err = mixkey.Load(e, m.geo, m.keyStoreDir)
 			if err != nil {
-				m.log.Warningf("Failed to load persisted mix key for epoch %d: %v", e, err)
-				k = nil
+				// A persisted key file that cannot be loaded or consumed
+				// is fatal: the on-disk state disagrees with what the
+				// consensus expects, and silently generating a fresh key
+				// would leave the node out of sync (first-hop MAC
+				// failures) until the next epoch. Refuse to start so the
+				// operator sees the cause.
+				m.log.Errorf("Failed to load persisted mix key for epoch %d: %v", e, err)
+				return false, err
 			} else if found {
 				m.log.Debugf("Loaded persisted mix key for epoch %d", e)
 			}
@@ -191,7 +251,11 @@ func NewMixKeys(glue glue.Glue, geo *geo.Geometry) (glue.MixKeys, error) {
 
 	if glue.Config().Server.PersistMixKeysOnShutdown {
 		m.persistOnShutdown = true
-		m.keyStoreDir = filepath.Join(glue.Config().Server.DataDir, "mixkeys")
+		if dir := glue.Config().Server.PersistMixKeysOnShutdownDir; dir != "" {
+			m.keyStoreDir = dir
+		} else {
+			m.keyStoreDir = defaultKeyStoreDir(glue.IdentityPublicKey())
+		}
 	}
 
 	if err := m.init(); err != nil {
@@ -199,4 +263,15 @@ func NewMixKeys(glue glue.Glue, geo *geo.Geometry) (glue.MixKeys, error) {
 	}
 
 	return m, nil
+}
+
+// defaultKeyStoreDir returns the tmpfs subdirectory used for persisted mix
+// keys when no explicit directory is configured: a per-node path derived
+// from a hash of the node's long-term identity key, so key material
+// survives a clean daemon restart but never touches durable storage.
+// Persist on shutdown and the consume-on-read boot reload then only span
+// the daemon's own lifetime.
+func defaultKeyStoreDir(idKey sign.PublicKey) string {
+	idKeyHash := hash.Sum256From(idKey)
+	return filepath.Join("/dev/shm", fmt.Sprintf("katzenpost-mixkeys-%x", idKeyHash))
 }
