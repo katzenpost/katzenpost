@@ -68,7 +68,10 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 	case *commands.ReplicaMessage:
 		c.log.Debugf("Processing ReplicaMessage command with ciphertext length: %d", len(cmd.Ciphertext))
 		// Handle asynchronously so proxy requests don't block the
-		// command loop. Semaphore limits active handlers.
+		// command loop. The proxy worker semaphore is acquired only
+		// inside proxyReadRequest/proxyWriteRequest for the blocking
+		// shard round-trip, so local reads and writes never wait
+		// behind in-flight proxied traffic (no head-of-line blocking).
 		recvAt := time.Now()
 		c.l.server.Add(1)
 		go func() {
@@ -79,13 +82,6 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 				return
 			default:
 			}
-			select {
-			case c.l.server.proxySema <- struct{}{}:
-			case <-c.l.closeAllCh:
-				c.log.Debugf("Terminating gracefully.")
-				return
-			}
-			defer func() { <-c.l.server.proxySema }()
 			resp := c.handleReplicaMessage(cmd)
 			c.log.Debugf("handleReplicaMessage returned: %T", resp)
 			select {
@@ -638,6 +634,16 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		targetShard       *pki.ReplicaDescriptor
 		failedShards      []*pki.ReplicaDescriptor
 	)
+	// Acquire a proxy worker slot for the blocking shard round-trip.
+	// Local reads and writes never contend for this semaphore, so a
+	// burst of proxied traffic cannot starve local operations. A slot
+	// is held for the full fail-over sweep across candidate holders.
+	select {
+	case c.l.server.proxySema <- struct{}{}:
+		defer func() { <-c.l.server.proxySema }()
+	case <-c.l.closeAllCh:
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+	}
 	for _, candidate := range proxyShardOrder(shards, idx) {
 		reply, mkemPrivateKey, targetEnvelopeKey, err = c.proxyToShard(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
 		if err == nil {
@@ -779,6 +785,16 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		targetEnvelopeKey nike.PublicKey
 		targetShard       *pki.ReplicaDescriptor
 	)
+	// Acquire a proxy worker slot for the blocking shard round-trip.
+	// Local reads and writes never contend for this semaphore, so a
+	// burst of proxied traffic cannot starve local operations. A slot
+	// is held for the full fail-over sweep across candidate holders.
+	select {
+	case c.l.server.proxySema <- struct{}{}:
+		defer func() { <-c.l.server.proxySema }()
+	case <-c.l.closeAllCh:
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+	}
 	for _, candidate := range proxyShardOrder(shards, idx) {
 		reply, mkemPrivateKey, targetEnvelopeKey, err = c.proxyToShard(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
 		if err == nil {
