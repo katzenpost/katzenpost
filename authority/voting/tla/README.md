@@ -2,7 +2,7 @@
 
 A model of the consensus protocol in
 [`authority/voting/server/state.go`](../server/state.go), as it is on `main` at
-commit `e17bffb95efed80a6a7fb236a131303c05494a5e`.
+commit `51270d399a841cf88b442cde4b9a4a77094ce21b`.
 
 ## What is modelled
 
@@ -29,7 +29,7 @@ Each element follows a named function in `state.go`:
 | Descriptors are tallied over received votes, with no equivocation check | `tallyVotes` |
 | Participants come from certificates; an authority seen with two commitments is excluded | `verifyCommits` |
 | A document needs `Threshold` votes, certificates and consistent commitments, or the authority signs nothing | `getMyConsensus` |
-| A tally must have the shape a configuration's `Topology` demands, to certify and to compute a document | `IsDocumentWellFormed`, at `getCertificate` and `getMyConsensus` |
+| A tally must have the shape a configuration's `Topology` demands, to certify and to compute a document | `IsDocumentWellFormed`, at `getCertificate` and `getMyConsensus`; `verifyTopology` at `getMyConsensus` |
 | An authority signs only its own document, and finalises at `Threshold` signatures over it | `getThresholdConsensus` |
 | The prior epoch's value is hashed in, or zero bytes when absent | `computeSharedRandom` |
 | An authority that did not finalise may be given any threshold-signed document, or none | `stateBootstrap` |
