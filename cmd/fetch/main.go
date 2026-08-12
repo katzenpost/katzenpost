@@ -31,6 +31,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/thin"
@@ -114,6 +115,7 @@ func runFetch(cfg Config) error {
 		Level: cfg.LogLevel,
 	}
 	client := thin.NewThinClient(thinCfg, logging)
+	logger := client.GetLogger("fetch")
 
 	// Ensure thin_close is sent even on Ctrl-C
 	sigCh := make(chan os.Signal, 1)
@@ -145,7 +147,7 @@ func runFetch(cfg Config) error {
 	// stall readiness checks until the daemon's next PKI broadcast at the
 	// next epoch boundary.
 	if doc, err := fetchSignedDocument(client, 0); err == nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
-		if err := waitForReady(cfg, doc); err != nil {
+		if err := waitForReady(cfg, logger, doc); err != nil {
 			return err
 		}
 		printDocument(doc, signerNames)
@@ -164,7 +166,7 @@ func runFetch(cfg Config) error {
 	for {
 		if cfg.RequireReady {
 			if doc, err := fetchSignedDocument(client, 0); err == nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
-				if err := waitForReady(cfg, doc); err != nil {
+				if err := waitForReady(cfg, logger, doc); err != nil {
 					return err
 				}
 				printDocument(doc, signerNames)
@@ -184,7 +186,7 @@ func runFetch(cfg Config) error {
 			if err != nil {
 				return err
 			}
-			if err := waitForReady(cfg, doc); err != nil {
+			if err := waitForReady(cfg, logger, doc); err != nil {
 				return err
 			}
 			printDocument(doc, signerNames)
@@ -298,8 +300,9 @@ type probe struct {
 // waitForReady blocks until every node in the document reports ready on its
 // metrics endpoint (--require-ready only). The fetched document supplies the
 // node inventory; the expected epochs are recomputed each poll so a mid-wait
-// epoch rotation does not wedge the loop.
-func waitForReady(cfg Config, doc *cpki.Document) error {
+// epoch rotation does not wedge the loop. While waiting, every 4 seconds (two
+// polls) the current ready/waiting split is logged at DEBUG.
+func waitForReady(cfg Config, logger *logging.Logger, doc *cpki.Document) error {
 	if !cfg.RequireReady {
 		return nil
 	}
@@ -309,6 +312,7 @@ func waitForReady(cfg Config, doc *cpki.Document) error {
 	}
 	fmt.Printf("waiting for the network to report ready (%d node(s), up to %v)...\n", len(probes), cfg.ReadyTimeout)
 	deadline := time.Now().Add(cfg.ReadyTimeout)
+	lastProgressLog := time.Now()
 	for {
 		notReady := checkProbes(probes)
 		if len(notReady) == 0 {
@@ -316,8 +320,14 @@ func waitForReady(cfg Config, doc *cpki.Document) error {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			printNotReady(notReady)
+			printNotReady(probes, notReady)
 			return fmt.Errorf("timed out after %v waiting for the network to report ready (%d node(s) not ready)", cfg.ReadyTimeout, len(notReady))
+		}
+		if time.Since(lastProgressLog) >= 4*time.Second {
+			ready, waiting := readyWaitingNames(probes, notReady)
+			logger.Debugf("ready %d/%d node(s): ready=[%s] waiting=[%s]",
+				len(ready), len(probes), strings.Join(ready, ","), strings.Join(waiting, ","))
+			lastProgressLog = time.Now()
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -360,9 +370,28 @@ func checkProbes(probes []*probe) []probeReport {
 	return notReady
 }
 
+// readyWaitingNames splits the probe inventory into the names currently
+// reporting ready and those still waiting, preserving probe order.
+func readyWaitingNames(probes []*probe, notReady []probeReport) (ready, waiting []string) {
+	waitingSet := make(map[string]bool, len(notReady))
+	for _, r := range notReady {
+		waitingSet[r.probe.name] = true
+	}
+	for _, p := range probes {
+		if waitingSet[p.name] {
+			waiting = append(waiting, p.name)
+		} else {
+			ready = append(ready, p.name)
+		}
+	}
+	return ready, waiting
+}
+
 // printNotReady emits per-node diagnostics for every unready node.
-func printNotReady(reports []probeReport) {
-	fmt.Fprintf(os.Stderr, "network NOT ready: %d node(s) not reporting ready:\n", len(reports))
+func printNotReady(probes []*probe, reports []probeReport) {
+	ready, waiting := readyWaitingNames(probes, reports)
+	fmt.Fprintf(os.Stderr, "network NOT ready: %d of %d node(s) ready: [%s]; still waiting on %d node(s): [%s]\n",
+		len(ready), len(probes), strings.Join(ready, ","), len(waiting), strings.Join(waiting, ","))
 	for _, r := range reports {
 		if r.err != nil {
 			fmt.Fprintf(os.Stderr, "  %-24s %-9s %-20s error: %v\n", r.probe.name, r.probe.kind, r.probe.addr, r.err)
