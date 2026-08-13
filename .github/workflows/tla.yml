@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'authority/voting/tla/**'
+      - 'authority/voting/server/state.go'
       - 'client/tla/**'
       - 'server/tla/**'
       - '.ci/tla.sh'
@@ -15,6 +16,7 @@ on:
     branches: [main]
     paths:
       - 'authority/voting/tla/**'
+      - 'authority/voting/server/state.go'
       - 'client/tla/**'
       - 'server/tla/**'
       - '.ci/tla.sh'
