@@ -244,6 +244,19 @@ func (p *pki) currentRawSignedDocument() ([]byte, uint64) {
 		cached := d.(*CachedDoc)
 		return cached.RawSignedBlob, cached.Doc.Epoch
 	}
+
+	// Mirror the currentDocument fallback: around an epoch boundary, or
+	// across a skipped (dead) consensus epoch, the current epoch's
+	// document is not yet or never cached. Serve the previous epoch's
+	// raw payload so raw document requests (the fetch tool's
+	// GetPKIDocumentRaw(0)) keep getting an answer. The reply's epoch
+	// is that of the document actually returned.
+	if d, _ := p.docs.Load(now - 1); d != nil {
+		cached := d.(*CachedDoc)
+		p.log.Debugf("currentRawSignedDocument: epoch %d not yet cached, using previous epoch %d", now, now-1)
+		return cached.RawSignedBlob, cached.Doc.Epoch
+	}
+
 	return nil, now
 }
 
@@ -323,6 +336,30 @@ func (p *pki) worker() {
 				continue
 			}
 			didUpdate = true
+		}
+
+		// A restart that misses the dirauth vote window skips a whole
+		// consensus epoch: the current epoch will never receive a
+		// document, so the loop above can only mark it as failed. Cache
+		// the previous epoch's document in that case so the daemon keeps
+		// serving a current-or-previous document to thin clients
+		// (currentDocument and currentRawSignedDocument both fall back
+		// one epoch) instead of starving them for the entire gap. The
+		// previous epoch is still served by the authorities inside their
+		// retention window; once a real current consensus exists the
+		// loop fetches it as usual and the fallback stops being reached.
+		if _, ok := p.docs.Load(now); !ok {
+			if _, ok := p.docs.Load(now - 1); !ok {
+				p.log.Debugf("current epoch %d has no document (likely unserved), fetching previous epoch %d", now, now-1)
+				if err := p.updateDocument(now - 1); err != nil {
+					if err == cpki.ErrDocumentGone {
+						p.failedFetches[now-1] = err
+					}
+					p.log.Debugf("failed to fetch previous epoch %d: %v", now-1, err)
+				} else {
+					didUpdate = true
+				}
+			}
 		}
 		p.pruneFailures(now)
 		if didUpdate {
