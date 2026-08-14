@@ -276,6 +276,104 @@ func TestPKICurrentDocumentFallsBackToPreviousEpoch(t *testing.T) {
 	require.Equal(t, []byte("cur"), blob)
 }
 
+// TestPKICurrentRawSignedDocumentFallsBackToPreviousEpoch confirms the raw
+// signed document path serves the previous epoch's payload while the current
+// epoch is unserved, so thin-client raw document requests (the fetch tool's
+// GetPKIDocumentRaw(0)) keep getting an answer across a skipped consensus
+// epoch instead of returning nil.
+func TestPKICurrentRawSignedDocumentFallsBackToPreviousEpoch(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+	}
+	p := newPKI(c)
+	c.pki = p
+
+	now, _, _ := epochtime.Now()
+
+	// Nothing cached for any epoch: there is nothing to fall back to.
+	raw, gotEpoch := p.currentRawSignedDocument()
+	require.Nil(t, raw)
+
+	prevDoc := &cpki.Document{Epoch: now - 1}
+	p.docs.Store(now-1, &CachedDoc{Doc: prevDoc, Blob: []byte("prev"), RawSignedBlob: []byte("prev-raw")})
+
+	// Current epoch absent: fall back to the previous epoch, reporting
+	// the previous epoch's document epoch.
+	raw, gotEpoch = p.currentRawSignedDocument()
+	require.Equal(t, []byte("prev-raw"), raw)
+	require.Equal(t, now-1, gotEpoch)
+
+	// Once the current epoch's document arrives it takes precedence.
+	curDoc := &cpki.Document{Epoch: now}
+	p.docs.Store(now, &CachedDoc{Doc: curDoc, Blob: []byte("cur"), RawSignedBlob: []byte("cur-raw")})
+	raw, gotEpoch = p.currentRawSignedDocument()
+	require.Equal(t, []byte("cur-raw"), raw)
+	require.Equal(t, now, gotEpoch)
+}
+
+// TestPKIWorkerFetchesPreviousEpochWhenCurrentUnserved exercises the PKI
+// worker's fallback: when the current epoch will never receive a document
+// (a consensus epoch skipped by a restart that missed the dirauth vote
+// window), the worker caches the previous epoch so the daemon keeps serving
+// a document to thin clients for the duration of the gap.
+func TestPKIWorkerFetchesPreviousEpochWhenCurrentUnserved(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	c := &Client{
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
+	}
+	cfg.Callbacks = &config.Callbacks{}
+
+	p := newPKI(c)
+	c.pki = p
+
+	now, _, _ := epochtime.Now()
+
+	// The current epoch is permanently unserved; the previous epoch is.
+	myMockPKIClient.doc = &cpki.Document{
+		Epoch:              now - 1,
+		SphinxGeometryHash: c.cfg.SphinxGeometry.Hash(),
+	}
+	p.consensusGetter = &mockConsensusGetter{
+		epochErrors: map[uint64]uint8{now: commands.ConsensusGone},
+	}
+
+	p.start()
+	defer func() {
+		p.Halt()
+		p.Wait()
+	}()
+
+	// The worker caches the previous epoch within its first wake.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, ok := p.docs.Load(now - 1); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("PKI worker never cached the previous epoch")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// The daemon serves the fallback document to raw-document requests.
+	raw, gotEpoch := p.currentRawSignedDocument()
+	require.NotNil(t, raw)
+	require.Equal(t, now-1, gotEpoch)
+}
+
 // TestPKIPruneRetainsPreviousEpoch confirms pruneDocuments keeps the
 // immediately previous epoch's document, so currentDocument can still
 // serve it as the last valid document while the current epoch's

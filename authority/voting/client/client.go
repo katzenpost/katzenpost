@@ -415,13 +415,13 @@ func (p *connector) initSessionWithRetry(
 	return nil, lastErr
 }
 
-func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
+func (p *connector) roundTrip(ctx context.Context, s *wire.Session, cmd commands.Command) (commands.Command, error) {
 	sendStart := time.Now()
-	if err := s.SendCommand(context.Background(), cmd); err != nil {
+	if err := s.SendCommand(ctx, cmd); err != nil {
 		return nil, err
 	}
 	p.log.Debugf("Sent %s in %v", cmd, time.Since(sendStart))
-	return s.RecvCommand(context.Background())
+	return s.RecvCommand(ctx)
 }
 
 type PeerResponse struct {
@@ -455,7 +455,7 @@ func (p *connector) allPeersRoundTrip(
 			}
 			defer conn.Close()
 
-			resp, err := p.roundTrip(conn.session, cmd)
+			resp, err := p.roundTrip(ictx, conn.session, cmd)
 			if err != nil {
 				p.log.Errorf("allPeersRoundTrip: %s round trip failed: %v", peer.Identifier, err)
 				responseCh <- PeerResponse{Peer: peer, Error: err}
@@ -601,7 +601,7 @@ func (p *connector) postAuthorityOnce(
 	}
 	defer conn.Close()
 
-	resp, err := p.roundTrip(conn.session, cmd)
+	resp, err := p.roundTrip(ctx, conn.session, cmd)
 	if err != nil {
 		elapsed := time.Since(start)
 		p.log.Warningf(
@@ -1103,7 +1103,7 @@ func (p *connector) fetchConsensus(
 		MixnetTransmission: false,
 	}
 
-	resp, err := p.roundTrip(conn.session, cmd)
+	resp, err := p.roundTrip(ctx, conn.session, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("peer %s: round trip failed: %v", auth.Identifier, err)
 	}

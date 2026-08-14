@@ -129,6 +129,18 @@ ifneq ($(epoch_duration),)
   epochDurationFlag=--epochDuration $(epoch_duration)
 endif
 
+# Mix key persistence across clean restarts. The testnet's dirauth
+# consensus survives `make stop`/`make start` because node dirs are
+# bind-mounted onto the host; persist the mix keys to each node's DataDir
+# on clean shutdown and reload them on the next boot so a restart doesn't
+# leave the fresh keys mismatched with the retained consensus (surfaces
+# as first-hop MAC failures until the next epoch). Set to empty to
+# disable persistence.
+persistMixKeysOnShutdownDir ?= mixkeys
+ifneq ($(persistMixKeysOnShutdownDir),)
+  persistMixKeysOnShutdownDirFlag=--persistMixKeysOnShutdownDir $(persistMixKeysOnShutdownDir)
+endif
+
 ifneq ($(session_grace_period),)
   sessionGracePeriodFlag=--sessionGracePeriod $(session_grace_period)
 endif
@@ -284,7 +296,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
 		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
-		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
+		${unwrapDelayFlag} ${numSphinxWorkersFlag} ${persistMixKeysOnShutdownDirFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
 
 # Generate configuration files only (without docker containers)
@@ -298,7 +310,7 @@ config-only: | $(net_name)
 		--nike "$(nike)" --kem "$(kem)" \
 		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
 		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
-		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
+		${unwrapDelayFlag} ${numSphinxWorkersFlag} ${persistMixKeysOnShutdownDirFlag} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 	@echo "Configuration files generated in ./$(net_name)/"
 	@echo "Tests can now use the symlinked configs (e.g., client/testdata/client.toml -> ../../docker/$(net_name)/client/client.toml)"
@@ -532,7 +544,7 @@ debian_base.stamp:
 	$(docker) rm katzenpost_debian_base
 	touch $@
 
-alpine_base_image?=ghcr.io/katzenpost/alpine-base:rocksdb-10.2.1
+alpine_base_image?=ghcr.io/katzenpost/alpine-base:latest
 
 alpine_base.stamp:
 	$(docker) pull $(alpine_base_image) \
