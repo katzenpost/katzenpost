@@ -217,9 +217,13 @@ func TestReadRepairFiresOnBoxNotFound(t *testing.T) {
 // only deepens whatever congestion caused the silence.
 func TestNoReadRepairOnSilentHolder(t *testing.T) {
 	env := setupSemaScopeTestServer(t)
-	// The silent holder is waited on for the full ProxyRequestTimeout.
-	// Shorten it so this test measures the failover, not the clock.
-	env.server.cfg.ProxyRequestTimeout = 2
+	// The silent holder burns its share of the sweep budget before the
+	// co-holder is tried. Shorten the budget so this test measures the
+	// failover rather than the clock, but keep it comfortably above the
+	// per-candidate MKEM encapsulation cost: that CTIDH1024 keygen and
+	// group action is spent from the same budget, so too small a value
+	// exhausts the sweep on crypto alone and no failover happens.
+	env.server.cfg.ProxyRequestTimeout = 10
 	sc := newScriptedConnector(t, env,
 		holderScript{silent: true},
 		holderScript{errorCode: pigeonhole.ReplicaSuccess},
