@@ -113,6 +113,42 @@ func cmdIdentity(cmd commands.Command) ([32]byte, bool) {
 	}
 }
 
+// failUndeliverableProxyRequest disposes of a command that could not be
+// handed to its peer, returning true if it dealt with it.
+//
+// Proxy requests are failed rather than retry-queued. Each one already
+// has a waiter holding a deadline, so a retry minutes later arrives for
+// a waiter long gone: it spends link capacity on a request nobody wants
+// and produces a reply HandleReply discards. Nor does the queue's dedup
+// help, since cmdIdentity keys a ReplicaMessage by envelope hash and
+// mkem.Encapsulate draws a fresh ephemeral keypair per attempt, so
+// every retry is a distinct entry and up to maxRetryQueuePerPeer of
+// them can pile up. Failing the request instead lets the sweep fail
+// over to the co-holder immediately.
+//
+// Replication writes keep the retry queue; they are what it was built
+// for, and they have no waiter to disappoint.
+func failUndeliverableProxyRequest(co GenericConnector, cmd commands.Command) bool {
+	msg, isProxyRequest := cmd.(*commands.ReplicaMessage)
+	if !isProxyRequest {
+		return false
+	}
+	// Both nil checks are load-bearing: connectors built by tests, and
+	// the window before Server.Start wires the proxy manager, have no
+	// manager to fail the request against. Fall through to the retry
+	// queue's existing behaviour rather than panicking.
+	server := co.Server()
+	if server == nil {
+		return false
+	}
+	proxyManager := server.ProxyManager()
+	if proxyManager == nil {
+		return false
+	}
+	proxyManager.FailRequest(*msg.EnvelopeHash())
+	return true
+}
+
 func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	co.RLock()
 	c, ok := co.conns[*idHash]
@@ -128,6 +164,8 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 		// Connection exists - dispatch immediately
 		co.log.Debugf("Dispatching command type %T to peer %x", cmd, idHash)
 		c.dispatchCommand(cmd)
+	} else if failUndeliverableProxyRequest(co, cmd) {
+		co.log.Warningf("No connection for destination %x, failing proxy request %T", idHash[:8], cmd)
 	} else {
 		// No connection - add to retry queue instead of dropping
 		co.log.Warningf("No connection for destination %x, queueing %T for retry", idHash[:8], cmd)
