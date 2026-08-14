@@ -461,8 +461,10 @@ func New(cfg *config.Config) (*Server, error) {
 	// running. Empty MetricsAddress disables the endpoint entirely;
 	// production deployments should leave it unset and only set it
 	// in docker and other operator-controlled diagnostic
-	// environments.
-	instrument.StartPrometheusListener(s.cfg.Server.MetricsAddress)
+	// environments. A configured address that cannot be bound is a
+	// configuration error and panics, consistent with the MetricsAddress
+	// syntax validation done at config parse time.
+	instrument.StartPrometheusListener(s.cfg.Server.MetricsAddress, s.log)
 
 	isOk = true
 	return s, nil
