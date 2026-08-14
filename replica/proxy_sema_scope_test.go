@@ -42,6 +42,15 @@ type semaScopeTestEnv struct {
 	inConn   *incomingConn
 	dummyOut chan *senderRequest
 	emitter  *delayedReplyEmitter
+
+	// holders are the two non-self shard replicas in doc, paired with
+	// their keys so a test connector can decapsulate a proxied request
+	// and answer it as that holder would.
+	holders     []*pki.ReplicaDescriptor
+	holderKeys  []*TestKeys
+	pigeonGeo   *pgeo.Geometry
+	sphinxGeo   *geo.Geometry
+	replicaKeys *TestKeys
 }
 
 // setupSemaScopeTestServer builds a real, self-contained Server by hand:
@@ -105,10 +114,12 @@ func setupSemaScopeTestServer(t *testing.T) *semaScopeTestEnv {
 			replicaEpoch: keypair.PublicKey.Bytes(),
 		},
 	}
+	holder1, holder1Keys := semaScopeHolderDescriptor(t, schemes, 1)
+	holder2, holder2Keys := semaScopeHolderDescriptor(t, schemes, 2)
 	doc := CreateTestPKIDocument(t, []*pki.ReplicaDescriptor{
 		serverDesc,
-		semaScopeHolderDescriptor(t, schemes, 1),
-		semaScopeHolderDescriptor(t, schemes, 2),
+		holder1,
+		holder2,
 	}, nil)
 	StoreTestDocument(t, server.PKIWorker, doc)
 
@@ -125,14 +136,19 @@ func setupSemaScopeTestServer(t *testing.T) *semaScopeTestEnv {
 	emitter := newDelayedReplyEmitter(dummyOut, server.logBackend, "test", func() time.Duration { return fallbackReplyJitter })
 
 	env := &semaScopeTestEnv{
-		server:   server,
-		keys:     keys,
-		cfg:      cfg,
-		doc:      doc,
-		listener: listener,
-		inConn:   inConn,
-		dummyOut: dummyOut,
-		emitter:  emitter,
+		server:      server,
+		keys:        keys,
+		cfg:         cfg,
+		doc:         doc,
+		listener:    listener,
+		inConn:      inConn,
+		dummyOut:    dummyOut,
+		emitter:     emitter,
+		holders:     []*pki.ReplicaDescriptor{holder1, holder2},
+		holderKeys:  []*TestKeys{holder1Keys, holder2Keys},
+		pigeonGeo:   pigeonholeGeo,
+		sphinxGeo:   geometry,
+		replicaKeys: keys,
 	}
 
 	t.Cleanup(func() {
@@ -150,7 +166,7 @@ func setupSemaScopeTestServer(t *testing.T) *semaScopeTestEnv {
 // semaScopeHolderDescriptor builds a storage-replica descriptor with a fresh
 // identity and a current-epoch envelope key, so proxyToShard can
 // encapsulate to it (the mock connector never delivers a reply).
-func semaScopeHolderDescriptor(t *testing.T, schemes *TestSchemes, index int) *pki.ReplicaDescriptor {
+func semaScopeHolderDescriptor(t *testing.T, schemes *TestSchemes, index int) (*pki.ReplicaDescriptor, *TestKeys) {
 	t.Helper()
 	keys := GenerateTestKeys(t, schemes)
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
@@ -163,7 +179,7 @@ func semaScopeHolderDescriptor(t *testing.T, schemes *TestSchemes, index int) *p
 		EnvelopeKeys: map[uint64][]byte{
 			replicaEpoch: keys.ReplicaKeyBlob,
 		},
-	}
+	}, keys
 }
 
 // findBoxByShardMembership returns a box ID whose K=2 shards either
