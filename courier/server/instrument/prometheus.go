@@ -4,12 +4,13 @@
 package instrument
 
 import (
-	"net/http"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/common/metrics"
 )
 
 var registerOnce sync.Once
@@ -99,8 +100,9 @@ var (
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
-// if address is non-empty.
-func StartPrometheusListener(address string) {
+// if address is non-empty. Panics if a configured address cannot be
+// bound.
+func StartPrometheusListener(address string, log *logging.Logger) {
 	registerOnce.Do(func() {
 		prometheus.MustRegister(decoysSent)
 		prometheus.MustRegister(messagesSent)
@@ -116,10 +118,10 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(copyShardReadTotal)
 	})
 
-	if address != "" {
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(address, nil)
+	if address == "" {
+		return
 	}
+	metrics.MustServe(address, log)
 }
 
 // DecoysSent increments the counter for decoy messages sent

@@ -5,12 +5,12 @@ package instrument
 
 import (
 	"fmt"
-	"net/http"
 
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/katzenpost/katzenpost/common/metrics"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -204,7 +204,8 @@ var (
 	)
 )
 
-// StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
+// StartPrometheusListener starts the Prometheus metrics TCP/HTTP
+// Listener. Panics if a configured MetricsAddress cannot be bound.
 func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(deadlineBlownPacketsDropped)
 	prometheus.MustRegister(incomingConns)
@@ -238,11 +239,10 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(selfCheckSphinxCores)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
-	if metricsAddress != "" {
-		// Expose registered metrics via HTTP
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(metricsAddress, nil)
+	if metricsAddress == "" {
+		return
 	}
+	metrics.MustServe(metricsAddress, glue.LogBackend().GetLogger("instrument"))
 }
 
 // Incoming increments the counter for incoming requests
