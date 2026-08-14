@@ -142,8 +142,13 @@ func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
 	default:
 		// A full per-peer queue means the peer is not draining. Never
 		// block the dispatching goroutine on it (proxy handlers
-		// dispatch before arming their own timeout); park the command
-		// in the connector retry queue instead.
+		// dispatch before arming their own timeout); fail the proxy
+		// request so its sweep fails over now, or park a replication
+		// write in the connector retry queue.
+		if failUndeliverableProxyRequest(c.co, cmd) {
+			c.log.Warningf("Outgoing queue for %s full, failing proxy request %T", c.dst.Name, cmd)
+			return
+		}
 		idHash := hash.Sum256(c.dst.IdentityKey)
 		c.log.Warningf("Outgoing queue for %s full, queueing %T for retry", c.dst.Name, cmd)
 		c.co.QueueForRetry(cmd, idHash)
@@ -208,6 +213,12 @@ func (c *outgoingConn) drainToRetryQueue() {
 	for {
 		select {
 		case cmd := <-c.ch:
+			if _, isProxyRequest := cmd.(*commands.ReplicaMessage); isProxyRequest {
+				// FailPeer already failed every pending proxy request
+				// to this peer when the session died, so this one has
+				// no waiter left to deliver to.
+				continue
+			}
 			c.co.QueueForRetry(cmd, idHash)
 			drained++
 		default:
@@ -586,7 +597,7 @@ func (c *outgoingConn) egressWorker(w wire.SessionInterface, outCh chan commands
 func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command) bool {
 	_, isDecoy := cmd.(*commands.ReplicaDecoy)
 	if err := w.SendCommand(context.Background(), cmd); err != nil {
-		if !isDecoy {
+		if !isDecoy && !failUndeliverableProxyRequest(c.co, cmd) {
 			c.log.Debugf("SendCommand failed: %v, queuing for retry", err)
 			idHash := hash.Sum256(c.dst.IdentityKey)
 			c.co.QueueForRetry(cmd, idHash)
@@ -603,7 +614,7 @@ func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command
 	// that goes silent tears the link down instead of parking this goroutine.
 	response, err := w.RecvCommand(context.Background())
 	if err != nil {
-		if !isDecoy {
+		if !isDecoy && !failUndeliverableProxyRequest(c.co, cmd) {
 			c.log.Debugf("Failed to receive command: %v, queuing for retry", err)
 			idHash := hash.Sum256(c.dst.IdentityKey)
 			c.co.QueueForRetry(cmd, idHash)

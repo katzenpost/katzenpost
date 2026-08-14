@@ -114,6 +114,28 @@ func (p *ProxyRequestManager) FailPeer(peerIDHash [32]byte) {
 	p.publishPendingLocked()
 }
 
+// FailRequest fails one pending proxy request by envelope hash so its
+// waiter stops waiting at once.
+//
+// Called when the request could not be handed to the peer at all: with
+// no command on the wire there is no reply coming, so the waiter would
+// otherwise burn its whole share of the sweep budget against nothing
+// and only then fail over to the co-holder. Sibling of FailPeer, which
+// does the same for every request to a peer whose session died.
+func (p *ProxyRequestManager) FailRequest(envelopeHash [32]byte) {
+	p.Lock()
+	defer p.Unlock()
+
+	request, exists := p.pendingRequests[envelopeHash]
+	if !exists {
+		return
+	}
+	p.log.Warningf("Failing undeliverable proxy request to %s: envelope hash %x", request.PeerName, envelopeHash)
+	close(request.ResponseCh)
+	delete(p.pendingRequests, envelopeHash)
+	p.publishPendingLocked()
+}
+
 // HandleReply processes an incoming reply and routes it to the waiting request
 func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) bool {
 	if reply.EnvelopeHash == nil {
