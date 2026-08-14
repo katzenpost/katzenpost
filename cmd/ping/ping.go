@@ -151,7 +151,10 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, t
 	}
 }
 
-func sendPings(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, count int, concurrency int, printDiff bool) {
+// sendPings sends count pings and returns how many failed. Callers use the
+// return value to set a non-zero process exit code so the ping can be used
+// as a smoke-test gate.
+func sendPings(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, count int, concurrency int, printDiff bool) uint64 {
 	// Extract service name from RecipientQueueID (remove leading '+' if present)
 	serviceName := string(serviceDesc.RecipientQueueID)
 	nodeName := serviceDesc.MixDescriptor.Name
@@ -205,4 +208,6 @@ func sendPings(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, 
 	} else {
 		fmt.Printf("%s\n", failureStyle.Render(successMsg))
 	}
+
+	return failed
 }

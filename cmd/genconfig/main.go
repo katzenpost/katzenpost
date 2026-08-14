@@ -170,6 +170,11 @@ performance optimization and security requirements.`,
 			"before reaping it (0 means use the daemon's built-in default of 10 minutes; "+
 			"docker mixnet sets a shorter value so the reaper visibly exercises)")
 
+	cmd.Flags().StringVar(&cfg.PersistMixKeysOnShutdownDir, "persistMixKeysOnShutdownDir", "",
+		"enable mix key persistence across clean restarts, writing every live mix key on "+
+			"shutdown to this subdirectory of each node's DataDir (e.g. mixkeys) and reloading "+
+			"them on the next boot; empty leaves persistence off in generated configs")
+
 	// Logging flags
 	cmd.Flags().StringVar(&cfg.LogLevel, "logLevel", genconfig.DebugLogLevel,
 		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
