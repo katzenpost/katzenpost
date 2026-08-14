@@ -8,9 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/nike"
+
+	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 var defaultCleanupInterval = 30 * time.Second
@@ -62,6 +65,13 @@ func NewProxyRequestManager(log *logging.Logger, requestTimeout time.Duration) *
 	return p
 }
 
+// publishPendingLocked republishes the pending-request gauge. Must be
+// called with the lock held, at every site that adds to or removes
+// from pendingRequests.
+func (p *ProxyRequestManager) publishPendingLocked() {
+	instrument.ProxyPendingRequests(len(p.pendingRequests))
+}
+
 // RegisterProxyRequest registers a new proxy request and returns a response channel
 func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPrivateKey nike.PrivateKey, targetPublicKey nike.PublicKey, originalRequest *commands.ReplicaMessage, peerIDHash [32]byte, peerName string) chan *commands.ReplicaMessageReply {
 	p.Lock()
@@ -79,6 +89,7 @@ func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPr
 		PeerName:        peerName,
 	}
 
+	p.publishPendingLocked()
 	p.log.Debugf("Registered proxy request to %s for envelope hash: %x", peerName, envelopeHash)
 
 	return responseCh
@@ -100,6 +111,7 @@ func (p *ProxyRequestManager) FailPeer(peerIDHash [32]byte) {
 		close(request.ResponseCh)
 		delete(p.pendingRequests, hash)
 	}
+	p.publishPendingLocked()
 }
 
 // HandleReply processes an incoming reply and routes it to the waiting request
@@ -132,6 +144,7 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 	// Clean up the request
 	delete(p.pendingRequests, *reply.EnvelopeHash)
 	close(request.ResponseCh)
+	p.publishPendingLocked()
 	return true
 }
 
@@ -173,6 +186,7 @@ func (p *ProxyRequestManager) Shutdown() {
 		close(request.ResponseCh)
 		delete(p.pendingRequests, hash)
 	}
+	p.publishPendingLocked()
 }
 
 // CleanupExpiredRequests removes requests that have been waiting too long
@@ -188,4 +202,5 @@ func (p *ProxyRequestManager) CleanupExpiredRequests(timeout time.Duration) {
 			delete(p.pendingRequests, hash)
 		}
 	}
+	p.publishPendingLocked()
 }

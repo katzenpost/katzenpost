@@ -638,10 +638,13 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 	// Local reads and writes never contend for this semaphore, so a
 	// burst of proxied traffic cannot starve local operations. A slot
 	// is held for the full fail-over sweep across candidate holders.
+	instrument.ProxySemWaitStart()
 	select {
 	case c.l.server.proxySema <- struct{}{}:
+		instrument.ProxySemWaitEnd()
 		defer func() { <-c.l.server.proxySema }()
 	case <-c.l.closeAllCh:
+		instrument.ProxySemWaitEnd()
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
 	}
 	for _, candidate := range proxyShardOrder(shards, idx) {
@@ -789,10 +792,13 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 	// Local reads and writes never contend for this semaphore, so a
 	// burst of proxied traffic cannot starve local operations. A slot
 	// is held for the full fail-over sweep across candidate holders.
+	instrument.ProxySemWaitStart()
 	select {
 	case c.l.server.proxySema <- struct{}{}:
+		instrument.ProxySemWaitEnd()
 		defer func() { <-c.l.server.proxySema }()
 	case <-c.l.closeAllCh:
+		instrument.ProxySemWaitEnd()
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
 	}
 	for _, candidate := range proxyShardOrder(shards, idx) {
@@ -862,6 +868,7 @@ func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMess
 	responseCh := c.l.server.proxyManager.RegisterProxyRequest(envelopeHash, mkemPrivateKey, targetEnvelopeKey, replicaMessage, *idHash, targetShard.Name)
 
 	// Dispatch the command to the target replica
+	start := time.Now()
 	c.l.server.connector.DispatchCommand(replicaMessage, idHash)
 	c.log.Debugf("Dispatched proxy request to %s, waiting for response", targetShard.Name)
 
@@ -874,12 +881,18 @@ func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMess
 	}
 	select {
 	case reply := <-responseCh:
+		// A closed channel yields nil: the request was failed rather
+		// than answered. Either way the attempt is over, so it is
+		// timed; only a genuine deadline miss is counted a timeout.
+		instrument.ProxyRequestLatency(time.Since(start))
 		if reply == nil {
 			return nil, fmt.Errorf("received nil reply from target replica")
 		}
 		c.log.Debugf("Received proxy reply from %s with error code: %d", targetShard.Name, reply.ErrorCode)
 		return reply, nil
 	case <-time.After(timeout):
+		instrument.ProxyRequestLatency(time.Since(start))
+		instrument.ProxyRequestTimedOut(targetShard.Name)
 		c.log.Errorf("Timeout waiting for proxy response from %s after %v", targetShard.Name, timeout)
 		return nil, fmt.Errorf("timeout waiting for proxy response")
 	case <-c.l.closeAllCh:
