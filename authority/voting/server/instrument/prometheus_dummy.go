@@ -12,10 +12,14 @@
 // prometheus.go.
 package instrument
 
-import "time"
+import (
+	"time"
+
+	"gopkg.in/op/go-logging.v1"
+)
 
 // StartPrometheusListener is a no-op when the noprometheus build tag is set.
-func StartPrometheusListener(_ string) {}
+func StartPrometheusListener(_ string, _ *logging.Logger) {}
 
 // VoteReceived is a no-op when the noprometheus build tag is set.
 func VoteReceived(_ string) {}

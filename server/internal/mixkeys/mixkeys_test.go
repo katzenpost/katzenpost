@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -93,6 +94,13 @@ func TestDefaultKeyStoreDir(t *testing.T) {
 	require.NotNil(scheme, "ed25519 scheme available")
 	pub, _, err := scheme.GenerateKey()
 	require.NoError(err)
+
+	if runtime.GOOS == "windows" {
+		// The /dev/shm default is unix-only; on Windows it must panic so
+		// operators configure PersistMixKeysOnShutdownDir explicitly.
+		require.Panics(func() { defaultKeyStoreDir(pub) }, "tmpfs default unsupported on windows")
+		return
+	}
 
 	dir := defaultKeyStoreDir(pub)
 	require.Contains(dir, "/dev/shm", "tmpfs location")

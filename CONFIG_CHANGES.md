@@ -138,6 +138,20 @@ None.
 
 Source: `server/config/config.go`.
 
+### `[Server]`
+
+- **Added** `WaitForConsensusExitOnShutdown` (bool, default `false`). When
+  enabled, SIGINT or SIGTERM stops new descriptor uploads while the node
+  continues serving traffic and fetching PKI documents. The daemon exits
+  after the last epoch in which it may still appear has ended. The wait is
+  conservative: an upload attempt counts even if it returned an error,
+  because enough directory authorities may already have accepted it. If the
+  next epoch's descriptor was uploaded before the signal, shutdown can take
+  almost two complete epochs. With the default 20-minute epoch, configure a
+  systemd `TimeoutStopSec` comfortably above 40 minutes, for example `45min`.
+  This option and `PersistMixKeysOnShutdown` are mutually exclusive; enabling
+  both is a configuration error.
+
 ### `[Server.Gateway]`
 
 - **Removed** `[Gateway.UserDB]` table (and its `[Gateway.UserDB.Bolt]`

@@ -81,7 +81,7 @@ func New(cfg *config.Config, pkiClient pki.Fetcher) (*Server, error) {
 	} else {
 		s.log.Notice("Prometheus metrics listener disabled (MetricsAddress not set)")
 	}
-	instrument.StartPrometheusListener(cfg.MetricsAddress)
+	instrument.StartPrometheusListener(cfg.MetricsAddress, s.log)
 
 	return s, nil
 }

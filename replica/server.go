@@ -323,7 +323,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	} else {
 		s.log.Notice("Prometheus metrics listener disabled (MetricsAddress not set)")
 	}
-	instrument.StartPrometheusListener(cfg.MetricsAddress)
+	instrument.StartPrometheusListener(cfg.MetricsAddress, s.log)
 
 	isOk = true
 

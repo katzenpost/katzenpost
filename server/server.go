@@ -41,6 +41,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -83,6 +84,7 @@ type Server struct {
 	periodic      *periodicTimer
 	mixKeys       glue.MixKeys
 	pki           glue.PKI
+	shutdownPKI   glue.PKI
 	listeners     []glue.Listener
 	connector     glue.Connector
 	gateway       glue.Gateway
@@ -90,9 +92,10 @@ type Server struct {
 	decoy         glue.Decoy
 	management    *thwack.Server
 
-	fatalErrCh chan error
-	haltedCh   chan interface{}
-	haltOnce   sync.Once
+	fatalErrCh   chan error
+	haltedCh     chan interface{}
+	haltOnce     sync.Once
+	gracefulOnce sync.Once
 }
 
 func (s *Server) initLogging() error {
@@ -135,6 +138,58 @@ func (s *Server) RotateLog() {
 // Shutdown cleanly shuts down a given Server instance.
 func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
+}
+
+// ShutdownGracefully withdraws the node from future consensus documents
+// before shutting it down when WaitForConsensusExitOnShutdown is enabled.
+// Fatal-error paths continue to use Shutdown so a broken node is not kept
+// alive merely to complete an operator-requested drain.
+func (s *Server) ShutdownGracefully() {
+	s.gracefulOnce.Do(func() {
+		if s.cfg.Server.WaitForConsensusExitOnShutdown {
+			s.waitForConsensusExit()
+		}
+		s.Shutdown()
+	})
+	<-s.haltedCh
+}
+
+func (s *Server) waitForConsensusExit() {
+	if s.shutdownPKI == nil {
+		return
+	}
+
+	lastEpoch := s.shutdownPKI.StopAdvertising()
+	currentEpoch, _, till := epochtime.Now()
+	wait := consensusExitWait(lastEpoch, currentEpoch, till, epochtime.Period)
+	if wait <= 0 {
+		s.log.Noticef("Consensus withdrawal complete: node is not advertised in epoch %d.", currentEpoch)
+		return
+	}
+
+	s.log.Noticef(
+		"Consensus withdrawal started: descriptor advertising stopped; last potentially advertised epoch=%d current_epoch=%d; continuing to serve traffic for %v before shutdown.",
+		lastEpoch,
+		currentEpoch,
+		wait,
+	)
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		s.log.Noticef("Consensus withdrawal complete after epoch %d.", lastEpoch)
+	case <-s.haltedCh:
+		// An immediate shutdown, normally caused by a fatal error, won the
+		// race. Do not keep the graceful caller blocked.
+	}
+}
+
+func consensusExitWait(lastAdvertisedEpoch, currentEpoch uint64, tillNextEpoch, epochPeriod time.Duration) time.Duration {
+	if lastAdvertisedEpoch < currentEpoch {
+		return 0
+	}
+	return tillNextEpoch + time.Duration(lastAdvertisedEpoch-currentEpoch)*epochPeriod
 }
 
 // Wait waits till the server is terminated for any reason.
@@ -445,7 +500,14 @@ func New(cfg *config.Config) (*Server, error) {
 
 		const shutdownCmd = "SHUTDOWN"
 		s.management.RegisterCommand(shutdownCmd, func(c *thwack.Conn, l string) error {
-			s.fatalErrCh <- fmt.Errorf("user requested shutdown via mgmt interface")
+			if err := c.WriteReply(thwack.StatusOk); err != nil {
+				return err
+			}
+			s.log.Warningf("Shutting down due to operator request via management interface")
+			// ShutdownGracefully drains when the option is enabled and is a
+			// plain Shutdown otherwise; run it async so the management
+			// connection is not held open through a long withdrawal.
+			go s.ShutdownGracefully()
 			return nil
 		})
 	}
@@ -456,6 +518,9 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("Failed to initialize PKI client: %v", err)
 		return nil, err
 	}
+	// Keep an immutable reference for a signal-triggered consensus withdrawal.
+	// The regular pki field is cleared during an immediate shutdown.
+	s.shutdownPKI = s.pki
 	logStartupStep("PKI client")
 
 	// Initialize the gateway backend.

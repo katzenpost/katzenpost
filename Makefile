@@ -54,7 +54,7 @@ sphinx:
 	cd cmd/sphinx; go build -trimpath -ldflags "-s -w"
 
 replica:
-	cd cmd/replica; go build -v -trimpath -ldflags "-X github.com/carlmjohnson/versioninfo.Revision=$$(git rev-parse --short HEAD)"
+	cd cmd/replica; go build -v -trimpath -ldflags "-s -w"
 
 clean:
 	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping \
