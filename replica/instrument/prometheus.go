@@ -131,6 +131,38 @@ var (
 			Help: "Number of DispatchReplication goroutines currently blocked acquiring a replicationSem slot. The cap is the package-level const maxConcurrentReplications (256) in replica/connector.go. Sustained values above zero would indicate the cap is acting as a constraint and a config field should be reconsidered; in practice the bounded work is sub-millisecond per goroutine so this gauge should stay at zero. Sibling of katzenpost_courier_dispatch_sem_waiters on the courier side.",
 		},
 	)
+	proxySemWaiters = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_proxy_sem_waiters",
+			Help: "Number of proxied-request handlers currently blocked acquiring a proxySema slot. The cap is the ProxyWorkerCount config field, which defaults to runtime.NumCPU. Unlike the replication semaphore this one guards a network round-trip, so a slow shard holder parks slots for as long as it stays slow. Sustained values above zero while peers are alive mean proxying to healthy peers is queued behind a sick one.",
+		},
+	)
+	proxyRequestLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_replica_proxy_request_latency_seconds",
+			Help:    "Wall-clock latency of a single proxied request to one shard holder, measured from dispatch to reply, timeout or fast-fail. One observation per candidate attempt, so a failover sweep records one per holder tried.",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+	proxyRequestTimedOut = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_replica_proxy_request_timeouts_total",
+			Help: "Number of proxied requests that reached ProxyRequestTimeout without a reply, labelled by the shard holder that did not answer.",
+		},
+		[]string{"peer"},
+	)
+	proxyActiveAttempts = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_proxy_active_attempts",
+			Help: "Number of proxied-request attempts currently holding a proxySema slot. Read against katzenpost_replica_proxy_sem_waiters to tell saturation apart from queueing: active pinned at ProxyWorkerCount with waiters above zero means the pool is the constraint, while waiters above zero with active below the cap means slots are turning over and something else is slow.",
+		},
+	)
+	proxyPendingRequests = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_proxy_pending_requests",
+			Help: "Number of proxied requests currently registered with the ProxyRequestManager awaiting a reply. Read alongside katzenpost_replica_proxy_sem_waiters: pending counts requests on the wire, waiters counts handlers that have not got that far.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -156,6 +188,11 @@ func StartPrometheusListener(address string, log *logging.Logger) {
 		prometheus.MustRegister(selfCheckOpsPerSecSaturated)
 		prometheus.MustRegister(selfCheckCores)
 		prometheus.MustRegister(replicationSemWaiters)
+		prometheus.MustRegister(proxySemWaiters)
+		prometheus.MustRegister(proxyRequestLatency)
+		prometheus.MustRegister(proxyRequestTimedOut)
+		prometheus.MustRegister(proxyActiveAttempts)
+		prometheus.MustRegister(proxyPendingRequests)
 	})
 
 	if address == "" {
@@ -264,4 +301,60 @@ func ReplicationSemWaitStart() {
 // slot obtained or shutdown).
 func ReplicationSemWaitEnd() {
 	replicationSemWaiters.Dec()
+}
+
+// ProxySemWaitStart and ProxySemWaitEnd bracket the blocking acquire
+// of the per-process proxySema in replica/handlers.go.
+//
+// The pairing matters and is easy to break in a refactor: Start
+// increments on entry to the acquire, and End decrements on EVERY exit
+// from it, whether a slot was obtained or the server is shutting down.
+// This gauge counts waiters, not holders. Holders are
+// ProxyAttemptStart/End below, which bracket the slot itself. Unlike
+// ReplicationSemWaitStart/End above, the work done under this
+// semaphore is a network round-trip to a shard holder rather than a
+// sub-millisecond dispatch, so a slow holder holds slots for as long
+// as it stays slow. A sustained positive reading while peers are
+// alive means proxied traffic to healthy holders is queued behind a
+// sick one, and ProxyWorkerCount is the constraint.
+func ProxySemWaitStart() {
+	proxySemWaiters.Inc()
+}
+
+// ProxySemWaitEnd marks exit from the acquire select (either slot
+// obtained or shutdown).
+func ProxySemWaitEnd() {
+	proxySemWaiters.Dec()
+}
+
+// ProxyRequestLatency observes the duration of one proxied-request
+// attempt against a single shard holder, whether it ended in a reply,
+// a timeout or a fast-fail. A failover sweep records one observation
+// per holder tried.
+func ProxyRequestLatency(d time.Duration) {
+	proxyRequestLatency.Observe(d.Seconds())
+}
+
+// ProxyRequestTimedOut increments the per-peer counter for a proxied
+// request that reached ProxyRequestTimeout with no reply.
+func ProxyRequestTimedOut(peer string) {
+	proxyRequestTimedOut.With(prometheus.Labels{"peer": peer}).Inc()
+}
+
+// ProxyPendingRequests sets the gauge for proxied requests currently
+// registered with the ProxyRequestManager awaiting a reply.
+func ProxyPendingRequests(n int) {
+	proxyPendingRequests.Set(float64(n))
+}
+
+// ProxyAttemptStart and ProxyAttemptEnd bracket the holding of a
+// proxySema slot, as distinct from waiting for one. Increment after a
+// slot is obtained, decrement when it is released.
+func ProxyAttemptStart() {
+	proxyActiveAttempts.Inc()
+}
+
+// ProxyAttemptEnd marks the release of a proxySema slot.
+func ProxyAttemptEnd() {
+	proxyActiveAttempts.Dec()
 }
