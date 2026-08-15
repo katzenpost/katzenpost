@@ -34,26 +34,31 @@ rebalance fingerprint).
 for i in {1..5}; do echo "Replica $i"; go run github.com/cockroachdb/pebble/cmd/pebble@v1.1.5 db scan voting_mixnet/replica${i}/replica-boxes.db; done
 ```
 
-## Is this replica keeping up? (as replica operator)
+## Self-tuning (as replica operator)
 
-Nothing on the proxy path is meant to be tuned by hand. `ProxyWorkerCount`,
-`ProxyRequestTimeout` and `IncomingQueueSize` should be absent from your TOML
-so the runtime derives them at startup from `runtime.NumCPU` and the CTIDH
-self-check it runs on your actual host. Setting them explicitly overrides that
-measurement with a guess, and is intended only for research workloads and
-deliberate chaos testing.
+The replica sizes its own proxy path. There is nothing here to configure.
 
-Reaching for `ProxyWorkerCount` in particular is a trap that has already been
-sprung once. An earlier revision let operators shrink it on co-tenanted hosts,
-on the reasonable-sounding intuition that fewer workers would reduce CPU
-contention. Measured under parallel load it did the opposite: throughput fell
-2.5x and p99 latency rose 12x, because the application-layer semaphore
-serialises pipeline parallelism far more aggressively than CPU contention ever
-would. The OS scheduler shares cores perfectly well. The reasoning is preserved
-in full at `ApplyRuntimeDefaults` in `config/config.go`.
+At startup it measures what this host can actually do, timing MKEM
+(CTIDH1024-X25519) decapsulation both solo and with `runtime.NumCPU` goroutines
+in parallel, and derives `ProxyWorkerCount`, `ProxyRequestTimeout` and
+`IncomingQueueSize` from the result. The measurement is cached in a sidecar file
+beside the database and re-taken automatically when `runtime.NumCPU` or the
+hostname changes, so moving the replica to a different machine re-sizes it
+without anyone being told to go and edit a TOML. Delete the sidecar to force a
+fresh measurement. The derivations, and the reasoning behind each, are at
+`ApplyRuntimeDefaults` in `config/config.go`.
 
-The metrics below are therefore for diagnosis, not for feeding back into
-config. They answer one question: is this replica keeping up?
+Those three fields do exist in the config schema, and setting any of them
+replaces a measurement of your host with a guess about it. They are there for
+research workloads and deliberate chaos testing. `ProxyWorkerCount` is the
+tempting one and the one to leave alone hardest: an earlier revision let
+operators shrink it on co-tenanted hosts, and measured under parallel load that
+cost 2.5x throughput and 12x p99 latency, because the semaphore serialises
+pipeline parallelism far more aggressively than CPU contention does.
+
+## Is this replica keeping up?
+
+These metrics are for watching health, not for feeding back into config.
 
 | Metric | Reading |
 |---|---|
@@ -68,14 +73,11 @@ Read the first two together:
   replica is not the constraint. Something it depends on is slow, and the
   per-peer timeout counter usually names it.
 - **Waiters above zero, active pinned at the cap.** This replica is CPU-bound on
-  CTIDH. The remedy is a bigger host, not a bigger number: the self-check
-  already sized the pool to the cores it found.
+  CTIDH, and wants more cores. It has already sized itself to the ones it has.
 - **Both at zero.** The proxy path is idle whatever else is wrong.
 
-If replicas across the fleet are saturated at once, the problem is not any one
-node's configuration. It means the offered load has caught up with the
-provisioned LambdaR, which is a consensus parameter set by the directory
-authorities and deliberately an over-provisioning decision made once, for a
-target population, rather than tuned against measured demand. See §6 of the
-Pigeonhole courier and replica decoy traffic design. Chasing it with per-node
-config would only move the queue somewhere less visible.
+If replicas across the fleet saturate at once, no node's configuration is at
+fault. It means offered load has caught up with the provisioned LambdaR, a
+consensus parameter the directory authorities set as a deliberate
+over-provisioning decision for a target population, never derived from measured
+demand. See §6 of the Pigeonhole courier and replica decoy traffic design.
