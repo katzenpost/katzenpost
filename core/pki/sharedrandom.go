@@ -23,8 +23,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"golang.org/x/crypto/blake2b"
-
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 )
 
@@ -50,9 +49,9 @@ func (s *SharedRandom) Commit(epoch uint64) ([]byte, error) {
 	s.reveal = make([]byte, SharedRandomLength)
 	binary.BigEndian.PutUint64(s.reveal, epoch)
 	binary.BigEndian.PutUint64(s.commit, epoch)
-	reveal := blake2b.Sum256(rn)
+	reveal := hash.Sum256(rn)
 	copy(s.reveal[8:], reveal[:])
-	commit := blake2b.Sum256(s.reveal)
+	commit := hash.Sum256(s.reveal)
 	copy(s.commit[8:], commit[:])
 	return s.commit, nil
 }
@@ -86,7 +85,7 @@ func (s *SharedRandom) Verify(reveal []byte) bool {
 		return false
 	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
-	allegedCommit := blake2b.Sum256(reveal)
+	allegedCommit := hash.Sum256(reveal)
 	if epoch == s.epoch {
 		if hmac.Equal(s.commit[8:], allegedCommit[:]) {
 			return true
