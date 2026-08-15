@@ -218,3 +218,50 @@ func TestProxyRequestDisposalPathsRace(t *testing.T) {
 		}
 	}
 }
+
+// TestHandleReplyReleasesWaiterDuringShutdown covers the case that made
+// the obvious version of "do the channel work outside the lock" wrong.
+//
+// Once HandleReply removes the map entry it is the channel's exclusive
+// owner, and Shutdown can no longer reach it. So HandleReply must always
+// finish the job, even with the manager's context already cancelled: an
+// early return there would leave the waiter to sit out its whole share
+// of the sweep budget instead of failing over to the co-holder.
+func TestHandleReplyReleasesWaiterDuringShutdown(t *testing.T) {
+	t.Parallel()
+
+	backendLog, err := log.New("", "ERROR", false)
+	require.NoError(t, err)
+
+	m := NewProxyRequestManager(backendLog.GetLogger("test"), time.Minute)
+
+	// Cancel the manager's context without disturbing the entries,
+	// which is the window Shutdown passes through.
+	m.cancel()
+
+	// Repeat, because a version that selects between the send and
+	// ctx.Done() has both cases ready here and Go picks uniformly at
+	// random among ready cases. One iteration would catch such a bug
+	// only half the time; twenty makes it a reliable detector.
+	const iterations = 20
+	for i := 0; i < iterations; i++ {
+		peer := [32]byte{byte(i)}
+		hash := [32]byte{byte(i), 0xaa}
+		ch := m.RegisterProxyRequest(hash, nil, nil, nil, peer, "storagereplicaA")
+
+		require.True(t, m.HandleReply(&commands.ReplicaMessageReply{EnvelopeHash: &hash}),
+			"a reply must still be routed once its request has been claimed (iteration %d)", i)
+
+		select {
+		case reply, ok := <-ch:
+			require.NotNil(t, reply)
+			require.True(t, ok)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("waiter was orphaned by a reply arriving during shutdown (iteration %d)", i)
+		}
+		_, ok := <-ch
+		require.False(t, ok, "the channel must still be closed exactly once (iteration %d)", i)
+	}
+
+	m.Shutdown()
+}

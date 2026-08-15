@@ -143,30 +143,36 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 		return false
 	}
 
+	// Claim the request under the lock, then do the channel work
+	// outside it. Holding the manager lock across a channel operation
+	// invites contention between the outgoing connections that call
+	// this and every other path that touches pendingRequests.
 	p.Lock()
-	defer p.Unlock()
-
 	request, exists := p.pendingRequests[*reply.EnvelopeHash]
 	if !exists {
+		p.Unlock()
 		p.log.Debugf("No pending request found for envelope hash: %x", reply.EnvelopeHash)
 		return false
 	}
+	responseCh := request.ResponseCh
+	delete(p.pendingRequests, *reply.EnvelopeHash)
+	p.publishPendingLocked()
+	p.Unlock()
 
 	p.log.Debugf("PROXY REPLY RECEIVED: Found pending request for envelope hash: %x", reply.EnvelopeHash)
 
-	// Send the reply to the waiting channel
-	select {
-	case request.ResponseCh <- reply:
-		p.log.Debugf("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
-	case <-p.ctx.Done():
-		p.log.Warning("halting...")
-		return false
-	}
-
-	// Clean up the request
-	delete(p.pendingRequests, *reply.EnvelopeHash)
-	close(request.ResponseCh)
-	p.publishPendingLocked()
+	// This send cannot block, so it needs no shutdown escape. Removing
+	// the map entry above made us the channel's exclusive owner, no
+	// other path can now find it, the channel has capacity one, and
+	// this is the only site in the package that ever sends on it, so
+	// the buffer is necessarily empty. A select on ctx.Done() here
+	// would be unreachable, and worse than unreachable: taking it
+	// would return with the entry already deleted and the channel
+	// neither sent to nor closed, orphaning a waiter that Shutdown can
+	// no longer reach.
+	responseCh <- reply
+	close(responseCh)
+	p.log.Debugf("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
 	return true
 }
 
