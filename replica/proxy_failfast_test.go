@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -128,4 +129,92 @@ func TestDispatchCommandFailsProxyRequestInsteadOfQueueing(t *testing.T) {
 	// A replication write in the same situation still queues.
 	co.DispatchCommand(writeCmd(7), &peer)
 	require.Len(t, co.retryQueue, 1, "replication writes keep the retry queue")
+}
+
+// TestProxyResponseChannelIsBufferedAndSingleOwner pins the lifecycle
+// that lets FailPeer, FailRequest, HandleReply, CleanupExpiredRequests
+// and Shutdown all dispose of a pending request safely.
+//
+// Two properties hold it together. The response channel has capacity
+// one, so the goroutine delivering a reply never blocks on a waiter
+// that has already given up and walked away. And the map entry is the
+// single ownership token: every disposal path closes the channel only
+// while holding the lock and only after finding the entry, then deletes
+// it, so no channel can be closed twice however the paths interleave.
+func TestProxyResponseChannelIsBufferedAndSingleOwner(t *testing.T) {
+	t.Parallel()
+
+	backendLog, err := log.New("", "ERROR", false)
+	require.NoError(t, err)
+
+	m := NewProxyRequestManager(backendLog.GetLogger("test"), time.Minute)
+	defer m.Shutdown()
+
+	peer := [32]byte{1}
+	hash := [32]byte{0xaa}
+	ch := m.RegisterProxyRequest(hash, nil, nil, nil, peer, "storagereplicaA")
+	require.Equal(t, 1, cap(ch),
+		"the response channel must be buffered so delivering a reply never blocks on an absent waiter")
+
+	// Nobody is reading. HandleReply must still complete rather than
+	// park the caller, which on the real path is an outgoing
+	// connection's event loop.
+	done := make(chan bool, 1)
+	go func() {
+		done <- m.HandleReply(&commands.ReplicaMessageReply{EnvelopeHash: &hash})
+	}()
+	select {
+	case handled := <-done:
+		require.True(t, handled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("HandleReply blocked on an unread response channel")
+	}
+
+	// The entry is gone, so every other disposal path is a no-op rather
+	// than a second close.
+	require.NotPanics(t, func() {
+		m.FailRequest(hash)
+		m.FailPeer(peer)
+		m.CleanupExpiredRequests(0)
+	})
+
+	reply, ok := <-ch
+	require.NotNil(t, reply, "the buffered reply survives for the waiter to collect")
+	require.True(t, ok)
+	_, ok = <-ch
+	require.False(t, ok, "and the channel is closed exactly once")
+}
+
+// TestProxyRequestDisposalPathsRace runs the disposal paths against each
+// other under the race detector: whichever wins, the rest must find no
+// entry and do nothing.
+func TestProxyRequestDisposalPathsRace(t *testing.T) {
+	t.Parallel()
+
+	backendLog, err := log.New("", "ERROR", false)
+	require.NoError(t, err)
+
+	m := NewProxyRequestManager(backendLog.GetLogger("test"), time.Minute)
+	defer m.Shutdown()
+
+	for i := 0; i < 50; i++ {
+		peer := [32]byte{byte(i)}
+		hash := [32]byte{byte(i), 0xbb}
+		ch := m.RegisterProxyRequest(hash, nil, nil, nil, peer, "storagereplicaA")
+
+		var wg sync.WaitGroup
+		wg.Add(4)
+		go func() { defer wg.Done(); m.FailRequest(hash) }()
+		go func() { defer wg.Done(); m.FailPeer(peer) }()
+		go func() { defer wg.Done(); m.HandleReply(&commands.ReplicaMessageReply{EnvelopeHash: &hash}) }()
+		go func() { defer wg.Done(); m.CleanupExpiredRequests(0) }()
+		wg.Wait()
+
+		// Whoever won, the waiter is released exactly once.
+		select {
+		case <-ch:
+		case <-time.After(5 * time.Second):
+			t.Fatal("waiter was never released by any disposal path")
+		}
+	}
 }
