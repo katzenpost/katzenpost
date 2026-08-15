@@ -2,10 +2,16 @@ Katzenpost Docker test network
 ==============================
 
 This is a Podman- and Docker-compatible docker-compose test network for
-Katzenpost developers to run an offline mix network on their development
-system. It is the standard way to run the whole stack locally: directory
-authorities, mix nodes, service nodes with the courier plugin, storage
-replicas, and the ``kpclientd`` thin-client daemon.
+Katzenpost developers to run a mix network on their development system. It is
+the standard way to run the whole stack locally: directory authorities, mix
+nodes, service nodes with the courier plugin, storage replicas, and the
+``kpclientd`` thin-client daemon.
+
+This is intended to also support offline development: after running it once
+while online, which will build an image and cache the go dependencies, you
+should be able to use it offline *as long as you do not run `make clean`.* The
+`clean-local` target exists to clean the parts which do not require internet
+access to recreate.
 
 The ``Makefile`` here is the source of truth for the targets described below;
 ``make help`` prints a one-line summary of every target.
@@ -17,22 +23,19 @@ The ``Makefile`` here is the source of truth for the targets described below;
 * GNU Make
 * A Unix system with an XDG runtime directory (rootless podman)
 
-Rootless podman needs its docker-compatible API socket enabled, exactly like
-the GitHub CI workflow does::
+Rootless podman needs its docker-compatible API socket enabled, which you can
+do with this command:
 
    systemctl --user enable --now podman.socket
 
 ``--now`` both enables the socket unit (so it survives reboots) and starts it
-immediately. You do **not** need to ``export DOCKER_HOST`` or run ``podman
-system service``; the Makefile points ``podman compose`` at
-``$XDG_RUNTIME_DIR/podman/podman.sock`` itself and mounts the same socket into
-the pumba chaos containers.
+immediately.
 
 1. Run a test network
 
 .. code-block:: console
 
-   git clone https://github.com/katzenpost/katzenpost.git
+   git clone https://github.com/katzenpost/katzenpost
    cd katzenpost/docker
    make start        # generate configs + binaries, boot the network in the background
    make wait         # wait until every node reports ready against the current consensus
@@ -130,7 +133,7 @@ For a fast code/rebuild/restart cycle without rebooting the whole network::
 
    make client-restart        # rebuild kpclientd and restart just that container
    make courier-restart       # stop/rebuild/start the courier plugin via its thwack interface
-   make servicenode-restart   # rebuild courier and restart servicenode1
+   make servicenode1-restart  # rebuild courier and restart servicenode1
    make replica-restart       # rebuild the replica binary and restart every replica container
 
    make client-logs           # follow kpclientd logs
@@ -178,8 +181,7 @@ distinct ``pumba_container=<name>`` per lane. Faults self-heal when
 7. thin_client / pigeonhole-cp (rust)
 
 Only the ``thin-client-sync`` / ``pigeonhole-cp-*`` targets touch the Rust
-``thin_client`` checkout; ``start``/``wait`` and everything else are rust-free,
-so routine development never pays for the Rust toolchain.
+``thin_client`` checkout; ``start``/``wait``/``run-ping`` do not require it.
 
 .. code-block:: console
 
@@ -240,34 +242,14 @@ integration tests::
 
    make test
 
-Today only ``./client`` defines docker tests (the other historical owners,
-``memspool``, ``catshadow``, ``stream`` and ``bench``, are gone). ``make test``
-runs the client's ``dockertest-all`` target (the legacy tests plus the new
-pigeonhole, multichannel, tombstone, copy-command and FromPayload tests — the
-same set the ``docker-mixnet`` CI job runs) and ``dockertest_pki_raw``
+The ``client`` package defines integration tests  which require a docker
+testnet to be running. ``make test`` runs the ``dockertest-all`` target from
+``client/Makefile`` (the legacy tests plus the new pigeonhole, multichannel,
+tombstone, copy-command and FromPayload tests — the same set the
+``docker-mixnet`` CI job currently runs) as well as ``dockertest_pki_raw``
 (``TestGetPKIDocumentRaw*`` and ``TestGetDirectoryAuthorities``). Each target
-was probed against a healthy mixnet-alpine and passes; a target that starts
-failing is dropped from ``make test`` and its failure documented there rather
-than fixed here, so ``make test`` stays green by construction.
-
-The individual client targets are also runnable directly::
-
-   cd ../client
-   make dockertest-all
-   make dockertest_pki_raw
-   make dockertest-legacy
-   make dockertest_new_pigeonhole_alice_sends_bob
-   make dockertest_new_pigeonhole_multiple_messages[_bulk]
-   make dockertest_copy_command
-   make dockertest_multichannel[_efficient]
-   make dockertest_tombstone_box
-   make dockertest_tombstone_range
-   make dockertest_tombstone_copy
-   make dockertest_box_id_not_found
-   make dockertest_box_already_exists
-   make dockertest_read_before_write
-   make dockertest_copy_onto_already_existing_box_error
-   make all_new_pigeonhole_tests    # the non-bulk new-pigeonhole suite
+was probed against a healthy mixnet-alpine and passed as of this writing
+(commit ``884914b79f002`` in August 2026).
 
 11. Other targets
 
@@ -279,7 +261,8 @@ The individual client targets are also runnable directly::
 * ``make check-go-version`` — print the base image's ``go version`` (handy for
   confirming the ``GO_VERSION`` arg took effect).
 * ``make go-mod-tidy`` / ``make go-mod-upgrade`` — run ``go mod tidy`` /
-  ``go get -d -u ./... && go mod tidy`` inside the base image.
+  ``go get -d -u ./... && go mod tidy`` inside the base image with the git
+  checkout mounted in to it.
 
 Notes
 
@@ -287,9 +270,6 @@ Notes
   epoch (``epoch_duration=2m``), so PKI, topology, and mix keys churn fast
   enough to exercise the system in a dev loop. The old explicit
   ``warped=true`` incantation is no longer needed.
-* The network is always a **voting** mixnet; ``run-nonvoting-testnet`` and the
-  ``docker network prune`` dance that used to be required when switching modes
-  are obsolete. ``docker compose down`` removes the network it created.
 * ``make wait`` waits until every node — gateway, mixes, servicenodes
   (with their courier plugins), and storage replicas — reports ready
   against the current consensus, i.e. each node's live per-epoch keys
@@ -297,3 +277,7 @@ Notes
   default). It retries until all report ready or ``--ready-timeout``
   (default 8m) elapses, prints per-node diagnostics on failure, and
   exits non-zero, so it is safe to gate CI on it.
+* If you want to run ``docker compose`` yourself instead of just interacting
+  with it via these make targets, you'll first need to manually
+  ``export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"`` as the
+  Makefile does.
