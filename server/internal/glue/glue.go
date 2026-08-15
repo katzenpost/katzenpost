@@ -66,6 +66,7 @@ type MixKeys interface {
 type PKI interface {
 	Halt()
 	StartWorker()
+	StopAdvertising() uint64
 	OutgoingDestinations() map[[constants.NodeIDLength]byte]*pki.MixDescriptor
 	AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool)
 	GetRawConsensus(uint64) ([]byte, error)

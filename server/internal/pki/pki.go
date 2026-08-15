@@ -99,6 +99,12 @@ type pki struct {
 	lastPublishedEpoch uint64
 	lastWarnedEpoch    uint64
 
+	publicationMu           sync.Mutex
+	advertising             bool
+	activePublicationCancel context.CancelFunc
+	activePublicationDone   chan struct{}
+	lastAdvertisedEpoch     uint64
+
 	// cachedAuthDocs stores a snapshot of documents for lock-free authentication.
 	// Updated atomically when documents change.
 	cachedAuthDocs atomic.Value // stores *authDocsCache
@@ -106,6 +112,85 @@ type pki struct {
 
 func (p *pki) StartWorker() {
 	p.Go(p.worker)
+}
+
+// beginDescriptorPublication registers a publication pass so
+// StopAdvertising can cancel it and wait for it to finish. Descriptor
+// construction is included in the pass to close the race where withdrawal
+// begins after the worker checks the flag but before it calls Post.
+func (p *pki) beginDescriptorPublication(parent context.Context) (context.Context, chan struct{}, bool) {
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+
+	if !p.advertising {
+		return nil, nil, false
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+	p.activePublicationCancel = cancel
+	p.activePublicationDone = done
+	return ctx, done, true
+}
+
+func (p *pki) endDescriptorPublication(done chan struct{}) {
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+
+	if p.activePublicationDone != done {
+		return
+	}
+	p.activePublicationCancel()
+	p.activePublicationCancel = nil
+	p.activePublicationDone = nil
+	close(done)
+}
+
+func (p *pki) recordDescriptorAdvertisement(epoch uint64) {
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+
+	if epoch > p.lastAdvertisedEpoch {
+		p.lastAdvertisedEpoch = epoch
+	}
+}
+
+// StopAdvertising prevents future descriptor uploads, cancels any upload in
+// progress, and waits until the active publication pass has returned. The
+// returned epoch is the last one in which this node may appear, based on both
+// attempted uploads and consensus documents already cached by the node.
+// Fetching and traffic service continue until the server performs its final
+// shutdown.
+func (p *pki) StopAdvertising() uint64 {
+	p.publicationMu.Lock()
+	p.advertising = false
+	cancel := p.activePublicationCancel
+	done := p.activePublicationDone
+	p.publicationMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		// The wait is bounded only if Post returns when its ctx is canceled.
+		<-done
+	}
+
+	p.publicationMu.Lock()
+	lastEpoch := p.lastAdvertisedEpoch
+	p.publicationMu.Unlock()
+
+	// A cached document proves that the node is present in that epoch even
+	// when the descriptor was uploaded by an earlier process invocation.
+	p.RLock()
+	for epoch := range p.docs {
+		if epoch > lastEpoch {
+			lastEpoch = epoch
+		}
+	}
+	p.RUnlock()
+
+	return lastEpoch
 }
 
 // updateAuthDocsCache rebuilds and atomically stores the auth docs cache.
@@ -452,6 +537,13 @@ func (p *pki) pruneDocuments() {
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
+	publicationCtx, publicationDone, ok := p.beginDescriptorPublication(pkiCtx)
+	if !ok {
+		p.log.Debug("Descriptor advertising is disabled; skipping publication.")
+		return nil
+	}
+	defer p.endDescriptorPublication(publicationDone)
+
 	currentEpoch, elapsed, till := epochtime.Now()
 
 	uploadDeadline := PublishDeadline - descriptorUploadSafety
@@ -506,7 +598,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		budget,
 	)
 
-	uploadCtx, cancel := context.WithTimeout(pkiCtx, budget)
+	uploadCtx, cancel := context.WithTimeout(publicationCtx, budget)
 	defer cancel()
 
 	// Note: Why, yes I *could* cache the descriptor and save a trivial amount
@@ -615,6 +707,11 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	)
 	p.log.Noticef("🔄 DESCRIPTOR UPLOAD: Node details - IsGateway: %v, IsService: %v", desc.IsGatewayNode, desc.IsServiceNode)
 
+	// Record the epoch before calling Post. Even when Post returns an error, a
+	// subset of authorities may already have accepted the descriptor and may
+	// be sufficient to include it in a later vote. Waiting an extra epoch is
+	// safer than shutting down while the node may still be in consensus.
+	p.recordDescriptorAdvertisement(doPublishEpoch)
 	err = p.impl.Post(uploadCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc, p.glue.Decoy().GetStats(doPublishEpoch))
 	switch err {
 	case nil:
@@ -915,6 +1012,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		docs:          make(map[uint64]*pkicache.Entry),
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
+		advertising:   true,
 	}
 
 	var err error

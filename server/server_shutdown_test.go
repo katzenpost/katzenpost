@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,8 +35,10 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	aconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/config"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 )
 
 var testingSchemeName = "xwing"
@@ -148,4 +151,96 @@ func TestServerStartShutdown(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	defer s.Shutdown()
+}
+
+func TestConsensusExitWait(t *testing.T) {
+	const (
+		currentEpoch = uint64(100)
+		period       = 20 * time.Minute
+		tillBoundary = 7 * time.Minute
+	)
+
+	tests := []struct {
+		name                string
+		lastAdvertisedEpoch uint64
+		want                time.Duration
+	}{
+		{
+			name:                "already absent",
+			lastAdvertisedEpoch: currentEpoch - 1,
+			want:                0,
+		},
+		{
+			name:                "advertised in current epoch",
+			lastAdvertisedEpoch: currentEpoch,
+			want:                tillBoundary,
+		},
+		{
+			name:                "next epoch descriptor already attempted",
+			lastAdvertisedEpoch: currentEpoch + 1,
+			want:                tillBoundary + period,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, consensusExitWait(
+				test.lastAdvertisedEpoch,
+				currentEpoch,
+				tillBoundary,
+				period,
+			))
+		})
+	}
+}
+
+type shutdownTestPKI struct {
+	glue.PKI
+	stopCalls int
+	haltCalls int
+}
+
+func (p *shutdownTestPKI) StopAdvertising() uint64 {
+	p.stopCalls++
+	return 0
+}
+
+func (p *shutdownTestPKI) Halt() {
+	p.haltCalls++
+}
+
+func TestShutdownGracefullyHonorsConsensusWithdrawalOption(t *testing.T) {
+	newServer := func(t *testing.T, enabled bool) (*Server, *shutdownTestPKI) {
+		t.Helper()
+		logBackend, err := log.New("", "ERROR", false)
+		require.NoError(t, err)
+		fakePKI := new(shutdownTestPKI)
+		return &Server{
+			cfg: &config.Config{
+				Server: &config.Server{
+					WaitForConsensusExitOnShutdown: enabled,
+				},
+			},
+			logBackend:  logBackend,
+			log:         logBackend.GetLogger("shutdown_test"),
+			pki:         fakePKI,
+			shutdownPKI: fakePKI,
+			fatalErrCh:  make(chan error),
+			haltedCh:    make(chan interface{}),
+		}, fakePKI
+	}
+
+	t.Run("enabled", func(t *testing.T) {
+		s, fakePKI := newServer(t, true)
+		s.ShutdownGracefully()
+		require.Equal(t, 1, fakePKI.stopCalls)
+		require.Equal(t, 1, fakePKI.haltCalls)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		s, fakePKI := newServer(t, false)
+		s.ShutdownGracefully()
+		require.Zero(t, fakePKI.stopCalls)
+		require.Equal(t, 1, fakePKI.haltCalls)
+	})
 }
