@@ -29,6 +29,23 @@ import (
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
+// semaScopeReplyBudget bounds how long these tests wait for a reply
+// that the fix guarantees is never queued behind the proxy worker pool.
+// The replica envelope NIKE is CTIDH1024-X25519, whose group action
+// costs the better part of a second per call, so a served-immediately
+// reply still takes seconds of honest work; the old five-second budget
+// left room for only a handful of those calls and failed on a loaded
+// runner rather than on a regression. A blocked reply never arrives at
+// all, so the budget only has to outlast honest work, not measure it.
+const semaScopeReplyBudget = 30 * time.Second
+
+// semaScopeProxyHold is the ProxyRequestTimeout of the hand-built
+// server: the pinned proxy request must still hold the sole worker slot
+// when the wait above ends, so the hold outlasts the budget rather than
+// racing it. Nothing ever waits this out; teardown closes closeAllCh via
+// listener.Halt() and the round-trip returns at once.
+const semaScopeProxyHold = 4 * semaScopeReplyBudget
+
 // semaScopeTestEnv bundles the hand-built server and connection used by the
 // head-of-line blocking regression tests. The server's connector is a
 // mockConnector whose DispatchCommand never delivers a reply, so any
@@ -74,7 +91,7 @@ func setupSemaScopeTestServer(t *testing.T) *semaScopeTestEnv {
 	cfg := CreateTestConfig(t, schemes, geometry, dname, "replica0", []string{"tcp://127.0.0.1:34394"})
 	// A one-slot pool: a single in-flight proxied request saturates it.
 	cfg.ProxyWorkerCount = 1
-	cfg.ProxyRequestTimeout = 30
+	cfg.ProxyRequestTimeout = int(semaScopeProxyHold / time.Second)
 
 	keys := GenerateTestKeys(t, schemes)
 	server := CreateTestServer(t, cfg, keys, nil)
@@ -235,6 +252,29 @@ func semaScopeValidReplicaMessage(t *testing.T, server *Server, boxID [32]byte) 
 	}
 }
 
+// awaitReplyFor waits for the emitted reply that answers the given
+// request, matched on envelope hash, and returns it. Replies belonging
+// to other in-flight requests are drained, so a stray proxy reply can
+// never be mistaken for the reply under test.
+func awaitReplyFor(t *testing.T, env *semaScopeTestEnv, msg *commands.ReplicaMessage, what string) *commands.ReplicaMessageReply {
+	t.Helper()
+	want := *msg.EnvelopeHash()
+	deadline := time.After(semaScopeReplyBudget)
+	for {
+		select {
+		case req := <-env.dummyOut:
+			require.NotNil(t, req.ReplicaMessageReply, "expected a ReplicaMessageReply to be emitted")
+			if req.ReplicaMessageReply.EnvelopeHash != nil && *req.ReplicaMessageReply.EnvelopeHash == want {
+				return req.ReplicaMessageReply
+			}
+			t.Logf("%s: drained a reply for another envelope hash", what)
+		case <-deadline:
+			t.Fatalf("%s: no reply within %v; a reply blocked behind the saturated proxy worker pool never arrives at all",
+				what, semaScopeReplyBudget)
+		}
+	}
+}
+
 // TestReplicaMessageNotBlockedBySaturatedProxyPool is the minimal
 // regression test for the head-of-line blocking fix: handling a
 // ReplicaMessage that needs no proxying must not wait on the proxy
@@ -275,13 +315,8 @@ func TestReplicaMessageNotBlockedBySaturatedProxyPool(t *testing.T) {
 	require.True(t, ok)
 	require.Nil(t, replyCommand)
 
-	select {
-	case req := <-env.dummyOut:
-		require.NotNil(t, req.ReplicaMessageReply, "expected a ReplicaMessageReply to be emitted")
-		require.NotEqual(t, uint8(0), req.ReplicaMessageReply.ErrorCode, "garbage crypto should yield an error reply")
-	case <-time.After(5 * time.Second):
-		t.Fatal("ReplicaMessage handling was blocked behind a saturated proxy worker pool")
-	}
+	reply := awaitReplyFor(t, env, replicaMessage, "error reply for garbage crypto")
+	require.NotEqual(t, uint8(0), reply.ErrorCode, "garbage crypto should yield an error reply")
 }
 
 // TestProxySaturationDoesNotBlockLocalRead drives a real proxied request
@@ -308,7 +343,7 @@ func TestProxySaturationDoesNotBlockLocalRead(t *testing.T) {
 	require.True(t, ok)
 
 	require.Eventually(t, func() bool { return len(env.server.proxySema) == 1 },
-		10*time.Second, 20*time.Millisecond,
+		semaScopeReplyBudget, 20*time.Millisecond,
 		"proxied request did not acquire the proxy worker slot")
 
 	// Phase 2: a local read for a box this server shards must be served
@@ -316,10 +351,11 @@ func TestProxySaturationDoesNotBlockLocalRead(t *testing.T) {
 	_, ok = env.inConn.onReplicaCommand(localMsg, env.emitter)
 	require.True(t, ok)
 
-	select {
-	case req := <-env.dummyOut:
-		require.NotNil(t, req.ReplicaMessageReply, "expected a ReplicaMessageReply to be emitted")
-	case <-time.After(5 * time.Second):
-		t.Fatal("local read was blocked behind a saturated proxy worker pool")
-	}
+	awaitReplyFor(t, env, localMsg, "local read")
+
+	// The pinned proxy request holds its slot until teardown, so the
+	// local read was served against a genuinely saturated pool rather
+	// than against one that quietly drained first.
+	require.Equal(t, 1, len(env.server.proxySema),
+		"proxy worker slot was released before the local read completed")
 }

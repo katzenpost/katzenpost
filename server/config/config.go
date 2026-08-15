@@ -116,6 +116,19 @@ type Server struct {
 	// resolves them inside its local proxy, not via DNS.
 	AllowHostnameAddresses bool
 
+	// WaitForConsensusExitOnShutdown, when true, makes SIGINT and SIGTERM
+	// stop descriptor publication and wait until every epoch for which this
+	// node may have advertised has ended before shutting down. The node keeps
+	// serving traffic and fetching PKI documents while it waits, allowing it
+	// to leave the consensus without disrupting traffic assigned to it.
+	//
+	// With the default 20-minute epoch, the conservative wait can approach
+	// 40 minutes when the next epoch's descriptor was already uploaded.
+	// Service managers must allow enough stop time (for example, systemd's
+	// TimeoutStopSec) or they may kill the process before withdrawal completes.
+	// This option is mutually exclusive with PersistMixKeysOnShutdown.
+	WaitForConsensusExitOnShutdown bool
+
 	// PersistMixKeysOnShutdown, when true, writes every live mix key to
 	// the mix key store on clean shutdown and reloads it on the next
 	// boot. A clean restart (e.g. a software upgrade) then keeps the
@@ -202,6 +215,9 @@ func (sCfg *Server) validate() error {
 	}
 	if sCfg.PersistMixKeysOnShutdownDir != "" && !filepath.IsAbs(sCfg.PersistMixKeysOnShutdownDir) {
 		return fmt.Errorf("config: Server: PersistMixKeysOnShutdownDir '%v' is not an absolute path", sCfg.PersistMixKeysOnShutdownDir)
+	}
+	if sCfg.WaitForConsensusExitOnShutdown && sCfg.PersistMixKeysOnShutdown {
+		return errors.New("config: Server: WaitForConsensusExitOnShutdown and PersistMixKeysOnShutdown are mutually exclusive")
 	}
 	if sCfg.MetricsAddress != "" {
 		if _, _, err := net.SplitHostPort(sCfg.MetricsAddress); err != nil {
