@@ -500,7 +500,14 @@ func New(cfg *config.Config) (*Server, error) {
 
 		const shutdownCmd = "SHUTDOWN"
 		s.management.RegisterCommand(shutdownCmd, func(c *thwack.Conn, l string) error {
-			s.fatalErrCh <- fmt.Errorf("user requested shutdown via mgmt interface")
+			if err := c.WriteReply(thwack.StatusOk); err != nil {
+				return err
+			}
+			s.log.Warningf("Shutting down due to operator request via management interface")
+			// ShutdownGracefully drains when the option is enabled and is a
+			// plain Shutdown otherwise; run it async so the management
+			// connection is not held open through a long withdrawal.
+			go s.ShutdownGracefully()
 			return nil
 		})
 	}
