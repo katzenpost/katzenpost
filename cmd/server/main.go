@@ -179,10 +179,15 @@ func runServer(cfg Config) error {
 	}
 	defer svr.Shutdown()
 
-	// Halt the server gracefully on SIGINT/SIGTERM.
+	// Halt the server gracefully on SIGINT/SIGTERM. A second signal received
+	// while the graceful shutdown (including a consensus withdrawal drain) is
+	// in progress aborts the drain and shuts the server down immediately.
 	go func() {
 		<-haltCh
-		svr.ShutdownGracefully()
+		go svr.ShutdownGracefully()
+		<-haltCh
+		fmt.Fprintf(os.Stderr, "Received a second interrupt signal, aborting graceful shutdown.\n")
+		svr.Shutdown()
 	}()
 
 	// Rotate server logs upon SIGHUP.
