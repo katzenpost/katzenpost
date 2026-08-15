@@ -172,6 +172,7 @@ func (p *pki) StopAdvertising() uint64 {
 		cancel()
 	}
 	if done != nil {
+		// The wait is bounded only if Post returns when its ctx is canceled.
 		<-done
 	}
 
