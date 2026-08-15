@@ -34,33 +34,48 @@ rebalance fingerprint).
 for i in {1..5}; do echo "Replica $i"; go run github.com/cockroachdb/pebble/cmd/pebble@v1.1.5 db scan voting_mixnet/replica${i}/replica-boxes.db; done
 ```
 
-## Tuning the proxy path (as replica operator)
+## Is this replica keeping up? (as replica operator)
 
-A replica that is not a shard holder for a box proxies the request to a
-holder, failing over to the co-holder if the first does not answer. Two
-config fields govern that, and both are best left unset so the runtime
-derives them from the CTIDH self-check at startup.
+Nothing on the proxy path is meant to be tuned by hand. `ProxyWorkerCount`,
+`ProxyRequestTimeout` and `IncomingQueueSize` should be absent from your TOML
+so the runtime derives them at startup from `runtime.NumCPU` and the CTIDH
+self-check it runs on your actual host. Setting them explicitly overrides that
+measurement with a guess, and is intended only for research workloads and
+deliberate chaos testing.
 
-- `ProxyRequestTimeout` is the budget for a whole proxied request across
-  every holder tried, **not** a per-holder timeout. The remainder is
-  divided among the candidates still to try, so a client waits this long
-  in total and a slow first holder still leaves time to fail over. It
-  also covers each attempt's CTIDH1024 encapsulation, so it must stay
-  well above K times the per-attempt crypto cost.
-- `ProxyWorkerCount` caps concurrent attempts. A slot covers one attempt
-  against one holder, including its crypto, so the `runtime.NumCPU`
-  default caps concurrent CTIDH at roughly one per core.
+Reaching for `ProxyWorkerCount` in particular is a trap that has already been
+sprung once. An earlier revision let operators shrink it on co-tenanted hosts,
+on the reasonable-sounding intuition that fewer workers would reduce CPU
+contention. Measured under parallel load it did the opposite: throughput fell
+2.5x and p99 latency rose 12x, because the application-layer semaphore
+serialises pipeline parallelism far more aggressively than CPU contention ever
+would. The OS scheduler shares cores perfectly well. The reasoning is preserved
+in full at `ApplyRuntimeDefaults` in `config/config.go`.
 
-Four metrics tell you which bound is biting:
+The metrics below are therefore for diagnosis, not for feeding back into
+config. They answer one question: is this replica keeping up?
 
 | Metric | Reading |
 |---|---|
-| `katzenpost_replica_proxy_active_attempts` | attempts holding a slot. Pinned at `ProxyWorkerCount` means the pool is the constraint. |
-| `katzenpost_replica_proxy_sem_waiters` | attempts queued for a slot. Above zero while peers are alive means proxying to healthy holders is stuck behind a sick one. |
-| `katzenpost_replica_proxy_pending_requests` | requests on the wire awaiting a reply. |
-| `katzenpost_replica_proxy_request_timeouts_total` | per-peer count of holders that did not answer in time. |
+| `katzenpost_replica_proxy_active_attempts` | attempts holding a worker slot |
+| `katzenpost_replica_proxy_sem_waiters` | attempts queued for a slot |
+| `katzenpost_replica_proxy_pending_requests` | requests on the wire awaiting a reply |
+| `katzenpost_replica_proxy_request_timeouts_total` | per-peer count of holders that did not answer in time |
 
-Read the first two together: active at the cap with waiters above zero is
-saturation, and wants a larger `ProxyWorkerCount` or more cores. Waiters
-above zero with active below the cap means slots are turning over and
-something else is slow, usually a peer.
+Read the first two together:
+
+- **Waiters above zero, active below the cap.** Slots are turning over, so this
+  replica is not the constraint. Something it depends on is slow, and the
+  per-peer timeout counter usually names it.
+- **Waiters above zero, active pinned at the cap.** This replica is CPU-bound on
+  CTIDH. The remedy is a bigger host, not a bigger number: the self-check
+  already sized the pool to the cores it found.
+- **Both at zero.** The proxy path is idle whatever else is wrong.
+
+If replicas across the fleet are saturated at once, the problem is not any one
+node's configuration. It means the offered load has caught up with the
+provisioned LambdaR, which is a consensus parameter set by the directory
+authorities and deliberately an over-provisioning decision made once, for a
+target population, rather than tuned against measured demand. See §6 of the
+Pigeonhole courier and replica decoy traffic design. Chasing it with per-node
+config would only move the queue somewhere less visible.
