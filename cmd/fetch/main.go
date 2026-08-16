@@ -154,25 +154,67 @@ func runFetch(cfg Config) error {
 		return nil
 	}
 
+	if cfg.RequireReady {
+		return waitRequireReady(client, logger, cfg, signerNames)
+	}
+	return waitForDocument(client, logger, cfg, signerNames)
+}
+
+// waitRequireReady polls the daemon's current signed document until one is
+// available, then waits for the whole network to report ready and prints it.
+//
+// It deliberately registers NO broadcast event sink. The thin client's fan-out
+// worker delivers every event to every registered sink in turn, blocking on a
+// full one; while this goroutine is blocked inside GetPKIDocumentRaw waiting
+// for its reply, its own persistent sink would accumulate events and, once
+// full, stall that very reply (deadlock). Polling the current document every
+// couple of seconds is strictly more reliable than the broadcast arm: the
+// daemon always answers GetPKIDocument, whether from its cache or with an
+// error reply, so there is no "broadcast only" case to wait for.
+//
+// Progress is reported on stdout from the very first poll, including the
+// reason the wait cannot yet finish. A cold-start wait (which can run for
+// minutes before the first consensus exists or it carries enough storage
+// replicas) would otherwise be silent.
+func waitRequireReady(client *thin.ThinClient, logger *logging.Logger, cfg Config, signerNames map[[32]byte]string) error {
+	start := time.Now()
+	fmt.Printf("waiting for the network to report ready (up to %v)...\n", cfg.ReadyTimeout)
+	lastProgressLog := time.Now()
+	for {
+		doc, err := fetchSignedDocument(client, 0)
+		if err == nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
+			if err := waitForReady(cfg, logger, doc); err != nil {
+				return err
+			}
+			printDocument(doc, signerNames)
+			return nil
+		}
+		if time.Since(lastProgressLog) >= 4*time.Second {
+			reason := err
+			if reason == nil {
+				reason = fmt.Errorf("consensus has %d storage replica(s); need %d",
+					len(doc.StorageReplicas), cfg.MinReplicas)
+			}
+			fmt.Printf("  still waiting for the network to report ready: %v (elapsed %v)\n",
+				reason, time.Since(start).Round(time.Second))
+			lastProgressLog = time.Now()
+		}
+		select {
+		case <-client.HaltCh():
+			return fmt.Errorf("connection closed before receiving PKI document")
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+// waitForDocument waits, via the event sink, for a consensus that satisfies
+// the replica requirement, then fetches and prints its signed form for that
+// epoch. Used when --require-ready is off.
+func waitForDocument(client *thin.ThinClient, logger *logging.Logger, cfg Config, signerNames map[[32]byte]string) error {
 	eventSink := client.EventSink()
 	defer client.StopEventSink(eventSink)
 
-	// Under --require-ready, re-try the daemon's current document every few
-	// seconds in addition to reacting to broadcasts. Without the poll a
-	// connect that lands before the daemon caches a current document would
-	// idle in the event sink until the next epoch boundary. The event arm
-	// remains for the (unobserved) case where the daemon only delivers the
-	// document by broadcast.
 	for {
-		if cfg.RequireReady {
-			if doc, err := fetchSignedDocument(client, 0); err == nil && hasEnoughReplicas(doc, cfg.MinReplicas) {
-				if err := waitForReady(cfg, logger, doc); err != nil {
-					return err
-				}
-				printDocument(doc, signerNames)
-				return nil
-			}
-		}
 		select {
 		case event := <-eventSink:
 			docEvent, ok := event.(*thin.NewDocumentEvent)
@@ -193,7 +235,6 @@ func runFetch(cfg Config) error {
 			return nil
 		case <-client.HaltCh():
 			return fmt.Errorf("connection closed before receiving PKI document")
-		case <-time.After(2 * time.Second):
 		}
 	}
 }
@@ -230,6 +271,16 @@ func loadAuthorityNames(client *thin.ThinClient) map[[32]byte]string {
 func fetchSignedDocument(client *thin.ThinClient, epoch uint64) (*cpki.Document, error) {
 	raw, gotEpoch, err := client.GetPKIDocumentRaw(epoch)
 	if err != nil {
+		if epoch == 0 && gotEpoch != 0 {
+			// A reply carrying an epoch means the daemon answered the
+			// "current document" request at all, and its only error reply
+			// for one is "no document cached". That is the normal
+			// cold-start case, so say so plainly instead of echoing a
+			// cryptic protocol error.
+			now, _, till := epochtime.Now()
+			return nil, fmt.Errorf("no consensus document for current epoch %d; next epoch %d starts in ~%v",
+				now, now+1, till.Round(time.Second))
+		}
 		return nil, fmt.Errorf("failed to fetch raw PKI document for epoch %d: %v", epoch, err)
 	}
 
