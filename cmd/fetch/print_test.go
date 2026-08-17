@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -49,6 +50,23 @@ func TestPrintDocumentFormats(t *testing.T) {
 	out, err = captureStdout(t, func() error { return printDocument(doc, names, "yaml") })
 	require.Error(t, err)
 	require.Empty(t, out)
+}
+
+func TestPrintSignersLabelFormatExactly(t *testing.T) {
+	doc, names := formatTestDoc(t)
+	var namedFP [32]byte
+	for fp, name := range names {
+		if name != "" {
+			namedFP = fp
+		}
+	}
+	out, err := captureStdout(t, func() error { return printDocument(doc, names, "") })
+	require.NoError(t, err)
+	unnamed := fmt.Sprintf("%x", [32]byte{0xab})
+	named := fmt.Sprintf("%s (%x)", names[namedFP], namedFP[:])
+	want := doc.String() + fmt.Sprintf("\nPKI document for epoch %d signed by 2 directory authorities:\n  %s\n  %s\n",
+		doc.Epoch, unnamed, named)
+	require.Equal(t, want, out)
 }
 
 func TestFetchRejectsUnknownFormatBeforeConnecting(t *testing.T) {
