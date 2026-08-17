@@ -431,16 +431,23 @@ func (p *pki) updateTimer(timer *time.Timer) {
 	// arrives.
 	p.updateReadiness(now)
 
-	// Wake at the next epoch boundary when the descriptor upload window has
-	// already closed. This avoids repeatedly posting a descriptor that every
-	// authority will reject as Conflict/Late for the next epoch.
+	// After the descriptor upload window closes we no longer need to
+	// re-post, but we must keep fetching until the current epoch's
+	// consensus document is cached; otherwise the node (and any clients
+	// that depend on it, like kpclientd) won't see the document until
+	// the next epoch boundary.
 	if elapsed >= PublishDeadline-descriptorUploadSafety {
-		interval := till
-		if interval < time.Second {
-			interval = time.Second
+		if p.entryForEpoch(now) != nil {
+			interval := till
+			if interval < time.Second {
+				interval = time.Second
+			}
+			p.log.Debugf("descriptor upload window closed and document cached, reset to next epoch in %v", interval)
+			timer.Reset(interval)
+		} else {
+			p.log.Debugf("descriptor upload window closed but no document for %v yet, reset to %v", now, recheckInterval)
+			timer.Reset(recheckInterval)
 		}
-		p.log.Debugf("descriptor upload window closed, reset to next epoch in %v", interval)
-		timer.Reset(interval)
 		return
 	}
 
@@ -1005,7 +1012,20 @@ func (p *pki) CurrentDocument() (*cpki.Document, error) {
 // specifically.
 func (p *pki) HasUsableDocument() bool {
 	docs, _, _, _ := p.documentsForAuthentication()
-	return len(docs) > 0
+	if len(docs) > 0 {
+		return true
+	}
+	// documentsForAuthentication() only includes now+1 inside the
+	// pkiEarlyConnectSlack window, but a document for the next epoch
+	// is sufficient to authenticate incoming connections (clients and
+	// peers) and serve consensus.  Check for it directly so that the
+	// gateway can accept connections as soon as the authority publishes
+	// the consensus, not only within 15 s of the epoch boundary.
+	now, _, _ := epochtime.Now()
+	p.RLock()
+	_, ok := p.docs[now+1]
+	p.RUnlock()
+	return ok
 }
 
 func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
