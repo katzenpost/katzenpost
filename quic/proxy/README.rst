@@ -34,7 +34,7 @@ client.
 By default the HTTP proxy service is deployed on the "provider1" node, and is
 advertising in the PKI with endpoint "http". Its configuration will be
 generated automatically and put in the path
-katzenpost/docker/voting_mixnet/provider1/katzenpost.toml.
+katzenpost/docker/mixnet-alpine/provider1/katzenpost.toml.
 
 For example, this is the configuration excerpt for the proxy service:
 ::
@@ -42,12 +42,12 @@ For example, this is the configuration excerpt for the proxy service:
   [[Provider.CBORPluginKaetzchen]]
     Capability = "http"
     Endpoint = "+http"
-    Command = "/voting_mixnet/proxy_server.alpine"
+    Command = "/mixnet-alpine/proxy_server.alpine"
     MaxConcurrency = 1
     Disable = false
     [Provider.CBORPluginKaetzchen.Config]
       host = "localhost:4242"
-      log_dir = "/voting_mixnet/provider1"
+      log_dir = "/mixnet-alpine/provider1"
       log_level = "DEBUG"
 
 This means that the service will accept proxy requests for localhost:4242 (and
@@ -80,7 +80,7 @@ To start the client using the generated testnet configuration:
 
 ::
 
-   ./client/client -ep http -cfg ../../docker/voting_mixnet/client/client.toml
+   ./client/client -ep http -cfg ../../docker/mixnet-alpine/client/client.toml
 
 Note that you can specify a different listening port (than 8080) with the -port flag.
 The client will connect to the mixnet and start exchanging decoy messages (cover traffic).

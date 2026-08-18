@@ -59,7 +59,7 @@ jobs:
           cd docker
           shopt -s nullglob
           found=0
-          for f in voting_mixnet/*/selfcheck.toml; do
+          for f in mixnet-alpine/*/selfcheck.toml; do
             found=1
             echo "=== $f ==="
             cat "$f" || echo "(unreadable: $f)"
@@ -80,9 +80,9 @@ jobs:
       - name: Dump replica logs on failure
         if: failure()
         run: |
-          cd docker && ls -la voting_mixnet/replica1/ && \
-          for r in voting_mixnet/replica*/; do echo "=== $r ===" && cat "${r}katzenpost.log" 2>&1 | tail -20 || echo "no log file"; done && \
-          cd voting_mixnet && podman compose ps -a 2>&1 | head -30 && \
+          cd docker && ls -la mixnet-alpine/replica1/ && \
+          for r in mixnet-alpine/replica*/; do echo "=== $r ===" && cat "${r}katzenpost.log" 2>&1 | tail -20 || echo "no log file"; done && \
+          cd mixnet-alpine && podman compose ps -a 2>&1 | head -30 && \
           podman compose logs --tail 30 replica1 replica2 replica3 replica4 replica5 2>&1 | tail -100
 
       - name: Stop the mixnet
@@ -95,6 +95,6 @@ jobs:
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
-            docker/voting_mixnet/*/*.log
-            docker/voting_mixnet/servicenode*/courier/courier.log
-            docker/voting_mixnet/*/selfcheck.toml
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml

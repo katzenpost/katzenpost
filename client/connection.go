@@ -295,7 +295,7 @@ func (c *connection) connectWorker() {
 func (c *connection) doConnect(dialCtx context.Context) {
 	const (
 		retryIncrement = 15 * time.Second
-		maxRetryDelay  = 2 * time.Minute
+		maxRetryDelay  = 30 * time.Second
 	)
 
 	dialFn := c.client.DialContextFn
