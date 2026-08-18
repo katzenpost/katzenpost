@@ -318,11 +318,7 @@ func printDocument(doc *cpki.Document, signerNames map[[32]byte]string, format s
 func printSigners(doc *cpki.Document, epoch uint64, signerNames map[[32]byte]string) {
 	labels := make([]string, 0, len(doc.Signatures))
 	for fp := range doc.Signatures {
-		if name := signerNames[fp]; name != "" {
-			labels = append(labels, fmt.Sprintf("%s (%x)", name, fp[:]))
-		} else {
-			labels = append(labels, fmt.Sprintf("%x", fp[:]))
-		}
+		labels = append(labels, signerLabel(signerNames[fp], fp, true))
 	}
 	sort.Strings(labels)
 
