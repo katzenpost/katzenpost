@@ -18,6 +18,7 @@
 package pki
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"errors"
@@ -420,16 +421,33 @@ func (p *pki) updateTimer(timer *time.Timer) {
 
 	p.log.Debugf("serverpki woke %v into epoch %v with %v remaining", elapsed, now, till)
 
-	// Wake at the next epoch boundary when the descriptor upload window has
-	// already closed. This avoids repeatedly posting a descriptor that every
-	// authority will reject as Conflict/Late for the next epoch.
+	// Reflect the current epoch's document in the readiness gauges on every
+	// wake, not just inside the descriptor-upload window. Without this a
+	// node that restarts mid-epoch with persisted mix keys leaves the gauge
+	// at its boot value of 0 until the next epoch boundary, even though the
+	// current consensus is served and its keys match; updateReadiness also
+	// records ready=false when no current-epoch document is cached yet, so
+	// the loop re-polls at recheckInterval and flips ready as soon as one
+	// arrives.
+	p.updateReadiness(now)
+
+	// After the descriptor upload window closes we no longer need to
+	// re-post, but we must keep fetching until the current epoch's
+	// consensus document is cached; otherwise the node (and any clients
+	// that depend on it, like kpclientd) won't see the document until
+	// the next epoch boundary.
 	if elapsed >= PublishDeadline-descriptorUploadSafety {
-		interval := till
-		if interval < time.Second {
-			interval = time.Second
+		if p.entryForEpoch(now) != nil {
+			interval := till
+			if interval < time.Second {
+				interval = time.Second
+			}
+			p.log.Debugf("descriptor upload window closed and document cached, reset to next epoch in %v", interval)
+			timer.Reset(interval)
+		} else {
+			p.log.Debugf("descriptor upload window closed but no document for %v yet, reset to %v", now, recheckInterval)
+			timer.Reset(recheckInterval)
 		}
-		p.log.Debugf("descriptor upload window closed, reset to next epoch in %v", interval)
-		timer.Reset(interval)
 		return
 	}
 
@@ -457,6 +475,24 @@ func (p *pki) updateTimer(timer *time.Timer) {
 			timer.Reset(interval)
 		}
 	}
+}
+
+// updateReadiness sets the node_ready gauge based on whether the descriptor
+// published in the current-epoch consensus carries the same per-epoch mix key
+// this instance currently holds. When they diverge — a restart that
+// regenerated the mix keys while the dirauths retained the old consensus, or
+// simply no current-epoch document yet — the gauge reads 0 and wait tooling
+// keeps polling instead of sending traffic into a first-hop MAC mismatch.
+func (p *pki) updateReadiness(epoch uint64) {
+	ready := false
+	if ent := p.entryForEpoch(epoch); ent != nil {
+		if self := ent.Self(); self != nil {
+			if local, ok := p.glue.MixKeys().Get(epoch); ok {
+				ready = bytes.Equal(self.MixKeys[epoch], local)
+			}
+		}
+	}
+	instrument.SetNodeReady(ready, epoch)
 }
 
 func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
@@ -976,7 +1012,20 @@ func (p *pki) CurrentDocument() (*cpki.Document, error) {
 // specifically.
 func (p *pki) HasUsableDocument() bool {
 	docs, _, _, _ := p.documentsForAuthentication()
-	return len(docs) > 0
+	if len(docs) > 0 {
+		return true
+	}
+	// documentsForAuthentication() only includes now+1 inside the
+	// pkiEarlyConnectSlack window, but a document for the next epoch
+	// is sufficient to authenticate incoming connections (clients and
+	// peers) and serve consensus.  Check for it directly so that the
+	// gateway can accept connections as soon as the authority publishes
+	// the consensus, not only within 15 s of the epoch boundary.
+	now, _, _ := epochtime.Now()
+	p.RLock()
+	_, ok := p.docs[now+1]
+	p.RUnlock()
+	return ok
 }
 
 func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {

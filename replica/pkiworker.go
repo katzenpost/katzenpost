@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/schemes"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
@@ -22,6 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -232,6 +234,9 @@ func (p *PKIWorker) ForceFetchPKI() error {
 	p.updateReplicas(d)
 	p.StoreDocument(epoch, d, rawDoc)
 
+	// Refresh the readiness gauges.
+	p.updateReadiness()
+
 	p.GetLogger().Debugf("Successfully force fetched PKI document for epoch %v", epoch)
 
 	// Kick the connector to update connections
@@ -245,6 +250,28 @@ func (p *PKIWorker) ForceFetchPKI() error {
 func (p *PKIWorker) HasCurrentPKIDocument() bool {
 	epoch, _, _ := epochtime.Now()
 	return p.documentForEpoch(epoch) != nil
+}
+
+// updateReadiness recomputes the replica readiness gauges. A replica is
+// ready only when it holds a PKI document for the current mixnet epoch
+// whose ReplicaDescriptor for this instance carries the same per-replica
+// envelope public key for the current replica epoch as the local keypair.
+// Anything else (no current document, descriptor missing, key mismatch)
+// reports not ready, so a restarted replica is never reported ready until
+// the consensus actually agrees with its persisted envelope keys.
+func (p *PKIWorker) updateReadiness() {
+	epoch, _, _ := epochtime.Now()
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	ready := false
+	if doc := p.documentForEpoch(epoch); doc != nil {
+		idKeyHash := hash.Sum256From(p.server.identityPublicKey)
+		if desc, err := doc.GetReplicaNodeByKeyHash(&idKeyHash); err == nil {
+			if key, err := p.server.envelopeKeys.GetKeypair(replicaEpoch); err == nil {
+				ready = hmac.Equal(desc.EnvelopeKeys[replicaEpoch], key.PublicKey.Bytes())
+			}
+		}
+	}
+	instrument.SetReplicaReady(ready, replicaEpoch)
 }
 
 // ReplyJitterBound returns the uniform per-reply delay upper bound

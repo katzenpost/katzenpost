@@ -152,6 +152,11 @@ func (p *PKIWorker) worker() {
 		// Handle document updates and cleanup.
 		p.handleDocumentUpdates(didUpdate)
 
+		// Refresh the readiness gauges so a restarted replica reports
+		// ready as soon as its descriptor and persisted keys agree with
+		// the current consensus.
+		p.updateReadiness()
+
 		// Update epoch tracking.
 		lastUpdateEpoch = p.updateEpochTracking(lastUpdateEpoch)
 
