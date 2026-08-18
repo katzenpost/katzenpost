@@ -21,14 +21,14 @@ func priorDocument(epoch uint64) (*pki.Document, [][]byte) {
 	thisWeek := bytes.Repeat([]byte{0xaa}, 32)
 	lastWeek := bytes.Repeat([]byte{0xbb}, 32)
 	return &pki.Document{
-		Epoch:             epoch,
-		GenesisEpoch:      epoch - 1000,
-		SharedRandomValue: bytes.Repeat([]byte{0xcc}, 32),
-		PriorSharedRandom: [][]byte{thisWeek, lastWeek},
+		Epoch:              epoch,
+		GenesisEpoch:       epoch - 1000,
+		SharedRandomValue:  bytes.Repeat([]byte{0xcc}, 32),
+		WeeklySharedRandom: [][]byte{thisWeek, lastWeek},
 	}, [][]byte{thisWeek, lastWeek}
 }
 
-func TestPriorSharedRandomRotatesOnceAtWeekBoundary(t *testing.T) {
+func TestWeeklySharedRandomRotatesOnceAtWeekBoundary(t *testing.T) {
 	require := require.New(t)
 	epoch := nextWeekBoundaryEpoch()
 	prior, was := priorDocument(epoch - 1)
@@ -37,28 +37,28 @@ func TestPriorSharedRandomRotatesOnceAtWeekBoundary(t *testing.T) {
 	for _, d := range docs {
 		require.Len(d.SharedRandomValue, 32)
 		require.NotEqual(make([]byte, 32), d.SharedRandomValue)
-		require.Equal([][]byte{d.SharedRandomValue, was[0]}, d.PriorSharedRandom)
+		require.Equal([][]byte{d.SharedRandomValue, was[0]}, d.WeeklySharedRandom)
 	}
 }
 
-func TestPriorSharedRandomUnchangedOffWeekBoundary(t *testing.T) {
+func TestWeeklySharedRandomUnchangedOffWeekBoundary(t *testing.T) {
 	require := require.New(t)
 	epoch := nextWeekBoundaryEpoch() + 1
 	prior, was := priorDocument(epoch - 1)
 	docs := runVoteScenario(t, 3, epoch, prior)
 	require.Len(docs, 3)
 	for _, d := range docs {
-		require.Equal(was, d.PriorSharedRandom)
+		require.Equal(was, d.WeeklySharedRandom)
 	}
 }
 
-func TestPriorSharedRandomAtGenesis(t *testing.T) {
+func TestWeeklySharedRandomAtGenesis(t *testing.T) {
 	require := require.New(t)
 	epoch := nextWeekBoundaryEpoch() + 2
 	docs := runVoteScenario(t, 3, epoch, nil)
 	require.Len(docs, 3)
 	for _, d := range docs {
 		require.Equal(epoch, d.GenesisEpoch)
-		require.Equal([][]byte{d.SharedRandomValue, d.SharedRandomValue}, d.PriorSharedRandom)
+		require.Equal([][]byte{d.SharedRandomValue, d.SharedRandomValue}, d.WeeklySharedRandom)
 	}
 }
