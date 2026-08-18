@@ -176,8 +176,7 @@ func TestMaybeStartupRebalanceRunsWhenFingerprintDiffers(t *testing.T) {
 // just enough to exercise the metadata column family. It does not seed
 // any boxes or PKI documents.
 func newMarkerTestState(t *testing.T) (*state, func()) {
-	dataDir, err := os.MkdirTemp("", "replica-marker-test-*")
-	require.NoError(t, err)
+	dataDir := t.TempDir()
 
 	nikeScheme := ecdh.Scheme(rand.Reader)
 	geom := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 1234, true, 5)
@@ -229,8 +228,7 @@ func newMarkerTestState(t *testing.T) (*state, func()) {
 // exactly the other replica, so a full Rebalance dispatches one command
 // per stored box; that count is the witness our startup-gate tests use.
 func newRebalanceServer(t *testing.T) (srv *Server, boxCount int, cc *countingConnector, dataDir string, cleanup func()) {
-	dataDir, err := os.MkdirTemp("", "replica-rebalance-test-*")
-	require.NoError(t, err)
+	dataDir = t.TempDir()
 
 	nikeScheme := ecdh.Scheme(rand.Reader)
 	geom := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 1234, true, 5)
