@@ -107,7 +107,10 @@ side-by-side::
 * ``net_name`` names the network directory (and the compose project); the
   binaries and configs land in ``./$(net_name)/``. It defaults to
   ``mixnet-<distro>`` (so ``make distro=foo start`` targets ``mixnet-foo``),
-  and a custom ``net_name=`` still overrides it.
+  and a custom ``net_name=`` still overrides it. The generated compose file
+  names the bridge network ``$(net_name)_katzenpost-net`` explicitly, so
+  each deployment gets its own bridge and targets that attach an ad-hoc
+  container to a running network can name it exactly.
 * ``base_port`` moves the whole published-port band (§2) to avoid clashes with
   a second network.
 
@@ -276,7 +279,11 @@ Notes
   match its descriptor in the fetched document (all 15 testnet nodes by
   default). It retries until all report ready or ``--ready-timeout``
   (default 8m) elapses, prints per-node diagnostics on failure, and
-  exits non-zero, so it is safe to gate CI on it.
+  exits non-zero, so it is safe to gate CI on it. It reads each node's
+  readiness from that node's ``MetricsAddress``, which is a compose
+  service name, so unlike ``run-ping`` it runs attached to the bridge
+  network rather than on ``--network=host``, and dials the daemon as
+  ``kpclientd:64331`` via ``client/thinclient-bridge.toml``.
 * If you want to run ``docker compose`` yourself instead of just interacting
   with it via these make targets, you'll first need to manually
   ``export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"`` as the

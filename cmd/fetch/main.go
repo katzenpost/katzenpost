@@ -78,7 +78,7 @@ and inspecting the current state of the mixnet topology.`,
   fetch -f thinclient.toml
 
   # Wait until the entire testnet reports ready before printing
-  fetch -f /mixnet-alpine/client/thinclient.toml -r 2 --require-ready`,
+  fetch -f /mixnet-alpine/client/thinclient-bridge.toml -r 2 --require-ready`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runFetch(cfg)
 		},
