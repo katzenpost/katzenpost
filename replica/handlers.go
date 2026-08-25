@@ -591,7 +591,15 @@ func (c *incomingConn) proxySweepBudget() time.Time {
 // candidates still to try. candidatesLeft counts the candidate about to
 // be attempted as well as those after it, so the final candidate is
 // called with 1 and may spend everything that is left.
-func proxyAttemptTimeout(deadline time.Time, candidatesLeft int) time.Duration {
+//
+// A share smaller than floor yields zero, abandoning the sweep. floor
+// is the measured cost of one saturated MKEM operation, which every
+// attempt pays for its own encapsulation before it begins waiting. An
+// attempt granted less than that cannot finish its own CTIDH1024 keygen
+// and group action inside the deadline, so starting it would take a
+// worker slot and occupy a core purely to arrive at a certain timeout.
+// A floor of zero, which is what an unmeasured host gets, disables this.
+func proxyAttemptTimeout(deadline time.Time, candidatesLeft int, floor time.Duration) time.Duration {
 	if candidatesLeft < 1 {
 		candidatesLeft = 1
 	}
@@ -599,7 +607,11 @@ func proxyAttemptTimeout(deadline time.Time, candidatesLeft int) time.Duration {
 	if remaining <= 0 {
 		return 0
 	}
-	return remaining / time.Duration(candidatesLeft)
+	share := remaining / time.Duration(candidatesLeft)
+	if share < floor {
+		return 0
+	}
+	return share
 }
 
 // proxyToShardWithSlot performs one candidate attempt while holding a
@@ -706,7 +718,7 @@ func (c *incomingConn) proxyReadSweep(shards []*pki.ReplicaDescriptor, first int
 	deadline := c.proxySweepBudget()
 	order := proxyShardOrder(shards, first)
 	for i, candidate := range order {
-		timeout := proxyAttemptTimeout(deadline, len(order)-i)
+		timeout := proxyAttemptTimeout(deadline, len(order)-i, c.l.server.mkemOpCost)
 		reply, mkemPrivateKey, targetEnvelopeKey, err := c.proxyToShardWithSlot(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme, timeout)
 		if err != nil {
 			c.log.Errorf("proxyReadRequest: proxy to %s failed: %v", candidate.Name, err)
@@ -920,7 +932,7 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 	deadline := c.proxySweepBudget()
 	order := proxyShardOrder(shards, idx)
 	for i, candidate := range order {
-		timeout := proxyAttemptTimeout(deadline, len(order)-i)
+		timeout := proxyAttemptTimeout(deadline, len(order)-i, c.l.server.mkemOpCost)
 		reply, mkemPrivateKey, targetEnvelopeKey, err = c.proxyToShardWithSlot(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme, timeout)
 		if err == nil {
 			targetShard = candidate
