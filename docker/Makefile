@@ -125,6 +125,10 @@ wirekem=xwing
 # (e.g. mixnet-alpine), so `make distro=foo start` targets mixnet-foo just
 # like the test-distros legs. A custom net_name= still overrides it.
 net_name=mixnet-$(distro)
+# docker-compose/podman normalize the project name (directory name) by
+# replacing dots with underscores; compute the actual network name the
+# same way so --network= matches the bridge compose creates.
+compose_network_name = $(subst .,,$(net_name))_katzenpost-net
 base_port=30000
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
@@ -345,7 +349,7 @@ endif
 
 # Recursive `$(MAKE)` invocations inherit these instead of re-deriving
 # them from a hardcoded argument list.
-export docker docker_user docker_args distro sh warped net_name cache_dir mount_net_name
+export docker docker_user docker_args distro sh warped net_name compose_network_name cache_dir mount_net_name
 export no_decoy no_client_decoy no_courier_replica_decoy no_mixdecoy no_gatewaydecoy
 export no_metrics pyroscope_dirauth pyroscope_kpclientd kpclientd_metrics
 export wirekem nike kem mixes auths gateways serviceNodes storageNodes
@@ -609,7 +613,7 @@ show-latest-vote:
 	@grep -A30 'Ready to send' $(net_name)/auth1/katzenpost.log |tail -30|sed /Sending/q
 
 wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=$(net_name)_katzenpost-net ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	$(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready
 
 $(distro)_base.stamp: $(base_dockerfile)
@@ -759,7 +763,7 @@ step?=90s
 payload?=256
 parallel_load_metrics_port?=9101
 run-parallel-load: $(net_name)/parallel-load.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=$(net_name)_katzenpost-net --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	$(docker) run --network=$(compose_network_name) --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/parallel-load.$(distro) \
             -config /$(net_name)/client/thinclient-bridge.toml \
             -clients $(clients) -duration $(duration) -sweep "$(sweep)" -step $(step) \
@@ -783,7 +787,7 @@ cp_sweep?=
 cp_propagation?=30s
 cp_metrics_port?=9102
 run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=$(net_name)_katzenpost-net --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	$(docker) run --network=$(compose_network_name) --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/cp-bench.$(distro) \
             -config /$(net_name)/client/thinclient-bridge.toml \
             -payload $(cp_payload) -sweep "$(cp_sweep)" -propagation $(cp_propagation) \
