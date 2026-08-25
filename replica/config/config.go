@@ -112,12 +112,13 @@ type Config struct {
 	// rather than this long per holder, and a slow first holder still
 	// leaves time to fail over to its co-holder.
 	//
-	// The budget also covers each attempt's MKEM encapsulation, a
-	// CTIDH1024 keygen plus group action, so it must stay comfortably
-	// above K times the per-attempt crypto cost or a sweep exhausts
-	// itself on crypto and never reaches the second holder. The
-	// auto-derivation below scales it from the measured saturated CTIDH
-	// rate for exactly this reason.
+	// The budget covers everything an attempt does, including the wait
+	// for one of the ProxyWorkerCount slots and the attempt's own MKEM
+	// encapsulation, a CTIDH1024 keygen plus group action. It must
+	// therefore stay comfortably above K times the per-attempt crypto
+	// cost or a sweep exhausts itself on crypto and never reaches the
+	// second holder. The auto-derivation below scales it from the
+	// measured saturated CTIDH rate for exactly this reason.
 	//
 	// Omit this field (or set it to 0) so the runtime can pick a
 	// sensible value from the CTIDH self-check's saturated rate; an
