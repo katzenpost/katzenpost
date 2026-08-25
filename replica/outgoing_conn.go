@@ -586,6 +586,14 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 // handing each inbound command to the event loop. Closing the returned
 // channel is how the reader reports that the session is finished.
 //
+// This goroutine is deliberately not waited on at shutdown. It parks in
+// RecvCommand, which returns only once the connection is closed, so
+// waiting for it before running onConnEstablished's deferred closes
+// would deadlock. It is not leaked either: both deferred closes reach
+// the same net.Conn (wire.Session.Close closes it too), and a closed
+// conn fails the in-flight io.ReadFull immediately, so the reader exits
+// a moment after the session does.
+//
 // Nothing here waits for the reply to any particular command. Replies
 // are demultiplexed by envelope hash, so they may arrive in any order
 // and at any time relative to the commands that provoked them.
@@ -645,7 +653,17 @@ func (c *outgoingConn) sendWorker(w wire.SessionInterface, outCh chan commands.C
 }
 
 // sendCommand puts one command on the wire. Returns false if the
-// connection should be closed.
+// connection should be closed, which any send error requires.
+//
+// There is no softer option. wire.Session.SendCommand rekeys the
+// transport state before it writes and marks the session invalid on any
+// write error, both by design ("All write errors are fatal"). So by the
+// time we see the error the Noise keystream has already advanced past
+// this command and the session refuses further sends, which makes a
+// local retry not merely conservative to avoid but impossible: it would
+// encrypt under a key the peer will never use. Tearing the session down
+// and letting the reconnect loop redial with backoff is the only way
+// back.
 func (c *outgoingConn) sendCommand(w wire.SessionInterface, cmd commands.Command) bool {
 	_, isDecoy := cmd.(*commands.ReplicaDecoy)
 	if err := w.SendCommand(context.Background(), cmd); err != nil {
