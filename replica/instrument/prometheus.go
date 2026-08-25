@@ -163,6 +163,12 @@ var (
 		},
 		[]string{"peer"},
 	)
+	proxyActiveAttempts = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_proxy_active_attempts",
+			Help: "Number of proxied-request attempts currently holding a proxySema slot. Read against katzenpost_replica_proxy_sem_waiters to tell saturation apart from queueing: active pinned at ProxyWorkerCount with waiters above zero means the pool is the constraint, while waiters above zero with active below the cap means slots are turning over and something else is slow.",
+		},
+	)
 	proxyPendingRequests = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "katzenpost_replica_proxy_pending_requests",
@@ -199,6 +205,7 @@ func StartPrometheusListener(address string, log *logging.Logger) {
 		prometheus.MustRegister(proxySemWaiters)
 		prometheus.MustRegister(proxyRequestLatency)
 		prometheus.MustRegister(proxyRequestTimedOut)
+		prometheus.MustRegister(proxyActiveAttempts)
 		prometheus.MustRegister(proxyPendingRequests)
 	})
 
@@ -325,7 +332,13 @@ func SetReplicaReady(ready bool, epoch uint64) {
 }
 
 // ProxySemWaitStart and ProxySemWaitEnd bracket the blocking acquire
-// of the per-process proxySema in replica/handlers.go. Unlike
+// of the per-process proxySema in replica/handlers.go.
+//
+// The pairing matters and is easy to break in a refactor: Start
+// increments on entry to the acquire, and End decrements on EVERY exit
+// from it, whether a slot was obtained or the server is shutting down.
+// This gauge counts waiters, not holders. Holders are
+// ProxyAttemptStart/End below, which bracket the slot itself. Unlike
 // ReplicationSemWaitStart/End above, the work done under this
 // semaphore is a network round-trip to a shard holder rather than a
 // sub-millisecond dispatch, so a slow holder holds slots for as long
@@ -360,4 +373,16 @@ func ProxyRequestTimedOut(peer string) {
 // registered with the ProxyRequestManager awaiting a reply.
 func ProxyPendingRequests(n int) {
 	proxyPendingRequests.Set(float64(n))
+}
+
+// ProxyAttemptStart and ProxyAttemptEnd bracket the holding of a
+// proxySema slot, as distinct from waiting for one. Increment after a
+// slot is obtained, decrement when it is released.
+func ProxyAttemptStart() {
+	proxyActiveAttempts.Inc()
+}
+
+// ProxyAttemptEnd marks the release of a proxySema slot.
+func ProxyAttemptEnd() {
+	proxyActiveAttempts.Dec()
 }

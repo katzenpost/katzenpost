@@ -587,6 +587,10 @@ func (c *incomingConn) proxySweepBudget() time.Time {
 	return time.Now().Add(time.Duration(c.l.server.cfg.ProxyRequestTimeout) * time.Second)
 }
 
+// proxyAttemptTimeout divides what remains of the budget among the
+// candidates still to try. candidatesLeft counts the candidate about to
+// be attempted as well as those after it, so the final candidate is
+// called with 1 and may spend everything that is left.
 func proxyAttemptTimeout(deadline time.Time, candidatesLeft int) time.Duration {
 	if candidatesLeft < 1 {
 		candidatesLeft = 1
@@ -609,6 +613,17 @@ func proxyAttemptTimeout(deadline time.Time, candidatesLeft int) time.Duration {
 // single sick shard holder takes the rest of the mesh down with it.
 // Turning the slot over at each candidate boundary bounds the damage
 // to a single attempt.
+//
+// The slot deliberately covers the MKEM encapsulation inside
+// proxyToShard as well as the network round-trip. That encapsulation is
+// a CTIDH1024 keygen plus group action, which is CPU-bound, so capping
+// concurrent attempts at ProxyWorkerCount = runtime.NumCPU caps
+// concurrent CTIDH at roughly one per core. Running the crypto before
+// taking a slot would raise network concurrency at the cost of spending
+// cores on attempts that then queue anyway; on a CPU-bound scheme that
+// is the wrong trade. Read katzenpost_replica_proxy_active_attempts
+// against katzenpost_replica_proxy_sem_waiters to see which bound is
+// biting.
 func (c *incomingConn) proxyToShardWithSlot(targetShard *pki.ReplicaDescriptor, replicaEpoch uint64, innerMessageBlob []byte, scheme *mkem.Scheme, nikeScheme nike.Scheme, timeout time.Duration) (*commands.ReplicaMessageReply, nike.PrivateKey, nike.PublicKey, error) {
 	if timeout <= 0 {
 		return nil, nil, nil, errors.New("proxy sweep budget exhausted")
@@ -621,7 +636,11 @@ func (c *incomingConn) proxyToShardWithSlot(targetShard *pki.ReplicaDescriptor, 
 		instrument.ProxySemWaitEnd()
 		return nil, nil, nil, errors.New("shutting down")
 	}
-	defer func() { <-c.l.server.proxySema }()
+	instrument.ProxyAttemptStart()
+	defer func() {
+		<-c.l.server.proxySema
+		instrument.ProxyAttemptEnd()
+	}()
 	return c.proxyToShard(targetShard, replicaEpoch, innerMessageBlob, scheme, nikeScheme, timeout)
 }
 
