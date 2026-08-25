@@ -113,6 +113,17 @@ func (s *Katzenpost) thinClientDialAddress() string {
 	return fmt.Sprintf("localhost:%d", s.BasePort+kpclientdPublishedPortOffset)
 }
 
+// DockerNetworkName returns the name the generated docker-compose gives the
+// bridge network. Compose would otherwise derive it by prefixing the project
+// name, which each runtime normalizes differently (case folding, dropping
+// characters that are legal in a network name), so anything attaching an
+// ad-hoc container to a running testnet had to guess. Naming it explicitly
+// makes it exact; deriving it from the net directory keeps parallel testnets
+// on separate bridges.
+func (s *Katzenpost) DockerNetworkName() string {
+	return fmt.Sprintf("%s_%s", filepath.Base(s.BaseDir), DockerNetwork)
+}
+
 // kpclientdMetricsPort returns the in-bridge port kpclientd serves its
 // /metrics endpoint on. It is derived from base_port so the client.toml
 // listener address and the prometheus scrape target stay in lockstep.
@@ -2648,10 +2659,11 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 	Write(f, `
 networks:
   %s:
+    name: %s
     driver: bridge
 
 services:
-`, DockerNetwork)
+`, DockerNetwork, s.DockerNetworkName())
 
 	for _, p := range gateways {
 		cmd := fmt.Sprintf("%s/server%s -f %s/%s/katzenpost.toml", s.BaseDir, s.BinSuffix, s.BaseDir, p.Identifier)

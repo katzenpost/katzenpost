@@ -62,6 +62,22 @@ func TestKatzenpostDerivedPublishedPorts(t *testing.T) {
 	require.Equal(t, uint16(44004), s.kpclientdMetricsPort())
 }
 
+// TestDockerNetworkName asserts the bridge network name the compose file
+// declares is the net directory joined to the network identifier, verbatim.
+// docker/Makefile's wait, run-parallel-load and run-cp-bench attach an
+// ad-hoc container to a running testnet by that exact string, so it must
+// not be run through compose's project-name normalization: a distro such
+// as ubuntu-26.04 keeps its dot, which is legal in a network name.
+func TestDockerNetworkName(t *testing.T) {
+	s := testKatzenpost(t)
+
+	s.BaseDir = "/mixnet-alpine"
+	require.Equal(t, "mixnet-alpine_katzenpost-net", s.DockerNetworkName())
+
+	s.BaseDir = "/mixnet-ubuntu-26.04"
+	require.Equal(t, "mixnet-ubuntu-26.04_katzenpost-net", s.DockerNetworkName())
+}
+
 // TestGenClient2ThinCfgEmitsDialSubtable asserts that GenClient2ThinCfg
 // writes the V1 [Dial.Tcp] subtable to the thin-client config file,
 // and that the resulting TOML round-trips into a thin.Config whose
