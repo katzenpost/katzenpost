@@ -24,6 +24,7 @@ import (
 // link or a downed peer looks like from the proxying replica.
 type holderScript struct {
 	silent    bool
+	bare      bool
 	errorCode uint8
 }
 
@@ -91,6 +92,15 @@ func (sc *scriptedConnector) DispatchCommand(cmd commands.Command, idHash *[32]b
 	sc.Unlock()
 
 	if script.silent {
+		return
+	}
+	if script.bare {
+		// A holder that failed before it could encrypt anything, so its
+		// reply carries an error code and no envelope.
+		sc.env.server.proxyManager.HandleReply(&commands.ReplicaMessageReply{
+			ErrorCode:    script.errorCode,
+			EnvelopeHash: msg.EnvelopeHash(),
+		})
 		return
 	}
 	sc.answerAsHolder(msg, keys, script)
@@ -264,5 +274,43 @@ func TestTombstoneEndsSweepWithoutRepair(t *testing.T) {
 	reply := proxyReadThroughSweep(t, env)
 	require.Equal(t, uint8(pigeonhole.ReplicaErrorTombstone), reply.ErrorCode,
 		"a tombstone is authoritative and must not fail over")
+	require.Empty(t, sc.repairWrites())
+}
+
+// TestBareReplyFailsOverAndSurfacesItsErrorCode covers the holder that
+// replies with an error code but no envelope, having failed before it
+// could encrypt anything. It never reached the box, so it is not a
+// box-not-found answer and must not be read-repaired, and the sweep
+// must carry on to the co-holder.
+func TestBareReplyFailsOverAndSurfacesItsErrorCode(t *testing.T) {
+	env := setupSemaScopeTestServer(t)
+	sc := newScriptedConnector(t, env,
+		holderScript{bare: true, errorCode: pigeonhole.ReplicaErrorInvalidEpoch},
+		holderScript{errorCode: pigeonhole.ReplicaSuccess},
+	)
+	env.server.connector = sc
+
+	reply := proxyReadThroughSweep(t, env)
+	require.Equal(t, uint8(pigeonhole.ReplicaSuccess), reply.ErrorCode,
+		"an envelope-less reply must fail over to the co-holder")
+	require.Empty(t, sc.repairWrites(),
+		"a holder that never reached the box must not be read-repaired")
+}
+
+// TestAllBareRepliesSurfaceTheHoldersErrorCode covers the exhausted
+// version: with no holder producing a usable reply, the last error code
+// a holder actually reported is more use to the client than the generic
+// replication-failed code.
+func TestAllBareRepliesSurfaceTheHoldersErrorCode(t *testing.T) {
+	env := setupSemaScopeTestServer(t)
+	sc := newScriptedConnector(t, env,
+		holderScript{bare: true, errorCode: pigeonhole.ReplicaErrorInvalidEpoch},
+		holderScript{bare: true, errorCode: pigeonhole.ReplicaErrorInvalidEpoch},
+	)
+	env.server.connector = sc
+
+	reply := proxyReadThroughSweep(t, env)
+	require.Equal(t, uint8(pigeonhole.ReplicaErrorInvalidEpoch), reply.ErrorCode,
+		"the holder's own error code must reach the client, not a generic sweep failure")
 	require.Empty(t, sc.repairWrites())
 }
