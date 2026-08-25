@@ -125,10 +125,6 @@ wirekem=xwing
 # (e.g. mixnet-alpine), so `make distro=foo start` targets mixnet-foo just
 # like the test-distros legs. A custom net_name= still overrides it.
 net_name=mixnet-$(distro)
-# docker-compose/podman normalize the project name (directory name) by
-# replacing dots with underscores; compute the actual network name the
-# same way so --network= matches the bridge compose creates.
-compose_network_name = $(subst .,,$(net_name))_katzenpost-net
 base_port=30000
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
@@ -349,7 +345,7 @@ endif
 
 # Recursive `$(MAKE)` invocations inherit these instead of re-deriving
 # them from a hardcoded argument list.
-export docker docker_user docker_args distro sh warped net_name compose_network_name cache_dir mount_net_name
+export docker docker_user docker_args distro sh warped net_name cache_dir mount_net_name
 export no_decoy no_client_decoy no_courier_replica_decoy no_mixdecoy no_gatewaydecoy
 export no_metrics pyroscope_dirauth pyroscope_kpclientd kpclientd_metrics
 export wirekem nike kem mixes auths gateways serviceNodes storageNodes
@@ -612,9 +608,9 @@ status:
 show-latest-vote:
 	@grep -A30 'Ready to send' $(net_name)/auth1/katzenpost.log |tail -30|sed /Sending/q
 
-wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready
+wait: $(net_name)/running.stamp | $(cache_dir)
+	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient.toml -r 2 --require-ready
 
 $(distro)_base.stamp: $(base_dockerfile)
 	$(docker) build -t katzenpost-$(distro)_base \
@@ -762,22 +758,12 @@ sweep?=
 step?=90s
 payload?=256
 parallel_load_metrics_port?=9101
-run-parallel-load: $(net_name)/parallel-load.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=$(compose_network_name) --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+run-parallel-load: $(net_name)/parallel-load.$(distro) $(net_name)/running.stamp | $(cache_dir)
+	$(docker) run --network=host --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/parallel-load.$(distro) \
-            -config /$(net_name)/client/thinclient-bridge.toml \
+            -config /$(net_name)/client/thinclient.toml \
             -clients $(clients) -duration $(duration) -sweep "$(sweep)" -step $(step) \
             -payload-bytes $(payload) -metrics 0.0.0.0:$(parallel_load_metrics_port)
-
-# Generate the bridge-network thinclient config the first time it is needed.
-# The host-network thinclient.toml dials localhost:base_port+2000 (kpclientd
-# is published on the host via the compose port forward); the bridge-network
-# variant uses the compose service name kpclientd:64331 directly.
-$(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
-	@echo '[Dial]'                                       >  $@
-	@echo '  [Dial.Tcp]'                                 >> $@
-	@echo '    Address = "kpclientd:64331"'              >> $@
-	@echo '    Network = "tcp"'                          >> $@
 
 # cp-bench knobs. Override on the make command line:
 #   make run-cp-bench cp_payload=65536
@@ -786,10 +772,10 @@ cp_payload?=4096
 cp_sweep?=
 cp_propagation?=30s
 cp_metrics_port?=9102
-run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=$(compose_network_name) --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp | $(cache_dir)
+	$(docker) run --network=host --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/cp-bench.$(distro) \
-            -config /$(net_name)/client/thinclient-bridge.toml \
+            -config /$(net_name)/client/thinclient.toml \
             -payload $(cp_payload) -sweep "$(cp_sweep)" -propagation $(cp_propagation) \
             -metrics 0.0.0.0:$(cp_metrics_port)
 
