@@ -231,7 +231,6 @@ type Katzenpost struct {
 
 	BasePort                uint16
 	LastPort                uint16
-	LastReplicaPort         uint16
 	ReplicaNodeIdx          int
 	BindAddr                string
 	NodeIdx                 int
@@ -535,11 +534,11 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
 
-	cfg.Addresses = []string{peerAddr(cfg.Identifier, s.LastReplicaPort)}
-	s.LastReplicaPort++
+	cfg.Addresses = []string{peerAddr(cfg.Identifier, s.LastPort)}
+	s.LastPort++
 
-	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastReplicaPort)
-	s.LastReplicaPort++
+	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastPort)
+	s.LastPort++
 
 	cfg.DataDir = filepath.Join(s.BaseDir, cfg.Identifier)
 	os.MkdirAll(filepath.Join(s.OutDir, cfg.Identifier), 0700)
@@ -958,18 +957,16 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.OutDir = cfg.OutDir
 	s.BinSuffix = cfg.BinSuffix
 	s.BasePort = uint16(cfg.BasePort)
-	s.LastPort = s.BasePort + 1
-	// Replicas are allotted their own port range so they remain
-	// distinguishable from the mix and authority listeners.  The published
-	// host-port band at +2000 is kept clear for kpclientd, prometheus,
-	// grafana, and pyroscope.  The Makefile's preflight port check catches
-	// collisions before docker-compose starts.
-	s.LastReplicaPort = s.BasePort + 1000
+	// In-bridge ports start at 1000 and increment sequentially for every
+	// node type (dirauth, gateway, service-node, mix, replica).  These
+	// ports are never published to the host, so they don't need to avoid
+	// cross-network collisions; only the published host-port band
+	// (base_port+2000..+2003) uses base_port.
+	s.LastPort = 1000
 	// The published host-port band (kpclientd, prometheus, grafana,
 	// pyroscope, and the kpclientd metrics listener) is derived from
-	// base_port as base_port+2000..+2004; see the constants declared next
-	// to DockerNetwork. Keeping it at +2000+ leaves the +1000 replica
-	// range untouched.
+	// base_port as base_port+2000..+2004; see the constants declared
+	// next to DockerNetwork.
 	s.BindAddr = cfg.BindAddr
 	s.LogLevel = cfg.LogLevel
 	s.DebugConfig = &cConfig.Debug{
