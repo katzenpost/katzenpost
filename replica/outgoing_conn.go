@@ -68,7 +68,7 @@ type outgoingConn struct {
 	ch  chan commands.Command
 
 	// unknownCmdSeen dedups unhandled-command warnings per type.
-	// Touched only by the egress goroutine.
+	// Touched only by the connection-event-loop goroutine.
 	unknownCmdSeen map[string]bool
 
 	// reauthFailures counts consecutive reauthentication failures.
@@ -749,7 +749,7 @@ func (c *outgoingConn) handleReplicaWriteReply(reply *commands.ReplicaWriteReply
 }
 
 // warnUnknownCommandOnce logs an unhandled-but-decodable command type once
-// per type for this connection. Only called from the egress goroutine.
+// per type for this connection. Only called from the connection-event-loop goroutine.
 func (c *outgoingConn) warnUnknownCommandOnce(cmd commands.Command) {
 	name := fmt.Sprintf("%T", cmd)
 	if c.unknownCmdSeen == nil {
