@@ -115,7 +115,7 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 			cfg:                cfg,
 			identityPrivateKey: peerKeys[i].idKey,
 			identityPublicKey:  peerKeys[i].idPubKey,
-			fatalErrCh:         make(chan error),
+			fatalErrCh:         make(chan error, 1),
 			haltedCh:           make(chan interface{}),
 		}
 		pk := hash.Sum256From(peerKeys[i].idPubKey)
@@ -902,7 +902,7 @@ func TestReplicaDescriptorConsensus(t *testing.T) {
 			cfg:                cfg,
 			identityPrivateKey: peerKeys[i].idKey,
 			identityPublicKey:  peerKeys[i].idPubKey,
-			fatalErrCh:         make(chan error),
+			fatalErrCh:         make(chan error, 1),
 			haltedCh:           make(chan interface{}),
 		}
 		pk := hash.Sum256From(peerKeys[i].idPubKey)
@@ -1372,7 +1372,7 @@ func TestConfiguredReplicaIdentityKeys(t *testing.T) {
 			cfg:                cfg,
 			identityPrivateKey: peerKeys[i].idKey,
 			identityPublicKey:  peerKeys[i].idPubKey,
-			fatalErrCh:         make(chan error),
+			fatalErrCh:         make(chan error, 1),
 			haltedCh:           make(chan interface{}),
 		}
 		pk := hash.Sum256From(peerKeys[i].idPubKey)
@@ -1690,7 +1690,7 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 			cfg:                cfg,
 			identityPrivateKey: peerKeys[i].idKey,
 			identityPublicKey:  peerKeys[i].idPubKey,
-			fatalErrCh:         make(chan error),
+			fatalErrCh:         make(chan error, 1),
 			haltedCh:           make(chan interface{}),
 		}
 		pk := hash.Sum256From(peerKeys[i].idPubKey)
@@ -2083,7 +2083,7 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 			cfg:                cfg,
 			identityPrivateKey: peerKeys[i].idKey,
 			identityPublicKey:  peerKeys[i].idPubKey,
-			fatalErrCh:         make(chan error),
+			fatalErrCh:         make(chan error, 1),
 			haltedCh:           make(chan interface{}),
 		}
 		pk := hash.Sum256From(peerKeys[i].idPubKey)
@@ -2468,7 +2468,7 @@ func TestEmptyEnvelopeKeysWithConfiguredReplicas(t *testing.T) {
 			cfg:                cfg,
 			identityPrivateKey: peerKeys[i].idKey,
 			identityPublicKey:  peerKeys[i].idPubKey,
-			fatalErrCh:         make(chan error),
+			fatalErrCh:         make(chan error, 1),
 			haltedCh:           make(chan interface{}),
 		}
 		pk := hash.Sum256From(peerKeys[i].idPubKey)
@@ -2755,7 +2755,7 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 			cfg:                cfg,
 			identityPrivateKey: peerKeys[i].idKey,
 			identityPublicKey:  peerKeys[i].idPubKey,
-			fatalErrCh:         make(chan error),
+			fatalErrCh:         make(chan error, 1),
 			haltedCh:           make(chan interface{}),
 		}
 		pk := hash.Sum256From(peerKeys[i].idPubKey)
@@ -3216,7 +3216,7 @@ func TestConsensusIdenticalAfterAuthorityRestart(t *testing.T) {
 			cfg:                cfg,
 			identityPrivateKey: peerKeys[i].idKey,
 			identityPublicKey:  peerKeys[i].idPubKey,
-			fatalErrCh:         make(chan error),
+			fatalErrCh:         make(chan error, 1),
 			haltedCh:           make(chan interface{}),
 		}
 		go func() {

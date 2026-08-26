@@ -302,7 +302,7 @@ func (s *state) fsm() <-chan time.Time {
 			if !ok {
 				fatalErr := fmt.Errorf("FSM FATAL: Failed to find our signature for epoch %v in consensus document - this indicates a critical consensus building failure", s.votingEpoch)
 				s.log.Errorf("FSM: %v", fatalErr)
-				s.s.fatalErrCh <- fatalErr
+				s.s.reportFatal(fatalErr)
 				break
 			}
 			s.log.Debugf("FSM: Found our signature in consensus document for epoch %d", s.votingEpoch)
@@ -310,14 +310,14 @@ func (s *state) fsm() <-chan time.Time {
 			if err != nil {
 				fatalErr := fmt.Errorf("FSM FATAL: Failed to serialize our signature for epoch %v: %s - this indicates a critical cryptographic failure", s.votingEpoch, err)
 				s.log.Errorf("FSM: %v", fatalErr)
-				s.s.fatalErrCh <- fatalErr
+				s.s.reportFatal(fatalErr)
 				break
 			}
 			s.log.Debugf("FSM: Successfully serialized our signature for epoch %d", s.votingEpoch)
 			signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, serialized, s.votingEpoch)
 			if err != nil {
 				s.log.Errorf("FSM: Failed to sign our signature for epoch %v: %s", s.votingEpoch, err)
-				s.s.fatalErrCh <- err
+				s.s.reportFatal(err)
 				break
 			}
 			s.log.Debugf("FSM: Successfully signed our signature for epoch %d", s.votingEpoch)
@@ -389,7 +389,7 @@ func (s *state) persistDocument(epoch uint64, doc []byte) {
 		// Persistence failures are FATAL.
 		fatalErr := fmt.Errorf("PERSISTENCE FATAL: Failed to persist consensus document for epoch %d to database: %v - this indicates critical storage failure", epoch, err)
 		s.log.Errorf("persistDocument: %v", fatalErr)
-		s.s.fatalErrCh <- fatalErr
+		s.s.reportFatal(fatalErr)
 	}
 }
 
@@ -1567,7 +1567,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	rng, err := rand.NewDeterministicRandReader(srv[:])
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
-		s.s.fatalErrCh <- err
+		s.s.reportFatal(err)
 	}
 	targetNodesPerLayer := len(nodeList) / s.s.cfg.Debug.Layers
 	topology := make([][]*pki.MixDescriptor, s.s.cfg.Debug.Layers)
@@ -1678,12 +1678,12 @@ func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor, srv []byte) [
 	if len(srv) != 32 {
 		err := errors.New("SharedRandomValue too short")
 		s.log.Errorf("srv: %s", srv)
-		s.s.fatalErrCh <- err
+		s.s.reportFatal(err)
 	}
 	rng, err := rand.NewDeterministicRandReader(srv[:])
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
-		s.s.fatalErrCh <- err
+		s.s.reportFatal(err)
 	}
 
 	nodeIndexes := rng.Perm(len(nodes))
@@ -2232,7 +2232,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 		return eBkt.Put(pk[:], rawDesc)
 	}); err != nil {
 		// Persistence failures are FATAL.
-		s.s.fatalErrCh <- err
+		s.s.reportFatal(err)
 		return err
 	}
 
@@ -2309,7 +2309,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		return eBkt.Put(pk[:], rawDesc)
 	}); err != nil {
 		// Persistence failures are FATAL.
-		s.s.fatalErrCh <- err
+		s.s.reportFatal(err)
 		return err
 	}
 
@@ -2837,7 +2837,7 @@ func (s *state) reveal(epoch uint64) []byte {
 		fatalErr := fmt.Errorf("REVEAL FATAL: reveal() called without commit for epoch %d - this indicates a critical SharedRandom protocol violation", epoch)
 		s.log.Errorf("reveal: %v", fatalErr)
 		s.log.Errorf("reveal: Available reveals for epoch %d: %d", epoch, len(s.reveals[epoch]))
-		s.s.fatalErrCh <- fatalErr
+		s.s.reportFatal(fatalErr)
 	}
 	s.log.Debugf("reveal: Successfully retrieved reveal for epoch %d", epoch)
 	return signed
