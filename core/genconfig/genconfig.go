@@ -229,7 +229,7 @@ type Katzenpost struct {
 	ReplicaNodeConfigs []*rConfig.Config
 	CourierConfigs     []*courierConfig.Config
 
-	BasePort                uint16
+	BasePort                uint16 // published host-port base (base_port); not used for in-bridge ports
 	LastPort                uint16
 	ReplicaNodeIdx          int
 	BindAddr                string
