@@ -1144,12 +1144,12 @@ func SaveConfigurations(s *Katzenpost, cfg *Config) error {
 // The kpclientd daemon and the thin clients that talk to it sit at
 // opposite ends of the docker-compose port publish, so they need
 // different addresses. The daemon binds to its own private bridge IP
-// (reached via its `kpclientd` hostname) on the fixed in-bridge port
-// 64331, and the docker port publish forwards host:base_port+2000 to
-// that same bridge address. The thin clients (ping, fetch) run on the
-// host with --network=host and dial localhost:base_port+2000 over the
-// published port; the host's /etc/hosts resolves localhost to
-// 127.0.0.1 and the published forward picks it up.
+// (reached via its `kpclientd` hostname) on base_port+2000, and the
+// docker port publish maps that same port to the host. The thin
+// clients (ping, fetch) run on the host with --network=host and dial
+// localhost:base_port+2000 over the published port; the host's
+// /etc/hosts resolves localhost to 127.0.0.1 and the published forward
+// picks it up.
 func GenerateClientConfigurations(s *Katzenpost) error {
 	clientDaemonNetwork := "tcp"
 	clientDaemonListenAddress := fmt.Sprintf("kpclientd:%d", s.BasePort+kpclientdPublishedPortOffset)
