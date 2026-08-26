@@ -128,7 +128,7 @@ func cmdIdentity(cmd commands.Command) ([32]byte, bool) {
 //
 // Replication writes keep the retry queue; they are what it was built
 // for, and they have no waiter to disappoint.
-func failUndeliverableProxyRequest(co GenericConnector, cmd commands.Command) bool {
+func failUndeliverableProxyRequest(co GenericConnector, log *logging.Logger, cmd commands.Command) bool {
 	msg, isProxyRequest := cmd.(*commands.ReplicaMessage)
 	if !isProxyRequest {
 		return false
@@ -143,6 +143,7 @@ func failUndeliverableProxyRequest(co GenericConnector, cmd commands.Command) bo
 	}
 	proxyManager := server.ProxyManager()
 	if proxyManager == nil {
+		log.Errorf("Proxy manager not wired; failing proxy request %T instead of retry-queuing", msg)
 		return false
 	}
 	proxyManager.FailRequest(*msg.EnvelopeHash())
@@ -164,7 +165,7 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 		// Connection exists - dispatch immediately
 		co.log.Debugf("Dispatching command type %T to peer %x", cmd, idHash)
 		c.dispatchCommand(cmd)
-	} else if failUndeliverableProxyRequest(co, cmd) {
+	} else if failUndeliverableProxyRequest(co, co.log, cmd) {
 		co.log.Warningf("No connection for destination %x, failing proxy request %T", idHash[:8], cmd)
 	} else {
 		// No connection - add to retry queue instead of dropping

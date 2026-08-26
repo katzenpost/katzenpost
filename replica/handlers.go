@@ -541,6 +541,7 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unmarshal envelope key for %s: %v", targetShard.Name, err)
 	}
+	start := time.Now()
 	mkemPrivateKey, envelope := scheme.Encapsulate([]nike.PublicKey{targetEnvelopeKey}, innerMessageBlob)
 	replicaMessage := &commands.ReplicaMessage{
 		Cmds:               commands.NewStorageReplicaCommands(c.geo, nikeScheme),
@@ -551,7 +552,7 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 		Ciphertext:         envelope.Envelope,
 	}
 	idHash := blake2b.Sum256(targetShard.IdentityKey)
-	reply, err := c.sendProxyRequestSync(replicaMessage, &idHash, targetShard, mkemPrivateKey, targetEnvelopeKey, scheme)
+	reply, err := c.sendProxyRequestSync(replicaMessage, &idHash, targetShard, mkemPrivateKey, targetEnvelopeKey, scheme, start)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -862,13 +863,12 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 }
 
 // sendProxyRequestSync sends a proxy request synchronously to the target replica
-func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMessage, idHash *[32]byte, targetShard *pki.ReplicaDescriptor, mkemPrivateKey nike.PrivateKey, targetEnvelopeKey nike.PublicKey, scheme *mkem.Scheme) (*commands.ReplicaMessageReply, error) {
+func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMessage, idHash *[32]byte, targetShard *pki.ReplicaDescriptor, mkemPrivateKey nike.PrivateKey, targetEnvelopeKey nike.PublicKey, scheme *mkem.Scheme, start time.Time) (*commands.ReplicaMessageReply, error) {
 	// Register the proxy request with the proxy manager
 	envelopeHash := *replicaMessage.EnvelopeHash()
 	responseCh := c.l.server.proxyManager.RegisterProxyRequest(envelopeHash, mkemPrivateKey, targetEnvelopeKey, replicaMessage, *idHash, targetShard.Name)
 
 	// Dispatch the command to the target replica
-	start := time.Now()
 	c.l.server.connector.DispatchCommand(replicaMessage, idHash)
 	c.log.Debugf("Dispatched proxy request to %s, waiting for response", targetShard.Name)
 
