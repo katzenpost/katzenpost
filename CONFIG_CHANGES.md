@@ -326,7 +326,7 @@ The client TOML had the most substantial reshape, driven by the
   ```toml
   [Listen]
     [Listen.Tcp]
-      Address = "localhost:64331"
+      Address = "kpclientd:64331"
       Network = "tcp"
   ```
 
@@ -389,7 +389,7 @@ Source: `client/thin/thin.go`, `Config` type.
   ```toml
   [Dial]
     [Dial.Tcp]
-      Address = "localhost:64331"
+      Address = "localhost:32000"
       Network = "tcp"
   ```
 

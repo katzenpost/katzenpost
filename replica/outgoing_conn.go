@@ -145,7 +145,7 @@ func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
 		// dispatch before arming their own timeout); fail the proxy
 		// request so its sweep fails over now, or park a replication
 		// write in the connector retry queue.
-		if failUndeliverableProxyRequest(c.co, cmd) {
+		if failUndeliverableProxyRequest(c.co, c.log, cmd) {
 			c.log.Warningf("Outgoing queue for %s full, failing proxy request %T", c.dst.Name, cmd)
 			return
 		}
@@ -667,7 +667,7 @@ func (c *outgoingConn) sendWorker(w wire.SessionInterface, outCh chan commands.C
 func (c *outgoingConn) sendCommand(w wire.SessionInterface, cmd commands.Command) bool {
 	_, isDecoy := cmd.(*commands.ReplicaDecoy)
 	if err := w.SendCommand(context.Background(), cmd); err != nil {
-		if !isDecoy && !failUndeliverableProxyRequest(c.co, cmd) {
+		if !isDecoy && !failUndeliverableProxyRequest(c.co, c.log, cmd) {
 			c.log.Debugf("SendCommand failed: %v, queuing for retry", err)
 			idHash := hash.Sum256(c.dst.IdentityKey)
 			c.co.QueueForRetry(cmd, idHash)
