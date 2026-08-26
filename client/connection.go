@@ -128,6 +128,8 @@ type connection struct {
 	queueID     []byte
 
 	isShutdown atomic.Bool
+
+	descAbsentCount atomic.Int64
 }
 
 // getGateway safely returns the current gateway hash
@@ -271,6 +273,11 @@ func (c *connection) getDescriptor() error {
 
 func (c *connection) connectWorker() {
 	defer c.log.Debugf("Terminating connect worker.")
+	defer func() {
+		if n := c.descAbsentCount.Load(); n > 1 {
+			c.log.Debugf("Aborting connect loop repeated %d times (first occurrence logged above).", n)
+		}
+	}()
 
 	dialCtx, cancelFn := context.WithCancel(context.Background())
 	c.Go(func() {
@@ -321,7 +328,9 @@ func (c *connection) doConnect(dialCtx context.Context) {
 	for {
 		connErr = c.getDescriptor()
 		if connErr != nil {
-			c.log.Debugf("Aborting connect loop, descriptor no longer present.")
+			if c.descAbsentCount.Add(1) == 1 {
+				c.log.Debugf("Aborting connect loop, descriptor no longer present.")
+			}
 			return
 		}
 		c.log.Debugf("doConnect, got descriptor %v", c.descriptor)
