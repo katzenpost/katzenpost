@@ -84,8 +84,8 @@ performance optimization and security requirements.`,
 		"base directory path for runtime data and configurations")
 	cmd.Flags().StringVarP(&cfg.OutDir, "outDir", "o", "",
 		"output directory path for generated configuration files")
-	cmd.Flags().IntVarP(&cfg.BasePort, "port", "P", genconfig.BasePort,
-		"starting port number for network services")
+	cmd.Flags().IntVarP(&cfg.BasePort, "port", "P", 0,
+		"starting port number for network services (required)")
 	cmd.Flags().StringVarP(&cfg.BindAddr, "addr", "a", genconfig.BindAddr,
 		"IP address to bind network services to")
 
@@ -180,6 +180,7 @@ performance optimization and security requirements.`,
 		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
 
 	// Mark required flags
+	cmd.MarkFlagRequired("port")
 	cmd.MarkFlagRequired("wirekem")
 	cmd.MarkFlagRequired("baseDir")
 	cmd.MarkFlagRequired("outDir")

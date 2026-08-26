@@ -47,7 +47,6 @@ import (
 )
 
 const (
-	BasePort               = 30000
 	BindAddr               = "0.0.0.0"
 	NrLayers               = 3
 	NrNodes                = 6
@@ -964,14 +963,10 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.BasePort = uint16(cfg.BasePort)
 	s.LastPort = s.BasePort + 1
 	// Replicas are allotted their own port range so they remain
-	// distinguishable from the mix and authority listeners. The offset is
-	// kept modest (1000 rather than 3000) so that with the default
-	// BasePort of 30000 the replicas land at 31000+ rather than 33000+.
-	// On Linux the default ephemeral source-port range begins at 32768,
-	// so a listener at 33000 may collide with an outbound connection that
-	// happened to be assigned that source port first; the resulting bind
-	// failure aborts replica startup and yields flaky CI runs. Holding
-	// the replica band beneath 32768 avoids that race.
+	// distinguishable from the mix and authority listeners.  The published
+	// host-port band at +2000 is kept clear for kpclientd, prometheus,
+	// grafana, and pyroscope.  The Makefile's preflight port check catches
+	// collisions before docker-compose starts.
 	s.LastReplicaPort = s.BasePort + 1000
 	// The published host-port band (kpclientd, prometheus, grafana,
 	// pyroscope, and the kpclientd metrics listener) is derived from
