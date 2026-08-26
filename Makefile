@@ -157,7 +157,6 @@ prune-docker-cache:
 
 act-clean:
 	@echo "Cleaning up docker mixnet environment..."
-	-podman rm -f $$(podman ps -aq --filter "name=voting_mixnet") 2>/dev/null || true
 	-cd docker && make clean-local 2>/dev/null || true
 	@echo "Cleanup complete."
 
