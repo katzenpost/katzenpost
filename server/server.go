@@ -126,12 +126,29 @@ func (s *Server) IdentityKey() sign.PublicKey {
 	return s.identityPublicKey
 }
 
+// reportFatal hands err to the fatal error watcher, which shuts the
+// server down. The send is non-blocking and fatalErrCh is buffered,
+// so a caller never blocks: one queued error is enough to bring the
+// server down, and the watcher is gone once shutdown has begun. A
+// blocking send would deadlock the callers that halt() waits for, and
+// closing the channel to release them would panic any send that lost
+// the race.
+func (s *Server) reportFatal(err error) {
+	select {
+	case s.fatalErrCh <- err:
+	default:
+		if s.log != nil {
+			s.log.Warningf("Fatal error while already shutting down: %v", err)
+		}
+	}
+}
+
 // RotateLog rotates the log file
 // if logging to a file is enabled.
 func (s *Server) RotateLog() {
 	err := s.logBackend.Rotate()
 	if err != nil {
-		s.fatalErrCh <- fmt.Errorf("failed to rotate log file, shutting down server")
+		s.reportFatal(fmt.Errorf("failed to rotate log file, shutting down server"))
 	}
 }
 
@@ -277,8 +294,6 @@ func (s *Server) halt() {
 		close(s.inboundPackets)
 	}
 
-	close(s.fatalErrCh)
-
 	s.log.Noticef("Shutdown complete.")
 	close(s.haltedCh)
 }
@@ -291,7 +306,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s := &Server{
 		cfg:        cfg,
-		fatalErrCh: make(chan error),
+		fatalErrCh: make(chan error, 1),
 		haltedCh:   make(chan interface{}),
 	}
 	goo := &serverGlue{s}
@@ -463,13 +478,13 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start the fatal error watcher.
 	go func() {
-		err, ok := <-s.fatalErrCh
-		if !ok {
+		select {
+		case err := <-s.fatalErrCh:
+			s.log.Warningf("Shutting down due to error: %v", err)
+			s.Shutdown()
+		case <-s.haltedCh:
 			// Graceful termination.
-			return
 		}
-		s.log.Warningf("Shutting down due to error: %v", err)
-		s.Shutdown()
 	}()
 	logStartupStep("fatal error watcher")
 
@@ -480,7 +495,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warningf("Warning: management socket file '%s' already exists, deleting it.", s.cfg.Management.Path)
 		err := os.Remove(s.cfg.Management.Path)
 		if err != nil {
-			s.fatalErrCh <- fmt.Errorf("failed to delete mgmt socket file, shutting down now")
+			s.reportFatal(fmt.Errorf("failed to delete mgmt socket file, shutting down now"))
 			return nil, err
 		}
 	}
