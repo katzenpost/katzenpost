@@ -627,13 +627,13 @@ show-latest-vote:
 # Generate the bridge-network thinclient config.  The host-network
 # thinclient.toml (used by run-ping, run-parallel-load, run-cp-bench)
 # dials localhost:base_port+2000 via the compose port forward; this
-# variant uses the compose service name kpclientd:64331 directly.
-# wait needs it because fetch --require-ready probes per-node metrics
-# endpoints via container DNS, which is only available on the bridge.
+# variant uses the compose service name kpclientd:<base_port+2000>
+# directly. wait needs it because fetch --require-ready probes per-node
+# metrics endpoints via container DNS, which is only available on the bridge.
 $(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
 	@echo '[Dial]'                                       >  $@
 	@echo '  [Dial.Tcp]'                                 >> $@
-	@echo '    Address = "kpclientd:64331"'              >> $@
+	@echo '    Address = "kpclientd:$(shell expr $(base_port) + 2000)"' >> $@
 	@echo '    Network = "tcp"'                          >> $@
 
 wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)

@@ -77,17 +77,14 @@ const (
 	DockerNetwork = "katzenpost-net"
 )
 
-// Published host-port band. Every service that is exposed to the host or
-// scraped by prometheus gets a port derived from base_port (the base that
-// dirauth/mix/service-node listeners already start from) so that several
-// parallel test networks with different base_port values can run on the
-// same host without colliding on published ports. Only the host side of
-// each publish moves; the in-bridge ports stay fixed (64331, 9090, 3000,
-// 4040, and the kpclientd metrics listener).
+// Published host-port band. Each published service gets a port derived
+// from base_port so that several parallel test networks can run on the
+// same host without colliding on host-side ports.
 const (
-	// kpclientdPublishedPortOffset publishes the kpclientd thin-client
-	// port (64331 in-bridge) to the host as base_port+2000. Thin clients
-	// running with --network=host dial localhost:<base_port+2000>.
+	// kpclientdPublishedPortOffset is the offset from base_port for the
+	// kpclientd thin-client port.  The daemon listens on base_port+2000
+	// inside the bridge, and the docker-compose publish maps that same
+	// port to the host.
 	kpclientdPublishedPortOffset = 2000
 	// metricsPublishedPortOffset publishes prometheus (9090 in-bridge)
 	// to the host as base_port+2001.
@@ -106,8 +103,8 @@ const (
 )
 
 // thinClientDialAddress returns the host-side address thin clients use to
-// reach kpclientd through the docker port publish. The daemon itself
-// listens on kpclientd:64331 inside the bridge.
+// reach kpclientd through the docker port publish. The daemon listens on
+// base_port+2000 inside the bridge, same as the published host port.
 func (s *Katzenpost) thinClientDialAddress() string {
 	return fmt.Sprintf("localhost:%d", s.BasePort+kpclientdPublishedPortOffset)
 }
@@ -1158,7 +1155,7 @@ func SaveConfigurations(s *Katzenpost, cfg *Config) error {
 // 127.0.0.1 and the published forward picks it up.
 func GenerateClientConfigurations(s *Katzenpost) error {
 	clientDaemonNetwork := "tcp"
-	clientDaemonListenAddress := "kpclientd:64331"
+	clientDaemonListenAddress := fmt.Sprintf("kpclientd:%d", s.BasePort+kpclientdPublishedPortOffset)
 	clientDaemonDialAddress := s.thinClientDialAddress()
 
 	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonListenAddress)
@@ -2746,16 +2743,17 @@ services:
 `, DockerNetwork, s.BasePort+pyroscopePublishedPortOffset)
 	}
 
-	// kpclientd publishes its thin-client port (64331) on the host at
+	// kpclientd publishes its thin-client port on the host at
 	// base_port+2000 so external thin clients (ping, fetch) running with
 	// --network=host can dial it. Inside the bridge it is reachable as
-	// kpclientd:64331 via compose DNS, which is how prometheus scrapes
-	// it when kpclientd_metrics is enabled.
+	// kpclientd:<base_port+2000> via compose DNS, which is how prometheus
+	// scrapes it when kpclientd_metrics is enabled.
 	cmd := fmt.Sprintf("%s/kpclientd%s -c %s/client/client.toml", s.BaseDir, s.BinSuffix, s.BaseDir)
 	writeKatzenpostService("kpclientd", cmd)
+	publishedPort := s.BasePort + kpclientdPublishedPortOffset
 	Write(f, `
     ports:
-      - "127.0.0.1:%d:64331"`, s.BasePort+kpclientdPublishedPortOffset)
+      - "127.0.0.1:%d:%d"`, publishedPort, publishedPort)
 	writeEnv("kpclientd")
 	Write(f, `
 `)
