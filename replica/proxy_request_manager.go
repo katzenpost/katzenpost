@@ -66,8 +66,10 @@ func NewProxyRequestManager(log *logging.Logger, requestTimeout time.Duration) *
 }
 
 // publishPendingLocked republishes the pending-request gauge. Must be
-// called with the lock held, at every site that adds to or removes
-// from pendingRequests.
+// called with the lock held after any operation that mutates
+// pendingRequests (register, fail, reply, shutdown, or cleanup).
+// Reading len() means a single call after a batch of deletions
+// is correct.
 func (p *ProxyRequestManager) publishPendingLocked() {
 	instrument.ProxyPendingRequests(len(p.pendingRequests))
 }
