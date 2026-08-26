@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -130,7 +130,9 @@ net_name=mixnet-$(distro)
 # the bridge compose creates.  Only the wait target uses this (fetch
 # --require-ready probes per-node metrics endpoints via container DNS).
 compose_network_name = $(subst .,,$(net_name))_katzenpost-net
-base_port=30000
+# Deterministic base_port derived from the network name so parallel
+# networks can't accidentally collide.  Override with base_port=<n>.
+base_port?=$(shell printf '%s' '$(net_name)' | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
 # bash is installed in every base image (alpine, debian, ubuntu), so a
@@ -421,7 +423,16 @@ selfcheck-cache-restore: $(docker_compose_yml)
 	  done; \
 	fi
 
-start: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
+check-ports:
+	@for port in $$(seq $(base_port) $$(($(base_port) + 3))); do \
+		if ss -tlnp "sport = :$$port" 2>/dev/null | grep -q LISTEN; then \
+			echo "ERROR: port $$port is already in use (base_port=$(base_port))."; \
+			echo "  Use 'make base_port=<N> start' or 'make stop' to free the ports."; \
+			exit 1; \
+		fi; \
+	done
+
+start: check-ports $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
