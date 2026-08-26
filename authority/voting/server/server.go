@@ -165,12 +165,29 @@ func (s *Server) IdentityKey() sign.PublicKey {
 	return s.identityPublicKey
 }
 
+// reportFatal hands err to the fatal error watcher, which shuts the
+// server down. The send is non-blocking and fatalErrCh is buffered,
+// so a caller never blocks: one queued error is enough to bring the
+// server down, and the watcher is gone once shutdown has begun. A
+// blocking send would deadlock the callers that halt() waits for, and
+// closing the channel to release them would panic any send that lost
+// the race.
+func (s *Server) reportFatal(err error) {
+	select {
+	case s.fatalErrCh <- err:
+	default:
+		if s.log != nil {
+			s.log.Warningf("Fatal error while already shutting down: %v", err)
+		}
+	}
+}
+
 // RotateLog rotates the log file
 // if logging to a file is enabled.
 func (s *Server) RotateLog() {
 	err := s.logBackend.Rotate()
 	if err != nil {
-		s.fatalErrCh <- fmt.Errorf("failed to rotate log file, shutting down server")
+		s.reportFatal(fmt.Errorf("failed to rotate log file, shutting down server"))
 	}
 	s.log.Notice("Log rotated.")
 }
@@ -238,8 +255,6 @@ func (s *Server) halt() {
 		s.state = nil
 	}
 
-	close(s.fatalErrCh)
-
 	s.log.Notice("Shutdown complete.")
 	close(s.haltedCh)
 }
@@ -251,7 +266,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.cfg = cfg
 	s.geo = cfg.SphinxGeometry
 
-	s.fatalErrCh = make(chan error)
+	s.fatalErrCh = make(chan error, 1)
 	s.haltedCh = make(chan interface{})
 
 	// Do the early initialization and bring up logging.
@@ -392,9 +407,11 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start the fatal error watcher.
 	go func() {
-		err, ok := <-s.fatalErrCh
-		if !ok {
-			s.log.Debugf("Fatal error channel closed gracefully")
+		var err error
+		select {
+		case err = <-s.fatalErrCh:
+		case <-s.haltedCh:
+			s.log.Debugf("Fatal error watcher stopping, server halted")
 			return
 		}
 		s.log.Errorf("FATAL ERROR DETECTED - Authority shutting down immediately!")
