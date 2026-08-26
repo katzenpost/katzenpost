@@ -68,7 +68,7 @@ type outgoingConn struct {
 	ch  chan commands.Command
 
 	// unknownCmdSeen dedups unhandled-command warnings per type.
-	// Touched only by the egress goroutine.
+	// Touched only by the connection-event-loop goroutine.
 	unknownCmdSeen map[string]bool
 
 	// reauthFailures counts consecutive reauthentication failures.
@@ -409,22 +409,23 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		AuthenticationKey: c.co.Server().linkKey,
 		RandomReader:      rand.Reader,
 		HandshakeTimeout:  time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond,
-		// A peer may take up to ProxyRequestTimeout to answer a proxied
-		// read, so allow generously more (2x) before treating the peer as
-		// wedged. This bound is load-bearing: without it (noIdleReadTimeout),
-		// a peer that accepts our command but never replies — because its
-		// own incoming handler is blocked re-proxying, or it is otherwise
-		// wedged at the application layer while TCP stays up — parks
-		// egressWorker on RecvCommand indefinitely. The session then never
-		// dies, so the reconnect loop never redials and FailPeer never fires,
-		// and every subsequent proxy read AND replication write queued for
-		// this peer times out forever. A finite bound lets the wedged session
-		// die, the reconnect loop redial, and pending proxy requests fail
-		// over. (2a0aae66 dropped this bound to noIdleReadTimeout on the
-		// theory that TCP keepalive catches dead peers; it does not catch an
-		// application-layer wedge on a live TCP connection. The separate
-		// inbound SafetyCap-deadline removal from that commit is kept.)
-		ReadTimeout: time.Duration(2*c.co.Server().cfg.ProxyRequestTimeout) * time.Second,
+		// No idle read deadline. The earlier 2*ProxyRequestTimeout bound
+		// existed because a peer that never replied parked the egress
+		// goroutine on RecvCommand, stalling everything queued for that
+		// peer. Sends are no longer gated on replies, so a silent peer
+		// stalls nothing: reading happens on its own goroutine and each
+		// proxy waiter fails over on its own budget. Dead peers are
+		// detected by TCP keepalive, matching this replica's incoming
+		// side and the courier.
+		//
+		// The decoy-traffic specification, section 5, refines this: with
+		// decoys enabled a healthy link's inter-arrival gaps are
+		// exponential at LambdaR, so the read deadline should be
+		// SafetyCap(LambdaR) and silence past it is near-certain proof
+		// the peer is gone. That refinement belongs to both the courier
+		// and the replica at once and is left to its own change;
+		// common.SafetyCap already exists for it.
+		ReadTimeout: noIdleReadTimeout,
 	}
 	envelopeScheme := nikeschemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
 	isInitiator := true
@@ -515,86 +516,155 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 	sender.UpdateConnectionStatus(true)
 
-	// Channel to signal egress goroutine to drain and exit
+	// Channel to signal the writer to drain and exit.
 	egressDoneCh := make(chan struct{})
 
-	// Start egress goroutine that sends commands over the wire
+	// One goroutine writes to the session and one reads from it. They
+	// may run concurrently: SendCommand and RecvCommand take disjoint
+	// locks over disjoint Noise states and arm disjoint deadlines. Two
+	// concurrent writers would not be safe, and there is exactly one.
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.egressWorker(w, outCh, egressDoneCh)
+		c.sendWorker(w, outCh, egressDoneCh)
 	}()
+	recvCh := c.startPeerReader(w, egressDoneCh)
 
 	// Start the reauthenticate ticker.
 	reauthMs := time.Duration(c.co.Server().cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
-	// Wait for shutdown or reauth failure
+	// The reader is deliberately not waited on: it may be parked in
+	// RecvCommand, which only returns once the deferred conn.Close
+	// runs, so waiting for it here would deadlock. It exits on its own
+	// the moment the connection closes.
+	shutdown := func() {
+		sender.UpdateConnectionStatus(false)
+		sender.Halt()
+		close(egressDoneCh)
+		wg.Wait()
+	}
+
 	for {
 		select {
 		case <-closeCh:
 			wasHalted = true
-			sender.UpdateConnectionStatus(false)
-			sender.Halt()
-			close(egressDoneCh)
-			wg.Wait()
+			shutdown()
 			return
 		case <-reauth.C:
 			creds, err := w.PeerCredentials()
 			if err != nil {
 				c.log.Debugf("replica outgoingConn: Session fail: %s", err)
-				sender.UpdateConnectionStatus(false)
-				sender.Halt()
-				close(egressDoneCh)
-				wg.Wait()
+				shutdown()
 				return
 			}
 			if !c.reauthOutcome(c.IsPeerValid(creds)) {
-				sender.UpdateConnectionStatus(false)
-				sender.Halt()
-				close(egressDoneCh)
-				wg.Wait()
+				shutdown()
+				return
+			}
+		case rawCmd, ok := <-recvCh:
+			if !ok {
+				c.log.Debugf("replica outgoingConn: peer reader exited, tearing down session.")
+				shutdown()
+				return
+			}
+			if !c.handleCommand(rawCmd) {
+				shutdown()
 				return
 			}
 		case <-c.egressErrCh:
-			// Egress worker hit a send/recv error
-			sender.UpdateConnectionStatus(false)
-			sender.Halt()
-			close(egressDoneCh)
-			wg.Wait()
+			// The writer hit a send error.
+			shutdown()
 			return
 		}
 	}
 }
 
-// egressWorker reads commands from the sender output channel and sends them
-// over the wire session. It handles responses and signals errors back.
-func (c *outgoingConn) egressWorker(w wire.SessionInterface, outCh chan commands.Command, doneCh <-chan struct{}) {
+// startPeerReader runs the only goroutine that reads from the session,
+// handing each inbound command to the event loop. Closing the returned
+// channel is how the reader reports that the session is finished.
+//
+// This goroutine is deliberately not waited on at shutdown. It parks in
+// RecvCommand, which returns only once the connection is closed, so
+// waiting for it before running onConnEstablished's deferred closes
+// would deadlock. It is not leaked either: both deferred closes reach
+// the same net.Conn (wire.Session.Close closes it too), and a closed
+// conn fails the in-flight io.ReadFull immediately, so the reader exits
+// a moment after the session does.
+//
+// Nothing here waits for the reply to any particular command. Replies
+// are demultiplexed by envelope hash, so they may arrive in any order
+// and at any time relative to the commands that provoked them.
+func (c *outgoingConn) startPeerReader(w wire.SessionInterface, doneCh <-chan struct{}) chan commands.Command {
+	recvCh := make(chan commands.Command, 1)
+	go func() {
+		defer close(recvCh)
+		for {
+			rawCmd, err := w.RecvCommand(context.Background())
+			if err != nil {
+				c.log.Debugf("Failed to receive command: %v", err)
+				return
+			}
+			select {
+			case recvCh <- rawCmd:
+			case <-doneCh:
+				return
+			case <-c.co.CloseAllCh():
+				return
+			}
+		}
+	}()
+	return recvCh
+}
+
+// sendWorker runs the only goroutine that writes to the session. It
+// takes whatever the LambdaR-paced sender hands it and puts it on the
+// wire, and never waits for a reply.
+//
+// That is the whole point. The decoy-traffic specification, section 3,
+// requires that sends are never gated on replies: the Poisson clock is
+// the sole pacing authority. Gating them, as this connection used to,
+// meant a slow peer backed up the outgoing queue until the ExpDist
+// ticks themselves stalled, so the decoy stream fell silent exactly
+// when a peer was slow. That couples observable link timing to replica
+// processing latency, which is the correlation the fixed-throughput
+// design exists to deny an observer.
+func (c *outgoingConn) sendWorker(w wire.SessionInterface, outCh chan commands.Command, doneCh <-chan struct{}) {
 	for {
 		select {
 		case <-doneCh:
-			// Drain remaining commands
+			// Drain whatever the sender already handed us.
 			for {
 				select {
 				case cmd := <-outCh:
-					c.sendAndRecv(w, cmd)
+					c.sendCommand(w, cmd) // return intentionally discarded: shutdown is already underway
 				default:
 					return
 				}
 			}
 		case cmd := <-outCh:
-			if !c.sendAndRecv(w, cmd) {
+			if !c.sendCommand(w, cmd) {
 				return
 			}
 		}
 	}
 }
 
-// sendAndRecv sends a command and processes the response.
-// Returns false if the connection should be closed.
-func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command) bool {
+// sendCommand puts one command on the wire. Returns false if the
+// connection should be closed, which any send error requires.
+//
+// There is no softer option. wire.Session.SendCommand rekeys the
+// transport state before it writes and marks the session invalid on any
+// write error, both by design ("All write errors are fatal"). So by the
+// time we see the error the Noise keystream has already advanced past
+// this command and the session refuses further sends, which makes a
+// local retry not merely conservative to avoid but impossible: it would
+// encrypt under a key the peer will never use. Tearing the session down
+// and letting the reconnect loop redial with backoff is the only way
+// back.
+func (c *outgoingConn) sendCommand(w wire.SessionInterface, cmd commands.Command) bool {
 	_, isDecoy := cmd.(*commands.ReplicaDecoy)
 	if err := w.SendCommand(context.Background(), cmd); err != nil {
 		if !isDecoy && !failUndeliverableProxyRequest(c.co, c.log, cmd) {
@@ -608,60 +678,34 @@ func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command
 		}
 		return false
 	}
+	return true
+}
 
-	// The Session bounds this receive itself (ReadTimeout, set to generously
-	// more than ProxyRequestTimeout when the session was created), so a peer
-	// that goes silent tears the link down instead of parking this goroutine.
-	response, err := w.RecvCommand(context.Background())
-	if err != nil {
-		if !isDecoy && !failUndeliverableProxyRequest(c.co, c.log, cmd) {
-			c.log.Debugf("Failed to receive command: %v, queuing for retry", err)
-			idHash := hash.Sum256(c.dst.IdentityKey)
-			c.co.QueueForRetry(cmd, idHash)
-		}
-		select {
-		case c.egressErrCh <- struct{}{}:
-		default:
-		}
-		return false
-	}
-
+// handleCommand processes one command read from the peer. Returns false
+// if the connection should be closed.
+//
+// Nothing here is matched to "the command we just sent", because there
+// is no such thing once sends stop waiting for replies. Every reply
+// that needs attribution carries its own: a ReplicaMessageReply is
+// routed by envelope hash.
+func (c *outgoingConn) handleCommand(response commands.Command) bool {
 	switch responseCmd := response.(type) {
 	case *commands.NoOp:
 		c.log.Debugf("replica outgoingConn: Received NoOp.")
 	case *commands.Disconnect:
 		c.log.Debugf("replica outgoingConn: Received Disconnect from peer.")
-		select {
-		case c.egressErrCh <- struct{}{}:
-		default:
-		}
 		return false
 	case *commands.ReplicaDecoy:
 		// Expected response to our decoy
 	case *commands.ReplicaWriteReply:
-		switch classifyReplicationReply(responseCmd.ErrorCode) {
-		case replicationReplyOK:
-			c.log.Debugf("replica outgoingConn: Received ReplicaWriteReply error code: %d", responseCmd.ErrorCode)
-		case replicationReplyRetry:
-			c.log.Warningf("replica outgoingConn: peer replied with transient error %d, queueing ReplicaWrite for retry",
-				responseCmd.ErrorCode)
-			if write, ok := cmd.(*commands.ReplicaWrite); ok {
-				idHash := hash.Sum256(c.dst.IdentityKey)
-				c.co.QueueForRetry(write, idHash)
-			}
-		case replicationReplyDrop:
-			c.log.Warningf("replica outgoingConn: peer replied with permanent error %d, dropping ReplicaWrite (retry would not help)",
-				responseCmd.ErrorCode)
-			instrument.DroppedByReason("peer_permanent_error")
-		}
+		c.handleReplicaWriteReply(responseCmd)
 	case *commands.ReplicaMessageReply:
 		c.log.Debugf("replica outgoingConn: Received ReplicaMessageReply error code: %d", responseCmd.ErrorCode)
 		if c.co.Server().ProxyManager() == nil {
 			c.log.Debugf("replica outgoingConn: ReplicaMessageReply received but proxy manager is nil")
 			return true
 		}
-		handled := c.co.Server().ProxyManager().HandleReply(responseCmd)
-		if handled {
+		if c.co.Server().ProxyManager().HandleReply(responseCmd) {
 			c.log.Debugf("replica outgoingConn: ReplicaMessageReply routed to proxy manager")
 		} else {
 			c.log.Debugf("replica outgoingConn: ReplicaMessageReply not handled by proxy manager")
@@ -675,8 +719,37 @@ func (c *outgoingConn) sendAndRecv(w wire.SessionInterface, cmd commands.Command
 	return true
 }
 
+// handleReplicaWriteReply records the outcome a peer reported for a
+// replication write.
+//
+// A transient error is no longer retried, because ReplicaWriteReply
+// carries an error code and nothing else: it names no BoxID, so on a
+// link where replies arrive out of order it cannot be attributed to the
+// write that produced it. The previous code retried whichever command
+// happened to have been sent last, which re-sent an unrelated write and,
+// when that command was a decoy, silently dropped the failed one. A
+// counted drop is the honest version of what was already happening.
+//
+// The box is not abandoned: an under-replicated box is healed by
+// read-repair when it is next read, and by Rebalance over longer
+// outages.
+func (c *outgoingConn) handleReplicaWriteReply(reply *commands.ReplicaWriteReply) {
+	switch classifyReplicationReply(reply.ErrorCode) {
+	case replicationReplyOK:
+		c.log.Debugf("replica outgoingConn: Received ReplicaWriteReply error code: %d", reply.ErrorCode)
+	case replicationReplyRetry:
+		c.log.Warningf("replica outgoingConn: peer %s replied with transient error %d; the reply names no BoxID so it cannot be retried",
+			c.dst.Name, reply.ErrorCode)
+		instrument.DroppedByReason("peer_transient_error_unattributable")
+	case replicationReplyDrop:
+		c.log.Warningf("replica outgoingConn: peer replied with permanent error %d, dropping ReplicaWrite (retry would not help)",
+			reply.ErrorCode)
+		instrument.DroppedByReason("peer_permanent_error")
+	}
+}
+
 // warnUnknownCommandOnce logs an unhandled-but-decodable command type once
-// per type for this connection. Only called from the egress goroutine.
+// per type for this connection. Only called from the connection-event-loop goroutine.
 func (c *outgoingConn) warnUnknownCommandOnce(cmd commands.Command) {
 	name := fmt.Sprintf("%T", cmd)
 	if c.unknownCmdSeen == nil {
