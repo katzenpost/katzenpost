@@ -116,6 +116,28 @@ func (p *ProxyRequestManager) FailPeer(peerIDHash [32]byte) {
 	p.publishPendingLocked()
 }
 
+// FailRequest fails one pending proxy request by envelope hash so its
+// waiter stops waiting at once.
+//
+// Called when the request could not be handed to the peer at all: with
+// no command on the wire there is no reply coming, so the waiter would
+// otherwise burn its whole share of the sweep budget against nothing
+// and only then fail over to the co-holder. Sibling of FailPeer, which
+// does the same for every request to a peer whose session died.
+func (p *ProxyRequestManager) FailRequest(envelopeHash [32]byte) {
+	p.Lock()
+	defer p.Unlock()
+
+	request, exists := p.pendingRequests[envelopeHash]
+	if !exists {
+		return
+	}
+	p.log.Warningf("Failing undeliverable proxy request to %s: envelope hash %x", request.PeerName, envelopeHash)
+	close(request.ResponseCh)
+	delete(p.pendingRequests, envelopeHash)
+	p.publishPendingLocked()
+}
+
 // HandleReply processes an incoming reply and routes it to the waiting request
 func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) bool {
 	if reply.EnvelopeHash == nil {
@@ -123,30 +145,36 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 		return false
 	}
 
+	// Claim the request under the lock, then do the channel work
+	// outside it. Holding the manager lock across a channel operation
+	// invites contention between the outgoing connections that call
+	// this and every other path that touches pendingRequests.
 	p.Lock()
-	defer p.Unlock()
-
 	request, exists := p.pendingRequests[*reply.EnvelopeHash]
 	if !exists {
+		p.Unlock()
 		p.log.Debugf("No pending request found for envelope hash: %x", reply.EnvelopeHash)
 		return false
 	}
+	responseCh := request.ResponseCh
+	delete(p.pendingRequests, *reply.EnvelopeHash)
+	p.publishPendingLocked()
+	p.Unlock()
 
 	p.log.Debugf("PROXY REPLY RECEIVED: Found pending request for envelope hash: %x", reply.EnvelopeHash)
 
-	// Send the reply to the waiting channel
-	select {
-	case request.ResponseCh <- reply:
-		p.log.Debugf("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
-	case <-p.ctx.Done():
-		p.log.Warning("halting...")
-		return false
-	}
-
-	// Clean up the request
-	delete(p.pendingRequests, *reply.EnvelopeHash)
-	close(request.ResponseCh)
-	p.publishPendingLocked()
+	// This send cannot block, so it needs no shutdown escape. Removing
+	// the map entry above made us the channel's exclusive owner, no
+	// other path can now find it, the channel has capacity one, and
+	// this is the only site in the package that ever sends on it, so
+	// the buffer is necessarily empty. A select on ctx.Done() here
+	// would be unreachable, and worse than unreachable: taking it
+	// would return with the entry already deleted and the channel
+	// neither sent to nor closed, orphaning a waiter that Shutdown can
+	// no longer reach.
+	responseCh <- reply
+	close(responseCh)
+	p.log.Debugf("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
 	return true
 }
 
