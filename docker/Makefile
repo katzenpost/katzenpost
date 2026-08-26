@@ -130,9 +130,10 @@ net_name=mixnet-$(distro)
 # the bridge compose creates.  Only the wait target uses this (fetch
 # --require-ready probes per-node metrics endpoints via container DNS).
 compose_network_name = $(subst .,,$(net_name))_katzenpost-net
-# Deterministic base_port derived from the network name so parallel
-# networks can't accidentally collide.  Override with base_port=<n>.
-base_port?=$(shell printf '%s' '$(net_name)' | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
+# Deterministic base_port derived from the network name + a per-checkout
+# random seed so parallel checkouts on the same machine get different
+# ports even with the same net_name.  Override with base_port=<n>.
+base_port?=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; printf '%s%s' '$(net_name)' "$$(cat .base_port_seed)" | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
 # bash is installed in every base image (alpine, debian, ubuntu), so a
@@ -749,6 +750,7 @@ clean-bin: stop
 # clean, so this depends on `stop` (not `clean-bin`) to avoid a redundant
 # rm.
 clean-local: stop
+	rm -f .base_port_seed
 	git clean -f -x $(net_name)
 	git status .
 
