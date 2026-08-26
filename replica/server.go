@@ -162,7 +162,14 @@ func (s *Server) Wait() {
 func (s *Server) halt() {
 	s.log.Noticef("Starting graceful shutdown.")
 
-	// First halt all listeners to stop accepting new connections
+	// The PKI worker goes first. It is the last remaining source of new
+	// work, and it writes envelope key files into DataDir and rebalances
+	// through state, both of which are torn down below.
+	if s.PKIWorker != nil {
+		s.PKIWorker.Halt()
+	}
+
+	// Then halt all listeners to stop accepting new connections
 	for _, listener := range s.listeners {
 		listener.Halt()
 	}
