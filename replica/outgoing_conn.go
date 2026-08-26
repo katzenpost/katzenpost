@@ -639,7 +639,7 @@ func (c *outgoingConn) sendWorker(w wire.SessionInterface, outCh chan commands.C
 			for {
 				select {
 				case cmd := <-outCh:
-					c.sendCommand(w, cmd)
+					c.sendCommand(w, cmd) // return intentionally discarded: shutdown is already underway
 				default:
 					return
 				}
