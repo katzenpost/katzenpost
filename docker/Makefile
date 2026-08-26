@@ -424,7 +424,7 @@ selfcheck-cache-restore: $(docker_compose_yml)
 	fi
 
 check-ports:
-	@for port in $$(seq $(base_port) $$(($(base_port) + 3))); do \
+	@for port in $$(seq $$(($(base_port) + 2000)) $$(($(base_port) + 2003))); do \
 		if ss -tlnp "sport = :$$port" 2>/dev/null | grep -q LISTEN; then \
 			echo "ERROR: port $$port is already in use (base_port=$(base_port))."; \
 			echo "  Use 'make base_port=<N> start' or 'make stop' to free the ports."; \
