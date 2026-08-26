@@ -152,7 +152,7 @@ var (
 	proxyRequestLatency = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "katzenpost_replica_proxy_request_latency_seconds",
-			Help:    "Wall-clock latency of a single proxied request to one shard holder, measured from dispatch to reply, timeout or fast-fail. One observation per candidate attempt, so a failover sweep records one per holder tried.",
+			Help:    "Wall-clock latency of a single proxied request to one shard holder, measured from MKEM encapsulation through dispatch to reply, timeout or fast-fail. Excludes the proxy semaphore wait (see katzenpost_replica_proxy_sem_waiters). One observation per candidate attempt, so a failover sweep records one per holder tried.",
 			Buckets: prometheus.DefBuckets,
 		},
 	)
@@ -356,9 +356,9 @@ func ProxySemWaitEnd() {
 }
 
 // ProxyRequestLatency observes the duration of one proxied-request
-// attempt against a single shard holder, whether it ended in a reply,
-// a timeout or a fast-fail. A failover sweep records one observation
-// per holder tried.
+// attempt against a single shard holder, from MKEM encapsulation
+// through dispatch to reply, timeout or fast-fail. The proxy
+// semaphore wait is not included; see ProxySemWaitStart/End.
 func ProxyRequestLatency(d time.Duration) {
 	proxyRequestLatency.Observe(d.Seconds())
 }

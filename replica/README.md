@@ -31,7 +31,7 @@ rebalance fingerprint).
 # Pebble's CLI can inspect the box keyspace. It opens the database
 # read-write and therefore takes the same lock as a running replica, so
 # stop the replica first:
-for i in {1..5}; do echo "Replica $i"; go run github.com/cockroachdb/pebble/cmd/pebble@v1.1.5 db scan voting_mixnet/replica${i}/replica-boxes.db; done
+for i in {1..5}; do echo "Replica $i"; go run github.com/cockroachdb/pebble/cmd/pebble@v1.1.5 db scan mixnet-alpine/replica${i}/replica-boxes.db; done
 ```
 
 ## Self-tuning (as replica operator)

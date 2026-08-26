@@ -1,67 +1,283 @@
-
 Katzenpost Docker test network
 ==============================
 
-This Podman-compatible docker-compose configuration is intended to allow
-Katzenpost developers to locally run an offline test network on their
-development system. It is meant for developing and testing client and server
-mix network components as part of the core Katzenpost developer work flow.
+This is a Podman- and Docker-compatible docker-compose test network for
+Katzenpost developers to run a mix network on their development system. It is
+the standard way to run the whole stack locally: directory authorities, mix
+nodes, service nodes with the courier plugin, storage replicas, and the
+``kpclientd`` thin-client daemon.
+
+This is intended to also support offline development: after running it once
+while online, which will build an image and cache the go dependencies, you
+should be able to use it offline *as long as you do not run `make clean`.* The
+`clean-local` target exists to clean the parts which do not require internet
+access to recreate.
+
+The ``Makefile`` here is the source of truth for the targets described below;
+``make help`` prints a one-line summary of every target.
 
 0. Requirements
 
-* Podman or Docker
-* either docker-compose (v1) or docker compose v2
+* Podman (preferred, rootless) or Docker
+* ``docker compose`` (the v2 plugin) or ``docker-compose`` v1
 * GNU Make
+* A Unix system with an XDG runtime directory (rootless podman)
+
+Rootless podman needs its docker-compatible API socket enabled, which you can
+do with this command:
+
+   systemctl --user enable --now podman.socket
+
+``--now`` both enables the socket unit (so it survives reboots) and starts it
+immediately.
 
 1. Run a test network
-::
 
-   git clone https://github.com/katzenpost/katzenpost.git
+.. code-block:: console
+
+   git clone https://github.com/katzenpost/katzenpost
    cd katzenpost/docker
-   make run-voting-testnet
+   make start        # generate configs + binaries, boot the network in the background
+   make wait         # wait until every node reports ready against the current consensus
+   make run-ping     # send pings through the network; exits non-zero unless all pass
+   make stop         # tear the network down
 
-Note that if you do not have podman and your system configuration requires you
-to ``sudo`` to use docker, you will need to prefix all of the ``make`` commands
-in this directory with ``sudo``. If you have both podman and docker installed,
-you can override the automatic choice of podman over docker by prefixing the
-``make`` argument list with ``docker=docker``.
+``start`` builds the per-role binaries and runs ``docker compose up -d`` in the
+background, so there is no ctrl-C to interrupt; use ``make stop``. The
+generated network lives in ``./mixnet-alpine/`` by default (see §3 for how
+the directory name derives from the distro). ``run-ping`` sends
+10 pings to the ``echo`` service and exits non-zero unless every ping is
+answered, which makes it useful as a health assertion in scripts and CI.
 
-Also note that if you are using podman, you'll need to have the podman system
-service running, and pointed to by DOCKER_HOST environment variable.
-::
+To observe the network, use ``make watch`` (tail every log), the narrower
+``watch-replicas`` / ``watch-auth`` / ``watch-mixes`` / ``watch-courier`` /
+``watch-servicenode`` / ``watch-gateway`` / ``watch-all-separate`` targets, or
+``make status`` / ``make show-latest-vote``.
 
-   export DOCKER_HOST=unix:///var/run/user/$(id -u)/podman/podman.sock
-   podman system service -t 0 $DOCKER_HOST &
+If you are rootless podman, no ``sudo`` is needed. If your system requires
+``sudo`` to use docker, prefix every ``make`` command in this directory with
+``sudo``. If both are installed, podman wins; override with ``make docker=docker
+...``.
 
-At this point, you should have a locally running network. You can hit ctrl-C to
-stop it, or use another terminal to observe the logs with ``tail -F voting_mixnet/*/*log``.
+2. What the Makefile builds
 
-You can send pings through the network with ``make ping``.
+``start`` wires everything together:
 
-While the docker-compose test network is running, you can use the ``make
-dockerdockertest`` targets in the ``client`` directory to
-run their docker tests (also in docker, but without docker-compose managing the
-instance where the tests are running). When running the docker tests, it may be
-desirable to add the ``warped=true`` to the make commands (eg, ``make
-warped=true run-nonvoting-testnet`` here in the docker directory, and ``make
-warped=true dockerdockertest`` in the client directory) to set the WarpedEpoch
-build flag.
+* a per-distro base image (see §3) layered on the distro's official image,
+  with the Go toolchain version taken from the repo's ``go.mod``;
+* every network binary (``server``, ``dirauth``, ``replica``, ``courier``,
+  ``kpclientd``, ``echo_server``, ``proxy_*``, ``fetch``, ``ping``), built
+  inside that image and dropped into ``./$(net_name)/``;
+* a ``docker-compose.yml`` generated by ``cmd/genconfig`` for a voting mixnet
+  (``--voting`` only; the old nonvoting mode is gone) with, by default, 3
+  directory authorities, 3 mixes, 1 gateway, 3 service nodes, 5 storage
+  replicas, and 1 ``kpclientd``;
+* committed ``selfcheck-cache`` sidecars copied into each daemon's DataDir so
+  boot-time self-checks are skipped on machines that have already measured
+  them.
 
-After stopping the network, you can discard all katzenpost-specific container
-images by running ``make clean``, and can delete the test network's data
-with ``make clean-data``, or run ``make clean`` to delete both images and data.
+Published host ports are all derived from a single ``base_port`` (default
+``30000``), so several networks can run on one host without colliding:
 
-The ``make clean-local`` target will delete instance data and
-offline-regeneratable images, but will retain the images containing
-dependencies which require network access to rebuild. This allows for an
-offline development workflow.
+====================  ========================  =====================
+Service               host port                 in-bridge port
+====================  ========================  =====================
+kpclientd (thin)      ``base_port+2000``        64331
+prometheus            ``base_port+2001``        9090
+grafana               ``base_port+2002``        3000
+pyroscope             ``base_port+2003``        4040
+kpclientd /metrics    (not published)           ``base_port+2004``
+====================  ========================  =====================
 
-The docker/podman commands in the ``Makefile`` are not as robust as they should
-be, so watch for error messages to see if it becomes necessary to delete stray
-containers which are using the images and preventing them from being deleted.
+3. Distros, networks, and parallelism
 
-**NOTE**: If you switch between voting and nonvoting authority mixnets then
-you must run this command after shutting down the old docker composed mixnet:
-::
+The default distro is ``alpine``. Any number of network deployments can coexist
+side-by-side::
 
-   docker network prune
+   make distro=alpine start wait
+   make distro=debian-trixie net_name=debian-net base_port=40000 start wait
+   make distro=ubuntu-26.04 net_name=ubuntu-net base_port=50000 start wait
+
+* ``distro`` selects the base image family. ``alpine`` uses
+  ``Dockerfile.base.alpine``; every other family (``debian-<tag>``,
+  ``ubuntu-<tag>``, ...) uses ``Dockerfile.base.apt`` and simply changes the
+  ``FROM`` tag. Drop-in new versions with no Makefile edits:
+  ``make distro=debian-12 start wait`` or ``make distro=ubuntu-25.10 start
+  wait``.
+* ``net_name`` names the network directory (and the compose project); the
+  binaries and configs land in ``./$(net_name)/``. It defaults to
+  ``mixnet-<distro>`` (so ``make distro=foo start`` targets ``mixnet-foo``),
+  and a custom ``net_name=`` still overrides it.
+* ``base_port`` moves the whole published-port band (§2) to avoid clashes with
+  a second network.
+
+The ``DISTROS`` variable lists the distros exercised by ``test-distros``
+(default ``alpine debian-trixie ubuntu-26.04``). Run the full multi-distro
+check serially, or in parallel::
+
+   make test-distros          # serial: alpine, then debian-trixie, then ubuntu-26.04
+   make -j3 test-distros      # concurrent legs, one per distro
+
+Each ``test-distro-<distro>`` leg brings up a network on its own ``mixnet-<distro>``
+directory and ``base_port`` band derived from the ``DISTROS`` order, runs
+``run-ping`` (which asserts a healthy network via its exit code), and leaves
+the network running. Tear everything down afterwards with ``make clean``, or
+stop individual networks with ``make distro=<d> stop``. Legs are internally
+serialized with ``-j1`` so ``start``/``wait``/``run-ping`` stay ordered even
+when the parent ``make -j`` runs them concurrently.
+
+4. Development iteration loop
+
+The binaries are rebuilt automatically when their stamp or the source changes.
+For a fast code/rebuild/restart cycle without rebooting the whole network::
+
+   make client-restart        # rebuild kpclientd and restart just that container
+   make courier-restart       # stop/rebuild/start the courier plugin via its thwack interface
+   make servicenode1-restart  # rebuild courier and restart servicenode1
+   make replica-restart       # rebuild the replica binary and restart every replica container
+
+   make client-logs           # follow kpclientd logs
+   make client-logs-snapshot  # print the last 200 kpclientd log lines (for CI failure dumps)
+
+``make config-only`` generates the configs and binaries for ``$(net_name)``
+without starting any containers; this is what unit tests need when they rely on
+the ``client/testdata/*.toml`` symlinks pointing into ``./mixnet-alpine/``.
+
+5. Metrics and load generation
+
+The default network runs with metrics disabled. To bring it up with prometheus
++ grafana scraping everything, including ``kpclientd``::
+
+   make start-with-client-metrics
+   make print-url-grafana
+   make print-url-prometheus
+
+Two chaos-engineering load generators can be pointed at a running network::
+
+   make run-parallel-load                  # N thin clients, measure throughput/latency
+   make run-cp-bench                       # copy-command (pigeonhole) payload sweep
+
+See the ``clients`` / ``duration`` / ``sweep`` / ``step`` / ``payload`` and
+``cp_payload`` / ``cp_sweep`` / ``cp_propagation`` make variables for tuning.
+
+6. Network chaos (pumba)
+
+The ``pumba-*`` targets inject network faults into the running network's
+containers using `pumba <https://github.com/alexei-led/pumba>`_ netem::
+
+   make pumba-latency    # delay/jitter (pumba_latency_ms=25, pumba_jitter_ms=10, pumba_distribution=normal)
+   make pumba-loss       # packet loss (pumba_loss_pct=5)
+   make pumba-corrupt    # single-bit corruption (pumba_corrupt_pct=0.01)
+   make pumba-pause      # freeze one container (pumba_pause_target=<net_name>-replica1-1)
+   make pumba-status     # list running chaos containers
+   make pumba-stop       # tear them all down
+
+The default ``pumba_targets`` regex matches every mix/gateway/servicenode/
+replica/kpclientd container of the *current* network, leaving dirauths,
+prometheus, grafana, and pyroscope alone. Stack asymmetric chaos by passing a
+distinct ``pumba_container=<name>`` per lane. Faults self-heal when
+``pumba_duration`` (default ``1h``) elapses.
+
+7. thin_client / pigeonhole-cp (rust)
+
+Only the ``thin-client-sync`` / ``pigeonhole-cp-*`` targets touch the Rust
+``thin_client`` checkout; ``start``/``wait``/``run-ping`` do not require it.
+
+.. code-block:: console
+
+   make thin-client-sync            # clone/update docker/thin_client at thin_client_ref
+   make pigeonhole-cp-genkey        # print a fresh pigeonhole channel keypair
+   make pigeonhole-cp-roundtrip     # round-trip a random file through a pigeonhole channel
+
+* ``thin_client_ref`` (default ``0.0.23``) pins the ref that
+  ``thin-client-sync`` checks out.
+* ``thin_client_dir`` overrides the checkout with an existing directory. Dev
+  checkouts and thin_client's own CI set this so the build uses the exact code
+  under test; ``thin-client-sync`` refuses to touch an overridden directory.
+* ``roundtrip_size`` (default ``65536``) sizes the round-trip file.
+
+8. Build caches
+
+Everything that can be cached lives in ``docker/cache/`` (gitignored), so a
+second build of any distro is fast:
+
+* ``cache/go`` — the Go module cache (source content, read-only, shared by all
+  distros).
+* ``cache/go-build-<distro>`` — the Go build cache, scoped per distro because
+  compiled archives are sensitive to the C library (musl vs glibc, and glibc
+  versions).
+* ``cache/cargo-home-<distro>`` / ``cache/cargo-target-<distro>`` — the cargo
+  registry and target dirs, also per distro.
+
+The Go toolchain version is the single source of truth in ``go.mod``; the base
+Dockerfiles receive it as a ``GO_VERSION`` build arg and fail-fast if it is not
+supplied.
+
+9. Cleaning up
+
+.. code-block:: console
+
+   make stop            # compose down for the current network (default mixnet-alpine)
+   make stop-all        # stop every network, one per distro inferred from build stamps
+   make clean-local     # stop the current network + wipe its state and binaries (keeps the build cache)
+   make clean-local-dryrun  # preview clean-local
+   make clean           # stop every network, then wipe all state, images, caches, orphan containers
+
+``stop`` operates on the current ``net_name`` (``make distro=<d> stop`` stops
+only that distro's network). ``stop-all`` and ``clean-testnets`` discover every
+distro a user could have named from the on-disk build stamps — not just the
+ones in ``DISTROS`` — so ``make clean`` tears down and wipes ``mixnet-*``
+networks even when the last-used distro differs. ``clean`` additionally removes
+both the ``_base`` and ``_rust`` image and stamp for each distro plus any
+orphan ``katzenpost_*`` / ``mixnet-*`` containers; the module cache is written
+read-only, so ``clean`` wipes it from inside a throwaway container. As a
+transitional step, ``clean`` also deletes a leftover ``./voting_mixnet/``
+directory so stale config symlinks fail loudly instead of silently reading old
+configs.
+
+10. Docker integration tests
+
+With the network up (``make start wait``), run every component's docker-based
+integration tests::
+
+   make test
+
+The ``client`` package defines integration tests  which require a docker
+testnet to be running. ``make test`` runs the ``dockertest-all`` target from
+``client/Makefile`` (the legacy tests plus the new pigeonhole, multichannel,
+tombstone, copy-command and FromPayload tests — the same set the
+``docker-mixnet`` CI job currently runs) as well as ``dockertest_pki_raw``
+(``TestGetPKIDocumentRaw*`` and ``TestGetDirectoryAuthorities``). Each target
+was probed against a healthy mixnet-alpine and passed as of this writing
+(commit ``884914b79f002`` in August 2026).
+
+11. Other targets
+
+* ``make shell`` — an interactive shell inside the per-distro base image with
+  the repo and the network mounted, running as the same user as the build
+  containers.
+* ``make rootshell`` — the same, forced to uid 0. Needed only for rootful
+  docker, where the regular build containers run as the invoking user.
+* ``make check-go-version`` — print the base image's ``go version`` (handy for
+  confirming the ``GO_VERSION`` arg took effect).
+* ``make go-mod-tidy`` / ``make go-mod-upgrade`` — run ``go mod tidy`` /
+  ``go get -d -u ./... && go mod tidy`` inside the base image with the git
+  checkout mounted in to it.
+
+Notes
+
+* ``warped`` defaults to ``true``: the network runs with a 2-minute warped
+  epoch (``epoch_duration=2m``), so PKI, topology, and mix keys churn fast
+  enough to exercise the system in a dev loop. The old explicit
+  ``warped=true`` incantation is no longer needed.
+* ``make wait`` waits until every node — gateway, mixes, servicenodes
+  (with their courier plugins), and storage replicas — reports ready
+  against the current consensus, i.e. each node's live per-epoch keys
+  match its descriptor in the fetched document (all 15 testnet nodes by
+  default). It retries until all report ready or ``--ready-timeout``
+  (default 8m) elapses, prints per-node diagnostics on failure, and
+  exits non-zero, so it is safe to gate CI on it.
+* If you want to run ``docker compose`` yourself instead of just interacting
+  with it via these make targets, you'll first need to manually
+  ``export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"`` as the
+  Makefile does.

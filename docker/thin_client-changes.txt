@@ -1,0 +1,81 @@
+Changes required in the thin_client repository (github.com/katzenpost/thin_client)
+====================================================================================
+
+Companion to docker/PLAN.md Part 5. This file lists the work items on the
+thin_client side so the docker Makefile's thin-client-sync / pigeonhole-cp
+targets (implemented here in katzenpost) and thin_client's own CI agree.
+Nothing in this file is implemented in the katzenpost repo; the changes
+below are for a separate thin_client PR.
+
+Context: katzenpost's docker Makefile now pins thin_client via
+`thin_client_ref?=` (default a tag like 0.0.23), auto-checks it out into a
+gitignored docker/thin_client/, and builds `cargo build --release --bin
+pigeonhole-cp --features cli` inside the container. The mixnet's published
+thin-client port is no longer 64331: genconfig derives it from base_port
+(port 32000 for the default base_port=30000), so a thin client dials
+`localhost:<base_port+2000>`.
+
+1. Port default (required for the current mixnet to be reachable)
+----------------------------------------------------------------
+The generated client.thinclient.toml dial address is now
+`localhost:32000` (default base_port=30000) instead of `localhost:64331`.
+Update the thin_client files that hardcode the old default so the
+integration tests talk to a current mixnet:
+
+  - testdata/thinclient.toml
+        Address = "localhost:64331"  ->  Address = "localhost:32000"
+        (consumed by tests/smoke_pigeonhole_cp.rs via the CONFIG const)
+
+  - tests/conftest.py (wait-for-port probe before the Python integration
+    tests run)
+        ('127.0.0.1', 64331)  ->  ('127.0.0.1', 32000)
+
+  Optional (doc-only, illustrative of the transport layer, not the
+  mixnet default): src/transport/mod.rs unit-test fixtures and the
+  README_rust.md / README_python.md "localhost:64331" examples. Leave
+  them if you prefer the transport examples to stay generic; nothing
+  at runtime depends on them.
+
+2. Pin-sync across repos (required whenever either side bumps)
+--------------------------------------------------------------
+katzenpost docker/Makefile is now the single place that pins the
+thin_client ref. thin_client's CI (test-integration-docker.yml) pins the
+katzenpost commit it tests against (currently `d5a6349a...`); the pair
+must move in lockstep:
+
+  - When a katzenpost docker/Makefile `thin_client_ref=` bump lands, the
+    thin_client CI's katzenpost checkout pin must point at the katzenpost
+    commit carrying that bump (so the checked-out thin_client and the
+    Makefile pin agree).
+  - Prefer reading the pin instead of duplicating it: thin_client CI
+    should build pigeonhole-cp from its own checkout via the
+    `thin_client_dir?=` override (see 3) rather than re-cloning the
+    pinned ref, which guarantees the exact code under test is exercised.
+
+  Four cells move in lockstep on a cross-repo feature bump:
+    (a) katzenpost docker/Makefile `thin_client_ref?=` pin
+    (b) thin_client CI's katzenpost checkout pin
+    (c) katzenqt's thin_client pin (katzenqt depends on the same ref)
+    (d) the thin_client release tags (0.0.x)
+
+3. thin_client_dir?= override support (required for CI correctness)
+------------------------------------------------------------------
+katzenpost's docker Makefile keeps `start`/`wait` thin_client-free and
+adds `thin-client-sync` + `pigeonhole-cp-*` targets; the build target is
+the file `$(net_name)/pigeonhole-cp.$(distro)` (`.$(distro)` suffix like
+the go binaries). thin_client CI calls `cd katzenpost/docker && make
+start wait` (unchanged) and should invoke the build target with:
+
+    make net_name=<project> distro=<distro> <project>/pigeonhole-cp.<distro> \
+        thin_client_dir=<path-to-thinclient-checkout>
+
+so the build uses the checkout under test instead of a fresh clone of the
+pinned ref. No thin_client code change is needed for this; it only means
+the CI workflow should pass the override.
+
+4. Runtime integration (no change expected)
+-------------------------------------------
+The docker Makefile runs pigeonhole-cp with `-c
+/$(net_name)/client/thinclient.toml` (the generated config carries the
+base_port-derived dial address). The binary's existing `-c`/`--config`
+flag (src/bin/pigeonhole_cp.rs) is sufficient; no CLI change is required.

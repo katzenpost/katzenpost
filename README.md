@@ -171,7 +171,7 @@ katzenpost/
 ├── tools/                     # Operator scripts (e.g. mixnet-params.py)
 └── docker/                    # Local docker mixnet for development
     ├── Makefile               # start/stop/watch targets
-    └── voting_mixnet/         # Generated configs and binaries
+    └── mixnet-alpine/         # Generated configs and binaries (one dir per distro)
 ```
 
 For the Pigeonhole storage system specifically, the courier and
