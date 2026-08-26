@@ -143,6 +143,32 @@ var (
 			Help: "The replica epoch whose consensus the replica_ready gauge was last computed against.",
 		},
 	)
+	proxySemWaiters = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_proxy_sem_waiters",
+			Help: "Number of proxied-request handlers currently blocked acquiring a proxySema slot. The cap is the ProxyWorkerCount config field, which defaults to runtime.NumCPU. Unlike the replication semaphore this one guards a network round-trip, so a slow shard holder parks slots for as long as it stays slow. Sustained values above zero while peers are alive mean proxying to healthy peers is queued behind a sick one.",
+		},
+	)
+	proxyRequestLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_replica_proxy_request_latency_seconds",
+			Help:    "Wall-clock latency of a single proxied request to one shard holder, measured from MKEM encapsulation through dispatch to reply, timeout or fast-fail. Excludes the proxy semaphore wait (see katzenpost_replica_proxy_sem_waiters). One observation per candidate attempt, so a failover sweep records one per holder tried.",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+	proxyRequestTimedOut = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_replica_proxy_request_timeouts_total",
+			Help: "Number of proxied requests that reached ProxyRequestTimeout without a reply, labelled by the shard holder that did not answer.",
+		},
+		[]string{"peer"},
+	)
+	proxyPendingRequests = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_replica_proxy_pending_requests",
+			Help: "Number of proxied requests currently registered with the ProxyRequestManager awaiting a reply. Read alongside katzenpost_replica_proxy_sem_waiters: pending counts requests on the wire, waiters counts handlers that have not got that far.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
@@ -170,6 +196,10 @@ func StartPrometheusListener(address string, log *logging.Logger) {
 		prometheus.MustRegister(replicationSemWaiters)
 		prometheus.MustRegister(replicaReady)
 		prometheus.MustRegister(replicaCurrentEpoch)
+		prometheus.MustRegister(proxySemWaiters)
+		prometheus.MustRegister(proxyRequestLatency)
+		prometheus.MustRegister(proxyRequestTimedOut)
+		prometheus.MustRegister(proxyPendingRequests)
 	})
 
 	if address == "" {
@@ -292,4 +322,42 @@ func SetReplicaReady(ready bool, epoch uint64) {
 		replicaReady.Set(0)
 	}
 	replicaCurrentEpoch.Set(float64(epoch))
+}
+
+// ProxySemWaitStart and ProxySemWaitEnd bracket the blocking acquire
+// of the per-process proxySema in replica/handlers.go. Unlike
+// ReplicationSemWaitStart/End above, the work done under this
+// semaphore is a network round-trip to a shard holder rather than a
+// sub-millisecond dispatch, so a slow holder holds slots for as long
+// as it stays slow. A sustained positive reading while peers are
+// alive means proxied traffic to healthy holders is queued behind a
+// sick one, and ProxyWorkerCount is the constraint.
+func ProxySemWaitStart() {
+	proxySemWaiters.Inc()
+}
+
+// ProxySemWaitEnd marks exit from the acquire select (either slot
+// obtained or shutdown).
+func ProxySemWaitEnd() {
+	proxySemWaiters.Dec()
+}
+
+// ProxyRequestLatency observes the duration of one proxied-request
+// attempt against a single shard holder, from MKEM encapsulation
+// through dispatch to reply, timeout or fast-fail. The proxy
+// semaphore wait is not included; see ProxySemWaitStart/End.
+func ProxyRequestLatency(d time.Duration) {
+	proxyRequestLatency.Observe(d.Seconds())
+}
+
+// ProxyRequestTimedOut increments the per-peer counter for a proxied
+// request that reached ProxyRequestTimeout with no reply.
+func ProxyRequestTimedOut(peer string) {
+	proxyRequestTimedOut.With(prometheus.Labels{"peer": peer}).Inc()
+}
+
+// ProxyPendingRequests sets the gauge for proxied requests currently
+// registered with the ProxyRequestManager awaiting a reply.
+func ProxyPendingRequests(n int) {
+	proxyPendingRequests.Set(float64(n))
 }
