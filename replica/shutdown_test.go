@@ -4,7 +4,9 @@
 package replica
 
 import (
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -24,4 +26,24 @@ func TestShutdownHaltsPKIWorker(t *testing.T) {
 	default:
 		t.Fatal("Shutdown returned with the PKI worker still running")
 	}
+}
+
+// ReplicaMessage commands are handled on goroutines that outlive the
+// connection worker which spawned them and that read and write the
+// database. If Shutdown returns while one is still running, it races
+// state.Close, which nils out the Pebble handles, and the handler
+// dereferences nil.
+func TestShutdownDrainsInFlightHandlers(t *testing.T) {
+	setup := createTestSetup(t)
+
+	var finished atomic.Bool
+	setup.server.handlerWg.Add(1)
+	go func() {
+		defer setup.server.handlerWg.Done()
+		time.Sleep(250 * time.Millisecond)
+		finished.Store(true)
+	}()
+
+	setup.server.Shutdown()
+	require.True(t, finished.Load(), "Shutdown returned with a handler still in flight")
 }

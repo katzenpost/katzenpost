@@ -57,7 +57,11 @@ type GenericConnector interface {
 }
 
 type Server struct {
-	sync.WaitGroup
+	// handlerWg tracks the asynchronous ReplicaMessage handler
+	// goroutines spawned by incoming connections. They outlive the
+	// connection worker that spawned them and reach into state, so
+	// halt() drains them before the database is closed.
+	handlerWg sync.WaitGroup
 
 	cfg *config.Config
 
@@ -173,6 +177,13 @@ func (s *Server) halt() {
 	for _, listener := range s.listeners {
 		listener.Halt()
 	}
+
+	// Listener.Halt closes closeAllCh and waits for the connection
+	// workers, so no further handler goroutines can be spawned. Drain
+	// the ones already in flight before tearing down what they use:
+	// every point they block on selects on closeAllCh, so this cannot
+	// stall.
+	s.handlerWg.Wait()
 
 	// Then halt the connector to stop outgoing connections
 	if s.connector != nil {
