@@ -43,12 +43,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents - use Alice's epoch for Bob to avoid race condition at epoch boundary
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates WriteCap and derives ReadCap for Bob using NewKeypair
 	t.Log("=== Step 1: Alice creates WriteCap and derives ReadCap for Bob ===")
@@ -141,12 +136,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents - use Alice's epoch for Bob to avoid race condition at epoch boundary
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates WriteCap and derives ReadCap for Bob using NewKeypair
 	t.Log("=== Setup: Alice creates WriteCap and derives ReadCap for Bob ===")
@@ -255,11 +245,7 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Alice creates WriteCap and derives ReadCap for Bob
 	t.Log("=== Setup: Alice creates WriteCap and derives ReadCap for Bob ===")
@@ -355,12 +341,7 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents - use Alice's epoch for Bob to avoid race condition at epoch boundary
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates destination WriteCap for the final payload
 	t.Log("=== Step 1: Alice creates destination WriteCap ===")
@@ -526,12 +507,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates two destination channels
 	t.Log("=== Step 1: Alice creates two destination channels ===")
@@ -691,12 +667,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates two destination channels
 	t.Log("=== Step 1: Alice creates two destination channels ===")
@@ -1092,12 +1063,7 @@ func TestReadBeforeWrite(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -1392,10 +1358,7 @@ func TestFromPayloadMultiCall(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Create destination channel
 	destSeed := make([]byte, 32)
@@ -1522,10 +1485,7 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Create two destination channels
 	chan1Seed := make([]byte, 32)
@@ -1668,11 +1628,7 @@ func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
 	bob := setupThinClient(t)
 	defer bob.Close()
 
-	aliceDoc := validatePKIDocument(t, alice)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bob, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, alice, bob)
 
 	// Create destination channel
 	destSeed := make([]byte, 32)
