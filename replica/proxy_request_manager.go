@@ -8,9 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/nike"
+
+	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 var defaultCleanupInterval = 30 * time.Second
@@ -62,6 +65,15 @@ func NewProxyRequestManager(log *logging.Logger, requestTimeout time.Duration) *
 	return p
 }
 
+// publishPendingLocked republishes the pending-request gauge. Must be
+// called with the lock held after any operation that mutates
+// pendingRequests (register, fail, reply, shutdown, or cleanup).
+// Reading len() means a single call after a batch of deletions
+// is correct.
+func (p *ProxyRequestManager) publishPendingLocked() {
+	instrument.ProxyPendingRequests(len(p.pendingRequests))
+}
+
 // RegisterProxyRequest registers a new proxy request and returns a response channel
 func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPrivateKey nike.PrivateKey, targetPublicKey nike.PublicKey, originalRequest *commands.ReplicaMessage, peerIDHash [32]byte, peerName string) chan *commands.ReplicaMessageReply {
 	p.Lock()
@@ -79,6 +91,7 @@ func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPr
 		PeerName:        peerName,
 	}
 
+	p.publishPendingLocked()
 	p.log.Debugf("Registered proxy request to %s for envelope hash: %x", peerName, envelopeHash)
 
 	return responseCh
@@ -100,6 +113,29 @@ func (p *ProxyRequestManager) FailPeer(peerIDHash [32]byte) {
 		close(request.ResponseCh)
 		delete(p.pendingRequests, hash)
 	}
+	p.publishPendingLocked()
+}
+
+// FailRequest fails one pending proxy request by envelope hash so its
+// waiter stops waiting at once.
+//
+// Called when the request could not be handed to the peer at all: with
+// no command on the wire there is no reply coming, so the waiter would
+// otherwise burn its whole share of the sweep budget against nothing
+// and only then fail over to the co-holder. Sibling of FailPeer, which
+// does the same for every request to a peer whose session died.
+func (p *ProxyRequestManager) FailRequest(envelopeHash [32]byte) {
+	p.Lock()
+	defer p.Unlock()
+
+	request, exists := p.pendingRequests[envelopeHash]
+	if !exists {
+		return
+	}
+	p.log.Warningf("Failing undeliverable proxy request to %s: envelope hash %x", request.PeerName, envelopeHash)
+	close(request.ResponseCh)
+	delete(p.pendingRequests, envelopeHash)
+	p.publishPendingLocked()
 }
 
 // HandleReply processes an incoming reply and routes it to the waiting request
@@ -109,29 +145,36 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 		return false
 	}
 
+	// Claim the request under the lock, then do the channel work
+	// outside it. Holding the manager lock across a channel operation
+	// invites contention between the outgoing connections that call
+	// this and every other path that touches pendingRequests.
 	p.Lock()
-	defer p.Unlock()
-
 	request, exists := p.pendingRequests[*reply.EnvelopeHash]
 	if !exists {
+		p.Unlock()
 		p.log.Debugf("No pending request found for envelope hash: %x", reply.EnvelopeHash)
 		return false
 	}
+	responseCh := request.ResponseCh
+	delete(p.pendingRequests, *reply.EnvelopeHash)
+	p.publishPendingLocked()
+	p.Unlock()
 
 	p.log.Debugf("PROXY REPLY RECEIVED: Found pending request for envelope hash: %x", reply.EnvelopeHash)
 
-	// Send the reply to the waiting channel
-	select {
-	case request.ResponseCh <- reply:
-		p.log.Debugf("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
-	case <-p.ctx.Done():
-		p.log.Warning("halting...")
-		return false
-	}
-
-	// Clean up the request
-	delete(p.pendingRequests, *reply.EnvelopeHash)
-	close(request.ResponseCh)
+	// This send cannot block, so it needs no shutdown escape. Removing
+	// the map entry above made us the channel's exclusive owner, no
+	// other path can now find it, the channel has capacity one, and
+	// this is the only site in the package that ever sends on it, so
+	// the buffer is necessarily empty. A select on ctx.Done() here
+	// would be unreachable, and worse than unreachable: taking it
+	// would return with the entry already deleted and the channel
+	// neither sent to nor closed, orphaning a waiter that Shutdown can
+	// no longer reach.
+	responseCh <- reply
+	close(responseCh)
+	p.log.Debugf("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
 	return true
 }
 
@@ -173,6 +216,7 @@ func (p *ProxyRequestManager) Shutdown() {
 		close(request.ResponseCh)
 		delete(p.pendingRequests, hash)
 	}
+	p.publishPendingLocked()
 }
 
 // CleanupExpiredRequests removes requests that have been waiting too long
@@ -188,4 +232,5 @@ func (p *ProxyRequestManager) CleanupExpiredRequests(timeout time.Duration) {
 			delete(p.pendingRequests, hash)
 		}
 	}
+	p.publishPendingLocked()
 }

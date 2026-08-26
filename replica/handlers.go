@@ -541,6 +541,7 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unmarshal envelope key for %s: %v", targetShard.Name, err)
 	}
+	start := time.Now()
 	mkemPrivateKey, envelope := scheme.Encapsulate([]nike.PublicKey{targetEnvelopeKey}, innerMessageBlob)
 	replicaMessage := &commands.ReplicaMessage{
 		Cmds:               commands.NewStorageReplicaCommands(c.geo, nikeScheme),
@@ -551,7 +552,7 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 		Ciphertext:         envelope.Envelope,
 	}
 	idHash := blake2b.Sum256(targetShard.IdentityKey)
-	reply, err := c.sendProxyRequestSync(replicaMessage, &idHash, targetShard, mkemPrivateKey, targetEnvelopeKey, scheme)
+	reply, err := c.sendProxyRequestSync(replicaMessage, &idHash, targetShard, mkemPrivateKey, targetEnvelopeKey, scheme, start)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -638,10 +639,13 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 	// Local reads and writes never contend for this semaphore, so a
 	// burst of proxied traffic cannot starve local operations. A slot
 	// is held for the full fail-over sweep across candidate holders.
+	instrument.ProxySemWaitStart()
 	select {
 	case c.l.server.proxySema <- struct{}{}:
+		instrument.ProxySemWaitEnd()
 		defer func() { <-c.l.server.proxySema }()
 	case <-c.l.closeAllCh:
+		instrument.ProxySemWaitEnd()
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
 	}
 	for _, candidate := range proxyShardOrder(shards, idx) {
@@ -789,10 +793,13 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 	// Local reads and writes never contend for this semaphore, so a
 	// burst of proxied traffic cannot starve local operations. A slot
 	// is held for the full fail-over sweep across candidate holders.
+	instrument.ProxySemWaitStart()
 	select {
 	case c.l.server.proxySema <- struct{}{}:
+		instrument.ProxySemWaitEnd()
 		defer func() { <-c.l.server.proxySema }()
 	case <-c.l.closeAllCh:
+		instrument.ProxySemWaitEnd()
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
 	}
 	for _, candidate := range proxyShardOrder(shards, idx) {
@@ -856,7 +863,7 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 }
 
 // sendProxyRequestSync sends a proxy request synchronously to the target replica
-func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMessage, idHash *[32]byte, targetShard *pki.ReplicaDescriptor, mkemPrivateKey nike.PrivateKey, targetEnvelopeKey nike.PublicKey, scheme *mkem.Scheme) (*commands.ReplicaMessageReply, error) {
+func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMessage, idHash *[32]byte, targetShard *pki.ReplicaDescriptor, mkemPrivateKey nike.PrivateKey, targetEnvelopeKey nike.PublicKey, scheme *mkem.Scheme, start time.Time) (*commands.ReplicaMessageReply, error) {
 	// Register the proxy request with the proxy manager
 	envelopeHash := *replicaMessage.EnvelopeHash()
 	responseCh := c.l.server.proxyManager.RegisterProxyRequest(envelopeHash, mkemPrivateKey, targetEnvelopeKey, replicaMessage, *idHash, targetShard.Name)
@@ -874,12 +881,18 @@ func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMess
 	}
 	select {
 	case reply := <-responseCh:
+		// A closed channel yields nil: the request was failed rather
+		// than answered. Either way the attempt is over, so it is
+		// timed; only a genuine deadline miss is counted a timeout.
+		instrument.ProxyRequestLatency(time.Since(start))
 		if reply == nil {
 			return nil, fmt.Errorf("received nil reply from target replica")
 		}
 		c.log.Debugf("Received proxy reply from %s with error code: %d", targetShard.Name, reply.ErrorCode)
 		return reply, nil
 	case <-time.After(timeout):
+		instrument.ProxyRequestLatency(time.Since(start))
+		instrument.ProxyRequestTimedOut(targetShard.Name)
 		c.log.Errorf("Timeout waiting for proxy response from %s after %v", targetShard.Name, timeout)
 		return nil, fmt.Errorf("timeout waiting for proxy response")
 	case <-c.l.closeAllCh:
