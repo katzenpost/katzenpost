@@ -73,9 +73,9 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 		// shard round-trip, so local reads and writes never wait
 		// behind in-flight proxied traffic (no head-of-line blocking).
 		recvAt := time.Now()
-		c.l.server.Add(1)
+		c.l.server.handlerWg.Add(1)
 		go func() {
-			defer c.l.server.Done()
+			defer c.l.server.handlerWg.Done()
 			select {
 			case <-c.l.closeAllCh:
 				c.log.Debugf("Terminating gracefully.")

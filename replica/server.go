@@ -57,7 +57,11 @@ type GenericConnector interface {
 }
 
 type Server struct {
-	sync.WaitGroup
+	// handlerWg tracks the asynchronous ReplicaMessage handler
+	// goroutines spawned by incoming connections. They outlive the
+	// connection worker that spawned them and reach into state, so
+	// halt() drains them before the database is closed.
+	handlerWg sync.WaitGroup
 
 	cfg *config.Config
 
@@ -170,10 +174,24 @@ func (s *Server) Wait() {
 func (s *Server) halt() {
 	s.log.Noticef("Starting graceful shutdown.")
 
-	// First halt all listeners to stop accepting new connections
+	// The PKI worker goes first. It is the last remaining source of new
+	// work, and it writes envelope key files into DataDir and rebalances
+	// through state, both of which are torn down below.
+	if s.PKIWorker != nil {
+		s.PKIWorker.Halt()
+	}
+
+	// Then halt all listeners to stop accepting new connections
 	for _, listener := range s.listeners {
 		listener.Halt()
 	}
+
+	// Listener.Halt closes closeAllCh and waits for the connection
+	// workers, so no further handler goroutines can be spawned. Drain
+	// the ones already in flight before tearing down what they use:
+	// every point they block on selects on closeAllCh, so this cannot
+	// stall.
+	s.handlerWg.Wait()
 
 	// Then halt the connector to stop outgoing connections
 	if s.connector != nil {
