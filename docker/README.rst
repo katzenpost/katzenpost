@@ -44,7 +44,7 @@ immediately.
 
 ``start`` builds the per-role binaries and runs ``docker compose up -d`` in the
 background, so there is no ctrl-C to interrupt; use ``make stop``. The
-generated network lives in ``./mixnet-alpine/`` by default (see §3 for how
+generated network lives in ``./mixnet-alpine/`` by default (see Section 3 for how
 the directory name derives from the distro). ``run-ping`` sends
 10 pings to the ``echo`` service and exits non-zero unless every ping is
 answered, which makes it useful as a health assertion in scripts and CI.
@@ -63,7 +63,7 @@ If you are rootless podman, no ``sudo`` is needed. If your system requires
 
 ``start`` wires everything together:
 
-* a per-distro base image (see §3) layered on the distro's official image,
+* a per-distro base image (see Section 3) layered on the distro's official image,
   with the Go toolchain version taken from the repo's ``go.mod``;
 * every network binary (``server``, ``dirauth``, ``replica``, ``courier``,
   ``kpclientd``, ``echo_server``, ``proxy_*``, ``fetch``, ``ping``), built
@@ -108,7 +108,7 @@ side-by-side::
   binaries and configs land in ``./$(net_name)/``. It defaults to
   ``mixnet-<distro>`` (so ``make distro=foo start`` targets ``mixnet-foo``),
   and a custom ``net_name=`` still overrides it.
-* ``base_port`` moves the whole published-port band (§2) to avoid clashes with
+* ``base_port`` moves the whole published-port band (Section 2) to avoid clashes with
   a second network.
 
 The ``DISTROS`` variable lists the distros exercised by ``test-distros``
@@ -201,12 +201,12 @@ Only the ``thin-client-sync`` / ``pigeonhole-cp-*`` targets touch the Rust
 Everything that can be cached lives in ``docker/cache/`` (gitignored), so a
 second build of any distro is fast:
 
-* ``cache/go`` — the Go module cache (source content, read-only, shared by all
+* ``cache/go`` - the Go module cache (source content, read-only, shared by all
   distros).
-* ``cache/go-build-<distro>`` — the Go build cache, scoped per distro because
+* ``cache/go-build-<distro>`` - the Go build cache, scoped per distro because
   compiled archives are sensitive to the C library (musl vs glibc, and glibc
   versions).
-* ``cache/cargo-home-<distro>`` / ``cache/cargo-target-<distro>`` — the cargo
+* ``cache/cargo-home-<distro>`` / ``cache/cargo-target-<distro>`` - the cargo
   registry and target dirs, also per distro.
 
 The Go toolchain version is the single source of truth in ``go.mod``; the base
@@ -225,8 +225,8 @@ supplied.
 
 ``stop`` operates on the current ``net_name`` (``make distro=<d> stop`` stops
 only that distro's network). ``stop-all`` and ``clean-testnets`` discover every
-distro a user could have named from the on-disk build stamps — not just the
-ones in ``DISTROS`` — so ``make clean`` tears down and wipes ``mixnet-*``
+distro a user could have named from the on-disk build stamps - not just the
+ones in ``DISTROS`` - so ``make clean`` tears down and wipes ``mixnet-*``
 networks even when the last-used distro differs. ``clean`` additionally removes
 both the ``_base`` and ``_rust`` image and stamp for each distro plus any
 orphan ``katzenpost_*`` / ``mixnet-*`` containers; the module cache is written
@@ -245,7 +245,7 @@ integration tests::
 The ``client`` package defines integration tests  which require a docker
 testnet to be running. ``make test`` runs the ``dockertest-all`` target from
 ``client/Makefile`` (the legacy tests plus the new pigeonhole, multichannel,
-tombstone, copy-command and FromPayload tests — the same set the
+tombstone, copy-command and FromPayload tests - the same set the
 ``docker-mixnet`` CI job currently runs) as well as ``dockertest_pki_raw``
 (``TestGetPKIDocumentRaw*`` and ``TestGetDirectoryAuthorities``). Each target
 was probed against a healthy mixnet-alpine and passed as of this writing
@@ -253,14 +253,14 @@ was probed against a healthy mixnet-alpine and passed as of this writing
 
 11. Other targets
 
-* ``make shell`` — an interactive shell inside the per-distro base image with
+* ``make shell`` - an interactive shell inside the per-distro base image with
   the repo and the network mounted, running as the same user as the build
   containers.
-* ``make rootshell`` — the same, forced to uid 0. Needed only for rootful
+* ``make rootshell`` - the same, forced to uid 0. Needed only for rootful
   docker, where the regular build containers run as the invoking user.
-* ``make check-go-version`` — print the base image's ``go version`` (handy for
+* ``make check-go-version`` - print the base image's ``go version`` (handy for
   confirming the ``GO_VERSION`` arg took effect).
-* ``make go-mod-tidy`` / ``make go-mod-upgrade`` — run ``go mod tidy`` /
+* ``make go-mod-tidy`` / ``make go-mod-upgrade`` - run ``go mod tidy`` /
   ``go get -d -u ./... && go mod tidy`` inside the base image with the git
   checkout mounted in to it.
 
@@ -270,8 +270,8 @@ Notes
   epoch (``epoch_duration=2m``), so PKI, topology, and mix keys churn fast
   enough to exercise the system in a dev loop. The old explicit
   ``warped=true`` incantation is no longer needed.
-* ``make wait`` waits until every node — gateway, mixes, servicenodes
-  (with their courier plugins), and storage replicas — reports ready
+* ``make wait`` waits until every node - gateway, mixes, servicenodes
+  (with their courier plugins), and storage replicas - reports ready
   against the current consensus, i.e. each node's live per-epoch keys
   match its descriptor in the fetched document (all 15 testnet nodes by
   default). It retries until all report ready or ``--ready-timeout``
@@ -281,3 +281,113 @@ Notes
   with it via these make targets, you'll first need to manually
   ``export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"`` as the
   Makefile does.
+
+12. Release interoperability
+
+Build three revisions and exercise the complete baseline-version by
+component-version matrix::
+
+   make interop-test previous_ref=v0.0.98 current_ref=v0.0.99 candidate_ref=v0.0.100
+   make interop-test-baseline BASELINE=current previous_ref=v0.0.98 current_ref=v0.0.99 candidate_ref=HEAD
+   make interop-test-role BASELINE=current ROLE=mix previous_ref=v0.0.98 current_ref=v0.0.99 candidate_ref=HEAD
+
+``make interop-test`` is the comprehensive entry point. It first starts one
+network containing ``HEAD``, current, and previous binaries together, applying
+the mixed assignments before waiting for consensus. It then checks complete
+current and previous networks in that order. Detailed candidate, current, and
+previous baseline and role checks follow. The command keeps full output in
+``interop-results/logs/``, continues collecting all mixed failures, prints
+compact progress every 5 seconds and a summary table at the end, and exits
+non-zero if any leg failed. Progress shows
+the exact refs and commits, matrix position, current status, leg and total
+elapsed time, current phase, and a rolling ETA. Networks are reused across the
+role legs of each baseline. Set ``interop_heartbeat`` to change the progress
+interval. All interoperability test targets stop the testnet when they finish,
+fail, or are interrupted. Each matrix leg is limited by
+``interop_leg_timeout=45m``. Run ``make interop-test DEBUG=1`` to print every
+versioned binary and runtime mapping, stream the active leg log, and show live
+daemon log tails alongside the compact status lines.
+Missing test networks fail immediately instead of consuming a readiness timeout.
+Interop networks use 30-second epochs by default; override this with
+``interop_epoch_duration``. Normal Docker networks retain their 2-minute epoch.
+The report contains 1 all-version network leg, 2 homogeneous network legs, and
+27 detailed mixed role legs.
+``make interop-report`` prints revisions and per-leg durations again without
+rerunning tests. ``make interop-validate`` checks matrix construction without
+building images or starting Podman.
+
+Each of ``candidate``, ``current``, and ``previous`` is first used as a complete
+network generated by that version's own ``genconfig``, then as a mixed-test
+baseline. Against every
+baseline, all three versions are exercised as ``mix``, ``gateway``,
+``servicenode``, ``dirauth``, ``replica``, ``courier``, ``http``, and ``client2``
+components. The ``client2`` leg rotates ``kpclientd``,
+``fetch``, ``ping``, ``proxy_client``, and the compiled client integration test
+together, and runs each version's own client tools.
+Every numbered mix, directory authority, service node, courier, and storage
+replica is swapped, checked, and restored independently. This keeps the rest of
+the network on its baseline version and identifies the incompatible service.
+Echo is an in-process service of each service node and is covered by the
+service-node swaps and echo check. The HTTP
+proxy plugin is swapped independently and checked with an HTTP round trip. The
+standalone echo example program is outside this daemon matrix.
+
+Every cross-version leg waits for a newer valid consensus containing all
+configured storage replicas. The compatibility probe verifies that every mix,
+replica, and courier has a reachable metrics endpoint. Swapped directory
+authorities must sign the new consensus. Network roles run a bounded echo
+probe, HTTP runs an HTTP round trip, replica and courier run a Pigeonhole
+write/read test, and client2 runs all three. Each role is restored to its
+baseline version before the next leg. Both placements of the two non-baseline
+versions in mixed directory-authority and replica quorums are tested for every
+baseline. Versioned sources and
+binaries are cached. Cached binary names contain the matrix label, sanitized
+ref, abbreviated commit, and build fingerprint, for example
+``server.alpine.previous-v0.0.98-1b9da9070f1f-a1b2c3d4``. The ``artifact`` file beside
+each binary set records that identifier. Runtime copies include the service
+name so every container has an immutable binary path. ``runtime-artifacts.tsv``
+maps every service and runtime binary back to its artifact, ref, and full commit.
+The full revision is also embedded in each Go binary. The artifacts are stored
+under ``cache/interop/``.
+
+When refs are omitted, ``current_ref`` and ``previous_ref`` default to the two
+newest stable ``vMAJOR.MINOR.PATCH`` tags and ``candidate_ref`` defaults to
+``HEAD``. A standalone
+``make interop-check`` starts the selected baseline when it is not already
+running; when called during a swap it checks the existing mixed network.
+``make interop-smoke`` performs the same check and always stops the network.
+
+Individual legs are useful while diagnosing a failure::
+
+   make interop-start BASELINE=current previous_ref=... current_ref=... candidate_ref=...
+   make interop-swap-mix BASELINE=current COMPONENT_VERSION=previous SERVICE=mix2 previous_ref=... current_ref=... candidate_ref=...
+   make interop-check
+   make interop-stop
+   make interop-clean-dryrun
+   make interop-clean
+   make interop-clean-cache
+   make interop-clean-results
+   make interop-clean-image
+   make interop-clean-all
+
+``interop-clean`` removes ``interop-alpine`` while retaining cached versioned
+sources, binaries, reports, and the interoperability image. The cache, results,
+and image targets remove those layers independently; ``interop-clean-all``
+removes all of them.
+The global ``stop-all`` and ``clean`` targets also discover and cover
+interoperability networks and images.
+
+Enable the pre-push hook from ``docker/``::
+
+   make install-git-hooks
+
+The hook is disabled by default and is never enabled by build or test targets.
+Run ``make disable-git-hooks`` to remove the local setting. When enabled, it
+checks pushed commits and runs ``interop-smoke`` for relevant changes. Use
+``KATZENPOST_FORCE_INTEROP=1`` to force the smoke test or
+``KATZENPOST_SKIP_INTEROP=1`` to skip it. The separate
+``docker-interop.yml`` workflow follows the structure of
+``docker-mixnet.yml``, builds the revisions and container image once, shares
+those artifacts, and defines the full baseline and role matrix. Its jobs are
+disabled until the interoperability suite is ready to become a required CI
+check.

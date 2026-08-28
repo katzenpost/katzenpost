@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help install-git-hooks disable-git-hooks start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-build interop-build-previous interop-build-current interop-build-candidate interop-image-check interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-noop interop-test interop-report interop-validate interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -42,6 +42,12 @@ help:
 	@echo " clean                     - stop all networks, wipe all state, plus base images and the build cache"
 	@echo " test-distros              - bring up and ping the testnet on every DISTRO, leaving them running (serial, or parallel with make -j)"
 	@echo
+
+install-git-hooks:
+	git -C .. config core.hooksPath .githooks
+
+disable-git-hooks:
+	@git -C .. config --unset-all core.hooksPath 2>/dev/null || true
 
 warped?=true
 no_decoy?=true
@@ -147,6 +153,49 @@ cache_dir=cache
 go_mod_cache=$(cache_dir)/go
 go_build_cache=$(cache_dir)/go-build-$(distro)
 
+interop_release_refs=$(shell git tag --sort=-v:refname | awk '/^v[0-9]+\.[0-9]+\.[0-9]+$$/ { print; if (++n == 2) exit }')
+current_ref?=$(word 1,$(interop_release_refs))
+previous_ref?=$(word 2,$(interop_release_refs))
+candidate_ref?=HEAD
+BASELINE?=current
+COMPONENT_VERSION?=candidate
+SWAP_RUNNING?=true
+CHECK_CLIENT_VERSION?=$(BASELINE)
+CHECK_HTTP_VERSION?=$(BASELINE)
+FETCH_VERSION?=$(BASELINE)
+interop_dir=$(cache_dir)/interop/$(distro)
+interop_versions=candidate current previous
+interop_network_versions=current previous
+interop_roles=mix gateway servicenode dirauth replica courier http client2
+interop_services_mix=mix1 mix2 mix3
+interop_services_gateway=gateway1
+interop_services_servicenode=servicenode1 servicenode2 servicenode3
+interop_services_dirauth=auth1 auth2 auth3
+interop_services_replica=replica1 replica2 replica3 replica4 replica5
+interop_services_courier=$(interop_services_servicenode)
+interop_services_http=$(interop_services_servicenode)
+interop_services_client2=kpclientd
+interop_runtime_bins=server dirauth replica courier kpclientd proxy_server proxy_client
+interop_probe_bins=fetch ping
+interop_build_bins=$(interop_runtime_bins) $(interop_probe_bins) genconfig client_tests
+interop_check_target?=interop-check
+interop_base_image?=ghcr.io/katzenpost/alpine-base:rocksdb-10.2.1
+interop_image=katzenpost-$(distro)_interop
+interop_net_name?=interop-$(distro)
+interop_report_dir?=interop-results
+interop_submake=$(MAKE)
+interop_stop_make=$(MAKE)
+interop_heartbeat?=5
+interop_epoch_duration?=30s
+interop_initial_leg_seconds?=600
+interop_ping_timeout?=3m
+interop_ping_attempts?=3
+interop_readiness_timeout?=5m
+interop_fetch_timeout?=30s
+interop_leg_timeout?=45m
+DEBUG?=0
+INTEROP_PINGS?=$(npings)
+
 # thin_client / pigeonhole-cp (rust). thin-client-sync clones the
 # pinned ref into docker/thin_client; thin_client_dir?= overrides that with
 # an existing checkout (devs, and thin_client's own CI, which must build
@@ -236,6 +285,12 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
 	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
+	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
+
+interop_genconfig_args=--wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --nodes $(mixes) \
+	--gateways $(gateways) --serviceNodes $(serviceNodes) --storageNodes $(storageNodes) \
+	--nike "$(nike)" --kem "$(kem)" --noMixDecoy=$(no_mixdecoy) \
+	--noGatewayDecoy=$(no_gatewaydecoy) --noDecoy --noMetrics --epochDuration "$(interop_epoch_duration)" \
 	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 
 # Pumba network chaos. Off by default; invoke `make pumba-latency` or
@@ -700,12 +755,435 @@ $(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} -o /$(net_name)/kpclientd.$(distro)'
 
+interop-build: interop-build-previous interop-build-current interop-build-candidate
+
+interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-test interop-report interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all: net_name=$(interop_net_name)
+
+interop-image-check: Dockerfile.interop.alpine
+	@test "$(distro)" = alpine || (echo "release interoperability currently supports distro=alpine" >&2; exit 2)
+	@fingerprint=$$(printf '%s\n' '$(interop_base_image)' '$(GO_VERSION)' | cat Dockerfile.interop.alpine - | sha256sum | cut -d' ' -f1); \
+	  if [ ! -f $(distro)_interop.stamp ] || [ "$$(cat $(distro)_interop.stamp)" != "$$fingerprint" ]; then \
+	    $(docker) build -t $(interop_image) --build-arg BASE_IMAGE=$(interop_base_image) --build-arg GO_VERSION=$(GO_VERSION) -f Dockerfile.interop.alpine .; \
+	    printf '%s\n' "$$fingerprint" > $(distro)_interop.stamp; \
+	  else echo "Using cached interop image ($$fingerprint)"; fi
+
+interop-build-previous interop-build-current interop-build-candidate: interop-image-check | $(cache_dir)
+	@label=$(@:interop-build-%=%); \
+	  case "$$label" in previous) ref='$(previous_ref)';; current) ref='$(current_ref)';; candidate) ref='$(candidate_ref)';; esac; \
+	  if [ -z "$$ref" ]; then echo "$${label}_ref is required" >&2; exit 2; fi; \
+	  commit=$$(git rev-parse --verify "$$ref^{commit}") || exit; \
+	  fingerprint=$$(printf '%s\n' '$(interop_base_image)' '$(GO_VERSION)' '$(warped)' '$(kpclientd_tags_flag)' | cat Dockerfile.interop.alpine - | sha256sum | cut -d' ' -f1); \
+	  safe_ref=$$(printf '%s' "$$ref" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-48); artifact="$$label-$$safe_ref-$$(printf '%.12s' "$$commit")-$$(printf '%.8s' "$$fingerprint")"; \
+	  out="$(interop_dir)/$$label"; src="$(interop_dir)/src/$$label"; \
+	  valid=true; \
+	  [ -f "$$out/commit" ] && [ "$$(cat "$$out/commit")" = "$$commit" ] || valid=false; \
+	  [ -f "$$out/ref" ] && [ "$$(cat "$$out/ref")" = "$$ref" ] || valid=false; \
+	  [ -f "$$out/artifact" ] && [ "$$(cat "$$out/artifact")" = "$$artifact" ] || valid=false; \
+	  [ -f "$$out/fingerprint" ] && [ "$$(cat "$$out/fingerprint")" = "$$fingerprint" ] || valid=false; \
+	  [ -f "$$out/format" ] && [ "$$(cat "$$out/format")" = 3 ] || valid=false; \
+	  for bin in $(interop_build_bins); do [ -x "$$out/$$bin.$(distro).$$artifact" ] || valid=false; done; \
+	  if [ "$$valid" != true ]; then \
+	    echo "Building interop $$label ($$ref -> $$commit)"; \
+	    rm -rf "$$src" "$$out"; mkdir -p "$$src" "$$out"; \
+	    git -C .. archive "$$commit" | tar -x -C "$$src"; \
+	    $(docker) run --user $(docker_user) --rm --pids-limit 4096 \
+	      -v "$$(readlink -f "$(go_mod_cache)"):/go/" \
+	      -v "$$(readlink -f "$$src"):/go/katzenpost:ro" \
+	      -v "$$(readlink -f "$$out"):/interop-out" \
+	      -v "$$(readlink -f "$(go_build_cache)"):/gocache/" \
+	      -e GOCACHE=/gocache -e GOPATH=/go -e INTEROP_ARTIFACT="$$artifact" -e INTEROP_COMMIT="$$commit" --workdir /go/katzenpost \
+	      $(interop_image) $(sh) -c '\
+	        set -eu; \
+	        flags="-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=$(warped) -X github.com/carlmjohnson/versioninfo.Revision=$${INTEROP_COMMIT}"; \
+	        go build -trimpath -ldflags "$$flags" -o /interop-out/server.$(distro).$${INTEROP_ARTIFACT} ./cmd/server; \
+	        go build -trimpath -ldflags "$$flags" -o /interop-out/dirauth.$(distro).$${INTEROP_ARTIFACT} ./cmd/dirauth; \
+	        go build -trimpath -ldflags "$$flags" -o /interop-out/replica.$(distro).$${INTEROP_ARTIFACT} ./cmd/replica; \
+	        go build -trimpath -ldflags "$$flags" -o /interop-out/courier.$(distro).$${INTEROP_ARTIFACT} ./cmd/courier; \
+	        go build $(kpclientd_tags_flag) -trimpath -ldflags "$$flags" -o /interop-out/kpclientd.$(distro).$${INTEROP_ARTIFACT} ./cmd/kpclientd; \
+	        go build -trimpath -ldflags "$$flags" -o /interop-out/fetch.$(distro).$${INTEROP_ARTIFACT} ./cmd/fetch; \
+	        go build -trimpath -ldflags "$$flags" -o /interop-out/ping.$(distro).$${INTEROP_ARTIFACT} ./cmd/ping; \
+	        go build -trimpath -ldflags "$$flags" -o /interop-out/proxy_server.$(distro).$${INTEROP_ARTIFACT} ./cmd/http-proxy-server; \
+	        go build -trimpath -ldflags "$$flags" -o /interop-out/proxy_client.$(distro).$${INTEROP_ARTIFACT} ./cmd/http-proxy-client; \
+	        go build -trimpath -ldflags "$$flags" -o /interop-out/genconfig.$(distro).$${INTEROP_ARTIFACT} ./cmd/genconfig; \
+	        go test -c -tags=docker_test -ldflags "$$flags" -o /interop-out/client_tests.$(distro).$${INTEROP_ARTIFACT} ./client' || exit; \
+	    for bin in $(interop_build_bins); do test -x "$$out/$$bin.$(distro).$$artifact" || exit 1; done; \
+	    printf '%s\n' "$$commit" > "$$out/commit"; \
+	    printf '%s\n' "$$ref" > "$$out/ref"; \
+	    printf '%s\n' "$$artifact" > "$$out/artifact"; \
+	    printf '%s\n' "$$fingerprint" > "$$out/fingerprint"; \
+	    printf '%s\n' 3 > "$$out/format"; \
+	  else echo "Using cached interop $$label ($$commit)"; fi
+
+interop-activate: interop-selfcheck-cache-restore | $(net_name)
+	@case "$(BASELINE)" in previous|current|candidate) ;; *) echo "BASELINE must be previous, current, or candidate" >&2; exit 2;; esac
+	@artifact=$$(cat $(interop_dir)/$(BASELINE)/artifact); for bin in $(interop_probe_bins); do \
+	  install -m 0755 "$(interop_dir)/$(BASELINE)/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).new"; \
+	  mv -f "$(net_name)/$$bin.$(distro).new" "$(net_name)/$$bin.$(distro)"; \
+	done
+	@printf 'SERVICE\tROLE\tBINARY\tARTIFACT\tREF\tCOMMIT\n' > $(net_name)/runtime-artifacts.tsv
+	@printf '%s\t%s\t%s\n' $(BASELINE) $$(cat $(interop_dir)/$(BASELINE)/artifact) $$(cat $(interop_dir)/$(BASELINE)/commit) > $(net_name)/runtime-baseline.tsv
+	@set -e; for spec in \
+	  "mix1 mix server" "mix2 mix server" "mix3 mix server" "gateway1 gateway server" \
+	  "servicenode1 servicenode server" "servicenode2 servicenode server" "servicenode3 servicenode server" \
+	  "auth1 dirauth dirauth" "auth2 dirauth dirauth" "auth3 dirauth dirauth" \
+	  "replica1 replica replica" "replica2 replica replica" "replica3 replica replica" "replica4 replica replica" "replica5 replica replica" \
+	  "servicenode1 courier courier" "servicenode2 courier courier" "servicenode3 courier courier" \
+	  "servicenode1 http proxy_server" "servicenode2 http proxy_server" "servicenode3 http proxy_server" \
+	  "kpclientd client2 kpclientd fetch ping proxy_client"; do \
+	  set -- $$spec; service=$$1; role=$$2; shift 2; bins="$$*"; artifact=$$(cat $(interop_dir)/$(BASELINE)/artifact); \
+	  for bin in $$bins; do install -m 0755 "$(interop_dir)/$(BASELINE)/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).$$service.new"; \
+	    mv -f "$(net_name)/$$bin.$(distro).$$service.new" "$(net_name)/$$bin.$(distro).$$service"; done; \
+	  $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$role BINS="$$bins" VERSION=$(BASELINE) interop-record-artifact; done
+	@if [ "$(DEBUG)" = 1 ]; then cat $(net_name)/runtime-artifacts.tsv; fi
+	@echo "Activated $(BASELINE) ($$(cat $(interop_dir)/$(BASELINE)/commit)) for the complete network"
+
+interop-record-artifact:
+	@artifact=$$(cat $(interop_dir)/$(VERSION)/artifact); ref=$$(cat $(interop_dir)/$(VERSION)/ref); commit=$$(cat $(interop_dir)/$(VERSION)/commit); \
+	  for bin in $(BINS); do tmp=$(net_name)/runtime-artifacts.tsv.new; \
+	    awk -F '\t' -v service='$(SERVICE)' -v binary="$$bin" 'BEGIN { OFS="\t" } NR == 1 || !($$1 == service && $$3 == binary)' $(net_name)/runtime-artifacts.tsv > "$$tmp"; \
+	    printf '%s\t%s\t%s\t%s\t%s\t%s\n' '$(SERVICE)' '$(ROLE)' "$$bin" "$$artifact" "$$ref" "$$commit" >> "$$tmp"; \
+	    mv -f "$$tmp" $(net_name)/runtime-artifacts.tsv; \
+	  done
+
+interop-compose: interop-build | $(net_name) $(cache_dir)
+	@-cd $(net_name) && $(docker_compose) down --remove-orphans
+	git clean -fdx $(net_name)
+	mkdir -p $(net_name)
+	$(docker) run --user $(docker_user) --rm --pids-limit 4096 \
+		-v $(shell readlink -f $(interop_dir)/$(BASELINE)):/interop-bin:ro \
+		-v $(shell readlink -f $(net_name)):/work/$(net_name) --workdir /work \
+		$(interop_image) /interop-bin/genconfig.$(distro).$(shell cat $(interop_dir)/$(BASELINE)/artifact 2>/dev/null) \
+			$(interop_genconfig_args) --binSuffix .$(distro) --voting \
+		--outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
+		--dockerImage $(interop_image)
+	@for spec in 'gateway1 server' 'servicenode1 server' 'servicenode2 server' 'servicenode3 server' \
+	  'mix1 server' 'mix2 server' 'mix3 server' 'replica1 replica' 'replica2 replica' 'replica3 replica' \
+	  'replica4 replica' 'replica5 replica' 'auth1 dirauth' 'auth2 dirauth' 'auth3 dirauth'; do \
+	  set -- $$spec; service=$$1; bin=$$2; sed -i "s|/$$bin.$(distro) -f /$(net_name)/$$service/|/$$bin.$(distro).$$service -f /$(net_name)/$$service/|" $(net_name)/docker-compose.yml; done
+	@sed -i "s|/kpclientd.$(distro) -c /$(net_name)/client/|/kpclientd.$(distro).kpclientd -c /$(net_name)/client/|" $(net_name)/docker-compose.yml
+	@for service in $(interop_services_servicenode); do \
+	  sed -i "s|/courier.$(distro)\"|/courier.$(distro).$$service\"|; s|/proxy_server.$(distro)\"|/proxy_server.$(distro).$$service\"|" $(net_name)/$$service/katzenpost.toml; done
+	install -m 0644 interop-http-server.pl $(net_name)/interop-http-server.pl
+	@addr=$$(sed -n '/^\[Listen\]/,$$ { s/^[[:space:]]*Address = "\([^"]*\)".*/\1/p; }' $(net_name)/client/client.toml | head -1); \
+	  [ -n "$$addr" ] || { echo "client listen address not found" >&2; exit 1; }; \
+	  printf '[Dial]\n  [Dial.Tcp]\n    Address = "kpclientd:%s"\n' "$${addr##*:}" > $(net_name)/client/thinclient-bridge.toml
+
+interop-selfcheck-cache-restore: interop-compose
+	@if [ -d selfcheck-cache ]; then \
+	  for f in selfcheck-cache/*.toml; do \
+	    svc=$$(basename $$f .toml); \
+	    if [ -d "$(net_name)/$$svc" ]; then \
+	      cp "$$f" "$(net_name)/$$svc/selfcheck.toml"; \
+	    fi; \
+	  done; \
+	fi
+
+interop-start: interop-activate
+	cd $(net_name); $(docker_compose) up --remove-orphans --force-recreate -d; $(docker_compose) ps
+	touch $(net_name)/running.stamp
+
+interop-wait:
+	@test -f $(net_name)/running.stamp || (echo "run make interop-start first" >&2; exit 2)
+	@$(docker) network inspect $(compose_network_name) >/dev/null 2>&1 || { echo "PHASE baseline=$(BASELINE) role=$(ROLE) status=infra-fail detail=network-missing" >&2; exit 1; }
+	@case "$(FETCH_VERSION)" in previous|current|candidate) ;; *) echo "FETCH_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
+	@out=$$(mktemp); cleanup() { rm -f "$$out"; }; trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	  deadline=$$(($$(date +%s) + 720)); attempt=0; while :; do \
+	    attempt=$$((attempt + 1)); \
+	    remaining=$$((deadline - $$(date +%s))); echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=client-daemon status=probing attempt=$$attempt timeout=$(interop_fetch_timeout) remaining=$${remaining}s"; \
+	    if timeout $(interop_fetch_timeout) $(docker) run $(replace_name) katzenpost_interop_probe --network=$(compose_network_name) ${docker_args} $(mount_net_name) \
+	      -v $(shell readlink -f $(interop_dir)/$(FETCH_VERSION)):/interop-fetch:ro --rm $(interop_image) \
+	      /interop-fetch/fetch.$(distro).$(shell cat $(interop_dir)/$(FETCH_VERSION)/artifact 2>/dev/null) -f /$(net_name)/client/thinclient-bridge.toml \
+	      -r $(storageNodes) > "$$out" 2>&1; then \
+	      epoch=$$(sed -n 's/^PKI document for epoch \([0-9][0-9]*\).*/\1/p' "$$out" | tail -1); \
+	    else \
+	      epoch=''; latest=$$(grep -E 'Failed to connect|failed|ERROR|Error' "$$out" | tail -1 || true); \
+	      [ -n "$$latest" ] || latest=$$(sed -n '/[^[:space:]]/p' "$$out" | tail -1); remaining=$$((deadline - $$(date +%s))); \
+	      if grep -Eqi 'unable to find network|network .*not found|no network with (name|ID)' "$$out"; then cat "$$out"; echo "PHASE baseline=$(BASELINE) role=$(ROLE) status=infra-fail detail=network-missing" >&2; exit 1; fi; \
+	      [ $$(date +%s) -lt $$deadline ] || { cat "$$out"; echo "client daemon did not become ready" >&2; exit 1; }; \
+	      echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=client-daemon status=retry attempt=$$attempt remaining=$${remaining}s detail=$$latest"; sleep 5; continue; \
+	    fi; \
+	    if [ -n "$$epoch" ] && { [ -z "$(WAIT_AFTER_EPOCH)" ] || [ "$$epoch" -gt "$(WAIT_AFTER_EPOCH)" ]; }; then break; fi; \
+	    [ $$(date +%s) -lt $$deadline ] || { cat "$$out"; echo "no consensus newer than epoch $(WAIT_AFTER_EPOCH)" >&2; exit 1; }; \
+	    remaining=$$((deadline - $$(date +%s))); echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=next-consensus current=$$epoch after=$(WAIT_AFTER_EPOCH) attempt=$$attempt remaining=$${remaining}s"; sleep 5; \
+	  done; cat "$$out"; printf '%s\n' "$$epoch" > $(net_name)/interop.last_epoch; \
+	  for auth in $(EXPECT_AUTHS); do grep -q "^  $$auth (" "$$out" || { echo "$$auth did not sign the consensus" >&2; exit 1; }; done
+	@timeout $(interop_readiness_timeout) $(docker) run $(replace_name) katzenpost_interop_probe --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm $(interop_image) $(sh) -c '\
+	  set -eu; tmp=$$(mktemp -d); cleanup() { rm -rf "$$tmp"; }; trap cleanup EXIT; trap '\''exit 129'\'' HUP; trap '\''exit 130'\'' INT; trap '\''exit 143'\'' TERM; pids=""; n=0; \
+	  for cfg in /$(net_name)/gateway*/katzenpost.toml /$(net_name)/mix*/katzenpost.toml \
+	    /$(net_name)/servicenode*/katzenpost.toml /$(net_name)/replica*/replica.toml \
+	    /$(net_name)/servicenode*/courier/courier.toml; do \
+	    n=$$((n + 1)); { addr=$$(sed -n '\''s/^[[:space:]]*MetricsAddress = "\([^" ]*\)".*/\1/p'\'' "$$cfg" | head -1); \
+	      [ -n "$$addr" ] || { echo "missing metrics address in $$cfg"; exit 1; }; \
+	      ready=false; for attempt in $$(seq 1 120); do if curl -fsS --max-time 3 "http://$$addr/metrics" >/dev/null 2>&1; then ready=true; break; fi; sleep 2; done; \
+	      [ "$$ready" = true ] || { echo "metrics unavailable for $$cfg at $$addr"; exit 1; }; \
+	      printf "READY %-24s %s\n" $$(basename $$(dirname "$$cfg")) "$$addr"; } > "$$tmp/$$n" 2>&1 & pids="$$pids $$!"; \
+	  done; failed=0; for pid in $$pids; do wait $$pid || failed=1; done; cat "$$tmp"/*; exit $$failed'
+
+interop-run-ping:
+	@out=$$(mktemp); cleanup() { rm -f "$$out"; }; trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; attempt=1; \
+	  while [ $$attempt -le $(interop_ping_attempts) ]; do \
+	    if timeout $(interop_ping_timeout) $(docker) run $(replace_name) katzenpost_interop_ping --network=host --user $(docker_user) $(mount_net_name) \
+	      -v $(shell readlink -f $(interop_dir)/$(CHECK_CLIENT_VERSION)):/interop-ping:ro --rm $(interop_image) \
+	      /interop-ping/ping.$(distro).$(shell cat $(interop_dir)/$(CHECK_CLIENT_VERSION)/artifact 2>/dev/null) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(INTEROP_PINGS) > "$$out" 2>&1; then \
+	      cat "$$out"; grep -q "Success rate is 100 percent ($(INTEROP_PINGS)/$(INTEROP_PINGS))" "$$out" && exit 0; \
+	    else cat "$$out"; fi; \
+	    echo "PHASE check=echo-ping retry=$$attempt/$(interop_ping_attempts)"; attempt=$$((attempt + 1)); sleep 5; \
+	  done; echo "echo ping failed" >&2; exit 1
+
+interop-http-check:
+	@case "$(CHECK_HTTP_VERSION)" in previous|current|candidate) ;; *) echo "CHECK_HTTP_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
+	@cd $(net_name) && for service in $(interop_services_http); do \
+	  $(docker_compose) exec -T "$$service" sh -c 'perl /$(net_name)/interop-http-server.pl >/tmp/interop-http.log 2>&1 &'; \
+	done
+	@$(docker) run $(replace_name) katzenpost_interop_http --network=$(compose_network_name) ${docker_args} $(mount_net_name) \
+		-v $(shell readlink -f $(interop_dir)/$(CHECK_HTTP_VERSION)):/interop-http:ro --rm $(interop_image) $(sh) -c '\
+	  set -eu; cleanup() { [ -z "$${pid:-}" ] || kill "$$pid" 2>/dev/null || true; }; trap cleanup EXIT; trap '\''exit 129'\'' HUP; trap '\''exit 130'\'' INT; trap '\''exit 143'\'' TERM; \
+	  /interop-http/proxy_client.$(distro).$(shell cat $(interop_dir)/$(CHECK_HTTP_VERSION)/artifact 2>/dev/null) -cfg /$(net_name)/client/thinclient-bridge.toml -retry 20 -delay 2 -port 8080 >/tmp/proxy.log 2>&1 & pid=$$!; \
+	  for n in $$(seq 1 10); do if NO_PROXY= no_proxy= curl -fsS --max-time 70 -x http://127.0.0.1:8080 http://localhost:4242/ | grep -q interop-http-ok; then echo "HTTP proxy round trip passed with $(CHECK_HTTP_VERSION) client"; exit; fi; sleep 2; done; \
+	  cat /tmp/proxy.log >&2; exit 1'
+
+interop-check:
+	@expected=$$(cat $(interop_dir)/$(BASELINE)/artifact); \
+	  if [ ! -f $(net_name)/running.stamp ] || ! $(docker) network inspect $(compose_network_name) >/dev/null 2>&1 || ! grep -q "^$(BASELINE)[[:space:]]$$expected[[:space:]]" $(net_name)/runtime-baseline.tsv 2>/dev/null; then \
+	    $(MAKE) --no-print-directory interop-stop >/dev/null 2>&1 || true; $(MAKE) -j1 BASELINE=$(BASELINE) interop-start; \
+	  fi
+	@$(MAKE) -j1 net_name=$(interop_net_name) FETCH_VERSION=$(CHECK_CLIENT_VERSION) interop-wait interop-run-ping CHECK_HTTP_VERSION=$(CHECK_HTTP_VERSION) interop-http-check CHECK_CLIENT_VERSION=$(CHECK_CLIENT_VERSION) interop-client-check
+
+interop-check-role:
+	@echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=consensus-and-processes"
+	@$(MAKE) -j1 net_name=$(interop_net_name) BASELINE=$(BASELINE) ROLE=$(ROLE) COMPONENT_VERSION=$(COMPONENT_VERSION) FETCH_VERSION=$(if $(filter client2,$(ROLE)),$(COMPONENT_VERSION),$(BASELINE)) WAIT_AFTER_EPOCH=$(WAIT_AFTER_EPOCH) EXPECT_AUTHS="$(if $(filter dirauth,$(ROLE)),$(EXPECT_AUTHS))" interop-wait
+	@case "$(ROLE)" in \
+	  mix|gateway|servicenode|dirauth) echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=echo-ping"; $(MAKE) -j1 net_name=$(interop_net_name) INTEROP_PINGS=1 interop-run-ping;; \
+	  replica|courier) echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=pigeonhole"; $(MAKE) -j1 net_name=$(interop_net_name) CHECK_CLIENT_VERSION=$(BASELINE) interop-client-check;; \
+	  http) echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=http"; $(MAKE) -j1 net_name=$(interop_net_name) CHECK_HTTP_VERSION=$(BASELINE) interop-http-check;; \
+	  client2) echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=client-suite"; $(MAKE) -j1 net_name=$(interop_net_name) INTEROP_PINGS=1 interop-run-ping CHECK_HTTP_VERSION=$(COMPONENT_VERSION) interop-http-check CHECK_CLIENT_VERSION=$(COMPONENT_VERSION) interop-client-check;; \
+	  *) echo "unsupported ROLE=$(ROLE)" >&2; exit 2;; \
+	esac
+
+interop-smoke: interop-build
+	@set -e; cleanup() { $(MAKE) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
+	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; $(MAKE) -j1 BASELINE=$(BASELINE) CHECK_CLIENT_VERSION=$(CHECK_CLIENT_VERSION) interop-check
+
+interop-client-check:
+	@case "$(CHECK_CLIENT_VERSION)" in previous|current|candidate) ;; *) echo "CHECK_CLIENT_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
+	$(docker) run --network=host --user $(docker_user) --rm --pids-limit 4096 \
+		-v $(shell readlink -f $(net_name)):/interop-net:ro \
+		-v $(shell readlink -f $(interop_dir)/$(CHECK_CLIENT_VERSION)):/interop-bin:ro \
+		--workdir /tmp $(interop_image) $(sh) -c 'mkdir -p client-test/testdata; \
+		cp /interop-net/client/client.toml /interop-net/client/thinclient.toml client-test/testdata/; \
+		cd client-test; exec /interop-bin/client_tests.$(distro).$(shell cat $(interop_dir)/$(CHECK_CLIENT_VERSION)/artifact 2>/dev/null) -test.v -test.timeout=15m \
+		-test.run "^TestNewPigeonholeAPIAliceSendsBob$$"'
+
+interop-noop:
+
+interop-validate:
+	@set -eu; \
+	  set -- $(interop_versions); [ $$# -eq 3 ]; \
+	  set -- $(interop_roles) quorums; [ $$# -eq 9 ]; \
+	  for version in $(interop_versions); do case $$version in previous|current|candidate) ;; *) exit 1;; esac; done; \
+	  for role in $(interop_roles) quorums; do case $$role in mix|gateway|servicenode|dirauth|replica|courier|http|client2|quorums) ;; *) exit 1;; esac; done; \
+	  [ $$(printf '%s\n' $(interop_versions) | sort -u | wc -l) -eq 3 ]; \
+	  set -- $(interop_network_versions); [ "$$*" = "current previous" ]; \
+	  [ $$(printf '%s\n' $(interop_roles) quorums | sort -u | wc -l) -eq 9 ]; \
+	  printf 'Interop plan valid: 1 all-version + 2 homogeneous + 27 role legs = 30 total\n'
+
+interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2: interop-build
+	@set -e; role=$(@:interop-swap-%=%); \
+	  case "$(COMPONENT_VERSION)" in previous|current|candidate) ;; *) echo "COMPONENT_VERSION must be previous, current, or candidate" >&2; exit 2;; esac; \
+	  case "$$role" in \
+	    mix) services='$(interop_services_mix)'; bins=server;; gateway) services='$(interop_services_gateway)'; bins=server;; \
+	    servicenode) services='$(interop_services_servicenode)'; bins=server;; dirauth) services='$(interop_services_dirauth)'; bins=dirauth;; \
+	    replica) services='$(interop_services_replica)'; bins=replica;; \
+	    courier) services='$(interop_services_courier)'; bins=courier;; \
+	    http) services='$(interop_services_http)'; bins=proxy_server;; \
+	    client2) services='$(interop_services_client2)'; bins='kpclientd fetch ping proxy_client';; \
+	  esac; \
+	  service='$(SERVICE)'; if [ -z "$$service" ]; then set -- $$services; service=$$1; fi; \
+	  case " $$services " in *" $$service "*) ;; *) echo "SERVICE=$$service is not a $$role service" >&2; exit 2;; esac; \
+	  artifact=$$(cat $(interop_dir)/$(COMPONENT_VERSION)/artifact); \
+	  echo "baseline=$(BASELINE) role=$$role service=$$service component=$(COMPONENT_VERSION) artifact=$$artifact commit=$$(cat $(interop_dir)/$(COMPONENT_VERSION)/commit)"; \
+	  if [ "$(SWAP_RUNNING)" = true ]; then cd "$(net_name)" && $(docker_compose) stop "$$service"; cd ..; fi; \
+	  for bin in $$bins; do \
+	    install -m 0755 "$(interop_dir)/$(COMPONENT_VERSION)/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).$$service.new"; \
+	    mv -f "$(net_name)/$$bin.$(distro).$$service.new" "$(net_name)/$$bin.$(distro).$$service"; \
+	  done; \
+	  if [ "$(SWAP_RUNNING)" = true ]; then cd "$(net_name)" && $(docker_compose) start "$$service"; cd ..; fi; \
+	  $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$role BINS="$$bins" VERSION=$(COMPONENT_VERSION) interop-record-artifact
+	@$(MAKE) -j1 net_name=$(interop_net_name) WAIT_AFTER_EPOCH=$(shell cat $(net_name)/interop.last_epoch 2>/dev/null) EXPECT_AUTHS=$(if $(filter dirauth,$(@:interop-swap-%=%)),$(SERVICE)) CHECK_HTTP_VERSION=$(if $(filter client2,$(@:interop-swap-%=%)),$(COMPONENT_VERSION),$(BASELINE)) CHECK_CLIENT_VERSION=$(if $(filter client2,$(@:interop-swap-%=%)),$(COMPONENT_VERSION),$(BASELINE)) $(interop_check_target)
+
+interop-restore-role:
+	@$(MAKE) -j1 BASELINE=$(BASELINE) COMPONENT_VERSION=$(BASELINE) SERVICE=$(SERVICE) interop_check_target=interop-noop interop-swap-$(ROLE)
+
+interop-test: interop-validate interop-build
+	@child=''; monitor=''; debug_tail=''; cleanup() { [ -z "$$debug_tail" ] || kill "$$debug_tail" 2>/dev/null || true; [ -z "$$monitor" ] || kill "$$monitor" 2>/dev/null || true; if [ -n "$$child" ]; then kill -INT "$$child" 2>/dev/null || true; n=0; while kill -0 "$$child" 2>/dev/null && [ $$n -lt 5 ]; do sleep 1; n=$$((n + 1)); done; kill -KILL "$$child" 2>/dev/null || true; wait "$$child" 2>/dev/null || true; fi; $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
+	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	  fmt() { printf '%02d:%02d:%02d' $$(($$1 / 3600)) $$(($$1 / 60 % 60)) $$(($$1 % 60)); }; \
+	  case '$(interop_report_dir)' in ''|.|..|/*) echo 'interop_report_dir must be a non-empty relative path' >&2; exit 2;; esac; \
+	  rm -rf '$(interop_report_dir)'; mkdir -p '$(interop_report_dir)/logs'; \
+	  if [ "$(DEBUG)" = 1 ]; then find '$(interop_dir)' -type f -perm -0100 -print | sort | sed 's/^/BINARY /'; fi; \
+	  printf 'VERSION\tREF\tCOMMIT\tARTIFACT\n' > $(interop_report_dir)/revisions.tsv; \
+	  for version in $(interop_versions); do case $$version in previous) ref='$(previous_ref)';; current) ref='$(current_ref)';; candidate) ref='$(candidate_ref)';; esac; \
+	    commit=$$(cat $(interop_dir)/$$version/commit); artifact=$$(cat $(interop_dir)/$$version/artifact); printf '%s\t%s\t%s\t%s\n' $$version $$ref $$commit $$artifact >> $(interop_report_dir)/revisions.tsv; \
+	    printf 'REV  %-9s %-16s %s %s\n' $$version $$ref $$commit $$artifact; done; \
+	  set -- $(interop_roles) quorums; role_count=$$#; set -- $(interop_versions); version_count=$$#; set -- $(interop_network_versions); network_count=$$#; total=$$((version_count * role_count + network_count + 1)); \
+	  printf 'PLAN 1 all-version + %d homogeneous + %d role legs, heartbeat %ss\n' $$network_count $$((version_count * role_count)) $(interop_heartbeat); \
+	  printf 'BASELINE\tROLE\tRESULT\tSECONDS\tLOG\n' > $(interop_report_dir)/report.tsv; \
+	  failed=0; completed=0; completed_seconds=0; index=0; active_baseline=''; matrix_started=$$(date +%s); \
+	  for spec in candidate/mixed-network $(foreach version,$(interop_network_versions),$(version)/network) $(foreach version,$(interop_versions),$(foreach role,$(interop_roles) quorums,$(version)/$(role))); do \
+	    baseline=$${spec%/*}; role=$${spec#*/}; \
+	    if [ "$$role" = network ] || [ "$$role" = mixed-network ] || [ "$$baseline" != "$$active_baseline" ]; then $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; fi; \
+	    case $$role in network|mixed-network) active_baseline='';; *) active_baseline=$$baseline;; esac; \
+	    index=$$((index + 1)); log=$(interop_report_dir)/logs/$$baseline-$$role.log; \
+	    case $$baseline in previous) ref='$(previous_ref)';; current) ref='$(current_ref)';; candidate) ref='$(candidate_ref)';; esac; \
+	    commit=$$(cat $(interop_dir)/$$baseline/commit); overall=$$(($$(date +%s) - matrix_started)); \
+	    eval role_total=\$${role_total_$$role:-0}; eval role_done=\$${role_done_$$role:-0}; \
+	    if [ $$role_done -gt 0 ]; then role_average=$$((role_total / role_done)); elif [ $$completed -gt 0 ]; then role_average=$$((completed_seconds / completed)); else role_average=$(interop_initial_leg_seconds); fi; \
+	    if [ $$completed -gt 0 ]; then average=$$((completed_seconds / completed)); else average=$(interop_initial_leg_seconds); fi; eta=$$((role_average + average * (total - index))); eta=$$(fmt $$eta); \
+	    printf 'RUN  %02d/%02d %-9s %-12s ref=%s@%.12s elapsed=%s eta=%s\n' $$index $$total $$baseline $$role $$ref $$commit $$(fmt $$overall) $$eta; \
+	    started=$$(date +%s); case $$role in network) target=interop-smoke;; mixed-network) target=interop-test-mixed-network;; *) target=interop-test-role;; esac; \
+	    timeout --foreground --kill-after=5s $(interop_leg_timeout) $(interop_submake) -j1 BASELINE=$$baseline ROLE=$$role REUSE_NETWORK=true DEBUG=$(DEBUG) $$target > $$log 2>&1 & child=$$!; \
+	    if [ "$(DEBUG)" = 1 ]; then tail -n +1 -F --pid=$$child $$log & debug_tail=$$!; fi; \
+	    (while kill -0 $$child 2>/dev/null; do sleep $(interop_heartbeat); kill -0 $$child 2>/dev/null || exit; \
+	      leg_elapsed=$$(($$(date +%s) - started)); overall=$$(($$(date +%s) - matrix_started)); \
+	      if [ $$completed -gt 0 ]; then average=$$((completed_seconds / completed)); else average=$(interop_initial_leg_seconds); fi; current_left=$$((role_average - leg_elapsed)); [ $$current_left -gt 0 ] || current_left=0; eta=$$((current_left + average * (total - index))); eta=$$(fmt $$eta); \
+	      latest=$$(grep -E '^(PHASE |CHECK |baseline=|READY |Activated |Sending |Success rate|--- PASS|error:)' $$log | tail -1 || true); \
+	      if [ "$(DEBUG)" = 1 ] && [ -d $(net_name) ]; then for live_log in $$(find $(net_name) -type f -name '*.log' | sort); do printf 'LOG %s\n' "$$live_log"; tail -n 3 "$$live_log"; done; fi; \
+	      printf 'WAIT %02d/%02d %-9s %-12s leg=%s elapsed=%s eta=%s %s\n' $$index $$total $$baseline $$role $$(fmt $$leg_elapsed) $$(fmt $$overall) $$eta "$$latest"; done) & monitor=$$!; \
+	    if wait $$child; then result=PASS; \
+	    else result=FAIL; failed=1; tail -20 $$log; $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; fi; \
+	    kill $$monitor 2>/dev/null || true; wait $$monitor 2>/dev/null || true; [ -z "$$debug_tail" ] || { kill $$debug_tail 2>/dev/null || true; wait $$debug_tail 2>/dev/null || true; }; child=''; monitor=''; debug_tail=''; \
+	    duration=$$(($$(date +%s) - started)); completed=$$((completed + 1)); completed_seconds=$$((completed_seconds + duration)); \
+	    eval role_total_$$role=$$((role_total + duration)); eval role_done_$$role=$$((role_done + 1)); \
+	    eta=$$((completed_seconds / completed * (total - completed))); overall=$$(($$(date +%s) - matrix_started)); \
+	    printf '%s\t%s\t%s\t%s\t%s\n' $$baseline $$role $$result $$duration $$log >> $(interop_report_dir)/report.tsv; \
+	    printf '%-4s %02d/%02d %-9s %-12s leg=%s elapsed=%s eta=%s\n' $$result $$index $$total $$baseline $$role $$(fmt $$duration) $$(fmt $$overall) $$(fmt $$eta); \
+	  done; \
+	  $(interop_submake) --no-print-directory interop-report; exit $$failed
+
+interop-report:
+	@test -f $(interop_report_dir)/report.tsv || { echo "No interoperability report found; run make interop-test" >&2; exit 2; }
+	@awk -F '\t' 'NR == 1 { print "REVISIONS"; next } { printf "  %-9s %-16s %s %s\n", $$1, $$2, $$3, $$4 }' $(interop_report_dir)/revisions.tsv
+	@awk -F '\t' 'function fmt(s) { return sprintf("%02d:%02d:%02d", int(s / 3600), int(s / 60) % 60, s % 60) } BEGIN { printf "\n%-11s %-14s %-7s %-10s %s\n", "BASELINE", "ROLE", "RESULT", "DURATION", "LOG" } NR > 1 { printf "%-11s %-14s %-7s %-10s %s\n", $$1, $$2, $$3, fmt($$4), $$5; seconds += $$4; if ($$3 != "PASS") failed++ } END { printf "\n%d passed, %d failed, %s total\n", NR - 1 - failed, failed, fmt(seconds) }' $(interop_report_dir)/report.tsv
+	@failures=$$(grep -h '^CHECK .* result=FAIL' $(interop_report_dir)/logs/*.log 2>/dev/null || true); [ -z "$$failures" ] || printf '\nFAILED CHECKS\n%s\n' "$$failures"
+
+interop-test-baseline: interop-build
+	@set -e; cleanup() { $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
+	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	  $(MAKE) -j1 BASELINE=$(BASELINE) CHECK_CLIENT_VERSION=$(BASELINE) interop-check; \
+	  for role in $(interop_roles) quorums; do \
+	    $(MAKE) -j1 BASELINE=$(BASELINE) ROLE=$$role REUSE_NETWORK=true interop-test-role; \
+	  done
+
+interop-test-role: interop-build
+	@case "$(ROLE)" in mix|gateway|servicenode|dirauth|replica|courier|http|client2|quorums) ;; *) echo "ROLE must be one of $(interop_roles) or quorums" >&2; exit 2;; esac
+	@set -e; cleanup() { [ "$(REUSE_NETWORK)" = true ] || $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
+	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	  if [ "$(ROLE)" = quorums ]; then $(MAKE) -j1 BASELINE=$(BASELINE) REUSE_NETWORK=$(REUSE_NETWORK) interop-test-quorums; exit; fi; \
+	  expected=$$(cat $(interop_dir)/$(BASELINE)/artifact); started=false; \
+	  if [ -f $(net_name)/running.stamp ] && $(docker) network inspect $(compose_network_name) >/dev/null 2>&1 && grep -q "^$(BASELINE)[[:space:]]$$expected[[:space:]]" $(net_name)/runtime-baseline.tsv 2>/dev/null; then echo "PHASE baseline=$(BASELINE) role=$(ROLE) action=reuse-network"; \
+	  else $(MAKE) --no-print-directory interop-stop >/dev/null 2>&1 || true; $(MAKE) -j1 BASELINE=$(BASELINE) interop-start; started=true; fi; \
+	  case "$(ROLE)" in mix) services='$(interop_services_mix)';; gateway) services='$(interop_services_gateway)';; servicenode) services='$(interop_services_servicenode)';; dirauth) services='$(interop_services_dirauth)';; replica) services='$(interop_services_replica)';; courier) services='$(interop_services_courier)';; http) services='$(interop_services_http)';; client2) services='$(interop_services_client2)';; esac; \
+	  failed=0; \
+	  if [ "$$started" = true ]; then \
+	    echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(BASELINE) action=check-baseline"; \
+	    if $(MAKE) -j1 BASELINE=$(BASELINE) COMPONENT_VERSION=$(BASELINE) ROLE=$(ROLE) EXPECT_AUTHS="$$services" interop-check-role; then \
+	      echo "CHECK baseline=$(BASELINE) role=$(ROLE) component=$(BASELINE) service=all result=PASS"; \
+	    else echo "CHECK baseline=$(BASELINE) role=$(ROLE) component=$(BASELINE) service=all result=FAIL"; exit 1; fi; \
+	  fi; \
+	  for component in $(interop_versions); do \
+	    [ "$$component" = "$(BASELINE)" ] && continue; \
+	    for service in $$services; do \
+	      wait_after=$$(cat $(net_name)/interop.last_epoch 2>/dev/null || true); \
+	      echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$$component service=$$service action=activate"; \
+	      swapped=0; \
+	      if $(MAKE) -j1 BASELINE=$(BASELINE) COMPONENT_VERSION=$$component SERVICE=$$service interop_check_target=interop-noop interop-swap-$(ROLE); then swapped=1; \
+	      else failed=1; fi; \
+	      result=FAIL; \
+	      if [ $$swapped -eq 1 ] && $(MAKE) -j1 BASELINE=$(BASELINE) COMPONENT_VERSION=$$component ROLE=$(ROLE) WAIT_AFTER_EPOCH=$$wait_after EXPECT_AUTHS="$$service" interop-check-role; then result=PASS; \
+	      else failed=1; fi; \
+	      echo "CHECK baseline=$(BASELINE) role=$(ROLE) component=$$component service=$$service result=$$result"; \
+	      echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$$component service=$$service action=restore"; \
+	      if ! $(MAKE) -j1 BASELINE=$(BASELINE) ROLE=$(ROLE) SERVICE=$$service interop-restore-role; then exit 1; fi; \
+	    done; \
+	  done; \
+	  exit $$failed
+
+interop-test-mixed-network: interop-build
+	@set -e; cleanup() { $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
+	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	  $(MAKE) -j1 BASELINE=candidate interop-activate; \
+	  for spec in \
+	    'mix mix2 current' 'mix mix3 previous' \
+	    'servicenode servicenode2 current' 'servicenode servicenode3 previous' \
+	    'dirauth auth2 current' 'dirauth auth3 previous' \
+	    'replica replica2 current' 'replica replica3 previous' 'replica replica5 current' \
+	    'courier servicenode1 previous' 'courier servicenode2 current' \
+	    'http servicenode1 current' 'http servicenode3 previous'; do \
+	    set -- $$spec; role=$$1; service=$$2; component=$$3; \
+	    echo "PHASE baseline=candidate role=$$role component=$$component service=$$service action=activate-all-version"; \
+	    $(MAKE) -j1 BASELINE=candidate ROLE=$$role COMPONENT_VERSION=$$component SERVICE=$$service SWAP_RUNNING=false interop_check_target=interop-noop interop-swap-$$role; \
+	  done; \
+	  cd $(net_name) && $(docker_compose) up --remove-orphans --force-recreate -d; cd ..; touch $(net_name)/running.stamp; \
+	  echo 'PHASE baseline=candidate role=mixed-network check=all-version-network'; \
+	  if $(MAKE) -j1 BASELINE=candidate CHECK_CLIENT_VERSION=candidate CHECK_HTTP_VERSION=previous EXPECT_AUTHS='auth1 auth2 auth3' interop-check; then \
+	    echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=PASS'; \
+	  else echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=FAIL'; exit 1; fi
+
+interop-test-quorums: interop-build
+	@set -e; cleanup() { [ "$(REUSE_NETWORK)" = true ] || $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
+	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	  expected=$$(cat $(interop_dir)/$(BASELINE)/artifact); \
+	  if [ -f $(net_name)/running.stamp ] && $(docker) network inspect $(compose_network_name) >/dev/null 2>&1 && grep -q "^$(BASELINE)[[:space:]]$$expected[[:space:]]" $(net_name)/runtime-baseline.tsv 2>/dev/null; then echo "PHASE baseline=$(BASELINE) role=quorums action=reuse-network"; \
+	  else $(MAKE) --no-print-directory interop-stop >/dev/null 2>&1 || true; $(MAKE) -j1 BASELINE=$(BASELINE) interop-start; fi; \
+	  wait_after=$$(cat $(net_name)/interop.last_epoch 2>/dev/null || true); \
+	  others=''; for version in $(interop_versions); do [ "$$version" = "$(BASELINE)" ] || others="$$others $$version"; done; \
+	  set -- $$others; first=$$1; second=$$2; \
+	  for order in "$$first $$second" "$$second $$first"; do \
+	    set -- $$order; one=$$1; two=$$2; echo "PHASE baseline=$(BASELINE) role=quorums assignment=$$one,$$two"; \
+	    for spec in "auth2 dirauth $$one" "auth3 dirauth $$two" \
+	                "replica2 replica $$one" "replica3 replica $$two" \
+	                "replica4 replica $$one" "replica5 replica $$two"; do \
+	      set -- $$spec; service=$$1; bin=$$2; version=$$3; artifact=$$(cat $(interop_dir)/$$version/artifact); \
+	      cd "$(net_name)" && $(docker_compose) stop "$$service"; cd ..; \
+	      install -m 0755 "$(interop_dir)/$$version/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).new"; \
+	      mv -f "$(net_name)/$$bin.$(distro).new" "$(net_name)/$$bin.$(distro)"; \
+	      cd "$(net_name)" && $(docker_compose) start "$$service"; cd ..; \
+	      $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$bin BINS="$$bin" VERSION=$$version interop-record-artifact; \
+	    done; \
+	    $(MAKE) -j1 net_name=$(interop_net_name) WAIT_AFTER_EPOCH=$$wait_after EXPECT_AUTHS="auth1 auth2 auth3" CHECK_CLIENT_VERSION=$(BASELINE) $(interop_check_target); \
+	    wait_after=$$(cat $(net_name)/interop.last_epoch); \
+	  done
+
+interop-stop:
+	-@$(docker) rm -f katzenpost_interop_probe katzenpost_interop_ping katzenpost_interop_http >/dev/null 2>&1
+	-@$(MAKE) --no-print-directory net_name=$(interop_net_name) stop >/dev/null 2>&1
+	@rm -f $(net_name)/running.stamp $(net_name)/servicenode*/courier/*.socket
+
+interop-clean: interop-stop
+	git clean -fdx $(net_name)
+	@echo "Retained versioned builds in $(interop_dir)"
+
+interop-clean-dryrun:
+	git clean -ndx $(net_name)
+
+interop-clean-cache:
+	git clean -fdx $(interop_dir)
+
+interop-clean-results:
+	git clean -fdx $(interop_report_dir)
+
+interop-clean-image:
+	$(MAKE) clean-container-$(distro)_interop
+	$(MAKE) clean-image-$(distro)_interop
+
+interop-clean-all: interop-clean interop-clean-cache interop-clean-results interop-clean-image
+
 # clean-images must remove images and stamps for every distro a user could
 # have named, not just the ones in DISTROS. Discover them from the on-disk
 # stamps and per-distro cache dirs, union with DISTROS, and remove both the
 # _base and _rust image/stamp. An interrupted `make -j test-distros` may
 # also leave orphan containers behind, so sweep those too.
-STAMP_DISTROS=$(sort $(patsubst %_base.stamp,%,$(wildcard *_base.stamp)) $(patsubst %_go_mod.stamp,%,$(wildcard *_go_mod.stamp)) $(patsubst %_rust.stamp,%,$(wildcard *_rust.stamp)))
+STAMP_DISTROS=$(sort $(patsubst %_base.stamp,%,$(wildcard *_base.stamp)) $(patsubst %_go_mod.stamp,%,$(wildcard *_go_mod.stamp)) $(patsubst %_rust.stamp,%,$(wildcard *_rust.stamp)) $(patsubst %_interop.stamp,%,$(wildcard *_interop.stamp)))
 CACHE_DISTROS=$(sort $(patsubst cache/go-build-%,%,$(wildcard cache/go-build-*)) $(patsubst cache/cargo-home-%,%,$(wildcard cache/cargo-home-*)) $(patsubst cache/cargo-target-%,%,$(wildcard cache/cargo-target-*)))
 KNOWN_DISTROS=$(sort $(DISTROS) $(STAMP_DISTROS) $(CACHE_DISTROS))
 
@@ -714,6 +1192,7 @@ clean-images: stop
 		$(MAKE) distro=$$distro clean-container-$${distro}_base; \
 		$(MAKE) distro=$$distro clean-image-$${distro}_base; \
 		$(MAKE) distro=$$distro clean-image-$${distro}_rust; \
+		$(MAKE) distro=$$distro clean-image-$${distro}_interop; \
 	done
 	-$(docker) ps -a --format '{{.Names}}' | grep -E '^(katzenpost_|mixnet-)' | xargs -r $(docker) rm -f
 
@@ -731,13 +1210,13 @@ clean-image-%:
 # `stop`'s `[ -e $(net_name) ]` guard makes this a no-op for any distro
 # that was never started.
 stop-all:
-	@for d in $(STAMP_DISTROS); do $(MAKE) distro=$$d stop; done
+	@for d in $(STAMP_DISTROS); do $(MAKE) distro=$$d stop; $(MAKE) distro=$$d interop-stop; done
 
 # Wipe the network directory of every distro ever built (stamp-inferred).
 # Called by `clean` only; clean-local deliberately touches just the current
 # net_name. `git clean` exits 0 even for a pathspec that matches nothing.
 clean-testnets:
-	@for d in $(STAMP_DISTROS); do git clean -fdx mixnet-$$d; done
+	@for d in $(STAMP_DISTROS); do git clean -fdx mixnet-$$d interop-$$d; done
 
 clean-bin: stop
 	rm -vf ./$(net_name)/*.$(distro)

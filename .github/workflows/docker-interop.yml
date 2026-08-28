@@ -1,0 +1,143 @@
+name: docker release interoperability tests (disabled)
+on: [pull_request]
+env:
+  previous_ref: v0.0.98
+  current_ref: v0.0.99
+  candidate_ref: HEAD
+jobs:
+
+  build:
+    if: ${{ false }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      matrix:
+        go-version: [1.26.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CA certificates
+        if: ${{ env.ACT }}
+        run: |
+          if [ -d /etc/ssl/certs ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+            echo "CA certificates already available"
+          else
+            apt update && apt install -y ca-certificates build-essential gcc g++ make
+            update-ca-certificates podman
+          fi
+        continue-on-error: true
+
+      - name: Configure podman socket
+        run: |
+          systemctl --user start podman.socket || true
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build interoperability artifacts
+        run: make -C docker -j1 interop-build previous_ref=$previous_ref current_ref=$current_ref candidate_ref=$candidate_ref
+
+      - name: Export interoperability image
+        run: podman save --format oci-archive -o docker/cache/interop-image.tar katzenpost-alpine_interop
+
+      - name: Upload interoperability builds
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-builds-${{ github.run_id }}
+          path: |
+            docker/cache/interop/alpine/previous
+            docker/cache/interop/alpine/current
+            docker/cache/interop/alpine/candidate
+          retention-days: 1
+
+      - name: Upload interoperability image
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-image-${{ github.run_id }}
+          path: |
+            docker/cache/interop-image.tar
+            docker/alpine_interop.stamp
+          retention-days: 1
+
+  test:
+    if: ${{ false }}
+    name: ${{ matrix.baseline }} / ${{ matrix.role }}
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: [1.26.x]
+        os: [ubuntu-latest]
+        baseline: [candidate, current, previous]
+        role: [mix, gateway, servicenode, dirauth, replica, courier, http, client2, quorums]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CA certificates
+        if: ${{ env.ACT }}
+        run: |
+          if [ -d /etc/ssl/certs ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+            echo "CA certificates already available"
+          else
+            apt update && apt install -y ca-certificates build-essential gcc g++ make
+            update-ca-certificates podman
+          fi
+        continue-on-error: true
+
+      - name: Configure podman socket
+        run: |
+          systemctl --user start podman.socket || true
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Download interoperability builds
+        uses: actions/download-artifact@v4
+        with:
+          name: interop-builds-${{ github.run_id }}
+          path: docker/cache/interop/alpine
+
+      - name: Download interoperability image
+        uses: actions/download-artifact@v4
+        with:
+          name: interop-image-${{ github.run_id }}
+          path: docker
+
+      - name: Import interoperability image
+        run: podman load -i docker/cache/interop-image.tar
+
+      - name: Test ${{ matrix.baseline }} ${{ matrix.role }}
+        run: make -C docker -j1 interop-test-role BASELINE=${{ matrix.baseline }} ROLE=${{ matrix.role }} previous_ref=$previous_ref current_ref=$current_ref candidate_ref=$candidate_ref
+
+      - name: Stop the mixnet
+        if: always()
+        run: |
+          cd docker && make interop-stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-${{ github.run_id }}-${{ matrix.baseline }}-${{ matrix.role }}
+          path: |
+            docker/interop-alpine/*/*.log
+            docker/interop-alpine/servicenode*/courier/courier.log
+            docker/interop-alpine/*/selfcheck.toml
+            docker/interop-alpine/runtime-artifacts.tsv
