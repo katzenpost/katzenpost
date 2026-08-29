@@ -1046,7 +1046,24 @@ func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMess
 	c.l.server.connector.DispatchCommand(replicaMessage, idHash)
 	c.log.Debugf("Dispatched proxy request to %s, waiting for response", targetShard.Name)
 
-	// Wait for the response within this attempt's share of the sweep budget.
+	reply, err := c.awaitProxyReply(responseCh, targetShard, timeout, start)
+	if err != nil {
+		// The waiter is leaving, so the registration goes with it.
+		// An attempt now gets only its share of the sweep budget while
+		// the periodic cleanup expires entries against the whole
+		// ProxyRequestTimeout, so an abandoned entry left behind would
+		// be counted pending, and would pin this attempt's request and
+		// MKEM private key, for the rest of a sweep that has already
+		// moved on to the next holder. A no-op when the request was
+		// answered or already failed, since either removed the entry.
+		c.l.server.proxyManager.FailRequest(envelopeHash, err.Error())
+	}
+	return reply, err
+}
+
+// awaitProxyReply waits out one attempt's share of the sweep budget for
+// the target shard holder's reply.
+func (c *incomingConn) awaitProxyReply(responseCh chan *commands.ReplicaMessageReply, targetShard *pki.ReplicaDescriptor, timeout time.Duration, start time.Time) (*commands.ReplicaMessageReply, error) {
 	select {
 	case <-c.l.closeAllCh:
 		return nil, fmt.Errorf("shutting down")

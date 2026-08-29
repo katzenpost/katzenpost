@@ -70,7 +70,7 @@ func TestProxyManagerFailRequest(t *testing.T) {
 	chA := m.RegisterProxyRequest(hashA, nil, nil, nil, peer, "storagereplicaA")
 	chB := m.RegisterProxyRequest(hashB, nil, nil, nil, peer, "storagereplicaA")
 
-	m.FailRequest(hashA)
+	m.FailRequest(hashA, "undeliverable")
 
 	select {
 	case reply, ok := <-chA:
@@ -89,8 +89,8 @@ func TestProxyManagerFailRequest(t *testing.T) {
 	// Failing an unknown hash, or the same one twice, must not panic
 	// or close an already-closed channel.
 	require.NotPanics(t, func() {
-		m.FailRequest(hashA)
-		m.FailRequest([32]byte{0xff})
+		m.FailRequest(hashA, "undeliverable")
+		m.FailRequest([32]byte{0xff}, "undeliverable")
 	})
 }
 
@@ -173,7 +173,7 @@ func TestProxyResponseChannelIsBufferedAndSingleOwner(t *testing.T) {
 	// The entry is gone, so every other disposal path is a no-op rather
 	// than a second close.
 	require.NotPanics(t, func() {
-		m.FailRequest(hash)
+		m.FailRequest(hash, "undeliverable")
 		m.FailPeer(peer)
 		m.CleanupExpiredRequests(0)
 	})
@@ -204,7 +204,7 @@ func TestProxyRequestDisposalPathsRace(t *testing.T) {
 
 		var wg sync.WaitGroup
 		wg.Add(4)
-		go func() { defer wg.Done(); m.FailRequest(hash) }()
+		go func() { defer wg.Done(); m.FailRequest(hash, "undeliverable") }()
 		go func() { defer wg.Done(); m.FailPeer(peer) }()
 		go func() { defer wg.Done(); m.HandleReply(&commands.ReplicaMessageReply{EnvelopeHash: &hash}) }()
 		go func() { defer wg.Done(); m.CleanupExpiredRequests(0) }()
