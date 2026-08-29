@@ -62,7 +62,16 @@ func TestFromConfig(t *testing.T) {
 }
 
 func TestLoadFile(t *testing.T) {
-	cfg, err := LoadFile("testdata/thinclient.toml")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "thinclient.toml")
+	err := os.WriteFile(path, []byte(`[Dial]
+  [Dial.Tcp]
+    Address = "localhost:32000"
+    Network = "tcp"
+`), 0600)
+	require.NoError(t, err)
+
+	cfg, err := LoadFile(path)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.NotNil(t, cfg.Dial)
