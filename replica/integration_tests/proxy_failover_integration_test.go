@@ -194,6 +194,11 @@ func TestProxyReadNotFoundWhenNoHolderHasBox(t *testing.T) {
 // error, and it must do so well inside ProxyRequestTimeout: a request
 // that cannot be handed to a peer at all is failed immediately rather
 // than waiting out its share of the sweep budget.
+//
+// The sweep is pinned at the downed holder so that it is genuinely
+// tried. Left to its usual random choice the live holder leads half the
+// time, answers at once, and the test passes having exercised no
+// failover and timed nothing but a healthy read.
 func TestProxyFailsOverWhenHolderIsDown(t *testing.T) {
 	env := setupTestEnvironment6Replicas(t)
 	defer env.cleanup()
@@ -220,6 +225,12 @@ func TestProxyFailsOverWhenHolderIsDown(t *testing.T) {
 	env.replicas[downed].Shutdown()
 	env.replicas[downed].Wait()
 
+	// Aim every surviving replica's sweep at the downed holder. Index 0
+	// is into the shard list GetShards returns for this box, which is
+	// the list getShardingInfo reported, so this is the holder shut down
+	// above.
+	pinSweepAtDownedHolder(t, env, downed)
+
 	indices, pubKeys := nonShardReplicas(t, env, sharding, replicaEpoch)
 
 	timeout := time.Duration(env.replicaConfigs[indices[0]].ProxyRequestTimeout) * time.Second
@@ -245,4 +256,17 @@ func TestProxyFailsOverWhenHolderIsDown(t *testing.T) {
 	plaintext, err := pigeonhole.ExtractMessageFromPaddedPayload(paddedPlaintext)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(payload, plaintext), "the surviving holder must serve the real payload")
+}
+
+// pinSweepAtDownedHolder makes every replica still running try the first
+// of a box's shard holders before any other, so a test that downed that
+// holder measures failover on every run instead of on a coin flip.
+func pinSweepAtDownedHolder(t *testing.T, env *testEnvironment, downed uint8) {
+	t.Helper()
+	for i, r := range env.replicas {
+		if uint8(i) == downed {
+			continue
+		}
+		t.Cleanup(r.PinFirstShardCandidate(0))
+	}
 }
