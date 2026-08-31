@@ -1,5 +1,5 @@
-warped?=true
-ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+epoch_duration?=2m
+ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid="
 dockertest_race?=-race
 dockertest_timeout?=1h
 dockertest_parallel?=5
@@ -19,7 +19,9 @@ cache_abs=$(if $(filter /%,$(cache_dir)),$(cache_dir),$(abspath ../docker/$(cach
 docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_abs)/go:/go/ -e GORACE=history_size=7 -e GOCACHE=/go/cache
 
 test:
-	go test -v -race -timeout 0 -ldflags ${ldflags} .
+	KATZENPOST_EPOCH_DURATION=$(epoch_duration) go test -v -race -timeout 0 -ldflags ${ldflags} .
+
+docker_args += -e KATZENPOST_EPOCH_DURATION=$(epoch_duration)
 
 lint:
 	golint ./...
@@ -118,9 +120,6 @@ dockertest-all:
 		-run "TestLegacyTests|TestNewPigeonholeAPI|TestCreateCourierEnvelopesFromPayload|TestCreateCourierEnvelopesFromTombstoneRange|TestCopyCommandMultiChannel|TestCopyOntoAlreadyExistingBoxError|TestTombston|TestBoxIDNotFoundError|TestBoxAlreadyExistsError|TestReadBeforeWrite|TestNestedCopyCommands|TestFromPayloadMultiCall|TestFromMultiPayloadMultiCall"
 
 all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages dockertest_new_pigeonhole_multiple_messages_bulk dockertest_copy_command dockertest_multichannel dockertest_multichannel_efficient dockertest_tombstone_box dockertest_tombstone_range dockertest_tombstone_copy dockertest_box_id_not_found dockertest_box_already_exists dockertest_read_before_write dockertest_copy_onto_already_existing_box_error
-
-warpedclientdaemon:
-	cd ../cmd/kpclientd; go build -ldflags ${ldflags}
 
 clientdaemon:
 	cd ../cmd/kpclientd; go build
