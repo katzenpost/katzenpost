@@ -9,4 +9,6 @@ type UnixListenConfig struct {
 	// directory must exist and be writable by the daemon; any stale
 	// socket file at the path is the operator's responsibility.
 	Address string `toml:"Address"`
+	// Addresses are additional sockets bound alongside Address.
+	Addresses []string `toml:"Addresses,omitempty"`
 }

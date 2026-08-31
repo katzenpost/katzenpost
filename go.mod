@@ -11,6 +11,7 @@ require (
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/coder/websocket v1.8.15
 	github.com/fxamacker/cbor/v2 v2.9.1
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20poly1305 v0.0.1
 	github.com/katzenpost/hpqc v0.0.85-0.20260715190213-e598e7ee2843

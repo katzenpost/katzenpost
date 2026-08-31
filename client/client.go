@@ -49,6 +49,12 @@ type Client struct {
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
 }
 
+func (c *Client) haltConnection() {
+	if c.conn != nil {
+		c.conn.Halt()
+	}
+}
+
 // Shutdown cleanly shuts down a given Client instance.
 func (c *Client) Shutdown() {
 	shutdownStart := time.Now()
