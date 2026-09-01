@@ -1,9 +1,5 @@
 name: docker release interoperability tests
 on: workflow_dispatch
-env:
-  previous_ref: v0.0.98
-  current_ref: v0.0.99
-  candidate_ref: HEAD
 jobs:
 
   build:
@@ -41,7 +37,7 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build interoperability artifacts
-        run: make -C docker -j1 interop-build previous_ref=$previous_ref current_ref=$current_ref candidate_ref=$candidate_ref
+        run: make -C docker -j1 interop-build
 
       - name: Export interoperability image
         run: podman save --format oci-archive -o docker/cache/interop-image.tar katzenpost-alpine_interop
@@ -122,7 +118,7 @@ jobs:
         run: podman load -i docker/cache/interop-image.tar
 
       - name: Test ${{ matrix.baseline }} ${{ matrix.role }}
-        run: make -C docker -j1 interop-test-role BASELINE=${{ matrix.baseline }} ROLE=${{ matrix.role }} previous_ref=$previous_ref current_ref=$current_ref candidate_ref=$candidate_ref
+        run: make -C docker -j1 interop-test-role BASELINE=${{ matrix.baseline }} ROLE=${{ matrix.role }}
 
       - name: Stop the mixnet
         if: always()
