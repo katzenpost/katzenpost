@@ -18,7 +18,10 @@ type WebsocketListener struct {
 	addr        net.Addr      // address of websocket
 	connections chan net.Conn // incoming connections
 	done        chan struct{} // channel "done" signal
+	ln          net.Listener  // bound TCP listener owned by this listener
+	server      *http.Server  // webserver serving the websocket handshake
 	closeOnce   sync.Once
+	closeErr    error
 }
 
 // Accept incoming websocket connection.
@@ -36,10 +39,17 @@ func (l *WebsocketListener) Accept() (net.Conn, error) {
 	}
 }
 
-// Close websocket listener.
+// Close websocket listener. Safe to call more than once.
 func (l *WebsocketListener) Close() error {
 	l.closeOnce.Do(func() {
 		close(l.done)
+		// free the bound port synchronously, then stop the webserver
+		if l.ln != nil {
+			l.closeErr = l.ln.Close()
+		}
+		if l.server != nil {
+			l.server.Close()
+		}
 		for {
 			select {
 			case conn := <-l.connections:
@@ -49,7 +59,7 @@ func (l *WebsocketListener) Close() error {
 			}
 		}
 	})
-	return nil
+	return l.closeErr
 }
 
 // Addr returns the address of the websocket.
@@ -116,13 +126,10 @@ func (c *WsListenConfig) Listen() (net.Listener, error) {
 		return nil, err
 	}
 	listener.addr = ln.Addr()
-	server := &http.Server{Handler: mux}
-	go func() {
-		<-listener.done
-		server.Shutdown(context.Background())
-	}()
+	listener.ln = ln
+	listener.server = &http.Server{Handler: mux}
 	// run webserver in go-routine
-	go server.Serve(ln)
+	go listener.server.Serve(ln)
 
 	// return listener instance
 	return listener, nil
