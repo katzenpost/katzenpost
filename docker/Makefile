@@ -806,7 +806,7 @@ interop-build-previous interop-build-current interop-build-candidate: interop-im
 	        go build -trimpath -ldflags "$$flags" -o /interop-out/proxy_server.$(distro).$${INTEROP_ARTIFACT} ./cmd/http-proxy-server; \
 	        go build -trimpath -ldflags "$$flags" -o /interop-out/proxy_client.$(distro).$${INTEROP_ARTIFACT} ./cmd/http-proxy-client; \
 	        go build -trimpath -ldflags "$$flags" -o /interop-out/genconfig.$(distro).$${INTEROP_ARTIFACT} ./cmd/genconfig; \
-	        go test -c -tags=docker_test -ldflags "$$flags" -o /interop-out/client_tests.$(distro).$${INTEROP_ARTIFACT} ./client' || exit; \
+	        go test -c -trimpath -tags=docker_test -ldflags "$$flags" -o /interop-out/client_tests.$(distro).$${INTEROP_ARTIFACT} ./client' || exit; \
 	    for bin in $(interop_build_bins); do test -x "$$out/$$bin.$(distro).$$artifact" || exit 1; done; \
 	    printf '%s\n' "$$commit" > "$$out/commit"; \
 	    printf '%s\n' "$$ref" > "$$out/ref"; \
