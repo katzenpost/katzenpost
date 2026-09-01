@@ -44,7 +44,7 @@ immediately.
 
 ``start`` builds the per-role binaries and runs ``docker compose up -d`` in the
 background, so there is no ctrl-C to interrupt; use ``make stop``. The
-generated network lives in ``./mixnet-alpine/`` by default (see Section 3 for how
+generated network lives in ``./mixnet-alpine/`` by default (see §3 for how
 the directory name derives from the distro). ``run-ping`` sends
 10 pings to the ``echo`` service and exits non-zero unless every ping is
 answered, which makes it useful as a health assertion in scripts and CI.
@@ -63,7 +63,7 @@ If you are rootless podman, no ``sudo`` is needed. If your system requires
 
 ``start`` wires everything together:
 
-* a per-distro base image (see Section 3) layered on the distro's official image,
+* a per-distro base image (see §3) layered on the distro's official image,
   with the Go toolchain version taken from the repo's ``go.mod``;
 * every network binary (``server``, ``dirauth``, ``replica``, ``courier``,
   ``kpclientd``, ``echo_server``, ``proxy_*``, ``fetch``, ``ping``), built
@@ -108,7 +108,7 @@ side-by-side::
   binaries and configs land in ``./$(net_name)/``. It defaults to
   ``mixnet-<distro>`` (so ``make distro=foo start`` targets ``mixnet-foo``),
   and a custom ``net_name=`` still overrides it.
-* ``base_port`` moves the whole published-port band (Section 2) to avoid clashes with
+* ``base_port`` moves the whole published-port band (§2) to avoid clashes with
   a second network.
 
 The ``DISTROS`` variable lists the distros exercised by ``test-distros``
@@ -201,12 +201,12 @@ Only the ``thin-client-sync`` / ``pigeonhole-cp-*`` targets touch the Rust
 Everything that can be cached lives in ``docker/cache/`` (gitignored), so a
 second build of any distro is fast:
 
-* ``cache/go`` - the Go module cache (source content, read-only, shared by all
+* ``cache/go`` — the Go module cache (source content, read-only, shared by all
   distros).
-* ``cache/go-build-<distro>`` - the Go build cache, scoped per distro because
+* ``cache/go-build-<distro>`` — the Go build cache, scoped per distro because
   compiled archives are sensitive to the C library (musl vs glibc, and glibc
   versions).
-* ``cache/cargo-home-<distro>`` / ``cache/cargo-target-<distro>`` - the cargo
+* ``cache/cargo-home-<distro>`` / ``cache/cargo-target-<distro>`` — the cargo
   registry and target dirs, also per distro.
 
 The Go toolchain version is the single source of truth in ``go.mod``; the base
@@ -225,8 +225,8 @@ supplied.
 
 ``stop`` operates on the current ``net_name`` (``make distro=<d> stop`` stops
 only that distro's network). ``stop-all`` and ``clean-testnets`` discover every
-distro a user could have named from the on-disk build stamps - not just the
-ones in ``DISTROS`` - so ``make clean`` tears down and wipes ``mixnet-*``
+distro a user could have named from the on-disk build stamps — not just the
+ones in ``DISTROS`` — so ``make clean`` tears down and wipes ``mixnet-*``
 networks even when the last-used distro differs. ``clean`` additionally removes
 both the ``_base`` and ``_rust`` image and stamp for each distro plus any
 orphan ``katzenpost_*`` / ``mixnet-*`` containers; the module cache is written
@@ -245,7 +245,7 @@ integration tests::
 The ``client`` package defines integration tests  which require a docker
 testnet to be running. ``make test`` runs the ``dockertest-all`` target from
 ``client/Makefile`` (the legacy tests plus the new pigeonhole, multichannel,
-tombstone, copy-command and FromPayload tests - the same set the
+tombstone, copy-command and FromPayload tests — the same set the
 ``docker-mixnet`` CI job currently runs) as well as ``dockertest_pki_raw``
 (``TestGetPKIDocumentRaw*`` and ``TestGetDirectoryAuthorities``). Each target
 was probed against a healthy mixnet-alpine and passed as of this writing
@@ -253,14 +253,14 @@ was probed against a healthy mixnet-alpine and passed as of this writing
 
 11. Other targets
 
-* ``make shell`` - an interactive shell inside the per-distro base image with
+* ``make shell`` — an interactive shell inside the per-distro base image with
   the repo and the network mounted, running as the same user as the build
   containers.
-* ``make rootshell`` - the same, forced to uid 0. Needed only for rootful
+* ``make rootshell`` — the same, forced to uid 0. Needed only for rootful
   docker, where the regular build containers run as the invoking user.
-* ``make check-go-version`` - print the base image's ``go version`` (handy for
+* ``make check-go-version`` — print the base image's ``go version`` (handy for
   confirming the ``GO_VERSION`` arg took effect).
-* ``make go-mod-tidy`` / ``make go-mod-upgrade`` - run ``go mod tidy`` /
+* ``make go-mod-tidy`` / ``make go-mod-upgrade`` — run ``go mod tidy`` /
   ``go get -d -u ./... && go mod tidy`` inside the base image with the git
   checkout mounted in to it.
 
@@ -270,8 +270,8 @@ Notes
   epoch (``epoch_duration=2m``), so PKI, topology, and mix keys churn fast
   enough to exercise the system in a dev loop. The old explicit
   ``warped=true`` incantation is no longer needed.
-* ``make wait`` waits until every node - gateway, mixes, servicenodes
-  (with their courier plugins), and storage replicas - reports ready
+* ``make wait`` waits until every node — gateway, mixes, servicenodes
+  (with their courier plugins), and storage replicas — reports ready
   against the current consensus, i.e. each node's live per-epoch keys
   match its descriptor in the fetched document (all 15 testnet nodes by
   default). It retries until all report ready or ``--ready-timeout``

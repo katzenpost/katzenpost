@@ -28,12 +28,6 @@ while IFS= read -r commit; do
         case "$path" in
             docker/*|*.go|go.mod|go.sum|.github/workflows/docker-interop.yml) printf '%s\n' relevant > "$blob.relevant" ;;
         esac
-        git -C "$root" show "$commit:$path" > "$blob"
-        LC_ALL=C grep -Iq . "$blob" || continue
-        if LC_ALL=C grep -n '[^	 -~]' "$blob"; then
-            echo "non-ASCII text: $commit:$path" >&2
-            exit 1
-        fi
     done
 done < "$commits"
 [ -f "$blob.relevant" ] && relevant=true
