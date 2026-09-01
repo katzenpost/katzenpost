@@ -887,6 +887,7 @@ interop-wait:
 	@test -f $(net_name)/running.stamp || (echo "run make interop-start first" >&2; exit 2)
 	@$(docker) network inspect $(compose_network_name) >/dev/null 2>&1 || { echo "PHASE baseline=$(BASELINE) role=$(ROLE) status=infra-fail detail=network-missing" >&2; exit 1; }
 	@case "$(FETCH_VERSION)" in previous|current|candidate) ;; *) echo "FETCH_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
+	@test -s $(interop_dir)/$(FETCH_VERSION)/artifact || { echo "interop artifacts not built for $(FETCH_VERSION); run make interop-build" >&2; exit 2; }
 	@out=$$(mktemp); cleanup() { rm -f "$$out"; }; trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
 	  deadline=$$(($$(date +%s) + $(interop_consensus_timeout))); attempt=0; while :; do \
 	    attempt=$$((attempt + 1)); \
@@ -921,6 +922,7 @@ interop-wait:
 	  done; failed=0; for pid in $$pids; do wait $$pid || failed=1; done; cat "$$tmp"/*; exit $$failed'
 
 interop-run-ping:
+	@test -s $(interop_dir)/$(CHECK_CLIENT_VERSION)/artifact || { echo "interop artifacts not built for $(CHECK_CLIENT_VERSION); run make interop-build" >&2; exit 2; }
 	@out=$$(mktemp); cleanup() { rm -f "$$out"; }; trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; attempt=1; \
 	  while [ $$attempt -le $(interop_ping_attempts) ]; do \
 	    if timeout $(interop_ping_timeout) $(docker) run $(replace_name) katzenpost_interop_ping --network=host --user $(docker_user) $(mount_net_name) \
@@ -933,6 +935,7 @@ interop-run-ping:
 
 interop-http-check:
 	@case "$(CHECK_HTTP_VERSION)" in previous|current|candidate) ;; *) echo "CHECK_HTTP_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
+	@test -s $(interop_dir)/$(CHECK_HTTP_VERSION)/artifact || { echo "interop artifacts not built for $(CHECK_HTTP_VERSION); run make interop-build" >&2; exit 2; }
 	@cd $(net_name) && for service in $(interop_services_http); do \
 	  $(docker_compose) exec -T "$$service" sh -c 'perl /$(net_name)/interop-http-server.pl >/tmp/interop-http.log 2>&1 &'; \
 	done
@@ -967,6 +970,7 @@ interop-smoke: interop-build
 
 interop-client-check:
 	@case "$(CHECK_CLIENT_VERSION)" in previous|current|candidate) ;; *) echo "CHECK_CLIENT_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
+	@test -s $(interop_dir)/$(CHECK_CLIENT_VERSION)/artifact || { echo "interop artifacts not built for $(CHECK_CLIENT_VERSION); run make interop-build" >&2; exit 2; }
 	$(docker) run --network=host --user $(docker_user) --rm --pids-limit 4096 \
 		-v $(shell readlink -f $(net_name)):/interop-net:ro \
 		-v $(shell readlink -f $(interop_dir)/$(CHECK_CLIENT_VERSION)):/interop-bin:ro \
