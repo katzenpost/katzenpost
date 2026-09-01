@@ -7,7 +7,12 @@ my $server = IO::Socket::INET->new(
     LocalPort => 4242,
     Listen => 5,
     ReuseAddr => 1,
-) or die "$!\n";
+);
+unless ($server) {
+    # A server is already listening on this port; leave it running.
+    exit 0 if $! =~ /in use/i;
+    die "$!\n";
+}
 
 while (my $client = $server->accept()) {
     while (my $line = <$client>) {

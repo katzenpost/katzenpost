@@ -937,7 +937,8 @@ interop-http-check:
 	@case "$(CHECK_HTTP_VERSION)" in previous|current|candidate) ;; *) echo "CHECK_HTTP_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
 	@test -s $(interop_dir)/$(CHECK_HTTP_VERSION)/artifact || { echo "interop artifacts not built for $(CHECK_HTTP_VERSION); run make interop-build" >&2; exit 2; }
 	@cd $(net_name) && for service in $(interop_services_http); do \
-	  $(docker_compose) exec -T "$$service" sh -c 'perl /$(net_name)/interop-http-server.pl >/tmp/interop-http.log 2>&1 &'; \
+	  $(docker_compose) exec -T "$$service" sh -c 'nohup perl /$(net_name)/interop-http-server.pl >>/tmp/interop-http.log 2>&1 &'; \
+	  $(docker_compose) exec -T "$$service" sh -c 'for i in $$(seq 1 20); do perl -e "use IO::Socket::INET; exit(IO::Socket::INET->new(PeerAddr=>q{127.0.0.1:4242}) ? 0 : 1)" && exit 0; sleep 1; done; echo "interop http server not listening on $$service" >&2; cat /tmp/interop-http.log >&2; exit 1'; \
 	done
 	@$(docker) run $(replace_name) katzenpost_interop_http --network=$(compose_network_name) ${docker_args} $(mount_net_name) \
 		-v $(shell readlink -f $(interop_dir)/$(CHECK_HTTP_VERSION)):/interop-http:ro --rm $(interop_image) $(sh) -c '\
