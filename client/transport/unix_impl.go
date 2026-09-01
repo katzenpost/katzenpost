@@ -33,11 +33,12 @@ func (c *UnixListenConfig) Listen() (Listener, error) {
 	if len(listeners) == 1 {
 		return listeners[0], nil
 	}
-	return newMultiListener(listeners), nil
+	return newMultiListener(listeners, c.log), nil
 }
 
 type multiListener struct {
 	listeners []Listener
+	log       Logger
 	accepted  chan net.Conn
 	done      chan struct{}
 	drained   chan struct{}
@@ -45,9 +46,10 @@ type multiListener struct {
 	wg        sync.WaitGroup
 }
 
-func newMultiListener(listeners []Listener) *multiListener {
+func newMultiListener(listeners []Listener, log Logger) *multiListener {
 	m := &multiListener{
 		listeners: listeners,
+		log:       log,
 		accepted:  make(chan net.Conn),
 		done:      make(chan struct{}),
 		drained:   make(chan struct{}),
@@ -77,6 +79,9 @@ func (m *multiListener) accept(listener Listener) {
 				case <-m.done:
 					return
 				}
+			}
+			if m.log != nil && !isClosing(m.done) {
+				m.log.Errorf("unix listener %s retired: %v", listener.Addr(), err)
 			}
 			listener.Close()
 			return
@@ -129,6 +134,15 @@ func (m multiAddr) String() string {
 		s[i] = a.String()
 	}
 	return strings.Join(s, ", ")
+}
+
+func isClosing(done chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
 }
 
 func closeListeners(listeners []Listener) error {

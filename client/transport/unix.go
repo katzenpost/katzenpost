@@ -16,6 +16,8 @@ type UnixListenConfig struct {
 	Address string `toml:"Address"`
 	// Addresses are additional sockets bound alongside Address.
 	Addresses []string `toml:"Addresses,omitempty"`
+
+	log Logger
 }
 
 func (c *UnixListenConfig) Validate() error {

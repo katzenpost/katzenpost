@@ -217,6 +217,23 @@ func (f *fakeListener) Accept() (net.Conn, error) { return f.acceptFn(f.closed) 
 func (f *fakeListener) Close() error              { f.closeOnce.Do(func() { close(f.closed) }); return nil }
 func (f *fakeListener) Addr() net.Addr            { return &net.UnixAddr{Name: "fake", Net: "unix"} }
 
+type fakeLogger struct {
+	mu  sync.Mutex
+	msg string
+}
+
+func (l *fakeLogger) Errorf(format string, args ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.msg = fmt.Sprintf(format, args...)
+}
+
+func (l *fakeLogger) last() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.msg
+}
+
 func TestMultiListenerMemberFailureKeepsServing(t *testing.T) {
 	dir := shortSockDir(t)
 	path := filepath.Join(dir, "live.sock")
@@ -224,7 +241,8 @@ func TestMultiListenerMemberFailureKeepsServing(t *testing.T) {
 	require.NoError(t, err)
 	failing := newFake(func(<-chan struct{}) (net.Conn, error) { return nil, errors.New("boom") })
 
-	m := newMultiListener([]Listener{live, failing})
+	log := &fakeLogger{}
+	m := newMultiListener([]Listener{live, failing}, log)
 	defer m.Close()
 
 	client, err := net.Dial("unix", path)
@@ -234,7 +252,8 @@ func TestMultiListenerMemberFailureKeepsServing(t *testing.T) {
 	require.NoError(t, err) // the failing member's error is not surfaced
 	require.NoError(t, conn.Close())
 
-	// The failing member was closed on retirement so dialers get refused.
+	// The failing member was closed on retirement so dialers get refused,
+	// and the retirement was logged.
 	require.Eventually(t, func() bool {
 		select {
 		case <-failing.closed:
@@ -243,11 +262,12 @@ func TestMultiListenerMemberFailureKeepsServing(t *testing.T) {
 			return false
 		}
 	}, time.Second, 10*time.Millisecond)
+	require.Contains(t, log.last(), "retired")
 }
 
 func TestMultiListenerAllMembersFailDrains(t *testing.T) {
 	dead := func(<-chan struct{}) (net.Conn, error) { return nil, errors.New("dead") }
-	m := newMultiListener([]Listener{newFake(dead), newFake(dead)})
+	m := newMultiListener([]Listener{newFake(dead), newFake(dead)}, nil)
 	_, err := m.Accept()
 	require.ErrorIs(t, err, net.ErrClosed)
 	require.NoError(t, m.Close())
@@ -273,7 +293,7 @@ func TestMultiListenerTemporaryErrorRetries(t *testing.T) {
 			return nil, net.ErrClosed
 		}
 	})
-	m := newMultiListener([]Listener{fake})
+	m := newMultiListener([]Listener{fake}, nil)
 	defer m.Close()
 
 	conn, err := m.Accept()
