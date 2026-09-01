@@ -104,12 +104,13 @@ func TestWsListenOriginChecked(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestWsListenConfigListenRejectsBadAddress(t *testing.T) {
-	for _, addr := range []string{"", "localhost:12345", "http://127.0.0.1:80", "ws://127.0.0.1"} {
-		l, err := (&WsListenConfig{Address: addr}).Listen()
-		require.Error(t, err, "address %q should be rejected", addr)
-		require.Nil(t, l)
-	}
+// A hostless address must default to loopback, never the 0.0.0.0 wildcard.
+func TestWsListenDefaultsHostToLoopback(t *testing.T) {
+	l, err := (&WsListenConfig{Address: "ws://:0"}).Listen()
+	require.NoError(t, err)
+	defer l.Close()
+	ip := l.Addr().(*net.TCPAddr).IP
+	require.True(t, ip.IsLoopback(), "hostless address bound %s, want loopback", ip)
 }
 
 func TestWsListenConfigListenBindError(t *testing.T) {

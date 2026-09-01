@@ -5,7 +5,6 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -84,14 +83,20 @@ func (c *WsListenConfig) Listen() (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	// require an explicit scheme and host:port; do not guess a wildcard bind
-	if u.Scheme != "ws" && u.Scheme != "wss" {
-		return nil, fmt.Errorf("transport/websocket: Address %q must use the ws:// or wss:// scheme", c.Address)
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		host = u.Host
+		if u.Scheme == "wss" {
+			port = "443"
+		} else {
+			port = "80"
+		}
 	}
-	if _, _, err = net.SplitHostPort(u.Host); err != nil {
-		return nil, fmt.Errorf("transport/websocket: Address %q must be ws://host:port: %w", c.Address, err)
+	// default a missing host to loopback rather than the 0.0.0.0 wildcard
+	if host == "" {
+		host = "localhost"
 	}
-	addr, err := net.ResolveTCPAddr("tcp", u.Host)
+	addr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(host, port))
 	if err != nil {
 		return nil, err
 	}
