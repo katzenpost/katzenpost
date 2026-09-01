@@ -106,9 +106,7 @@ func (c *WsListenConfig) Listen() (net.Listener, error) {
 	// start a webserver to handle websocket connections
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			InsecureSkipVerify: true,
-		})
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
