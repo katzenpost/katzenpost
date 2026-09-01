@@ -1,5 +1,5 @@
-name: docker release interoperability tests (disabled)
-on: [pull_request]
+name: docker release interoperability tests
+on: workflow_dispatch
 env:
   previous_ref: v0.0.98
   current_ref: v0.0.99
@@ -7,7 +7,6 @@ env:
 jobs:
 
   build:
-    if: ${{ false }}
     permissions:
       contents: read
       packages: read
@@ -69,7 +68,6 @@ jobs:
           retention-days: 1
 
   test:
-    if: ${{ false }}
     name: ${{ matrix.baseline }} / ${{ matrix.role }}
     needs: build
     permissions:
