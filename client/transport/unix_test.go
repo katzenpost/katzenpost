@@ -159,13 +159,11 @@ func TestUnixListenerCloseDrainsInFlight(t *testing.T) {
 	// Let the accept goroutine park on the unbuffered channel with no reader.
 	time.Sleep(50 * time.Millisecond)
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		require.NoError(t, l.Close())
-	}()
+	closeErr := make(chan error, 1)
+	go func() { closeErr <- l.Close() }()
 	select {
-	case <-done:
+	case err := <-closeErr:
+		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close hung with an in-flight connection")
 	}
