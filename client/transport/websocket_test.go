@@ -1,12 +1,15 @@
 package transport
 
 import (
+	"context"
 	"io"
 	"net"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,12 +29,12 @@ func TestWebsocketListenerCloseIdempotent(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_ = l.Close()
-		}()
+		go func() { defer wg.Done(); _ = l.Close() }()
 	}
 	wg.Wait()
+	require.NoError(t, l.Close())
+	_, err := l.Accept()
+	require.ErrorIs(t, err, net.ErrClosed)
 }
 
 func TestWebsocketListenerCloseDrainsAndReportsClosed(t *testing.T) {
@@ -42,6 +45,71 @@ func TestWebsocketListenerCloseDrainsAndReportsClosed(t *testing.T) {
 	require.True(t, conn.closed, "queued conn should be closed on Close")
 	_, err := l.Accept()
 	require.ErrorIs(t, err, net.ErrClosed)
+}
+
+// Listen must report the real bound port for ws://host:0 and free that exact
+// port again on Close.
+func TestWsListenReportsBoundPortAndFreesIt(t *testing.T) {
+	l, err := (&WsListenConfig{Address: "ws://127.0.0.1:0"}).Listen()
+	require.NoError(t, err)
+	addr := l.Addr().String()
+	_, port, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	require.NotEqual(t, "0", port, "bound port should be resolved, not 0")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws://"+addr, nil)
+	require.NoError(t, err)
+	c.CloseNow()
+
+	require.NoError(t, l.Close())
+
+	ln, err := net.Listen("tcp", addr)
+	require.NoError(t, err, "port still bound after Close")
+	ln.Close()
+}
+
+// Accept run concurrently with Close must not race and must return ErrClosed.
+func TestWsListenAcceptRaceWithClose(t *testing.T) {
+	l, err := (&WsListenConfig{Address: "ws://127.0.0.1:0"}).Listen()
+	require.NoError(t, err)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = l.Accept()
+	}()
+	require.NoError(t, l.Close())
+	wg.Wait()
+}
+
+// A thin-client (no Origin header) is accepted; a cross-origin browser request
+// is rejected.
+func TestWsListenOriginChecked(t *testing.T) {
+	l, err := (&WsListenConfig{Address: "ws://127.0.0.1:0"}).Listen()
+	require.NoError(t, err)
+	defer l.Close()
+	url := "ws://" + l.Addr().String()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	c, _, err := websocket.Dial(ctx, url, nil)
+	require.NoError(t, err)
+	c.CloseNow()
+
+	h := http.Header{}
+	h.Set("Origin", "http://evil.example")
+	_, _, err = websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: h})
+	require.Error(t, err)
+}
+
+func TestWsListenConfigListenRejectsBadAddress(t *testing.T) {
+	for _, addr := range []string{"", "localhost:12345", "http://127.0.0.1:80", "ws://127.0.0.1"} {
+		l, err := (&WsListenConfig{Address: addr}).Listen()
+		require.Error(t, err, "address %q should be rejected", addr)
+		require.Nil(t, l)
+	}
 }
 
 func TestWsListenConfigListenBindError(t *testing.T) {
