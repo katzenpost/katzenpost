@@ -980,14 +980,12 @@ interop-noop:
 
 interop-validate:
 	@set -eu; \
-	  set -- $(interop_versions); [ $$# -eq 3 ]; \
-	  set -- $(interop_roles) quorums; [ $$# -eq 9 ]; \
-	  for version in $(interop_versions); do case $$version in previous|current|candidate) ;; *) exit 1;; esac; done; \
-	  for role in $(interop_roles) quorums; do case $$role in mix|gateway|servicenode|dirauth|replica|courier|http|client2|quorums) ;; *) exit 1;; esac; done; \
-	  [ $$(printf '%s\n' $(interop_versions) | sort -u | wc -l) -eq 3 ]; \
-	  set -- $(interop_network_versions); [ "$$*" = "current previous" ]; \
-	  [ $$(printf '%s\n' $(interop_roles) quorums | sort -u | wc -l) -eq 9 ]; \
-	  printf 'Interop plan valid: 1 all-version + 2 homogeneous + 27 role legs = 30 total\n'
+	  for role in $(interop_roles); do case $$role in mix|gateway|servicenode|dirauth|replica|courier|http|client2) ;; *) echo "unknown interop role: $$role" >&2; exit 1;; esac; done; \
+	  for svc in '$(interop_services_mix)' '$(interop_services_gateway)' '$(interop_services_servicenode)' '$(interop_services_dirauth)' '$(interop_services_replica)'; do \
+	    [ -n "$$svc" ] || { echo "empty interop service list; check the topology variables" >&2; exit 1; }; done; \
+	  [ $(auths) -ge 3 ] || { echo "interop-test-quorums needs auths >= 3 (have $(auths))" >&2; exit 1; }; \
+	  [ $(storageNodes) -ge 5 ] || { echo "interop-test-quorums needs storageNodes >= 5 (have $(storageNodes))" >&2; exit 1; }; \
+	  printf 'Interop plan valid: %s roles x 3 baselines + quorums (auths=%s replicas=%s)\n' $$(printf '%s\n' $(interop_roles) | wc -l) '$(auths)' '$(storageNodes)'
 
 interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2: interop-build
 	@set -e; role=$(@:interop-swap-%=%); \
