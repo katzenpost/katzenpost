@@ -73,6 +73,8 @@ func (l *WebsocketListener) Addr() net.Addr {
 type WsListenConfig struct {
 	// Address is the URL of the websocket like "ws://localhost:12345"
 	Address string `toml:"Address"`
+	// InsecureSkipVerify disables Origin checking; dev-only, keep false in production.
+	InsecureSkipVerify bool `toml:"InsecureSkipVerify"`
 }
 
 // Listen creates a websocket listener bound to c.Address.
@@ -111,7 +113,9 @@ func (c *WsListenConfig) Listen() (net.Listener, error) {
 	// start a webserver to handle websocket connections
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			InsecureSkipVerify: c.InsecureSkipVerify,
+		})
 		if err != nil {
 			return
 		}

@@ -104,6 +104,21 @@ func TestWsListenOriginChecked(t *testing.T) {
 	require.Error(t, err)
 }
 
+// InsecureSkipVerify allows cross-origin requests for local development; off by default.
+func TestWsListenInsecureSkipVerifyAllowsCrossOrigin(t *testing.T) {
+	l, err := (&WsListenConfig{Address: "ws://127.0.0.1:0", InsecureSkipVerify: true}).Listen()
+	require.NoError(t, err)
+	defer l.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	h := http.Header{}
+	h.Set("Origin", "http://evil.example")
+	c, _, err := websocket.Dial(ctx, "ws://"+l.Addr().String(), &websocket.DialOptions{HTTPHeader: h})
+	require.NoError(t, err)
+	c.CloseNow()
+}
+
 // A hostless address must default to loopback, never the 0.0.0.0 wildcard.
 func TestWsListenDefaultsHostToLoopback(t *testing.T) {
 	l, err := (&WsListenConfig{Address: "ws://:0"}).Listen()
