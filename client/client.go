@@ -51,6 +51,7 @@ type Client struct {
 
 func (c *Client) haltConnection() {
 	if c.conn != nil {
+		c.conn.isShutdown.Store(true)
 		c.conn.Halt()
 	}
 }
