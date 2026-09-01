@@ -19,7 +19,7 @@ import (
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
 )
 
-const defaultDBusName = "kpclientd"
+const defaultDBusName = "network.katzenpost.kpclientd"
 
 // Config holds the command line configuration
 type Config struct {
@@ -62,7 +62,8 @@ applications to share a single network connection.`,
   kpclientd -c /etc/katzenpost/client.toml --validate-only
 
   # Own a session D-Bus name for the daemon's lifetime
-  kpclientd -c /etc/katzenpost/client.toml --dbus-name org.katzenpost.Client`,
+  kpclientd -c /etc/katzenpost/client.toml --dbus-name=network.katzenpost.kpclientd`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runClientDaemon(cfg)
 		},
@@ -76,7 +77,7 @@ applications to share a single network connection.`,
 	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
 		"load and validate the configuration file, then exit without side effects")
 	cmd.Flags().StringVar(&cfg.DBusName, "dbus-name", "",
-		"own this session D-Bus name (bare flag defaults to kpclientd)")
+		"own this session D-Bus name (bare flag defaults to "+defaultDBusName+")")
 	cmd.Flags().Lookup("dbus-name").NoOptDefVal = defaultDBusName
 
 	// Mark required flags
