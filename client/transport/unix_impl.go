@@ -15,16 +15,13 @@ import (
 
 // Listen creates a unix-domain-socket listener bound to c.Address.
 func (c *UnixListenConfig) Listen() (Listener, error) {
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
 	addresses := append([]string{c.Address}, c.Addresses...)
 	listeners := make([]Listener, 0, len(addresses))
 	for _, address := range addresses {
-		name := os.ExpandEnv(address)
-		if name == "" || name == "@" {
-			// "" or "@" would autobind a random abstract socket.
-			closeListeners(listeners)
-			return nil, errors.New("transport: empty unix socket address")
-		}
-		addr := &net.UnixAddr{Name: name, Net: "unix"}
+		addr := &net.UnixAddr{Name: os.ExpandEnv(address), Net: "unix"}
 		listener, err := net.ListenUnix("unix", addr)
 		if err != nil {
 			closeListeners(listeners)

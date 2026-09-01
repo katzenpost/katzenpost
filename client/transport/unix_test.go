@@ -189,6 +189,12 @@ func TestUnixListenerRejectsEmptyAddress(t *testing.T) {
 	require.Nil(t, l)
 }
 
+func TestUnixListenConfigValidateRejectsEmpty(t *testing.T) {
+	require.Error(t, (&ListenConfig{Unix: &UnixListenConfig{Address: ""}}).Validate())
+	require.Error(t, (&ListenConfig{Unix: &UnixListenConfig{Address: "@"}}).Validate())
+	require.NoError(t, (&ListenConfig{Unix: &UnixListenConfig{Address: "/tmp/x.sock"}}).Validate())
+}
+
 // tempError is a net.Error reporting itself as temporary, like EMFILE.
 type tempError struct{}
 
