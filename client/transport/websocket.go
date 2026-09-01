@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"sync"
 
 	"github.com/coder/websocket"
 )
@@ -18,11 +17,14 @@ type WebsocketListener struct {
 	addr        net.Addr      // address of websocket
 	connections chan net.Conn // incoming connections
 	done        chan struct{} // channel "done" signal
-	closeOnce   sync.Once
+	closed      bool          // listener closed?
 }
 
 // Accept incoming websocket connection.
 func (l *WebsocketListener) Accept() (net.Conn, error) {
+	if l.closed {
+		return nil, net.ErrClosed
+	}
 	select {
 	case conn := <-l.connections:
 		return conn, nil
@@ -33,7 +35,10 @@ func (l *WebsocketListener) Accept() (net.Conn, error) {
 
 // Close websocket listener.
 func (l *WebsocketListener) Close() error {
-	l.closeOnce.Do(func() { close(l.done) })
+	if !l.closed {
+		l.closed = true
+		close(l.done)
+	}
 	return nil
 }
 
@@ -76,6 +81,7 @@ func (c *WsListenConfig) Listen() (net.Listener, error) {
 		addr:        addr,
 		connections: make(chan net.Conn, 100),
 		done:        make(chan struct{}),
+		closed:      false,
 	}
 
 	// start a webserver to handle websocket connections
@@ -95,17 +101,15 @@ func (c *WsListenConfig) Listen() (net.Listener, error) {
 			netConn.Close()
 		}
 	})
-	ln, err := net.Listen("tcp", addr.String())
-	if err != nil {
-		return nil, err
-	}
-	server := &http.Server{Handler: mux}
-	go func() {
-		<-listener.done
-		server.Shutdown(context.Background())
-	}()
 	// run webserver in go-routine
-	go server.Serve(ln)
+	go func() {
+		server := &http.Server{Addr: addr.String(), Handler: mux}
+		go func() {
+			<-listener.done
+			server.Shutdown(context.Background())
+		}()
+		server.ListenAndServe()
+	}()
 
 	// return listener instance
 	return listener, nil
