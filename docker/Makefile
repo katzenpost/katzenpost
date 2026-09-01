@@ -1012,7 +1012,13 @@ interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dira
 	    install -m 0755 "$(interop_dir)/$(COMPONENT_VERSION)/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).$$service.new"; \
 	    mv -f "$(net_name)/$$bin.$(distro).$$service.new" "$(net_name)/$$bin.$(distro).$$service"; \
 	  done; \
-	  if [ "$(SWAP_RUNNING)" = true ]; then cd "$(net_name)" && $(docker_compose) start "$$service"; cd ..; fi; \
+	  if [ "$(SWAP_RUNNING)" = true ]; then \
+	    commit=$$(cat $(interop_dir)/$(COMPONENT_VERSION)/commit); \
+	    cd "$(net_name)" && $(docker_compose) start "$$service"; \
+	    ok=false; for i in $$(seq 1 30); do if $(docker_compose) logs "$$service" 2>/dev/null | grep -q " rev $$commit"; then ok=true; break; fi; sleep 2; done; \
+	    cd ..; \
+	    [ "$$ok" = true ] || { echo "swap verify: $$service did not come up running rev $$commit" >&2; exit 1; }; \
+	  fi; \
 	  $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$role BINS="$$bins" VERSION=$(COMPONENT_VERSION) interop-record-artifact
 	@$(MAKE) -j1 net_name=$(interop_net_name) WAIT_AFTER_EPOCH=$(shell cat $(net_name)/interop.last_epoch 2>/dev/null) EXPECT_AUTHS=$(if $(filter dirauth,$(@:interop-swap-%=%)),$(SERVICE)) CHECK_HTTP_VERSION=$(if $(filter client2,$(@:interop-swap-%=%)),$(COMPONENT_VERSION),$(BASELINE)) CHECK_CLIENT_VERSION=$(if $(filter client2,$(@:interop-swap-%=%)),$(COMPONENT_VERSION),$(BASELINE)) $(interop_check_target)
 
