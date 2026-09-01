@@ -192,6 +192,7 @@ interop_ping_timeout?=3m
 interop_ping_attempts?=3
 interop_readiness_timeout?=5m
 interop_fetch_timeout?=30s
+interop_consensus_timeout?=720
 interop_leg_timeout?=45m
 DEBUG?=0
 INTEROP_PINGS?=$(npings)
@@ -887,7 +888,7 @@ interop-wait:
 	@$(docker) network inspect $(compose_network_name) >/dev/null 2>&1 || { echo "PHASE baseline=$(BASELINE) role=$(ROLE) status=infra-fail detail=network-missing" >&2; exit 1; }
 	@case "$(FETCH_VERSION)" in previous|current|candidate) ;; *) echo "FETCH_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
 	@out=$$(mktemp); cleanup() { rm -f "$$out"; }; trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
-	  deadline=$$(($$(date +%s) + 720)); attempt=0; while :; do \
+	  deadline=$$(($$(date +%s) + $(interop_consensus_timeout))); attempt=0; while :; do \
 	    attempt=$$((attempt + 1)); \
 	    remaining=$$((deadline - $$(date +%s))); echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=client-daemon status=probing attempt=$$attempt timeout=$(interop_fetch_timeout) remaining=$${remaining}s"; \
 	    if timeout $(interop_fetch_timeout) $(docker) run $(replace_name) katzenpost_interop_probe --network=$(compose_network_name) ${docker_args} $(mount_net_name) \
