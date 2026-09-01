@@ -338,6 +338,24 @@ The client TOML had the most substantial reshape, driven by the
       Address = "/var/run/katzenpost/kpclientd.sock"
   ```
 
+- **Added** `[Listen.Unix].Addresses` (string array). Optional. Extra
+  unix sockets bound alongside `Address`; a thin client may connect on
+  any of them. Each entry, and `Address` itself, is either a filesystem
+  path or, on Linux, an abstract-namespace name written with a leading
+  `@`, and is expanded with `os.ExpandEnv` before binding, so
+  `"$XDG_RUNTIME_DIR/kpclientd.sock"` resolves at startup. **Warning:**
+  an abstract socket has no filesystem entry and therefore no filesystem
+  permissions; any process in the same network namespace can connect to
+  it and drive the daemon's mixnet identity. Prefer a path socket in a
+  directory with restrictive permissions unless the namespace is trusted.
+  Note that `$VAR` expansion applies only to the daemon's listen address,
+  not to a thin client's `[Dial.Unix] Address`.
+
+- **Added** top-level `DBusName` (string). Optional. A session D-Bus
+  well-known name the daemon owns for its lifetime (single-instance and
+  systemd/D-Bus activation). Empty (the default) owns no name and needs
+  no bus; the `--dbus-name` flag overrides it.
+
 - **Added** `PigeonholeGeometry` (table). Pigeonhole protocol
   parameters; required for new pigeonhole channel operations.
 
