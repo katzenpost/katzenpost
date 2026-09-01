@@ -3,10 +3,7 @@
 
 package transport
 
-import (
-	"net"
-	"os"
-)
+import "net"
 
 // UnixDialConfig configures a unix-domain-socket dialer.
 type UnixDialConfig struct {
@@ -17,5 +14,5 @@ type UnixDialConfig struct {
 
 // Dial opens a unix-domain-socket connection to c.Address.
 func (c *UnixDialConfig) Dial() (net.Conn, error) {
-	return net.Dial("unix", os.ExpandEnv(c.Address))
+	return net.Dial("unix", c.Address)
 }
