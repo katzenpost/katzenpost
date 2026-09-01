@@ -13,12 +13,14 @@ type busOwner interface {
 	Close() error
 }
 
-var sessionBus = func() (busOwner, error) {
+func sessionBus() (busOwner, error) {
 	return dbus.ConnectSessionBus()
 }
 
+var connectBus = sessionBus
+
 func ownBusName(name string) (func() error, error) {
-	conn, err := sessionBus()
+	conn, err := connectBus()
 	if err != nil {
 		return nil, err
 	}

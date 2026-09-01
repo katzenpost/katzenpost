@@ -25,10 +25,10 @@ func (b *fakeBus) Close() error {
 }
 
 func TestOwnBusName(t *testing.T) {
-	original := sessionBus
-	t.Cleanup(func() { sessionBus = original })
+	original := connectBus
+	t.Cleanup(func() { connectBus = original })
 	want := errors.New("test")
-	sessionBus = func() (busOwner, error) { return nil, want }
+	connectBus = func() (busOwner, error) { return nil, want }
 	closeBus, err := ownBusName("test")
 	if !errors.Is(err, want) || closeBus != nil {
 		t.Fatalf("unexpected result: close=%t, err=%v", closeBus != nil, err)
@@ -42,7 +42,7 @@ func TestOwnBusName(t *testing.T) {
 		{"success", &fakeBus{reply: dbus.RequestNameReplyPrimaryOwner}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			sessionBus = func() (busOwner, error) { return test.bus, nil }
+			connectBus = func() (busOwner, error) { return test.bus, nil }
 			closeBus, err := ownBusName("test")
 			if test.name != "success" {
 				if err == nil || !test.bus.closed {
