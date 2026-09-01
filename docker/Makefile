@@ -972,8 +972,9 @@ interop-client-check:
 		-v $(shell readlink -f $(interop_dir)/$(CHECK_CLIENT_VERSION)):/interop-bin:ro \
 		--workdir /tmp $(interop_image) $(sh) -c 'mkdir -p client-test/testdata; \
 		cp /interop-net/client/client.toml /interop-net/client/thinclient.toml client-test/testdata/; \
-		cd client-test; exec /interop-bin/client_tests.$(distro).$(shell cat $(interop_dir)/$(CHECK_CLIENT_VERSION)/artifact 2>/dev/null) -test.v -test.timeout=15m \
-		-test.run "^TestNewPigeonholeAPIAliceSendsBob$$"'
+		cd client-test; /interop-bin/client_tests.$(distro).$(shell cat $(interop_dir)/$(CHECK_CLIENT_VERSION)/artifact 2>/dev/null) -test.v -test.timeout=15m \
+		-test.run "^TestNewPigeonholeAPIAliceSendsBob$$" 2>&1 | tee /tmp/client-test.log; \
+		grep -q "^--- PASS: TestNewPigeonholeAPIAliceSendsBob" /tmp/client-test.log'
 
 interop-noop:
 
