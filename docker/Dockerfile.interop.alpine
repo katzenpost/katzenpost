@@ -1,19 +1,6 @@
+# Interop build/test image. Built FROM the per-distro katzenpost base image
+# so it inherits that image's Go toolchain and the bash, perl and curl the
+# interop recipes rely on, instead of pulling an external image and layering
+# a second Go installer.
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
-
-ARG GO_VERSION
-ARG TARGETARCH=amd64
-
-RUN set -eu; \
-    test -n "$GO_VERSION"; \
-    archive="go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
-    curl -fsSL "https://go.dev/dl/?mode=json&include=all" -o /tmp/go.json; \
-    checksum=$(awk -v name="\"filename\": \"$archive\"" '$0 ~ name { found=1 } found && /"sha256":/ { gsub(/[\",]/, "", $2); print $2; exit }' /tmp/go.json); \
-    test -n "$checksum"; \
-    curl -fsSL "https://go.dev/dl/$archive" -o /tmp/go.tar.gz; \
-    printf '%s  %s\n' "$checksum" /tmp/go.tar.gz | sha256sum -c -; \
-    rm -rf /usr/local/go; \
-    tar -C /usr/local -xzf /tmp/go.tar.gz; \
-    rm -f /tmp/go.json /tmp/go.tar.gz; \
-    ln -sf /usr/local/go/bin/go /usr/bin/go; \
-    ln -sf /usr/local/go/bin/gofmt /usr/bin/gofmt

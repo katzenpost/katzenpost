@@ -179,7 +179,7 @@ interop_runtime_bins=server dirauth replica courier kpclientd proxy_server proxy
 interop_probe_bins=fetch ping
 interop_build_bins=$(interop_runtime_bins) $(interop_probe_bins) genconfig client_tests
 interop_check_target?=interop-check
-interop_base_image?=ghcr.io/katzenpost/alpine-base:rocksdb-10.2.1
+interop_base_image?=katzenpost-$(distro)_base
 interop_image=katzenpost-$(distro)_interop
 interop_net_name?=interop-$(distro)
 interop_report_dir?=interop-results
@@ -760,11 +760,11 @@ interop-build: interop-build-previous interop-build-current interop-build-candid
 
 interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-test interop-report interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all: net_name=$(interop_net_name)
 
-interop-image-check: Dockerfile.interop.alpine
+interop-image-check: Dockerfile.interop.alpine $(distro)_base.stamp
 	@test "$(distro)" = alpine || (echo "release interoperability currently supports distro=alpine" >&2; exit 2)
 	@fingerprint=$$(printf '%s\n' '$(interop_base_image)' '$(GO_VERSION)' | cat Dockerfile.interop.alpine - | sha256sum | cut -d' ' -f1); \
 	  if [ ! -f $(distro)_interop.stamp ] || [ "$$(cat $(distro)_interop.stamp)" != "$$fingerprint" ]; then \
-	    $(docker) build -t $(interop_image) --build-arg BASE_IMAGE=$(interop_base_image) --build-arg GO_VERSION=$(GO_VERSION) -f Dockerfile.interop.alpine .; \
+	    $(docker) build -t $(interop_image) --build-arg BASE_IMAGE=$(interop_base_image) -f Dockerfile.interop.alpine .; \
 	    printf '%s\n' "$$fingerprint" > $(distro)_interop.stamp; \
 	  else echo "Using cached interop image ($$fingerprint)"; fi
 
