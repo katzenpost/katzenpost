@@ -83,7 +83,8 @@ func TestUnixListenerMultiple(t *testing.T) {
 	paths := []string{filepath.Join(tmpDir, "one.sock"), filepath.Join(tmpDir, "two.sock")}
 	l, err := (&UnixListenConfig{Address: paths[0], Addresses: paths[1:]}).Listen()
 	require.NoError(t, err)
-	require.Equal(t, paths[0], l.Addr().String())
+	require.Contains(t, l.Addr().String(), paths[0])
+	require.Contains(t, l.Addr().String(), paths[1])
 	defer l.Close()
 	for _, path := range paths {
 		client, err := net.Dial("unix", path)
@@ -127,7 +128,8 @@ func TestUnixListenerAbstractAndFile(t *testing.T) {
 	file := filepath.Join(tmpDir, "file.sock")
 	l, err := (&UnixListenConfig{Address: abstract, Addresses: []string{file}}).Listen()
 	require.NoError(t, err)
-	require.Equal(t, abstract, l.Addr().String())
+	require.Contains(t, l.Addr().String(), abstract)
+	require.Contains(t, l.Addr().String(), file)
 	defer l.Close()
 
 	for _, name := range []string{abstract, file} {

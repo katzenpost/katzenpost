@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -111,7 +112,23 @@ func (m *multiListener) Close() error {
 }
 
 func (m *multiListener) Addr() net.Addr {
-	return m.listeners[0].Addr()
+	addrs := make(multiAddr, len(m.listeners))
+	for i, l := range m.listeners {
+		addrs[i] = l.Addr()
+	}
+	return addrs
+}
+
+type multiAddr []net.Addr
+
+func (m multiAddr) Network() string { return m[0].Network() }
+
+func (m multiAddr) String() string {
+	s := make([]string, len(m))
+	for i, a := range m {
+		s[i] = a.String()
+	}
+	return strings.Join(s, ", ")
 }
 
 func closeListeners(listeners []Listener) error {
