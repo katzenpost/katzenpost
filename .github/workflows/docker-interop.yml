@@ -108,6 +108,9 @@ jobs:
           name: interop-builds-${{ github.run_id }}
           path: docker/cache/interop/alpine
 
+      - name: Restore executable bit on downloaded builds
+        run: chmod -R +x docker/cache/interop/alpine
+
       - name: Download interoperability image
         uses: actions/download-artifact@v4
         with:
