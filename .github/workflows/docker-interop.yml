@@ -39,8 +39,8 @@ jobs:
       - name: Build interoperability artifacts
         run: make -C docker -j1 interop-build
 
-      - name: Export interoperability image
-        run: podman save --format oci-archive -o docker/cache/interop-image.tar katzenpost-alpine_interop
+      - name: Export the interop base image
+        run: podman save --format oci-archive -o docker/cache/base-image.tar katzenpost-alpine_base
 
       - name: Upload interoperability builds
         uses: actions/upload-artifact@v4
@@ -53,14 +53,14 @@ jobs:
             docker/cache/interop/alpine/candidate
           retention-days: 1
 
-      - name: Upload interoperability image
+      - name: Upload the interop base image
         uses: actions/upload-artifact@v4
         if: always() && !env.ACT
         with:
-          name: interop-image-${{ github.run_id }}
+          name: interop-base-image-${{ github.run_id }}
           path: |
-            docker/cache/interop-image.tar
-            docker/alpine_interop.stamp
+            docker/cache/base-image.tar
+            docker/alpine_base.stamp
           retention-days: 1
 
   test:
@@ -111,14 +111,16 @@ jobs:
       - name: Restore executable bit on downloaded builds
         run: chmod -R +x docker/cache/interop/alpine
 
-      - name: Download interoperability image
+      - name: Download the interop base image
         uses: actions/download-artifact@v4
         with:
-          name: interop-image-${{ github.run_id }}
+          name: interop-base-image-${{ github.run_id }}
           path: docker
 
-      - name: Import interoperability image
-        run: podman load -i docker/cache/interop-image.tar
+      - name: Import the interop base image
+        run: |
+          podman load -i docker/cache/base-image.tar
+          touch docker/alpine_base.stamp
 
       - name: Test ${{ matrix.baseline }} ${{ matrix.role }}
         run: make -C docker -j1 interop-test-role BASELINE=${{ matrix.baseline }} ROLE=${{ matrix.role }}
