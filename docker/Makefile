@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help install-git-hooks disable-git-hooks start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-build interop-build-previous interop-build-current interop-build-candidate interop-image-check interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-noop interop-test interop-report interop-validate interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help install-git-hooks disable-git-hooks start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-build interop-build-previous interop-build-current interop-build-candidate interop-image-check interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-noop interop-test interop-report interop-validate interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-all
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -188,7 +188,10 @@ interop_probe_bins=fetch ping
 interop_build_bins=$(interop_runtime_bins) $(interop_probe_bins) genconfig client_tests
 interop_check_target?=interop-check
 interop_base_image?=katzenpost-$(distro)_base
-interop_image=katzenpost-$(distro)_interop
+# The interop recipes run in the katzenpost base image directly; it already
+# ships the Go toolchain plus the bash, perl and curl they need, so there is
+# no separate interop image to build, stamp, save or load.
+interop_image=$(interop_base_image)
 interop_net_name?=interop-$(distro)
 interop_report_dir?=interop-results
 interop_submake=$(MAKE)
@@ -766,22 +769,17 @@ $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 
 interop-build: interop-build-previous interop-build-current interop-build-candidate
 
-interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-test interop-report interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all: net_name=$(interop_net_name)
+interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-test interop-report interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-all: net_name=$(interop_net_name)
 
-interop-image-check: Dockerfile.interop.alpine $(distro)_base.stamp
+interop-image-check: $(distro)_base.stamp
 	@test "$(distro)" = alpine || (echo "release interoperability currently supports distro=alpine" >&2; exit 2)
-	@fingerprint=$$(printf '%s\n' '$(interop_base_image)' '$(GO_VERSION)' | cat Dockerfile.interop.alpine - | sha256sum | cut -d' ' -f1); \
-	  if [ ! -f $(distro)_interop.stamp ] || [ "$$(cat $(distro)_interop.stamp)" != "$$fingerprint" ]; then \
-	    $(docker) build -t $(interop_image) --build-arg BASE_IMAGE=$(interop_base_image) -f Dockerfile.interop.alpine .; \
-	    printf '%s\n' "$$fingerprint" > $(distro)_interop.stamp; \
-	  else echo "Using cached interop image ($$fingerprint)"; fi
 
 interop-build-previous interop-build-current interop-build-candidate: interop-image-check | $(cache_dir)
 	@label=$(@:interop-build-%=%); \
 	  case "$$label" in previous) ref='$(previous_ref)';; current) ref='$(current_ref)';; candidate) ref='$(candidate_ref)';; esac; \
 	  if [ -z "$$ref" ]; then echo "$${label}_ref is required" >&2; exit 2; fi; \
 	  commit=$$(git rev-parse --verify "$$ref^{commit}") || exit; \
-	  fingerprint=$$(printf '%s\n' '$(interop_base_image)' '$(GO_VERSION)' '$(warped)' '$(kpclientd_tags_flag)' | cat Dockerfile.interop.alpine - | sha256sum | cut -d' ' -f1); \
+	  fingerprint=$$(printf '%s\n' '$(interop_base_image)' '$(GO_VERSION)' '$(warped)' '$(kpclientd_tags_flag)' | cat Dockerfile.base.alpine - | sha256sum | cut -d' ' -f1); \
 	  safe_ref=$$(printf '%s' "$$ref" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-48); artifact="$$label-$$safe_ref-$$(printf '%.12s' "$$commit")-$$(printf '%.8s' "$$fingerprint")"; \
 	  out="$(interop_dir)/$$label"; src="$(interop_dir)/src/$$label"; \
 	  valid=true; \
@@ -1199,18 +1197,14 @@ interop-clean-cache:
 interop-clean-results:
 	git clean -fdx $(interop_report_dir)
 
-interop-clean-image:
-	$(MAKE) clean-container-$(distro)_interop
-	$(MAKE) clean-image-$(distro)_interop
-
-interop-clean-all: interop-clean interop-clean-cache interop-clean-results interop-clean-image
+interop-clean-all: interop-clean interop-clean-cache interop-clean-results
 
 # clean-images must remove images and stamps for every distro a user could
 # have named, not just the ones in DISTROS. Discover them from the on-disk
 # stamps and per-distro cache dirs, union with DISTROS, and remove both the
 # _base and _rust image/stamp. An interrupted `make -j test-distros` may
 # also leave orphan containers behind, so sweep those too.
-STAMP_DISTROS=$(sort $(patsubst %_base.stamp,%,$(wildcard *_base.stamp)) $(patsubst %_go_mod.stamp,%,$(wildcard *_go_mod.stamp)) $(patsubst %_rust.stamp,%,$(wildcard *_rust.stamp)) $(patsubst %_interop.stamp,%,$(wildcard *_interop.stamp)))
+STAMP_DISTROS=$(sort $(patsubst %_base.stamp,%,$(wildcard *_base.stamp)) $(patsubst %_go_mod.stamp,%,$(wildcard *_go_mod.stamp)) $(patsubst %_rust.stamp,%,$(wildcard *_rust.stamp)))
 CACHE_DISTROS=$(sort $(patsubst cache/go-build-%,%,$(wildcard cache/go-build-*)) $(patsubst cache/cargo-home-%,%,$(wildcard cache/cargo-home-*)) $(patsubst cache/cargo-target-%,%,$(wildcard cache/cargo-target-*)))
 KNOWN_DISTROS=$(sort $(DISTROS) $(STAMP_DISTROS) $(CACHE_DISTROS))
 

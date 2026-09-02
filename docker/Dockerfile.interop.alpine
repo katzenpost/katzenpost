@@ -1,6 +1,0 @@
-# Interop build/test image. Built FROM the per-distro katzenpost base image
-# so it inherits that image's Go toolchain and the bash, perl and curl the
-# interop recipes rely on, instead of pulling an external image and layering
-# a second Go installer.
-ARG BASE_IMAGE
-FROM ${BASE_IMAGE}
