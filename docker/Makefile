@@ -175,6 +175,14 @@ interop_services_replica=$(addprefix replica,$(shell seq $(storageNodes)))
 interop_services_courier=$(interop_services_servicenode)
 interop_services_http=$(interop_services_servicenode)
 interop_services_client2=kpclientd
+# service:binary pairs for the compose command rewrite, derived from the
+# topology so adding mixes, gateways, service nodes, dirauths or replicas
+# needs no edit here. Courier and proxy_server share the servicenode
+# containers and are rewritten from their own toml, not here.
+interop_compose_bins=\
+  $(addsuffix :server,$(interop_services_mix) $(interop_services_gateway) $(interop_services_servicenode)) \
+  $(addsuffix :replica,$(interop_services_replica)) \
+  $(addsuffix :dirauth,$(interop_services_dirauth))
 interop_runtime_bins=server dirauth replica courier kpclientd proxy_server proxy_client
 interop_probe_bins=fetch ping
 interop_build_bins=$(interop_runtime_bins) $(interop_probe_bins) genconfig client_tests
@@ -823,18 +831,24 @@ interop-activate: interop-selfcheck-cache-restore | $(net_name)
 	done
 	@printf 'SERVICE\tROLE\tBINARY\tARTIFACT\tREF\tCOMMIT\n' > $(net_name)/runtime-artifacts.tsv
 	@printf '%s\t%s\t%s\n' $(BASELINE) $$(cat $(interop_dir)/$(BASELINE)/artifact) $$(cat $(interop_dir)/$(BASELINE)/commit) > $(net_name)/runtime-baseline.tsv
-	@set -e; for spec in \
-	  "mix1 mix server" "mix2 mix server" "mix3 mix server" "gateway1 gateway server" \
-	  "servicenode1 servicenode server" "servicenode2 servicenode server" "servicenode3 servicenode server" \
-	  "auth1 dirauth dirauth" "auth2 dirauth dirauth" "auth3 dirauth dirauth" \
-	  "replica1 replica replica" "replica2 replica replica" "replica3 replica replica" "replica4 replica replica" "replica5 replica replica" \
-	  "servicenode1 courier courier" "servicenode2 courier courier" "servicenode3 courier courier" \
-	  "servicenode1 http proxy_server" "servicenode2 http proxy_server" "servicenode3 http proxy_server" \
-	  "kpclientd client2 kpclientd fetch ping proxy_client"; do \
-	  set -- $$spec; service=$$1; role=$$2; shift 2; bins="$$*"; artifact=$$(cat $(interop_dir)/$(BASELINE)/artifact); \
-	  for bin in $$bins; do install -m 0755 "$(interop_dir)/$(BASELINE)/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).$$service.new"; \
-	    mv -f "$(net_name)/$$bin.$(distro).$$service.new" "$(net_name)/$$bin.$(distro).$$service"; done; \
-	  $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$role BINS="$$bins" VERSION=$(BASELINE) interop-record-artifact; done
+	@set -e; artifact=$$(cat $(interop_dir)/$(BASELINE)/artifact); \
+	  for role in $(interop_roles); do \
+	    case "$$role" in \
+	      mix) services='$(interop_services_mix)'; bins=server;; \
+	      gateway) services='$(interop_services_gateway)'; bins=server;; \
+	      servicenode) services='$(interop_services_servicenode)'; bins=server;; \
+	      dirauth) services='$(interop_services_dirauth)'; bins=dirauth;; \
+	      replica) services='$(interop_services_replica)'; bins=replica;; \
+	      courier) services='$(interop_services_courier)'; bins=courier;; \
+	      http) services='$(interop_services_http)'; bins=proxy_server;; \
+	      client2) services='$(interop_services_client2)'; bins='kpclientd fetch ping proxy_client';; \
+	    esac; \
+	    for service in $$services; do \
+	      for bin in $$bins; do install -m 0755 "$(interop_dir)/$(BASELINE)/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).$$service.new"; \
+	        mv -f "$(net_name)/$$bin.$(distro).$$service.new" "$(net_name)/$$bin.$(distro).$$service"; done; \
+	      $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$role BINS="$$bins" VERSION=$(BASELINE) interop-record-artifact; \
+	    done; \
+	  done
 	@if [ "$(DEBUG)" = 1 ]; then cat $(net_name)/runtime-artifacts.tsv; fi
 	@echo "Activated $(BASELINE) ($$(cat $(interop_dir)/$(BASELINE)/commit)) for the complete network"
 
@@ -857,10 +871,8 @@ interop-compose: interop-build | $(net_name) $(cache_dir)
 			$(interop_genconfig_args) --binSuffix .$(distro) --voting \
 		--outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--dockerImage $(interop_image)
-	@for spec in 'gateway1 server' 'servicenode1 server' 'servicenode2 server' 'servicenode3 server' \
-	  'mix1 server' 'mix2 server' 'mix3 server' 'replica1 replica' 'replica2 replica' 'replica3 replica' \
-	  'replica4 replica' 'replica5 replica' 'auth1 dirauth' 'auth2 dirauth' 'auth3 dirauth'; do \
-	  set -- $$spec; service=$$1; bin=$$2; sed -i "s|/$$bin.$(distro) -f /$(net_name)/$$service/|/$$bin.$(distro).$$service -f /$(net_name)/$$service/|" $(net_name)/docker-compose.yml; done
+	@for spec in $(interop_compose_bins); do \
+	  service=$${spec%%:*}; bin=$${spec##*:}; sed -i "s|/$$bin.$(distro) -f /$(net_name)/$$service/|/$$bin.$(distro).$$service -f /$(net_name)/$$service/|" $(net_name)/docker-compose.yml; done
 	@sed -i "s|/kpclientd.$(distro) -c /$(net_name)/client/|/kpclientd.$(distro).kpclientd -c /$(net_name)/client/|" $(net_name)/docker-compose.yml
 	@for service in $(interop_services_servicenode); do \
 	  sed -i "s|/courier.$(distro)\"|/courier.$(distro).$$service\"|; s|/proxy_server.$(distro)\"|/proxy_server.$(distro).$$service\"|" $(net_name)/$$service/katzenpost.toml; done
