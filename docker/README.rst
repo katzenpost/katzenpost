@@ -82,7 +82,7 @@ Published host ports are all derived from a single ``base_port`` (default
 ====================  ========================  =====================
 Service               host port                 in-bridge port
 ====================  ========================  =====================
-kpclientd (thin)      ``base_port+2000``        64331
+kpclientd (thin)      ``base_port+2000``        ``base_port+2000``
 prometheus            ``base_port+2001``        9090
 grafana               ``base_port+2002``        3000
 pyroscope             ``base_port+2003``        4040

@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -130,7 +130,10 @@ net_name=mixnet-$(distro)
 # the bridge compose creates.  Only the wait target uses this (fetch
 # --require-ready probes per-node metrics endpoints via container DNS).
 compose_network_name = $(subst .,,$(net_name))_katzenpost-net
-base_port=30000
+# Deterministic base_port derived from the network name + a per-checkout
+# random seed so parallel checkouts on the same machine get different
+# ports even with the same net_name.  Override with base_port=<n>.
+base_port?=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; printf '%s%s' '$(net_name)' "$$(cat .base_port_seed)" | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
 # bash is installed in every base image (alpine, debian, ubuntu), so a
@@ -421,7 +424,16 @@ selfcheck-cache-restore: $(docker_compose_yml)
 	  done; \
 	fi
 
-start: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
+check-ports:
+	@for port in $$(seq $$(($(base_port) + 2000)) $$(($(base_port) + 2003))); do \
+		if ss -tlnp "sport = :$$port" 2>/dev/null | grep -q LISTEN; then \
+			echo "ERROR: port $$port is already in use (base_port=$(base_port))."; \
+			echo "  Use 'make base_port=<N> start' or 'make stop' to free the ports."; \
+			exit 1; \
+		fi; \
+	done
+
+start: check-ports $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
@@ -616,13 +628,13 @@ show-latest-vote:
 # Generate the bridge-network thinclient config.  The host-network
 # thinclient.toml (used by run-ping, run-parallel-load, run-cp-bench)
 # dials localhost:base_port+2000 via the compose port forward; this
-# variant uses the compose service name kpclientd:64331 directly.
-# wait needs it because fetch --require-ready probes per-node metrics
-# endpoints via container DNS, which is only available on the bridge.
+# variant uses the compose service name kpclientd:<base_port+2000>
+# directly. wait needs it because fetch --require-ready probes per-node
+# metrics endpoints via container DNS, which is only available on the bridge.
 $(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
 	@echo '[Dial]'                                       >  $@
 	@echo '  [Dial.Tcp]'                                 >> $@
-	@echo '    Address = "kpclientd:64331"'              >> $@
+	@echo '    Address = "kpclientd:$(shell expr $(base_port) + 2000)"' >> $@
 	@echo '    Network = "tcp"'                          >> $@
 
 wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
@@ -738,6 +750,7 @@ clean-bin: stop
 # clean, so this depends on `stop` (not `clean-bin`) to avoid a redundant
 # rm.
 clean-local: stop
+	rm -f .base_port_seed
 	git clean -f -x $(net_name)
 	git status .
 

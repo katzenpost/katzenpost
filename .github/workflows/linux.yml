@@ -39,7 +39,7 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Generate mixnet configuration
-        run: cd cmd/genconfig && go build && ./genconfig --wirekem xwing --voting --baseDir /conf --outDir ../../docker/mixnet-alpine/
+        run: cd cmd/genconfig && go build && ./genconfig --wirekem xwing --port 35000 --voting --baseDir /conf --outDir ../../docker/mixnet-alpine/
 
       - name: Run ${{ matrix.test-suite.name }} unit tests
         run: cd ${{ matrix.test-suite.path }} && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout ${{ matrix.test-suite.timeout }} ./...
