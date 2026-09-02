@@ -9,6 +9,7 @@ docker/*_go_mod.stamp
 docker/*_rust.stamp
 docker/cache
 docker/mixnet-*
+docker/.base_port_seed
 docker/thin_client
 cmd/genconfig/genconfig
 cmd/server/server

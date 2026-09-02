@@ -44,7 +44,7 @@ jobs:
         run: |
           cd cmd/genconfig
           go build
-          ./genconfig --wirekem xwing --voting --baseDir /conf --outDir ../../docker/mixnet-alpine/
+          ./genconfig --wirekem xwing --port 35000 --voting --baseDir /conf --outDir ../../docker/mixnet-alpine/
 
       - name: Run daily benchmarks
         run: |
