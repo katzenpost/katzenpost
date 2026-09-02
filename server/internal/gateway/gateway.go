@@ -181,12 +181,16 @@ func (p *gateway) onSURBReply(pkt *packet.Packet, recipient []byte) {
 	geo := p.glue.Config().SphinxGeometry
 	if len(pkt.Payload) != geo.PayloadTagLength+geo.ForwardPayloadLength {
 		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v (%v)", pkt.ID, len(pkt.Payload))
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("gateway_surb_reply_missized")
 		return
 	}
 
 	// Store the payload in the spool.
 	if err := p.spool.StoreSURBReply(recipient, &pkt.SurbReply.ID, pkt.Payload); err != nil {
 		p.log.Debugf("Failed to store SURB-Reply: %v (%v)", pkt.ID, err)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("gateway_spool_surb_reply_failed")
 		return
 	}
 	p.log.Debugf("Stored SURB-Reply: %v", pkt.ID)
@@ -205,6 +209,8 @@ func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 	// Store the ciphertext in the spool.
 	if err := p.spool.StoreMessage(recipient, ct); err != nil {
 		p.log.Debugf("Failed to store message payload: %v (%v)", pkt.ID, err)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("gateway_spool_message_failed")
 		return
 	}
 	p.notifyListeners(recipient)
@@ -214,6 +220,8 @@ func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 		ackPkt, err := packet.NewPacketFromSURB(surb, nil, p.glue.Config().SphinxGeometry)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
+			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("gateway_surb_ack_failed")
 			return
 		}
 

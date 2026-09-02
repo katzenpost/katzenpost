@@ -76,6 +76,8 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 	k.Unlock()
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", pkt.ID)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("cbor_kaetzchen_dispatch_no_handler")
 		return
 	}
 	select {
@@ -192,6 +194,8 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 					respPkt, err := packet.NewPacketFromSURB(r.SURB, r.Payload, k.geo)
 					if err != nil {
 						k.log.Debugf("%v: Failed to generate SURB-Reply: %v (%v)", pluginCap, r.ID, err)
+						instrument.PacketsDropped()
+						instrument.PacketsDroppedByReason("cbor_kaetzchen_surb_reply_failed")
 						continue
 					}
 					// Set the packet queue delay
