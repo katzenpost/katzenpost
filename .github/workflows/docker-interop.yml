@@ -140,3 +140,84 @@ jobs:
             docker/interop-alpine/servicenode*/courier/courier.log
             docker/interop-alpine/*/selfcheck.toml
             docker/interop-alpine/runtime-artifacts.tsv
+
+  # Exercises every interop target the test matrix above does not already
+  # invoke. The matrix covers interop-build(+build-previous/current/candidate),
+  # image-check, compose, selfcheck-cache-restore, start, activate, wait,
+  # run-ping, http-check, check, check-role, client-check, swap-* (all roles),
+  # restore-role, record-artifact, noop, stop, test-role and test-quorums.
+  # This job covers the rest: validate, report, noop, test-baseline,
+  # test-mixed-network, clean-dryrun, clean, clean-cache, clean-results,
+  # clean-image and clean-all. interop-test and interop-smoke are umbrella
+  # targets composed entirely of the steps above, so they are not re-run here.
+  extra-targets:
+    name: extra-targets
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        go-version: [1.26.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+
+      - name: Download interoperability builds
+        uses: actions/download-artifact@v4
+        with:
+          name: interop-builds-${{ github.run_id }}
+          path: docker/cache/interop/alpine
+
+      - name: Restore executable bit on downloaded builds
+        run: chmod -R +x docker/cache/interop/alpine
+
+      - name: Download the interop base image
+        uses: actions/download-artifact@v4
+        with:
+          name: interop-base-image-${{ github.run_id }}
+          path: docker
+
+      - name: Import the interop base image
+        run: |
+          podman load -i docker/cache/base-image.tar
+          touch docker/alpine_base.stamp
+
+      - name: Meta targets (validate, noop, clean-dryrun)
+        run: |
+          cd docker
+          make -j1 interop-validate
+          make -j1 interop-noop
+          make -j1 interop-clean-dryrun
+
+      - name: interop-test-baseline
+        run: make -C docker -j1 interop-test-baseline BASELINE=current
+
+      - name: interop-report
+        run: make -C docker -j1 interop-report
+
+      - name: Stop the mixnet
+        if: always()
+        run: cd docker && make interop-stop
+
+      - name: interop-test-mixed-network
+        run: make -C docker -j1 interop-test-mixed-network
+
+      - name: Stop the mixnet
+        if: always()
+        run: cd docker && make interop-stop
+
+      - name: Clean targets (image, cache, results, all)
+        if: always()
+        run: |
+          cd docker
+          make -j1 interop-clean-image
+          make -j1 interop-clean-all
