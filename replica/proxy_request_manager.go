@@ -116,15 +116,22 @@ func (p *ProxyRequestManager) FailPeer(peerIDHash [32]byte) {
 	p.publishPendingLocked()
 }
 
-// FailRequest fails one pending proxy request by envelope hash so its
-// waiter stops waiting at once.
+// FailRequest ends one pending proxy request by envelope hash, closing
+// its response channel and dropping the registration. reason names the
+// circumstance for the log.
 //
-// Called when the request could not be handed to the peer at all: with
-// no command on the wire there is no reply coming, so the waiter would
-// otherwise burn its whole share of the sweep budget against nothing
-// and only then fail over to the co-holder. Sibling of FailPeer, which
+// Two circumstances reach it. The request could not be handed to the
+// peer at all: with no command on the wire there is no reply coming, so
+// the waiter would otherwise burn its whole share of the sweep budget
+// against nothing and only then fail over to the co-holder. Or the
+// waiter has already spent that share and left, in which case the entry
+// must go with it rather than linger until the periodic cleanup expires
+// it against the whole ProxyRequestTimeout. Sibling of FailPeer, which
 // does the same for every request to a peer whose session died.
-func (p *ProxyRequestManager) FailRequest(envelopeHash [32]byte) {
+//
+// A request already answered or already failed is gone from the map, so
+// calling this after either is a silent no-op.
+func (p *ProxyRequestManager) FailRequest(envelopeHash [32]byte, reason string) {
 	p.Lock()
 	defer p.Unlock()
 
@@ -132,7 +139,7 @@ func (p *ProxyRequestManager) FailRequest(envelopeHash [32]byte) {
 	if !exists {
 		return
 	}
-	p.log.Warningf("Failing undeliverable proxy request to %s: envelope hash %x", request.PeerName, envelopeHash)
+	p.log.Warningf("Failing pending proxy request to %s (%s): envelope hash %x", request.PeerName, reason, envelopeHash)
 	close(request.ResponseCh)
 	delete(p.pendingRequests, envelopeHash)
 	p.publishPendingLocked()
