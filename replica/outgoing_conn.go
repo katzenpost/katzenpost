@@ -78,6 +78,13 @@ type outgoingConn struct {
 	id          uint64
 	retryDelay  time.Duration
 	egressErrCh chan struct{}
+
+	// sessionUp reports whether a handshaked session is currently
+	// carrying this peer's queue. False before the first handshake and
+	// between sessions, including while the worker is redialling a peer
+	// that is down. Read by dispatching goroutines, written only by the
+	// connection worker.
+	sessionUp atomic.Bool
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -135,6 +142,23 @@ func (c *outgoingConn) validateReplicaInPKI(creds *wire.PeerCredentials) bool {
 }
 
 func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
+	// A peer with no live session has nothing to carry a proxy request.
+	// The per-peer queue would hold it until a session comes up, which
+	// for a peer that is down is not within the waiter's share of the
+	// sweep budget: the connection is only reported dead by FailPeer
+	// when an established session ends, and one that never handshakes
+	// never arms that. So the sweep would sit out its whole share
+	// against a peer known to be refusing connections before trying the
+	// co-holder, which is the failover this queue silently defers.
+	//
+	// Replication writes are the opposite case and fall through: they
+	// have no waiter, and the queue is exactly where they should wait
+	// for the peer to come back.
+	if !c.sessionUp.Load() && failUndeliverableProxyRequest(c.co, c.log, cmd) {
+		c.log.Warningf("No session with %s, failing proxy request %T", c.dst.Name, cmd)
+		return
+	}
+
 	select {
 	case c.ch <- cmd:
 		instrument.OutgoingQueueLength(c.dst.Name, len(c.ch))
@@ -496,6 +520,12 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	// burning the full ProxyRequestTimeout against a dead session.
 	peerIDHash := hash.Sum256(c.dst.IdentityKey)
 	defer c.co.Server().proxyManager.FailPeer(peerIDHash)
+
+	// Ordered so that the flag falls before FailPeer runs: a request
+	// dispatched in the gap sees no session and is failed by
+	// dispatchCommand rather than parked on a queue nothing will drain.
+	c.sessionUp.Store(true)
+	defer c.sessionUp.Store(false)
 
 	// Set up the outgoing sender for fixed-throughput traffic.
 	// On each tick of the uniform random timer, send a real command

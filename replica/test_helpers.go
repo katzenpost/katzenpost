@@ -378,3 +378,19 @@ func newTestState(t *testing.T, dataDir string) *state {
 
 	return &state{server: s, log: s.LogBackend().GetLogger("state")}
 }
+
+// PinFirstShardCandidate makes every proxy sweep on this server try the
+// shard holder at idx first, and returns a function restoring the random
+// choice.
+//
+// Exported for tests outside this package: the integration tests down a
+// named holder and assert the read degrades to its peer, which without
+// this passes half the time on the coin flip that picks the live holder
+// first, exercising no failover at all. idx is an index into the shard
+// list GetShards returns for the box being read, so pinning 0 aims the
+// sweep at the same holder getShardingInfo reports first.
+func (s *Server) PinFirstShardCandidate(idx int) func() {
+	chooser := shardChooser(func(int) (int, error) { return idx, nil })
+	s.firstShardCandidate.Store(&chooser)
+	return func() { s.firstShardCandidate.Store(nil) }
+}

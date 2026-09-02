@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
@@ -86,6 +87,22 @@ type Server struct {
 
 	// proxySema limits the number of concurrent proxy request goroutines
 	proxySema chan struct{}
+
+	// firstShardCandidate overrides which of a box's shard holders a
+	// proxy sweep tries first. Nil in production, where the choice is
+	// random; see Server.proxyFirstCandidate. A test pins it to drive
+	// the sweep at a named holder, so it is per-server rather than a
+	// package variable: replica tests run in parallel, and a shared one
+	// would be written by a test while another reads it mid-sweep.
+	firstShardCandidate atomic.Pointer[shardChooser]
+
+	// mkemOpCost is the wall-clock latency of one MKEM operation when
+	// the host is saturated, measured by the startup self-check. Every
+	// proxied attempt pays it once, for its encapsulation, before any
+	// waiting begins, so it is the smallest share of a sweep budget
+	// that an attempt can possibly make use of. Zero when no
+	// measurement is available, which disables the floor.
+	mkemOpCost time.Duration
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -331,6 +348,16 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	s.log.Noticef("Replica runtime defaults: ProxyWorkerCount=%d, IncomingQueueSize=%d, ProxyRequestTimeout=%ds (derived from runtime.NumCPU=%d, saturated CTIDH=%.2f ops/s)",
 		s.cfg.ProxyWorkerCount, s.cfg.IncomingQueueSize, s.cfg.ProxyRequestTimeout,
 		selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
+
+	// Per-op latency under saturation, by Little's Law: with NumCPU
+	// operations in flight and OpsPerSecSaturated completing per
+	// second, each one takes NumCPU/OpsPerSecSaturated to finish. Not
+	// 1/OpsPerSecSaturated, which is the interval between completions
+	// rather than the latency of any one of them.
+	if selfCheck.OpsPerSecSaturated > 0 && selfCheck.NumCPU > 0 {
+		s.mkemOpCost = time.Duration(float64(selfCheck.NumCPU) / selfCheck.OpsPerSecSaturated * float64(time.Second))
+		s.log.Noticef("Replica proxy attempt floor: %v (one saturated MKEM operation)", s.mkemOpCost)
+	}
 
 	// Initialize proxy request manager and concurrency limiter.
 	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
