@@ -780,9 +780,13 @@ interop-build: $(addprefix interop-build-,$(interop_versions))
 
 interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-test interop-report interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all: net_name=$(interop_net_name)
 
+# Ensure the alpine base image the interop recipes run in is built.
 interop-image-check: $(distro)_base.stamp
 	@test "$(distro)" = alpine || (echo "release interoperability currently supports distro=alpine" >&2; exit 2)
 
+# Build one baseline revision (previous, current, or candidate=HEAD) into
+# the interop cache; previous is skipped when no second non-rocksdb release
+# exists.
 interop-build-previous interop-build-current interop-build-candidate: interop-image-check | $(cache_dir)
 	@label=$(@:interop-build-%=%); \
 	  case "$$label" in previous) ref='$(previous_ref)';; current) ref='$(current_ref)';; candidate) ref='$(candidate_ref)';; esac; \
@@ -830,6 +834,8 @@ interop-build-previous interop-build-current interop-build-candidate: interop-im
 	    printf '%s\n' 3 > "$$out/format"; \
 	  else echo "Using cached interop $$label ($$commit)"; fi
 
+# Materialise every service's per-service binary for a baseline and record
+# it in runtime-artifacts.tsv.
 interop-activate: interop-selfcheck-cache-restore | $(net_name)
 	@case "$(BASELINE)" in previous|current|candidate) ;; *) echo "BASELINE must be previous, current, or candidate" >&2; exit 2;; esac
 	@artifact=$$(cat $(interop_dir)/$(BASELINE)/artifact); for bin in $(interop_probe_bins); do \
@@ -859,6 +865,8 @@ interop-activate: interop-selfcheck-cache-restore | $(net_name)
 	@if [ "$(DEBUG)" = 1 ]; then cat $(net_name)/runtime-artifacts.tsv; fi
 	@echo "Activated $(BASELINE) ($$(cat $(interop_dir)/$(BASELINE)/commit)) for the complete network"
 
+# Record which artifact/commit a service currently runs into
+# runtime-artifacts.tsv.
 interop-record-artifact:
 	@artifact=$$(cat $(interop_dir)/$(VERSION)/artifact); ref=$$(cat $(interop_dir)/$(VERSION)/ref); commit=$$(cat $(interop_dir)/$(VERSION)/commit); \
 	  for bin in $(BINS); do tmp=$(net_name)/runtime-artifacts.tsv.new; \
@@ -867,6 +875,8 @@ interop-record-artifact:
 	    mv -f "$$tmp" $(net_name)/runtime-artifacts.tsv; \
 	  done
 
+# Generate the interop docker-compose network and rewrite each service to
+# its per-service binary path.
 interop-compose: interop-build | $(net_name) $(cache_dir)
 	@-cd $(net_name) && $(docker_compose) down --remove-orphans
 	git clean -fdx $(net_name)
@@ -888,6 +898,8 @@ interop-compose: interop-build | $(net_name) $(cache_dir)
 	  [ -n "$$addr" ] || { echo "client listen address not found" >&2; exit 1; }; \
 	  printf '[Dial]\n  [Dial.Tcp]\n    Address = "kpclientd:%s"\n' "$${addr##*:}" > $(net_name)/client/thinclient-bridge.toml
 
+# Copy committed selfcheck sidecars into each service dir so boot-time
+# self-checks are skipped.
 interop-selfcheck-cache-restore: interop-compose
 	@if [ -d selfcheck-cache ]; then \
 	  for f in selfcheck-cache/*.toml; do \
@@ -898,10 +910,12 @@ interop-selfcheck-cache-restore: interop-compose
 	  done; \
 	fi
 
+# Activate a baseline across the whole network and bring the containers up.
 interop-start: interop-activate
 	cd $(net_name); $(docker_compose) up --remove-orphans --force-recreate -d; $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
+# Block until every node reports ready against the current consensus.
 interop-wait:
 	@test -f $(net_name)/running.stamp || (echo "run make interop-start first" >&2; exit 2)
 	@$(docker) network inspect $(compose_network_name) >/dev/null 2>&1 || { echo "PHASE baseline=$(BASELINE) role=$(ROLE) status=infra-fail detail=network-missing" >&2; exit 1; }
@@ -940,6 +954,7 @@ interop-wait:
 	      printf "READY %-24s %s\n" $$(basename $$(dirname "$$cfg")) "$$addr"; } > "$$tmp/$$n" 2>&1 & pids="$$pids $$!"; \
 	  done; failed=0; for pid in $$pids; do wait $$pid || failed=1; done; cat "$$tmp"/*; exit $$failed'
 
+# Send pings through the running network and fail unless all are answered.
 interop-run-ping:
 	@test -s $(interop_dir)/$(CHECK_CLIENT_VERSION)/artifact || { echo "interop artifacts not built for $(CHECK_CLIENT_VERSION); run make interop-build" >&2; exit 2; }
 	@out=$$(mktemp); cleanup() { rm -f "$$out"; }; trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; attempt=1; \
@@ -952,6 +967,7 @@ interop-run-ping:
 	    echo "PHASE check=echo-ping retry=$$attempt/$(interop_ping_attempts)"; attempt=$$((attempt + 1)); sleep 5; \
 	  done; echo "echo ping failed" >&2; exit 1
 
+# Exercise the HTTP proxy service end to end against the running network.
 interop-http-check:
 	@case "$(CHECK_HTTP_VERSION)" in previous|current|candidate) ;; *) echo "CHECK_HTTP_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
 	@test -s $(interop_dir)/$(CHECK_HTTP_VERSION)/artifact || { echo "interop artifacts not built for $(CHECK_HTTP_VERSION); run make interop-build" >&2; exit 2; }
@@ -966,6 +982,8 @@ interop-http-check:
 	  for n in $$(seq 1 10); do if NO_PROXY= no_proxy= curl -fsS --max-time 70 -x http://127.0.0.1:8080 http://localhost:4242/ | grep -q interop-http-ok; then echo "HTTP proxy round trip passed with $(CHECK_HTTP_VERSION) client"; exit; fi; sleep 2; done; \
 	  cat /tmp/proxy.log >&2; exit 1'
 
+# Run the full functional check (wait, ping, HTTP, and client tests)
+# against the network.
 interop-check:
 	@expected=$$(cat $(interop_dir)/$(BASELINE)/artifact); \
 	  if [ ! -f $(net_name)/running.stamp ] || ! $(docker) network inspect $(compose_network_name) >/dev/null 2>&1 || ! grep -q "^$(BASELINE)[[:space:]]$$expected[[:space:]]" $(net_name)/runtime-baseline.tsv 2>/dev/null; then \
@@ -973,6 +991,7 @@ interop-check:
 	  fi
 	@$(MAKE) -j1 net_name=$(interop_net_name) FETCH_VERSION=$(CHECK_CLIENT_VERSION) interop-wait interop-run-ping CHECK_HTTP_VERSION=$(CHECK_HTTP_VERSION) interop-http-check CHECK_CLIENT_VERSION=$(CHECK_CLIENT_VERSION) interop-client-check
 
+# Run interop-check for one role's services, reporting per-service results.
 interop-check-role:
 	@echo "PHASE baseline=$(BASELINE) role=$(ROLE) component=$(COMPONENT_VERSION) check=consensus-and-processes"
 	@$(MAKE) -j1 net_name=$(interop_net_name) BASELINE=$(BASELINE) ROLE=$(ROLE) COMPONENT_VERSION=$(COMPONENT_VERSION) FETCH_VERSION=$(if $(filter client2,$(ROLE)),$(COMPONENT_VERSION),$(BASELINE)) WAIT_AFTER_EPOCH=$(WAIT_AFTER_EPOCH) EXPECT_AUTHS="$(if $(filter dirauth,$(ROLE)),$(EXPECT_AUTHS))" interop-wait
@@ -984,10 +1003,13 @@ interop-check-role:
 	  *) echo "unsupported ROLE=$(ROLE)" >&2; exit 2;; \
 	esac
 
+# Build the revisions and run one quick end-to-end interop check (used by
+# the pre-push hook).
 interop-smoke: interop-build
 	@set -e; cleanup() { $(MAKE) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
 	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; $(MAKE) -j1 BASELINE=$(BASELINE) CHECK_CLIENT_VERSION=$(CHECK_CLIENT_VERSION) interop-check
 
+# Run the compiled pigeonhole client tests against the running network.
 interop-client-check:
 	@case "$(CHECK_CLIENT_VERSION)" in previous|current|candidate) ;; *) echo "CHECK_CLIENT_VERSION must be previous, current, or candidate" >&2; exit 2;; esac
 	@test -s $(interop_dir)/$(CHECK_CLIENT_VERSION)/artifact || { echo "interop artifacts not built for $(CHECK_CLIENT_VERSION); run make interop-build" >&2; exit 2; }
@@ -1000,17 +1022,28 @@ interop-client-check:
 		-test.run "^TestNewPigeonholeAPIAliceSendsBob$$" 2>&1 | tee /tmp/client-test.log; \
 		grep -q "^--- PASS: TestNewPigeonholeAPIAliceSendsBob" /tmp/client-test.log'
 
+# Do nothing; used as the check target when a swap should skip its
+# post-swap check.
 interop-noop:
 
+# Check the topology preconditions the suite relies on without building
+# images or starting Podman.
 interop-validate:
 	@set -eu; \
 	  for role in $(interop_roles); do case $$role in mix|gateway|servicenode|dirauth|replica|courier|http|client2) ;; *) echo "unknown interop role: $$role" >&2; exit 1;; esac; done; \
 	  for svc in '$(interop_services_mix)' '$(interop_services_gateway)' '$(interop_services_servicenode)' '$(interop_services_dirauth)' '$(interop_services_replica)'; do \
 	    [ -n "$$svc" ] || { echo "empty interop service list; check the topology variables" >&2; exit 1; }; done; \
-	  [ $(auths) -ge 3 ] || { echo "interop-test-quorums needs auths >= 3 (have $(auths))" >&2; exit 1; }; \
-	  [ $(storageNodes) -ge 5 ] || { echo "interop-test-quorums needs storageNodes >= 5 (have $(storageNodes))" >&2; exit 1; }; \
-	  printf 'Interop plan valid: %s roles x 3 baselines + quorums (auths=%s replicas=%s)\n' $$(printf '%s\n' $(interop_roles) | wc -l) '$(auths)' '$(storageNodes)'
+	  nversions=$$(echo $(interop_versions) | wc -w); \
+	  nonbase=$$(echo $(filter-out $(BASELINE),$(interop_versions)) | wc -w); \
+	  if [ "$$nonbase" -ge 2 ]; then quorums=" + quorums"; \
+	    [ $(auths) -ge 3 ] || { echo "interop-test-quorums needs auths >= 3 (have $(auths))" >&2; exit 1; }; \
+	    [ $(storageNodes) -ge 5 ] || { echo "interop-test-quorums needs storageNodes >= 5 (have $(storageNodes))" >&2; exit 1; }; \
+	  else quorums=" (quorums skipped until a second non-rocksdb release)"; fi; \
+	  printf 'Interop plan valid: %s roles x %s baselines%s (auths=%s replicas=%s)\n' $$(printf '%s\n' $(interop_roles) | wc -l) "$$nversions" "$$quorums" '$(auths)' '$(storageNodes)'
 
+# Swap one role's (mix, gateway, servicenode, dirauth, replica, courier,
+# http, client2) binary to COMPONENT_VERSION, verify the service came back
+# up on that revision from its log, and re-check the network.
 interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2: interop-build
 	@set -e; role=$(@:interop-swap-%=%); \
 	  case "$(COMPONENT_VERSION)" in previous|current|candidate) ;; *) echo "COMPONENT_VERSION must be previous, current, or candidate" >&2; exit 2;; esac; \
@@ -1042,9 +1075,12 @@ interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dira
 	  $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$role BINS="$$bins" VERSION=$(COMPONENT_VERSION) interop-record-artifact
 	@$(MAKE) -j1 net_name=$(interop_net_name) WAIT_AFTER_EPOCH=$(shell cat $(net_name)/interop.last_epoch 2>/dev/null) EXPECT_AUTHS=$(if $(filter dirauth,$(@:interop-swap-%=%)),$(SERVICE)) CHECK_HTTP_VERSION=$(if $(filter client2,$(@:interop-swap-%=%)),$(COMPONENT_VERSION),$(BASELINE)) CHECK_CLIENT_VERSION=$(if $(filter client2,$(@:interop-swap-%=%)),$(COMPONENT_VERSION),$(BASELINE)) $(interop_check_target)
 
+# Swap a role's service back to the baseline revision.
 interop-restore-role:
 	@$(MAKE) -j1 BASELINE=$(BASELINE) COMPONENT_VERSION=$(BASELINE) SERVICE=$(SERVICE) interop_check_target=interop-noop interop-swap-$(ROLE)
 
+# Run the full interop matrix: baselines, mixed networks, per-role swaps,
+# and quorums.
 interop-test: interop-validate interop-build
 	@child=''; monitor=''; debug_tail=''; cleanup() { [ -z "$$debug_tail" ] || kill "$$debug_tail" 2>/dev/null || true; [ -z "$$monitor" ] || kill "$$monitor" 2>/dev/null || true; if [ -n "$$child" ]; then kill -INT "$$child" 2>/dev/null || true; n=0; while kill -0 "$$child" 2>/dev/null && [ $$n -lt 5 ]; do sleep 1; n=$$((n + 1)); done; kill -KILL "$$child" 2>/dev/null || true; wait "$$child" 2>/dev/null || true; fi; $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
 	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
@@ -1091,12 +1127,15 @@ interop-test: interop-validate interop-build
 	  done; \
 	  $(interop_submake) --no-print-directory interop-report; exit $$failed
 
+# Print the recorded revisions and per-leg durations from the last run
+# without re-running.
 interop-report:
 	@test -f $(interop_report_dir)/report.tsv || { echo "No interoperability report found; run make interop-test" >&2; exit 2; }
 	@awk -F '\t' 'NR == 1 { print "REVISIONS"; next } { printf "  %-9s %-16s %s %s\n", $$1, $$2, $$3, $$4 }' $(interop_report_dir)/revisions.tsv
 	@awk -F '\t' 'function fmt(s) { return sprintf("%02d:%02d:%02d", int(s / 3600), int(s / 60) % 60, s % 60) } BEGIN { printf "\n%-11s %-14s %-7s %-10s %s\n", "BASELINE", "ROLE", "RESULT", "DURATION", "LOG" } NR > 1 { printf "%-11s %-14s %-7s %-10s %s\n", $$1, $$2, $$3, fmt($$4), $$5; seconds += $$4; if ($$3 != "PASS") failed++ } END { printf "\n%d passed, %d failed, %s total\n", NR - 1 - failed, failed, fmt(seconds) }' $(interop_report_dir)/report.tsv
 	@failures=$$(grep -h '^CHECK .* result=FAIL' $(interop_report_dir)/logs/*.log 2>/dev/null || true); [ -z "$$failures" ] || printf '\nFAILED CHECKS\n%s\n' "$$failures"
 
+# Bring up each baseline network and check it end to end.
 interop-test-baseline: interop-build
 	@set -e; cleanup() { $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
 	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
@@ -1105,6 +1144,8 @@ interop-test-baseline: interop-build
 	    $(MAKE) -j1 BASELINE=$(BASELINE) ROLE=$$role REUSE_NETWORK=true interop-test-role; \
 	  done
 
+# Bring up a baseline and swap the given ROLE through every other version,
+# checking each; skips unavailable baselines/roles.
 interop-test-role: interop-build
 	@case "$(ROLE)" in mix|gateway|servicenode|dirauth|replica|courier|http|client2|quorums) ;; *) echo "ROLE must be one of $(interop_roles) or quorums" >&2; exit 2;; esac
 	@case "$(ROLE)" in quorums) ;; *) case " $(interop_versions) " in *" $(BASELINE) "*) ;; *) echo "PHASE baseline=$(BASELINE) role=$(ROLE) action=skip reason=no-non-rocksdb-release"; exit 0;; esac;; esac
@@ -1140,6 +1181,8 @@ interop-test-role: interop-build
 	  done; \
 	  exit $$failed
 
+# Run a network whose services are a mix of versions and check it end to
+# end.
 interop-test-mixed-network: interop-build
 	@set -e; cleanup() { $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
 	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
@@ -1161,6 +1204,8 @@ interop-test-mixed-network: interop-build
 	    echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=PASS'; \
 	  else echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=FAIL'; exit 1; fi
 
+# Swap the dirauth/replica quorum to mixed versions in both orderings and
+# check each; skipped unless two non-baseline versions exist.
 interop-test-quorums: interop-build
 	@n=$$(echo $(filter-out $(BASELINE),$(interop_versions)) | wc -w); [ "$$n" -ge 2 ] || { echo "PHASE baseline=$(BASELINE) role=quorums action=skip reason=needs-2-non-baseline-versions-have-$$n"; exit 0; }
 	@set -e; cleanup() { [ "$(REUSE_NETWORK)" = true ] || $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
@@ -1191,21 +1236,26 @@ interop-test-quorums: interop-build
 	    wait_after=$$(cat $(net_name)/interop.last_epoch); \
 	  done
 
+# Stop and remove the interop network's containers.
 interop-stop:
 	-@$(docker) rm -f katzenpost_interop_probe katzenpost_interop_ping katzenpost_interop_http >/dev/null 2>&1
 	-@$(MAKE) --no-print-directory net_name=$(interop_net_name) stop >/dev/null 2>&1
 	@rm -f $(net_name)/running.stamp $(net_name)/servicenode*/courier/*.socket
 
+# Stop the network and remove its generated network directory.
 interop-clean: interop-stop
 	git clean -fdx $(net_name)
 	@echo "Retained versioned builds in $(interop_dir)"
 
+# Show what interop-clean would remove without removing it.
 interop-clean-dryrun:
 	git clean -ndx $(net_name)
 
+# Remove the cached interop build artifacts.
 interop-clean-cache:
 	git clean -fdx $(interop_dir)
 
+# Remove the interop-results report directory.
 interop-clean-results:
 	git clean -fdx $(interop_report_dir)
 
@@ -1216,6 +1266,7 @@ interop-clean-image:
 	-$(MAKE) clean-container-$(distro)_interop
 	-$(MAKE) clean-image-$(distro)_interop
 
+# Run interop-clean plus the cache, results, and image cleanups.
 interop-clean-all: interop-clean interop-clean-cache interop-clean-results interop-clean-image
 
 # clean-images must remove images and stamps for every distro a user could
