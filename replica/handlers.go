@@ -519,8 +519,38 @@ func (c *incomingConn) readRepair(readReply *pigeonhole.ReplicaReadReply, holder
 	}
 }
 
-// proxyShardOrder returns the shard holders reordered so the randomly
-// chosen candidate leads and the remaining holders follow as failover
+// shardChooser picks which of n shard holders a proxy sweep tries
+// first. Its contract is CryptoRandIndex's: a value in [0, n).
+type shardChooser func(n int) (int, error)
+
+// proxyFirstCandidate chooses which of a box's shard holders this
+// sweep tries first. The choice is random so that proxied traffic for
+// a box spreads across its holders rather than pinning every proxied
+// read of it on whichever holder happened to be listed first.
+//
+// A test may pin the choice, which is the only way to aim a sweep at a
+// named holder: an integration test that downs one holder and asserts
+// the read degrades to its peer otherwise passes half the time without
+// exercising failover at all. A pinned chooser is range-checked here
+// rather than trusted, so a stale index fails the sweep with an error
+// instead of indexing past the shard list.
+func (s *Server) proxyFirstCandidate(n int) (int, error) {
+	chooser := s.firstShardCandidate.Load()
+	if chooser == nil {
+		return pigeonhole.CryptoRandIndex(n)
+	}
+	idx, err := (*chooser)(n)
+	if err != nil {
+		return 0, err
+	}
+	if idx < 0 || idx >= n {
+		return 0, fmt.Errorf("pinned first shard candidate %d out of range for %d holders", idx, n)
+	}
+	return idx, nil
+}
+
+// proxyShardOrder returns the shard holders reordered so the chosen
+// candidate leads and the remaining holders follow as failover
 // targets, preserving their relative order.
 func proxyShardOrder(shards []*pki.ReplicaDescriptor, first int) []*pki.ReplicaDescriptor {
 	ordered := make([]*pki.ReplicaDescriptor, 0, len(shards))
@@ -829,11 +859,10 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	// Select a random shard using hpqc's cryptographic Reader —
-	// unbiased, goroutine-safe, no per-call Rand construction.
-	idx, err := pigeonhole.CryptoRandIndex(len(shards))
+	// Select the shard to try first; random unless a test has pinned it.
+	idx, err := c.l.server.proxyFirstCandidate(len(shards))
 	if err != nil {
-		c.log.Errorf("proxyReadRequest: CryptoRandIndex failed: %v", err)
+		c.log.Errorf("proxyReadRequest: choosing the first shard candidate failed: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 	// Get current replica epoch and keypair
@@ -931,11 +960,10 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	// Select a random shard using hpqc's cryptographic Reader —
-	// unbiased, goroutine-safe, no per-call Rand construction.
-	idx, err := pigeonhole.CryptoRandIndex(len(shards))
+	// Select the shard to try first; random unless a test has pinned it.
+	idx, err := c.l.server.proxyFirstCandidate(len(shards))
 	if err != nil {
-		c.log.Errorf("proxyWriteRequest: CryptoRandIndex failed: %v", err)
+		c.log.Errorf("proxyWriteRequest: choosing the first shard candidate failed: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 	// Get current replica epoch and keypair
@@ -1046,7 +1074,24 @@ func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMess
 	c.l.server.connector.DispatchCommand(replicaMessage, idHash)
 	c.log.Debugf("Dispatched proxy request to %s, waiting for response", targetShard.Name)
 
-	// Wait for the response within this attempt's share of the sweep budget.
+	reply, err := c.awaitProxyReply(responseCh, targetShard, timeout, start)
+	if err != nil {
+		// The waiter is leaving, so the registration goes with it.
+		// An attempt now gets only its share of the sweep budget while
+		// the periodic cleanup expires entries against the whole
+		// ProxyRequestTimeout, so an abandoned entry left behind would
+		// be counted pending, and would pin this attempt's request and
+		// MKEM private key, for the rest of a sweep that has already
+		// moved on to the next holder. A no-op when the request was
+		// answered or already failed, since either removed the entry.
+		c.l.server.proxyManager.FailRequest(envelopeHash, err.Error())
+	}
+	return reply, err
+}
+
+// awaitProxyReply waits out one attempt's share of the sweep budget for
+// the target shard holder's reply.
+func (c *incomingConn) awaitProxyReply(responseCh chan *commands.ReplicaMessageReply, targetShard *pki.ReplicaDescriptor, timeout time.Duration, start time.Time) (*commands.ReplicaMessageReply, error) {
 	select {
 	case <-c.l.closeAllCh:
 		return nil, fmt.Errorf("shutting down")

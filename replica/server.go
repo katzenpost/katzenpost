@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
@@ -86,6 +87,14 @@ type Server struct {
 
 	// proxySema limits the number of concurrent proxy request goroutines
 	proxySema chan struct{}
+
+	// firstShardCandidate overrides which of a box's shard holders a
+	// proxy sweep tries first. Nil in production, where the choice is
+	// random; see Server.proxyFirstCandidate. A test pins it to drive
+	// the sweep at a named holder, so it is per-server rather than a
+	// package variable: replica tests run in parallel, and a shared one
+	// would be written by a test while another reads it mid-sweep.
+	firstShardCandidate atomic.Pointer[shardChooser]
 
 	// mkemOpCost is the wall-clock latency of one MKEM operation when
 	// the host is saturated, measured by the startup self-check. Every
