@@ -73,9 +73,9 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 		// shard round-trip, so local reads and writes never wait
 		// behind in-flight proxied traffic (no head-of-line blocking).
 		recvAt := time.Now()
-		c.l.server.Add(1)
+		c.l.server.handlerWg.Add(1)
 		go func() {
-			defer c.l.server.Done()
+			defer c.l.server.handlerWg.Done()
 			select {
 			case <-c.l.closeAllCh:
 				c.log.Debugf("Terminating gracefully.")
@@ -501,16 +501,20 @@ func buildRepairWrite(readReply *pigeonhole.ReplicaReadReply, cmds *commands.Com
 }
 
 // readRepair replicates a successfully proxied box to the shard holders
-// that failed to serve it. The connector's retry queue provides delivery
-// with dedup once a holder returns; on a fixed-throughput mesh link the
-// repair write displaces a decoy, so the traffic shape is unchanged.
+// that answered box-not-found for it. Those holders missed the box's
+// original replication, and this heals the divergence lazily on the
+// read path. Holders that failed to answer at all are deliberately not
+// passed here: silence is evidence about the link, not about storage.
+// The connector's retry queue provides delivery with dedup once a
+// holder returns; on a fixed-throughput mesh link the repair write
+// displaces a decoy, so the traffic shape is unchanged.
 func (c *incomingConn) readRepair(readReply *pigeonhole.ReplicaReadReply, holders []*pki.ReplicaDescriptor) {
 	scheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	cmds := commands.NewStorageReplicaCommands(c.l.server.cfg.SphinxGeometry, scheme)
 	write := buildRepairWrite(readReply, cmds)
 	for _, holder := range holders {
 		idHash := blake2b.Sum256(holder.IdentityKey)
-		c.log.Noticef("Read-repair: replicating box %x to %s after failed proxy", write.BoxID[:8], holder.Name)
+		c.log.Noticef("Read-repair: replicating box %x to %s, which reported it missing", write.BoxID[:8], holder.Name)
 		c.l.server.connector.DispatchCommand(write, &idHash)
 	}
 }
@@ -560,6 +564,100 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 		return nil, nil, nil, errors.New("nil reply from target replica")
 	}
 	return reply, mkemPrivateKey, targetEnvelopeKey, nil
+}
+
+// proxyReadResult is what one failover sweep across a box's shard
+// holders produced.
+type proxyReadResult struct {
+	// readReply is the answer to hand back to the client: the first
+	// authoritative one if a holder gave us one, otherwise the last
+	// non-authoritative one seen. Nil if no holder answered at all.
+	readReply *pigeonhole.ReplicaReadReply
+
+	// missingBox holds the shard holders that answered
+	// ReplicaErrorBoxIDNotFound. These, and only these, are known to
+	// be missing a box their co-holder may have, so these and only
+	// these are candidates for read-repair.
+	missingBox []*pki.ReplicaDescriptor
+
+	// bareReply is the last reply that arrived with no envelope, from
+	// a holder that failed before it could encrypt anything. Kept only
+	// to surface its error code when no holder produced a readReply.
+	bareReply *commands.ReplicaMessageReply
+}
+
+// decryptProxyReadReply unseals one shard holder's reply and returns
+// the read reply inside it. A non-nil error means this exchange was
+// unusable (undecryptable, malformed, or carrying no read reply),
+// which says nothing about what the holder stores.
+func (c *incomingConn) decryptProxyReadReply(reply *commands.ReplicaMessageReply, mkemPrivateKey nike.PrivateKey, targetEnvelopeKey nike.PublicKey, scheme *mkem.Scheme) (*pigeonhole.ReplicaReadReply, error) {
+	decrypted, err := scheme.DecryptEnvelope(mkemPrivateKey, targetEnvelopeKey, reply.EnvelopeReply)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt proxy reply envelope: %v", err)
+	}
+	replyBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(decrypted)
+	if err != nil {
+		return nil, fmt.Errorf("extract padded reply inner message: %v", err)
+	}
+	inner, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(replyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse proxy reply inner message: %v", err)
+	}
+	if inner.ReadReply == nil {
+		return nil, errors.New("proxy reply does not contain a read reply")
+	}
+	return inner.ReadReply, nil
+}
+
+// proxyReadSweep tries the randomly chosen holder first and then the
+// rest, and reports both the answer and which holders are missing the
+// box. One sick shard replica must degrade to its live peer rather
+// than into a client-visible error.
+//
+// The distinction the caller needs is between a holder that did not
+// answer and a holder that answered "I do not have it", because only
+// the second is evidence about storage. Silence means the link is
+// congested or the peer is down; pushing a full-payload repair write
+// at such a peer only deepens whatever caused the silence. A
+// box-not-found answer, by contrast, is a holder demonstrably missing
+// a box its co-holder may hold, which is the divergence read-repair
+// exists to heal, and it must not end the sweep or the co-holder is
+// never asked.
+func (c *incomingConn) proxyReadSweep(shards []*pki.ReplicaDescriptor, first int, replicaEpoch uint64, innerMessageBlob []byte, scheme *mkem.Scheme, nikeScheme nike.Scheme) proxyReadResult {
+	var result proxyReadResult
+	for _, candidate := range proxyShardOrder(shards, first) {
+		reply, mkemPrivateKey, targetEnvelopeKey, err := c.proxyToShard(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
+		if err != nil {
+			c.log.Errorf("proxyReadRequest: proxy to %s failed: %v", candidate.Name, err)
+			continue
+		}
+		if len(reply.EnvelopeReply) == 0 {
+			c.log.Warningf("proxyReadRequest: %s replied without an envelope, error code %d", candidate.Name, reply.ErrorCode)
+			result.bareReply = reply
+			continue
+		}
+		readReply, err := c.decryptProxyReadReply(reply, mkemPrivateKey, targetEnvelopeKey, scheme)
+		if err != nil {
+			c.log.Errorf("proxyReadRequest: unusable reply from %s: %v", candidate.Name, err)
+			continue
+		}
+
+		result.readReply = readReply
+		switch readReply.ErrorCode {
+		case pigeonhole.ReplicaSuccess, pigeonhole.ReplicaErrorTombstone:
+			// Authoritative. A tombstone is the true state of the box
+			// rather than a miss, so it ends the sweep and provokes no
+			// repair.
+			c.log.Debugf("proxyReadRequest: %s answered authoritatively with error code %d", candidate.Name, readReply.ErrorCode)
+			return result
+		case pigeonhole.ReplicaErrorBoxIDNotFound:
+			c.log.Noticef("proxyReadRequest: %s does not hold box %x, trying the next holder", candidate.Name, readReply.BoxID[:8])
+			result.missingBox = append(result.missingBox, candidate)
+		default:
+			c.log.Warningf("proxyReadRequest: %s answered with error code %d, trying the next holder", candidate.Name, readReply.ErrorCode)
+		}
+	}
+	return result
 }
 
 // proxyReadRequest forwards a read request to the appropriate shard replica
@@ -625,16 +723,6 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	// Try the randomly chosen holder first, then fail over to the other
-	// holder(s): one sick shard replica must degrade to its live peer,
-	// not into a client-visible error.
-	var (
-		reply             *commands.ReplicaMessageReply
-		mkemPrivateKey    nike.PrivateKey
-		targetEnvelopeKey nike.PublicKey
-		targetShard       *pki.ReplicaDescriptor
-		failedShards      []*pki.ReplicaDescriptor
-	)
 	// Acquire a proxy worker slot for the blocking shard round-trip.
 	// Local reads and writes never contend for this semaphore, so a
 	// burst of proxied traffic cannot starve local operations. A slot
@@ -648,70 +736,38 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		instrument.ProxySemWaitEnd()
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
 	}
-	for _, candidate := range proxyShardOrder(shards, idx) {
-		reply, mkemPrivateKey, targetEnvelopeKey, err = c.proxyToShard(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
-		if err == nil {
-			targetShard = candidate
-			break
+
+	result := c.proxyReadSweep(shards, idx, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
+	if result.readReply == nil {
+		// Nobody produced a usable answer. Prefer a holder's own outer
+		// error code over a generic one when we have it.
+		if result.bareReply != nil {
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, result.bareReply.ErrorCode, originalEnvelopeHash, []byte{}, replicaID)
 		}
-		failedShards = append(failedShards, candidate)
-		c.log.Errorf("proxyReadRequest: proxy to %s failed: %v", candidate.Name, err)
-	}
-	if reply == nil {
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorReplicationFailed, originalEnvelopeHash, []byte{}, replicaID)
 	}
 
-	c.log.Debugf("Received proxy reply from %s with error code: %d", targetShard.Name, reply.ErrorCode)
-
-	// Decrypt the envelope reply from the target replica
-	if len(reply.EnvelopeReply) > 0 {
-		decryptedReply, err := scheme.DecryptEnvelope(mkemPrivateKey, targetEnvelopeKey, reply.EnvelopeReply)
-		if err != nil {
-			c.log.Errorf("proxyReadRequest: failed to decrypt proxy reply envelope: %v", err)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-		}
-
-		// Parse the decrypted reply to get the actual read reply data
-		replyBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedReply)
-		if err != nil {
-			c.log.Errorf("proxyReadRequest: failed to extract padded reply inner message: %v", err)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-		}
-		replyInnerMessage, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(replyBytes)
-		if err != nil {
-			c.log.Errorf("proxyReadRequest: failed to parse proxy reply inner message: %v", err)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-		}
-
-		if replyInnerMessage.ReadReply == nil {
-			c.log.Error("proxyReadRequest: proxy reply does not contain read reply")
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-		}
-
-		// Read-repair: a holder that failed the proxy may also have
-		// missed this box's replication; heal it opportunistically.
-		if len(failedShards) > 0 && replyInnerMessage.ReadReply.ErrorCode == pigeonhole.ReplicaSuccess {
-			c.readRepair(replyInnerMessage.ReadReply, failedShards)
-		}
-
-		// Now re-encrypt the read reply data for the original client
-		// Pad so tombstone reads are indistinguishable from normal reads
-		newReplyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-			ReadReply: replyInnerMessage.ReadReply,
-		}
-		newReplyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&newReplyInnerMessage, c.l.server.pigeonholeGeo)
-		if err != nil {
-			c.log.Errorf("proxyReadRequest: failed to pad read reply: %s", err)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-		}
-		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
-
-		// Return the reply encrypted for the original client
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, replyInnerMessage.ReadReply.ErrorCode, originalEnvelopeHash, envelopeReply.Envelope, replicaID)
+	// Read-repair, gated twice over: only a holder that answered
+	// box-not-found is known to be missing anything, and only a
+	// successful read hands us a copy worth replaying. If every holder
+	// answered not-found there is no good copy, and the guard below
+	// correctly repairs nobody.
+	if len(result.missingBox) > 0 && result.readReply.ErrorCode == pigeonhole.ReplicaSuccess {
+		c.readRepair(result.readReply, result.missingBox)
 	}
 
-	// No envelope reply data - just return the error code
-	return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, reply.ErrorCode, originalEnvelopeHash, []byte{}, replicaID)
+	// Re-encrypt the read reply for the original client, padded so
+	// tombstone reads are indistinguishable from normal reads.
+	newReplyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+		ReadReply: result.readReply,
+	}
+	newReplyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&newReplyInnerMessage, c.l.server.pigeonholeGeo)
+	if err != nil {
+		c.log.Errorf("proxyReadRequest: failed to pad read reply: %s", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+	}
+	envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
+	return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, result.readReply.ErrorCode, originalEnvelopeHash, envelopeReply.Envelope, replicaID)
 }
 
 // proxyWriteRequest forwards a write request to the appropriate shard replica
