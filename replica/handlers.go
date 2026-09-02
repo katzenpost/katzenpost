@@ -519,8 +519,38 @@ func (c *incomingConn) readRepair(readReply *pigeonhole.ReplicaReadReply, holder
 	}
 }
 
-// proxyShardOrder returns the shard holders reordered so the randomly
-// chosen candidate leads and the remaining holders follow as failover
+// shardChooser picks which of n shard holders a proxy sweep tries
+// first. Its contract is CryptoRandIndex's: a value in [0, n).
+type shardChooser func(n int) (int, error)
+
+// proxyFirstCandidate chooses which of a box's shard holders this
+// sweep tries first. The choice is random so that proxied traffic for
+// a box spreads across its holders rather than pinning every proxied
+// read of it on whichever holder happened to be listed first.
+//
+// A test may pin the choice, which is the only way to aim a sweep at a
+// named holder: an integration test that downs one holder and asserts
+// the read degrades to its peer otherwise passes half the time without
+// exercising failover at all. A pinned chooser is range-checked here
+// rather than trusted, so a stale index fails the sweep with an error
+// instead of indexing past the shard list.
+func (s *Server) proxyFirstCandidate(n int) (int, error) {
+	chooser := s.firstShardCandidate.Load()
+	if chooser == nil {
+		return pigeonhole.CryptoRandIndex(n)
+	}
+	idx, err := (*chooser)(n)
+	if err != nil {
+		return 0, err
+	}
+	if idx < 0 || idx >= n {
+		return 0, fmt.Errorf("pinned first shard candidate %d out of range for %d holders", idx, n)
+	}
+	return idx, nil
+}
+
+// proxyShardOrder returns the shard holders reordered so the chosen
+// candidate leads and the remaining holders follow as failover
 // targets, preserving their relative order.
 func proxyShardOrder(shards []*pki.ReplicaDescriptor, first int) []*pki.ReplicaDescriptor {
 	ordered := make([]*pki.ReplicaDescriptor, 0, len(shards))
@@ -536,7 +566,7 @@ func proxyShardOrder(shards []*pki.ReplicaDescriptor, first int) []*pki.ReplicaD
 // proxyToShard encapsulates the padded inner message for one shard
 // holder and dispatches it synchronously, returning the raw reply
 // together with the MKEM keys needed to decrypt it.
-func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaEpoch uint64, innerMessageBlob []byte, scheme *mkem.Scheme, nikeScheme nike.Scheme) (*commands.ReplicaMessageReply, nike.PrivateKey, nike.PublicKey, error) {
+func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaEpoch uint64, innerMessageBlob []byte, scheme *mkem.Scheme, nikeScheme nike.Scheme, deadline time.Time, candidatesLeft int) (*commands.ReplicaMessageReply, nike.PrivateKey, nike.PublicKey, error) {
 	targetEnvelopeKeyBytes, exists := targetShard.EnvelopeKeys[replicaEpoch]
 	if !exists {
 		return nil, nil, nil, fmt.Errorf("no envelope key for %s at replica epoch %d", targetShard.Name, replicaEpoch)
@@ -545,7 +575,6 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unmarshal envelope key for %s: %v", targetShard.Name, err)
 	}
-	start := time.Now()
 	mkemPrivateKey, envelope := scheme.Encapsulate([]nike.PublicKey{targetEnvelopeKey}, innerMessageBlob)
 	replicaMessage := &commands.ReplicaMessage{
 		Cmds:               commands.NewStorageReplicaCommands(c.geo, nikeScheme),
@@ -555,8 +584,16 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 		DEK:                (*[mkem.DEKSize]byte)(envelope.DEKCiphertexts[0]),
 		Ciphertext:         envelope.Envelope,
 	}
+	// The encapsulation above spent budget, so the wait for the reply
+	// gets what is left rather than the share measured before it. No
+	// floor applies here: the crypto this attempt had to pay for is
+	// already paid, so any time left is worth spending on the wait.
+	timeout := proxyAttemptTimeout(deadline, candidatesLeft, 0)
+	if timeout <= 0 {
+		return nil, nil, nil, errProxySweepBudgetExhausted
+	}
 	idHash := blake2b.Sum256(targetShard.IdentityKey)
-	reply, err := c.sendProxyRequestSync(replicaMessage, &idHash, targetShard, mkemPrivateKey, targetEnvelopeKey, scheme, start)
+	reply, err := c.sendProxyRequestSync(replicaMessage, &idHash, targetShard, mkemPrivateKey, targetEnvelopeKey, scheme, timeout)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -564,6 +601,134 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 		return nil, nil, nil, errors.New("nil reply from target replica")
 	}
 	return reply, mkemPrivateKey, targetEnvelopeKey, nil
+}
+
+// proxySweepBudget is the wall-clock budget for one whole failover
+// sweep, and proxyAttemptTimeout divides what is left of it among the
+// candidates still to try.
+//
+// The budget covers the sweep rather than each candidate within it: a
+// client waiting on a proxied read should not wait K times the
+// configured timeout because K holders were slow. Dividing the
+// remainder rather than spending it on the first candidate keeps every
+// holder reachable, so a slow first holder still fails over instead of
+// consuming the whole allowance.
+//
+// The budget is a deadline rather than a duration handed out at the
+// top of the sweep because everything an attempt does spends it: the
+// wait for a proxy worker slot, the MKEM encapsulation (a CTIDH1024
+// keygen plus group action) and then the network round-trip. Each of
+// those is measured against the deadline as it is reached, so the
+// whole sweep stays inside ProxyRequestTimeout however the time is
+// distributed between them. It does mean ProxyRequestTimeout must stay
+// comfortably above K times the per-attempt crypto cost, which the
+// derivation in config.ApplyRuntimeDefaults ensures by scaling the
+// timeout from the measured saturated CTIDH rate.
+func (c *incomingConn) proxySweepBudget() time.Time {
+	return time.Now().Add(time.Duration(c.l.server.cfg.ProxyRequestTimeout) * time.Second)
+}
+
+// proxyAttemptTimeout divides what remains of the budget among the
+// candidates still to try. candidatesLeft counts the candidate about to
+// be attempted as well as those after it, so the final candidate is
+// called with 1 and may spend everything that is left.
+//
+// A share smaller than floor yields zero, abandoning the sweep. floor
+// is the measured cost of one saturated MKEM operation, which every
+// attempt pays for its own encapsulation before it begins waiting. An
+// attempt granted less than that cannot finish its own CTIDH1024 keygen
+// and group action inside the deadline, so starting it would take a
+// worker slot and occupy a core purely to arrive at a certain timeout.
+// A floor of zero, which is what an unmeasured host gets, disables this.
+func proxyAttemptTimeout(deadline time.Time, candidatesLeft int, floor time.Duration) time.Duration {
+	if candidatesLeft < 1 {
+		candidatesLeft = 1
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return 0
+	}
+	share := remaining / time.Duration(candidatesLeft)
+	if share < floor {
+		return 0
+	}
+	return share
+}
+
+// errProxySweepBudgetExhausted ends an attempt that has no useful time
+// left, whether it never had any or spent it queueing for a worker
+// slot. The sweep loop logs it and moves on; the next candidate
+// measures the same deadline and stops too.
+var errProxySweepBudgetExhausted = errors.New("proxy sweep budget exhausted")
+
+// acquireProxySlot waits for a proxy worker slot, but no longer than
+// the sweep deadline. An unbounded wait here would put the queueing
+// delay outside the budget: a saturated pool could hold a request for
+// as long as it liked and then still grant it a full attempt timeout,
+// so the client's wait would be semaphore queue plus ProxyRequestTimeout
+// rather than the ProxyRequestTimeout the budget promises.
+func (c *incomingConn) acquireProxySlot(deadline time.Time) error {
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+
+	instrument.ProxySemWaitStart()
+	defer instrument.ProxySemWaitEnd()
+	select {
+	case c.l.server.proxySema <- struct{}{}:
+		return nil
+	case <-timer.C:
+		return errProxySweepBudgetExhausted
+	case <-c.l.closeAllCh:
+		return errors.New("shutting down")
+	}
+}
+
+// proxyToShardWithSlot performs one candidate attempt while holding a
+// proxy worker slot, and releases the slot as soon as that attempt
+// finishes.
+//
+// The slot must not span the whole sweep. ProxyWorkerCount defaults to
+// runtime.NumCPU and one attempt can run to the timeout, so a slot held
+// across K candidates lets NumCPU stalled requests stop this replica
+// proxying to anything at all, healthy holders included. That is how a
+// single sick shard holder takes the rest of the mesh down with it.
+// Turning the slot over at each candidate boundary bounds the damage
+// to a single attempt.
+//
+// The slot deliberately covers the MKEM encapsulation inside
+// proxyToShard as well as the network round-trip. That encapsulation is
+// a CTIDH1024 keygen plus group action, which is CPU-bound, so capping
+// concurrent attempts at ProxyWorkerCount = runtime.NumCPU caps
+// concurrent CTIDH at roughly one per core. Running the crypto before
+// taking a slot would raise network concurrency at the cost of spending
+// cores on attempts that then queue anyway; on a CPU-bound scheme that
+// is the wrong trade. Read katzenpost_replica_proxy_active_attempts
+// against katzenpost_replica_proxy_sem_waiters to see which bound is
+// biting.
+func (c *incomingConn) proxyToShardWithSlot(targetShard *pki.ReplicaDescriptor, replicaEpoch uint64, innerMessageBlob []byte, scheme *mkem.Scheme, nikeScheme nike.Scheme, deadline time.Time, candidatesLeft int) (*commands.ReplicaMessageReply, nike.PrivateKey, nike.PublicKey, error) {
+	floor := c.l.server.mkemOpCost
+	if proxyAttemptTimeout(deadline, candidatesLeft, floor) <= 0 {
+		return nil, nil, nil, errProxySweepBudgetExhausted
+	}
+	if err := c.acquireProxySlot(deadline); err != nil {
+		return nil, nil, nil, err
+	}
+	instrument.ProxyAttemptStart()
+	defer func() {
+		<-c.l.server.proxySema
+		instrument.ProxyAttemptEnd()
+	}()
+
+	// Queueing for the slot spent budget, so the share is measured
+	// again now that the attempt can actually start. The floor applies
+	// as it did before the wait: a slot won too late to finish the
+	// encapsulation must be handed straight back rather than spent on
+	// a CTIDH1024 keygen and group action that can only end in a
+	// timeout.
+	if proxyAttemptTimeout(deadline, candidatesLeft, floor) <= 0 {
+		return nil, nil, nil, errProxySweepBudgetExhausted
+	}
+	return c.proxyToShard(targetShard, replicaEpoch, innerMessageBlob, scheme, nikeScheme, deadline, candidatesLeft)
 }
 
 // proxyReadResult is what one failover sweep across a box's shard
@@ -625,8 +790,10 @@ func (c *incomingConn) decryptProxyReadReply(reply *commands.ReplicaMessageReply
 // never asked.
 func (c *incomingConn) proxyReadSweep(shards []*pki.ReplicaDescriptor, first int, replicaEpoch uint64, innerMessageBlob []byte, scheme *mkem.Scheme, nikeScheme nike.Scheme) proxyReadResult {
 	var result proxyReadResult
-	for _, candidate := range proxyShardOrder(shards, first) {
-		reply, mkemPrivateKey, targetEnvelopeKey, err := c.proxyToShard(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
+	deadline := c.proxySweepBudget()
+	order := proxyShardOrder(shards, first)
+	for i, candidate := range order {
+		reply, mkemPrivateKey, targetEnvelopeKey, err := c.proxyToShardWithSlot(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme, deadline, len(order)-i)
 		if err != nil {
 			c.log.Errorf("proxyReadRequest: proxy to %s failed: %v", candidate.Name, err)
 			continue
@@ -692,11 +859,10 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	// Select a random shard using hpqc's cryptographic Reader —
-	// unbiased, goroutine-safe, no per-call Rand construction.
-	idx, err := pigeonhole.CryptoRandIndex(len(shards))
+	// Select the shard to try first; random unless a test has pinned it.
+	idx, err := c.l.server.proxyFirstCandidate(len(shards))
 	if err != nil {
-		c.log.Errorf("proxyReadRequest: CryptoRandIndex failed: %v", err)
+		c.log.Errorf("proxyReadRequest: choosing the first shard candidate failed: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 	// Get current replica epoch and keypair
@@ -723,20 +889,10 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	// Acquire a proxy worker slot for the blocking shard round-trip.
-	// Local reads and writes never contend for this semaphore, so a
-	// burst of proxied traffic cannot starve local operations. A slot
-	// is held for the full fail-over sweep across candidate holders.
-	instrument.ProxySemWaitStart()
-	select {
-	case c.l.server.proxySema <- struct{}{}:
-		instrument.ProxySemWaitEnd()
-		defer func() { <-c.l.server.proxySema }()
-	case <-c.l.closeAllCh:
-		instrument.ProxySemWaitEnd()
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-	}
-
+	// Each candidate attempt takes a proxy worker slot only for its own
+	// duration; see proxyToShardWithSlot. Local reads and writes never
+	// contend for this semaphore, so a burst of proxied traffic cannot
+	// starve local operations.
 	result := c.proxyReadSweep(shards, idx, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
 	if result.readReply == nil {
 		// Nobody produced a usable answer. Prefer a holder's own outer
@@ -804,11 +960,10 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	// Select a random shard using hpqc's cryptographic Reader —
-	// unbiased, goroutine-safe, no per-call Rand construction.
-	idx, err := pigeonhole.CryptoRandIndex(len(shards))
+	// Select the shard to try first; random unless a test has pinned it.
+	idx, err := c.l.server.proxyFirstCandidate(len(shards))
 	if err != nil {
-		c.log.Errorf("proxyWriteRequest: CryptoRandIndex failed: %v", err)
+		c.log.Errorf("proxyWriteRequest: choosing the first shard candidate failed: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 	// Get current replica epoch and keypair
@@ -838,28 +993,18 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 
 	// Try the randomly chosen holder first, then fail over to the other
 	// holder(s): one sick shard replica must degrade to its live peer,
-	// not into a client-visible error.
+	// not into a client-visible error. Each attempt takes a proxy
+	// worker slot only for its own duration; see proxyToShardWithSlot.
 	var (
 		reply             *commands.ReplicaMessageReply
 		mkemPrivateKey    nike.PrivateKey
 		targetEnvelopeKey nike.PublicKey
 		targetShard       *pki.ReplicaDescriptor
 	)
-	// Acquire a proxy worker slot for the blocking shard round-trip.
-	// Local reads and writes never contend for this semaphore, so a
-	// burst of proxied traffic cannot starve local operations. A slot
-	// is held for the full fail-over sweep across candidate holders.
-	instrument.ProxySemWaitStart()
-	select {
-	case c.l.server.proxySema <- struct{}{}:
-		instrument.ProxySemWaitEnd()
-		defer func() { <-c.l.server.proxySema }()
-	case <-c.l.closeAllCh:
-		instrument.ProxySemWaitEnd()
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-	}
-	for _, candidate := range proxyShardOrder(shards, idx) {
-		reply, mkemPrivateKey, targetEnvelopeKey, err = c.proxyToShard(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
+	deadline := c.proxySweepBudget()
+	order := proxyShardOrder(shards, idx)
+	for i, candidate := range order {
+		reply, mkemPrivateKey, targetEnvelopeKey, err = c.proxyToShardWithSlot(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme, deadline, len(order)-i)
 		if err == nil {
 			targetShard = candidate
 			break
@@ -919,17 +1064,34 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 }
 
 // sendProxyRequestSync sends a proxy request synchronously to the target replica
-func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMessage, idHash *[32]byte, targetShard *pki.ReplicaDescriptor, mkemPrivateKey nike.PrivateKey, targetEnvelopeKey nike.PublicKey, scheme *mkem.Scheme, start time.Time) (*commands.ReplicaMessageReply, error) {
+func (c *incomingConn) sendProxyRequestSync(replicaMessage *commands.ReplicaMessage, idHash *[32]byte, targetShard *pki.ReplicaDescriptor, mkemPrivateKey nike.PrivateKey, targetEnvelopeKey nike.PublicKey, scheme *mkem.Scheme, timeout time.Duration) (*commands.ReplicaMessageReply, error) {
 	// Register the proxy request with the proxy manager
 	envelopeHash := *replicaMessage.EnvelopeHash()
 	responseCh := c.l.server.proxyManager.RegisterProxyRequest(envelopeHash, mkemPrivateKey, targetEnvelopeKey, replicaMessage, *idHash, targetShard.Name)
 
 	// Dispatch the command to the target replica
+	start := time.Now()
 	c.l.server.connector.DispatchCommand(replicaMessage, idHash)
 	c.log.Debugf("Dispatched proxy request to %s, waiting for response", targetShard.Name)
 
-	// Wait for the response with configurable timeout
-	timeout := time.Duration(c.l.server.cfg.ProxyRequestTimeout) * time.Second
+	reply, err := c.awaitProxyReply(responseCh, targetShard, timeout, start)
+	if err != nil {
+		// The waiter is leaving, so the registration goes with it.
+		// An attempt now gets only its share of the sweep budget while
+		// the periodic cleanup expires entries against the whole
+		// ProxyRequestTimeout, so an abandoned entry left behind would
+		// be counted pending, and would pin this attempt's request and
+		// MKEM private key, for the rest of a sweep that has already
+		// moved on to the next holder. A no-op when the request was
+		// answered or already failed, since either removed the entry.
+		c.l.server.proxyManager.FailRequest(envelopeHash, err.Error())
+	}
+	return reply, err
+}
+
+// awaitProxyReply waits out one attempt's share of the sweep budget for
+// the target shard holder's reply.
+func (c *incomingConn) awaitProxyReply(responseCh chan *commands.ReplicaMessageReply, targetShard *pki.ReplicaDescriptor, timeout time.Duration, start time.Time) (*commands.ReplicaMessageReply, error) {
 	select {
 	case <-c.l.closeAllCh:
 		return nil, fmt.Errorf("shutting down")

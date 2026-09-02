@@ -146,7 +146,7 @@ func failUndeliverableProxyRequest(co GenericConnector, log *logging.Logger, cmd
 		log.Errorf("Proxy manager not wired; failing proxy request %T instead of retry-queuing", msg)
 		return false
 	}
-	proxyManager.FailRequest(*msg.EnvelopeHash())
+	proxyManager.FailRequest(*msg.EnvelopeHash(), "undeliverable")
 	return true
 }
 
