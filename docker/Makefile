@@ -1017,16 +1017,17 @@ interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dira
 	  case " $$services " in *" $$service "*) ;; *) echo "SERVICE=$$service is not a $$role service" >&2; exit 2;; esac; \
 	  artifact=$$(cat $(interop_dir)/$(COMPONENT_VERSION)/artifact); \
 	  echo "baseline=$(BASELINE) role=$$role service=$$service component=$(COMPONENT_VERSION) artifact=$$artifact commit=$$(cat $(interop_dir)/$(COMPONENT_VERSION)/commit)"; \
-	  if [ "$(SWAP_RUNNING)" = true ]; then cd "$(net_name)" && $(docker_compose) stop "$$service"; cd ..; fi; \
+	  commit=$$(cat $(interop_dir)/$(COMPONENT_VERSION)/commit); \
+	  revcount() { if [ "$$role" = client2 ]; then (cd "$(net_name)" && $(docker_compose) logs "$$service" 2>/dev/null) | grep -c " rev $$commit" || true; \
+	    else cat "$(net_name)/$$service/katzenpost.log" "$(net_name)/$$service/courier/courier.log" "$(net_name)/$$service"/proxy.*.log 2>/dev/null | grep -c " rev $$commit" || true; fi; }; \
+	  if [ "$(SWAP_RUNNING)" = true ]; then before=$$(revcount); cd "$(net_name)" && $(docker_compose) stop "$$service"; cd ..; fi; \
 	  for bin in $$bins; do \
 	    install -m 0755 "$(interop_dir)/$(COMPONENT_VERSION)/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).$$service.new"; \
 	    mv -f "$(net_name)/$$bin.$(distro).$$service.new" "$(net_name)/$$bin.$(distro).$$service"; \
 	  done; \
 	  if [ "$(SWAP_RUNNING)" = true ]; then \
-	    commit=$$(cat $(interop_dir)/$(COMPONENT_VERSION)/commit); \
-	    cd "$(net_name)" && $(docker_compose) start "$$service"; \
-	    ok=false; for i in $$(seq 1 30); do if $(docker_compose) logs "$$service" 2>/dev/null | grep -q " rev $$commit"; then ok=true; break; fi; sleep 2; done; \
-	    cd ..; \
+	    cd "$(net_name)" && $(docker_compose) start "$$service"; cd ..; \
+	    ok=false; for i in $$(seq 1 30); do if [ "$$(revcount)" -gt "$${before:-0}" ]; then ok=true; break; fi; sleep 2; done; \
 	    [ "$$ok" = true ] || { echo "swap verify: $$service did not come up running rev $$commit" >&2; exit 1; }; \
 	  fi; \
 	  $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$role BINS="$$bins" VERSION=$(COMPONENT_VERSION) interop-record-artifact
