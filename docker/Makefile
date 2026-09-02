@@ -1167,10 +1167,14 @@ interop-test-quorums: interop-build
 	                "replica2 replica $$one" "replica3 replica $$two" \
 	                "replica4 replica $$one" "replica5 replica $$two"; do \
 	      set -- $$spec; service=$$1; bin=$$2; version=$$3; artifact=$$(cat $(interop_dir)/$$version/artifact); \
+	      commit=$$(cat $(interop_dir)/$$version/commit); log="$(net_name)/$$service/katzenpost.log"; \
+	      before=$$(grep -c " rev $$commit" "$$log" 2>/dev/null || true); \
 	      cd "$(net_name)" && $(docker_compose) stop "$$service"; cd ..; \
-	      install -m 0755 "$(interop_dir)/$$version/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).new"; \
-	      mv -f "$(net_name)/$$bin.$(distro).new" "$(net_name)/$$bin.$(distro)"; \
+	      install -m 0755 "$(interop_dir)/$$version/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).$$service.new"; \
+	      mv -f "$(net_name)/$$bin.$(distro).$$service.new" "$(net_name)/$$bin.$(distro).$$service"; \
 	      cd "$(net_name)" && $(docker_compose) start "$$service"; cd ..; \
+	      ok=false; for i in $$(seq 1 30); do if [ "$$(grep -c " rev $$commit" "$$log" 2>/dev/null || true)" -gt "$${before:-0}" ]; then ok=true; break; fi; sleep 2; done; \
+	      [ "$$ok" = true ] || { echo "quorum swap verify: $$service did not come up running rev $$commit" >&2; exit 1; }; \
 	      $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$bin BINS="$$bin" VERSION=$$version interop-record-artifact; \
 	    done; \
 	    $(MAKE) -j1 net_name=$(interop_net_name) WAIT_AFTER_EPOCH=$$wait_after EXPECT_AUTHS="auth1 auth2 auth3" CHECK_CLIENT_VERSION=$(BASELINE) $(interop_check_target); \
