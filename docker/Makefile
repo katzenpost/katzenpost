@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help install-git-hooks disable-git-hooks start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-build interop-build-previous interop-build-current interop-build-candidate interop-image-check interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-noop interop-test interop-report interop-validate interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-all
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help install-git-hooks disable-git-hooks start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-build interop-build-previous interop-build-current interop-build-candidate interop-image-check interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-noop interop-test interop-report interop-validate interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -153,7 +153,12 @@ cache_dir=cache
 go_mod_cache=$(cache_dir)/go
 go_build_cache=$(cache_dir)/go-build-$(distro)
 
-interop_release_refs=$(shell git tag --sort=-v:refname | awk '/^v[0-9]+\.[0-9]+\.[0-9]+$$/ { print; if (++n == 2) exit }')
+# The two most recent release tags that do NOT link rocksdb (grocksdb was
+# dropped at v0.0.99). Older rocksdb-era releases cannot be built in the
+# rocksdb-free base image, so they are skipped; until a second non-rocksdb
+# release exists this yields a single ref and the suite runs candidate vs
+# current only. The scan is bounded to the newest tags to stay cheap.
+interop_release_refs=$(shell git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | head -25 | while read t; do git show "$$t:go.mod" 2>/dev/null | grep -qi grocksdb || echo "$$t"; done | head -2)
 current_ref?=$(word 1,$(interop_release_refs))
 previous_ref?=$(word 2,$(interop_release_refs))
 candidate_ref?=HEAD
@@ -164,8 +169,10 @@ CHECK_CLIENT_VERSION?=$(BASELINE)
 CHECK_HTTP_VERSION?=$(BASELINE)
 FETCH_VERSION?=$(BASELINE)
 interop_dir=$(cache_dir)/interop/$(distro)
-interop_versions=candidate current previous
-interop_network_versions=current previous
+# previous is included only when a second non-rocksdb release exists; with
+# just one, the suite runs candidate vs current and skips previous/quorums.
+interop_versions=candidate current $(if $(strip $(previous_ref)),previous)
+interop_network_versions=current $(if $(strip $(previous_ref)),previous)
 interop_roles=mix gateway servicenode dirauth replica courier http client2
 interop_services_mix=$(addprefix mix,$(shell seq $(mixes)))
 interop_services_gateway=$(addprefix gateway,$(shell seq $(gateways)))
@@ -767,9 +774,11 @@ $(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} -o /$(net_name)/kpclientd.$(distro)'
 
-interop-build: interop-build-previous interop-build-current interop-build-candidate
+# Build only the versions that exist; previous is absent until a second
+# non-rocksdb release is tagged (see interop_release_refs).
+interop-build: $(addprefix interop-build-,$(interop_versions))
 
-interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-test interop-report interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-all: net_name=$(interop_net_name)
+interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-test interop-report interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all: net_name=$(interop_net_name)
 
 interop-image-check: $(distro)_base.stamp
 	@test "$(distro)" = alpine || (echo "release interoperability currently supports distro=alpine" >&2; exit 2)
@@ -1098,6 +1107,7 @@ interop-test-baseline: interop-build
 
 interop-test-role: interop-build
 	@case "$(ROLE)" in mix|gateway|servicenode|dirauth|replica|courier|http|client2|quorums) ;; *) echo "ROLE must be one of $(interop_roles) or quorums" >&2; exit 2;; esac
+	@case "$(ROLE)" in quorums) ;; *) case " $(interop_versions) " in *" $(BASELINE) "*) ;; *) echo "PHASE baseline=$(BASELINE) role=$(ROLE) action=skip reason=no-non-rocksdb-release"; exit 0;; esac;; esac
 	@set -e; cleanup() { [ "$(REUSE_NETWORK)" = true ] || $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
 	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
 	  if [ "$(ROLE)" = quorums ]; then $(MAKE) -j1 BASELINE=$(BASELINE) REUSE_NETWORK=$(REUSE_NETWORK) interop-test-quorums; exit; fi; \
@@ -1152,6 +1162,7 @@ interop-test-mixed-network: interop-build
 	  else echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=FAIL'; exit 1; fi
 
 interop-test-quorums: interop-build
+	@n=$$(echo $(filter-out $(BASELINE),$(interop_versions)) | wc -w); [ "$$n" -ge 2 ] || { echo "PHASE baseline=$(BASELINE) role=quorums action=skip reason=needs-2-non-baseline-versions-have-$$n"; exit 0; }
 	@set -e; cleanup() { [ "$(REUSE_NETWORK)" = true ] || $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
 	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
 	  expected=$$(cat $(interop_dir)/$(BASELINE)/artifact); \
@@ -1198,7 +1209,14 @@ interop-clean-cache:
 interop-clean-results:
 	git clean -fdx $(interop_report_dir)
 
-interop-clean-all: interop-clean interop-clean-cache interop-clean-results
+# Remove the obsolete standalone interop image and container left by older
+# checkouts; the suite now runs in the base image, so this is a no-op once
+# that image is gone.
+interop-clean-image:
+	-$(MAKE) clean-container-$(distro)_interop
+	-$(MAKE) clean-image-$(distro)_interop
+
+interop-clean-all: interop-clean interop-clean-cache interop-clean-results interop-clean-image
 
 # clean-images must remove images and stamps for every distro a user could
 # have named, not just the ones in DISTROS. Discover them from the on-disk
