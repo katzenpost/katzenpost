@@ -1082,16 +1082,17 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 //     only (no replica reply ever arrived).
 //
 // The replica state layer treats byte-identical retries as idempotent
-// success (see replica/state.go), so a non-Success reply reflects a
-// genuine conflict — retrying will not change the verdict and the
-// dispatch aborts on the first one. Retries are reserved for
-// transport-level failures: SendMessage errors and "no replies before
-// the deadline." No shard-level failover is available on the write
-// path because the two intermediate replicas are MKEM-baked into the
-// client's envelope.
+// success (see replica/state.go). A permanent non-Success reply (e.g.
+// BoxAlreadyExists) reflects a genuine conflict and aborts the dispatch
+// at once; a transient one (e.g. a ReplicationFailed peer-replica blip)
+// is retried with backoff, as are transport-level failures (SendMessage
+// errors and "no replies before the deadline"). No shard-level failover
+// is available on the write path because the two intermediate replicas
+// are MKEM-baked into the client's envelope.
 func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bool, uint8) {
 	envHash := envelope.EnvelopeHash()
 
+	lastTransientErr := uint8(0)
 	for attempt := 0; attempt < maxCopyWriteAttempts; attempt++ {
 		if attempt > 0 {
 			time.Sleep(copyAttemptBackoff(attempt - 1))
@@ -1140,19 +1141,26 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 			}
 		}
 
-		// Any non-Success reply is terminal. Prefer BoxAlreadyExists
-		// as the reportable code — it's the most diagnostic signal
-		// for the client's Copy failure report.
-		if len(replies) > 0 {
-			bestErr := replies[0].ErrorCode
-			for _, r := range replies {
-				if r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
-					bestErr = r.ErrorCode
-					break
+		// A permanent non-Success reply aborts at once (preferring
+		// BoxAlreadyExists as the most diagnostic code); a transient one
+		// falls through to the retry loop.
+		permanentErr := uint8(0)
+		for _, r := range replies {
+			if classifyReplicaErrorForCopyWrite(r.ErrorCode) == replicaErrorPermanent {
+				if permanentErr == 0 || r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
+					permanentErr = r.ErrorCode
 				}
+			} else {
+				lastTransientErr = r.ErrorCode
 			}
-			e.log.Warningf("dispatchCopyEnvelope: replica error %d, aborting Copy", bestErr)
-			return false, bestErr
+		}
+		if permanentErr != 0 {
+			e.log.Warningf("dispatchCopyEnvelope: replica error %d, aborting Copy", permanentErr)
+			return false, permanentErr
+		}
+		if len(replies) > 0 {
+			e.log.Warningf("dispatchCopyEnvelope: attempt %d transient replica error %d, retrying", attempt+1, lastTransientErr)
+			continue
 		}
 
 		// No replies before the deadline — transport failure. Retry.
@@ -1161,7 +1169,7 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 
 	e.log.Errorf("dispatchCopyEnvelope: exhausted %d attempts, aborting Copy", maxCopyWriteAttempts)
 	instrument.DroppedByReason("copy_dispatch_exhausted")
-	return false, 0
+	return false, lastTransientErr
 }
 
 // readNextBox reads a single box from the shard replicas, decrypts it,
