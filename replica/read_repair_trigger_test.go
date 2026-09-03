@@ -227,13 +227,16 @@ func TestReadRepairFiresOnBoxNotFound(t *testing.T) {
 // only deepens whatever congestion caused the silence.
 func TestNoReadRepairOnSilentHolder(t *testing.T) {
 	env := setupSemaScopeTestServer(t)
-	// The silent holder burns its share of the sweep budget before the
-	// co-holder is tried. Shorten the budget so this test measures the
-	// failover rather than the clock, but keep it comfortably above the
-	// per-candidate MKEM encapsulation cost: that CTIDH1024 keygen and
-	// group action is spent from the same budget, so too small a value
-	// exhausts the sweep on crypto alone and no failover happens.
-	env.server.cfg.ProxyRequestTimeout = 10
+	// The silent holder burns its share (budget/candidates) of the sweep
+	// deadline before the co-holder is tried, and every candidate also
+	// spends its CTIDH1024 keygen and group action from the same budget
+	// before it can wait. The budget must therefore cover both
+	// candidates' crypto plus the failover wait even on a slow, contended
+	// runner; too small a value exhausts the sweep on crypto alone and no
+	// failover happens. A 10s budget flaked under -race with -parallel on
+	// CI, so size it generously. Production instead derives this from
+	// measured CTIDH throughput.
+	env.server.cfg.ProxyRequestTimeout = 60
 	sc := newScriptedConnector(t, env,
 		holderScript{silent: true},
 		holderScript{errorCode: pigeonhole.ReplicaSuccess},
