@@ -123,6 +123,8 @@ func (l *listener) updatePKIDocWorker() {
 	}
 }
 
+const acceptRetryDelay = 5 * time.Millisecond
+
 func (l *listener) worker() {
 	addr := l.listener.Addr()
 	l.log.Infof("Listening on: %v", addr)
@@ -141,6 +143,11 @@ func (l *listener) worker() {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				l.log.Errorf("Critical accept failure: %v", err)
 				return
+			}
+			select {
+			case <-l.HaltCh():
+				return
+			case <-time.After(acceptRetryDelay):
 			}
 			continue
 		}
@@ -529,7 +536,9 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 
 		l.connsLock.Lock()
 		delete(l.conns, oldAppID)
+		c.appIDMu.Lock()
 		c.appID = existingAppID
+		c.appIDMu.Unlock()
 		l.conns[*existingAppID] = c
 		for i, id := range l.connOrder {
 			if id == oldAppID {
