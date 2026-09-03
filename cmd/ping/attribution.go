@@ -58,6 +58,36 @@ type observation struct {
 // service set vary and brings it into the estimable set too, which is what
 // --rotate-services is for.
 //
+// # Why exposure means met-this-node-and-not-its-neighbour
+//
+// A route draws one node from each layer going out and another coming back, so
+// most packets that touch a healthy node also touch its faulty neighbour, fail
+// because of the neighbour, and would be charged to both. On a simulated layer
+// with one node dropping 15%, counting every packet that touched a node gave
+// the innocent partner 12.4% against the culprit's 15.9%: three points of
+// difference where the truth was fifteen.
+//
+// So a node's count here is restricted to packets that met it and no other
+// member of its group, which no neighbour was in a position to spoil. It costs
+// sample size, since a packet whose two draws differ is used by neither side,
+// but an undiluted comparison on half the packets beats a diluted one on all
+// of them by a wide margin. See exclusiveTally.
+//
+// # What this cannot see
+//
+// The comparison assumes a node's behaviour holds still for as long as it is
+// measured. Real loss does not oblige. If two nodes each fail badly at
+// different times, the run-long averages come out equal and the comparison
+// reports nothing whatever; simulated, it missed a culprit that swapped
+// halfway through in two hundred runs out of two hundred. A node that fails
+// badly but briefly is diluted the same way and was caught under one time in
+// ten.
+//
+// scanWindows exists for that, repeating the comparison over stretches of the
+// run. It recovers the swapping culprit reliably and the brief one about half
+// the time. Half is not all, and a batch that ends with no finding has shown
+// an absence of evidence rather than evidence of absence.
+//
 // # Why intervals rather than point estimates
 //
 // Per-node failure counts are small and frequently zero, where a point
@@ -92,29 +122,40 @@ const zScore95 = 1.959964
 
 // wilson returns the Wilson score interval for k failures in n trials.
 //
-// The textbook interval, p ± z·sqrt(p(1-p)/n), is unusable here. With zero
-// failures it collapses to [0, 0], claiming certainty from an absence of
-// evidence, and its coverage falls well below the nominal level whenever n is
-// small or the rate is near zero, which is our ordinary case.
+// It answers "we saw this rate, but how sure are we", which for the small
+// counts this tool works with is the only question worth asking.
 //
-// Wilson inverts the score test instead. Rather than placing an interval
-// around the observed rate, it asks which true rates would leave the observed
-// count unsurprising, solving
+// The obvious way to build such a range is to take the rate you observed and
+// spread it either side by some multiple of its standard error. That method
+// has a fatal defect here. With no failures at all it computes a spread of
+// zero and returns the range [0%, 0%], claiming perfect certainty on the
+// strength of having seen nothing go wrong. It is also too narrow whenever the
+// packet count is small or the rate is near zero, which describes most of what
+// gets measured here.
 //
-//	|p̂ - p| / sqrt(p(1-p)/n) <= z
+// Wilson's method asks the question the other way round. Rather than spreading
+// a range around the rate that happened to come up, it asks which true rates
+// would make that observation unsurprising, and keeps those. For no failures
+// in a hundred packets it answers [0%, 3.7%]: nothing has gone wrong yet, and
+// a node quietly dropping one packet in twenty-seven is still entirely
+// consistent with what was seen. The arithmetic below is the closed-form
+// solution to that question; it has no free parameters to tune.
 //
-// for p. That is a quadratic in p, and its two roots are the bounds; the
-// closed form below is that solution rearranged. The (1 + z²/n) denominator is
-// not a fudge factor but falls out of the algebra, and it is what pulls the
-// estimate slightly toward one half, so that zero failures still yields a
-// positive upper bound: 0 in 100 gives [0, 3.70%], which is the honest reading
-// of no failures yet.
+// z sets the confidence: it is how many standard deviations wide the range is,
+// and 1.96 is the value that yields 95%.
 func wilson(k, n int) (lo, hi float64) {
+	return wilsonZ(k, n, zScore95)
+}
+
+// wilsonZ is wilson at an arbitrary confidence, expressed as the z that
+// corresponds to it. Scanning many time windows needs a stricter z than 95%,
+// because testing repeatedly gives chance more opportunities to produce a
+// striking result; see zForTests.
+func wilsonZ(k, n int, z float64) (lo, hi float64) {
 	if n == 0 {
 		return 0, 0
 	}
 	p := float64(k) / float64(n)
-	z := zScore95
 	nf := float64(n)
 	denom := 1 + z*z/nf
 	center := (p + z*z/(2*nf)) / denom
@@ -124,25 +165,34 @@ func wilson(k, n int) (lo, hi float64) {
 
 // diffInterval returns a 95% interval for p1-p2 by Newcombe's score method.
 //
-// Adding the two variances and appealing to normality fails for the same
-// reason the textbook interval does: when either count is zero its variance
-// term vanishes and the interval is far too narrow. Newcombe composes the two
-// Wilson intervals instead. The difference is at its most negative when p1
-// sits at its own lower plausible bound and p2 at its upper, so those two
-// distances bound the excursion; they are combined in quadrature rather than
-// added because the two estimates are independent, and adding them would be
-// needlessly conservative.
+// The tempting shortcut is to spread a range around each rate and combine the
+// spreads. That inherits the defect described on wilson: when either side has
+// seen no failures its contribution collapses to nothing and the answer comes
+// out far too confident.
 //
-// An interval lying wholly above zero is what licenses the claim that one node
-// is worse than its peers. See contrast.worse.
+// Newcombe's method uses the two Wilson ranges as they are. The difference is
+// at its most negative when the first rate sits at the bottom of its plausible
+// range and the second at the top, so those two distances bound how far the
+// difference can stray. They are combined as the hypotenuse of a right
+// triangle rather than added, because the two measurements are independent and
+// simply adding them would overstate the uncertainty.
+//
+// When the whole range lies above zero, one node is worse than the other by
+// more than chance comfortably explains. That is the test contrast.worse
+// applies.
 func diffInterval(k1, n1, k2, n2 int) (lo, hi float64) {
+	return diffIntervalZ(k1, n1, k2, n2, zScore95)
+}
+
+// diffIntervalZ is diffInterval at an arbitrary confidence.
+func diffIntervalZ(k1, n1, k2, n2 int, z float64) (lo, hi float64) {
 	if n1 == 0 || n2 == 0 {
 		return 0, 0
 	}
 	p1 := float64(k1) / float64(n1)
 	p2 := float64(k2) / float64(n2)
-	l1, u1 := wilson(k1, n1)
-	l2, u2 := wilson(k2, n2)
+	l1, u1 := wilsonZ(k1, n1, z)
+	l2, u2 := wilsonZ(k2, n2, z)
 	d := p1 - p2
 	lo = d - math.Sqrt((p1-l1)*(p1-l1)+(u2-p2)*(u2-p2))
 	hi = d + math.Sqrt((u1-p1)*(u1-p1)+(p2-l2)*(p2-l2))
@@ -269,6 +319,7 @@ func (a *attribution) report(w io.Writer, doc *cpki.Document) {
 	fmt.Fprintf(w, "  associations, not causes: ping can localize loss, never explain it.\n")
 
 	a.reportLayers(w, obs, doc)
+	a.reportWindows(w, obs, doc)
 	a.reportNotSeparable(w, obs, doc)
 	a.reportOverTime(w, obs)
 }
@@ -297,7 +348,59 @@ func (c contrast) worse() bool { return c.diffLo > 0 }
 // group. Nodes with no exposure are omitted, and a group with fewer than two
 // exposed members yields nothing, there being no peer to compare against.
 func layerContrasts(obs []observation, layer []string) []contrast {
-	byName := tallyNodes(obs)
+	return layerContrastsZ(obs, layer, zScore95)
+}
+
+// exclusiveTally counts, for each member of a group, the packets that met
+// that member and no other member of the same group.
+//
+// Counting every packet that merely touched a node does not work. A route
+// draws one node from a layer going out and another coming back, so most
+// packets that touch a healthy node also touch its faulty neighbour, fail
+// because of the neighbour, and are charged to both. Measured on a layer with
+// one node dropping 15%, the innocent partner showed 12.4% against the
+// culprit's 15.9%: a difference of three points where the truth was fifteen.
+//
+// Restricting each node's count to packets that met it alone removes the
+// confusion entirely, because no other member of the group was in a position
+// to drop them. It costs sample size, since a packet whose two draws differ is
+// used by neither side, but an undiluted contrast on half the packets beats a
+// diluted one on all of them by a wide margin.
+func exclusiveTally(obs []observation, group []string) map[string]*tally {
+	member := make(map[string]struct{}, len(group))
+	for _, name := range group {
+		member[name] = struct{}{}
+	}
+
+	out := make(map[string]*tally, len(group))
+	for _, o := range obs {
+		touched := make(map[string]struct{}, 2)
+		for _, hop := range append(append([]string{}, o.forward...), o.back...) {
+			if _, ok := member[hop]; ok {
+				touched[hop] = struct{}{}
+			}
+		}
+		if len(touched) != 1 {
+			continue
+		}
+		for name := range touched {
+			t, ok := out[name]
+			if !ok {
+				t = &tally{name: name}
+				out[name] = t
+			}
+			t.exposure++
+			if !o.ok {
+				t.failures++
+			}
+		}
+	}
+	return out
+}
+
+// layerContrastsZ is layerContrasts at an arbitrary confidence.
+func layerContrastsZ(obs []observation, layer []string, z float64) []contrast {
+	byName := exclusiveTally(obs, layer)
 	present := make([]*tally, 0, len(layer))
 	for _, name := range layer {
 		if t, ok := byName[name]; ok && t.exposure > 0 {
@@ -317,8 +420,8 @@ func layerContrasts(obs []observation, layer []string) []contrast {
 				restFail += other.failures
 			}
 		}
-		lo, hi := wilson(t.failures, t.exposure)
-		dlo, dhi := diffInterval(t.failures, t.exposure, restFail, restExp)
+		lo, hi := wilsonZ(t.failures, t.exposure, z)
+		dlo, dhi := diffIntervalZ(t.failures, t.exposure, restFail, restExp, z)
 		restRate := 0.0
 		if restExp > 0 {
 			restRate = float64(restFail) / float64(restExp)
@@ -352,6 +455,163 @@ func (a *attribution) reportLayers(w io.Writer, obs []observation, doc *cpki.Doc
 				100*c.diff, 100*c.diffLo, 100*c.diffHi, flag)
 		}
 	}
+}
+
+// zForTests returns the z to use when m separate comparisons are made, so
+// that the chance of any one of them misfiring stays near 5% rather than 5%
+// each. With twenty windows and six nodes there are a hundred and twenty
+// opportunities for chance to produce something striking, and at a plain 95%
+// roughly six of them would.
+//
+// The correction is Bonferroni's: test each comparison at 5%/m instead of 5%.
+// It is the blunt instrument of its family and errs toward missing things
+// rather than inventing them, which is the right way round for a tool whose
+// output an operator may act on.
+func zForTests(m int) float64 {
+	if m < 1 {
+		m = 1
+	}
+	alpha := 0.05 / float64(m)
+	return math.Sqrt2 * math.Erfinv(1-alpha)
+}
+
+// scanWindowCount picks how finely to slice a run.
+//
+// The choice is a trade. Wider windows hold more packets and so can resolve a
+// smaller difference, but they average a short episode away, which is the very
+// thing the scan exists to catch. Narrower windows do the reverse, and also
+// multiply the comparisons, which zForTests then charges for.
+//
+// Measured against simulation on a 3000-packet run: a culprit that swaps
+// halfway is caught every time between four and ten windows and starts to slip
+// by twenty, while a node bad for a thirtieth of the run is caught about half
+// the time and improves with more windows. Around 250 packets per window
+// serves both, so that is what this aims for, bounded so that a short run is
+// not sliced into noise nor a long one into hundreds of comparisons.
+func scanWindowCount(packets int) int {
+	n := packets / 250
+	if n < 4 {
+		n = 4
+	}
+	if n > 16 {
+		n = 16
+	}
+	return n
+}
+
+// windowFinding is a node that stood out from its peers during one stretch of
+// the run.
+type windowFinding struct {
+	group string
+	start time.Time
+	end   time.Time
+	c     contrast
+}
+
+// bucketize splits observations into n consecutive windows of equal duration.
+// Windows with no traffic come back empty rather than being dropped, so a
+// caller can still report when they were.
+func bucketize(obs []observation, n int) ([][]observation, time.Time, time.Duration) {
+	timed := make([]observation, 0, len(obs))
+	for _, o := range obs {
+		if !o.at.IsZero() {
+			timed = append(timed, o)
+		}
+	}
+	if len(timed) < 2 || n < 1 {
+		return nil, time.Time{}, 0
+	}
+	sort.Slice(timed, func(i, j int) bool { return timed[i].at.Before(timed[j].at) })
+	start := timed[0].at
+	span := timed[len(timed)-1].at.Sub(start)
+	if span <= 0 {
+		return nil, time.Time{}, 0
+	}
+	width := span / time.Duration(n)
+	if width <= 0 {
+		return nil, time.Time{}, 0
+	}
+
+	out := make([][]observation, n)
+	for _, o := range timed {
+		i := int(o.at.Sub(start) / width)
+		if i >= n {
+			i = n - 1
+		}
+		out[i] = append(out[i], o)
+	}
+	return out, start, width
+}
+
+// scanWindows looks for a node that was worse than its peers during part of
+// the run.
+//
+// A whole-run comparison answers "was this node worse on average", which is
+// the wrong question when loss arrives in episodes. Averaged over a long
+// batch, a node that failed badly for two minutes looks nearly innocent, and
+// two nodes that each failed badly at different times look identical to each
+// other and so to the comparison, which then reports nothing at all. Measured
+// against simulation, the whole-run comparison misses a swapping culprit
+// entirely and catches a node that is bad for a thirtieth of the run less than
+// one time in ten.
+//
+// Scanning windows restores both cases, at the cost of many more comparisons,
+// which zForTests pays for.
+func scanWindows(obs []observation, groups []group, windows int) []windowFinding {
+	buckets, start, width := bucketize(obs, windows)
+	if buckets == nil {
+		return nil
+	}
+
+	comparisons := 0
+	for _, b := range buckets {
+		for _, g := range groups {
+			comparisons += len(layerContrasts(b, g.nodes))
+		}
+	}
+	z := zForTests(comparisons)
+
+	found := make([]windowFinding, 0, 4)
+	for i, b := range buckets {
+		for _, g := range groups {
+			for _, c := range layerContrastsZ(b, g.nodes, z) {
+				if c.diffLo > 0 {
+					found = append(found, windowFinding{
+						group: g.label,
+						start: start.Add(time.Duration(i) * width),
+						end:   start.Add(time.Duration(i+1) * width),
+						c:     c,
+					})
+				}
+			}
+		}
+	}
+	return found
+}
+
+// reportWindows prints anything the windowed scan turned up, and says plainly
+// when it turned up nothing, since silence here is a weaker statement than it
+// looks.
+func (a *attribution) reportWindows(w io.Writer, obs []observation, doc *cpki.Document) {
+	groups := comparisonGroups(doc)
+	if len(groups) == 0 {
+		return
+	}
+	found := scanWindows(obs, groups, scanWindowCount(len(obs)))
+	if len(found) == 0 {
+		fmt.Fprintf(w, "\n  no node stood out within any single window either.\n")
+		return
+	}
+
+	fmt.Fprintf(w, "\n  worse than its peers during part of the run:\n")
+	for _, f := range found {
+		fmt.Fprintf(w, "    %s-%s  %-16s %-22s %d/%d failed  %+.1f%% vs peers\n",
+			f.start.Format("15:04:05"), f.end.Format("15:04:05"), f.group,
+			f.c.node, f.c.failures, f.c.exposure, 100*f.c.diff)
+	}
+	fmt.Fprintf(w, "  Loss that comes and goes is averaged away by the whole-run\n")
+	fmt.Fprintf(w, "  comparison above, so a node named here and not there is not a\n")
+	fmt.Fprintf(w, "  contradiction: it was bad for a while rather than throughout.\n")
 }
 
 // reportNotSeparable names the nodes whose contribution cannot be told apart

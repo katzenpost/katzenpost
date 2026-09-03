@@ -88,13 +88,9 @@ func synthesise(t *testing.T, n int, drop map[string]float64, seed int64) []obse
 		}
 		back = append(back, "gw")
 
+		// One roll per traversal, as above.
 		ok := true
-		seen := map[string]bool{}
 		for _, hop := range append(append([]string{}, fwd...), back...) {
-			if seen[hop] {
-				continue
-			}
-			seen[hop] = true
 			if rng.Float64() < drop[hop] {
 				ok = false
 			}
@@ -123,22 +119,31 @@ func TestLayerContrastsFindsThePlantedNode(t *testing.T) {
 	require.Greater(t, byNode["l2a"].rate, byNode["l2b"].rate)
 }
 
-// A uniform-loss control must flag nobody. This is the guard against an
-// estimator that finds a culprit wherever it looks.
-func TestLayerContrastsUniformLossFlagsNobody(t *testing.T) {
+// Under uniform loss nobody is at fault, so flags here are false ones. A 95%
+// interval is built to produce them 5% of the time and asserting none would
+// be asserting the interval is wrong; what matters is that the rate stays near
+// nominal rather than the estimator finding a culprit wherever it looks.
+func TestLayerContrastsFalsePositiveRateIsNominal(t *testing.T) {
 	uniform := map[string]float64{}
 	for _, n := range []string{"gw", "svc", "l1a", "l1b", "l2a", "l2b", "l3a", "l3b"} {
 		uniform[n] = 0.02
 	}
-	for seed := int64(1); seed <= 5; seed++ {
+	comparisons, flagged := 0, 0
+	for seed := int64(1); seed <= 60; seed++ {
 		obs := synthesise(t, 4000, uniform, seed)
 		for _, layer := range [][]string{{"l1a", "l1b"}, {"l2a", "l2b"}, {"l3a", "l3b"}} {
 			for _, c := range layerContrasts(obs, layer) {
-				require.False(t, c.worse(),
-					"seed %d: %s flagged under uniform loss", seed, c.node)
+				comparisons++
+				if c.worse() {
+					flagged++
+				}
 			}
 		}
 	}
+	rate := float64(flagged) / float64(comparisons)
+	require.Less(t, rate, 0.10,
+		"false positive rate %.1f%% (%d of %d) is well above the nominal 5%%",
+		100*rate, flagged, comparisons)
 }
 
 // Nodes on every route must be named as inseparable rather than silently
@@ -188,4 +193,131 @@ func TestReportOverTimeShowsAnEpisode(t *testing.T) {
 	require.Contains(t, out, "failures over time")
 	require.Contains(t, out, "100.0%", "the burst window should read as total loss")
 	require.Contains(t, out, "  0.0%", "quiet windows should read as none")
+}
+
+// simulateVarying builds a run in which a node's drop probability may change
+// partway through, which is the case the whole-run comparison cannot see.
+func simulateVarying(seed int64, n int, dropAt func(i int, node string) float64) []observation {
+	rng := rand.New(rand.NewSource(seed))
+	layers := [][]string{{"l1a", "l1b"}, {"l2a", "l2b"}, {"l3a", "l3b"}}
+	obs := make([]observation, 0, n)
+	base := time.Now()
+	for i := 0; i < n; i++ {
+		fwd := []string{"gw"}
+		back := []string{}
+		for _, l := range layers {
+			fwd = append(fwd, l[rng.Intn(2)])
+		}
+		fwd = append(fwd, "svc")
+		for _, l := range layers {
+			back = append(back, l[rng.Intn(2)])
+		}
+		back = append(back, "gw")
+
+		// One roll per traversal: a node that drops packets does so each
+		// time it handles one, so a route meeting it twice risks it twice.
+		ok := true
+		for _, hop := range append(append([]string{}, fwd...), back...) {
+			if rng.Float64() < dropAt(i, hop) {
+				ok = false
+			}
+		}
+		obs = append(obs, observation{
+			at: base.Add(time.Duration(i) * time.Second), ok: ok, forward: fwd, back: back,
+		})
+	}
+	return obs
+}
+
+func testGroups() []group {
+	return []group{
+		{"mix layer 1", []string{"l1a", "l1b"}},
+		{"mix layer 2", []string{"l2a", "l2b"}},
+		{"mix layer 3", []string{"l3a", "l3b"}},
+	}
+}
+
+// When the culprit swaps identity halfway through, both nodes end the run
+// with the same average and the whole-run comparison is blind. The windowed
+// scan must see both, in their own halves.
+func TestWindowScanSeesASwappingCulprit(t *testing.T) {
+	drop := func(i int, n string) float64 {
+		if i < 1500 && n == "l1a" {
+			return 0.15
+		}
+		if i >= 1500 && n == "l1b" {
+			return 0.15
+		}
+		return 0.004
+	}
+	obs := simulateVarying(1, 3000, drop)
+
+	for _, c := range layerContrasts(obs, []string{"l1a", "l1b"}) {
+		require.False(t, c.worse(),
+			"whole-run comparison should be blind here; that is why windows exist")
+	}
+
+	named := map[string]bool{}
+	for _, f := range scanWindows(obs, testGroups(), scanWindowCount(len(obs))) {
+		named[f.c.node] = true
+	}
+	require.True(t, named["l1a"], "the first half's culprit must be found")
+	require.True(t, named["l1b"], "the second half's culprit must be found")
+}
+
+// A node bad for only a small slice of the run is diluted to near-innocence
+// in the average. The windowed scan must still find it.
+func TestWindowScanSeesABriefEpisode(t *testing.T) {
+	drop := func(i int, n string) float64 {
+		if i >= 1450 && i < 1550 && n == "l2a" {
+			return 0.70
+		}
+		return 0.004
+	}
+	found := 0
+	for seed := int64(1); seed <= 20; seed++ {
+		obs := simulateVarying(seed, 3000, drop)
+		for _, f := range scanWindows(obs, testGroups(), scanWindowCount(len(obs))) {
+			if f.c.node == "l2a" {
+				found++
+				break
+			}
+		}
+	}
+	// Half the time is the honest expectation for so brief an episode: a
+	// hundred bad packets in three thousand is thin evidence however it is
+	// sliced. The whole-run comparison manages under one time in ten.
+	require.Greater(t, found, 8,
+		"a node dropping 70%% for a thirtieth of the run should be caught about half the time")
+}
+
+// The scan must not invent culprits. Under uniform loss, and under a
+// network-wide episode that lifts every node together, it must stay quiet
+// despite testing many windows.
+func TestWindowScanQuietWhenNobodyIsAtFault(t *testing.T) {
+	uniform := func(i int, n string) float64 { return 0.02 }
+	episode := func(i int, n string) float64 {
+		if i >= 1800 && i < 2100 {
+			return 0.35
+		}
+		return 0.004
+	}
+	for name, drop := range map[string]func(int, string) float64{
+		"uniform loss": uniform, "network-wide episode": episode,
+	} {
+		flagged := 0
+		for seed := int64(1); seed <= 20; seed++ {
+			flagged += len(scanWindows(simulateVarying(seed, 3000, drop), testGroups(), scanWindowCount(3000)))
+		}
+		require.LessOrEqual(t, flagged, 1, "%s: scan should stay quiet, got %d", name, flagged)
+	}
+}
+
+// The multiple-comparison correction must actually tighten as more tests are
+// made, or the scan would simply be a licence to find something.
+func TestZForTestsTightensWithMoreComparisons(t *testing.T) {
+	require.InDelta(t, zScore95, zForTests(1), 1e-3)
+	require.Greater(t, zForTests(120), zForTests(1))
+	require.Greater(t, zForTests(1000), zForTests(120))
+	require.Equal(t, zForTests(1), zForTests(0))
 }
