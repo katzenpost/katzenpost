@@ -91,6 +91,31 @@ const fallbackRoundTrip = 60 * time.Second
 // (L + 2 hops with encoded delays because the packet carries a SURB),
 // SURB return is L mixes + gateway (L + 1 hops). For the default
 // L = 3 topology this is 9, matching the paper's Erlang-9 analysis.
+// replySlop is how long past the daemon's own estimate of a reply's due time
+// a packet is worth waiting for.
+//
+// The daemon reports, as ReplyETA, the delay actually encoded into the packet
+// it just sent. What that figure cannot include is the wall-clock cost the
+// Sphinx delays do not encode: crypto at each hop, scheduler dwell, and
+// transmission between nodes. Those are what this budget covers, at
+// perHopSlopMs each.
+//
+// The alternative, which this replaces as the normal case, is to wait
+// roundTripTimeout for every packet. That bound assumes every hop drew close
+// to the worst delay the distribution permits, which on namenlos comes to four
+// minutes; a packet that is simply lost then holds a concurrency slot for four
+// minutes rather than the few seconds its own route warranted.
+func replySlop(doc *cpki.Document) time.Duration {
+	hops := uint64(9)
+	if doc != nil && len(doc.Topology) > 0 {
+		hops = uint64(2*len(doc.Topology) + 3)
+	}
+	return time.Duration(hops*perHopSlopMs) * time.Millisecond
+}
+
+// roundTripTimeout returns the outer bound on a packet's wait, used when the
+// daemon reports no estimate of its own: an older daemon, or a send that
+// failed before the estimate arrived. See replySlop for the normal case.
 func roundTripTimeout(doc *cpki.Document) time.Duration {
 	if doc == nil || doc.Mu <= 0 || len(doc.Topology) == 0 {
 		return fallbackRoundTrip
@@ -108,7 +133,7 @@ func roundTripTimeout(doc *cpki.Document) time.Duration {
 // daemon chose for it. The route is recorded on failure as well as success,
 // which is the whole point: a packet that never came back is the one whose
 // hops we most want to know.
-func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, timeout time.Duration, printDiff bool) observation {
+func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, timeout, slop time.Duration, printDiff bool) observation {
 	var nonce [32]byte
 
 	_, err := rand.Reader.Read(nonce[:])
@@ -129,7 +154,7 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, t
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	res, err := session.BlockingSendMessageWithResult(ctx, cborPayload, &id, serviceDesc.RecipientQueueID)
+	res, err := session.BlockingSendMessageWithResult(ctx, cborPayload, &id, serviceDesc.RecipientQueueID, slop)
 
 	// A result accompanies a failed send whenever the packet actually went
 	// out, so build the observation from it either way.
@@ -191,9 +216,12 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 	// topology change rarely enough that recomputing per ping would
 	// add complexity without benefit.
 	timeout := roundTripTimeout(session.PKIDocument())
+	slop := replySlop(session.PKIDocument())
 
 	fmt.Println("Control-C to abort...")
-	fmt.Printf("%s\n", headerStyle.Render(fmt.Sprintf("Sending %d Sphinx packets to %s@%s (per-packet timeout %s)", count, serviceName, nodeName, timeout)))
+	fmt.Printf("%s\n", headerStyle.Render(fmt.Sprintf(
+		"Sending %d Sphinx packets to %s@%s (reply due + %s, hard cap %s)",
+		count, serviceName, nodeName, slop, timeout)))
 
 	var passed, failed uint64
 	attrib := new(attribution)
@@ -213,7 +241,7 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 
 		// make new goroutine for each ping to send them in parallel
 		go func() {
-			o := sendPing(session, desc, timeout, printDiff)
+			o := sendPing(session, desc, timeout, slop, printDiff)
 			attrib.record(o)
 			if o.ok {
 				fmt.Printf("%s", successStyle.Render("!"))
