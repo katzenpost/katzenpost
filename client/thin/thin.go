@@ -1804,6 +1804,50 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 //
 //	fmt.Printf("Echo reply: %s\n", reply)
 func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+	res, err := t.BlockingSendMessageWithResult(ctx, payload, destNode, destQueue)
+	if res == nil {
+		return nil, err
+	}
+	return res.Payload, err
+}
+
+// SendResult reports what the daemon did with one message: the route the packet
+// took and the timing the daemon reported, alongside the reply if one arrived.
+//
+// A result is returned even when the send ultimately fails, because the route is
+// known when the packet goes out and a loss is only discovered later. A caller
+// diagnosing loss needs the route of exactly the packets that did not come back,
+// so success must be judged from the error and not from the result being nil.
+//
+// Empty route slices mean unknown rather than no hops; see MessageSentEvent.
+type SendResult struct {
+	// Payload is the reply, or nil if none arrived.
+	Payload []byte
+
+	// SURBID identifies this message. It is the key the daemon's send and
+	// reply events share, and is generated here rather than by the caller.
+	SURBID *[sConstants.SURBIDLength]byte
+
+	// SentAt is when the daemon reported putting the packet on the wire,
+	// and ReplyETA the round trip it expected. Both are zero if no send
+	// event was observed before the call returned.
+	SentAt   time.Time
+	ReplyETA time.Duration
+
+	// ForwardRoute and ReturnRoute name the hops in path order, from the
+	// daemon's MessageSentEvent.
+	ForwardRoute []string
+	ReturnRoute  []string
+}
+
+// BlockingSendMessageWithResult is BlockingSendMessage, additionally reporting
+// the route and timing the daemon recorded for the message.
+//
+// Unlike most Go APIs it returns a non-nil result together with a non-nil error
+// whenever the message was actually sent, so that a timed-out packet can still
+// be attributed to the hops it would have traversed. Only a failure before the
+// send returns a nil result.
+func (t *ThinClient) BlockingSendMessageWithResult(ctx context.Context, payload []byte, destNode *[32]byte, destQueue []byte) (*SendResult, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -1821,14 +1865,16 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 		return nil, err
 	}
 
+	res := &SendResult{SURBID: surbID}
+
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return res, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, errHalting
+			return res, errHalting
 		}
 
 		switch v := event.(type) {
@@ -1836,20 +1882,28 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 			// Ignore garbage collection events
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return nil, errConnectionLost
+				return res, errConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		case *MessageSentEvent:
-			// Ignore message sent events
+			// Record our own send, matched by SURB ID because the sink
+			// carries every event on this connection, not only ours.
+			if v.SURBID != nil && hmac.Equal(surbID[:], v.SURBID[:]) {
+				res.SentAt = v.SentAt
+				res.ReplyETA = v.ReplyETA
+				res.ForwardRoute = v.ForwardRoute
+				res.ReturnRoute = v.ReturnRoute
+			}
 		case *MessageReplyEvent:
 			if hmac.Equal(surbID[:], v.SURBID[:]) {
-				return v.Payload, nil
+				res.Payload = v.Payload
+				return res, nil
 			} else {
 				continue
 			}
 		default:
-			t.log.Debugf("BlockingSendMessage: ignoring unexpected event %T", v)
+			t.log.Debugf("BlockingSendMessageWithResult: ignoring unexpected event %T", v)
 		}
 	}
 	// unreachable
