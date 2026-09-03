@@ -156,24 +156,14 @@ func (p *gateway) worker() {
 		// Post-process the recipient.
 		recipient := pkt.Recipient.ID[:]
 
-		// Process the packet based on type.
+		// The caller checks that the packet is either a SURB-Reply or a
+		// user message, so anything that is not the former is the latter.
 		if pkt.IsSURBReply() {
 			p.onSURBReply(pkt, recipient)
-			pkt.Dispose()
-			continue
 		} else {
-			// Caller checks that the packet is either a SURB-Reply or a user
-			// message, so this must be the latter.
 			p.onToUser(pkt, recipient)
-			pkt.Dispose()
-			continue
 		}
-
-		p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%x')", pkt.ID, recipient)
-		instrument.PacketsDropped()
-		instrument.PacketsDroppedByReason("gateway_invalid_recipient")
 		pkt.Dispose()
-
 	}
 }
 
