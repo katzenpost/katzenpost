@@ -25,6 +25,7 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
+	clientcommon "github.com/katzenpost/katzenpost/client/common"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/common"
@@ -77,6 +78,11 @@ type Config struct {
 	PrintDiff      bool
 	ThinClientOnly bool
 	LogLevel       string
+
+	// RotateServices spreads the batch across every node offering the
+	// requested service. Off by default so a plain ping keeps pinning a
+	// single destination as it always has.
+	RotateServices bool
 }
 
 // newRootCommand creates the root cobra command
@@ -125,7 +131,7 @@ full client mode where this ping tool starts it's own client daemon.`,
 				os.Exit(0)
 			}()
 
-			failed := executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff)
+			failed := executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff, cfg.RotateServices)
 			if failed > 0 {
 				return fmt.Errorf("ping success rate below 100%%: %d/%d pings failed", failed, cfg.Count)
 			}
@@ -139,6 +145,7 @@ full client mode where this ping tool starts it's own client daemon.`,
 	cmd.Flags().IntVarP(&cfg.Count, "count", "n", 5, "number of ping messages to send")
 	cmd.Flags().IntVarP(&cfg.Concurrency, "concurrency", "C", 1, "number of concurrent ping operations")
 	cmd.Flags().BoolVar(&cfg.PrintDiff, "print-diff", false, "print payload contents if reply is different than original")
+	cmd.Flags().BoolVar(&cfg.RotateServices, "rotate-services", false, "spread the batch across every node offering the service, instead of pinning one")
 	cmd.Flags().BoolVar(&cfg.ThinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
 	cmd.Flags().StringVar(&cfg.LogLevel, "log-level", "DEBUG", "logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
 
@@ -214,13 +221,27 @@ func initializeFullClient(configFile string, logPath string, logLevel string) (*
 }
 
 // executePing performs the ping operation and returns how many pings failed.
-func executePing(thinClient *thin.ThinClient, service string, count, concurrency int, printDiff bool) uint64 {
-	desc, err := thinClient.GetService(service)
-	if err != nil {
-		panic(err)
+//
+// With rotate set the batch is spread across every node offering the service
+// rather than pinned to one. That varies the destination hop, which otherwise
+// sits on every route of a run and so cannot be told apart from the baseline.
+func executePing(thinClient *thin.ThinClient, service string, count, concurrency int, printDiff, rotate bool) uint64 {
+	var services []*clientcommon.ServiceDescriptor
+	if rotate {
+		var err error
+		services, err = thinClient.GetServices(service)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		desc, err := thinClient.GetService(service)
+		if err != nil {
+			panic(err)
+		}
+		services = []*clientcommon.ServiceDescriptor{desc}
 	}
 
-	return sendPings(thinClient, desc, count, concurrency, printDiff)
+	return sendPings(thinClient, services, count, concurrency, printDiff)
 }
 
 // cleanup closes the thin client connection and shuts down the daemon if running
