@@ -120,23 +120,42 @@ func tallyNodes(obs []observation) map[string]*tally {
 	return byName
 }
 
-// layersOf maps each mix layer to the node names it contains, from the
-// consensus. Only mix layers are returned: the gateway and the service node
-// are handled separately because they do not vary within a run.
-func layersOf(doc *cpki.Document) [][]string {
+// group is a set of nodes interchangeable for one position on a route, and
+// so comparable against one another.
+type group struct {
+	label string
+	nodes []string
+}
+
+// comparisonGroups lists the sets a run may be able to compare within: each
+// mix layer, and the gateway and service sets.
+//
+// The latter two yield a comparison only when the run actually varied them,
+// which for the gateway it never does and for the service nodes it does only
+// under --rotate-services. Including them regardless costs nothing, since a
+// group with fewer than two exposed members produces no contrast, and it
+// means the report widens by itself as a run's coverage does.
+func comparisonGroups(doc *cpki.Document) []group {
 	if doc == nil {
 		return nil
 	}
-	layers := make([][]string, 0, len(doc.Topology))
-	for _, layer := range doc.Topology {
-		names := make([]string, 0, len(layer))
-		for _, desc := range layer {
-			names = append(names, desc.Name)
+	names := func(descs []*cpki.MixDescriptor) []string {
+		out := make([]string, 0, len(descs))
+		for _, desc := range descs {
+			out = append(out, desc.Name)
 		}
-		sort.Strings(names)
-		layers = append(layers, names)
+		sort.Strings(out)
+		return out
 	}
-	return layers
+
+	groups := make([]group, 0, len(doc.Topology)+2)
+	for i, layer := range doc.Topology {
+		groups = append(groups, group{fmt.Sprintf("mix layer %d", i+1), names(layer)})
+	}
+	groups = append(groups,
+		group{"gateways", names(doc.GatewayNodes)},
+		group{"service nodes", names(doc.ServiceNodes)})
+	return groups
 }
 
 // report writes the attribution summary. It is deliberately quiet when
@@ -200,8 +219,8 @@ type contrast struct {
 // from zero at 95%.
 func (c contrast) worse() bool { return c.diffLo > 0 }
 
-// layerContrasts computes each layer member against the pooled rest of its
-// layer. Nodes with no exposure are omitted, and a layer with fewer than two
+// layerContrasts computes each group member against the pooled rest of its
+// group. Nodes with no exposure are omitted, and a group with fewer than two
 // exposed members yields nothing, there being no peer to compare against.
 func layerContrasts(obs []observation, layer []string) []contrast {
 	byName := tallyNodes(obs)
@@ -241,12 +260,12 @@ func layerContrasts(obs []observation, layer []string) []contrast {
 
 // reportLayers prints the per-layer contrasts.
 func (a *attribution) reportLayers(w io.Writer, obs []observation, doc *cpki.Document) {
-	for i, layer := range layersOf(doc) {
-		cs := layerContrasts(obs, layer)
+	for _, g := range comparisonGroups(doc) {
+		cs := layerContrasts(obs, g.nodes)
 		if len(cs) == 0 {
 			continue
 		}
-		fmt.Fprintf(w, "\n  mix layer %d\n", i+1)
+		fmt.Fprintf(w, "\n  %s\n", g.label)
 		fmt.Fprintf(w, "    %-22s %8s %6s %20s  %s\n",
 			"node", "packets", "fail", "rate [95% CI]", "vs rest of layer")
 		for _, c := range cs {
