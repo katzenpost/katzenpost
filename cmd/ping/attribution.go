@@ -26,9 +26,56 @@ type observation struct {
 	back    []string
 }
 
-// attribution collects observations across a batch. Pings run concurrently,
-// so record is called from many goroutines and takes the lock; the report is
-// produced once, after the batch has drained.
+// attribution collects the outcome and route of every packet in a batch and
+// turns them into per-node statements about loss.
+//
+// # The model
+//
+// A round trip visits the gateway, one mix from each layer, the service node,
+// one mix from each layer again, and the gateway once more. When a packet does
+// not come back, every node on its route is a suspect and none is convicted:
+// the observation is a single bit about nine nodes. Only across many packets,
+// with the mixes redrawn each time, does the evidence separate.
+//
+// # What a single run can and cannot identify
+//
+// Each group contributes a fixed number of hops to every route: the gateway
+// twice, each mix layer twice, the service node once. A group's overall level
+// is therefore confounded with every other group's, and no quantity of packets
+// will separate them, because nothing in the data varies that could. What does
+// vary is which member of a layer was drawn, so differences within a layer are
+// estimable even though the layers' levels are not.
+//
+// That is why every comparison here is against the rest of a node's own group.
+// Its peers sit behind the identical baseline, so the comparison cancels it. A
+// comparison against a network-wide average would instead carry the confounded
+// baseline into the estimate and quietly attribute it to whichever node was
+// being measured.
+//
+// So a run pinned to one gateway and one service node can say which mix in a
+// layer is worse than its neighbours, can say what the overall loss rate is,
+// and can say nothing whatever about the gateway. Rotating services makes the
+// service set vary and brings it into the estimable set too, which is what
+// --rotate-services is for.
+//
+// # Why intervals rather than point estimates
+//
+// Per-node failure counts are small and frequently zero, where a point
+// estimate is close to meaningless on its own: three failures in twenty
+// packets is 15% and is also entirely consistent with 5% or with 35%. See
+// wilson for why the usual textbook interval will not serve either.
+//
+// # How much data it takes
+//
+// Interval width shrinks roughly as the reciprocal square root of exposure, so
+// telling a node running at 6% apart from a 2% baseline needs on the order of
+// a thousand packets through it. In a two-member layer a node sees about half
+// the batch, so that is a couple of thousand packets. A short run is not a
+// clean bill of health; it is an absence of evidence, and the intervals say so
+// by remaining wide enough to straddle zero.
+//
+// Pings run concurrently, so record is called from many goroutines and takes
+// the lock; the report is produced once, after the batch has drained.
 type attribution struct {
 	mu  sync.Mutex
 	obs []observation
@@ -45,10 +92,23 @@ const zScore95 = 1.959964
 
 // wilson returns the Wilson score interval for k failures in n trials.
 //
-// The normal approximation is unusable here: per-node failure counts are
-// small and frequently zero, where it produces intervals that are far too
-// narrow and can extend below zero. The Wilson interval is well behaved at
-// both extremes and is what the contrast below is built on.
+// The textbook interval, p ± z·sqrt(p(1-p)/n), is unusable here. With zero
+// failures it collapses to [0, 0], claiming certainty from an absence of
+// evidence, and its coverage falls well below the nominal level whenever n is
+// small or the rate is near zero, which is our ordinary case.
+//
+// Wilson inverts the score test instead. Rather than placing an interval
+// around the observed rate, it asks which true rates would leave the observed
+// count unsurprising, solving
+//
+//	|p̂ - p| / sqrt(p(1-p)/n) <= z
+//
+// for p. That is a quadratic in p, and its two roots are the bounds; the
+// closed form below is that solution rearranged. The (1 + z²/n) denominator is
+// not a fudge factor but falls out of the algebra, and it is what pulls the
+// estimate slightly toward one half, so that zero failures still yields a
+// positive upper bound: 0 in 100 gives [0, 3.70%], which is the honest reading
+// of no failures yet.
 func wilson(k, n int) (lo, hi float64) {
 	if n == 0 {
 		return 0, 0
@@ -62,9 +122,19 @@ func wilson(k, n int) (lo, hi float64) {
 	return math.Max(0, center-half), math.Min(1, center+half)
 }
 
-// diffInterval returns a 95% interval for p1-p2 by Newcombe's score method,
-// which composes the two Wilson intervals rather than assuming normality of
-// the difference. Like wilson it stays sane when either count is zero.
+// diffInterval returns a 95% interval for p1-p2 by Newcombe's score method.
+//
+// Adding the two variances and appealing to normality fails for the same
+// reason the textbook interval does: when either count is zero its variance
+// term vanishes and the interval is far too narrow. Newcombe composes the two
+// Wilson intervals instead. The difference is at its most negative when p1
+// sits at its own lower plausible bound and p2 at its upper, so those two
+// distances bound the excursion; they are combined in quadrature rather than
+// added because the two estimates are independent, and adding them would be
+// needlessly conservative.
+//
+// An interval lying wholly above zero is what licenses the claim that one node
+// is worse than its peers. See contrast.worse.
 func diffInterval(k1, n1, k2, n2 int) (lo, hi float64) {
 	if n1 == 0 || n2 == 0 {
 		return 0, 0
@@ -79,10 +149,14 @@ func diffInterval(k1, n1, k2, n2 int) (lo, hi float64) {
 	return lo, hi
 }
 
-// tally is one node's exposure and failure count. Exposure counts packets
-// whose route included the node in either direction, not traversals: a
-// packet that met the node twice is one opportunity to be dropped by it as
-// far as that packet's outcome is concerned.
+// tally is one node's exposure and failure count.
+//
+// Exposure counts packets whose route included the node, not hops through it.
+// A packet that met the node on both the forward and the return path counts
+// once, because the packet yields a single bit of evidence and must therefore
+// contribute a single trial. Counting it twice would weight one observation
+// double and would break the independence the binomial assumes, since the two
+// hops share one outcome.
 type tally struct {
 	name     string
 	exposure int
