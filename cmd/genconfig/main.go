@@ -165,6 +165,12 @@ performance optimization and security requirements.`,
 	cmd.Flags().IntVar(&cfg.NumSphinxWorkers, "numSphinxWorkers", 0,
 		"number of Sphinx crypto workers per mix node (0 for default 2)")
 
+	// Replica proxy tuning flags
+	cmd.Flags().IntVar(&cfg.ProxyWorkerCount, "proxyWorkerCount", 0,
+		"number of concurrent proxy worker slots per replica (0 for auto-derived from numCPU)")
+	cmd.Flags().IntVar(&cfg.ProxyRequestTimeout, "proxyRequestTimeout", 0,
+		"proxy request timeout in seconds per replica (0 for auto-derived from MKEM ops/sec)")
+
 	cmd.Flags().DurationVar(&cfg.SessionGracePeriod, "sessionGracePeriod", 0,
 		"how long kpclientd preserves per-app state after a thin-client disconnect "+
 			"before reaping it (0 means use the daemon's built-in default of 10 minutes; "+

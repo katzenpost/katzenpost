@@ -195,6 +195,8 @@ type Config struct {
 	SendSlack                int
 	UnwrapDelay              int
 	NumSphinxWorkers         int
+	ProxyWorkerCount         int
+	ProxyRequestTimeout      int
 	// SessionGracePeriod controls how long kpclientd preserves
 	// per-app state after a thin client's socket drops without a
 	// thin_close. Parsed from a Go duration string ("30s", "10m");
@@ -251,6 +253,8 @@ type Katzenpost struct {
 	SendSlack               int
 	UnwrapDelay             int
 	NumSphinxWorkers        int
+	ProxyWorkerCount        int
+	ProxyRequestTimeout     int
 	// SessionGracePeriod is written into the generated kpclientd
 	// client.toml so the daemon's per-app reap interval is tunable
 	// per docker invocation; zero means the daemon's compile-time
@@ -567,6 +571,14 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.Logging.File = ServerLogFile
 	//cfg.Logging.Level = s.LogLevel
 	cfg.Logging.Level = DebugLogLevel
+
+	// Override proxy configuration if explicitly provided (non-zero values)
+	if s.ProxyWorkerCount > 0 {
+		cfg.ProxyWorkerCount = s.ProxyWorkerCount
+	}
+	if s.ProxyRequestTimeout > 0 {
+		cfg.ProxyRequestTimeout = s.ProxyRequestTimeout
+	}
 
 	s.ReplicaNodeConfigs = append(s.ReplicaNodeConfigs, cfg)
 	_ = CfgIdKey(cfg, s.OutDir)
@@ -989,6 +1001,8 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.SendSlack = cfg.SendSlack
 	s.UnwrapDelay = cfg.UnwrapDelay
 	s.NumSphinxWorkers = cfg.NumSphinxWorkers
+	s.ProxyWorkerCount = cfg.ProxyWorkerCount
+	s.ProxyRequestTimeout = cfg.ProxyRequestTimeout
 	s.SessionGracePeriod = cfg.SessionGracePeriod
 	s.PersistMixKeysOnShutdownDir = cfg.PersistMixKeysOnShutdownDir
 
