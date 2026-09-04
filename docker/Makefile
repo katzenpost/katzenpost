@@ -90,6 +90,14 @@ sendSlack=0
 unwrapDelay=0
 numSphinxWorkers=0
 
+# Replica proxy tuning for parallel tests (0 = use defaults auto-derived from
+# numCPU and MKEM ops/sec). Under heavy parallel load, increase these to prevent
+# "replication failed" errors during copy commands: proxyWorkerCount bounds
+# concurrent proxy attempts, and proxyRequestTimeout sets the total budget for
+# each failover sweep. For 17 parallel tests, 16 workers and 120s timeout work.
+proxyWorkerCount=0
+proxyRequestTimeout=0
+
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
 
@@ -235,6 +243,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
+	--proxyWorkerCount $(proxyWorkerCount) --proxyRequestTimeout $(proxyRequestTimeout) \
 	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
 	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 
