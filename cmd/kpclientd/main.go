@@ -19,10 +19,13 @@ import (
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
 )
 
+const defaultDBusName = "network.katzenpost.kpclientd"
+
 // Config holds the command line configuration
 type Config struct {
 	ConfigFile   string
 	ValidateOnly bool
+	DBusName     string
 }
 
 // newRootCommand creates the root cobra command
@@ -56,7 +59,11 @@ applications to share a single network connection.`,
   kpclientd -c /path/to/custom-client.toml
 
   # Validate the configuration file and exit without side effects
-  kpclientd -c /etc/katzenpost/client.toml --validate-only`,
+  kpclientd -c /etc/katzenpost/client.toml --validate-only
+
+  # Own a session D-Bus name for the daemon's lifetime
+  kpclientd -c /etc/katzenpost/client.toml --dbus-name=network.katzenpost.kpclientd`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runClientDaemon(cfg)
 		},
@@ -69,6 +76,9 @@ applications to share a single network connection.`,
 	// Operation mode flags
 	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
 		"load and validate the configuration file, then exit without side effects")
+	cmd.Flags().StringVar(&cfg.DBusName, "dbus-name", "",
+		"own this session D-Bus name (bare flag defaults to "+defaultDBusName+")")
+	cmd.Flags().Lookup("dbus-name").NoOptDefVal = defaultDBusName
 
 	// Mark required flags
 	cmd.MarkFlagRequired("config")
@@ -96,6 +106,21 @@ func runClientDaemon(cfg Config) error {
 		}
 		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", cfg.ConfigFile)
 		return nil
+	}
+	dbusName := clientCfg.DBusName
+	if cfg.DBusName != "" {
+		dbusName = cfg.DBusName
+	}
+	if dbusName != "" {
+		closeBus, err := ownBusName(dbusName)
+		if err != nil {
+			return fmt.Errorf("failed to own D-Bus name: %w", err)
+		}
+		defer func() {
+			if err := closeBus(); err != nil {
+				fmt.Fprintf(os.Stderr, "releasing D-Bus name %q: %v\n", dbusName, err)
+			}
+		}()
 	}
 
 	// Start the prometheus listener before the daemon so that any
