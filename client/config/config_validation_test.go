@@ -462,7 +462,13 @@ func TestUnmarshalTOML(t *testing.T) {
 
 		pinnedGateways := raw["PinnedGateways"].(map[string]interface{})
 		gateways := pinnedGateways["Gateways"].([]map[string]interface{})
-		gw0 := gateways[0]
+		gw0Orig := gateways[0]
+
+		// Copy the gateway data to avoid mutating shared test data
+		gw0 := make(map[string]interface{})
+		for k, v := range gw0Orig {
+			gw0[k] = v
+		}
 
 		// Override Addresses with a non-slice
 		gw0["Addresses"] = "not-a-slice"
@@ -480,7 +486,13 @@ func TestUnmarshalTOML(t *testing.T) {
 
 		pinnedGateways := raw["PinnedGateways"].(map[string]interface{})
 		gateways := pinnedGateways["Gateways"].([]map[string]interface{})
-		gw0 := gateways[0]
+		gw0Orig := gateways[0]
+
+		// Copy the gateway data to avoid mutating shared test data
+		gw0 := make(map[string]interface{})
+		for k, v := range gw0Orig {
+			gw0[k] = v
+		}
 
 		gw0["Addresses"] = []interface{}{"http://invalid:1234"}
 		gw := &Gateway{}
