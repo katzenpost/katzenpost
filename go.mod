@@ -3,6 +3,7 @@ module github.com/katzenpost/katzenpost
 go 1.26.2
 
 require (
+	github.com/godbus/dbus/v5 v5.1.0
 	charm.land/lipgloss/v2 v2.0.2
 	github.com/BurntSushi/toml v1.6.0
 	github.com/carlmjohnson/versioninfo v0.22.5
