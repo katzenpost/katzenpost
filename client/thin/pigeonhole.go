@@ -5,6 +5,7 @@ package thin
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 
@@ -497,7 +498,12 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 //	}
 //	fmt.Printf("Received: %s\n", result.Plaintext)
 func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, false)
+	return t.startResendingEncryptedMessageImpl(context.Background(), readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, false)
+}
+
+// StartResendingEncryptedMessageWithContext stops waiting when ctx is done.
+func (t *ThinClient) StartResendingEncryptedMessageWithContext(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
+	return t.startResendingEncryptedMessageImpl(ctx, readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, false)
 }
 
 // StartResendingEncryptedMessageNoRetry behaves exactly like
@@ -508,7 +514,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(readCap *bacap.ReadCap, writ
 //
 // An in-flight call may be cancelled via CancelResendingEncryptedMessage.
 func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, true, false)
+	return t.startResendingEncryptedMessageImpl(context.Background(), readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, true, false)
 }
 
 // StartResendingEncryptedMessageReturnBoxExists behaves exactly like
@@ -524,7 +530,7 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCa
 //
 // An in-flight call may be cancelled via CancelResendingEncryptedMessage.
 func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
-	return t.startResendingEncryptedMessageImpl(readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, true)
+	return t.startResendingEncryptedMessageImpl(context.Background(), readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, true)
 }
 
 // startResendingEncryptedMessageImpl is the shared implementation behind
@@ -535,6 +541,7 @@ func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *baca
 // daemon to fetch and return the replica's BoxAlreadyExists code
 // rather than swallowing it as idempotent success.
 func (t *ThinClient) startResendingEncryptedMessageImpl(
+	ctx context.Context,
 	readCap *bacap.ReadCap,
 	writeCap *bacap.WriteCap,
 	messageBoxIndex []byte,
@@ -585,15 +592,13 @@ func (t *ThinClient) startResendingEncryptedMessageImpl(
 		return nil, err
 	}
 
-	// Wait for reply from daemon — blocks forever until success, error, or Close()
-	// For writes: daemon sends reply after receiving ACK (or payload, if
-	// noIdempotentBoxAlreadyExists is set — two round-trips in that case).
-	// For reads: daemon sends reply after receiving payload (after ACK).
-	// The daemon may also send error responses (e.g., BoxIDNotFound) which will cause this to exit.
+	// Wait for the daemon's reply, ctx cancellation, or Close().
 	for {
 		var event Event
 		select {
 		case event = <-eventSink:
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		case <-t.HaltCh():
 			return nil, errHalting
 		}

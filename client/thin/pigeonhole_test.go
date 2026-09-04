@@ -4,9 +4,11 @@
 package thin
 
 import (
+	"context"
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 
@@ -429,6 +431,27 @@ func TestStartResendingEncryptedMessageWriteSuccess(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, courierHash, result.CourierIdentityHash)
 	require.Equal(t, []byte("queue1"), result.CourierQueueID)
+}
+
+func TestStartResendingEncryptedMessageWithContextDeadline(t *testing.T) {
+	tc, server := setupMockDaemon(t)
+
+	go func() { _, _ = readRequest(server) }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	_, err := tc.StartResendingEncryptedMessageWithContext(
+		ctx,
+		nil,
+		newTestWriteCap(t),
+		nil,
+		nil,
+		[]byte("desc"),
+		[]byte("cipher"),
+		&[32]byte{7, 8, 9},
+	)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestStartResendingEncryptedMessageReadSuccess(t *testing.T) {
