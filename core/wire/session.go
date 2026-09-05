@@ -76,8 +76,8 @@ const (
 // ever block forever, even when a caller passes a context with no deadline.
 // Callers should set role-appropriate values on SessionConfig.
 var (
-	// DefaultHandshakeTimeout bounds the entire handshake, including the
-	// finalization NoOp exchange.
+	// DefaultHandshakeTimeout bounds the four-message handshake; the
+	// finalization NoOp that follows is bounded by the read/write timeouts.
 	DefaultHandshakeTimeout = 3 * time.Second
 
 	// DefaultReadTimeout bounds a single RecvCommand: the longest a peer may
