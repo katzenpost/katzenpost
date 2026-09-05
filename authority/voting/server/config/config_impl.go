@@ -163,13 +163,9 @@ func (sCfg *Server) validate() error {
 		}
 	}
 
-	if sCfg.PKISignatureScheme == "" {
-		return errors.New("PKISignatureScheme was not set")
-	} else {
-		s := signSchemes.ByName(sCfg.PKISignatureScheme)
-		if s == nil {
-			return errors.New("PKI Signature Scheme not found")
-		}
+	sCfg.applyPKISignatureSchemeDefault()
+	if s := signSchemes.ByName(sCfg.PKISignatureScheme); s == nil {
+		return errors.New("PKI Signature Scheme not found")
 	}
 
 	if sCfg.Addresses != nil {
