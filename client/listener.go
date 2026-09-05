@@ -646,6 +646,7 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 
 	l.decoySender = newSender(l.PickNextRequest, egressCh, client.cfg.Debug.DisableDecoyTraffic, logBackend)
 
+	client.cfg.Listen.SetLogger(l.log)
 	l.listener, err = client.cfg.Listen.Listen()
 	if err != nil {
 		return nil, err
