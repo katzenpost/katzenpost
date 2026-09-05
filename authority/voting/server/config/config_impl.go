@@ -131,8 +131,16 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	if !ok {
 		return errors.New("map entry not found")
 	}
-	for _, addr := range pos.([]interface{}) {
-		addresses = append(addresses, addr.(string))
+	posSlice, ok := pos.([]interface{})
+	if !ok {
+		return errors.New("Authority.Addresses must be an array of strings")
+	}
+	for _, addr := range posSlice {
+		s, ok := addr.(string)
+		if !ok {
+			return errors.New("Authority.Addresses entries must be strings")
+		}
+		addresses = append(addresses, s)
 	}
 	a.Addresses = addresses
 	return nil
