@@ -396,10 +396,19 @@ func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) erro
 
 	var args []string
 	if len(pluginConf.Config) > 0 {
-		args = []string{}
+		args = make([]string, 0, len(pluginConf.Config)*2)
 		for key, val := range pluginConf.Config {
-			args = append(args, fmt.Sprintf("-%s", key), val.(string))
+			var strVal string
+			switch v := val.(type) {
+			case string:
+				strVal = v
+			default:
+				strVal = fmt.Sprintf("%v", v)
+			}
+			args = append(args, fmt.Sprintf("-%s", key), strVal)
 		}
+	} else {
+		args = []string{}
 	}
 
 	pluginClient, err := k.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
