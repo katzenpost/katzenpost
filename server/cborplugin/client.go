@@ -232,10 +232,10 @@ func (c *Client) reaper() {
 }
 
 func (c *Client) logPluginStderr(stderr io.ReadCloser) {
-	logWriter := c.logBackend.GetLogWriter(c.cmd.Path, "DEBUG")
+	logWriter := c.logBackend.GetLogWriter(c.cmd.Path, "NOTICE")
 	_, err := io.Copy(logWriter, stderr)
 	if err != nil {
-		c.log.Errorf("Failed to proxy cborplugin stderr to DEBUG log: %s", err)
+		c.log.Errorf("Failed to proxy cborplugin stderr to NOTICE log: %s", err)
 	}
 	c.Halt()
 }
