@@ -66,6 +66,8 @@ func New(cfg *config.Config, pkiClient pki.Fetcher) (*Server, error) {
 		return nil, err
 	}
 
+	s.log.Noticef("Katzenpost courier version: %s", kpcommon.Version())
+
 	if err := s.initializePKI(pkiClient); err != nil {
 		return nil, err
 	}
