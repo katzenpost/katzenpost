@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -94,4 +95,117 @@ func (r *readUntilEOF) Read(p []byte) (int, error) {
 		err = io.EOF
 	}
 	return n, err
+}
+
+func TestUnixListenerRepairsStaleSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stale socket repair relies on POSIX unix socket semantics")
+	}
+	tmpDir := shortSockDir(t)
+	sockPath := filepath.Join(tmpDir, "stale.sock")
+
+	// Emulate a crashed daemon: a listener whose socket file survives
+	// because SetUnlinkOnClose(false) skips the unlink that a clean
+	// shutdown would perform.
+	addr, err := net.ResolveUnixAddr("unix", sockPath)
+	require.NoError(t, err)
+	crashed, err := net.ListenUnix("unix", addr)
+	require.NoError(t, err)
+	crashed.SetUnlinkOnClose(false)
+	require.NoError(t, crashed.Close())
+
+	fi, err := os.Stat(sockPath)
+	require.NoError(t, err, "the stale socket file must survive the crash")
+	require.NotZero(t, fi.Mode()&os.ModeSocket)
+
+	cfg := &UnixListenConfig{Address: sockPath}
+	l, err := cfg.Listen()
+	require.NoError(t, err, "a stale socket must not block the next bind")
+	defer l.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		conn, err := net.Dial("unix", sockPath)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		conn.Close()
+		errCh <- nil
+	}()
+	acceptedConn, err := l.Accept()
+	require.NoError(t, err)
+	acceptedConn.Close()
+	require.NoError(t, <-errCh)
+}
+
+func TestUnixListenerKeepsLiveSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stale socket repair relies on POSIX unix socket semantics")
+	}
+	tmpDir := shortSockDir(t)
+	sockPath := filepath.Join(tmpDir, "live.sock")
+
+	live := &UnixListenConfig{Address: sockPath}
+	first, err := live.Listen()
+	require.NoError(t, err)
+	defer first.Close()
+
+	// A second bind on a socket a live daemon still answers on must
+	// fail rather than evict the running daemon.
+	_, err = (&UnixListenConfig{Address: sockPath}).Listen()
+	require.Error(t, err)
+
+	fi, statErr := os.Stat(sockPath)
+	require.NoError(t, statErr, "the live socket file must be left in place")
+	require.NotZero(t, fi.Mode()&os.ModeSocket)
+
+	errCh := make(chan error, 1)
+	go func() {
+		conn, err := net.Dial("unix", sockPath)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		conn.Close()
+		errCh <- nil
+	}()
+	acceptedConn, err := first.Accept()
+	require.NoError(t, err, "the original listener must still be serving")
+	acceptedConn.Close()
+	require.NoError(t, <-errCh)
+}
+
+func TestUnixListenerLeavesRegularFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stale socket repair relies on POSIX unix socket semantics")
+	}
+	tmpDir := shortSockDir(t)
+	filePath := filepath.Join(tmpDir, "regular.file")
+	require.NoError(t, os.WriteFile(filePath, []byte("not a socket"), 0600))
+
+	_, err := (&UnixListenConfig{Address: filePath}).Listen()
+	require.Error(t, err, "binding over a regular file must fail")
+
+	got, readErr := os.ReadFile(filePath)
+	require.NoError(t, readErr, "a non-socket file must never be removed")
+	require.Equal(t, []byte("not a socket"), got)
+}
+
+func TestUnixListenerAbstractAddressInUse(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("abstract unix sockets are Linux-only")
+	}
+	address := "@katzenpost-stale-test"
+
+	first, err := (&UnixListenConfig{Address: address}).Listen()
+	require.NoError(t, err)
+	defer first.Close()
+
+	// An abstract socket never outlives its owner, so a second bind
+	// failing means the first is still live: pass the error through
+	// rather than treating it as stale.
+	_, err = (&UnixListenConfig{Address: address}).Listen()
+	require.Error(t, err)
+	require.False(t, staleUnixSocket(address))
 }
