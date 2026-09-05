@@ -215,6 +215,54 @@ func TestDispatchCopyEnvelopeSingleBoxAlreadyExistsAborts(t *testing.T) {
 	}
 }
 
+// TestDispatchCopyEnvelopeReplicationFailedRetries pins that a transient
+// ReplicaErrorReplicationFailed (a peer-replica blip) is retried rather
+// than aborting the Copy, and succeeds once the blip clears.
+func TestDispatchCopyEnvelopeReplicationFailedRetries(t *testing.T) {
+	courier := createTestCourier(t)
+	conn := newFakeConnector()
+	courier.server.connector = conn
+
+	envelope := buildTestCourierEnvelope()
+	envHash := envelope.EnvelopeHash()
+
+	type result struct {
+		ok   bool
+		code uint8
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		ok, code := courier.dispatchCopyEnvelope(envelope)
+		resultCh <- result{ok, code}
+	}()
+
+	waitForSends := func(round int) {
+		for i := 0; i < 2; i++ {
+			select {
+			case <-conn.sendCalledCh:
+			case <-time.After(3 * time.Second):
+				t.Fatalf("round %d SendMessage %d not observed in time", round, i+1)
+			}
+		}
+	}
+
+	waitForSends(1)
+	courier.HandleReply(&commands.ReplicaMessageReply{EnvelopeHash: envHash, ReplicaID: 1, ErrorCode: pigeonhole.ReplicaErrorReplicationFailed})
+	courier.HandleReply(&commands.ReplicaMessageReply{EnvelopeHash: envHash, ReplicaID: 2, ErrorCode: pigeonhole.ReplicaErrorReplicationFailed})
+
+	waitForSends(2)
+	courier.HandleReply(&commands.ReplicaMessageReply{EnvelopeHash: envHash, ReplicaID: 1, ErrorCode: pigeonhole.ReplicaSuccess})
+	courier.HandleReply(&commands.ReplicaMessageReply{EnvelopeHash: envHash, ReplicaID: 2, ErrorCode: pigeonhole.ReplicaSuccess})
+
+	select {
+	case r := <-resultCh:
+		require.True(t, r.ok, "a transient ReplicationFailed must be retried, not aborted")
+		require.Equal(t, uint8(0), r.code)
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatchCopyEnvelope did not return in time")
+	}
+}
+
 // TestDispatchCopyEnvelopeAllSuccess is the happy path — both
 // intermediates write cleanly.
 func TestDispatchCopyEnvelopeAllSuccess(t *testing.T) {
