@@ -184,8 +184,8 @@ type Session struct {
 	tx *nyquist.CipherState
 	rx *nyquist.CipherState
 
-	rxKeyMutex *sync.RWMutex
-	txKeyMutex *sync.RWMutex
+	rxKeyMutex *sync.Mutex
+	txKeyMutex *sync.Mutex
 
 	clockSkew   time.Duration
 	state       uint32
@@ -590,18 +590,18 @@ func (s *Session) SendCommand(ctx context.Context, cmd commands.Command) error {
 	var ctHdr [4]byte
 	binary.BigEndian.PutUint32(ctHdr[:], uint32(ctLen))
 	toSend := make([]byte, 0, macLen+4+ctLen)
-	s.txKeyMutex.RLock()
+	s.txKeyMutex.Lock()
 	var err error
 	toSend, err = s.tx.EncryptWithAd(toSend, nil, ctHdr[:])
-	s.txKeyMutex.RUnlock()
+	s.txKeyMutex.Unlock()
 	if err != nil {
 		return err
 	}
 
 	// Build the Ciphertext.
-	s.txKeyMutex.RLock()
+	s.txKeyMutex.Lock()
 	toSend, err = s.tx.EncryptWithAd(toSend, nil, pt)
-	s.txKeyMutex.RUnlock()
+	s.txKeyMutex.Unlock()
 	if err != nil {
 		return err
 	}
@@ -645,9 +645,9 @@ func (s *Session) recvCommandImpl(ctx context.Context) (commands.Command, error)
 	if _, err := io.ReadFull(s.conn, ctHdrCt[:]); err != nil {
 		return nil, err
 	}
-	s.rxKeyMutex.RLock()
+	s.rxKeyMutex.Lock()
 	ctHdr, err := s.rx.DecryptWithAd(nil, nil, ctHdrCt[:])
-	s.rxKeyMutex.RUnlock()
+	s.rxKeyMutex.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -664,9 +664,9 @@ func (s *Session) recvCommandImpl(ctx context.Context) (commands.Command, error)
 	if _, err := io.ReadFull(s.conn, ct); err != nil {
 		return nil, err
 	}
-	s.rxKeyMutex.RLock()
+	s.rxKeyMutex.Lock()
 	pt, err := s.rx.DecryptWithAd(nil, nil, ct)
-	s.rxKeyMutex.RUnlock()
+	s.rxKeyMutex.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -758,8 +758,8 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		randReader:     cfg.RandomReader,
 		isInitiator:    isInitiator,
 		state:          stateInit,
-		rxKeyMutex:     new(sync.RWMutex),
-		txKeyMutex:     new(sync.RWMutex),
+		rxKeyMutex:     new(sync.Mutex),
+		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewPKICommands(cfg.PKISignatureScheme),
 		maxMesgSize:    -1,
 
@@ -802,8 +802,8 @@ func NewStorageReplicaSession(cfg *SessionConfig, scheme nike.Scheme, isInitiato
 		randReader:     cfg.RandomReader,
 		isInitiator:    isInitiator,
 		state:          stateInit,
-		rxKeyMutex:     new(sync.RWMutex),
-		txKeyMutex:     new(sync.RWMutex),
+		rxKeyMutex:     new(sync.Mutex),
+		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewStorageReplicaCommands(cfg.Geometry, scheme),
 
 		handshakeTimeout: timeoutOr(cfg.HandshakeTimeout, DefaultHandshakeTimeout),
@@ -845,8 +845,8 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		randReader:     cfg.RandomReader,
 		isInitiator:    isInitiator,
 		state:          stateInit,
-		rxKeyMutex:     new(sync.RWMutex),
-		txKeyMutex:     new(sync.RWMutex),
+		rxKeyMutex:     new(sync.Mutex),
+		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewMixnetCommands(cfg.Geometry),
 		maxMesgSize:    -1,
 
