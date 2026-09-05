@@ -25,6 +25,7 @@ package cborplugin
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os/exec"
 	"syscall"
@@ -266,9 +267,21 @@ func (c *Client) launch(command string, args []string) error {
 
 	// read and decode plugin stdout
 	stdoutScanner := bufio.NewScanner(stdout)
-	stdoutScanner.Scan()
+	if !stdoutScanner.Scan() {
+		err := stdoutScanner.Err()
+		if err != nil {
+			c.log.Errorf("Failed to read plugin stdout (scan error): %v", err)
+			return fmt.Errorf("plugin stdout read failed: %v", err)
+		}
+		c.log.Errorf("Plugin produced no output on stdout - likely crashed before printing socket path")
+		return fmt.Errorf("plugin produced no stdout output")
+	}
 	c.socketFile = stdoutScanner.Text()
-	c.log.Debugf("plugin socket path:'%s'\n", c.socketFile)
+	c.log.Noticef("Plugin socket path from stdout: '%s' (len=%d)", c.socketFile, len(c.socketFile))
+	if c.socketFile == "" {
+		c.log.Errorf("Plugin stdout was empty string - socket path is missing")
+		return fmt.Errorf("plugin stdout was empty")
+	}
 	return nil
 }
 

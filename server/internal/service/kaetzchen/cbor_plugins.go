@@ -262,9 +262,16 @@ func (k *CBORPluginWorker) isKaetzchen(recipient [constants.RecipientIDLength]by
 }
 
 func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
-	k.log.Debugf("Launching plugin: %s", command)
+	k.log.Noticef("Launching plugin %s: command=%s", capability, command)
+	k.log.Noticef("Plugin %s args (len=%d): %v", capability, len(args), args)
+	if len(args) == 0 {
+		k.log.Warningf("Plugin %s has NO arguments - will be launched without config", capability)
+	}
 	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{})
 	err := plugin.Start(command, args)
+	if err != nil {
+		k.log.Errorf("Plugin %s failed to start: %v", capability, err)
+	}
 	return plugin, err
 }
 
@@ -394,20 +401,31 @@ func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) erro
 	k.pluginChans[endpoint] = make(chan interface{}, InboundPacketsChannelSize)
 	k.log.Noticef("Starting Kaetzchen plugin client: %s", pluginConf.Capability)
 
+	k.log.Noticef("Plugin %s Config field: %+v (nil=%v, len=%d)", pluginConf.Capability, pluginConf.Config, pluginConf.Config == nil, len(pluginConf.Config))
+
 	var args []string
-	if len(pluginConf.Config) > 0 {
+	if pluginConf.Config == nil {
+		k.log.Warningf("Plugin %s Config is nil - TOML may not have been parsed correctly", pluginConf.Capability)
+		args = []string{}
+	} else if len(pluginConf.Config) > 0 {
 		args = make([]string, 0, len(pluginConf.Config)*2)
+		k.log.Debugf("Plugin %s processing %d config entries", pluginConf.Capability, len(pluginConf.Config))
 		for key, val := range pluginConf.Config {
+			k.log.Debugf("Plugin %s config key=%s val=%v (type=%T)", pluginConf.Capability, key, val, val)
 			var strVal string
 			switch v := val.(type) {
 			case string:
 				strVal = v
+				k.log.Debugf("  -> string: %s", strVal)
 			default:
 				strVal = fmt.Sprintf("%v", v)
+				k.log.Debugf("  -> converted: %s", strVal)
 			}
 			args = append(args, fmt.Sprintf("-%s", key), strVal)
 		}
+		k.log.Noticef("Plugin %s final args: %v", pluginConf.Capability, args)
 	} else {
+		k.log.Warningf("Plugin %s Config map is empty (len=0)", pluginConf.Capability)
 		args = []string{}
 	}
 

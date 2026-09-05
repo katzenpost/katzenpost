@@ -75,19 +75,28 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 		// it's possible that the plugin has written the socketFile to its stdout
 		// but the call to Accept hasn't happened yet, so backoff and wait a bit
 		// https://github.com/katzenpost/katzenpost/issues/477
+		c.log.Noticef("Starting plugin client connection (initiator=true)")
+		c.log.Noticef("Socket file to dial: '%s' (len=%d, empty=%v)", socketFile, len(socketFile), socketFile == "")
+		if socketFile == "" {
+			c.log.Errorf("FATAL: socketFile is empty - plugin did not provide socket path on stdout")
+		}
 		var err error
 		started := false
 		for tries := 0; tries < 40; tries++ {
+			c.log.Debugf("Dial attempt %d/40 on socket: %s", tries+1, socketFile)
 			err = c.dial(socketFile)
 			if err != nil {
+				c.log.Debugf("Dial attempt %d failed: %v (sleeping 1s)", tries+1, err)
 				time.Sleep(time.Second)
 				continue
 			} else {
+				c.log.Noticef("Dial succeeded on attempt %d", tries+1)
 				started = true
 				break
 			}
 		}
 		if started != true {
+			c.log.Errorf("All 40 dial attempts failed on socket '%s': %v", socketFile, err)
 			panic(err)
 		}
 		c.Go(c.reader)
