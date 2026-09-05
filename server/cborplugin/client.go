@@ -266,22 +266,30 @@ func (c *Client) launch(command string, args []string) error {
 	})
 
 	// read and decode plugin stdout
+	c.log.Debugf("Attempting to read socket path from plugin stdout...")
 	stdoutScanner := bufio.NewScanner(stdout)
+	c.log.Debugf("Created stdout scanner, calling Scan()...")
+
 	if !stdoutScanner.Scan() {
 		err := stdoutScanner.Err()
 		if err != nil {
-			c.log.Errorf("Failed to read plugin stdout (scan error): %v", err)
+			c.log.Errorf("SCAN FAILED with error: %v", err)
 			return fmt.Errorf("plugin stdout read failed: %v", err)
 		}
-		c.log.Errorf("Plugin produced no output on stdout - likely crashed before printing socket path")
+		c.log.Errorf("SCAN RETURNED FALSE: Plugin produced no output on stdout - likely crashed before printing socket path")
 		return fmt.Errorf("plugin produced no stdout output")
 	}
+
+	c.log.Debugf("Scan() succeeded, reading text...")
 	c.socketFile = stdoutScanner.Text()
-	c.log.Noticef("Plugin socket path from stdout: '%s' (len=%d)", c.socketFile, len(c.socketFile))
+	c.log.Noticef("Successfully read socket path from stdout: '%s' (len=%d)", c.socketFile, len(c.socketFile))
+
 	if c.socketFile == "" {
-		c.log.Errorf("Plugin stdout was empty string - socket path is missing")
+		c.log.Errorf("Socket path is empty string - this should not happen after successful Scan()")
 		return fmt.Errorf("plugin stdout was empty")
 	}
+
+	c.log.Debugf("Socket path validation passed, returning successfully")
 	return nil
 }
 
