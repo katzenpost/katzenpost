@@ -70,6 +70,11 @@ type Server struct {
 	state     *state
 	listeners []net.Listener
 
+	// maxMessageSize is the effective PKI wire message ceiling: the operator
+	// override if set, else the estimate derived from the configured PKI and
+	// topology.
+	maxMessageSize int
+
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
@@ -282,6 +287,17 @@ func New(cfg *config.Config) (*Server, error) {
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
 	}
+
+	// Derive the PKI wire message ceiling from the configured PKI schemes and
+	// topology so it scales with the primitives in use, unless the operator
+	// pinned it explicitly.
+	s.maxMessageSize = effectiveMaxMessageSize(cfg)
+	s.log.Debugf(
+		"PKI wire message ceiling=%d bytes (configured=%d, estimated=%d)",
+		s.maxMessageSize,
+		cfg.Server.MaxMessageSize,
+		estimatedMaxConsensusSize(cfg),
+	)
 
 	if err := profiling.Start(s.log); err != nil {
 		return nil, fmt.Errorf("failed to start profiling: %w", err)
