@@ -88,6 +88,7 @@ func (s *Server) onConn(conn net.Conn) {
 		HandshakeTimeout:   time.Duration(s.cfg.Server.HandshakeTimeoutSec) * time.Second,
 		ReadTimeout:        time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second,
 		WriteTimeout:       time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second,
+		MaxMessageSize:     s.cfg.Server.MaxMessageSize,
 	}
 
 	wireConn, err := wire.NewPKISession(cfg, false)

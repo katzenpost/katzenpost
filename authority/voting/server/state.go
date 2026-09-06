@@ -1046,6 +1046,7 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 		HandshakeTimeout:  handshakeTimeout,
 		ReadTimeout:       responseTimeout,
 		WriteTimeout:      responseTimeout,
+		MaxMessageSize:    s.s.cfg.Server.MaxMessageSize,
 	}
 	session, err := wire.NewPKISession(cfg, true)
 	if err != nil {

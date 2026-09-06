@@ -57,6 +57,14 @@ const (
 	// send arbitrary sized PKI documents and the like. Therefore this maximum constant is only applicable
 	// to wire protocol connections among the dirauths and among the mix nodes.
 	MaxMessageSize = 500000000
+
+	// DefaultMaxPKIMessageSize is the default per-session send and receive
+	// ceiling for PKI (dirauth) sessions when SessionConfig.MaxMessageSize is
+	// left zero. It is sized to the live network's consensus document (about
+	// 0.33 MB on the namenlos network) with headroom for a larger static
+	// topology, and is far below the 500 MB absolute backstop. The topology is
+	// static, so operators of a larger network raise this via config.
+	DefaultMaxPKIMessageSize = 2 * 1024 * 1024
 )
 
 var (
@@ -94,6 +102,14 @@ func timeoutOr(v, def time.Duration) time.Duration {
 		return def
 	}
 	return v
+}
+
+// mesgSizeOr returns the configured message-size ceiling if set, else def.
+func mesgSizeOr(configured, def int) int {
+	if configured > 0 {
+		return configured
+	}
+	return def
 }
 
 var (
@@ -778,7 +794,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		rxKeyMutex:     new(sync.Mutex),
 		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewPKICommands(cfg.PKISignatureScheme),
-		maxMesgSize:    -1,
+		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, DefaultMaxPKIMessageSize),
 
 		handshakeTimeout: timeoutOr(cfg.HandshakeTimeout, DefaultHandshakeTimeout),
 		readTimeout:      timeoutOr(cfg.ReadTimeout, DefaultReadTimeout),
@@ -822,6 +838,7 @@ func NewStorageReplicaSession(cfg *SessionConfig, scheme nike.Scheme, isInitiato
 		rxKeyMutex:     new(sync.Mutex),
 		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewStorageReplicaCommands(cfg.Geometry, scheme),
+		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, 0),
 
 		handshakeTimeout: timeoutOr(cfg.HandshakeTimeout, DefaultHandshakeTimeout),
 		readTimeout:      timeoutOr(cfg.ReadTimeout, DefaultReadTimeout),
@@ -865,7 +882,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		rxKeyMutex:     new(sync.Mutex),
 		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewMixnetCommands(cfg.Geometry),
-		maxMesgSize:    -1,
+		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, -1),
 
 		handshakeTimeout: timeoutOr(cfg.HandshakeTimeout, DefaultHandshakeTimeout),
 		readTimeout:      timeoutOr(cfg.ReadTimeout, DefaultReadTimeout),
@@ -913,4 +930,11 @@ type SessionConfig struct {
 	HandshakeTimeout time.Duration
 	ReadTimeout      time.Duration
 	WriteTimeout     time.Duration
+
+	// MaxMessageSize is the per-session send and receive ceiling in bytes. A
+	// command larger than this is refused on send and rejected on receive.
+	// Zero selects the per-session-type default: DefaultMaxPKIMessageSize for
+	// PKI sessions, the 500 MB backstop for mixnet sessions, and the computed
+	// fixed command size for storage-replica sessions.
+	MaxMessageSize int
 }
