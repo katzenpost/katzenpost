@@ -404,7 +404,9 @@ func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) erro
 
 	pluginClient, err := k.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
 	if err != nil {
-		k.log.Error("Failed to start a plugin client: %s", err)
+		// Not logged here: the caller (server.New) already logs subsystem
+		// init failures uniformly, and this error can carry a large captured
+		// stderr payload that would otherwise be printed twice.
 		return err
 	}
 
