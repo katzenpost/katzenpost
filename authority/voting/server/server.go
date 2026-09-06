@@ -75,6 +75,11 @@ type Server struct {
 	// topology.
 	maxMessageSize int
 
+	// maxMessageSizeEstimate is the derived estimate regardless of any operator
+	// override; kept so the FSM can log observed consensus size against what we
+	// predicted.
+	maxMessageSizeEstimate int
+
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
@@ -291,13 +296,21 @@ func New(cfg *config.Config) (*Server, error) {
 	// Derive the PKI wire message ceiling from the configured PKI schemes and
 	// topology so it scales with the primitives in use, unless the operator
 	// pinned it explicitly.
+	estimated := estimatedMaxConsensusSize(cfg)
+	s.maxMessageSizeEstimate = estimated
 	s.maxMessageSize = effectiveMaxMessageSize(cfg)
 	s.log.Debugf(
 		"PKI wire message ceiling=%d bytes (configured=%d, estimated=%d)",
 		s.maxMessageSize,
 		cfg.Server.MaxMessageSize,
-		estimatedMaxConsensusSize(cfg),
+		estimated,
 	)
+	if cfg.Server.MaxMessageSize > 0 && cfg.Server.MaxMessageSize < estimated {
+		s.log.Warningf(
+			"MaxMessageSize=%d is below the estimated consensus size %d for the configured schemes and topology; consensus documents may exceed it and be rejected as oversized, which is hard to diagnose. Raise MaxMessageSize to at least %d, or unset it to track the estimate.",
+			cfg.Server.MaxMessageSize, estimated, estimated,
+		)
+	}
 
 	if err := profiling.Start(s.log); err != nil {
 		return nil, fmt.Errorf("failed to start profiling: %w", err)

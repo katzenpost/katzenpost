@@ -297,6 +297,18 @@ func (s *state) fsm() <-chan time.Time {
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
 			s.log.Noticef("FSM: Successfully computed my view of consensus for epoch %d: %x\n%s", s.votingEpoch, s.identityPubKeyHash(), doc)
+			if raw, merr := doc.MarshalCertificate(); merr == nil {
+				observed := len(raw)
+				est := s.s.maxMessageSizeEstimate
+				pct := 0
+				if est > 0 {
+					pct = observed * 100 / est
+				}
+				s.log.Noticef("FSM: consensus size epoch %d: observed=%d bytes, estimated=%d bytes (%d%% of estimate), ceiling=%d bytes", s.votingEpoch, observed, est, pct, s.s.maxMessageSize)
+				if observed > s.s.maxMessageSize {
+					s.log.Warningf("FSM: consensus size %d exceeds the wire ceiling %d for epoch %d; peers may reject it as oversized", observed, s.s.maxMessageSize, s.votingEpoch)
+				}
+			}
 			// detach signature and send to authorities
 			sig, ok := doc.Signatures[s.identityPubKeyHash()]
 			if !ok {

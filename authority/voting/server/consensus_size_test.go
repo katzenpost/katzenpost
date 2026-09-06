@@ -72,6 +72,18 @@ func TestEffectiveMaxMessageSizeHonorsConfig(t *testing.T) {
 	require.Equal(t, 4242, effectiveMaxMessageSize(cfg))
 }
 
+// TestUnderSizedOverrideIsBelowEstimate documents the item the warning guards:
+// an operator override set below the derived estimate is detectable, so the
+// server can warn that consensus documents may exceed the pinned ceiling.
+func TestUnderSizedOverrideIsBelowEstimate(t *testing.T) {
+	cfg := namenlosCfg("Xwing")
+	estimated := estimatedMaxConsensusSize(cfg)
+	cfg.Server.MaxMessageSize = estimated / 2
+	require.Less(t, cfg.Server.MaxMessageSize, estimated)
+	require.Equal(t, cfg.Server.MaxMessageSize, effectiveMaxMessageSize(cfg),
+		"an explicit override wins even when it is below the estimate")
+}
+
 // TestEstimatedCeilingUnknownSchemeFallsBack ensures an unusable config does not
 // panic or return zero, but falls back to the built-in default.
 func TestEstimatedCeilingUnknownSchemeFallsBack(t *testing.T) {
