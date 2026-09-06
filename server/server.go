@@ -549,8 +549,10 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Initialize the provider backend.
 	if s.cfg.Server.IsServiceNode {
+		// Not logged here: fang's boxed error report at process exit
+		// already carries this (and, for a plugin, can be a large
+		// stderr-bearing message); logging it too just repeats it.
 		if s.serviceNode, err = service.New(goo); err != nil {
-			s.log.Errorf("Failed to initialize provider backend: %v", err)
 			return nil, err
 		}
 	}
