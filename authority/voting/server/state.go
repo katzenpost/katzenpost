@@ -2716,7 +2716,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 				Authorities:        s.s.cfg.Authorities,
 				DialContextFn:      nil,
 				Geo:                s.geo,
-				MaxMessageSize:     s.s.maxMessageSize,
+				MaxConsensusSize:   s.s.maxMessageSize,
 			}
 			c, err := client.New(cfg)
 			if err != nil {

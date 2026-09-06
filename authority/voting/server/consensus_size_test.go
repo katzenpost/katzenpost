@@ -68,7 +68,7 @@ func TestEstimatedCeilingNamenlosRange(t *testing.T) {
 // TestEffectiveMaxMessageSizeHonorsConfig verifies the operator override wins.
 func TestEffectiveMaxMessageSizeHonorsConfig(t *testing.T) {
 	cfg := namenlosCfg("Xwing")
-	cfg.Server.MaxMessageSize = 4242
+	cfg.Server.MaxConsensusSize = 4242
 	require.Equal(t, 4242, effectiveMaxMessageSize(cfg))
 }
 
@@ -78,9 +78,9 @@ func TestEffectiveMaxMessageSizeHonorsConfig(t *testing.T) {
 func TestUnderSizedOverrideIsBelowEstimate(t *testing.T) {
 	cfg := namenlosCfg("Xwing")
 	estimated := estimatedMaxConsensusSize(cfg)
-	cfg.Server.MaxMessageSize = estimated / 2
-	require.Less(t, cfg.Server.MaxMessageSize, estimated)
-	require.Equal(t, cfg.Server.MaxMessageSize, effectiveMaxMessageSize(cfg),
+	cfg.Server.MaxConsensusSize = estimated / 2
+	require.Less(t, cfg.Server.MaxConsensusSize, estimated)
+	require.Equal(t, cfg.Server.MaxConsensusSize, effectiveMaxMessageSize(cfg),
 		"an explicit override wins even when it is below the estimate")
 }
 

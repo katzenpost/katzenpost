@@ -307,11 +307,11 @@ type Server struct {
 	// ResponseTimeoutSec is the timeout for command send/receive operations (default: 30)
 	ResponseTimeoutSec int
 
-	// MaxMessageSize is the per-connection send and receive ceiling in bytes
+	// MaxConsensusSize is the per-connection send and receive ceiling in bytes
 	// for PKI wire commands. Zero selects the built-in default
 	// (wire.DefaultMaxPKIMessageSize). Raise it for a network whose consensus
 	// document is larger than the default allows.
-	MaxMessageSize int
+	MaxConsensusSize int
 
 	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
 	CloseDelaySec int

@@ -59,8 +59,8 @@ func estimatedMaxConsensusSize(cfg *config.Config) int {
 // effectiveMaxMessageSize returns the operator-configured ceiling if set, else
 // the estimate derived from the configured PKI and topology.
 func effectiveMaxMessageSize(cfg *config.Config) int {
-	if cfg.Server.MaxMessageSize > 0 {
-		return cfg.Server.MaxMessageSize
+	if cfg.Server.MaxConsensusSize > 0 {
+		return cfg.Server.MaxConsensusSize
 	}
 	return estimatedMaxConsensusSize(cfg)
 }

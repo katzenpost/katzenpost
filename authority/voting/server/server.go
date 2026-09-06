@@ -302,13 +302,13 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Debugf(
 		"PKI wire message ceiling=%d bytes (configured=%d, estimated=%d)",
 		s.maxMessageSize,
-		cfg.Server.MaxMessageSize,
+		cfg.Server.MaxConsensusSize,
 		estimated,
 	)
-	if cfg.Server.MaxMessageSize > 0 && cfg.Server.MaxMessageSize < estimated {
+	if cfg.Server.MaxConsensusSize > 0 && cfg.Server.MaxConsensusSize < estimated {
 		s.log.Warningf(
-			"MaxMessageSize=%d is below the estimated consensus size %d for the configured schemes and topology; consensus documents may exceed it and be rejected as oversized, which is hard to diagnose. Raise MaxMessageSize to at least %d, or unset it to track the estimate.",
-			cfg.Server.MaxMessageSize, estimated, estimated,
+			"MaxConsensusSize=%d is below the estimated consensus size %d for the configured schemes and topology; consensus documents may exceed it and be rejected as oversized, which is hard to diagnose. Raise MaxConsensusSize to at least %d, or unset it to track the estimate.",
+			cfg.Server.MaxConsensusSize, estimated, estimated,
 		)
 	}
 
