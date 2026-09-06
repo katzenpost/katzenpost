@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	corepki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
@@ -60,7 +61,7 @@ func TestEstimatedCeilingScalesWithWireKEM(t *testing.T) {
 // backstop) because namenlos keys are small.
 func TestEstimatedCeilingNamenlosRange(t *testing.T) {
 	est := estimatedMaxConsensusSize(namenlosCfg("Xwing"))
-	require.GreaterOrEqual(t, est, minConsensusCeiling)
+	require.GreaterOrEqual(t, est, corepki.MinConsensusCeiling)
 	require.Less(t, est, 8*1024*1024)
 }
 
