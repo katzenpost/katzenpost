@@ -18,16 +18,23 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
+
+type echoConfig struct {
+	logDir   string
+	logLevel string
+}
 
 type Echo struct {
 	write func(cborplugin.Command)
@@ -50,24 +57,49 @@ func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
 }
 
 func main() {
-	var logLevel string
-	var logDir string
-	flag.StringVar(&logDir, "log_dir", "", "logging directory")
-	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	flag.Parse()
+	cmd := newRootCommand()
+	cmd.SetArgs(normalizeLegacyArgs(os.Args[1:]))
+	kpcommon.ExecuteWithFang(cmd)
+}
 
+func normalizeLegacyArgs(args []string) []string {
+	normalized := append([]string(nil), args...)
+	for i, arg := range normalized {
+		switch strings.SplitN(arg, "=", 2)[0] {
+		case "-log_dir", "-log_level":
+			normalized[i] = "-" + arg
+		}
+	}
+	return normalized
+}
+
+func newRootCommand() *cobra.Command {
+	var cfg echoConfig
+	cmd := &cobra.Command{
+		Use:   "echo-plugin",
+		Short: "Katzenpost echo service plugin",
+		Run: func(cmd *cobra.Command, args []string) {
+			runEcho(cfg)
+		},
+	}
+	cmd.Flags().StringVar(&cfg.logDir, "log_dir", "", "logging directory")
+	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	return cmd
+}
+
+func runEcho(cfg echoConfig) {
 	// Ensure that the log directory exists.
-	s, err := os.Stat(logDir)
+	s, err := os.Stat(cfg.logDir)
 	if os.IsNotExist(err) {
-		cborplugin.FailStartup("echo-plugin", fmt.Errorf("log directory %q doesn't exist", logDir))
+		cborplugin.FailStartup("echo-plugin", fmt.Errorf("log directory %q doesn't exist", cfg.logDir))
 	}
 	if !s.IsDir() {
-		cborplugin.FailStartup("echo-plugin", fmt.Errorf("log directory %q is not a directory", logDir))
+		cborplugin.FailStartup("echo-plugin", fmt.Errorf("log directory %q is not a directory", cfg.logDir))
 	}
 
 	// Log to a file.
-	logFile := path.Join(logDir, fmt.Sprintf("echo.%d.log", os.Getpid()))
-	logBackend, err := log.New(logFile, logLevel, false)
+	logFile := path.Join(cfg.logDir, fmt.Sprintf("echo.%d.log", os.Getpid()))
+	logBackend, err := log.New(logFile, cfg.logLevel, false)
 	if err != nil {
 		cborplugin.FailStartup("echo-plugin", err)
 	}

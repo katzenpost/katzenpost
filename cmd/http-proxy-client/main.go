@@ -21,15 +21,17 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httputil"
+	"os"
+	"strings"
 	"time"
 
 	cbor "github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/spf13/cobra"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client/config"
@@ -38,24 +40,24 @@ import (
 	"github.com/katzenpost/katzenpost/quic/proxy/common"
 )
 
-var (
-	cfgFile  = flag.String("cfg", "proxy.toml", "thin client config file")
-	epName   = flag.String("ep", "http", "endpoint name")
-	logLevel = flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	port     = flag.Int("port", 8080, "listener address")
-	retry    = flag.Int("retry", -1, "limit number of reconnection attempts")
-	delay    = flag.Int("delay", 30, "time to wait between connection attempts (seconds)>")
-)
+type proxyClientConfig struct {
+	cfgFile  string
+	epName   string
+	logLevel string
+	port     int
+	retry    int
+	delay    int
+}
 
 // getThinClient connects to the client daemon and returns a ThinClient
-func getThinClient(cfgFile string) (*thin.ThinClient, error) {
-	cfg, err := thin.LoadFile(cfgFile)
+func getThinClient(cmdCfg proxyClientConfig) (*thin.ThinClient, error) {
+	cfg, err := thin.LoadFile(cmdCfg.cfgFile)
 	if err != nil {
 		return nil, err
 	}
 
 	logging := &config.Logging{
-		Level: *logLevel,
+		Level: cmdCfg.logLevel,
 	}
 	client := thin.NewThinClient(cfg, logging)
 
@@ -66,8 +68,8 @@ func getThinClient(cfgFile string) (*thin.ThinClient, error) {
 		case nil:
 			return client, nil
 		default:
-			<-time.After(time.Duration(*delay) * time.Second)
-			if retries == *retry {
+			<-time.After(time.Duration(cmdCfg.delay) * time.Second)
+			if retries == cmdCfg.retry {
 				return nil, errors.New("failed to connect within retry limit")
 			}
 		}
@@ -78,10 +80,11 @@ func getThinClient(cfgFile string) (*thin.ThinClient, error) {
 type kttp struct {
 	client *thin.ThinClient
 	log    *logging.Logger
+	epName string
 }
 
 func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	d, err := k.client.GetService(*epName)
+	d, err := k.client.GetService(k.epName)
 	if err != nil {
 		k.log.Errorf("Err getting service: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -137,8 +140,42 @@ func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	flag.Parse()
-	client, err := getThinClient(*cfgFile)
+	cmd := newRootCommand()
+	cmd.SetArgs(normalizeLegacyArgs(os.Args[1:]))
+	kpcommon.ExecuteWithFang(cmd)
+}
+
+func normalizeLegacyArgs(args []string) []string {
+	normalized := append([]string(nil), args...)
+	for i, arg := range normalized {
+		switch strings.SplitN(arg, "=", 2)[0] {
+		case "-cfg", "-ep", "-log_level", "-port", "-retry", "-delay":
+			normalized[i] = "-" + arg
+		}
+	}
+	return normalized
+}
+
+func newRootCommand() *cobra.Command {
+	var cfg proxyClientConfig
+	cmd := &cobra.Command{
+		Use:   "http-proxy-client",
+		Short: "Katzenpost HTTP proxy client",
+		Run: func(cmd *cobra.Command, args []string) {
+			runProxyClient(cfg)
+		},
+	}
+	cmd.Flags().StringVar(&cfg.cfgFile, "cfg", "proxy.toml", "thin client config file")
+	cmd.Flags().StringVar(&cfg.epName, "ep", "http", "endpoint name")
+	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	cmd.Flags().IntVar(&cfg.port, "port", 8080, "listener address")
+	cmd.Flags().IntVar(&cfg.retry, "retry", -1, "limit number of reconnection attempts")
+	cmd.Flags().IntVar(&cfg.delay, "delay", 30, "time to wait between connection attempts (seconds)>")
+	return cmd
+}
+
+func runProxyClient(cfg proxyClientConfig) {
+	client, err := getThinClient(cfg)
 	if err != nil {
 		panic(err)
 	}
@@ -148,7 +185,7 @@ func main() {
 	clientLog.Noticef("Katzenpost http-proxy-client version: %s", kpcommon.Version())
 	clientLog.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
-	addr := fmt.Sprintf(":%d", *port)
-	handler := &kttp{client: client, log: clientLog}
+	addr := fmt.Sprintf(":%d", cfg.port)
+	handler := &kttp{client: client, log: clientLog, epName: cfg.epName}
 	http.ListenAndServe(addr, handler)
 }

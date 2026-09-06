@@ -4,9 +4,11 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
+	"strings"
+
+	"github.com/spf13/cobra"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
@@ -15,36 +17,58 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
-func main() {
-	var configFile string
-	var printVersion bool
-	var validateOnly bool
+type courierConfig struct {
+	configFile   string
+	validateOnly bool
+}
 
-	flag.StringVar(&configFile, "c", "", "configuration file")
-	flag.BoolVar(&printVersion, "v", false, "print version and exit")
-	flag.BoolVar(&validateOnly, "validate-only", false,
-		"load and validate the configuration file, then exit without side effects")
-	flag.Parse()
-
-	if printVersion {
-		fmt.Fprintln(os.Stdout, kpcommon.Version())
-		os.Exit(0)
+func newRootCommand() *cobra.Command {
+	var cfg courierConfig
+	cmd := &cobra.Command{
+		Use:   "courier",
+		Short: "Katzenpost storage courier service",
+		Run: func(cmd *cobra.Command, args []string) {
+			runCourier(cfg)
+		},
 	}
 
-	cfg, err := config.LoadFile(configFile)
+	cmd.Flags().StringVarP(&cfg.configFile, "config", "c", "", "configuration file")
+	cmd.Flags().BoolVar(&cfg.validateOnly, "validate-only", false,
+		"load and validate the configuration file, then exit without side effects")
+	return cmd
+}
+
+func main() {
+	cmd := newRootCommand()
+	cmd.SetArgs(normalizeLegacyArgs(os.Args[1:]))
+	kpcommon.ExecuteWithFang(cmd)
+}
+
+func normalizeLegacyArgs(args []string) []string {
+	normalized := append([]string(nil), args...)
+	for i, arg := range normalized {
+		if strings.SplitN(arg, "=", 2)[0] == "-validate-only" {
+			normalized[i] = "-" + arg
+		}
+	}
+	return normalized
+}
+
+func runCourier(cmdCfg courierConfig) {
+	cfg, err := config.LoadFile(cmdCfg.configFile)
 	if err != nil {
-		if validateOnly {
-			fmt.Fprintf(os.Stderr, "configuration file '%v' is invalid: %v\n", configFile, err)
+		if cmdCfg.validateOnly {
+			fmt.Fprintf(os.Stderr, "configuration file '%v' is invalid: %v\n", cmdCfg.configFile, err)
 			os.Exit(1)
 		}
 		cborplugin.FailStartup("courier", err)
 	}
-	if validateOnly {
-		if err := tomlstrict.Check(configFile, new(config.Config)); err != nil {
-			fmt.Fprintf(os.Stderr, "configuration file '%v' is invalid: %v\n", configFile, err)
+	if cmdCfg.validateOnly {
+		if err := tomlstrict.Check(cmdCfg.configFile, new(config.Config)); err != nil {
+			fmt.Fprintf(os.Stderr, "configuration file '%v' is invalid: %v\n", cmdCfg.configFile, err)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", configFile)
+		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", cmdCfg.configFile)
 		os.Exit(0)
 	}
 
