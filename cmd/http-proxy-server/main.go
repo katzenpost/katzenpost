@@ -109,19 +109,17 @@ func main() {
 	// Ensure that the log directory exists.
 	s, err := os.Stat(logDir)
 	if os.IsNotExist(err) {
-		fmt.Printf("Log directory '%s' doesn't exist.", logDir)
-		os.Exit(1)
+		cborplugin.FailStartup("http-proxy-server", fmt.Errorf("log directory %q doesn't exist", logDir))
 	}
 	if !s.IsDir() {
-		fmt.Println("Log directory must actually be a directory.")
-		os.Exit(1)
+		cborplugin.FailStartup("http-proxy-server", fmt.Errorf("log directory %q is not a directory", logDir))
 	}
 
 	// Log to a file.
 	logFile := path.Join(logDir, fmt.Sprintf("proxy.%d.log", os.Getpid()))
 	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
-		panic(err)
+		cborplugin.FailStartup("http-proxy-server", err)
 	}
 	serverLog := logBackend.GetLogger("http_proxy")
 	serverLog.Noticef("Katzenpost http-proxy-server version: %s", kpcommon.Version())
@@ -130,7 +128,7 @@ func main() {
 	// start service
 	tmpDir, err := ioutil.TempDir("", "http_proxy")
 	if err != nil {
-		panic(err)
+		cborplugin.FailStartup("http-proxy-server", err)
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid()))
 

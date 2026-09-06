@@ -59,19 +59,17 @@ func main() {
 	// Ensure that the log directory exists.
 	s, err := os.Stat(logDir)
 	if os.IsNotExist(err) {
-		fmt.Printf("Log directory '%s' doesn't exist.", logDir)
-		os.Exit(1)
+		cborplugin.FailStartup("echo-plugin", fmt.Errorf("log directory %q doesn't exist", logDir))
 	}
 	if !s.IsDir() {
-		fmt.Println("Log directory must actually be a directory.")
-		os.Exit(1)
+		cborplugin.FailStartup("echo-plugin", fmt.Errorf("log directory %q is not a directory", logDir))
 	}
 
 	// Log to a file.
 	logFile := path.Join(logDir, fmt.Sprintf("echo.%d.log", os.Getpid()))
 	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
-		panic(err)
+		cborplugin.FailStartup("echo-plugin", err)
 	}
 	serverLog := logBackend.GetLogger("echo_server")
 	serverLog.Noticef("Katzenpost echo-plugin version: %s", kpcommon.Version())
@@ -80,7 +78,7 @@ func main() {
 	// start service
 	tmpDir, err := os.MkdirTemp("", "echo_server")
 	if err != nil {
-		panic(err)
+		cborplugin.FailStartup("echo-plugin", err)
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.echo.socket", os.Getpid()))
 	echo := new(Echo)
