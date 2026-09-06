@@ -631,6 +631,23 @@ func (s *Session) RecvCommand(ctx context.Context) (commands.Command, error) {
 	return cmd, err
 }
 
+// recvChunkSize caps how many command-body bytes are allocated before any arrive, bounding the memory a peer can pin by declaring a large length and then not sending the body.
+const recvChunkSize = 64 * 1024
+
+// readCommandBody reads exactly n bytes from r, growing the buffer as data arrives instead of allocating n up front.
+func readCommandBody(r io.Reader, n int) ([]byte, error) {
+	buf := make([]byte, 0, min(n, recvChunkSize))
+	chunk := make([]byte, min(n, recvChunkSize))
+	for len(buf) < n {
+		m, err := io.ReadFull(r, chunk[:min(n-len(buf), len(chunk))])
+		buf = append(buf, chunk[:m]...)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return buf, nil
+}
+
 func (s *Session) recvCommandImpl(ctx context.Context) (commands.Command, error) {
 	if atomic.LoadUint32(&s.state) != stateEstablished {
 		return nil, errInvalidState
@@ -659,9 +676,9 @@ func (s *Session) recvCommandImpl(ctx context.Context) (commands.Command, error)
 		return nil, errMsgSize
 	}
 
-	// Read and decrypt the Ciphertext.
-	ct := make([]byte, ctLen)
-	if _, err := io.ReadFull(s.conn, ct); err != nil {
+	// Grow the buffer as bytes arrive rather than allocating the peer-declared ctLen up front.
+	ct, err := readCommandBody(s.conn, int(ctLen))
+	if err != nil {
 		return nil, err
 	}
 	s.rxKeyMutex.Lock()
