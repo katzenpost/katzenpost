@@ -1578,6 +1578,7 @@ func New(cfg *Config) (pki.PostingClient, error) {
 		log:  cfg.LogBackend.GetLogger("pki/voting/Client"),
 		pool: newConnector(cfg),
 	}
+	c.log.Debugf("PKI wire message ceiling=%d bytes", cfg.MaxMessageSize)
 
 	c.verifiers = make([]sign.PublicKey, 0, len(cfg.Authorities))
 	for _, auth := range cfg.Authorities {
