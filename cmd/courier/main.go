@@ -12,6 +12,7 @@ import (
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
 	"github.com/katzenpost/katzenpost/courier/server"
 	"github.com/katzenpost/katzenpost/courier/server/config"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
 func main() {
@@ -36,7 +37,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "configuration file '%v' is invalid: %v\n", configFile, err)
 			os.Exit(1)
 		}
-		panic(err)
+		cborplugin.FailStartup("courier", err)
 	}
 	if validateOnly {
 		if err := tomlstrict.Check(configFile, new(config.Config)); err != nil {
@@ -49,7 +50,7 @@ func main() {
 
 	s, err := server.New(cfg, nil)
 	if err != nil {
-		panic(err)
+		cborplugin.FailStartup("courier", err)
 	}
 
 	// blocks until service node disconnect
