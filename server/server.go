@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -119,6 +120,17 @@ func (s *Server) reshadowCryptoWorkers() {
 	for _, w := range s.cryptoWorkers {
 		w.UpdateMixKeys()
 	}
+}
+
+// firstLine returns the first non-empty line of err's message, summarizing
+// a multi-line error (e.g. one carrying a captured plugin stderr tail) to a
+// single log line. The full error text still reaches stderr via fang at
+// process exit.
+func firstLine(err error) string {
+	if err == nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.SplitN(err.Error(), "\n", 2)[0])
 }
 
 // IdentityKey returns the running server's identity public key.
@@ -549,10 +561,12 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Initialize the provider backend.
 	if s.cfg.Server.IsServiceNode {
-		// Not logged here: fang's boxed error report at process exit
-		// already carries this (and, for a plugin, can be a large
-		// stderr-bearing message); logging it too just repeats it.
+		// Log a one-line summary to the log backend so operators who log to
+		// a file (rather than stdout/stderr) still see startup failures. The
+		// full error, including any captured plugin stderr tail, is carried
+		// to stderr via fang at process exit.
 		if s.serviceNode, err = service.New(goo); err != nil {
+			s.log.Errorf("Failed to initialize provider backend: %s", firstLine(err))
 			return nil, err
 		}
 	}
