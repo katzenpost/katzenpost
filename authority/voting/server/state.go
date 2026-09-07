@@ -1048,6 +1048,9 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 			return nil, fmt.Errorf("all addresses exhausted: %w", err)
 		}
 	}
+	if conn == nil {
+		return nil, fmt.Errorf("peer %s: no usable address could be dialed", peer.Identifier)
+	}
 
 	s.s.Add(1)
 	defer s.s.Done()

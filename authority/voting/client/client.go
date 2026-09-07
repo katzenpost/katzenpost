@@ -321,6 +321,12 @@ func (p *connector) initSession(
 			return nil, fmt.Errorf("%s: all connection attempts failed: %v", peerInfo(), lastErr)
 		}
 	}
+	if conn == nil {
+		if lastErr == nil {
+			lastErr = fmt.Errorf("%s: no usable address", peerInfo())
+		}
+		return nil, lastErr
+	}
 
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peer.IdentityPublicKey,
