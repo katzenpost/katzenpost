@@ -44,8 +44,93 @@ func validateSendMessageRequest(destinationIdHash *[32]byte, recipientQueueID []
 	return nil
 }
 
+// Route names the hops a composed Sphinx packet travels, in path order.
+// Forward runs from the gateway to the destination; Return is the path the
+// SURB takes back, and is empty when the packet carries no SURB.
+//
+// The names come from the consensus the path was selected against, so a
+// Route is meaningful only alongside that document's epoch. A nil Route
+// means the hops could not be named, which is not the same as a packet
+// with no hops.
+type Route struct {
+	// Forward names the hops from the gateway to the destination.
+	Forward []string
+
+	// Return names the hops the SURB travels back over, if there is one.
+	Return []string
+}
+
+// Forward hops of r, tolerating a nil receiver so that a send whose hops
+// could not be named still yields a well-formed, empty answer.
+func (r *Route) forward() []string {
+	if r == nil {
+		return nil
+	}
+	return r.Forward
+}
+
+// Return hops of r, with the same nil tolerance as forward.
+func (r *Route) back() []string {
+	if r == nil {
+		return nil
+	}
+	return r.Return
+}
+
+// routeNames resolves the two halves of a selected path to node names against
+// the current consensus.
+//
+// Naming is best effort by design: the packet is already correctly addressed
+// by key hash, and these names exist only so a caller can attribute a lost
+// reply. A document that cannot name a hop therefore yields nil rather than
+// failing a send that would otherwise have succeeded.
+func (c *Client) routeNames(fwdPath, revPath []*sphinx.PathHop) *Route {
+	_, doc := c.CurrentDocument()
+	if doc == nil {
+		return nil
+	}
+	fwd, err := hopNames(doc, fwdPath)
+	if err != nil {
+		c.log.Debugf("routeNames: cannot name forward hops: %v", err)
+		return nil
+	}
+	route := &Route{Forward: fwd}
+	if len(revPath) == 0 {
+		return route
+	}
+	rev, err := hopNames(doc, revPath)
+	if err != nil {
+		c.log.Debugf("routeNames: cannot name return hops: %v", err)
+		return route
+	}
+	route.Return = rev
+	return route
+}
+
+// hopNames maps each hop to the node name the consensus gives it.
+func hopNames(doc *cpki.Document, p []*sphinx.PathHop) ([]string, error) {
+	names := make([]string, 0, len(p))
+	for _, hop := range p {
+		desc, err := doc.GetNodeByKeyHash(&hop.ID)
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, desc.Name)
+	}
+	return names, nil
+}
+
 // ComposeSphinxPacket is used to compose Sphinx packets.
 func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
+	pkt, surbkey, rtt, _, err = c.ComposeSphinxPacketWithRoute(request)
+	return pkt, surbkey, rtt, err
+}
+
+// ComposeSphinxPacketWithRoute is ComposeSphinxPacket, additionally reporting
+// the hops the packet was routed over. The route is diagnostic only: it is
+// nil when the hops could not be named, which callers must read as unknown
+// rather than as no hops.
+func (c *Client) ComposeSphinxPacketWithRoute(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, route *Route, err error) {
 	// Extract fields from the appropriate sub-struct
 	var destinationIdHash *[32]byte
 	var recipientQueueID []byte
@@ -60,11 +145,11 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		withSURB = request.SendMessage.WithSURB
 		surbID = request.SendMessage.SURBID
 	} else {
-		return nil, nil, 0, errors.New("request must have SendMessage")
+		return nil, nil, 0, nil, errors.New("request must have SendMessage")
 	}
 
 	if err := validateSendMessageRequest(destinationIdHash, recipientQueueID, requestPayload, c.geo.UserForwardPayloadLength); err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, nil, err
 	}
 
 	payload := make([]byte, c.geo.UserForwardPayloadLength)
@@ -74,7 +159,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		// Check if we're shutting down to avoid races
 		select {
 		case <-c.HaltCh():
-			return nil, nil, 0, ErrShutdown
+			return nil, nil, 0, nil, ErrShutdown
 		default:
 		}
 
@@ -92,7 +177,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 
 		fwdPath, then, err := c.makePath(recipientQueueID, destinationIdHash, surbID, now, true, gateway)
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, 0, nil, err
 		}
 
 		revPath := make([]*sphinx.PathHop, 0)
@@ -102,7 +187,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 			}
 			revPath, then, err = c.makePath(c.conn.queueID, destinationIdHash, surbID, then, false, gateway)
 			if err != nil {
-				return nil, nil, 0, err
+				return nil, nil, 0, nil, err
 			}
 		}
 
@@ -116,12 +201,13 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		// the PKI publication imposted limitations will be selected.  When
 		// that happens, the path selection must be redone.
 		if then.Sub(now) < epochtime.Period*2 {
+			rt := c.routeNames(fwdPath, revPath)
 			if withSURB {
 				payload := make([]byte, 2, 2+c.geo.SURBLength+len(requestPayload))
 				payload[0] = 1 // Packet has a SURB.
 				surb, k, err := c.sphinx.NewSURB(rand.Reader, revPath)
 				if err != nil {
-					return nil, nil, 0, err
+					return nil, nil, 0, nil, err
 				}
 				payload = append(payload, surb...)
 				payload = append(payload, requestPayload...)
@@ -131,40 +217,48 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 
 				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, blob)
 				if err != nil {
-					return nil, nil, 0, err
+					return nil, nil, 0, nil, err
 				}
-				return pkt, k, then.Sub(now), err
+				return pkt, k, then.Sub(now), rt, err
 			} else {
 				blob := make([]byte, c.geo.ForwardPayloadLength)
 				copy(blob, payload)
 
 				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, blob)
 				if err != nil {
-					return nil, nil, 0, err
+					return nil, nil, 0, nil, err
 				}
-				return pkt, nil, then.Sub(now), nil
+				return pkt, nil, then.Sub(now), rt, nil
 			}
 		}
 	}
-	return nil, nil, 0, fmt.Errorf("ComposeSphinxPacket: path selection exceeded %d attempts", maxPathSelectionAttempts)
+	return nil, nil, 0, nil, fmt.Errorf("ComposeSphinxPacket: path selection exceeded %d attempts", maxPathSelectionAttempts)
 }
 
 // SendCiphertext sends the ciphertext b to the recipient/provider, with a
 // SURB identified by surbID, and returns the SURB decryption key and total
 // round trip delay. Blocks until packet is sent on the wire.
 func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
+	k, rtt, _, err := c.SendCiphertextWithRoute(request)
+	return k, rtt, err
+}
+
+// SendCiphertextWithRoute is SendCiphertext, additionally reporting the hops
+// the packet was routed over so that a caller may attribute a reply that never
+// arrives to the nodes it would have traversed.
+func (c *Client) SendCiphertextWithRoute(request *Request) ([]byte, time.Duration, *Route, error) {
 	// Check that we have a valid send request
 	if request.SendMessage == nil {
-		return nil, 0, errors.New("request must have SendMessage")
+		return nil, 0, nil, errors.New("request must have SendMessage")
 	}
 
-	pkt, k, rtt, err := c.ComposeSphinxPacket(request)
+	pkt, k, rtt, route, err := c.ComposeSphinxPacketWithRoute(request)
 	if err != nil {
 		// Don't panic on shutdown or other errors, return them gracefully
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	err = c.conn.sendPacket(pkt)
-	return k, rtt, err
+	return k, rtt, route, err
 }
 
 func (c *Client) SendPacket(pkt []byte) error {
@@ -254,16 +348,24 @@ func (c *Client) logPath(doc *cpki.Document, p []*sphinx.PathHop) error {
 
 // ComposeSphinxPacketForQuery is used to compose Sphinx packets for channel queries.
 func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, surbID *[sConstants.SURBIDLength]byte) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
+	pkt, surbkey, rtt, _, err = c.ComposeSphinxPacketForQueryWithRoute(request, surbID)
+	return pkt, surbkey, rtt, err
+}
+
+// ComposeSphinxPacketForQueryWithRoute is ComposeSphinxPacketForQuery,
+// additionally reporting the hops the packet was routed over, under the same
+// nil-means-unknown caveat.
+func (c *Client) ComposeSphinxPacketForQueryWithRoute(request *thin.SendChannelQuery, surbID *[sConstants.SURBIDLength]byte) (pkt []byte, surbkey []byte, rtt time.Duration, route *Route, err error) {
 
 	if len(request.Payload) > c.geo.UserForwardPayloadLength {
-		return nil, nil, 0, fmt.Errorf("ComposeSphinxPacketForQuery Payload field too large: %v > %v", len(request.Payload), c.geo.UserForwardPayloadLength)
+		return nil, nil, 0, nil, fmt.Errorf("ComposeSphinxPacketForQuery Payload field too large: %v > %v", len(request.Payload), c.geo.UserForwardPayloadLength)
 	}
 
 	for attempt := 0; attempt < maxPathSelectionAttempts; attempt++ {
 		// Check if we're shutting down to avoid races
 		select {
 		case <-c.HaltCh():
-			return nil, nil, 0, ErrShutdown
+			return nil, nil, 0, nil, ErrShutdown
 		default:
 		}
 
@@ -282,7 +384,7 @@ func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, sur
 		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, surbID, now, true, gateway)
 		if err != nil {
 			c.log.Errorf("ComposeSphinxPacketForQuery: c.makePath: fwdPath: err: %s", err.Error())
-			return nil, nil, 0, err
+			return nil, nil, 0, nil, err
 		}
 
 		revPath := make([]*sphinx.PathHop, 0)
@@ -293,7 +395,7 @@ func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, sur
 			revPath, then, err = c.makePath(c.conn.queueID, request.DestinationIdHash, surbID, then, false, gateway)
 			if err != nil {
 				c.log.Errorf("ComposeSphinxPacketForQuery: c.makePath: revPath: err: %s", err.Error())
-				return nil, nil, 0, err
+				return nil, nil, 0, nil, err
 			}
 		}
 
@@ -307,11 +409,12 @@ func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, sur
 		// the PKI publication imposted limitations will be selected.  When
 		// that happens, the path selection must be redone.
 		if then.Sub(now) < epochtime.Period*2 {
+			rt := c.routeNames(fwdPath, revPath)
 			payload := make([]byte, 2, 2+c.geo.SURBLength+len(request.Payload))
 			payload[0] = 1 // Packet has a SURB.
 			surb, k, err := c.sphinx.NewSURB(rand.Reader, revPath)
 			if err != nil {
-				return nil, nil, 0, err
+				return nil, nil, 0, nil, err
 			}
 			payload = append(payload, surb...)
 			payload = append(payload, request.Payload...)
@@ -321,12 +424,12 @@ func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, sur
 
 			pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, blob)
 			if err != nil {
-				return nil, nil, 0, err
+				return nil, nil, 0, nil, err
 			}
-			return pkt, k, then.Sub(now), err
+			return pkt, k, then.Sub(now), rt, err
 		}
 	}
-	return nil, nil, 0, fmt.Errorf("ComposeSphinxPacketForQuery: path selection exceeded %d attempts", maxPathSelectionAttempts)
+	return nil, nil, 0, nil, fmt.Errorf("ComposeSphinxPacketForQuery: path selection exceeded %d attempts", maxPathSelectionAttempts)
 }
 
 // SendChannelQuery

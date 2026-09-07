@@ -24,6 +24,10 @@ import (
 const (
 	defaultThinClientConfigFile = "testdata/thinclient.toml"
 	defaultTestLogLevel         = "DEBUG"
+
+	// Above the docker testnet's ~54s worst-case round trip, so a
+	// tail-latency reply is not mistaken for a lost one.
+	replyWaitTimeout = 3 * time.Minute
 )
 
 var (
@@ -139,7 +143,7 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 		return nil, fmt.Errorf("SendMessage: %w", err)
 	}
 
-	timeout := time.After(1 * time.Minute)
+	timeout := time.After(replyWaitTimeout)
 	for {
 		var event thin.Event
 		select {
