@@ -5,6 +5,7 @@ package client
 import (
 	"testing"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/client/config"
@@ -42,4 +43,41 @@ func TestCachedDocumentForAnotherEpochIsNotCurrent(t *testing.T) {
 	require.Nil(t, cur)
 	require.Nil(t, blob)
 	require.Equal(t, epoch+5, p.GetDocumentByEpoch(epoch+5).Epoch)
+}
+
+func TestCachedDocumentBlobIsTheStrippedDocument(t *testing.T) {
+	epoch, _, _ := epochtime.Now()
+	doc := &cpki.Document{Epoch: epoch, Mu: 0.5, Signatures: map[[32]byte]cert.Signature{{1}: {}}}
+	p := newCachedDocumentPKI(t, doc)
+
+	blob, cur := p.currentDocument()
+	require.Nil(t, cur.Signatures)
+	want := *doc
+	want.Signatures = nil
+	wantBlob, err := ccbor.Marshal(&want)
+	require.NoError(t, err)
+	require.Equal(t, wantBlob, blob)
+
+	var got cpki.Document
+	require.NoError(t, cbor.Unmarshal(blob, &got))
+	require.Equal(t, epoch, got.Epoch)
+	require.Equal(t, 0.5, got.Mu)
+	require.Empty(t, got.Signatures)
+}
+
+func TestCachedDocumentFromThePreviousEpochServesAsCurrent(t *testing.T) {
+	epoch, _, _ := epochtime.Now()
+	p := newCachedDocumentPKI(t, &cpki.Document{Epoch: epoch - 1})
+
+	blob, cur := p.currentDocument()
+	require.NotNil(t, cur)
+	require.Equal(t, epoch-1, cur.Epoch)
+	require.NotEmpty(t, blob)
+}
+
+func TestNoCachedDocumentLeavesNothingCurrent(t *testing.T) {
+	p := newCachedDocumentPKI(t, nil)
+	blob, cur := p.currentDocument()
+	require.Nil(t, cur)
+	require.Nil(t, blob)
 }
