@@ -22,7 +22,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -58,19 +57,12 @@ func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
 
 func main() {
 	cmd := newRootCommand()
-	cmd.SetArgs(normalizeLegacyArgs(os.Args[1:]))
+	cmd.SetArgs(normalizeLegacyArgs(cmd, os.Args[1:]))
 	kpcommon.ExecuteWithFang(cmd)
 }
 
-func normalizeLegacyArgs(args []string) []string {
-	normalized := append([]string(nil), args...)
-	for i, arg := range normalized {
-		switch strings.SplitN(arg, "=", 2)[0] {
-		case "-log_dir", "-log_level":
-			normalized[i] = "-" + arg
-		}
-	}
-	return normalized
+func normalizeLegacyArgs(cmd *cobra.Command, args []string) []string {
+	return kpcommon.NormalizeLegacyLongFlags(cmd, args, "log_dir", "log_level")
 }
 
 func newRootCommand() *cobra.Command {

@@ -19,7 +19,7 @@ func TestVersionFlags(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			cmd.SetOut(&stdout)
 			cmd.SetErr(&stderr)
-			cmd.SetArgs(normalizeLegacyArgs([]string{"-cfg", "/missing", arg}))
+			cmd.SetArgs(normalizeLegacyArgs(cmd, []string{"-cfg", "/missing", arg}))
 
 			if err := fang.Execute(context.Background(), cmd, fang.WithVersion("test-version")); err != nil {
 				t.Fatalf("execute %s: %v: %s", arg, err, stderr.String())
@@ -31,5 +31,28 @@ func TestVersionFlags(t *testing.T) {
 				t.Fatalf("version output for %s did not contain version: %q", arg, stdout.String())
 			}
 		})
+	}
+}
+
+func TestLegacyFlagReachesRun(t *testing.T) {
+	cmd := newRootCommand()
+	ran := false
+	cmd.Run = func(cmd *cobra.Command, args []string) {
+		ran = true
+		cfg, err := cmd.Flags().GetString("cfg")
+		if err != nil {
+			t.Fatalf("get cfg: %v", err)
+		}
+		if cfg != "/missing" {
+			t.Fatalf("cfg = %q, want %q", cfg, "/missing")
+		}
+	}
+	cmd.SetArgs(normalizeLegacyArgs(cmd, []string{"-cfg", "/missing"}))
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute legacy flag: %v", err)
+	}
+	if !ran {
+		t.Fatal("command did not run")
 	}
 }
