@@ -238,11 +238,23 @@ func (s *Server) listenWorker(l net.Listener) {
 		}
 
 		s.state.Go(func() {
-			s.onConn(conn)
+			s.handleConn(conn)
 		})
 	}
 
 	// NOTREACHED
+}
+
+// handleConn runs onConn with panic recovery so a bug in command handling
+// drops the offending connection instead of crashing the whole authority.
+func (s *Server) handleConn(conn net.Conn) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Errorf("onConn: recovered from panic, dropping connection: %v", r)
+			conn.Close()
+		}
+	}()
+	s.onConn(conn)
 }
 
 func (s *Server) halt() {
