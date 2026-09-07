@@ -338,6 +338,11 @@ The client TOML had the most substantial reshape, driven by the
       Address = "/var/run/katzenpost/kpclientd.sock"
   ```
 
+- **Added** top-level `DBusName` (string). Optional. A session dbus
+  well-known name the daemon owns for its lifetime, for single-instance
+  ownership and dbus activation. Empty (the default) owns no name and
+  needs no bus; the `--dbus-name` flag overrides it.
+
 - **Added** `PigeonholeGeometry` (table). Pigeonhole protocol
   parameters; required for new pigeonhole channel operations.
 

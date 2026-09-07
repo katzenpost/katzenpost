@@ -261,6 +261,9 @@ type Config struct {
 	// "10m" or "30s".
 	SessionGracePeriod time.Duration
 
+	// DBusName is the session dbus name to own; empty owns none.
+	DBusName string
+
 	upstreamProxy *proxy.Config
 }
 
