@@ -158,6 +158,9 @@ func (sCfg *Server) validate() error {
 	if sCfg.ResponseTimeoutSec == 0 {
 		sCfg.ResponseTimeoutSec = 30
 	}
+	if sCfg.MaxConcurrentConns == 0 {
+		sCfg.MaxConcurrentConns = 64
+	}
 	if sCfg.CloseDelaySec == 0 {
 		sCfg.CloseDelaySec = 10
 	}

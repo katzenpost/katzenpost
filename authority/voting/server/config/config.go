@@ -313,6 +313,11 @@ type Server struct {
 	// document is larger than the default allows.
 	MaxConsensusSize int
 
+	// MaxConcurrentConns bounds the number of incoming connections handled
+	// at once, so a connection flood cannot exhaust goroutines or memory
+	// (default: 64).
+	MaxConcurrentConns int
+
 	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
 	CloseDelaySec int
 

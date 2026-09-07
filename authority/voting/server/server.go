@@ -69,6 +69,7 @@ type Server struct {
 
 	state     *state
 	listeners []net.Listener
+	connSem   chan struct{}
 
 	// maxMessageSize is the effective PKI wire message ceiling: the operator
 	// override if set, else the estimate derived from the configured PKI and
@@ -237,7 +238,17 @@ func (s *Server) listenWorker(l net.Listener) {
 			continue
 		}
 
+		// Bound concurrent handlers so a connection flood cannot exhaust
+		// goroutines or memory. Full means accept parks here until a
+		// handler finishes; the kernel backlog absorbs the wait.
+		select {
+		case s.connSem <- struct{}{}:
+		case <-s.haltedCh:
+			conn.Close()
+			return
+		}
 		s.state.Go(func() {
+			defer func() { <-s.connSem }()
 			s.handleConn(conn)
 		})
 	}
@@ -290,6 +301,11 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.fatalErrCh = make(chan error, 1)
 	s.haltedCh = make(chan interface{})
+	maxConns := cfg.Server.MaxConcurrentConns
+	if maxConns <= 0 {
+		maxConns = 64
+	}
+	s.connSem = make(chan struct{}, maxConns)
 
 	// Do the early initialization and bring up logging.
 	if err := s.initDataDir(); err != nil {
