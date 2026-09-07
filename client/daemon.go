@@ -186,6 +186,7 @@ func (d *Daemon) halt() {
 	// Step 2: Stop workers
 	workersStart := time.Now()
 	d.log.Debug("Stopping workers first to prevent channel deadlocks")
+	d.client.haltConnection()
 	d.Halt() // shutdown ingressWorker and egressWorker first
 	d.log.Infof("Workers stopped in %v", time.Since(workersStart))
 

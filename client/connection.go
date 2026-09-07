@@ -806,7 +806,7 @@ func (c *connection) sendPacket(pkt []byte) error {
 		return ErrShutdown
 	}
 
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 	select {
 	case c.sendCh <- &connSendCtx{
 		pkt: pkt,
@@ -831,7 +831,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 		return nil, ErrNotConnected
 	}
 
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 	replyCh := make(chan interface{})
 
 	select {
