@@ -20,7 +20,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -30,6 +29,7 @@ import (
 	"path/filepath"
 
 	cbor "github.com/fxamacker/cbor/v2"
+	"github.com/spf13/cobra"
 	"gopkg.in/op/go-logging.v1"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
@@ -37,6 +37,12 @@ import (
 	"github.com/katzenpost/katzenpost/quic/proxy/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
+
+type proxyServerConfig struct {
+	host     string
+	logDir   string
+	logLevel string
+}
 
 type proxy struct {
 	allowedHost map[string]struct{}
@@ -98,26 +104,43 @@ func (p proxy) OnCommand(cmd cborplugin.Command) error {
 }
 
 func main() {
-	var logLevel string
-	var logDir string
-	var host string
-	flag.StringVar(&logDir, "log_dir", "", "logging directory")
-	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	flag.StringVar(&host, "host", "*", "wildcard allow proxy to any http.Request.Host")
-	flag.Parse()
+	cmd := newRootCommand()
+	cmd.SetArgs(normalizeLegacyArgs(cmd, os.Args[1:]))
+	kpcommon.ExecuteWithFang(cmd)
+}
 
+func normalizeLegacyArgs(cmd *cobra.Command, args []string) []string {
+	return kpcommon.NormalizeLegacyLongFlags(cmd, args, "log_dir", "log_level", "host")
+}
+
+func newRootCommand() *cobra.Command {
+	var cfg proxyServerConfig
+	cmd := &cobra.Command{
+		Use:   "http-proxy-server",
+		Short: "Katzenpost HTTP proxy service plugin",
+		Run: func(cmd *cobra.Command, args []string) {
+			runProxyServer(cfg)
+		},
+	}
+	cmd.Flags().StringVar(&cfg.logDir, "log_dir", "", "logging directory")
+	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	cmd.Flags().StringVar(&cfg.host, "host", "*", "wildcard allow proxy to any http.Request.Host")
+	return cmd
+}
+
+func runProxyServer(cfg proxyServerConfig) {
 	// Ensure that the log directory exists.
-	s, err := os.Stat(logDir)
+	s, err := os.Stat(cfg.logDir)
 	if os.IsNotExist(err) {
-		cborplugin.FailStartup("http-proxy-server", fmt.Errorf("log directory %q doesn't exist", logDir))
+		cborplugin.FailStartup("http-proxy-server", fmt.Errorf("log directory %q doesn't exist", cfg.logDir))
 	}
 	if !s.IsDir() {
-		cborplugin.FailStartup("http-proxy-server", fmt.Errorf("log directory %q is not a directory", logDir))
+		cborplugin.FailStartup("http-proxy-server", fmt.Errorf("log directory %q is not a directory", cfg.logDir))
 	}
 
 	// Log to a file.
-	logFile := path.Join(logDir, fmt.Sprintf("proxy.%d.log", os.Getpid()))
-	logBackend, err := log.New(logFile, logLevel, false)
+	logFile := path.Join(cfg.logDir, fmt.Sprintf("proxy.%d.log", os.Getpid()))
+	logBackend, err := log.New(logFile, cfg.logLevel, false)
 	if err != nil {
 		cborplugin.FailStartup("http-proxy-server", err)
 	}
@@ -133,7 +156,7 @@ func main() {
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid()))
 
 	p := &proxy{allowedHost: make(map[string]struct{}), log: serverLog}
-	p.allowedHost[host] = struct{}{}
+	p.allowedHost[cfg.host] = struct{}{}
 
 	cmdBuilder := new(cborplugin.RequestFactory)
 	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, p)
