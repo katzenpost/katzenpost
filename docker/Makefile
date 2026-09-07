@@ -90,6 +90,14 @@ sendSlack=0
 unwrapDelay=0
 numSphinxWorkers=0
 
+# Replica proxy tuning for parallel tests (0 = use defaults auto-derived from
+# numCPU and MKEM ops/sec). Under heavy parallel load, increase these to prevent
+# "replication failed" errors during copy commands: proxyWorkerCount bounds
+# concurrent proxy attempts, and proxyRequestTimeout sets the total budget for
+# each failover sweep. For 17 parallel tests, 16 workers and 120s timeout work.
+proxyWorkerCount=0
+proxyRequestTimeout=0
+
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
 
@@ -125,17 +133,18 @@ wirekem=xwing
 # (e.g. mixnet-alpine), so `make distro=foo start` targets mixnet-foo just
 # like the test-distros legs. A custom net_name= still overrides it.
 net_name=mixnet-$(distro)
-# docker-compose normalizes the project name (directory name) by stripping
-# dots; compute the actual network name the same way so --network= matches
-# the bridge compose creates.  Only the wait target uses this (fetch
-# --require-ready probes per-node metrics endpoints via container DNS).
-compose_network_name = $(subst .,,$(net_name))_katzenpost-net
 # Deterministic base_port derived from the network name + a per-checkout
 # random seed so parallel checkouts on the same machine get different
 # ports even with the same net_name.  Override with base_port=<n>.
 base_port?=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; printf '%s%s' '$(net_name)' "$$(cat .base_port_seed)" | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
+compose_project_name=$(net_name)_$(shell cat .base_port_seed|sha1sum|head -c 5)
+# docker-compose normalizes the project name (directory name) by stripping
+# dots; compute the actual network name the same way so --network= matches
+# the bridge compose creates.  Only the wait target uses this (fetch
+# --require-ready probes per-node metrics endpoints via container DNS).
+compose_network_name = $(subst .,,$(compose_project_name))_katzenpost-net
 # bash is installed in every base image (alpine, debian, ubuntu), so a
 # single shell covers all distros.
 sh?=bash
@@ -235,6 +244,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
+	--proxyWorkerCount $(proxyWorkerCount) --proxyRequestTimeout $(proxyRequestTimeout) \
 	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
 	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 
@@ -344,9 +354,9 @@ docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpos
 
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
-docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
+docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose) -p $(compose_project_name)
 ifeq ($(docker),podman)
-  docker_compose= DOCKER_USER=$(docker_user) DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose
+  docker_compose= DOCKER_USER=$(docker_user) DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose -p $(compose_project_name)
 else
   docker_compose= DOCKER_USER=$(docker_user) $(docker_compose_v1_or_v2)
 endif

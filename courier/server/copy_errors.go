@@ -39,3 +39,17 @@ func classifyReplicaErrorForCopyRead(code uint8) replicaErrorCategory {
 	}
 	return replicaErrorPermanent
 }
+
+// classifyReplicaErrorForCopyWrite mirrors classifyReplicaErrorForCopyRead
+// for the Copy write path, without ReplicaErrorBoxIDNotFound, which is a
+// read-only outcome.
+func classifyReplicaErrorForCopyWrite(code uint8) replicaErrorCategory {
+	switch code {
+	case pigeonhole.ReplicaErrorStorageFull,
+		pigeonhole.ReplicaErrorDatabaseFailure,
+		pigeonhole.ReplicaErrorInternalError,
+		pigeonhole.ReplicaErrorReplicationFailed:
+		return replicaErrorTemporary
+	}
+	return replicaErrorPermanent
+}
