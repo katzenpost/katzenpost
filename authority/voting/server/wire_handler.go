@@ -559,6 +559,15 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	}
 
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+	// Length-check before unmarshal: the hybrid scheme's UnmarshalBinaryPublicKey
+	// slices the input with no length guard and panics on a short key. Reject a
+	// wrong-size key here with DescriptorInvalid.
+	if len(desc.IdentityKey) != pkiSignatureScheme.PublicKeySize() {
+		s.log.Errorf("Peer %s: Replica descriptor identity key length %d != %d", peerID, len(desc.IdentityKey), pkiSignatureScheme.PublicKeySize())
+		instrument.DescriptorRejected("replica", "identity_key_length")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
 	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
 	if err != nil {
 		s.log.Error("failed to unmarshal descriptor IdentityKey")
@@ -683,6 +692,15 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	s.log.Debugf("onPostDescriptor: Identity key hash verification passed from peer %s", strconv.QuoteToASCII(peerID))
 
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+	// Length-check before unmarshal: the hybrid scheme's UnmarshalBinaryPublicKey
+	// slices the input with no length guard and panics on a short key. Reject a
+	// wrong-size key here with DescriptorInvalid.
+	if len(desc.IdentityKey) != pkiSignatureScheme.PublicKeySize() {
+		s.log.Errorf("onPostDescriptor: IDENTITY KEY LENGTH INVALID from peer %s: %d != %d", strconv.QuoteToASCII(peerID), len(desc.IdentityKey), pkiSignatureScheme.PublicKeySize())
+		instrument.DescriptorRejected("mix", "identity_key_length")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
 	s.log.Debugf("onPostDescriptor: Unmarshaling identity public key from peer %s", strconv.QuoteToASCII(peerID))
 	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
 	if err != nil {
