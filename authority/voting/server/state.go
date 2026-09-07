@@ -1012,7 +1012,17 @@ func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd comman
 	return nil, lastErr
 }
 
-func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addrs []string) (commands.Command, error) {
+func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addrs []string) (resp commands.Command, rerr error) {
+	// doSendCommand runs on its own goroutine and talks to an untrusted peer, so
+	// recover here and fail the send instead of crashing the daemon.
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Errorf("peer %s: recovered from panic in outbound send: %v", peer.Identifier, r)
+			resp = nil
+			rerr = fmt.Errorf("peer %s: recovered from panic: %v", peer.Identifier, r)
+		}
+	}()
+
 	dialTimeout := time.Duration(s.s.cfg.Server.DialTimeoutSec) * time.Second
 	handshakeTimeout := time.Duration(s.s.cfg.Server.HandshakeTimeoutSec) * time.Second
 	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
@@ -1096,7 +1106,7 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 		return nil, err
 	}
 
-	resp, err := session.RecvCommand(context.Background())
+	resp, err = session.RecvCommand(context.Background())
 	if err != nil {
 		return nil, err
 	}
