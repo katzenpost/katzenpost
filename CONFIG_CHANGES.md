@@ -338,6 +338,16 @@ The client TOML had the most substantial reshape, driven by the
       Address = "/var/run/katzenpost/kpclientd.sock"
   ```
 
+- **Added** `[Listen.Unix].Addresses` (string array). Optional. The unix
+  listener already bound a single `Address`; with `Addresses` it can bind
+  any number of unix sockets, each a filesystem path or, on Linux, an
+  abstract-namespace name with a leading `@`, in any combination. A
+  thin_client may connect on any of them. An abstract socket has no
+  filesystem permissions, so any process in the network namespace can
+  connect; access control relies on kpclientd running per user (a systemd
+  user service or run by the user), and a peer-credential check is
+  deferred until there is a system-wide daemon.
+
 - **Added** `PigeonholeGeometry` (table). Pigeonhole protocol
   parameters; required for new pigeonhole channel operations.
 
