@@ -108,8 +108,7 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 		for j, _ := range peerKeys {
 			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
-		st.threshold = len(st.verifiers)/2 + 1
-		st.dissenters = len(cfg.Authorities)/2 - 1
+		st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 		s := &Server{
 			cfg:                cfg,
@@ -895,8 +894,7 @@ func TestReplicaDescriptorConsensus(t *testing.T) {
 		for j := range peerKeys {
 			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
-		st.threshold = len(st.verifiers)/2 + 1
-		st.dissenters = len(cfg.Authorities)/2 - 1
+		st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 		s := &Server{
 			cfg:                cfg,
@@ -1365,8 +1363,7 @@ func TestConfiguredReplicaIdentityKeys(t *testing.T) {
 		for j := range peerKeys {
 			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
-		st.threshold = len(st.verifiers)/2 + 1
-		st.dissenters = len(cfg.Authorities)/2 - 1
+		st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 		s := &Server{
 			cfg:                cfg,
@@ -1683,8 +1680,7 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 		for j := range peerKeys {
 			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
-		st.threshold = len(st.verifiers)/2 + 1
-		st.dissenters = len(cfg.Authorities)/2 - 1
+		st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 		s := &Server{
 			cfg:                cfg,
@@ -2076,8 +2072,7 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 		for j := range peerKeys {
 			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
-		st.threshold = len(st.verifiers)/2 + 1
-		st.dissenters = len(cfg.Authorities)/2 - 1
+		st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 		s := &Server{
 			cfg:                cfg,
@@ -2461,8 +2456,7 @@ func TestEmptyEnvelopeKeysWithConfiguredReplicas(t *testing.T) {
 		for j := range peerKeys {
 			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
-		st.threshold = len(st.verifiers)/2 + 1
-		st.dissenters = len(cfg.Authorities)/2 - 1
+		st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 		s := &Server{
 			cfg:                cfg,
@@ -2748,8 +2742,7 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 		for j := range peerKeys {
 			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
-		st.threshold = len(st.verifiers)/2 + 1
-		st.dissenters = len(cfg.Authorities)/2 - 1
+		st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 		s := &Server{
 			cfg:                cfg,
@@ -3209,8 +3202,7 @@ func TestConsensusIdenticalAfterAuthorityRestart(t *testing.T) {
 		for j := range peerKeys {
 			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
-		st.threshold = len(st.verifiers)/2 + 1
-		st.dissenters = len(cfg.Authorities)/2 - 1
+		st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 		s := &Server{
 			cfg:                cfg,

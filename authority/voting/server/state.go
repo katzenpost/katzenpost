@@ -2746,6 +2746,10 @@ func (s *state) restorePersistence() error {
 	})
 }
 
+func votingThresholds(votingSetSize int) (threshold, dissenters int) {
+	return votingSetSize/2 + 1, votingSetSize/2 - 1
+}
+
 func newState(s *Server) (*state, error) {
 	const dbFile = "persistence.db"
 
@@ -2772,8 +2776,7 @@ func newState(s *Server) (*state, error) {
 		st.verifiers[hash.Sum256From(auth.IdentityPublicKey)] = auth.IdentityPublicKey
 	}
 	st.verifiers[hash.Sum256From(s.IdentityKey())] = sign.PublicKey(s.IdentityKey())
-	st.threshold = len(st.verifiers)/2 + 1
-	st.dissenters = len(s.cfg.Authorities)/2 - 1
+	st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 	st.s.cfg.Server.PKISignatureScheme = s.cfg.Server.PKISignatureScheme
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
