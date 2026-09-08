@@ -59,6 +59,19 @@ var (
 	// five RetrieveMessage cycles, leaves room for an occasional slow
 	// reply, and gets us back into a redial within half a minute.
 	readIdleTimeout = 15 * time.Second
+
+	// heartbeatInterval bounds how long the connection can go without
+	// sending the gateway anything. The gateway's incoming session has
+	// no explicit ReadTimeout (core/wire's DefaultReadTimeout, 2
+	// minutes, applies), re-armed only when it receives a command from
+	// us. An otherwise-idle client's only traffic is one GetConsensus2
+	// per epoch, so a default epoch duration equal to that timeout races
+	// it: any jitter past the deadline gets the gateway tearing the link
+	// down for "silence" mid-epoch. Ten seconds mirrors the NoOp
+	// heartbeat the gateway already sends us (senderWorker in
+	// server/internal/incoming) to keep readIdleTimeout warm, and keeps
+	// the gateway's deadline out of reach of epoch cadence entirely.
+	heartbeatInterval = 10 * time.Second
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
@@ -565,9 +578,21 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 		}
 	}()
 
+	heartbeat := time.NewTimer(heartbeatInterval)
+	defer heartbeat.Stop()
+
 	for {
 		var rawCmd commands.Command
 		select {
+		case <-heartbeat.C:
+			cmd := &commands.NoOp{Cmds: w.GetCommands()}
+			wireErr = w.SendCommand(context.Background(), cmd)
+			if wireErr != nil {
+				c.log.Debugf("Failed to send heartbeat NoOp: %v", wireErr)
+				return
+			}
+			heartbeat.Reset(heartbeatInterval)
+			continue
 		case ctx := <-c.getConsensusCh:
 			if consensusCtx != nil {
 				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
