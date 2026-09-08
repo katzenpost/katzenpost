@@ -128,8 +128,15 @@ type state struct {
 	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
 	authorityNames         map[[publicKeyHashSize]byte]string
 
-	documents          map[uint64]*pki.Document
-	myconsensus        map[uint64]*pki.Document
+	documents   map[uint64]*pki.Document
+	myconsensus map[uint64]*pki.Document
+
+	// serializedDocs caches the marshaled consensus per epoch, guarded by its
+	// own mutex. A consensus is write-once per epoch, so the cache never goes
+	// stale; it is pruned alongside documents.
+	serializedDocsMu sync.Mutex
+	serializedDocs   map[uint64][]byte
+
 	descriptors        map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor
 	replicaDescriptors map[uint64]map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor
 	votes              map[uint64]map[[publicKeyHashSize]byte]*pki.Document
@@ -1597,7 +1604,11 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 	// XXX: Tor also hashes in the previous srv or 32 bytes of 0x00
 	//      How do we bootstrap a new authority?
 	zeros := make([]byte, 32)
-	if vot, ok := s.documents[s.votingEpoch-1]; ok {
+	// Use the epoch argument, not s.votingEpoch, so the previous SRV hashed in
+	// here matches the epoch being computed. They are equal on the current
+	// call path, but relying on that coupling is a byte-identical-consensus
+	// hazard.
+	if vot, ok := s.documents[epoch-1]; ok {
 		srv.Write(vot.SharedRandomValue)
 	} else {
 		srv.Write(zeros)
@@ -1776,6 +1787,13 @@ func (s *state) pruneDocuments() {
 			delete(s.documents, e)
 		}
 	}
+	s.serializedDocsMu.Lock()
+	for e := range s.serializedDocs {
+		if e < cmpEpoch {
+			delete(s.serializedDocs, e)
+		}
+	}
+	s.serializedDocsMu.Unlock()
 	for e := range s.descriptors {
 		if e < cmpEpoch {
 			delete(s.descriptors, e)
@@ -2430,8 +2448,22 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 
 	// If we have a serialized document, return it.
 	if d, ok := s.documents[epoch]; ok {
-		// XXX We should cache this
-		return d.MarshalCertificate()
+		// Serve the serialized form from a cache: a consensus is write-once
+		// per epoch, so the cached bytes never go stale, and this avoids
+		// re-serializing the whole document on every GetConsensus.
+		s.serializedDocsMu.Lock()
+		b, cached := s.serializedDocs[epoch]
+		if !cached {
+			var err error
+			b, err = d.MarshalCertificate()
+			if err != nil {
+				s.serializedDocsMu.Unlock()
+				return nil, err
+			}
+			s.serializedDocs[epoch] = b
+		}
+		s.serializedDocsMu.Unlock()
+		return b, nil
 	}
 
 	// Otherwise, return an error based on the time.
@@ -2736,6 +2768,7 @@ func newState(s *Server) (*state, error) {
 	st.reverseHash[hash.Sum256From(st.s.identityPublicKey)] = st.s.identityPublicKey
 
 	st.documents = make(map[uint64]*pki.Document)
+	st.serializedDocs = make(map[uint64][]byte)
 	st.myconsensus = make(map[uint64]*pki.Document)
 	st.descriptors = make(map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor)
 	st.replicaDescriptors = make(map[uint64]map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
