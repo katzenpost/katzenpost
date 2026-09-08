@@ -902,6 +902,9 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 // for our link layer wire protocol as specified by
 // the PeerAuthenticator interface in core/wire/session.go
 func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
+	if len(creds.AdditionalData) < publicKeyHashSize {
+		return false
+	}
 	var ad [publicKeyHashSize]byte
 	copy(ad[:], creds.AdditionalData[:publicKeyHashSize])
 	_, ok := s.authorizedAuthorities[ad]

@@ -66,6 +66,10 @@ type authorityAuthenticator struct {
 
 // IsPeerValid authenticates the remote peer's credentials.
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
+	if len(creds.AdditionalData) < hash.HashSize {
+		a.log.Warningf("voting/Client: IsPeerValid(): AD too short: %d", len(creds.AdditionalData))
+		return false
+	}
 	identityHash := hash.Sum256From(a.IdentityPublicKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
