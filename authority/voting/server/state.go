@@ -388,9 +388,26 @@ func (s *state) fsm() <-chan time.Time {
 	default:
 	}
 	s.pruneDocuments()
+	if sleep < 0 {
+		// A phase deadline was already missed (clock skew or slow
+		// processing). Do not hand a negative duration to time.After; fire
+		// promptly so the round fails and re-bootstraps rather than behaving
+		// on the negative-duration timer.
+		s.log.Warningf("FSM: negative sleep %s in state %v, behind schedule; clamping to 0", sleep, s.state)
+	}
+	sleep = clampSleep(sleep)
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
 	s.Unlock()
 	return time.After(sleep)
+}
+
+// clampSleep floors a computed FSM sleep at zero, so a missed phase deadline
+// never produces a negative time.After duration.
+func clampSleep(d time.Duration) time.Duration {
+	if d < 0 {
+		return 0
+	}
+	return d
 }
 
 func (s *state) persistDocument(epoch uint64, doc []byte) {
