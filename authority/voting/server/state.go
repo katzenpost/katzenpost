@@ -2027,6 +2027,15 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 
+	// The certified body must be at least the 8-byte epoch prefix that
+	// epochFromBytes reads below. A shorter body is malformed; reject it
+	// rather than panicking on the slice.
+	if len(certified) < 8 {
+		s.log.Errorf("Reveal from %s has malformed payload: %d bytes", s.authorityNames[pk], len(certified))
+		resp.ErrorCode = commands.RevealNotSigned
+		return &resp
+	}
+
 	e := epochFromBytes(certified[:8])
 	// received too late
 	if e < s.votingEpoch {
