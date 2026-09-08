@@ -1964,6 +1964,15 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 		return &resp
 	}
 
+	// Bind the document epoch to the voting epoch, like onVoteUpload. Otherwise a
+	// byzantine authority could replay a victim's genuine prior-epoch cert (still
+	// within the epoch+5 window) into this epoch's first-write-wins slot.
+	if doc.Epoch != s.votingEpoch {
+		s.log.Errorf("Certificate from %s contains wrong Epoch %d != %d", s.authorityNames[pk], doc.Epoch, s.votingEpoch)
+		resp.ErrorCode = commands.CertNotSigned
+		return &resp
+	}
+
 	// haven't received a vote from this peer yet for this epoch
 	if _, ok := s.votes[s.votingEpoch][pk]; !ok {
 		s.log.Errorf("Certficate from %s received before peer's vote?.", s.authorityNames[pk])
