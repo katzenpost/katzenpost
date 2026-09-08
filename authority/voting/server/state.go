@@ -1973,6 +1973,14 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 		return &resp
 	}
 
+	// A real certificate carries shared-random reveals; a vote does not, so a
+	// reveal-less signed document is a vote replayed into the cert slot.
+	if len(doc.SharedRandomReveal) == 0 {
+		s.log.Errorf("Certificate from %s carries no shared-random reveals", s.authorityNames[pk])
+		resp.ErrorCode = commands.CertNotSigned
+		return &resp
+	}
+
 	// haven't received a vote from this peer yet for this epoch
 	if _, ok := s.votes[s.votingEpoch][pk]; !ok {
 		s.log.Errorf("Certficate from %s received before peer's vote?.", s.authorityNames[pk])
