@@ -14,6 +14,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
@@ -34,6 +35,13 @@ func newSingleAuthorityState(t *testing.T) (*state, peerKeys, uint64) {
 	st.votingEpoch = votingEpoch
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	st.authorityNames = make(map[[publicKeyHashSize]byte]string)
+	// Mirror the per-epoch maps that newState() initializes in production, so
+	// the handlers do not assign into a nil map.
+	st.votes = make(map[uint64]map[[publicKeyHashSize]byte]*pki.Document)
+	st.certificates = make(map[uint64]map[[publicKeyHashSize]byte]*pki.Document)
+	st.reveals = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
+	st.signatures = make(map[uint64]map[[publicKeyHashSize]byte]*cert.Signature)
+	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 	pk := hash.Sum256From(keys[0].idPubKey)
 	st.authorizedAuthorities[pk] = true
 	st.authorityNames[pk] = "auth0"
