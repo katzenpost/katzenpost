@@ -185,14 +185,29 @@ func (s *state) worker() {
 		case <-s.HaltCh():
 			s.log.Debugf("authority: Terminating gracefully.")
 			return
-		case <-s.fsm():
+		case <-s.fsmTick():
 			s.log.Debugf("authority: Wakeup due to voting schedule.")
 		}
 	}
 }
 
+// fsmTick runs one FSM step with panic recovery, so a bug on the consensus
+// path drops the round and retries instead of crashing the authority. On a
+// recovered panic it returns a short retry timer rather than a nil channel
+// (which would wedge the worker's select).
+func (s *state) fsmTick() (ch <-chan time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Errorf("FSM: recovered from panic, retrying shortly: %v", r)
+			ch = time.After(time.Second)
+		}
+	}()
+	return s.fsm()
+}
+
 func (s *state) fsm() <-chan time.Time {
 	s.Lock()
+	defer s.Unlock()
 	var sleep time.Duration
 	epoch, elapsed, nextEpoch := epochtime.Now()
 	s.log.Debugf("FSM: Current epoch %d, elapsed: %v, remaining time: %v, current state: %v", epoch, elapsed, nextEpoch, s.state)
@@ -397,7 +412,6 @@ func (s *state) fsm() <-chan time.Time {
 	}
 	sleep = clampSleep(sleep)
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
-	s.Unlock()
 	return time.After(sleep)
 }
 
