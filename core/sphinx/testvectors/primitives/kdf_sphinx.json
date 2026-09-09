@@ -1,0 +1,26 @@
+{
+  "format_version": 1,
+  "generator": "github.com/katzenpost/katzenpost/core/sphinx/testvectors/cmd/generate",
+  "primitive": "kdf_sphinx",
+  "description": "Sphinx's PacketKeys derivation: HKDF-SHA256 Expand-only (raw ikm treated directly as PRK, no Extract step) with info=\"katzenpost-kdf-v0-hkdf-sha256\", 160 bytes OKM sliced into HeaderMAC(32)+HeaderEncryption(32)+HeaderEncryptionIV(16)+PayloadEncryption(48)+BlindingFactorSeed(32). BlindingFactorSeedHex is the raw seed bytes only -- turning it into a NIKE private key is NIKE.privateKeyFromSeed's job (tested separately), not KDF's.",
+  "vectors": [
+    {
+      "name": "32B_shared_secret_0x00",
+      "ikm_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "header_mac_hex": "b805cdc0a27a85dc44ccd78c029629c5fa72e1758a132976450f5df23ab217ae",
+      "header_encryption_hex": "9d63a688188302d79f3367ecdea423d6e02e43176d94f31e916d51a45bf36bca",
+      "header_encryption_iv_hex": "abdf87e18827a51ac9779b7aa52c8461",
+      "payload_encryption_hex": "ce2f00385b3d959d02b70e85dfa4bf557ce6c89d2b560478f604a1a48661eac0ddf838353ce05e2cc8518aa1094f2e8c",
+      "blinding_factor_seed_hex": "7e609e5489178ecebfad9fee26a8f79d3b2049f4fe59d7ec3f96f4b706fe36c7"
+    },
+    {
+      "name": "32B_shared_secret_0x01",
+      "ikm_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "header_mac_hex": "9ef9853a076ae84186d38bc42293c6dc58b4e671247fa61cb3cebed4b61f27ae",
+      "header_encryption_hex": "36d1202046e7c73220a5f2e908cf14c867947029d3e879886caf4d9d42579483",
+      "header_encryption_iv_hex": "c4e902f451e172e95e454d07ab1ea732",
+      "payload_encryption_hex": "66810366c5225beba16c4504bf049f33f08d5d022c2009559b4fbaea8771b1f1695018831ee47b2eb38db738867ea2fc",
+      "blinding_factor_seed_hex": "e7c3442b2a15c779f2fd94a6f727195590564a63126b375a9551fdff61c45182"
+    }
+  ]
+}
