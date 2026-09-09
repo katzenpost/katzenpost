@@ -324,6 +324,13 @@ type Server struct {
 	// (default: 64).
 	MaxConcurrentConns int
 
+	// PersistentPeerConns opts into outbound persistent inter-authority
+	// connections, which reuse one authenticated session per peer across a
+	// voting round instead of dialing and handshaking per command. Persistent
+	// inter-authority connections are opt-in and off by default; when false
+	// (the default) each command uses its own dial and handshake.
+	PersistentPeerConns bool
+
 	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
 	CloseDelaySec int
 

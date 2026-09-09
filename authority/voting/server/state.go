@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -61,9 +60,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -147,6 +144,13 @@ type state struct {
 	commits            map[uint64]map[[publicKeyHashSize]byte][]byte
 	verifiers          map[[publicKeyHashSize]byte]sign.PublicKey
 
+	// persistent outbound sessions to peer authorities, keyed by identifier.
+	peerConnsMu sync.Mutex
+	peerConns   map[string]*peerConn
+	// dialContextFn overrides the dialer for outbound peer connections; nil
+	// uses a default net.Dialer. Set in tests to inject a transport.
+	dialContextFn func(ctx context.Context, network, addr string) (net.Conn, error)
+
 	updateCh chan interface{}
 
 	votingEpoch  uint64
@@ -162,6 +166,9 @@ type state struct {
 
 func (s *state) Halt() {
 	s.Worker.Halt()
+
+	// Close any persistent peer connections now that the workers are stopped.
+	s.closeAllPeerConns()
 
 	// Gracefully close the persistence store.
 	s.db.Sync()
@@ -1064,94 +1071,45 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 		}
 	}()
 
-	dialTimeout := time.Duration(s.s.cfg.Server.DialTimeoutSec) * time.Second
-	handshakeTimeout := time.Duration(s.s.cfg.Server.HandshakeTimeoutSec) * time.Second
-	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
-
-	var conn net.Conn
-	var err error
-	for i, a := range addrs {
-		u, err := url.Parse(a)
-		if err != nil {
-			s.log.Debugf("peer %s: invalid URL %s: %v", peer.Identifier, a, err)
-			continue
-		}
-		defaultDialer := &net.Dialer{Timeout: dialTimeout}
-		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
-		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
-		cancelFn()
-		if err == nil {
-			defer conn.Close()
-			break
-		}
-		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)
-		if i == len(addrs)-1 {
-			return nil, fmt.Errorf("all addresses exhausted: %w", err)
-		}
-	}
-	if conn == nil {
-		return nil, fmt.Errorf("peer %s: no usable address could be dialed", peer.Identifier)
-	}
-
 	s.s.Add(1)
 	defer s.s.Done()
-	identityHash := hash.Sum256From(s.s.identityPublicKey)
 
-	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-	if kemscheme == nil {
-		panic("kem scheme not found in registry")
-	}
-
-	cfg := &wire.SessionConfig{
-		KEMScheme:         kemscheme,
-		Geometry:          s.geo,
-		Authenticator:     s,
-		AdditionalData:    identityHash[:],
-		AuthenticationKey: s.s.linkKey,
-		RandomReader:      rand.Reader,
-		HandshakeTimeout:  handshakeTimeout,
-		ReadTimeout:       responseTimeout,
-		WriteTimeout:      responseTimeout,
-		MaxMessageSize:    s.s.maxMessageSize,
-	}
-	session, err := wire.NewPKISession(cfg, true)
-	if err != nil {
-		return nil, err
-	}
-	defer session.Close()
-
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
-	handshakeStart := time.Now()
-	if err = session.Initialize(context.Background(), conn); err != nil {
-		handshakeElapsed := time.Since(handshakeStart)
-		state := "other"
-		if he, ok := wire.GetHandshakeError(err); ok {
-			state = string(he.State)
-		} else if wire.IsNoHandshakeBytesError(err) {
-			state = "premature_close"
+	// Persistent inter-authority connections are opt-in and off by default.
+	// In the default case, use one dial and handshake per command with no
+	// reuse.
+	if !s.s.cfg.Server.PersistentPeerConns {
+		session, conn, err := s.dialAndHandshakePeer(peer, addrs)
+		if err != nil {
+			return nil, err
 		}
-		handshakeinstrument.HandshakeFailure("outgoing", state)
-		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
-		// Add peer name context to the error if it's a HandshakeError
-		if he, ok := wire.GetHandshakeError(err); ok {
-			he.WithPeerName(peer.Identifier)
+		defer session.Close()
+		return s.peerRoundTrip(session, conn, cmd)
+	}
+
+	// Persistent connection: reuse the cached session if it is live, else
+	// dial a fresh one. A reused session that the peer has since closed fails
+	// the round trip, so evict it and redial once.
+	pc := s.peerConnFor(peer.Identifier)
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+
+	if pc.session != nil {
+		resp, err := s.peerRoundTrip(pc.session, pc.conn, cmd)
+		if err == nil {
+			return resp, nil
 		}
-		// Log detailed debug info (contains IPs, keys, peer name) at debug level only
-		s.log.Debugf("peer %s: handshake failure details:\n%s", peer.Identifier, wire.GetDebugError(err))
-		return nil, err
+		s.log.Debugf("peer %s: reused connection failed, redialing: %v", peer.Identifier, err)
+		pc.closeLocked()
 	}
-	handshakeElapsed := time.Since(handshakeStart)
-	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
-	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, handshakeElapsed)
 
-	conn.SetDeadline(time.Now().Add(responseTimeout))
-	err = session.SendCommand(context.Background(), cmd)
+	session, conn, err := s.dialAndHandshakePeer(peer, addrs)
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err = session.RecvCommand(context.Background())
+	pc.session, pc.conn = session, conn
+	resp, err = s.peerRoundTrip(pc.session, pc.conn, cmd)
 	if err != nil {
+		pc.closeLocked()
 		return nil, err
 	}
 	return resp, nil

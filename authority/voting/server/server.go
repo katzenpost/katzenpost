@@ -483,6 +483,9 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 	s.state.Go(s.state.worker)
+	if s.cfg.Server.PersistentPeerConns {
+		s.state.Go(s.state.peerKeepaliveWorker)
+	}
 
 	// Start up the listeners.
 	listenAddresses := s.cfg.Server.Addresses
