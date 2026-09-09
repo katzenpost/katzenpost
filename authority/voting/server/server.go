@@ -71,6 +71,14 @@ type Server struct {
 	listeners []net.Listener
 	connSem   chan struct{}
 
+	// connMu guards conns and halting. conns tracks every accepted connection
+	// whose handler is running so shutdown can close them, and halting records
+	// that shutdown has begun so a connection accepted during shutdown is
+	// closed immediately instead of leaking a blocked handler.
+	connMu  sync.Mutex
+	conns   map[net.Conn]struct{}
+	halting bool
+
 	// maxMessageSize is the effective PKI wire message ceiling: the operator
 	// override if set, else the estimate derived from the configured PKI and
 	// topology.
@@ -256,6 +264,30 @@ func (s *Server) listenWorker(l net.Listener) {
 	// NOTREACHED
 }
 
+// registerConn tracks an accepted connection so shutdown can close it and
+// unblock its handler. If shutdown has already begun it closes the connection
+// and returns false, so the caller returns without serving.
+func (s *Server) registerConn(conn net.Conn) bool {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if s.halting {
+		conn.Close()
+		return false
+	}
+	if s.conns == nil {
+		s.conns = make(map[net.Conn]struct{})
+	}
+	s.conns[conn] = struct{}{}
+	return true
+}
+
+// unregisterConn stops tracking a connection once its handler returns.
+func (s *Server) unregisterConn(conn net.Conn) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	delete(s.conns, conn)
+}
+
 // handleConn runs onConn with panic recovery so a bug in command handling
 // drops the offending connection instead of crashing the whole authority.
 func (s *Server) handleConn(conn net.Conn) {
@@ -265,6 +297,10 @@ func (s *Server) handleConn(conn net.Conn) {
 			conn.Close()
 		}
 	}()
+	if !s.registerConn(conn) {
+		return
+	}
+	defer s.unregisterConn(conn)
 	s.onConn(conn)
 }
 
@@ -278,6 +314,20 @@ func (s *Server) halt() {
 		}
 		s.listeners[idx] = nil
 	}
+
+	// Close every accepted connection. A handler blocked reading a peer that
+	// holds the connection open (for example an authority connection kept warm
+	// between voting rounds) does not otherwise return until the long idle
+	// timeout, which would stall shutdown for that whole window. Setting
+	// halting under the same lock closes any connection accepted from here on
+	// as soon as its handler registers, so none escapes this pass.
+	s.connMu.Lock()
+	s.halting = true
+	for c := range s.conns {
+		c.Close()
+	}
+	s.conns = nil
+	s.connMu.Unlock()
 
 	// Wait for all the connections to terminate.
 	s.WaitGroup.Wait()
