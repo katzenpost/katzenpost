@@ -14,6 +14,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -109,16 +110,17 @@ func (s *state) dialAndHandshakePeer(peer *config.Authority, addrs []string) (*w
 		panic("kem scheme not found in registry")
 	}
 	cfg := &wire.SessionConfig{
-		KEMScheme:         kemscheme,
-		Geometry:          s.geo,
-		Authenticator:     s,
-		AdditionalData:    identityHash[:],
-		AuthenticationKey: s.s.linkKey,
-		RandomReader:      rand.Reader,
-		HandshakeTimeout:  handshakeTimeout,
-		ReadTimeout:       responseTimeout,
-		WriteTimeout:      responseTimeout,
-		MaxMessageSize:    s.s.maxMessageSize,
+		KEMScheme:          kemscheme,
+		PKISignatureScheme: signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme),
+		Geometry:           s.geo,
+		Authenticator:      s,
+		AdditionalData:     identityHash[:],
+		AuthenticationKey:  s.s.linkKey,
+		RandomReader:       rand.Reader,
+		HandshakeTimeout:   handshakeTimeout,
+		ReadTimeout:        responseTimeout,
+		WriteTimeout:       responseTimeout,
+		MaxMessageSize:     s.s.maxMessageSize,
 	}
 	session, err := wire.NewPKISession(cfg, true)
 	if err != nil {
