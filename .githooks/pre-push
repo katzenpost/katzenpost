@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+commits=$(mktemp)
+blob=$(mktemp)
+cleanup() {
+    rm -f "$commits" "$blob" "$blob.relevant"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+zero=0000000000000000000000000000000000000000
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ "$local_sha" = "$zero" ] && continue
+    if [ "$remote_sha" = "$zero" ]; then
+        git -C "$root" rev-list "$local_sha" --not --remotes >> "$commits"
+    else
+        git -C "$root" rev-list "$remote_sha..$local_sha" >> "$commits"
+    fi
+done
+sort -u "$commits" -o "$commits"
+relevant=false
+while IFS= read -r commit; do
+    [ -n "$commit" ] || continue
+    git -C "$root" diff-tree --no-commit-id --check -r --root "$commit"
+    git -C "$root" diff-tree --no-commit-id --name-only --diff-filter=ACMR -r --root "$commit" | while IFS= read -r path; do
+        case "$path" in
+            docker/*|*.go|go.mod|go.sum|.github/workflows/docker-interop.yml) printf '%s\n' relevant > "$blob.relevant" ;;
+        esac
+    done
+done < "$commits"
+[ -f "$blob.relevant" ] && relevant=true
+rm -f "$blob.relevant"
+if [ "${KATZENPOST_FORCE_INTEROP:-0}" = 1 ] || { [ "$relevant" = true ] && [ "${KATZENPOST_SKIP_INTEROP:-0}" != 1 ]; }; then
+    make -C "$root/docker" -j1 interop-smoke
+fi

@@ -1,0 +1,223 @@
+name: docker release interoperability tests
+on: workflow_dispatch
+jobs:
+
+  build:
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      matrix:
+        go-version: [1.26.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CA certificates
+        if: ${{ env.ACT }}
+        run: |
+          if [ -d /etc/ssl/certs ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+            echo "CA certificates already available"
+          else
+            apt update && apt install -y ca-certificates build-essential gcc g++ make
+            update-ca-certificates podman
+          fi
+        continue-on-error: true
+
+      - name: Configure podman socket
+        run: |
+          systemctl --user start podman.socket || true
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build interoperability artifacts
+        run: make -C docker -j1 interop-build
+
+      - name: Export the interop base image
+        run: podman save --format oci-archive -o docker/cache/base-image.tar katzenpost-alpine_base
+
+      - name: Upload interoperability builds
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-builds-${{ github.run_id }}
+          path: |
+            docker/cache/interop/alpine/previous
+            docker/cache/interop/alpine/current
+            docker/cache/interop/alpine/candidate
+          retention-days: 1
+
+      - name: Upload the interop base image
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-base-image-${{ github.run_id }}
+          path: |
+            docker/cache/base-image.tar
+            docker/alpine_base.stamp
+          retention-days: 1
+
+  test:
+    name: ${{ matrix.baseline }} / ${{ matrix.role }}
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: [1.26.x]
+        os: [ubuntu-latest]
+        baseline: [candidate, current, previous]
+        role: [mix, gateway, servicenode, dirauth, replica, courier, http, client2, quorums]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CA certificates
+        if: ${{ env.ACT }}
+        run: |
+          if [ -d /etc/ssl/certs ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+            echo "CA certificates already available"
+          else
+            apt update && apt install -y ca-certificates build-essential gcc g++ make
+            update-ca-certificates podman
+          fi
+        continue-on-error: true
+
+      - name: Configure podman socket
+        run: |
+          systemctl --user start podman.socket || true
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Download interoperability builds
+        uses: actions/download-artifact@v4
+        with:
+          name: interop-builds-${{ github.run_id }}
+          path: docker/cache/interop/alpine
+
+      - name: Restore executable bit on downloaded builds
+        run: chmod -R +x docker/cache/interop/alpine
+
+      - name: Download the interop base image
+        uses: actions/download-artifact@v4
+        with:
+          name: interop-base-image-${{ github.run_id }}
+          path: docker
+
+      - name: Import the interop base image
+        run: |
+          podman load -i docker/cache/base-image.tar
+          touch docker/alpine_base.stamp
+
+      - name: Test ${{ matrix.baseline }} ${{ matrix.role }}
+        run: make -C docker -j1 interop-test-role BASELINE=${{ matrix.baseline }} ROLE=${{ matrix.role }}
+
+      - name: Stop the mixnet
+        if: always()
+        run: |
+          cd docker && make interop-stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-${{ github.run_id }}-${{ matrix.baseline }}-${{ matrix.role }}
+          path: |
+            docker/interop-alpine/*/*.log
+            docker/interop-alpine/servicenode*/courier/courier.log
+            docker/interop-alpine/*/selfcheck.toml
+            docker/interop-alpine/runtime-artifacts.tsv
+
+  # Exercises every interop target the test matrix above does not already
+  # invoke. The matrix covers interop-build(+build-previous/current/candidate),
+  # image-check, compose, selfcheck-cache-restore, start, activate, wait,
+  # run-ping, http-check, check, check-role, client-check, swap-* (all roles),
+  # restore-role, record-artifact, noop, stop, test-role and test-quorums.
+  # This job covers the rest: validate, report, noop, test-baseline,
+  # test-mixed-network, clean-dryrun, clean, clean-cache, clean-results,
+  # clean-image and clean-all. interop-test and interop-smoke are umbrella
+  # targets composed entirely of the steps above, so they are not re-run here.
+  extra-targets:
+    name: extra-targets
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        go-version: [1.26.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+
+      - name: Download interoperability builds
+        uses: actions/download-artifact@v4
+        with:
+          name: interop-builds-${{ github.run_id }}
+          path: docker/cache/interop/alpine
+
+      - name: Restore executable bit on downloaded builds
+        run: chmod -R +x docker/cache/interop/alpine
+
+      - name: Download the interop base image
+        uses: actions/download-artifact@v4
+        with:
+          name: interop-base-image-${{ github.run_id }}
+          path: docker
+
+      - name: Import the interop base image
+        run: |
+          podman load -i docker/cache/base-image.tar
+          touch docker/alpine_base.stamp
+
+      - name: Meta targets (validate, noop, clean-dryrun)
+        run: |
+          cd docker
+          make -j1 interop-validate
+          make -j1 interop-noop
+          make -j1 interop-clean-dryrun
+
+      - name: interop-test-baseline
+        run: make -C docker -j1 interop-test-baseline BASELINE=current
+
+      - name: interop-report
+        run: make -C docker -j1 interop-report
+
+      - name: Stop the mixnet
+        if: always()
+        run: cd docker && make interop-stop
+
+      - name: interop-test-mixed-network
+        run: make -C docker -j1 interop-test-mixed-network
+
+      - name: Stop the mixnet
+        if: always()
+        run: cd docker && make interop-stop
+
+      - name: Clean targets (image, cache, results, all)
+        if: always()
+        run: |
+          cd docker
+          make -j1 interop-clean-image
+          make -j1 interop-clean-all

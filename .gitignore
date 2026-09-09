@@ -7,9 +7,12 @@
 docker/*_base.stamp
 docker/*_go_mod.stamp
 docker/*_rust.stamp
+docker/*_interop.stamp
 docker/cache
 docker/mixnet-*
 docker/.base_port_seed
+docker/interop-*
+!docker/interop-http-server.pl
 docker/thin_client
 cmd/genconfig/genconfig
 cmd/server/server
@@ -44,5 +47,3 @@ coverage.out
 
 __pycache__/
 *.pyc
-
-
