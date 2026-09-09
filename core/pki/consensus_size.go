@@ -51,7 +51,8 @@ type ConsensusSizeParams struct {
 }
 
 // EstimateConsensusSize returns an upper estimate of the signed consensus
-// document size for the given parameters, with headroom applied and the result
+// document size for the given parameters, plus the shared-random blobs that a
+// certificate carries on the peer links, with headroom applied and the result
 // clamped to [MinConsensusCeiling, MaxConsensusCeiling].
 func EstimateConsensusSize(p ConsensusSizeParams) int {
 	mixDesc := p.SignPubSize + p.LinkKEMPubSize + ConsensusMixKeyEpochs*p.SphinxPubSize + perDescriptorMisc
@@ -59,6 +60,18 @@ func EstimateConsensusSize(p ConsensusSizeParams) int {
 
 	unsigned := docBase + p.NumNodes*mixDesc + p.NumReplicas*replicaDesc
 	signed := unsigned + p.NumAuthorities*(p.SignSigSize+certSigOverhead)
+
+	// The same derived ceiling bounds the inter-authority peer links, which
+	// carry the certificate rather than only the consensus document. A
+	// certificate embeds, on top of the signed body, up to two signed
+	// shared-random blobs per authority (a commit and a reveal), each a full
+	// signed blob carrying a signature, per-signature overhead, and the
+	// shared-random value. Omitting this term let the derived ceiling fall
+	// below a real certificate on a small network, so the peer certificate
+	// exchange was rejected as oversized and consensus never formed. Add the
+	// certificate term so the ceiling always covers the peer certificate.
+	certExtra := 2 * p.NumAuthorities * (p.SignSigSize + certSigOverhead + SharedRandomLength)
+	signed += certExtra
 
 	est := signed * consensusSizeHeadroom
 	if est < MinConsensusCeiling {
