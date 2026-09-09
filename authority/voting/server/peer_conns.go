@@ -193,7 +193,11 @@ func (s *state) sendPeerKeepalives() {
 
 	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
 	for _, pc := range pcs {
-		pc.mu.Lock()
+		// Keepalive is best-effort; never block real voting traffic. If a round
+		// trip already holds the lock, skip this peer (the traffic keeps it warm).
+		if !pc.mu.TryLock() {
+			continue
+		}
 		if pc.session != nil {
 			pc.conn.SetDeadline(time.Now().Add(responseTimeout))
 			noop := &commands.NoOp{Cmds: pc.session.GetCommands()}
