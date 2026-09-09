@@ -106,6 +106,7 @@ func (s *Server) onConn(conn net.Conn) {
 			time.Since(acceptedAt),
 			err,
 		)
+		conn.Close()
 		return
 	}
 
