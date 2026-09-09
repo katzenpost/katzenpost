@@ -1,6 +1,6 @@
 // main.go - Generates cross-implementation test vectors for the Sphinx
-// primitive layer (Hash, MAC, Stream cipher, SPRP, KDF), for the Lean port
-// in CryptWalker (https://github.com/katzenpost/CryptWalker).
+// primitive layer (Hash, MAC, Stream cipher, SPRP, KDF, ChaCha20), for the
+// Lean port in CryptWalker (https://github.com/katzenpost/CryptWalker).
 //
 // Mirrors the envelope format used by
 // github.com/katzenpost/hpqc/testvectors/cmd/generate, so the Lean-side
@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/katzenpost/chacha20"
 	"golang.org/x/crypto/hkdf"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
@@ -259,10 +260,48 @@ func genKDF() {
 		vecs)
 }
 
+// --- ChaCha20 (hpqc/rand.NewDeterministicRandReader's cipher, used to derive NIKE-Sphinx's
+// per-hop BlindingFactor from the KDF's blindingFactorSeed) ---
+
+type chacha20Vector struct {
+	Name         string `json:"name"`
+	KeyHex       string `json:"key_hex"`
+	KeystreamHex string `json:"keystream_hex"`
+}
+
+func genChaCha20() {
+	keys := map[string][]byte{
+		"all_zero":   make([]byte, 32),
+		"ascending":  pattern(0x00, 32),
+		"descending": pattern(0xff, 32), // wraps: 0xff, 0xfe, ..., 0xe0
+	}
+	names := []string{"all_zero", "ascending", "descending"}
+	var vecs []chacha20Vector
+	for _, name := range names {
+		key := keys[name]
+		// hpqc/rand.NewDeterministicRandReader always uses an 8-byte all-zero nonce; only the
+		// first 32 bytes are ever drawn from it (nike/x25519.GeneratePrivateKey reads exactly
+		// one NIKE private key's worth).
+		var nonce [8]byte
+		c, err := chacha20.New(key, nonce[:])
+		if err != nil {
+			panic(err)
+		}
+		out := make([]byte, 32)
+		c.KeyStream(out)
+		vecs = append(vecs, chacha20Vector{Name: name, KeyHex: hx(key), KeystreamHex: hx(out)})
+	}
+	writeVectorFile("core/sphinx/testvectors/primitives/chacha20_deterministic_rand.json",
+		"chacha20_deterministic_rand",
+		"github.com/katzenpost/chacha20 (original/Bernstein construction, 8-byte nonce) as used by hpqc/rand.NewDeterministicRandReader: key as given, nonce = 8 zero bytes, first 32 bytes (half a block) of keystream, matching nike/x25519.scheme.GeneratePrivateKey's single Read call.",
+		vecs)
+}
+
 func main() {
 	genHash()
 	genMAC()
 	genStream()
 	genSPRP()
 	genKDF()
+	genChaCha20()
 }
