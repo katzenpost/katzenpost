@@ -340,6 +340,43 @@ func (s *Server) onConn(conn net.Conn) {
 			remainingAfterSend,
 		)
 	}
+
+	// For authority peers, keep serving further commands on the same
+	// connection so a voting round does not open a fresh post-quantum
+	// handshake per command. An old one-shot sender simply closes after the
+	// first reply, which ends the loop immediately, so this is backward
+	// compatible.
+	if auth.isAuthority {
+		s.serveAuthorityConn(conn, wireConn, peerID)
+	}
+}
+
+// serveAuthorityConn keeps serving commands from an already-handshaked
+// authority peer on the same connection until it goes idle or errors. A NoOp
+// is treated as a keepalive and consumed without a reply.
+func (s *Server) serveAuthorityConn(conn net.Conn, wireConn *wire.Session, peerID string) {
+	idle := time.Duration(s.cfg.Server.KeepaliveTimeoutSec) * time.Second
+	responseTimeout := time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second
+	for {
+		conn.SetDeadline(time.Now().Add(idle))
+		cmd, err := wireConn.RecvCommand(context.Background())
+		if err != nil {
+			s.log.Debugf("Peer %s: reused authority connection ended: %v", peerID, err)
+			return
+		}
+		if _, ok := cmd.(*commands.NoOp); ok {
+			continue // keepalive
+		}
+		resp := s.onAuthority(peerID, cmd)
+		if resp == nil {
+			continue
+		}
+		conn.SetDeadline(time.Now().Add(responseTimeout))
+		if err := wireConn.SendCommand(context.Background(), resp); err != nil {
+			s.log.Warningf("Peer %s: failed to send response on reused connection: %v", peerID, err)
+			return
+		}
+	}
 }
 
 func classifyAuthorityHandshakeFailure(err error) string {

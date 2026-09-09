@@ -307,6 +307,12 @@ type Server struct {
 	// ResponseTimeoutSec is the timeout for command send/receive operations (default: 30)
 	ResponseTimeoutSec int
 
+	// KeepaliveTimeoutSec bounds how long a reused authority connection waits
+	// idle for the next command before it is closed (default: 120). A larger
+	// value keeps persistent inter-authority connections warm across phase
+	// gaps so a voting round does not re-handshake per command.
+	KeepaliveTimeoutSec int
+
 	// MaxConsensusSize is the per-connection send and receive ceiling in bytes
 	// for PKI wire commands. Zero selects the built-in default
 	// (wire.DefaultMaxPKIMessageSize). Raise it for a network whose consensus
