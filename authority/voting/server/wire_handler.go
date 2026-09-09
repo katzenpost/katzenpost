@@ -888,7 +888,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.isReplica = true
 		return true
 	default:
-		a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
+		a.s.log.Warningf("Rejecting connection: peer identity %x is in no authorized set (mix, gateway, service node, replica, or authority); check the topology configuration. peer=%s", a.peerIdentityKeyHash, a.peerName)
 		return false
 	}
 
