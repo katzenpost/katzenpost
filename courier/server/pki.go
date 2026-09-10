@@ -7,11 +7,14 @@ import (
 	"context"
 	"crypto/hmac"
 	"errors"
+	"fmt"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/sign"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
@@ -73,12 +76,25 @@ func newPKIWorkerWithDefaultClient(server *Server, log *logging.Logger) (*PKIWor
 	if kemscheme == nil {
 		return nil, errors.New("kem scheme not found in registry")
 	}
+	// The courier has no PKI signature scheme of its own; it only fetches and
+	// verifies the consensus signed by the authorities. The consensus carries
+	// a single PKISignatureScheme, so every authority shares it: take it from
+	// the configured peer set to derive the wire ceiling. Leaving it unset
+	// keeps the flat default ceiling.
+	var pkiSignatureScheme sign.Scheme
+	if peers := server.cfg.PKI.Voting.Authorities; len(peers) > 0 && peers[0].PKISignatureScheme != "" {
+		pkiSignatureScheme = signSchemes.ByName(peers[0].PKISignatureScheme)
+		if pkiSignatureScheme == nil {
+			return nil, fmt.Errorf("pki signature scheme %q not found in registry", peers[0].PKISignatureScheme)
+		}
+	}
 	pkiCfg := &vClient.Config{
-		KEMScheme:   kemscheme,
-		LinkKey:     server.linkPrivKey,
-		LogBackend:  server.LogBackend(),
-		Authorities: server.cfg.PKI.Voting.Authorities,
-		Geo:         server.cfg.SphinxGeometry,
+		KEMScheme:          kemscheme,
+		PKISignatureScheme: pkiSignatureScheme,
+		LinkKey:            server.linkPrivKey,
+		LogBackend:         server.LogBackend(),
+		Authorities:        server.cfg.PKI.Voting.Authorities,
+		Geo:                server.cfg.SphinxGeometry,
 		// Convert milliseconds to seconds for PKI client timeouts
 		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
 		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,

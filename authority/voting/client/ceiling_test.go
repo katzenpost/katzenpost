@@ -50,3 +50,22 @@ func TestClientCeilingFallsBackWithoutSchemes(t *testing.T) {
 	cfg := &Config{Authorities: []*config.Authority{{}}}
 	require.Equal(t, wire.DefaultMaxPKIMessageSize, cfg.deriveMaxMessageSize())
 }
+
+// TestClientCeilingWithSchemesIsNotFallback proves a Config that carries the
+// configured PKI schemes derives a real ceiling instead of the flat
+// DefaultMaxPKIMessageSize fallback. This is the property a consumer gains once
+// its schemes are wired into the Config rather than left unset.
+func TestClientCeilingWithSchemesIsNotFallback(t *testing.T) {
+	signScheme := signschemes.ByName("Ed25519 Sphincs+")
+	require.NotNil(t, signScheme)
+	kemScheme := kemschemes.ByName("MLKEM768-X25519")
+	require.NotNil(t, kemScheme)
+
+	withSchemes := clientCfg(signScheme, kemScheme, "x25519", 3).deriveMaxMessageSize()
+	require.NotEqual(t, wire.DefaultMaxPKIMessageSize, withSchemes,
+		"a configured consumer must derive a ceiling, not fall back to the flat default")
+
+	noSchemes := (&Config{Authorities: []*config.Authority{{}}}).deriveMaxMessageSize()
+	require.Equal(t, wire.DefaultMaxPKIMessageSize, noSchemes,
+		"a consumer without schemes keeps the flat default ceiling")
+}
