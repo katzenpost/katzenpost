@@ -185,6 +185,16 @@ func (s *state) peerKeepaliveWorker() {
 	}
 }
 
+// peerKeepaliveWriteTimeout bounds how long a keepalive NoOp write may block.
+// The keepalive holds pc.mu across the write, so a keepalive to a TCP-stalled
+// peer would delay a real send queued behind it on the same session for as long
+// as the write blocks. A pre-set conn deadline does not help here: SendCommand
+// re-arms its own write deadline (Session.writeTimeout, a minute by default) and
+// clobbers it. SendCommand does honor an earlier context deadline, so pass a
+// short one to bound the keepalive write and let a stalled keepalive release the
+// lock quickly. It is a package var so a test can shorten it.
+var peerKeepaliveWriteTimeout = 5 * time.Second
+
 func (s *state) sendPeerKeepalives() {
 	s.peerConnsMu.Lock()
 	pcs := make([]*peerConn, 0, len(s.peerConns))
@@ -193,7 +203,6 @@ func (s *state) sendPeerKeepalives() {
 	}
 	s.peerConnsMu.Unlock()
 
-	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
 	for _, pc := range pcs {
 		// Keepalive is best-effort; never block real voting traffic. If a round
 		// trip already holds the lock, skip this peer (the traffic keeps it warm).
@@ -201,9 +210,11 @@ func (s *state) sendPeerKeepalives() {
 			continue
 		}
 		if pc.session != nil {
-			pc.conn.SetDeadline(time.Now().Add(responseTimeout))
+			ctx, cancel := context.WithTimeout(context.Background(), peerKeepaliveWriteTimeout)
 			noop := &commands.NoOp{Cmds: pc.session.GetCommands()}
-			if err := pc.session.SendCommand(context.Background(), noop); err != nil {
+			err := pc.session.SendCommand(ctx, noop)
+			cancel()
+			if err != nil {
 				pc.closeLocked()
 			}
 		}
