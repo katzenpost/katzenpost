@@ -268,7 +268,7 @@ func (s *Server) onConn(conn net.Conn) {
 	} else if auth.isReplica {
 		resp = s.onReplica(peerID, cmd, auth.peerIdentityKeyHash)
 	} else if auth.isAuthority {
-		resp = s.onAuthority(peerID, cmd)
+		resp = s.onAuthority(peerID, cmd, auth.peerIdentityKeyHash)
 	} else {
 		panic("wtf") // should only happen if there is a bug in wireAuthenticator
 	}
@@ -348,14 +348,14 @@ func (s *Server) onConn(conn net.Conn) {
 	// first reply, which ends the loop immediately, so this is backward
 	// compatible.
 	if auth.isAuthority {
-		s.serveAuthorityConn(conn, wireConn, peerID)
+		s.serveAuthorityConn(conn, wireConn, peerID, auth.peerIdentityKeyHash)
 	}
 }
 
 // serveAuthorityConn keeps serving commands from an already-handshaked
 // authority peer on the same connection until it goes idle or errors. A NoOp
 // is treated as a keepalive and consumed without a reply.
-func (s *Server) serveAuthorityConn(conn net.Conn, wireConn *wire.Session, peerID string) {
+func (s *Server) serveAuthorityConn(conn net.Conn, wireConn *wire.Session, peerID string, peerIdentityKeyHash []byte) {
 	idle := time.Duration(s.cfg.Server.KeepaliveTimeoutSec) * time.Second
 	responseTimeout := time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second
 	for {
@@ -368,7 +368,7 @@ func (s *Server) serveAuthorityConn(conn net.Conn, wireConn *wire.Session, peerI
 		if _, ok := cmd.(*commands.NoOp); ok {
 			continue // keepalive
 		}
-		resp := s.onAuthority(peerID, cmd)
+		resp := s.onAuthority(peerID, cmd, peerIdentityKeyHash)
 		if resp == nil {
 			continue
 		}
@@ -492,7 +492,7 @@ func (s *Server) onReplica(peerID string, cmd commands.Command, peerIdentityKeyH
 	return resp
 }
 
-func (s *Server) onAuthority(peerID string, cmd commands.Command) commands.Command {
+func (s *Server) onAuthority(peerID string, cmd commands.Command, peerIdentityKeyHash []byte) commands.Command {
 	s.log.Debugf("onAuthority: Received command from authority peer %s: %T", peerID, cmd)
 	var resp commands.Command
 	switch c := cmd.(type) {
@@ -504,7 +504,7 @@ func (s *Server) onAuthority(peerID string, cmd commands.Command) commands.Comma
 		resp = s.state.onVoteUpload(c)
 	case *commands.Cert:
 		s.log.Debugf("onAuthority: Processing Certificate upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onCertUpload(c)
+		resp = s.state.onCertUpload(c, peerIdentityKeyHash)
 	case *commands.Reveal:
 		s.log.Debugf("onAuthority: Processing Reveal upload from authority %s for epoch %d", peerID, c.Epoch)
 		resp = s.state.onRevealUpload(c)

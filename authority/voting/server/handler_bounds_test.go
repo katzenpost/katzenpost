@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/hash"
+
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -37,9 +39,10 @@ func TestOnCertUploadGarbagePayloadRejected(t *testing.T) {
 	signed, err := cert.Sign(key.idKey, key.idPubKey, []byte("not-a-document"), votingEpoch+100)
 	require.NoError(err)
 	c := &commands.Cert{Epoch: votingEpoch, PublicKey: key.idPubKey, Payload: signed}
+	keyHash := hash.Sum256From(key.idPubKey)
 
 	var resp commands.Command
-	require.NotPanics(func() { resp = st.onCertUpload(c) })
+	require.NotPanics(func() { resp = st.onCertUpload(c, keyHash[:]) })
 	cs, ok := resp.(*commands.CertStatus)
 	require.True(ok, "expected *CertStatus, got %T", resp)
 	require.True(cs.ErrorCode != commands.CertOk, "garbage cert must be rejected, got %d", cs.ErrorCode)

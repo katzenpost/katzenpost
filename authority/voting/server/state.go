@@ -1956,11 +1956,22 @@ func (s *state) dupVote(vote commands.Vote) bool {
 }
 
 // a certificate is a vote that has a full set of sharedrandom commit and reveals as seen by the peer
-func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
+func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.CertStatus{}
 	pk := hash.Sum256From(certificate.PublicKey)
+
+	// Bind the certificate's declared PublicKey to the wire-authenticated peer
+	// identity, the same way the descriptor upload path binds a descriptor's
+	// identity key to the connected peer. Without this, an authorized but
+	// byzantine authority could relay another authority's genuine certificate
+	// on its own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Certificate PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		resp.ErrorCode = commands.CertNotAuthorized
+		return &resp
+	}
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]

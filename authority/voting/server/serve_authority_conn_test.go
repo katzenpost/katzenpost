@@ -75,7 +75,7 @@ func TestServeAuthorityConnHandlesMultipleCommands(t *testing.T) {
 	st := &state{log: lb.GetLogger("state"), s: s}
 	s.state = st
 
-	go s.serveAuthorityConn(respConn, respS, "peer")
+	go s.serveAuthorityConn(respConn, respS, "peer", nil)
 
 	epoch, _, _ := epochtime.Now()
 	for i := 0; i < 3; i++ {

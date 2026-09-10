@@ -61,7 +61,7 @@ func TestOnCertUploadRejectsRevealLessDocument(t *testing.T) {
 		Epoch:     votingEpoch,
 		PublicKey: idPub,
 		Payload:   signed,
-	})
+	}, pk[:])
 	status, ok := resp.(*commands.CertStatus)
 	require.True(t, ok, "onCertUpload must return a *CertStatus")
 	require.EqualValues(t, commands.CertNotSigned, status.ErrorCode,
@@ -108,7 +108,7 @@ func TestOnCertUploadAcceptsCertWithReveals(t *testing.T) {
 		Epoch:     votingEpoch,
 		PublicKey: idPub,
 		Payload:   signed,
-	})
+	}, pk[:])
 	status, ok := resp.(*commands.CertStatus)
 	require.True(t, ok, "onCertUpload must return a *CertStatus")
 	require.EqualValues(t, commands.CertOk, status.ErrorCode,

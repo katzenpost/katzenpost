@@ -99,7 +99,7 @@ func TestDoSendCommandReusesConnection(t *testing.T) {
 				srvConn.Close()
 				return
 			}
-			responder.s.serveAuthorityConn(srvConn, rs, "sender")
+			responder.s.serveAuthorityConn(srvConn, rs, "sender", nil)
 		}()
 		return cli, nil
 	}
