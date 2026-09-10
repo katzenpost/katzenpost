@@ -22,7 +22,6 @@ import (
 	"crypto/hmac"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"net"
@@ -30,11 +29,11 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	bolt "go.etcd.io/bbolt"
@@ -1486,21 +1485,11 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	replicaNodes := make([]*pki.ReplicaDescriptor, 0)
 	for id, vote := range s.votes[epoch] {
 		// serialize the vote parameters and tally these as well.
-		params := &config.Parameters{
-			Mu:      vote.Mu,
-			LambdaP: vote.LambdaP,
-			LambdaL: vote.LambdaL,
-			LambdaM: vote.LambdaM,
-			LambdaR: vote.LambdaR,
-		}
-		b := bytes.Buffer{}
-		e := gob.NewEncoder(&b)
-		err := e.Encode(params)
+		bs, err := votedParametersKey(vote)
 		if err != nil {
 			s.log.Errorf("Skipping vote from Authority %s whose MixParameters failed to encode?! %v", s.authorityNames[id], err)
 			continue
 		}
-		bs := b.String()
 		if _, ok := mixParams[bs]; !ok {
 			mixParams[bs] = make([]*pki.Document, 0)
 		}
@@ -1594,10 +1583,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 
 	// include parameters that have a threshold of votes
 	for bs, votes := range mixParams {
-		params := &config.Parameters{}
-		d := gob.NewDecoder(strings.NewReader(bs))
-		if err := d.Decode(params); err != nil {
-			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%v", err, bs)
+		params, err := votedParametersFromKey(bs)
+		if err != nil {
+			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%x", err, bs)
 			continue
 		}
 
@@ -2748,6 +2736,52 @@ func (s *state) restorePersistence() error {
 
 func votingThresholds(votingSetSize int) (threshold, dissenters int) {
 	return votingSetSize/2 + 1, votingSetSize/2 - 1
+}
+
+type votedParameters struct {
+	Mu      float64
+	LambdaP float64
+	LambdaL float64
+	LambdaM float64
+	LambdaR float64
+}
+
+var canonicalCBOR cbor.EncMode
+
+func init() {
+	var err error
+	canonicalCBOR, err = cbor.CanonicalEncOptions().EncMode()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func votedParametersKey(vote *pki.Document) (string, error) {
+	b, err := canonicalCBOR.Marshal(&votedParameters{
+		Mu:      vote.Mu,
+		LambdaP: vote.LambdaP,
+		LambdaL: vote.LambdaL,
+		LambdaM: vote.LambdaM,
+		LambdaR: vote.LambdaR,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func votedParametersFromKey(key string) (*config.Parameters, error) {
+	var v votedParameters
+	if err := cbor.Unmarshal([]byte(key), &v); err != nil {
+		return nil, err
+	}
+	return &config.Parameters{
+		Mu:      v.Mu,
+		LambdaP: v.LambdaP,
+		LambdaL: v.LambdaL,
+		LambdaM: v.LambdaM,
+		LambdaR: v.LambdaR,
+	}, nil
 }
 
 func newState(s *Server) (*state, error) {
