@@ -25,18 +25,17 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
-// TestShutdownClosesIdleAuthorityConn proves shutdown does not hang on an
-// authority peer that keeps a handshaked connection open and idle. The
-// responder serves an authority connection in a loop bounded only by the long
-// idle timeout and does not watch the halt signal, so shutdown must close
-// accepted connections for the blocked handler to return.
-func TestShutdownClosesIdleAuthorityConn(t *testing.T) {
+// newResponderConn stands up a responder handler and a handshaked authority
+// client session over an in-memory pipe, with the responder's persistent-conn
+// setting controlled by persistent.
+func newResponderConn(t *testing.T, persistent bool) *wire.Session {
+	t.Helper()
 	require := require.New(t)
+
 	const (
 		wireKEM = "Xwing"
 		pkiSig  = "Ed25519"
 	)
-
 	idScheme := signschemes.ByName(pkiSig)
 	kemScheme := kemschemes.ByName(wireKEM)
 	require.NotNil(idScheme)
@@ -64,12 +63,8 @@ func TestShutdownClosesIdleAuthorityConn(t *testing.T) {
 			PKISignatureScheme:  pkiSig,
 			HandshakeTimeoutSec: 10,
 			ResponseTimeoutSec:  30,
-			// Long idle timeout: this is what shutdown must not wait out.
 			KeepaliveTimeoutSec: 120,
-			// Persistent conns keep the responder in the multi-command serve
-			// loop after the first command, which is the blocked handler this
-			// test drains at shutdown.
-			PersistentPeerConns: true,
+			PersistentPeerConns: persistent,
 		}},
 		identityPublicKey: respIDPub,
 		linkKey:           respLinkPriv,
@@ -87,15 +82,13 @@ func TestShutdownClosesIdleAuthorityConn(t *testing.T) {
 	}
 	srv.state = st
 
-	// Authorize the peer authority so the responder handshake classifies it as
-	// an authority and enters the multi-command serve loop.
 	cliHash := hash.Sum256From(cliIDPub)
 	st.authorizedAuthorities[cliHash] = true
 	st.authorityLinkKeys[cliHash] = cliLinkPub
 
 	srvConn, cliConn := net.Pipe()
+	t.Cleanup(func() { cliConn.Close() })
 
-	// Run the responder handler the way an accepting listenWorker does.
 	srv.state.Go(func() { srv.handleConn(srvConn) })
 
 	cliCfg := &wire.SessionConfig{
@@ -109,34 +102,59 @@ func TestShutdownClosesIdleAuthorityConn(t *testing.T) {
 	cliS, err := wire.NewPKISession(cliCfg, true)
 	require.NoError(err)
 
-	ctx := context.Background()
 	hsErr := make(chan error, 1)
-	go func() { hsErr <- cliS.Initialize(ctx, cliConn) }()
+	go func() { hsErr <- cliS.Initialize(context.Background(), cliConn) }()
 	require.NoError(<-hsErr)
 
-	// Send one command and read its reply. This confirms the responder finished
-	// the single-command path and is now blocked in the authority serve loop
-	// waiting for more commands on this idle connection.
+	return cliS
+}
+
+// getConsensusRoundTrip sends one GetConsensus and reads the reply.
+func getConsensusRoundTrip(ctx context.Context, cliS *wire.Session) (commands.Command, error) {
 	epoch, _, _ := epochtime.Now()
-	require.NoError(cliS.SendCommand(ctx, &commands.GetConsensus{Epoch: epoch + 1, Cmds: cliS.GetCommands()}))
-	resp, err := cliS.RecvCommand(ctx)
-	require.NoError(err)
-	_, ok := resp.(*commands.Consensus)
-	require.True(ok, "expected *Consensus, got %T", resp)
-
-	// The peer now holds the connection open and idle. Shutdown must return
-	// promptly instead of waiting out the 120s idle timeout on the handler.
-	done := make(chan struct{})
-	go func() {
-		srv.Shutdown()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(15 * time.Second):
-		t.Fatal("Shutdown blocked on an idle authority connection")
+	if err := cliS.SendCommand(ctx, &commands.GetConsensus{Epoch: epoch + 1, Cmds: cliS.GetCommands()}); err != nil {
+		return nil, err
 	}
+	return cliS.RecvCommand(ctx)
+}
 
-	cliConn.Close()
+// With PersistentPeerConns off (the default), the responder serves exactly one
+// command on an authority connection and then closes it: a second round trip on
+// the same connection fails.
+func TestInboundResponderServesOneCommandWhenNotPersistent(t *testing.T) {
+	cliS := newResponderConn(t, false)
+	ctx := context.Background()
+
+	resp, err := getConsensusRoundTrip(ctx, cliS)
+	require.NoError(t, err, "the first command must be served")
+	_, ok := resp.(*commands.Consensus)
+	require.True(t, ok, "expected *Consensus, got %T", resp)
+
+	// The responder closed the connection after the single command, so a second
+	// round trip must fail rather than receive another reply.
+	done := make(chan error, 1)
+	go func() {
+		_, err := getConsensusRoundTrip(ctx, cliS)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.Error(t, err, "a second command on a non-persistent connection must fail")
+	case <-time.After(10 * time.Second):
+		t.Fatal("second round trip neither failed nor returned; connection was not closed")
+	}
+}
+
+// With PersistentPeerConns on, the responder serves multiple commands on one
+// handshaked authority connection.
+func TestInboundResponderServesManyCommandsWhenPersistent(t *testing.T) {
+	cliS := newResponderConn(t, true)
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		resp, err := getConsensusRoundTrip(ctx, cliS)
+		require.NoError(t, err, "command %d must be served on the reused connection", i)
+		_, ok := resp.(*commands.Consensus)
+		require.True(t, ok, "command %d: expected *Consensus, got %T", i, resp)
+	}
 }

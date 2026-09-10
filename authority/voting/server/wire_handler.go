@@ -342,12 +342,15 @@ func (s *Server) onConn(conn net.Conn) {
 		)
 	}
 
-	// For authority peers, keep serving further commands on the same
-	// connection so a voting round does not open a fresh post-quantum
-	// handshake per command. An old one-shot sender simply closes after the
-	// first reply, which ends the loop immediately, so this is backward
-	// compatible.
-	if auth.isAuthority {
+	// Persistent inter-authority connections are opt-in. When enabled, keep
+	// serving further commands on the same connection so a voting round does
+	// not open a fresh post-quantum handshake per command. When disabled (the
+	// default), serve exactly the one command handled above and return, which
+	// closes the connection: the pre-persistent one-command-per-connection
+	// behavior. Either way handleConn tracks the connection via
+	// registerConn/unregisterConn, so shutdown closes it and unblocks the
+	// handler in both modes.
+	if auth.isAuthority && s.cfg.Server.PersistentPeerConns {
 		s.serveAuthorityConn(conn, wireConn, peerID, auth.peerIdentityKeyHash)
 	}
 }
