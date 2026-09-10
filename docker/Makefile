@@ -369,6 +369,7 @@ endif
 docker_args_common=-v $(abspath $(go_mod_cache)):/go/ \
 	-v $(abspath $(go_build_cache)):/gocache/ \
 	-e GOCACHE=/gocache -e GOPATH=/go --pids-limit 4096
+docker_tty=$(shell [ -t 0 ] && echo -t)
 docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost $(docker_args_common)
 
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
@@ -827,7 +828,7 @@ clean: stop-all
 	-$(docker) images|grep katzenpost|cat
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
-	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -i $(docker_tty) -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings) $(ping_args)
 
 # parallel-load knobs. Override on the make command line:
