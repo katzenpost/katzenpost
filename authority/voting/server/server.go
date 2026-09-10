@@ -504,6 +504,19 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)
 	}
 
+	// Log the per-role authorized counts so an operator can compare them
+	// against the per-role counts that actually land in each assembled
+	// consensus (logged in getMyConsensus) and spot a configured node that is
+	// missing from consensus.
+	s.log.Noticef(
+		"Authorized nodes: mixes=%d gateways=%d serviceNodes=%d replicas=%d authorities=%d",
+		len(cfg.Mixes),
+		len(cfg.GatewayNodes),
+		len(cfg.ServiceNodes),
+		len(cfg.StorageReplicas),
+		len(cfg.Authorities),
+	)
+
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
 	isOk := false
 	defer func() {

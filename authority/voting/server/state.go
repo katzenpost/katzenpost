@@ -625,6 +625,20 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	}
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
 
+	// Log the per-role counts that actually landed in the assembled consensus
+	// so an operator can compare them against the authorized counts logged at
+	// startup and see when a configured, expected node is absent from
+	// consensus.
+	mixCount, gatewayCount, serviceCount, replicaCount := documentRoleCounts(consensusOfOne)
+	s.log.Noticef(
+		"Assembled consensus for epoch %d: mixes=%d gateways=%d serviceNodes=%d replicas=%d",
+		epoch,
+		mixCount,
+		gatewayCount,
+		serviceCount,
+		replicaCount,
+	)
+
 	// Do not sign an empty or otherwise malformed consensus.
 	if err := pki.IsDocumentWellFormed(consensusOfOne, s.getVerifiers()); err != nil {
 		s.log.Noticef(
@@ -811,6 +825,18 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
 	}
 	return doc
+}
+
+// documentRoleCounts returns the per-role node counts present in an assembled
+// document: mixes summed across the topology layers, plus gateways, service
+// nodes, and storage replicas. An operator compares these against the
+// authorized counts logged at startup to spot a configured node that never made
+// it into consensus.
+func documentRoleCounts(doc *pki.Document) (mixes, gateways, serviceNodes, replicas int) {
+	for _, layer := range doc.Topology {
+		mixes += len(layer)
+	}
+	return mixes, len(doc.GatewayNodes), len(doc.ServiceNodes), len(doc.StorageReplicas)
 }
 
 func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescriptor) bool {
