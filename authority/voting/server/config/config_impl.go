@@ -174,6 +174,9 @@ func (sCfg *Server) validate() error {
 	if sCfg.MaxConcurrentConns == 0 {
 		sCfg.MaxConcurrentConns = 64
 	}
+	if sCfg.MaxConnsPerPeer <= 0 {
+		sCfg.MaxConnsPerPeer = 8
+	}
 	if sCfg.CloseDelaySec == 0 {
 		sCfg.CloseDelaySec = 10
 	}

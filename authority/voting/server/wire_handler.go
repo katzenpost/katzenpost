@@ -45,6 +45,15 @@ func isQUICConn(conn net.Conn) bool {
 	return ok
 }
 
+// firstCommandTimeout bounds how long the responder waits for the first command
+// after a completed handshake, distinct from and shorter than the per-command
+// ReadTimeout. A peer that finishes the handshake and then stalls releases its
+// accept slot at this deadline instead of tying it up for the full ReadTimeout.
+// Every legitimate first command (GetConsensus, a descriptor or vote upload) is
+// sent immediately after the handshake, so this does not clip a real flow. It
+// is a package var so a test can shorten it.
+var firstCommandTimeout = 5 * time.Second
+
 func (s *Server) onConn(conn net.Conn) {
 	rAddr := conn.RemoteAddr()
 	lAddr := conn.LocalAddr()
@@ -218,9 +227,29 @@ func (s *Server) onConn(conn net.Conn) {
 		remainingAfterHandshake,
 	)
 
-	// Receive a command.
+	// Bound concurrent connections per authenticated peer identity so one peer
+	// cannot camp all of the MaxConcurrentConns accept slots. Only identified
+	// peers carry an identity hash; anonymous clients are not capped here. The
+	// global semaphore already bounds the total and stays before the handshake,
+	// so a handshake flood is still bounded; this check is necessarily after the
+	// handshake because the peer identity is only known once it completes.
+	if len(auth.peerIdentityKeyHash) == hash.HashSize {
+		var peerSlotID [hash.HashSize]byte
+		copy(peerSlotID[:], auth.peerIdentityKeyHash)
+		if !s.acquirePeerSlot(peerSlotID) {
+			s.log.Warningf("Peer %s: rejecting connection, per-peer connection cap reached", peerID)
+			return
+		}
+		defer s.releasePeerSlot(peerSlotID)
+	}
+
+	// Receive a command. Bound the wait for the first command with a short
+	// deadline so a peer that completes the handshake and then stalls releases
+	// its accept slot quickly, rather than holding it for the full ReadTimeout.
 	recvStart := time.Now()
-	cmd, err := wireConn.RecvCommand(context.Background())
+	firstCmdCtx, cancelFirstCmd := context.WithTimeout(context.Background(), firstCommandTimeout)
+	cmd, err := wireConn.RecvCommand(firstCmdCtx)
+	cancelFirstCmd()
 	if err != nil {
 		phaseNow, remainingNow := s.state.PhaseInfo()
 		s.log.Debugf(

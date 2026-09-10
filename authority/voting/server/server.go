@@ -79,6 +79,13 @@ type Server struct {
 	conns   map[net.Conn]struct{}
 	halting bool
 
+	// peerSlotMu guards peerSlots, which counts the in-flight handlers per
+	// authenticated peer identity so a single peer cannot camp all of the
+	// MaxConcurrentConns accept slots. Keyed by the wire-authenticated identity
+	// hash; anonymous clients (no identity) are not tracked here.
+	peerSlotMu sync.Mutex
+	peerSlots  map[[hash.HashSize]byte]int
+
 	// maxMessageSize is the effective PKI wire message ceiling: the operator
 	// override if set, else the estimate derived from the configured PKI and
 	// topology.
@@ -286,6 +293,40 @@ func (s *Server) unregisterConn(conn net.Conn) {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	delete(s.conns, conn)
+}
+
+// acquirePeerSlot reserves a per-peer accept slot for the authenticated peer
+// identity id, returning false if the peer already holds MaxConnsPerPeer
+// concurrent handlers. The caller must releasePeerSlot when its handler returns.
+// This is checked after the handshake, because the peer identity is only known
+// then; the global MaxConcurrentConns semaphore stays before the handshake so a
+// handshake flood is still bounded.
+func (s *Server) acquirePeerSlot(id [hash.HashSize]byte) bool {
+	limit := s.cfg.Server.MaxConnsPerPeer
+	if limit <= 0 {
+		limit = 8
+	}
+	s.peerSlotMu.Lock()
+	defer s.peerSlotMu.Unlock()
+	if s.peerSlots == nil {
+		s.peerSlots = make(map[[hash.HashSize]byte]int)
+	}
+	if s.peerSlots[id] >= limit {
+		return false
+	}
+	s.peerSlots[id]++
+	return true
+}
+
+// releasePeerSlot frees a per-peer accept slot reserved by acquirePeerSlot.
+func (s *Server) releasePeerSlot(id [hash.HashSize]byte) {
+	s.peerSlotMu.Lock()
+	defer s.peerSlotMu.Unlock()
+	if s.peerSlots[id] <= 1 {
+		delete(s.peerSlots, id)
+		return
+	}
+	s.peerSlots[id]--
 }
 
 // handleConn runs onConn with panic recovery so a bug in command handling

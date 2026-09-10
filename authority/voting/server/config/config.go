@@ -324,6 +324,15 @@ type Server struct {
 	// (default: 64).
 	MaxConcurrentConns int
 
+	// MaxConnsPerPeer bounds the number of concurrent incoming connections
+	// handled at once from a single authenticated peer identity, so one peer
+	// cannot camp all of the MaxConcurrentConns accept slots. The cap is keyed
+	// by the wire-authenticated identity and therefore applies only to
+	// identified peers (mixes, gateways, service nodes, replicas, authorities);
+	// anonymous clients are not capped by identity. Zero selects the default
+	// (8).
+	MaxConnsPerPeer int
+
 	// PersistentPeerConns opts into outbound persistent inter-authority
 	// connections, which reuse one authenticated session per peer across a
 	// voting round instead of dialing and handshaking per command. Persistent
