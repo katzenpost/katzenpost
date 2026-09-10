@@ -74,13 +74,23 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		return errors.New("type assertion failed")
 	}
 
-	pkiSignatureSchemeStr, ok := data["PKISignatureScheme"].(string)
-	if !ok {
-		return errors.New("PKISignatureScheme failed type assertion")
+	// An omitted PKISignatureScheme inherits DefaultPKISignatureScheme, the
+	// same value the [Server] block defaults to, so peer blocks and the
+	// server block behave consistently. A present-but-unknown scheme still
+	// errors.
+	pkiSignatureSchemeStr := DefaultPKISignatureScheme
+	if raw, present := data["PKISignatureScheme"]; present {
+		schemeStr, ok := raw.(string)
+		if !ok {
+			return errors.New("PKISignatureScheme failed type assertion")
+		}
+		if schemeStr != "" {
+			pkiSignatureSchemeStr = schemeStr
+		}
 	}
 	pkiSignatureScheme := signSchemes.ByName(pkiSignatureSchemeStr)
 	if pkiSignatureScheme == nil {
-		return fmt.Errorf("pki signature scheme `%s` not found", pkiSignatureScheme)
+		return fmt.Errorf("pki signature scheme `%s` not found", pkiSignatureSchemeStr)
 	}
 	a.PKISignatureScheme = pkiSignatureSchemeStr
 
