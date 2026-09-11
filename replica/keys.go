@@ -116,9 +116,12 @@ func (k *EnvelopeKeys) worker() {
 func (k *EnvelopeKeys) Generate(replicaEpoch uint64) error {
 	k.keysLock.Lock()
 	defer k.keysLock.Unlock()
-	keypair := replicaCommon.NewEnvelopeKey(k.scheme)
+	keypair := &replicaCommon.EnvelopeKey{}
 	err := keypair.WriteKeyFiles(k.datadir, k.scheme, replicaEpoch)
 	if err != nil {
+		if keypair.PrivateKey != nil {
+			keypair.PrivateKey.Reset()
+		}
 		return err
 	}
 	k.keys[replicaEpoch] = keypair
@@ -135,6 +138,7 @@ func (k *EnvelopeKeys) Prune() bool {
 			k.log.Debugf("Purging expired key for epoch: %v", key)
 			// Remove key files from disk
 			keypair.PurgeKeyFiles(k.datadir, k.scheme, key)
+			keypair.PrivateKey.Reset()
 			delete(k.keys, key)
 			didPrune = true
 		}
