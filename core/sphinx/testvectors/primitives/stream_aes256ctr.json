@@ -1,0 +1,36 @@
+{
+  "format_version": 1,
+  "generator": "github.com/katzenpost/katzenpost/core/sphinx/testvectors/cmd/generate",
+  "primitive": "stream_aes256ctr",
+  "description": "AES-256-CTR keystream as used by Sphinx's header/routing-info encryption (crypto.NewStream), raw keystream bytes (crypto.Stream.KeyStream).",
+  "vectors": [
+    {
+      "name": "len_0",
+      "key_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "iv_hex": "404142434445464748494a4b4c4d4e4f",
+      "length": 0,
+      "keystream_hex": ""
+    },
+    {
+      "name": "len_16",
+      "key_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "iv_hex": "404142434445464748494a4b4c4d4e4f",
+      "length": 16,
+      "keystream_hex": "9ec9dccea9f5b126ba1e7678d3832943"
+    },
+    {
+      "name": "len_32",
+      "key_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "iv_hex": "404142434445464748494a4b4c4d4e4f",
+      "length": 32,
+      "keystream_hex": "9ec9dccea9f5b126ba1e7678d38329434f5519ee42b489eba00ad35a5ae3907d"
+    },
+    {
+      "name": "len_100",
+      "key_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "iv_hex": "404142434445464748494a4b4c4d4e4f",
+      "length": 100,
+      "keystream_hex": "9ec9dccea9f5b126ba1e7678d38329434f5519ee42b489eba00ad35a5ae3907d3b37be2ce4f7b020a6d5972bbe859b432fc1521134a427112b68c767c83ccfdcaddf3e39a1f83e7034466cdcdc1f5e220199eab1106891756d37478da9178985b9efff4f"
+    }
+  ]
+}
