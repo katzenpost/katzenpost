@@ -427,8 +427,8 @@ func (p *pki) updateDocument(epoch uint64) error {
 		return err
 	}
 	if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
-		p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.c.cfg.SphinxGeometry.Display())
-		panic("Sphinx Geometry mismatch!")
+		p.log.Errorf("Rejecting PKI document for epoch %v: its Sphinx geometry hash does not match the local geometry:\n%s", epoch, p.c.cfg.SphinxGeometry.Display())
+		return fmt.Errorf("pki: document for epoch %v has a Sphinx geometry that does not match the local configuration", epoch)
 	}
 	p.docs.Store(epoch, &CachedDoc{
 		Doc:           d,

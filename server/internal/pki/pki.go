@@ -50,11 +50,12 @@ import (
 )
 
 var (
-	errNotCached         = errors.New("pki: requested epoch document not in cache")
-	recheckInterval      = epochtime.Period / 16
-	pkiEarlyConnectSlack = epochtime.Period / 8
-	PublishDeadline      = vServer.MixPublishDeadline
-	nextFetchTill        = epochtime.Period - PublishDeadline
+	errNotCached              = errors.New("pki: requested epoch document not in cache")
+	errSphinxGeometryMismatch = errors.New("pki: document Sphinx geometry does not match the local configuration")
+	recheckInterval           = epochtime.Period / 16
+	pkiEarlyConnectSlack      = epochtime.Period / 8
+	PublishDeadline           = vServer.MixPublishDeadline
+	nextFetchTill             = epochtime.Period - PublishDeadline
 
 	// descriptorUploadSafety is the wall-clock margin we leave
 	// before MixPublishDeadline so a slow upload still finishes
@@ -337,8 +338,10 @@ func (p *pki) worker() {
 			}
 
 			if !hmac.Equal(d.SphinxGeometryHash, p.glue.Config().SphinxGeometry.Hash()) {
-				p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.glue.Config().SphinxGeometry.Display())
-				panic("Sphinx Geometry mismatch!")
+				p.log.Errorf("Rejecting PKI document for epoch %v: its Sphinx geometry hash does not match the local geometry:\n%s", epoch, p.glue.Config().SphinxGeometry.Display())
+				p.setFailedFetch(epoch, errSphinxGeometryMismatch)
+				instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
+				continue
 			}
 
 			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsGatewayNode, p.glue.Config().Server.IsServiceNode)
