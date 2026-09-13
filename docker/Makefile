@@ -63,11 +63,12 @@ epoch_duration?=2m
 # longer test scenarios. Empty means "use the daemon's compile-time
 # default" (currently 10 minutes).
 session_grace_period?=30s
-mixes=3
-auths=3
-gateways=1
-serviceNodes=3
-storageNodes=5
+mixes=8
+auths=6
+gateways=5
+serviceNodes=4
+storageNodes=4
+layers=3
 
 # number of pings sent by run-ping target
 npings?=10
@@ -235,6 +236,7 @@ ifneq ($(kpclientd_build_tags),)
 endif
 
 genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --nodes $(mixes) \
+	--layers $(layers) \
 	--gateways $(gateways) --serviceNodes $(serviceNodes) --storageNodes $(storageNodes) \
 	--mu $(mu) --lambdaP $(lP) --lambdaL $(lL) --lambdaM $(lM) --lambdaR $(lR) \
 	--nike "$(nike)" --kem "$(kem)" \
@@ -366,7 +368,7 @@ endif
 export docker docker_user docker_args distro sh warped net_name compose_network_name cache_dir mount_net_name
 export no_decoy no_client_decoy no_courier_replica_decoy no_mixdecoy no_gatewaydecoy
 export no_metrics pyroscope_dirauth pyroscope_kpclientd kpclientd_metrics
-export wirekem nike kem mixes auths gateways serviceNodes storageNodes
+export wirekem nike kem mixes auths gateways serviceNodes storageNodes layers
 export mu lP lL lM lR UserForwardPayloadLength log_level
 export kpclientd_build_tags kpclientd_tags_flag pyroscope_dirauth_tags pyroscope_kpclientd_tags
 
