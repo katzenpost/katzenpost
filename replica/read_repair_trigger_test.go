@@ -154,7 +154,8 @@ func (sc *scriptedConnector) answerAsHolder(msg *commands.ReplicaMessage, keys *
 	blob, err := pigeonhole.PadReplyInnerMessageForEncryption(
 		&pigeonhole.ReplicaMessageReplyInnerMessage{ReadReply: readReply}, sc.env.pigeonGeo)
 	require.NoError(t, err)
-	envelope := scheme.EnvelopeReply(keys.ReplicaPrivKey, senderEPub, blob)
+	envelope, err := scheme.EnvelopeReply(keys.ReplicaPrivKey, senderEPub, blob)
+	require.NoError(t, err)
 
 	sc.env.server.proxyManager.HandleReply(&commands.ReplicaMessageReply{
 		Cmds:               commands.NewStorageReplicaCommands(sc.env.sphinxGeo, nikeScheme),

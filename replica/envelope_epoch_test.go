@@ -65,7 +65,8 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForCurrent(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := []byte("hello-current-epoch")
-	_, ct := mscheme.Encapsulate([]nike.PublicKey{kp.PublicKey}, payload)
+	_, ct, err := mscheme.Encapsulate([]nike.PublicKey{kp.PublicKey}, payload)
+	require.NoError(t, err)
 	decapCt := &mkem.Ciphertext{
 		EphemeralPublicKey: ct.EphemeralPublicKey,
 		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
@@ -94,7 +95,8 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForPrevious(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := []byte("encrypted-before-rollover")
-	_, ct := mscheme.Encapsulate([]nike.PublicKey{prevKp.PublicKey}, payload)
+	_, ct, err := mscheme.Encapsulate([]nike.PublicKey{prevKp.PublicKey}, payload)
+	require.NoError(t, err)
 	decapCt := &mkem.Ciphertext{
 		EphemeralPublicKey: ct.EphemeralPublicKey,
 		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
@@ -121,7 +123,8 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForNext(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := []byte("encrypted-ahead-of-rollover")
-	_, ct := mscheme.Encapsulate([]nike.PublicKey{nextKp.PublicKey}, payload)
+	_, ct, err := mscheme.Encapsulate([]nike.PublicKey{nextKp.PublicKey}, payload)
+	require.NoError(t, err)
 	decapCt := &mkem.Ciphertext{
 		EphemeralPublicKey: ct.EphemeralPublicKey,
 		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
@@ -151,7 +154,8 @@ func TestTryDecapsulateAcrossEpochWindowRejectsOutOfWindow(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := []byte("encrypted-too-long-ago")
-	_, ct := mscheme.Encapsulate([]nike.PublicKey{oldKp.PublicKey}, payload)
+	_, ct, err := mscheme.Encapsulate([]nike.PublicKey{oldKp.PublicKey}, payload)
+	require.NoError(t, err)
 	decapCt := &mkem.Ciphertext{
 		EphemeralPublicKey: ct.EphemeralPublicKey,
 		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
@@ -227,7 +231,8 @@ func TestTryDecapsulateSkipsAbsentNeighbours(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := []byte("nearest-first")
-	_, ct := scheme.Encapsulate([]nike.PublicKey{keypair.PublicKey}, payload)
+	_, ct, err := scheme.Encapsulate([]nike.PublicKey{keypair.PublicKey}, payload)
+	require.NoError(t, err)
 
 	plaintext, gotKeypair, gotEpoch, err := tryDecapsulateAcrossEpochWindow(keys, scheme, ct, currentEpoch)
 	require.NoError(t, err)

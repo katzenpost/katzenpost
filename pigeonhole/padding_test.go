@@ -331,8 +331,10 @@ func TestTombstoneWriteMKEMCiphertextIndistinguishable(t *testing.T) {
 	tombstonePadded, err := PadInnerMessageForEncryption(tombstoneWrite, g)
 	require.NoError(t, err)
 
-	_, normalCiphertext := mkemScheme.Encapsulate(replicaPubKeys, normalPadded)
-	_, tombstoneCiphertext := mkemScheme.Encapsulate(replicaPubKeys, tombstonePadded)
+	_, normalCiphertext, err := mkemScheme.Encapsulate(replicaPubKeys, normalPadded)
+	require.NoError(t, err)
+	_, tombstoneCiphertext, err := mkemScheme.Encapsulate(replicaPubKeys, tombstonePadded)
+	require.NoError(t, err)
 
 	require.Equal(t, len(normalCiphertext.Envelope), len(tombstoneCiphertext.Envelope),
 		"MKEM ciphertext must be identical size for tombstone and normal write")
@@ -379,8 +381,10 @@ func TestTombstoneReadReplyMKEMCiphertextIndistinguishable(t *testing.T) {
 	tombstonePadded, err := PadReplyInnerMessageForEncryption(tombstoneReadReply, g)
 	require.NoError(t, err)
 
-	normalReply := mkemScheme.EnvelopeReply(replicaPriv, clientPub, normalPadded)
-	tombstoneReply := mkemScheme.EnvelopeReply(replicaPriv, clientPub, tombstonePadded)
+	normalReply, err := mkemScheme.EnvelopeReply(replicaPriv, clientPub, normalPadded)
+	require.NoError(t, err)
+	tombstoneReply, err := mkemScheme.EnvelopeReply(replicaPriv, clientPub, tombstonePadded)
+	require.NoError(t, err)
 
 	require.Equal(t, len(normalReply.Envelope), len(tombstoneReply.Envelope),
 		"MKEM reply ciphertext must be identical size for tombstone and normal read reply")
@@ -422,8 +426,10 @@ func TestReadWriteQueryMKEMCiphertextIndistinguishable(t *testing.T) {
 	writePadded, err := PadInnerMessageForEncryption(writeQuery, g)
 	require.NoError(t, err)
 
-	_, readCiphertext := mkemScheme.Encapsulate(replicaPubKeys, readPadded)
-	_, writeCiphertext := mkemScheme.Encapsulate(replicaPubKeys, writePadded)
+	_, readCiphertext, err := mkemScheme.Encapsulate(replicaPubKeys, readPadded)
+	require.NoError(t, err)
+	_, writeCiphertext, err := mkemScheme.Encapsulate(replicaPubKeys, writePadded)
+	require.NoError(t, err)
 
 	require.Equal(t, len(readCiphertext.Envelope), len(writeCiphertext.Envelope),
 		"MKEM ciphertext must be identical size for read and write queries")
@@ -463,8 +469,10 @@ func TestReadWriteReplyMKEMCiphertextIndistinguishable(t *testing.T) {
 	writePadded, err := PadReplyInnerMessageForEncryption(writeReply, g)
 	require.NoError(t, err)
 
-	readEnvReply := mkemScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
-	writeEnvReply := mkemScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+	readEnvReply, err := mkemScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
+	require.NoError(t, err)
+	writeEnvReply, err := mkemScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+	require.NoError(t, err)
 
 	require.Equal(t, len(readEnvReply.Envelope), len(writeEnvReply.Envelope),
 		"MKEM reply ciphertext must be identical size for read and write replies")

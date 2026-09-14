@@ -1307,7 +1307,10 @@ func (e *Courier) tryReadFromShardReplica(
 	mkemScheme := mkem.NewScheme(e.envelopeScheme)
 	totalStart := time.Now()
 	encapStart := totalStart
-	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
+	mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encapsulate: %w", err)
+	}
 	computeElapsed := time.Since(encapStart)
 
 	query := &commands.ReplicaMessage{
@@ -1474,7 +1477,11 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 
 		// Encrypt using MKEM for whichever shard keys we have.
 		mkemScheme := mkem.NewScheme(e.envelopeScheme)
-		mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
+		mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
+		if err != nil {
+			e.log.Errorf("writeTombstone: encapsulate: %v", err)
+			continue
+		}
 		mkemPublicKey := mkemPrivateKey.Public()
 
 		// Build per-replica ReplicaMessages (all share SenderEPubKey +

@@ -241,7 +241,8 @@ func semaScopeValidReplicaMessage(t *testing.T, server *Server, boxID [32]byte) 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	keypair, err := server.envelopeKeys.GetKeypair(replicaEpoch)
 	require.NoError(t, err)
-	_, ct := replicaCommon.MKEMNikeScheme.Encapsulate([]nike.PublicKey{keypair.PublicKey}, padded)
+	_, ct, err := replicaCommon.MKEMNikeScheme.Encapsulate([]nike.PublicKey{keypair.PublicKey}, padded)
+	require.NoError(t, err)
 	return &commands.ReplicaMessage{
 		Cmds:               commands.NewStorageReplicaCommands(server.cfg.SphinxGeometry, replicaCommon.NikeScheme),
 		PigeonholeGeometry: server.pigeonholeGeo,
