@@ -176,6 +176,9 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 			}
 
 			blinded := s.nike.Blind(pubkey, keys[j].BlindingFactor)
+			if blinded == nil {
+				return nil, nil, errors.New("sphinx: degenerate blinded key")
+			}
 			sharedSecret = blinded.Bytes()
 		}
 		keys[i] = crypto.KDF(sharedSecret, s.nike)
