@@ -150,7 +150,8 @@ func TestReplicaReplication(t *testing.T) {
 	// Pad to write size, matching PadInnerMessageForEncryption in the live encoder.
 	paddedWriteMsg, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(intermediaryPubKeys, paddedWriteMsg)
+	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(intermediaryPubKeys, paddedWriteMsg)
+	require.NoError(t, err)
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
@@ -278,7 +279,8 @@ func readFromSpecificReplica(t *testing.T, env *testEnvironment, boxID *[bacap.B
 	// Pad to write size, matching PadInnerMessageForEncryption in the live encoder.
 	paddedReadMsg, err := pigeonhole.PadInnerMessageForEncryption(readMsg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedReadMsg)
+	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedReadMsg)
+	require.NoError(t, err)
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
