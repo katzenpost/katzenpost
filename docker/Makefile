@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -454,7 +454,7 @@ start_debug: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	touch $(net_name)/running.stamp
 
 stop:
-	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp $(net_name)/servicenode*/courier/*.socket
+	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp docker-compose.override.yml $(net_name)/servicenode*/courier/*.socket
 
 client-restart:
 	@echo "Cleaning and rebuilding kpclientd daemon..."
@@ -940,3 +940,49 @@ test-distros: $(addprefix test-distro-,$(DISTROS))
 
 check-go-version:
 	$(docker) run --rm katzenpost-$(distro)_base go version
+
+release_refs?=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1)
+namenlos_config?=client-configs/namenlos.toml
+namenlos_thin_config?=client-configs/namenlos-thin.toml
+interop_swaps=$(shell j=1; for ref in $(release_refs); do j=$$((j+1)); for grp in auth,$(auths) replica,$(storageNodes) mix,$(mixes) gateway,$(gateways); do for i in $$(seq $$j $(words HEAD $(release_refs)) $${grp#*,}); do printf '%s ' $${grp%,*}$$i=$$ref; done; done; done)
+
+docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --pids-limit 4096 \
+	-v $(shell readlink -f .)/$(go_mod_cache):/go/ -v $$src:/go/katzenpost:ro \
+	-v $(shell readlink -f .)/$(net_name):/$(net_name) -v $(shell readlink -f .)/$(go_build_cache):/gocache/ \
+	-e GOCACHE=/gocache -e GOPATH=/go --workdir /go/katzenpost katzenpost-$(distro)_base $(sh) -c
+
+interop-ref-binaries: $(distro)_base.stamp | $(net_name) $(cache_dir)
+	@for ref in $(release_refs); do \
+	  src=$$(mktemp -d); git -C .. archive $$ref | tar -x -C $$src; \
+	  rev=$$(git -C .. rev-list -n 1 $$ref); \
+	  for cmd in dirauth replica server; do \
+	    $(docker_run_ref_sh) "cd cmd/$$cmd && go build -trimpath -ldflags '-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=$(warped) -X github.com/carlmjohnson/versioninfo.Revision=$$rev' -o /$(net_name)/$$cmd.$(distro).$$ref"; \
+	  done; rm -rf $$src; \
+	done
+
+interop-gate: interop-ref-binaries
+	$(MAKE) stop
+	rm -f $(docker_compose_yml) $(net_name)/*/katzenpost.log
+	@[ -z "$(strip $(interop_swaps))" ] || { echo "services:"; \
+	  for pair in $(interop_swaps); do s=$${pair%%=*}; v=$${pair#*=}; \
+	    case $$s in \
+	      auth*)    echo "  $$s:"; echo "    command: /$(net_name)/dirauth.$(distro).$$v -f /$(net_name)/$$s/authority.toml";; \
+	      replica*) echo "  $$s:"; echo "    command: /$(net_name)/replica.$(distro).$$v -f /$(net_name)/$$s/replica.toml";; \
+	      *)        echo "  $$s:"; echo "    command: /$(net_name)/server.$(distro).$$v -f /$(net_name)/$$s/katzenpost.toml";; \
+	    esac; done; } > $(net_name)/docker-compose.override.yml
+	$(MAKE) start
+	$(MAKE) wait
+	@for pair in $(strip $(interop_swaps)); do s=$${pair%%=*}; v=$${pair#*=}; \
+	  grep -q " rev $$(git -C .. rev-list -n 1 $$v)" $(net_name)/$$s/*.log \
+	  || { echo "swap verify failed: $$s is not running $$v" >&2; exit 1; }; done
+	$(MAKE) run-ping || (sleep 10; $(MAKE) run-ping) || (sleep 10; $(MAKE) run-ping)
+
+client-check: | $(cache_dir)
+	@[ -s $(namenlos_config) ] || { echo "client-check: no namenlos config at $(namenlos_config)" >&2; exit 1; }
+	mkdir -p namenlos-client/client
+	sed 's/@katzenpost/@namenlos-client/; s#\$$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock#/namenlos-client/kpclientd.sock#' $(namenlos_config) > namenlos-client/client/client.toml
+	sed 's/@katzenpost/@namenlos-client/' $(namenlos_thin_config) > namenlos-client/client/thinclient.toml
+	$(MAKE) warped=false net_name=namenlos-client namenlos-client/kpclientd.$(distro) namenlos-client/fetch.$(distro)
+	$(docker) rm -f namenlos-client 2>/dev/null; $(docker) run -d --name namenlos-client --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/kpclientd.$(distro) -c /namenlos-client/client/client.toml
+	sleep 15
+	$(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/fetch.$(distro) -f /namenlos-client/client/thinclient.toml; st=$$?; $(docker) rm -f namenlos-client 2>/dev/null; exit $$st

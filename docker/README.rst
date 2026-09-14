@@ -264,6 +264,33 @@ was probed against a healthy mixnet-alpine and passed as of this writing
   ``go get -d -u ./... && go mod tidy`` inside the base image with the git
   checkout mounted in to it.
 
+12. Cross-version and namenlos modes
+
+* ``make interop-gate`` -- boot the default testnet and swap a share of its
+  authorities, replicas, mixes, and gateways to each tag in ``release_refs``
+  (default: the latest tag), so ``release_refs=""`` is all-HEAD, one tag is a
+  three-and-three authority split and two tags a two-two-two split; the default
+  six authorities need a simple majority (four of six), so consensus forms only
+  if the versions interoperate. It builds only the swapped ``dirauth``,
+  ``replica``, and ``server`` binaries per tag and reuses the working tree for
+  the rest. The swap is a ``docker-compose.override.yml`` on the swapped
+  services' ``command`` only; ``make stop`` removes it.
+* ``make client-check`` -- run the working-tree client with ``warped=false``
+  against the live namenlos network, using only the public
+  ``client-configs/namenlos.toml``.
+
+Each gate runs on its own ``net_name`` and port band (section 3), so several can
+run at once against different versions; give each a distinct ``net_name``::
+
+   make net_name=gate-a release_refs="v0.0.104" interop-gate &
+   make net_name=gate-b release_refs="v0.0.103 v0.0.104" interop-gate &
+   wait
+
+CI routes by changed path: a client change runs the working-tree client against
+namenlos and, if that cannot validate, falls back to the full docker gate; a
+server change runs ``make test`` and then ``interop-gate`` against one and then
+two releases. The required check passes when either lane passes.
+
 Notes
 
 * ``warped`` defaults to ``true``: the network runs with a 2-minute warped
