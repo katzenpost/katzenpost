@@ -187,6 +187,9 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 		if err != nil {
 			panic(err)
 		}
+		if utils.CtIsZero(clientPublicKey.Bytes()) {
+			return nil, nil, errors.New("sphinx: degenerate blinded key")
+		}
 		groupElements[i], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
 		if err != nil {
 			panic(err)
@@ -417,6 +420,9 @@ func (s *Sphinx) unwrapNike(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte
 		err := groupElement.Blind(keys.BlindingFactor)
 		if err != nil {
 			panic(err)
+		}
+		if utils.CtIsZero(groupElement.Bytes()) {
+			return nil, replayTag[:], nil, errors.New("sphinx: degenerate blinded group element")
 		}
 		copy(pkt[geOff:riOff], groupElement.Bytes()[:])
 		copy(pkt[riOff:macOff], newRoutingInfo)
