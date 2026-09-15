@@ -43,6 +43,7 @@ help:
 	@echo " test-distros              - bring up and ping the testnet on every DISTRO, leaving them running (serial, or parallel with make -j)"
 	@echo
 
+# Point git at the repo .githooks so the opt-in pre-push interop-smoke hook runs (see README section 12).
 install-git-hooks:
 	git -C .. config core.hooksPath .githooks
 
@@ -183,6 +184,8 @@ interop_services_replica=$(addprefix replica,$(shell seq $(storageNodes)))
 interop_services_courier=$(interop_services_servicenode)
 interop_services_http=$(interop_services_servicenode)
 interop_services_client2=kpclientd
+interop_quorum_dirauths=$(filter-out $(firstword $(interop_services_dirauth)),$(interop_services_dirauth))
+interop_quorum_replicas=$(filter-out $(firstword $(interop_services_replica)),$(interop_services_replica))
 # service:binary pairs for the compose command rewrite, derived from the
 # topology so adding mixes, gateways, service nodes, dirauths or replicas
 # needs no edit here. Courier and proxy_server share the servicenode
@@ -1046,7 +1049,7 @@ interop-validate:
 	  nonbase=$$(echo $(filter-out $(BASELINE),$(interop_versions)) | wc -w); \
 	  if [ "$$nonbase" -ge 2 ]; then quorums=" + quorums"; \
 	    [ $(auths) -ge 3 ] || { echo "interop-test-quorums needs auths >= 3 (have $(auths))" >&2; exit 1; }; \
-	    [ $(storageNodes) -ge 5 ] || { echo "interop-test-quorums needs storageNodes >= 5 (have $(storageNodes))" >&2; exit 1; }; \
+	    [ $(storageNodes) -ge 3 ] || { echo "interop-test-quorums needs storageNodes >= 3 (have $(storageNodes))" >&2; exit 1; }; \
 	  else quorums=" (quorums skipped until a second non-rocksdb release)"; fi; \
 	  printf 'Interop plan valid: %s roles x %s baselines%s (auths=%s replicas=%s)\n' $$(printf '%s\n' $(interop_roles) | wc -l) "$$nversions" "$$quorums" '$(auths)' '$(storageNodes)'
 
@@ -1237,19 +1240,21 @@ interop-test-quorums: interop-build
 	  set -- $$others; first=$$1; second=$$2; \
 	  for order in "$$first $$second" "$$second $$first"; do \
 	    set -- $$order; one=$$1; two=$$2; echo "PHASE baseline=$(BASELINE) role=quorums assignment=$$one,$$two"; \
-	    for spec in "auth2 dirauth $$one" "auth3 dirauth $$two" \
-	                "replica2 replica $$one" "replica3 replica $$two" \
-	                "replica4 replica $$one" "replica5 replica $$two"; do \
-	      set -- $$spec; service=$$1; bin=$$2; version=$$3; artifact=$$(cat $(interop_dir)/$$version/artifact); \
-	      commit=$$(cat $(interop_dir)/$$version/commit); log="$(net_name)/$$service/katzenpost.log"; \
-	      before=$$(grep -c " rev $$commit" "$$log" 2>/dev/null || true); \
-	      cd "$(net_name)" && $(docker_compose) stop "$$service"; cd ..; \
-	      install -m 0755 "$(interop_dir)/$$version/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).$$service.new"; \
-	      mv -f "$(net_name)/$$bin.$(distro).$$service.new" "$(net_name)/$$bin.$(distro).$$service"; \
-	      cd "$(net_name)" && $(docker_compose) start "$$service"; cd ..; \
-	      ok=false; for i in $$(seq 1 30); do if [ "$$(grep -c " rev $$commit" "$$log" 2>/dev/null || true)" -gt "$${before:-0}" ]; then ok=true; break; fi; sleep 2; done; \
-	      [ "$$ok" = true ] || { echo "quorum swap verify: $$service did not come up running rev $$commit" >&2; exit 1; }; \
-	      $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$bin BINS="$$bin" VERSION=$$version interop-record-artifact; \
+	    for grp in "dirauth $(interop_quorum_dirauths)" "replica $(interop_quorum_replicas)"; do \
+	      set -- $$grp; bin=$$1; shift; idx=0; \
+	      for service in $$@; do \
+	        if [ $$((idx % 2)) -eq 0 ]; then version=$$one; else version=$$two; fi; idx=$$((idx + 1)); \
+	        artifact=$$(cat $(interop_dir)/$$version/artifact); \
+	        commit=$$(cat $(interop_dir)/$$version/commit); log="$(net_name)/$$service/katzenpost.log"; \
+	        before=$$(grep -c " rev $$commit" "$$log" 2>/dev/null || true); \
+	        cd "$(net_name)" && $(docker_compose) stop "$$service"; cd ..; \
+	        install -m 0755 "$(interop_dir)/$$version/$$bin.$(distro).$$artifact" "$(net_name)/$$bin.$(distro).$$service.new"; \
+	        mv -f "$(net_name)/$$bin.$(distro).$$service.new" "$(net_name)/$$bin.$(distro).$$service"; \
+	        cd "$(net_name)" && $(docker_compose) start "$$service"; cd ..; \
+	        ok=false; for i in $$(seq 1 30); do if [ "$$(grep -c " rev $$commit" "$$log" 2>/dev/null || true)" -gt "$${before:-0}" ]; then ok=true; break; fi; sleep 2; done; \
+	        [ "$$ok" = true ] || { echo "quorum swap verify: $$service did not come up running rev $$commit" >&2; exit 1; }; \
+	        $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$bin BINS="$$bin" VERSION=$$version interop-record-artifact; \
+	      done; \
 	    done; \
 	    $(MAKE) -j1 net_name=$(interop_net_name) WAIT_AFTER_EPOCH=$$wait_after EXPECT_AUTHS="$(interop_services_dirauth)" CHECK_CLIENT_VERSION=$(BASELINE) $(interop_check_target); \
 	    wait_after=$$(cat $(net_name)/interop.last_epoch); \
