@@ -56,6 +56,7 @@ func newResponderConn(t *testing.T, persistent bool) *wire.Session {
 
 	db, err := bolt.Open(filepath.Join(t.TempDir(), "state.db"), 0600, nil)
 	require.NoError(err)
+	t.Cleanup(func() { _ = db.Close() })
 
 	srv := &Server{
 		cfg: &config.Config{Server: &config.Server{

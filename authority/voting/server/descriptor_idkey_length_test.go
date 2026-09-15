@@ -26,6 +26,7 @@ import (
 func TestPostDescriptorRejectsWrongLengthIdentityKey(t *testing.T) {
 	backend, err := log.New(filepath.Join(t.TempDir(), "test.log"), "ERROR", false)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = backend.Close() })
 
 	srv := &Server{
 		cfg:   &config.Config{Server: &config.Server{PKISignatureScheme: "Ed25519"}},
