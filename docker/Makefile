@@ -1187,6 +1187,7 @@ interop-test-mixed-network: interop-build
 	@set -e; cleanup() { $(interop_stop_make) --no-print-directory interop-stop >/dev/null 2>&1 || true; }; \
 	  trap cleanup EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
 	  $(MAKE) -j1 BASELINE=candidate interop-activate; \
+	  auth_expect=''; \
 	  for spec in \
 	    'mix mix2 current' 'mix mix3 previous' \
 	    'servicenode servicenode2 current' 'servicenode servicenode3 previous' \
@@ -1195,14 +1196,23 @@ interop-test-mixed-network: interop-build
 	    'courier servicenode1 previous' 'courier servicenode2 current' \
 	    'http servicenode1 current' 'http servicenode3 previous'; do \
 	    set -- $$spec; role=$$1; service=$$2; component=$$3; \
+	    case " $(interop_versions) " in *" $$component "*) ;; *) echo "PHASE baseline=candidate role=$$role component=$$component service=$$service action=skip reason=no-$$component-release"; continue;; esac; \
 	    echo "PHASE baseline=candidate role=$$role component=$$component service=$$service action=activate-all-version"; \
 	    $(MAKE) -j1 BASELINE=candidate ROLE=$$role COMPONENT_VERSION=$$component SERVICE=$$service SWAP_RUNNING=false interop_check_target=interop-noop interop-swap-$$role; \
+	    [ "$$role" = dirauth ] && auth_expect="$$auth_expect $$service=$$component" || true; \
 	  done; \
 	  cd $(net_name) && $(docker_compose) up --remove-orphans --force-recreate -d; cd ..; touch $(net_name)/running.stamp; \
 	  echo 'PHASE baseline=candidate role=mixed-network check=all-version-network'; \
-	  if $(MAKE) -j1 BASELINE=candidate CHECK_CLIENT_VERSION=candidate CHECK_HTTP_VERSION=previous EXPECT_AUTHS='auth1 auth2 auth3' interop-check; then \
+	  if $(MAKE) -j1 BASELINE=candidate CHECK_CLIENT_VERSION=candidate CHECK_HTTP_VERSION=$(if $(strip $(previous_ref)),previous,current) EXPECT_AUTHS='auth1 auth2 auth3' interop-check; then \
 	    echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=PASS'; \
-	  else echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=FAIL'; exit 1; fi
+	  else echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=FAIL'; exit 1; fi; \
+	  echo 'PHASE baseline=candidate role=mixed-network check=dirauth-quorum-revisions'; \
+	  for svc in $(interop_services_dirauth); do \
+	    want=candidate; for pair in $$auth_expect; do [ "$${pair%%=*}" = "$$svc" ] && want=$${pair#*=} || true; done; \
+	    commit=$$(cat $(interop_dir)/$$want/commit); \
+	    grep -q " rev $$commit" "$(net_name)/$$svc/katzenpost.log" || { echo "dirauth quorum verify: $$svc is not running $$want ($$commit)" >&2; exit 1; }; \
+	    echo "DIRAUTH $$svc version=$$want commit=$$commit"; \
+	  done
 
 # Swap the dirauth/replica quorum to mixed versions in both orderings and
 # check each; skipped unless two non-baseline versions exist.
