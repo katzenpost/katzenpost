@@ -21,7 +21,7 @@ import (
 func TestAuthorityAuthenticatorShortADDoesNotPanic(t *testing.T) {
 	lb, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
-	scheme := signschemes.ByName("Ed25519 Sphincs+")
+	scheme := signschemes.ByName("Ed25519")
 	require.NotNil(t, scheme)
 	pub, _, err := scheme.GenerateKey()
 	require.NoError(t, err)
