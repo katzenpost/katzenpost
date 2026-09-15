@@ -150,6 +150,8 @@ compose_network_name = $(subst .,,$(compose_project_name))_katzenpost-net
 # single shell covers all distros.
 sh?=bash
 cache_dir=cache
+dockertest_race?=-race
+dockertest_timeout?=1h
 # The go module cache (source content, read-only) is shared across distros.
 # The go build cache holds compiled archives that are sensitive to the C
 # library (musl vs glibc, and glibc versions), and Go's cache key does not
@@ -917,8 +919,8 @@ rootshell: $(distro)_base.stamp
 #   dockertest_pki_raw PASS  TestGetPKIDocumentRaw{,CurrentEpoch,UnknownEpoch}
 #                            and TestGetDirectoryAuthorities.
 test: wait
-	$(MAKE) -C ../client testargs=$(testargs) dockertest-all
-	$(MAKE) -C ../client testargs=$(testargs) dockertest_pki_raw
+	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest-all
+	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_pki_raw
 
 # Bring the testnet up on every supported distro (uses the shared build
 # cache). Serial by default; with `make -j N test-distros` each
@@ -953,11 +955,17 @@ docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --pids-limit 4096 \
 
 interop-ref-binaries: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	@for ref in $(release_refs); do \
-	  src=$$(mktemp -d); git -C .. archive $$ref | tar -x -C $$src; \
-	  rev=$$(git -C .. rev-list -n 1 $$ref); \
-	  for cmd in dirauth replica server; do \
-	    $(docker_run_ref_sh) "cd cmd/$$cmd && go build -trimpath -ldflags '-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=$(warped) -X github.com/carlmjohnson/versioninfo.Revision=$$rev' -o /$(net_name)/$$cmd.$(distro).$$ref"; \
-	  done; rm -rf $$src; \
+	  refdir=$(cache_dir)/refbins/$$ref; mkdir -p $$refdir; \
+	  if [ -x $$refdir/server.$(distro).$$ref ]; then \
+	    cp $$refdir/dirauth.$(distro).$$ref $$refdir/replica.$(distro).$$ref $$refdir/server.$(distro).$$ref $(net_name)/; \
+	  else \
+	    src=$$(mktemp -d); git -C .. archive $$ref | tar -x -C $$src; \
+	    rev=$$(git -C .. rev-list -n 1 $$ref); \
+	    for cmd in dirauth replica server; do \
+	      $(docker_run_ref_sh) "cd cmd/$$cmd && go build -trimpath -ldflags '-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=$(warped) -X github.com/carlmjohnson/versioninfo.Revision=$$rev' -o /$(net_name)/$$cmd.$(distro).$$ref"; \
+	    done; rm -rf $$src; \
+	    cp $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref $$refdir/; \
+	  fi; \
 	done
 
 interop-gate: interop-ref-binaries

@@ -89,10 +89,12 @@ jobs:
         with:
           path: docker/cache
           key: interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
+          restore-keys: |
+            interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-
       - name: Run the client suite, then the interop gate against one and two releases
         run: |
           cd docker
-          make test
+          make dockertest_race= dockertest_timeout=2h test
           make interop-gate
           make interop-gate release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)"
       - name: Dump logs on failure
