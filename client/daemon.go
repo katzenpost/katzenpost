@@ -186,6 +186,7 @@ func (d *Daemon) halt() {
 	// Step 2: Stop workers
 	workersStart := time.Now()
 	d.log.Debug("Stopping workers first to prevent channel deadlocks")
+	d.client.haltConnection()
 	d.Halt() // shutdown ingressWorker and egressWorker first
 	d.log.Infof("Workers stopped in %v", time.Since(workersStart))
 
@@ -650,10 +651,11 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 func (d *Daemon) send(request *Request) {
 	var surbKey []byte
 	var rtt time.Duration
+	var route *Route
 	var err error
 	var now time.Time
 
-	surbKey, rtt, err = d.client.SendCiphertext(request)
+	surbKey, rtt, route, err = d.client.SendCiphertextWithRoute(request)
 	if err != nil {
 		d.log.Debugf("SendCiphertext error: %s", err.Error())
 	}
@@ -718,11 +720,13 @@ func (d *Daemon) send(request *Request) {
 				response := &Response{
 					AppID: request.AppID,
 					MessageSentEvent: &thin.MessageSentEvent{
-						MessageID: messageID,
-						SURBID:    surbID,
-						SentAt:    now,
-						ReplyETA:  rtt,
-						Err:       errStr,
+						MessageID:    messageID,
+						SURBID:       surbID,
+						SentAt:       now,
+						ReplyETA:     rtt,
+						ForwardRoute: route.forward(),
+						ReturnRoute:  route.back(),
+						Err:          errStr,
 					},
 				}
 				err = incomingConn.sendResponse(response)

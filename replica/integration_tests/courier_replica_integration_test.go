@@ -752,9 +752,10 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 
 	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(
+	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(
 		sharding.ReplicaPubKeys, paddedMsg,
 	)
+	require.NoError(t, err)
 	mkemPublicKey := mkemPrivateKey.Public()
 
 	senderPubkeyBytes := mkemPublicKey.Bytes()
@@ -1033,7 +1034,8 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 
 	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedMsg)
+	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedMsg)
+	require.NoError(t, err)
 	mkemPublicKey := mkemPrivateKey.Public()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
@@ -1146,8 +1148,10 @@ func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
 	clientPub, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
-	readEnvReply := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
-	writeEnvReply := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+	readEnvReply, err := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
+	require.NoError(t, err)
+	writeEnvReply, err := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+	require.NoError(t, err)
 
 	require.Equal(t, len(readEnvReply.Envelope), len(writeEnvReply.Envelope),
 		"MKEM-encrypted read and write replies must have identical EnvelopeReply size")

@@ -1458,9 +1458,10 @@ func TestARQSuccessWritePayload(t *testing.T) {
 
 	// Encrypt the reply using MKEM EnvelopeReply (replica encrypts for client)
 	// This uses DH between replica's private key and client's public key
-	encryptedPayload := replicaCommon.MKEMNikeScheme.EnvelopeReply(
+	encryptedPayload, err := replicaCommon.MKEMNikeScheme.EnvelopeReply(
 		replica0PrivKey, clientPubKey, paddedReplyBytes,
 	)
+	require.NoError(err)
 
 	// Create a CourierEnvelopeReply with ReplyType=Payload containing the encrypted write reply
 	courierEnvelopeReply := &pigeonhole.CourierEnvelopeReply{

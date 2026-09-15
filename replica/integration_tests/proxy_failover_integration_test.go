@@ -78,7 +78,8 @@ func proxyRead(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte,
 	paddedReadMsg, err := pigeonhole.PadInnerMessageForEncryption(readMsg, env.geometry)
 	require.NoError(t, err)
 
-	privKey, ciphertext := mkemNikeScheme.Encapsulate(pubKeys, paddedReadMsg)
+	privKey, ciphertext, err := mkemNikeScheme.Encapsulate(pubKeys, paddedReadMsg)
+	require.NoError(t, err)
 	senderPubkeyBytes := privKey.Public().Bytes()
 
 	envelope := &pigeonhole.CourierEnvelope{
@@ -137,7 +138,8 @@ func writeBoxToShards(t *testing.T, env *testEnvironment, writer *bacap.Stateful
 	sharding := getShardingInfo(t, env, &boxID)
 	paddedWrite, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, env.geometry)
 	require.NoError(t, err)
-	privKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedWrite)
+	privKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedWrite)
+	require.NoError(t, err)
 	senderPubkeyBytes := privKey.Public().Bytes()
 
 	envelope := &pigeonhole.CourierEnvelope{

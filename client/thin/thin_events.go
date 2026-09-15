@@ -157,6 +157,19 @@ type MessageSentEvent struct {
 	// ReplyETA is the expected round trip time to receive a response.
 	ReplyETA time.Duration `cbor:"reply_eta"`
 
+	// ForwardRoute names the hops the packet was sent over, in path order,
+	// from the gateway to the destination.
+	//
+	// Empty means unknown, not that there were no hops: a daemon predating
+	// this field omits it, and so does one that could not name the hops
+	// against its consensus.
+	ForwardRoute []string `cbor:"forward_route,omitempty"`
+
+	// ReturnRoute names the hops the SURB travels back over, in path order.
+	// Empty when the message carried no SURB, and otherwise under the same
+	// unknown-versus-absent caveat as ForwardRoute.
+	ReturnRoute []string `cbor:"return_route,omitempty"`
+
 	// Err is the error message if any error was encountered when sending the message.
 	// Empty string indicates no error occurred.
 	Err string `cbor:"err,omitempty"`

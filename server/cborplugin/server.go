@@ -46,7 +46,9 @@ func NewServer(log *logging.Logger, socketFile string, commandBuilder CommandBui
 		socket:         NewCommandIO(log),
 	}
 	s.plugin.RegisterConsumer(s)
-	s.socket.Start(false, s.socketFile, s.commandBuilder)
+	// non-initiator side never aborts early and its own failures are
+	// handled internally via c.log.Fatal, so the returned error is unused.
+	_ = s.socket.Start(false, s.socketFile, s.commandBuilder, nil)
 	return s
 }
 

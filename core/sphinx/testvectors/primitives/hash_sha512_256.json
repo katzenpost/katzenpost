@@ -1,0 +1,28 @@
+{
+  "format_version": 1,
+  "generator": "github.com/katzenpost/katzenpost/core/sphinx/testvectors/cmd/generate",
+  "primitive": "sha512_256",
+  "description": "SHA-512/256 as used by Sphinx for the replay tag (crypto.Hash).",
+  "vectors": [
+    {
+      "name": "empty",
+      "input_hex": "",
+      "output_hex": "c672b8d1ef56ed28ab87c3622c5114069bdd3ad7b8f9737498d0c01ecef0967a"
+    },
+    {
+      "name": "abc",
+      "input_hex": "616263",
+      "output_hex": "53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23"
+    },
+    {
+      "name": "32B_group_element_like",
+      "input_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "output_hex": "b1915eae84b12616ce51d7e259b7aec3798d427a735bb13226d07119f651e981"
+    },
+    {
+      "name": "one_sha512_block_128B",
+      "input_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "output_hex": "2ff11194b2aec1f943cb5f130ba647c151334068083194d7281a55d607ae255f"
+    }
+  ]
+}

@@ -27,6 +27,72 @@ func ExecuteWithFang(cmd *cobra.Command) {
 	}
 }
 
+// NormalizeLegacyLongFlags converts selected long flags from the legacy
+// single-dash form to the double-dash form expected by pflag. Flag values are
+// left untouched, including values that happen to match a legacy flag name.
+func NormalizeLegacyLongFlags(cmd *cobra.Command, args []string, names ...string) []string {
+	legacyNames := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		legacyNames[name] = struct{}{}
+	}
+
+	normalized := append([]string(nil), args...)
+	expectValue := false
+	for i, arg := range normalized {
+		if expectValue {
+			expectValue = false
+			continue
+		}
+		if arg == "--" {
+			break
+		}
+
+		flagName, hasInlineValue, isLegacy := legacyLongFlag(arg, legacyNames)
+		if isLegacy {
+			normalized[i] = "-" + arg
+			expectValue = flagNeedsValue(cmd, flagName, hasInlineValue)
+			continue
+		}
+
+		flagName, hasInlineValue = commandFlag(arg)
+		expectValue = flagNeedsValue(cmd, flagName, hasInlineValue)
+	}
+	return normalized
+}
+
+func legacyLongFlag(arg string, names map[string]struct{}) (string, bool, bool) {
+	if !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
+		return "", false, false
+	}
+
+	nameAndValue := strings.TrimPrefix(arg, "-")
+	name, _, hasInlineValue := strings.Cut(nameAndValue, "=")
+	_, ok := names[name]
+	return name, hasInlineValue, ok
+}
+
+func commandFlag(arg string) (string, bool) {
+	if !strings.HasPrefix(arg, "-") || arg == "-" {
+		return "", false
+	}
+
+	nameAndValue := strings.TrimLeft(arg, "-")
+	name, _, hasInlineValue := strings.Cut(nameAndValue, "=")
+	return name, hasInlineValue
+}
+
+func flagNeedsValue(cmd *cobra.Command, name string, hasInlineValue bool) bool {
+	if name == "" || hasInlineValue {
+		return false
+	}
+
+	flag := cmd.Flags().Lookup(name)
+	if flag == nil && len(name) == 1 {
+		flag = cmd.Flags().ShorthandLookup(name)
+	}
+	return flag != nil && flag.NoOptDefVal == ""
+}
+
 // ErrorHandlerWithUsage creates a custom error handler that displays error messages
 // followed by usage help for CLI argument errors. This provides better user experience
 // by showing both the error and how to use the command correctly.
