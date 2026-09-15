@@ -1,0 +1,607 @@
+// SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package replica
+
+import (
+	"bytes"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/cockroachdb/pebble"
+	"golang.org/x/crypto/blake2b"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/nike/schemes"
+
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/pigeonhole"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+)
+
+const (
+	errDatabaseClosed = "database is closed"
+
+	// keyEpochSize is the on-disk encoding length of the replica-epoch
+	// prefix that distinguishes stored boxes by the week in which they
+	// were written. Storage keys are <8-byte big-endian epoch> || <BoxID>.
+	keyEpochSize = 8
+
+	// boxIDOffset is where the BoxID begins inside an on-disk storage key.
+	boxIDOffset = keyEpochSize
+)
+
+func epochPrefix(epoch uint64) []byte {
+	p := make([]byte, keyEpochSize)
+	binary.BigEndian.PutUint64(p, epoch)
+	return p
+}
+
+func boxKey(epoch uint64, boxID []byte) []byte {
+	k := make([]byte, keyEpochSize+len(boxID))
+	binary.BigEndian.PutUint64(k[:keyEpochSize], epoch)
+	copy(k[keyEpochSize:], boxID)
+	return k
+}
+
+// keptEpochs returns the replica epochs whose boxes are still within
+// the retention window, newest first. Boxes one week old are kept;
+// those two weeks old are eligible for deletion.
+func keptEpochs(current uint64) []uint64 {
+	if current == 0 {
+		return []uint64{0}
+	}
+	return []uint64{current, current - 1}
+}
+
+func currentReplicaEpoch() uint64 {
+	e, _, _ := replicaCommon.ReplicaNow()
+	return e
+}
+
+// boxLock is a per-BoxID mutex with a refCount. refCount is protected by
+// state.locksMu, not by bl.mu: it tracks how many goroutines currently
+// hold or are waiting on this entry so that releaseBoxLock can remove
+// the map entry when the last holder leaves.
+type boxLock struct {
+	mu       sync.Mutex
+	refCount int
+}
+
+var (
+	ErrBoxIDNotFound       = errors.New("Box ID not found")
+	ErrBoxAlreadyExists    = errors.New("BoxID already exists, writes are immutable")
+	ErrFailedDBRead        = errors.New("Failed to read from database")
+	ErrFailedToDeserialize = errors.New("Failed to deserialize data from DB")
+	ErrDBClosed            = errors.New("DB is closed")
+	ErrStorageFull         = errors.New("replica storage full")
+)
+
+// storageCheckInterval is how often the storage watcher samples the
+// database size and filesystem free space. Sampling (rather than
+// probing on every write) keeps the hot path a single atomic load.
+const storageCheckInterval = 30 * time.Second
+
+// availableBytesFn indirects availableBytes so tests can simulate a
+// filesystem that is full, or one whose free space cannot be probed as
+// on Windows. Every free-space check in this package goes through it.
+var availableBytesFn = availableBytes
+
+// Pebble value lifetimes: a value returned by db.Get is valid only until
+// its Closer is closed, and a key or value returned by an iterator only
+// until the next positioning call. This file passes those borrowed
+// slices straight to pigeonhole.BoxFromBytes and keeps the resulting Box
+// well past the borrow, Rebalance most of all, since it hands the
+// payload to another goroutine. That is sound only because Box.Parse
+// copies every field it produces, a property pinned by
+// TestParseBoxDoesNotAliasInput in the pigeonhole package. Any new code
+// that retains a Pebble-owned slice without passing through that copy
+// must clone it first.
+type state struct {
+	worker.Worker
+
+	server *Server
+	db     *pebble.DB
+	// metaDB holds small replica-local bookkeeping records that are
+	// not box data, e.g. the storage-replica-set fingerprint used to
+	// decide whether a startup rebalance is necessary. It is a
+	// separate database rather than a reserved key prefix within db so
+	// that the GC's DeleteRange over the box keyspace (state_gc.go)
+	// can never reach it.
+	metaDB *pebble.DB
+	// cache is the block cache shared by db and metaDB. state holds one
+	// reference to it and each database holds its own until closed.
+	cache *pebble.Cache
+	log   *logging.Logger
+
+	// locksMu protects boxLocks and every boxLock's refCount. Held only
+	// briefly during a map lookup / refCount adjustment, not across
+	// database I/O, so it does not serialize the actual write work.
+	locksMu  sync.Mutex
+	boxLocks map[[32]byte]*boxLock
+
+	// storageFull is set by the storage watcher when the database has
+	// hit the configured MaxStorageMiB quota or the DataDir filesystem
+	// free space has dropped below MinFreeStorageMiB. The write path
+	// reads it with a single atomic load; tombstones are never gated
+	// by it because they free space.
+	storageFull atomic.Bool
+}
+
+// acquireBoxLock returns a locked per-BoxID mutex. The caller MUST
+// call releaseBoxLock with the returned *boxLock and the same boxID
+// exactly once, whether or not the critical section succeeded.
+//
+// A single top-level mutex (locksMu) covers both the map operation and
+// the refCount bump so that a concurrent releaseBoxLock cannot delete
+// the entry between LoadOrStore-equivalent and refCount++.
+func (s *state) acquireBoxLock(boxID *[32]byte) *boxLock {
+	key := *boxID
+	s.locksMu.Lock()
+	if s.boxLocks == nil {
+		s.boxLocks = make(map[[32]byte]*boxLock)
+	}
+	bl, ok := s.boxLocks[key]
+	if !ok {
+		bl = &boxLock{}
+		s.boxLocks[key] = bl
+	}
+	bl.refCount++
+	s.locksMu.Unlock()
+	bl.mu.Lock()
+	return bl
+}
+
+// releaseBoxLock unlocks the per-BoxID mutex and drops the refCount,
+// removing the map entry when the last holder leaves.
+func (s *state) releaseBoxLock(bl *boxLock, boxID *[32]byte) {
+	bl.mu.Unlock()
+	key := *boxID
+	s.locksMu.Lock()
+	bl.refCount--
+	if bl.refCount == 0 {
+		delete(s.boxLocks, key)
+	}
+	s.locksMu.Unlock()
+}
+
+func newState(s *Server) *state {
+	if s.cfg.SphinxGeometry == nil {
+		panic("s.server.cfg.SphinxGeometry cannot be nil")
+	}
+	st := &state{
+		server: s,
+		log:    s.LogBackend().GetLogger("replica state"),
+	}
+	st.log.Debug("state: Created new state")
+	return st
+}
+
+func (s *state) Close() {
+	s.log.Debug("state: Closing state")
+	s.Worker.Halt()
+	if s.metaDB != nil {
+		s.metaDB.Close()
+		s.metaDB = nil
+	}
+	if s.db != nil {
+		s.db.Close()
+		s.db = nil
+	}
+	if s.cache != nil {
+		s.cache.Unref()
+		s.cache = nil
+	}
+}
+
+func (s *state) dbPath() string {
+	path := filepath.Join(s.server.cfg.DataDir, "replica.db")
+	s.log.Debugf("state: Database path: %s", path)
+	return path
+}
+
+// boxesDBPath is the Pebble database holding box records.
+func (s *state) boxesDBPath() string {
+	return filepath.Join(s.server.cfg.DataDir, "replica-boxes.db")
+}
+
+// metadataDBPath is the Pebble database holding metadata records.
+func (s *state) metadataDBPath() string {
+	return filepath.Join(s.server.cfg.DataDir, "replica-metadata.db")
+}
+
+// startStorageWatcher launches the periodic storage-pressure sampler.
+func (s *state) startStorageWatcher() {
+	s.Go(s.storageWatcher)
+}
+
+// storageWatcher samples database size and filesystem free space on a
+// fixed interval and toggles s.storageFull. The write path then only
+// performs a cheap atomic load (see the audit's "periodically
+// sampled, not per-Put" guidance). It mirrors gcWorker's shutdown
+// discipline.
+func (s *state) storageWatcher() {
+	s.refreshStorageFull() // evaluate once at startup before the first tick
+	timer := time.NewTimer(storageCheckInterval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-s.HaltCh():
+			s.log.Debug("state: storage watcher terminating gracefully.")
+			return
+		case <-timer.C:
+		}
+		s.refreshStorageFull()
+		timer.Reset(storageCheckInterval)
+	}
+}
+
+// dbOnDiskBytes returns the Pebble databases' live on-disk footprint,
+// or (0, false) if the databases are not open.
+func (s *state) dbOnDiskBytes() (uint64, bool) {
+	if s.db == nil {
+		return 0, false
+	}
+	n := s.db.Metrics().DiskSpaceUsage()
+	if s.metaDB != nil {
+		n += s.metaDB.Metrics().DiskSpaceUsage()
+	}
+	return n, true
+}
+
+// refreshStorageFull recomputes whether the replica should refuse new
+// writes. It is "full" when the operator's MaxStorageMiB quota is set
+// and the database has reached it, or when the DataDir filesystem has
+// less than MinFreeStorageMiB available. Probe failures are treated
+// as "not full" so a transient measurement error never blocks an
+// otherwise healthy replica; the next tick re-evaluates.
+func (s *state) refreshStorageFull() {
+	cfg := s.server.cfg
+	full := false
+	reason := ""
+	const bytesPerMiB = uint64(1024 * 1024)
+
+	if cfg.MaxStorageMiB > 0 {
+		quota := uint64(cfg.MaxStorageMiB) * bytesPerMiB
+		if used, ok := s.dbOnDiskBytes(); ok && used >= quota {
+			full = true
+			reason = fmt.Sprintf("db size %d bytes >= MaxStorageMiB quota %d MiB (%d bytes)", used, cfg.MaxStorageMiB, quota)
+		}
+	}
+
+	if !full && cfg.MinFreeStorageMiB > 0 {
+		reserve := uint64(cfg.MinFreeStorageMiB) * bytesPerMiB
+		if avail, ok := availableBytesFn(s.server.cfg.DataDir); ok && avail < reserve {
+			full = true
+			reason = fmt.Sprintf("free space %d bytes < MinFreeStorageMiB reserve %d MiB (%d bytes)", avail, cfg.MinFreeStorageMiB, reserve)
+		}
+	}
+
+	prev := s.storageFull.Swap(full)
+	if full && !prev {
+		s.log.Warningf("state: entering storage-full state (%s); new writes will be rejected with ReplicaErrorStorageFull", reason)
+	} else if !full && prev {
+		s.log.Noticef("state: storage pressure relieved; accepting writes again")
+	}
+}
+
+func (s *state) initDB() {
+	s.log.Debug("state: Initializing database")
+
+	// One cache serves both databases; pebbleOptions is called per Open
+	// because Pebble retains the Options value it is given.
+	s.cache = pebble.NewCache(pebbleBlockCacheSize)
+
+	var err error
+	s.db, err = pebble.Open(s.boxesDBPath(), s.pebbleOptions(s.cache))
+	if err != nil {
+		panic(err)
+	}
+	s.metaDB, err = pebble.Open(s.metadataDBPath(), s.pebbleOptions(s.cache))
+	if err != nil {
+		panic(err)
+	}
+
+	// The RocksDB era is over. Remove the legacy database now that the
+	// migration marker is present, and refuse to start if unmigrated
+	// legacy data is still on disk (see state_legacy.go). initDB runs
+	// before any worker goroutines start, so there is no concurrent
+	// access to the Pebble databases.
+	if err := s.cleanupLegacyDatabase(); err != nil {
+		panic(err)
+	}
+	s.log.Debug("state: Database initialized successfully")
+}
+
+func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pigeonhole.Box, error) {
+	s.log.Debugf("state: Starting replica read for BoxID: %x", replicaRead.BoxID)
+
+	// Check if database is still open
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform read")
+		return nil, ErrDBClosed
+	}
+
+	// Storage is bucketed by replica epoch; a tombstone written in a
+	// later epoch must shadow an earlier box, so we consult the kept
+	// window newest-first and return the first hit.
+	for _, ep := range keptEpochs(currentReplicaEpoch()) {
+		key := boxKey(ep, replicaRead.BoxID[:])
+		value, closer, err := s.db.Get(key)
+		if err != nil {
+			if errors.Is(err, pebble.ErrNotFound) {
+				continue
+			}
+			s.log.Errorf("state: Failed to read from database: %s", err)
+			return nil, ErrFailedDBRead
+		}
+		// value is borrowed until closer.Close(); BoxFromBytes copies.
+		box, err := pigeonhole.BoxFromBytes(value)
+		closer.Close()
+		if err != nil {
+			s.log.Errorf("state: Failed to deserialize box: %s", err)
+			return nil, ErrFailedToDeserialize
+		}
+		s.log.Debugf("state: Successfully handled replica read at epoch %d, returning box with %d bytes payload", ep, len(box.Payload))
+		return box, nil
+	}
+	s.log.Debugf("state: No data found for BoxID: %x", replicaRead.BoxID)
+	return nil, ErrBoxIDNotFound
+}
+
+func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
+	s.log.Debugf("state: Starting replica write for BoxID: %x", replicaWrite.BoxID)
+
+	// Check if database is still open
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform write")
+		return fmt.Errorf(errDatabaseClosed)
+	}
+
+	// Refuse new writes under storage pressure. Tombstones
+	// (handleReplicaTombstone) are deliberately NOT gated: they
+	// replace a box with an empty payload and so free, never grow,
+	// storage, and a client must be able to delete in order to
+	// recover. ReplicaErrorStorageFull is a terminal code, so the
+	// client stops rather than retrying into a wall.
+	if s.storageFull.Load() {
+		s.log.Warningf("state: rejecting write for BoxID %x: storage full", replicaWrite.BoxID)
+		return ErrStorageFull
+	}
+
+	// Serialize check-and-put for this BoxID so concurrent writers
+	// cannot both pass the existence check and both Put. The lock is
+	// per-BoxID — unrelated writes do not contend.
+	bl := s.acquireBoxLock(replicaWrite.BoxID)
+	defer s.releaseBoxLock(bl, replicaWrite.BoxID)
+
+	cur := currentReplicaEpoch()
+
+	// Writes are immutable; a duplicate by content within the retention
+	// window is idempotent (the courier's K=2 path retries on lost
+	// replies and the replication layer assumes this), and a mismatch
+	// is rejected. We consult both retained epochs because a prior
+	// write may have landed just before an epoch boundary.
+	for _, ep := range keptEpochs(cur) {
+		existing, closer, err := s.db.Get(boxKey(ep, replicaWrite.BoxID[:]))
+		if err != nil {
+			if errors.Is(err, pebble.ErrNotFound) {
+				continue
+			}
+			s.log.Errorf("state: Failed to check existing entry for BoxID %x: %s", replicaWrite.BoxID, err)
+			return fmt.Errorf("failed to check existing entry: %w", err)
+		}
+		// existing is borrowed until closer.Close(); BoxFromBytes copies,
+		// so storedBox stays valid for the comparison below.
+		storedBox, perr := pigeonhole.BoxFromBytes(existing)
+		closer.Close()
+		if perr == nil &&
+			bytes.Equal(storedBox.Payload, replicaWrite.Payload) &&
+			storedBox.Signature == *replicaWrite.Signature {
+			s.log.Debugf("state: BoxID %x idempotent write at epoch %d (matching payload+signature)", replicaWrite.BoxID, ep)
+			return nil
+		}
+		s.log.Debugf("state: BoxID %x already exists at epoch %d with differing data, rejecting write", replicaWrite.BoxID, ep)
+		return ErrBoxAlreadyExists
+	}
+
+	box := &pigeonhole.Box{
+		PayloadLen: uint32(len(replicaWrite.Payload)),
+		Payload:    replicaWrite.Payload,
+	}
+	copy(box.BoxID[:], replicaWrite.BoxID[:])
+	copy(box.Signature[:], replicaWrite.Signature[:])
+	s.log.Debugf("state: Attempting to write %d bytes to database at replica epoch %d", len(box.Bytes()), cur)
+	if err := s.db.Set(boxKey(cur, box.BoxID[:]), box.Bytes(), nil); err != nil {
+		s.log.Errorf("state: Failed to write to database: %s", err)
+		return err
+	}
+	s.log.Debug("state: Successfully handled replica write")
+	return nil
+}
+
+// handleReplicaTombstone stores a tombstone (empty payload with signature) in the database.
+// Tombstones are BACAP messages with empty payloads that overwrite previously stored messages.
+// This allows readers to verify the tombstone was intentionally created by the writer.
+func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) error {
+	s.log.Debugf("state: Processing tombstone for BoxID: %x", boxID)
+
+	// Check if database is still open
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform tombstone write")
+		return fmt.Errorf(errDatabaseClosed)
+	}
+
+	// Take the same per-BoxID lock as handleReplicaWrite so a tombstone
+	// and a concurrent normal write for the same BoxID can't interleave
+	// between the existence check and the Put.
+	boxIDArr := boxID
+	bl := s.acquireBoxLock(&boxIDArr)
+	defer s.releaseBoxLock(bl, &boxIDArr)
+
+	// Store the tombstone as a Box with empty payload
+	box := &pigeonhole.Box{
+		PayloadLen: 0,
+		Payload:    nil,
+	}
+	copy(box.BoxID[:], boxID[:])
+	copy(box.Signature[:], signature[:])
+
+	cur := currentReplicaEpoch()
+	s.log.Debugf("state: Writing tombstone to database for BoxID: %x at replica epoch %d", boxID, cur)
+	if err := s.db.Set(boxKey(cur, box.BoxID[:]), box.Bytes(), nil); err != nil {
+		s.log.Errorf("state: Failed to write tombstone for BoxID %x to database: %s", boxID, err)
+		return err
+	}
+
+	s.log.Debugf("state: Successfully stored tombstone for BoxID: %x", boxID)
+	return nil
+}
+
+func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error) {
+	s.log.Debugf("state: Converting blob of size %d to ReplicaWrite", len(blob))
+	box, err := pigeonhole.BoxFromBytes(blob)
+	if err != nil {
+		s.log.Errorf("state: Failed to deserialize box from blob: %s", err)
+		return nil, err
+	}
+	scheme := schemes.ByName(s.server.cfg.ReplicaNIKEScheme)
+	if scheme == nil {
+		s.log.Errorf("state: Scheme %s doesn't exist", s.server.cfg.ReplicaNIKEScheme)
+		panic(fmt.Sprintf("scheme %s doesn't exist", s.server.cfg.ReplicaNIKEScheme))
+	}
+	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry, scheme)
+	// Convert array types to pointer types for wire commands
+	boxID := &[32]byte{}
+	copy(boxID[:], box.BoxID[:])
+
+	signature := &[64]byte{}
+	copy(signature[:], box.Signature[:])
+
+	ret := &commands.ReplicaWrite{
+		Cmds:      cmds,
+		BoxID:     boxID,
+		Signature: signature,
+		Payload:   box.Payload,
+	}
+	s.log.Debugf("state: Successfully converted blob to ReplicaWrite with BoxID: %x", box.BoxID)
+	return ret, nil
+}
+
+func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) {
+	s.log.Debugf("state: Getting remote shards for BoxID: %x", boxID)
+	doc := s.server.PKIWorker.LastCachedPKIDocument()
+
+	// Check if PKI document has storage replicas
+	if doc == nil {
+		s.log.Debugf("state: No PKI document available yet, skipping remote shards for BoxID: %x", boxID)
+		return []*pki.ReplicaDescriptor{}, nil
+	}
+
+	if doc.StorageReplicas == nil || len(doc.StorageReplicas) == 0 {
+		s.log.Debugf("state: No storage replicas in PKI document yet, skipping remote shards for BoxID: %x", boxID)
+		return []*pki.ReplicaDescriptor{}, nil
+	}
+
+	boxIDar := new([32]byte)
+	copy(boxIDar[:], boxID)
+	shards, err := replicaCommon.GetRemoteShards(s.server.identityPublicKey, boxIDar, doc)
+	if err != nil {
+		s.log.Errorf("state: GetShards for boxID %x has failed: %s", boxID, err)
+		return nil, err
+	}
+	s.log.Debugf("state: Found %d remote shards", len(shards))
+	return shards, nil
+}
+
+// Rebalance is called once we've been noticed that one or more
+// storage replicas have been added or removed from the PKI document.
+// We perform a rebalance in order to maintain redundancy of all
+// pigeonhole storage boxes in the system.
+//
+// Scan through all the Box IDs and determine which
+// shards they belong to. If this replica node is one of the shares,
+// then just copy the share to the other replica. Otherwise copy
+// the share to the two replicas.
+func (s *state) Rebalance(trigger string) error {
+	s.log.Noticef("state: starting rebalance (trigger=%s)", trigger)
+	start := time.Now()
+
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform rebalance")
+		return fmt.Errorf(errDatabaseClosed)
+	}
+
+	// Read-only forward scan. SetFillCache(false) had no Pebble
+	// equivalent at migration time; if a future scan ever needs
+	// sequential-read prefetch, consider IterOptions{OnlyReadAhead: true}.
+	it, err := s.db.NewIter(&pebble.IterOptions{})
+	if err != nil {
+		return err
+	}
+	defer it.Close()
+
+	// Iterate only the kept epochs; anything outside the window is
+	// about to be GCed and need not be replicated again.
+	for _, ep := range keptEpochs(currentReplicaEpoch()) {
+		prefix := epochPrefix(ep)
+		for it.SeekGE(prefix); it.Valid(); it.Next() {
+			key := it.Key()
+			if !bytes.HasPrefix(key, prefix) {
+				break
+			}
+			if len(key) < boxIDOffset+32 {
+				s.log.Errorf("state: malformed key (size %d) at epoch %d, skipping", len(key), ep)
+				continue
+			}
+			boxID := make([]byte, 32)
+			copy(boxID, key[boxIDOffset:boxIDOffset+32])
+
+			// it.Value() is borrowed until the next it.Next();
+			// replicaWriteFromBlob parses through BoxFromBytes, which
+			// copies, so writeCmd owns its payload and may outlive this
+			// loop in the connector's queue.
+			writeCmd, err := s.replicaWriteFromBlob(it.Value())
+			if err != nil {
+				s.log.Errorf("state: Failed to create ReplicaWrite from blob: %s", err)
+				return err
+			}
+
+			remoteShards, err := s.getRemoteShards(boxID)
+			if err != nil {
+				s.log.Errorf("state: Failed to get remote shards: %s", err)
+				return err
+			}
+			for _, shard := range remoteShards {
+				idHash := blake2b.Sum256(shard.IdentityKey)
+				s.server.connector.DispatchCommand(writeCmd, &idHash)
+			}
+		}
+	}
+	if err := it.Error(); err != nil {
+		s.log.Errorf("state: rebalance iterator failed: %s", err)
+		return err
+	}
+
+	s.log.Noticef("state: rebalance completed (trigger=%s, duration=%s)", trigger, time.Since(start))
+
+	// Record the storage-replica-set fingerprint we just rebalanced
+	// against. The startup path consults this marker to decide whether
+	// a fresh rebalance is necessary on the next boot. We only reach
+	// this point after the iterator completes without error, so a
+	// partial rebalance is never credited as complete.
+	if doc := s.server.PKIWorker.LastCachedPKIDocument(); doc != nil {
+		fp := replicaSetFingerprint(doc)
+		if err := s.storeLastRebalanceFingerprint(fp); err != nil {
+			s.log.Warningf("state: failed to persist rebalance fingerprint: %s", err)
+		}
+	}
+	return nil
+}

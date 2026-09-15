@@ -1,26 +1,164 @@
 
-.PHONY: all test sphincsplus clean server dirauth genconfig ping
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
 
-all: server dirauth genconfig ping
+.PHONY: update-go-deps
+update-go-deps:
+	@echo ">> updating Go dependencies"
+	@for m in $$(go list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
+		go get $$m; \
+	done
+	go mod tidy
+ifneq (,$(wildcard vendor))
+	go mod vendor
+endif
+
+all: server dirauth genconfig ping courier replica echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd sphinx
 
 server:
-	cd server/cmd/server; go build
+	cd cmd/server; go build -trimpath -ldflags "-s -w"
 
 dirauth:
-	cd authority/cmd/voting; go build
+	cd cmd/dirauth; go build -trimpath -ldflags "-s -w"
 
 genconfig:
-	cd genconfig; go build
+	cd cmd/genconfig; go build -trimpath -ldflags "-s -w"
 
 ping:
-	cd ping; go build
+	cd cmd/ping; go build -trimpath -ldflags "-s -w"
+
+courier:
+	cd cmd/courier; go build -trimpath -ldflags "-s -w"
+
+echo-plugin:
+	cd cmd/echo-plugin; go build -trimpath -ldflags "-s -w"
+
+fetch:
+	cd cmd/fetch; go build -trimpath -ldflags "-s -w"
+
+genkeypair:
+	cd cmd/genkeypair; go build -trimpath -ldflags "-s -w"
+
+geometry:
+	cd cmd/geometry; go build -trimpath -ldflags "-s -w"
+
+http-proxy-client:
+	cd cmd/http-proxy-client; go build -trimpath -ldflags "-s -w"
+
+http-proxy-server:
+	cd cmd/http-proxy-server; go build -trimpath -ldflags "-s -w"
+
+kpclientd:
+	cd cmd/kpclientd; go build -trimpath -ldflags "-s -w"
+
+sphinx:
+	cd cmd/sphinx; go build -trimpath -ldflags "-s -w"
+
+replica:
+	cd cmd/replica; go build -v -trimpath -ldflags "-s -w"
 
 clean:
-	rm -f server/cmd/server/server authority/cmd/voting/voting genconfig/genconfig ping/ping
+	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping \
+		cmd/courier/courier cmd/echo-plugin/echo-plugin cmd/fetch/fetch \
+		cmd/genkeypair/genkeypair cmd/geometry/geometry \
+		cmd/http-proxy-client/http-proxy-client cmd/http-proxy-server/http-proxy-server \
+		cmd/kpclientd/kpclientd \
+		cmd/sphinx/sphinx cmd/replica/replica cmd/copycat/copycat
 
 sphincsplus:
 	cd sphincsplus/ref && go test -v -race -timeout 0 ./...
 
-test:
+# Generate mixnet configuration files (required for tests that depend on config symlinks)
+test-config:
+	@echo "Generating mixnet configuration files..."
+	cd docker && make config-only
+
+# Run all unit tests (same as GitHub workflow)
+test-unit: test-config
+	@echo "Running authority unit tests..."
+	cd authority && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	@echo "Running client unit tests..."
+	cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	@echo "Running core unit tests..."
+	cd core && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	@echo "Running NIKE Sphinx unit tests..."
+	cd core/sphinx && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	@echo "Running server unit tests..."
+	cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	@echo "Running courier unit tests..."
+	cd courier && GORACE=history_size=7 go test -coverprofile=coverage.out -v -failfast -timeout 30m ./...
+
+
+	@echo "All unit tests completed successfully!"
+
+# Run replica unit tests
+test-replica: test-config
+	@echo "Running replica unit tests..."
+	cd replica && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	@echo "Replica unit tests completed successfully!"
+
+# Run replica benchmarks
+bench-replica:
+	@echo "Running replica benchmarks..."
+	cd replica && go test -v -run=^$$ -bench=. -benchtime=3x ./...
+	@echo "Replica benchmarks completed successfully!"
+
+# Run all sphinx benchmarks
+bench-sphinx:
+	@echo "Running Sphinx benchmarks..."
+	go test -v -run='^$$' -bench=. -benchmem ./core/sphinx/...
+	@echo ""
+	@echo "Sphinx benchmarks completed!"
+
+# Run all wire handshake benchmarks (client, courier, mix server, dirauth, replica)
+bench-handshake:
+	@echo "Running all wire handshake benchmarks..."
+	@echo ""
+	@echo "=== Client2 Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./client/
+	@echo ""
+	@echo "=== Dirauth Client Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./authority/voting/client/
+	@echo ""
+	@echo "=== Dirauth Server Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./authority/voting/server/
+	@echo ""
+	@echo "=== Mix Server Incoming Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./server/internal/incoming/
+	@echo ""
+	@echo "=== Mix Server Outgoing Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./server/internal/outgoing/
+	@echo ""
+	@echo "=== Mix Server PKI Client Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./server/internal/pki/
+	@echo ""
+	@echo "=== Courier Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./courier/server/
+	@echo ""
+	@echo "=== Replica Handshake Benchmarks ==="
+	cd replica && go test -v -run=^$$ -bench=. -benchtime=3x ./...
+	@echo ""
+	@echo "All wire handshake benchmarks completed successfully!"
+
+# Legacy test target (kept for backwards compatibility)
+test: prune-docker-cache
 	go test -v -race -timeout 0 ./...
 
+# The docker build populates docker/cache/go/pkg/mod with a module cache
+# inside the repo tree. A legacy (pre-modules) dependency there has no
+# go.mod of its own, so `go test ./...` walks into it and fails the whole
+# pattern with "outside main module or its selected dependencies". Dropping
+# a sink go.mod makes Go treat docker/cache as a separate nested module and
+# prune it (and everything beneath it) from ./... . docker/cache is
+# gitignored, so this file is never committed; the target recreates it.
+.PHONY: prune-docker-cache
+prune-docker-cache:
+	@mkdir -p docker/cache
+	@printf 'module katzenpost-docker-cache-sink\n\ngo 1.26\n' > docker/cache/go.mod
+
+act-clean:
+	@echo "Cleaning up docker mixnet environment..."
+	-cd docker && make clean-local 2>/dev/null || true
+	@echo "Cleanup complete."
+
+act: act-clean
+	act --bind --container-options "-v /etc/ssl/certs:/etc/ssl/certs:ro -v /usr/share/ca-certificates:/usr/share/ca-certificates:ro -v /run/user/$(shell id -u)/podman/podman.sock:/var/run/docker.sock" -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -j test_e2e_client

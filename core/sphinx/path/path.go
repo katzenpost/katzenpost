@@ -25,6 +25,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -91,8 +92,12 @@ selectLoop:
 			var delay uint64
 			if idx != len(descs)-1 || (surbID != nil && isForward) {
 				delay = uint64(rand.Exp(rng, doc.Mu)) + 1
-				if doc.MuMaxDelay > 0 && delay > doc.MuMaxDelay {
-					delay = doc.MuMaxDelay
+				// The safety cap is the (1 - 1e-12) quantile of the
+				// configured exponential, derived programmatically
+				// so the per-hop delay distribution is not biased
+				// by an operator-tunable clamp.
+				if muCap := common.SafetyCap(doc.Mu); muCap > 0 && delay > muCap {
+					delay = muCap
 				}
 				then = then.Add(time.Duration(delay) * time.Millisecond)
 				delayCmd := &commands.NodeDelay{

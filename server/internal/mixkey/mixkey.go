@@ -19,6 +19,10 @@ package mixkey
 
 import (
 	"crypto/sha512"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 
@@ -35,6 +39,14 @@ import (
 const (
 	// TagLength is the replay tag length in bytes.
 	TagLength = sha512.Size256
+
+	// keyFileMagic identifies persisted mix key files.
+	keyFileMagic = "KMK1"
+
+	// keyFileKindNike and keyFileKindKem identify the private key kind a
+	// persisted mix key file contains.
+	keyFileKindNike = 0
+	keyFileKindKem  = 1
 )
 
 var dbOptions = &bolt.Options{
@@ -156,15 +168,7 @@ func (k *MixKey) forceClose() {
 // New creates (or loads) a mix key in the provided data directory, for the
 // given epoch.
 func New(epoch uint64, g *geo.Geometry) (*MixKey, error) {
-	var err error
-
-	// Initialize the structure and create or open the database.
-	k := &MixKey{
-		epoch:    epoch,
-		refCount: 1,
-	}
-
-	k.f, err = bloom.New(rand.Reader, 29, 0.001) // 64 MiB, 37,240,820 entries.
+	k, err := newKey(epoch, g)
 	if err != nil {
 		return nil, err
 	}
@@ -182,5 +186,149 @@ func New(epoch uint64, g *geo.Geometry) (*MixKey, error) {
 		}
 	}
 
+	return k, nil
+}
+
+// Load returns the mix key persisted for the given epoch, if any. The bool
+// reports whether a key was found and loaded; a nil error with a false bool
+// means no key file exists (the caller should generate a fresh key). Any
+// other error means a key file exists but could not be loaded or consumed;
+// the caller should log it and refuse to start, since silently generating a
+// fresh key would leave the node's keypairs out of sync with the consensus
+// already published by the authorities.
+//
+// Load is consume-on-read: the persisted key file is deleted as soon as it
+// has been successfully loaded, so key material exists on the filesystem only between
+// a clean shutdown and the immediately following boot. A file that fails to
+// load, or that cannot be unlinked after loading, is left in place and is
+// reported as an error so the daemon does not start with unexpected private
+// key material on the filesystem.
+func Load(epoch uint64, g *geo.Geometry, keyStoreDir string) (*MixKey, bool, error) {
+	blob, err := os.ReadFile(keyPath(epoch, keyStoreDir))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	// Layout: magic, key kind, private key material.
+	if len(blob) < len(keyFileMagic)+1 {
+		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d is truncated", epoch)
+	}
+	if string(blob[:len(keyFileMagic)]) != keyFileMagic {
+		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d has an invalid header", epoch)
+	}
+	kind := blob[len(keyFileMagic)]
+	keyBytes := blob[len(keyFileMagic)+1:]
+
+	k, err := newKey(epoch, g)
+	if err != nil {
+		return nil, false, err
+	}
+
+	nikeScheme, kemScheme := g.Scheme()
+	switch {
+	case nikeScheme != nil && kind == keyFileKindNike:
+		k.nikeKeypair, err = nikeScheme.UnmarshalBinaryPrivateKey(keyBytes)
+		if err != nil {
+			return nil, false, fmt.Errorf("mixkey: failed to load nike key for epoch %d: %v", epoch, err)
+		}
+		k.nikePubKey = k.nikeKeypair.Public()
+	case kemScheme != nil && kind == keyFileKindKem:
+		k.kemKeypair, err = kemScheme.UnmarshalBinaryPrivateKey(keyBytes)
+		if err != nil {
+			return nil, false, fmt.Errorf("mixkey: failed to load kem key for epoch %d: %v", epoch, err)
+		}
+	default:
+		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d was written for a different scheme", epoch)
+	}
+
+	// Consume the file so key material is on the filesystem only until the next
+	// clean shutdown. A key that cannot be consumed must not be used:
+	// silently leaving private key material on the filesystem (or
+	// continuing as if persistence were trustworthy) would defeat the
+	// purpose of the feature, so this is reported as a startup error.
+	if err := os.Remove(keyPath(epoch, keyStoreDir)); err != nil {
+		return nil, false, fmt.Errorf("mixkey: failed to consume persisted key file for epoch %d: %v", epoch, err)
+	}
+
+	return k, true, nil
+}
+
+// Persist writes the private key material to the key store directory, keyed
+// by the key's epoch. It is used on clean shutdown so that a subsequent boot
+// can reload the same keypair and remain in sync with the already-published
+// consensus. The write is atomic (temp file + rename).
+func (k *MixKey) Persist(keyStoreDir string) error {
+	kind := byte(keyFileKindNike)
+	var keyBytes []byte
+	switch {
+	case k.nikeKeypair != nil:
+		keyBytes = k.nikeKeypair.Bytes()
+	case k.kemKeypair != nil:
+		kind = keyFileKindKem
+		var err error
+		keyBytes, err = k.kemKeypair.MarshalBinary()
+		if err != nil {
+			return err
+		}
+	default:
+		return errors.New("mixkey: cannot persist a key with no private key material")
+	}
+
+	blob := make([]byte, 0, len(keyFileMagic)+1+len(keyBytes))
+	blob = append(blob, keyFileMagic...)
+	blob = append(blob, kind)
+	blob = append(blob, keyBytes...)
+
+	if err := os.MkdirAll(keyStoreDir, 0700); err != nil {
+		return err
+	}
+	return atomicWrite(keyPath(k.epoch, keyStoreDir), blob)
+}
+
+// Remove deletes the persisted key file for the given epoch, if present.
+func Remove(epoch uint64, keyStoreDir string) {
+	os.Remove(keyPath(epoch, keyStoreDir))
+}
+
+func keyPath(epoch uint64, keyStoreDir string) string {
+	return filepath.Join(keyStoreDir, fmt.Sprintf("mixkey-%d.bin", epoch))
+}
+
+func atomicWrite(path string, blob []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".mixkey-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.Write(blob); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
+func newKey(epoch uint64, g *geo.Geometry) (*MixKey, error) {
+	k := &MixKey{
+		epoch:    epoch,
+		refCount: 1,
+	}
+
+	f, err := bloom.New(rand.Reader, 29, 0.001) // 64 MiB, 37,240,820 entries.
+	if err != nil {
+		return nil, err
+	}
+	k.f = f
 	return k, nil
 }

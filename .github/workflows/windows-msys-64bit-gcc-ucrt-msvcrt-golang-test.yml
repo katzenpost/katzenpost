@@ -4,35 +4,60 @@ on: [pull_request]
 
 jobs:
   windows-build-and-test-golang:
-    runs-on: ${{ matrix.os }}
+    env:
+      HIGHCTIDH_PORTABLE: 1
+      CGO_ENABLED: 1
+      GOEXPERIMENT: cgocheck2
+      GODEBUG: cgocheck=1
+      CGO_LDFLAGS: "-Wl,--no-as-needed -Wl,-allow-multiple-definition"
     strategy:
       matrix:
         OS: ["windows-2022"]
         CC: ["gcc"]
         ENVIRONMENT: ["MINGW64"] # https://www.msys2.org/docs/environments/
-        go-version: ["1.22.x"]
+        go-version: ["1.26.x"]
+        test-suite:
+          - { name: "authority", path: "authority", timeout: "30m" }
+          - { name: "client", path: "client", timeout: "30m" }
+          - { name: "core", path: "core", timeout: "30m" }
+          - { name: "sphinx", path: "core/sphinx", timeout: "30m" }
+          - { name: "server", path: "server", timeout: "30m" }
+          - { name: "pigeonhole", path: "pigeonhole", timeout: "30m" }
       fail-fast: false
+    runs-on: ${{ matrix.OS }}
+    name: test-${{ matrix.test-suite.name }}-windows
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Msys2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{ matrix.ENVIRONMENT }}
-          install: >-
-            base-devel
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-go
-            make
-            git
-            gcc
 
       - name: Setup Go ${{ matrix.go-version }}
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+
+      - name: Set up Msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.ENVIRONMENT }}
+          path-type: inherit
+          install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-gcc
+            make
+            git
+            gcc
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ matrix.go-version }}-
+            ${{ runner.os }}-go-
 
       - name: Gather runtime environment
         shell: msys2 {0}
@@ -43,12 +68,11 @@ jobs:
          ${{ matrix.CC }} -v
          go version
 
-      - name: Golang test
+      - name: Generate mixnet configuration
         shell: msys2 {0}
         run: |
-          export HIGHCTIDH_PORTABLE=1
-          export CGO_ENABLED=1
-          export GOEXPERIMENT=cgocheck2
-          export GODEBUG=cgocheck=1
-          export CGO_LDFLAGS="-Wl,--no-as-needed -Wl,-allow-multiple-definition"
-          go test -race -v -failfast -timeout 1h ./...;
+          cd cmd/genconfig && go build && ./genconfig --wirekem xwing --port 35000 --voting --baseDir /conf --outDir ../../docker/mixnet-alpine/
+
+      - name: Run ${{ matrix.test-suite.name }} unit tests
+        shell: msys2 {0}
+        run: cd ${{ matrix.test-suite.path }} && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout ${{ matrix.test-suite.timeout }} ./...

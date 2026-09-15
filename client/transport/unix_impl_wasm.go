@@ -1,0 +1,13 @@
+// SPDX-FileCopyrightText: Copyright (C) 2026 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//go:build wasm
+
+package transport
+
+import "errors"
+
+// Listen creates a unix-domain-socket listener bound to c.Address.
+func (c *UnixListenConfig) Listen() (Listener, error) {
+	return nil, errors.New("not implemented")
+}

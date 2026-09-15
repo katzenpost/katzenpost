@@ -25,80 +25,9 @@ import (
 	"net/url"
 
 	"github.com/fxamacker/cbor/v2"
-
-	"golang.org/x/net/idna"
-
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem"
-	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/nike/schemes"
-	"github.com/katzenpost/hpqc/sign"
-
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/loops"
 )
-
-const (
-	DescriptorVersion = "v0"
-)
-
-var (
-	ErrNoSignature       = errors.New("MixDescriptor has no signature")
-	ErrInvalidSignature  = errors.New("MixDescriptor has an invalid signature")
-	ErrTooManySignatures = errors.New("MixDescriptor has more than one signature")
-)
-
-type SignedUpload struct {
-	// Signature is the signature over the serialized SignedUpload.
-	Signature *cert.Signature
-
-	// MixDescriptor is the mix descriptor.
-	MixDescriptor *MixDescriptor
-
-	// LoopStats is the mix loop statistics.
-	LoopStats *loops.LoopStats
-}
-
-func (s *SignedUpload) Marshal() ([]byte, error) {
-	return ccbor.Marshal(s)
-}
-
-func (s *SignedUpload) Unmarshal(data []byte) error {
-	return cbor.Unmarshal(data, s)
-}
-
-func (s *SignedUpload) Sign(privKey sign.PrivateKey, pubKey sign.PublicKey) error {
-	if s.Signature != nil {
-		return errors.New("SignedUpload already has a signature")
-	}
-	blob, err := s.Marshal()
-	if err != nil {
-		return err
-	}
-	sig := &cert.Signature{
-		PublicKeySum256: hash.Sum256From(pubKey),
-		Payload:         privKey.Scheme().Sign(privKey, blob, nil),
-	}
-	s.Signature = sig
-	return nil
-}
-
-func (s *SignedUpload) Verify(pubKey sign.PublicKey) bool {
-	ss := &SignedUpload{
-		Signature:     nil,
-		MixDescriptor: s.MixDescriptor,
-		LoopStats:     s.LoopStats,
-	}
-	blob, err := ss.Marshal()
-	if err != nil {
-		return false
-	}
-
-	return pubKey.Scheme().Verify(pubKey, blob, s.Signature.Payload, nil)
-}
 
 // MixDescriptor is a description of a given Mix or Provider (node).
 type MixDescriptor struct {
@@ -123,7 +52,13 @@ type MixDescriptor struct {
 
 	// Kaetzchen is the map of provider autoresponder agents by capability
 	// to parameters.
-	Kaetzchen map[string]map[string]interface{} `cbor:"omitempty"`
+	Kaetzchen map[string]map[string]interface{}
+
+	// KaetzchenAdvertizedData is used by the operator to advertize
+	// additional information about specific services. This is different
+	// from the above Kaetzchen map in that these keys will never be
+	// modified or passed over commandline to the plugin.
+	KaetzchenAdvertizedData map[string]map[string]interface{}
 
 	// IsGatewayNode indicates that this Mix is a gateway node.
 	// Essentially a gateway allows clients to interact with the mixnet.
@@ -146,24 +81,6 @@ type MixDescriptor struct {
 	Version string
 }
 
-type mixdescriptor MixDescriptor
-
-func (d *MixDescriptor) UnmarshalMixKeyAsNike(epoch uint64, g *geo.Geometry) (nike.PublicKey, error) {
-	s := schemes.ByName(g.NIKEName)
-	if s == nil {
-		panic("failed to get a NIKE scheme")
-	}
-	return s.UnmarshalBinaryPublicKey(d.MixKeys[epoch])
-}
-
-func (d *MixDescriptor) UnmarshalMixKeyAsKEM(epoch uint64, g *geo.Geometry) (kem.PublicKey, error) {
-	k := kemschemes.ByName(g.KEMName)
-	if k == nil {
-		panic("failed to get a KEM scheme")
-	}
-	return k.UnmarshalBinaryPublicKey(d.MixKeys[epoch])
-}
-
 // String returns a human readable MixDescriptor suitable for terse logging.
 func (d *MixDescriptor) String() string {
 	kaetzchen := ""
@@ -175,6 +92,8 @@ func (d *MixDescriptor) String() string {
 	s += kaetzchen + d.AuthenticationType + "}"
 	return s
 }
+
+type mixdescriptor MixDescriptor
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
@@ -219,52 +138,9 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			return fmt.Errorf("Descriptor contains empty Address list for transport '%v'", transport)
 		}
 
-		var expectedIPVer int
-		switch transport {
-		case TransportInvalid:
-			return fmt.Errorf("Descriptor contains invalid Transport")
-		case TransportTCPv4:
-			expectedIPVer = 4
-		case TransportTCPv6:
-			expectedIPVer = 6
-		case TransportHTTP:
-		case TransportTCP:
-			// Ignore transports that don't have validation logic.
-			continue
-		default:
-			// Unknown transports are only supported between the client and
-			// gateway.
-			if !d.IsGatewayNode {
-				return fmt.Errorf("Non-gateway published Transport '%v'", transport)
-			}
-		}
-
-		// Validate all addresses belonging to the TCP variants.
 		for _, v := range addrs {
-			u, err := url.Parse(v)
-			if err != nil {
+			if err := isDescriptorAddressWellFormed(transport, v, d.IsGatewayNode, true); err != nil {
 				return err
-			}
-			switch u.Scheme {
-			case TransportWS, TransportTCP, TransportTCPv4, TransportTCPv6, TransportHTTP:
-			default:
-				return fmt.Errorf("Unsupported listener scheme '%v': %v", v, u.Scheme)
-			}
-
-			switch expectedIPVer {
-			case 4, 6:
-				if ver, err := getIPVer(u.Hostname()); err != nil {
-					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
-				} else if ver != expectedIPVer {
-					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': IP version mismatch", transport, v)
-				}
-			default:
-				// This must be TransportTCP or something else that supports
-				// "sensible" DNS style hostnames.  Validate that they are
-				// at least somewhat well formed.
-				if _, err := idna.Lookup.ToASCII(u.Hostname()); err != nil {
-					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
-				}
 			}
 		}
 	}
@@ -280,6 +156,31 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			return fmt.Errorf("Descriptor contains invalid Kaetzchen block: %v", err)
 		}
 	}
+	return nil
+}
+
+func isDescriptorAddressWellFormed(transport, addr string, isGatewayNode bool, allowOnion bool) error {
+	u, err := url.Parse(addr)
+	if err != nil {
+		return err
+	}
+
+	switch u.Scheme {
+	case TransportWS, TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC:
+		if _, _, err := net.SplitHostPort(u.Host); err != nil {
+			return fmt.Errorf("invalid descriptor address %q for transport %q: %w", addr, transport, err)
+		}
+	case TransportOnion:
+		if !allowOnion {
+			return errors.New("Onion Transport not yet supported in pigeonhole storage replica")
+		}
+		if !isGatewayNode {
+			return fmt.Errorf("Non-gateway published Transport '%v'", transport)
+		}
+	default:
+		return fmt.Errorf("Unsupported listener scheme '%v': %v", addr, u.Scheme)
+	}
+
 	return nil
 }
 
@@ -318,16 +219,88 @@ func validateKaetzchen(m map[string]map[string]interface{}) error {
 	return nil
 }
 
-func getIPVer(h string) (int, error) {
-	ip := net.ParseIP(h)
-	if ip != nil {
-		switch {
-		case ip.To4() != nil:
-			return 4, nil
-		case ip.To16() != nil:
-			return 6, nil
-		default:
+// ReplicaDescriptor describe pigeonhole storage replica nodes.
+type ReplicaDescriptor struct {
+	// Name is the unique name of the pigeonhole storage replica.
+	Name string
+
+	// ReplicaID is the static uint8 identifier for this replica.
+	// All dirauths and replicas must agree on this value.
+	ReplicaID uint8
+
+	// Epoch is the Epoch in which this descriptor was created
+	Epoch uint64
+
+	// IdentityKey is the node's identity (signing) key.
+	IdentityKey []byte
+
+	// LinkKey is our PQ Noise Public Key.
+	LinkKey []byte
+
+	// EnvelopeKeys is mapping from Replica Epoch ID to Public NIKE Key used with our MKEM scheme.
+	EnvelopeKeys map[uint64][]byte
+
+	// Addresses is the map of transport to address combinations that can
+	// be used to reach the node.
+	Addresses map[string][]string
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
+func (d *ReplicaDescriptor) Unmarshal(data []byte) error {
+	return cbor.Unmarshal(data, d)
+}
+
+// MarshalBinary implmements encoding.BinaryMarshaler
+func (d *ReplicaDescriptor) Marshal() ([]byte, error) {
+	return ccbor.Marshal(d)
+}
+
+func (d *ReplicaDescriptor) String() string {
+	if d == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("{%s %x %v}", d.Name, d.IdentityKey, d.Addresses)
+}
+
+// IsReplicaDescriptorWellFormed validates the descriptor and returns a descriptive
+// error iff there are any problems that would make it unusable as part of
+// a PKI Document.
+func IsReplicaDescriptorWellFormed(d *ReplicaDescriptor, epoch uint64) error {
+	if d.Name == "" {
+		return fmt.Errorf("ReplicaDescriptor missing Name")
+	}
+	if len(d.Name) > constants.NodeIDLength {
+		return fmt.Errorf("ReplicaDescriptor Name '%v' exceeds max length", d.Name)
+	}
+	if d.LinkKey == nil {
+		return fmt.Errorf("ReplicaDescriptor missing LinkKey")
+	}
+	if d.IdentityKey == nil {
+		return fmt.Errorf("ReplicaDescriptor missing IdentityKey")
+	}
+
+	if d.EnvelopeKeys == nil {
+		return errors.New("ReplicaDescriptor EnvelopeKeys is nil")
+	}
+	if len(d.EnvelopeKeys) == 0 {
+		return errors.New("ReplicaDescriptor EnvelopeKeys is zero size")
+	}
+
+	if len(d.Addresses) == 0 {
+		return fmt.Errorf("ReplicaDescriptor missing Addresses")
+	}
+	for transport, addrs := range d.Addresses {
+		if len(addrs) == 0 {
+			return fmt.Errorf("ReplicaDescriptor contains empty Address list for transport '%v'", transport)
+		}
+		for _, v := range addrs {
+			if err := isDescriptorAddressWellFormed(transport, v, false, false); err != nil {
+				return err
+			}
 		}
 	}
-	return 0, fmt.Errorf("address is not an IP")
+	if len(d.Addresses) == 0 {
+		return fmt.Errorf("ReplicaDescriptor contains no addresses")
+	}
+	return nil
 }

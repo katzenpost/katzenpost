@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -29,14 +30,17 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -62,9 +66,25 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
 
+	// Helper function to get peer name
+	// Helper function to get peer name - returns name and whether peer was found in PKI
+	getPeerName := func() (string, bool) {
+		if doc, err := c.co.glue.PKI().CurrentDocument(); err == nil && doc != nil {
+			var adHash [32]byte
+			copy(adHash[:], creds.AdditionalData)
+			if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
+				return node.Name, true
+			}
+		}
+		return "", false
+	}
+
 	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
-		c.log.Debug("IsPeerValid false, identity hash mismatch")
+		// We know what we expected (c.dst.Name) even if the peer isn't in PKI
+		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash mismatch connecting to '%s' (expected=%x, received=%x)", c.dst.Name, idHash[:], creds.AdditionalData)
+		c.log.Debugf("server/outgoing: IsPeerValid(): Expected identity key (raw): %x, Received link key: %s",
+			c.dst.IdentityKey, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
@@ -72,7 +92,9 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		panic(err)
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
-		c.log.Debug("IsPeerValid false, link key mismatch")
+		c.log.Warningf("server/outgoing: IsPeerValid(): Link key mismatch for peer '%s' (identity_hash=%x)", c.dst.Name, creds.AdditionalData)
+		c.log.Debugf("server/outgoing: IsPeerValid(): Expected link key (raw): %x, Received link key: %s",
+			c.dst.LinkKey, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 
@@ -82,7 +104,14 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	_, c.canSend, isValid = c.co.glue.PKI().AuthenticateConnection(creds, true)
 
 	if !isValid {
-		c.log.Debug("failed to authenticate connect via latest PKI doc")
+		peerName, found := getPeerName()
+		if found {
+			c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer '%s' via latest PKI doc", peerName)
+		} else {
+			c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer via latest PKI doc (identity_hash=%x not in current PKI)", creds.AdditionalData)
+		}
+		c.log.Debugf("server/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 	}
 	return isValid
 }
@@ -91,16 +120,21 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 	select {
 	case c.ch <- pkt:
 	default:
-		// Drop-tail.  This would be better as a RingChannel from the channels
-		// package (Drop-head), but it doesn't provide a way to tell if the
-		// item was discared or not.
+		// Drop-tail.  This would be better as a RingChannel from the
+		// channels package (Drop-head), but it doesn't provide a way to
+		// tell if the item was discarded or not.
 		//
-		// The drops here should basically only happen if the link is down,
-		// since the connection worker will handle dropping packets when the
-		// link is congested.
+		// The drops here should basically only happen if the link is
+		// down, since the connection worker will handle dropping packets
+		// when the link is congested.
 		//
-		// Note: Not logging here because this would get spammy, and we may be
-		// under catastrophic load, in which case we can't afford to log.
+		// Not logging at this site because it would get spammy and we
+		// may be under catastrophic load, but the prometheus counter
+		// rolls up cheaply and gives operators a visible signal that
+		// the per-peer outgoing buffer is full.
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("outgoing_queue_full")
+		instrument.OutgoingPacketsDropped()
 		pkt.Dispose()
 	}
 }
@@ -228,6 +262,11 @@ func (c *outgoingConn) worker() {
 				}
 			}
 			c.log.Debugf("%v connection established.", u.Scheme)
+			// Disable Nagle so handshake/finalisation messages do not
+			// wait on a coalesce timer; harmless on non-TCP transports.
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				tcpConn.SetNoDelay(true)
+			}
 			instrument.Outgoing()
 			start := time.Now()
 
@@ -266,6 +305,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.co.glue.LinkKey(),
 		RandomReader:      rand.Reader,
+		HandshakeTimeout:  time.Duration(c.co.glue.Config().Debug.HandshakeTimeout) * time.Millisecond,
 	}
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
@@ -276,13 +316,58 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
-	conn.SetDeadline(time.Now().Add(timeoutMs))
-	if err = w.Initialize(conn); err != nil {
-		c.log.Errorf("Handshake failed: %v", err)
+	handshakeStart := time.Now()
+	if err = w.Initialize(context.Background(), conn); err != nil {
+		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("outgoing", state)
+		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
+
+		localAddr := ""
+		if conn.LocalAddr() != nil {
+			localAddr = conn.LocalAddr().String()
+		}
+
+		remoteAddr := ""
+		if conn.RemoteAddr() != nil {
+			remoteAddr = conn.RemoteAddr().String()
+		}
+
+		peerIdentityHash := hash.Sum256(c.dst.IdentityKey)
+
+		var descriptorAddrs []string
+		for _, transport := range cpki.InternalTransports {
+			descriptorAddrs = append(descriptorAddrs, c.dst.Addresses[transport]...)
+		}
+
+		if he, ok := wire.GetHandshakeError(err); ok {
+			he.WithPeerName(c.dst.Name)
+		}
+
+		c.log.Errorf(
+			"Handshake failed peer=%s identity_hash=%x descriptor_addrs=%s local=%s remote=%s after=%v timeout=%v: %v",
+			c.dst.Name,
+			peerIdentityHash[:],
+			strings.Join(descriptorAddrs, ","),
+			localAddr,
+			remoteAddr,
+			handshakeElapsed,
+			timeoutMs,
+			err,
+		)
+
+		// Log detailed debug info (contains IPs, keys) at debug level only
+		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
-	c.log.Debugf("Handshake completed.")
-	conn.SetDeadline(time.Time{})
+	handshakeElapsed := time.Since(handshakeStart)
+	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
+	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 
 	// Since outgoing connections have no reverse traffic, read from the
@@ -312,13 +397,15 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			if !ok {
 				return
 			}
+
 			cmd := commands.SendPacket{
 				SphinxPacket: pkt.Raw,
 				Cmds:         w.GetCommands(),
 			}
-			if err := w.SendCommand(&cmd); err != nil {
+			if err := w.SendCommand(context.Background(), &cmd); err != nil {
 				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.ID, err)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("outgoing_send_command_failed")
 				instrument.OutgoingPacketsDropped()
 				pkt.Dispose()
 				return
@@ -364,6 +451,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 				instrument.DeadlineBlownPacketsDropped()
 				instrument.OutgoingPacketsDropped()
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("outgoing_send_deadline_blown")
 				pkt.Dispose()
 				continue
 			}
@@ -375,6 +463,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			c.log.Debugf("Dropping packet: %v (Not yet connected to outbound mix node.)", pkt.ID)
 			instrument.OutgoingPacketsDropped()
 			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("outgoing_peer_not_connected")
 			pkt.Dispose()
 			continue
 		}

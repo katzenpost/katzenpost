@@ -28,45 +28,273 @@ uncertainty is in regards to trying to link incoming messages with the
 outgoing messages.
 
 
+## Pigeonhole: a storage layer atop the mixnet
+
+Beyond mix routing itself, Katzenpost provides a storage layer called
+Pigeonhole. Applications communicate through encrypted, append-only
+streams composed of fixed-size, padded Boxes that are sharded across
+storage replicas via consistent hashing (two replicas per Box). Access
+is governed by cryptographic capabilities: a write capability can
+append messages or place tombstones, whilst a separate read capability
+decrypts and verifies without conferring any ability to write. Streams
+are single-writer and multi-reader, and unlinkable in the sense that
+storage servers cannot tell which messages belong to the same stream.
+Storage is ephemeral: Boxes are garbage-collected after roughly two
+weeks, so Pigeonhole is not intended as long-term archival storage.
+
+Clients never speak to replicas directly. Each Pigeonhole operation
+is carried as a Sphinx round-trip through the mix layers to a courier
+service, which then forwards the request to the appropriate replicas
+on fixed-throughput connections so that traffic patterns reveal
+nothing to an outside observer. Many higher-level protocols (group
+chat, file transfer, request-response services) compose readily on
+top of these streams by sharing read capabilities out-of-band.
+
+For a developer-oriented introduction see
+[Understanding Pigeonhole](https://katzenpost.network/docs/pigeonhole_explained/);
+for the wire-level details see the
+[Pigeonhole specification](https://katzenpost.network/docs/specs/pigeonhole/)
+and §§4-5 of the [Echomix paper](https://arxiv.org/abs/2501.02933).
+
+
 # Project Status
 
-Many excited new changes are forthcoming!
-You can watch our progress being tracked, here:
+The designs presented in our
+[Echomix paper](https://arxiv.org/abs/2501.02933) are now implemented.
+The paper offers a broad overview of Katzenpost; for the present
+codebase the two sections that map most directly onto the code are §4,
+which describes **BACAP** (the blinding-and-capability scheme used to
+derive Box identifiers and the read/write capabilities), and §5, which
+describes the **Pigeonhole protocol** (couriers, replicas, sharding,
+copy commands, and tombstones).
 
-https://github.com/orgs/katzenpost/projects/6/views/5
+The paper is the high-level treatment; the focused normative
+specifications live on the website:
+
+* [Pigeonhole Protocol Specification](https://katzenpost.network/docs/specs/pigeonhole/)
+* [Group Chat Protocol Specification](https://katzenpost.network/docs/specs/group_chat/)
+* [Thin Client Specification](https://katzenpost.network/docs/specs/thin_client/)
+
+For the messaging client application see the
+[Katzenqt repository](https://github.com/katzenpost/katzenqt).
+
+
+# Architecture
+
+The repository is a Go monorepo. Each top-level directory is either a
+library shared between components, a long-lived component (mix server,
+dirauth, courier, replica, client daemon), or one of the entry-point
+binaries under `cmd/`.
+
+```
+katzenpost/
+├── cmd/                       # Executable entry points (one per binary)
+│   ├── server/                # Mix node (gateway, service, or mix)
+│   ├── dirauth/               # Directory authority node
+│   ├── kpclientd/             # Client daemon
+│   ├── courier/               # Pigeonhole courier service
+│   ├── replica/               # Pigeonhole storage replica
+│   ├── genconfig/             # TOML configuration generator
+│   ├── ping/                  # Round-trip connectivity test
+│   ├── fetch/                 # PKI document fetcher
+│   ├── sphinx/                # Sphinx packet diagnostic tool
+│   ├── geometry/              # Sphinx and Pigeonhole geometry generator
+│   ├── genkeypair/            # Key pair generator
+│   ├── echo-plugin/           # Echo service plugin (example)
+│   ├── http-proxy-client/     # HTTP-over-mixnet proxy client
+│   └── http-proxy-server/     # HTTP-over-mixnet proxy server
+│
+├── core/                      # Primitives shared by every component
+│   ├── sphinx/                # Sphinx packet format (NIKE and KEM variants)
+│   ├── wire/                  # PQ Noise wire protocol over TCP
+│   ├── pki/                   # PKI document types and verification
+│   ├── cert/                  # Multi-signature certificate scheme
+│   ├── epochtime/             # Epoch arithmetic (the system's heartbeat)
+│   ├── genconfig/             # Programmatic config generation library
+│   ├── log/                   # Logging facade
+│   ├── queue/                 # Priority queues used by the scheduler
+│   ├── retry/                 # Retry/backoff helpers
+│   ├── thwack/                # Lightweight management protocol
+│   ├── utils/                 # Misc utilities (constants, hash helpers)
+│   ├── worker/                # Worker goroutine helpers with HaltCh
+│   └── compat/                # OS compatibility shims
+│
+├── authority/                 # Directory authority (voting consensus PKI)
+│   └── voting/
+│       ├── client/            # PKI client used by mixes and clients
+│       └── server/            # Voting protocol server (the dirauth)
+│
+├── server/                    # Mix node, used as gateway/service/mix
+│   ├── config/                # Server TOML schema
+│   ├── internal/              # Wire-up of the node's subsystems:
+│   │   ├── gateway/           #   gateway-specific behavior
+│   │   ├── incoming/          #   inbound wire connections
+│   │   ├── outgoing/          #   outbound wire connections
+│   │   ├── cryptoworker/      #   Sphinx unwrap workers
+│   │   ├── scheduler/         #   per-hop delay scheduler
+│   │   ├── decoy/             #   decoy traffic generator
+│   │   ├── mixkey/            #   per-epoch mix keys (memory-only)
+│   │   ├── pki/               #   PKI fetch loop
+│   │   └── service/kaetzchen/ #   service node plugin host
+│   ├── cborplugin/            # CBOR-over-stdio plugin protocol
+│   └── spool/                 # Gateway message spool storage
+│
+├── client/                    # Client daemon and thin client API
+│   ├── thin/                  # Thin-client API (Go reference; Rust and Python live in thin_client repo)
+│   ├── config/                # Client TOML schema
+│   ├── transport/             # Daemon to gateway transport
+│   ├── arq.go, daemon.go, …   # ARQ resend, connection state, dispatch
+│   └── pigeonhole.go          # Pigeonhole channel logic in the daemon
+│
+├── courier/                   # Pigeonhole courier service plugin
+│   └── server/                # Plugin host, replica fan-out, copy state
+│
+├── replica/                   # Pigeonhole storage replica (Pebble)
+│   ├── common/                # Shared types (envelope keys, sharding)
+│   ├── config/                # Replica TOML schema
+│   ├── handlers.go            # Read/write/proxy/replication handlers
+│   ├── envelope_epoch.go      # Envelope key rotation window
+│   ├── pkiworker.go           # PKI fetch loop
+│   ├── integration_tests/     # Courier <-> replica end-to-end tests
+│   └── cryptography_model_tests/  # Crypto model tests
+│
+├── pigeonhole/                # Pigeonhole protocol layer (shared)
+│   ├── pigeonhole_messages.trunnel  # Wire schema (regenerate via go generate)
+│   ├── trunnel_messages.go    # Generated; do not hand-edit
+│   ├── geo/                   # Pigeonhole packet geometry
+│   ├── copy_stream.go         # Streaming all-or-nothing copy state
+│   └── errors.go              # Pigeonhole-level error codes
+│
+├── common/                    # Cross-component helpers (CLI, PEM, lambda)
+├── loops/                     # Decoy-loop packet-loss heat map types
+├── quic/                      # Optional QUIC transport (in progress)
+├── tools/                     # Operator scripts (e.g. mixnet-params.py)
+└── docker/                    # Local docker mixnet for development
+    ├── Makefile               # start/stop/watch targets
+    └── mixnet-alpine/         # Generated configs and binaries (one dir per distro)
+```
+
+For the Pigeonhole storage system specifically, the courier and
+replica together implement the design described in §5 of the
+[Echomix paper](https://arxiv.org/abs/2501.02933); the BACAP scheme
+they rely on lives in the [hpqc repository](https://github.com/katzenpost/hpqc)
+under `bacap/`.
 
 
 # Building Katzenpost
 
-To build all server related components, type "make" when inside this repo:
+For a guided walk-through with pinned versions of every component
+(katzenpost, hpqc, thin_client, katzenqt) see the
+[Build from source](https://katzenpost.network/docs/build_from_source/)
+page on the website. The instructions below cover the in-tree
+Makefile targets.
 
+## Build Targets
+
+The root Makefile provides several build targets for different components:
+
+### Standard Components
+
+Most Katzenpost components require Go and basic build tools.
+To build all components, use:
+
+**Debian/Ubuntu users** should first install build essentials:
 ```bash
-cd katzenpost
-make
+sudo apt-get update
+sudo apt-get install -y build-essential
 ```
 
-# Client:
+and then build:
+```bash
+cd katzenpost
+make all
+```
 
-Currently, [Katzen](https://github.com/katzenpost/katzen) is the only client available for use with Katzenpost. However a SOCKS proxy client is forthcoming
-and you'll be able to use that with many existing applications.
+This builds all executables in the `cmd/` directory:
+- **server** - Mix server node
+- **dirauth** - Directory authority node
+- **genconfig** - Configuration file generator
+- **ping** - Network connectivity testing tool
+- **courier** - Pigeonhole protocol Message courier service
+- **replica** - Pigeonhole protocol storage replica
+- **echo-plugin** - Echo service plugin
+- **fetch** -  Utility for fetching the PKI doc
+- **genkeypair** - Cryptographic key pair generator
+- **geometry** - Sphinx and Pigeonhole geometry generator
+- **http-proxy-client** - HTTP proxy client
+- **http-proxy-server** - HTTP proxy server
+- **kpclientd** - Katzenpost client daemon
+- **sphinx** - Sphinx cryptographic packet tool
 
-# Server Side Usage/Configuration
+### Individual Components
+You can also build individual components:
 
-Our docker configuration is the most comprehensive and up to date
-place to learn about how to configure a Katzenpost mix network. Run
-the makefile in the docker directory to get a usage menu:
+```bash
+make server      # Build just the mix server
+make dirauth     # Build just the directory authority
+make genconfig   # Build just the config generator
+# ... etc for any component
+```
+
+### Replica Component
+
+The replica uses Pebble for storage and is a standard pure-Go
+component, so it builds with the same commands as everything else:
+
+```bash
+make replica               # Build the replica executable
+make test-replica          # Run replica unit tests
+make bench-replica         # Run replica benchmarks
+```
+
+### Cleaning Built Binaries
+To remove all built executables:
+
+```bash
+make clean
+```
+
+
+# Developers Corner
+
+If you are writing an application against Katzenpost rather than
+hacking on the daemons themselves, the place to start is the thin
+client documentation:
+
+* [Understanding Pigeonhole](https://katzenpost.network/docs/pigeonhole_explained/) - high-level model of streams, capabilities, couriers and replicas
+* [Thin Client How-to Guide](https://katzenpost.network/docs/thin_client_howto/) - task-oriented guides for the thin client API
+* [Thin Client API Reference](https://katzenpost.network/docs/thin_client_api_reference/) - complete reference for the Go, Rust, and Python bindings
+* [Thin Client Specification](https://katzenpost.network/docs/specs/thin_client/) - wire-level details
+
+For those modifying the daemons themselves, our docker configuration
+is the most comprehensive and up to date place to learn about how to
+configure a Katzenpost mix network. It's also very useful for
+developers working on Katzenpost whether there's a task like adding a
+new core feature or a new mixnet service plugin.
+
+Run the makefile in the docker directory to get a usage menu:
 
 ```bash
 $ cd katzenpost/docker; make 
 These make targets allow you to control the test network:
- run                - run the testnet in the foreground, until ctrl-C
- start              - start the testnet in the background
+ config-only        - generate configuration files only (no docker containers)
+ start              - start the testnet
  stop               - stop the testnet
+ client-restart     - restart just the kpclientd daemon
+ client-logs        - view kpclientd daemon logs
  wait               - wait for testnet to have consensus
  watch              - tail -F all logs
+ watch-replicas     - monitor all replica logs
+ watch-auth         - monitor all directory authority logs
+ watch-mixes        - monitor all mix node logs
+ watch-courier      - monitor courier service log
+ watch-servicenode  - monitor service node log
+ watch-gateway      - monitor gateway log
+ watch-all-separate - monitor all logs with component labels
  status             - show testnet consensus status
  show-latest-vote   - does what it says
  run-ping           - send a ping over the testnet
+ clean-bin          - stop, and delete compiled binaries
  clean-local        - stop, and delete data and binaries
  clean-local-dryrun - show what clean-local would delete
  clean              - the above, plus cleans includes go_deps images
@@ -75,27 +303,79 @@ These make targets allow you to control the test network:
 **You can run a docker mixnet locally and then inspect the configuration files
 to learn how to configure a Katzenpost mixnet.**
 
-
-Documentation is a work in progress:
-
-* [mix server docs](docs/handbook/mix_server.rst)
-
-* [dirauth server docs](docs/handbook/voting_pki.rst)
+* [Using the Katzenpost Docker test mix network](https://katzenpost.network/docs/admin_guide/docker.html)
 
 
+## Regenerating the pigeonhole wire message types
 
-# Expert's Corner
+The pigeonhole wire types in `pigeonhole/pigeonhole_messages.trunnel`
+are compiled to Go via our fork of
+[trunnel](https://github.com/mmcloughlin/trunnel). `go generate` runs
+a build driver that shells out to a `trunnel` binary, so the binary
+needs to be on your `$PATH` before you can regenerate anything.
+
+Install the Katzenpost trunnel fork (requires Go 1.17+):
+
+```bash
+go install github.com/katzenpost/trunnel/cmd/trunnel@latest
+```
+
+Make sure `$GOPATH/bin` (or `$GOBIN`) is on your `$PATH`; a quick
+`which trunnel` confirms the install landed where the build driver
+looks first. Then regenerate:
+
+```bash
+cd pigeonhole
+go generate ./...
+```
+
+This rewrites `pigeonhole/trunnel_messages.go` from the schema. **Do
+not hand-edit `trunnel_messages.go`** — edit the `.trunnel` schema and
+regenerate. If you change the schema, also update any padding
+assumptions in `pigeonhole/geo/geometry.go` and run the padding
+tests in `pigeonhole/`.
+
+
+# Documentation
+
+Documentation is a work in progress. The full documentation index is
+on the website:
+
+* [Katzenpost Documentation](https://katzenpost.network/docs/)
+
+**For operators:**
+
+* [Mixnet Admin Guide](https://katzenpost.network/docs/admin_guide/) - install, configure, and run a mix node, dirauth, courier, or replica
+* [Run a mix node in Docker](https://katzenpost.network/docs/run_katzenpost_mixnode_docker/) - containerised deployment recipe
+* [Build from source](https://katzenpost.network/docs/build_from_source/) - pinned versions of every component
+
+**For application developers:**
+
+* [Understanding Pigeonhole](https://katzenpost.network/docs/pigeonhole_explained/)
+* [Thin Client How-to Guide](https://katzenpost.network/docs/thin_client_howto/)
+* [Thin Client API Reference](https://katzenpost.network/docs/thin_client_api_reference/)
+
+**Specifications:**
+
+* [Specifications index](https://katzenpost.network/docs/specs/)
+* [Pigeonhole Protocol](https://katzenpost.network/docs/specs/pigeonhole/)
+* [Group Chat Protocol](https://katzenpost.network/docs/specs/group_chat/)
+* [Thin Client](https://katzenpost.network/docs/specs/thin_client/)
+* [Contact Voucher](https://katzenpost.network/docs/specs/contact_voucher/)
+
+
+# Researcher's Corner
 
 Katzenpost is an unverified decryption mix network that uses a continuous time
-mixing strategy with client selected exponential delays and a stratified (layered) topology. 
+mixing strategy with client selected exponential delays and a stratified routing topology. 
 
-Our documentation is in progress, but we have some resources for experts:
+We have some resources for experts:
 
-* Out mix net design literature review, can be found [here.](https://katzenpost.network/research/Literature_overview__website_version.pdf)
+* [Mixnet Threat Model Document](https://katzenpost.network/research/Threat_Model_Doc.pdf)
 
-* Our threat model document, work-in-progress, can be found [here.](https://katzenpost.network/research/Threat_Model_Doc.pdf)
+* [Mixnet Literature Review](https://katzenpost.network/research/Literature_overview__website_version.pdf)
 
-* Our design specification documents are available [here.](https://github.com/katzenpost/katzenpost/tree/main/docs/specs)
+* Our research paper, thus far self-published: [Echomix: a Strong Anonymity System with Messaging](https://arxiv.org/abs/2501.02933)
 
 
 ## Cryptographic Agility
@@ -117,6 +397,54 @@ allowing us to build protocols that are completely agnostic to the
 specific cryptographic primitive being used.  Secondly, each of these
 protocol implementations allows for the selection of the cryptographic
 primitive via it's TOML configuration file.
+
+Here's what primitives are available to you:
+
+| NIKE: Non-Interactive Key Exchange |
+|:---:|
+
+| Primitive | HPQC name | security |
+|  --------  |  -------  | -------  |
+| X25519 | "X25519" | classic |
+| X448 | "X448" | classic |
+| Implementations of CTIDH | "ctidh511", "ctidh512", "ctidh1024", "ctidh2048" | post-quantum |
+| hybrids of CTIDH with X25519 | "CTIDH512-X25519", "CTIDH1024-X25519" (alias "X25519-CTIDH1024") | hybrid |
+| hybrids of CTIDH with X448 | "CTIDH512-X448", "CTIDH1024-X448", "CTIDH2048-X448" | hybrid |
+
+__________
+
+| KEM: Key Encapsulation Mechanism |
+|:---:|
+
+
+| Primitive | HPQC name | security |
+|  --------  |  -------  | -------  | 
+| ML-KEM-768| "MLKEM768" | post-quantum |
+| XWING is a hybrid primitive that pre-combines ML-KEM-768 and X25519. Due to [security properties](https://eprint.iacr.org/2018/024) of our combiner, we also implement our own combination of the two below.| "XWING" | hybrid |
+| The sntrup4591761 version of the NTRU cryptosystem. | "sntrup4591761" | post-quantum |
+| FrodoKEM-640-SHAKE |"FrodoKEM-640-SHAKE"| post-quantum|
+| Various forms of the McEliece cryptosystem| "mceliece348864", "mceliece348864f", "mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f", "mceliece8192128", "mceliece8192128f" | post-quantum|
+|A hybrid of ML-KEM-768 and X25519. The [KEM Combiners paper](https://eprint.iacr.org/2018/024.pdf) is the reason we implemented our own combination in addition to including XWING. |"MLKEM768-X25519"| hybrid |
+|A hybrid of ML-KEM-768 and X448|"MLKEM768-X448"| hybrid |
+|A hybrid of FrodoKEM-640-SHAKE and X448|"FrodoKEM-640-SHAKE-X448"| hybrid |
+|A hybrid of NTRU and X448| "sntrup4591761-X448"| hybrid |
+|Hybrids of the McEliece primitives and X25519| "mceliece348864-X25519", "mceliece348864f-X25519", "mceliece460896-X25519", "mceliece460896f-X25519", "mceliece6688128-X25519", "mceliece6688128f-X25519", "mceliece6960119-X25519", "mceliece6960119f-X25519", "mceliece8192128-X25519", "mceliece8192128f-X25519" | hybrid|
+
+As well as all of the NIKE schemes through the KEM adapter, and any combinations of the above through the combiner.
+
+____________
+
+| SIGN: Cryptographic Signature Schemes |
+|:---:|
+
+
+| Primitive | HPQC name | security |
+|  --------  |  -------  |  -------  |
+| Ed25519 | "ed25519" | classic |
+| Ed448 | "ed448" | classic |
+| Sphincs+shake-256f | "Sphincs+" | post-quantum |
+| hybrids of Sphincs+ and ECC | "Ed25519-Sphincs+", "Ed448-Sphincs+" (legacy alias "Ed25519 Sphincs+" still resolves) | hybrid |
+|hybrids of Dilithium 2 and 3 with Ed25519 | "eddilithium2", "eddilithium3" | hybrid |
 
 
 ## Wire protocol based on Noise/PQ Noise
@@ -221,7 +549,7 @@ by the dirauth configuration. Clients also use this signature scheme to verify P
 We can optionally enable the use of pyroscope pprof profiling within the mix server
 by building with the "pyroscope" build tag:
 
-cd server/cmd/server; go build --tags pyroscope
+cd cmd/server; go build --tags pyroscope
 
 You'll have to setup a pyroscope server via these instructions, here:
 

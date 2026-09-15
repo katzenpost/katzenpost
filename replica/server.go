@@ -1,0 +1,634 @@
+// SPDX-FileCopyrightText: Copyright (C) 2025 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package replica
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
+	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
+	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/replica/config"
+	"github.com/katzenpost/katzenpost/replica/instrument"
+)
+
+// ErrGenerateOnly is the error returned when the server initialization
+// terminates due to the `GenerateOnly` debug config option.
+var ErrGenerateOnly = errors.New("server: GenerateOnly set")
+
+type GenericListener interface {
+	Halt()
+	CloseOldConns(interface{}) error
+	GetConnIdentities() (map[[constants.RecipientIDLength]byte]interface{}, error)
+}
+
+type GenericConnector interface {
+	Halt()
+	Server() *Server
+	OnClosedConn(conn *outgoingConn)
+	CloseAllCh() chan interface{}
+	ForceUpdate()
+	DispatchCommand(cmd commands.Command, idHash *[32]byte)
+	DispatchReplication(cmd *commands.ReplicaWrite)
+	QueueForRetry(cmd commands.Command, idHash [32]byte)
+	ConnectionCount() int
+}
+
+type Server struct {
+	// handlerWg tracks the asynchronous ReplicaMessage handler
+	// goroutines spawned by incoming connections. They outlive the
+	// connection worker that spawned them and reach into state, so
+	// halt() drains them before the database is closed.
+	handlerWg sync.WaitGroup
+
+	cfg *config.Config
+
+	PKIWorker *PKIWorker
+	listeners []GenericListener
+	state     *state
+	connector GenericConnector
+
+	identityPrivateKey sign.PrivateKey
+	identityPublicKey  sign.PublicKey
+	linkKey            kem.PrivateKey
+
+	envelopeKeys *EnvelopeKeys
+
+	// pigeonholeGeo is the Pigeonhole geometry derived once at startup
+	// from the Sphinx geometry and the configured replica NIKE scheme.
+	// The message handlers read it rather than re-deriving it per request.
+	pigeonholeGeo *pgeo.Geometry
+
+	// Proxy request manager for handling async proxy requests
+	proxyManager *ProxyRequestManager
+
+	// proxySema limits the number of concurrent proxy request goroutines
+	proxySema chan struct{}
+
+	// firstShardCandidate overrides which of a box's shard holders a
+	// proxy sweep tries first. Nil in production, where the choice is
+	// random; see Server.proxyFirstCandidate. A test pins it to drive
+	// the sweep at a named holder, so it is per-server rather than a
+	// package variable: replica tests run in parallel, and a shared one
+	// would be written by a test while another reads it mid-sweep.
+	firstShardCandidate atomic.Pointer[shardChooser]
+
+	// mkemOpCost is the wall-clock latency of one MKEM operation when
+	// the host is saturated, measured by the startup self-check. Every
+	// proxied attempt pays it once, for its encapsulation, before any
+	// waiting begins, so it is the smallest share of a sweep budget
+	// that an attempt can possibly make use of. Zero when no
+	// measurement is available, which disables the floor.
+	mkemOpCost time.Duration
+
+	logBackend *log.Backend
+	log        *logging.Logger
+
+	fatalErrCh chan error
+	haltedCh   chan interface{}
+	haltOnce   sync.Once
+}
+
+func (s *Server) initDataDir() error {
+	const dirMode = os.ModeDir | 0700
+	d := s.cfg.DataDir
+
+	// Initialize the data directory, by ensuring that it exists (or can be
+	// created), and that it has the appropriate permissions.
+	if fi, err := os.Lstat(d); err != nil {
+		// Directory doesn't exist, create one.
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("replica: failed to stat() DataDir: %v", err)
+		}
+		if err = os.Mkdir(d, dirMode); err != nil {
+			return fmt.Errorf("replica: failed to create DataDir: %v", err)
+		}
+	} else {
+		if !fi.IsDir() {
+			return fmt.Errorf("replica: DataDir '%v' is not a directory", d)
+		}
+		if fi.Mode() != dirMode {
+			return fmt.Errorf("replica: DataDir '%v' has invalid permissions '%v'", d, fi.Mode())
+		}
+	}
+
+	return nil
+}
+
+func (s *Server) LogBackend() *log.Backend {
+	return s.logBackend
+}
+
+// ProxyManager returns the proxy request manager
+func (s *Server) ProxyManager() *ProxyRequestManager {
+	return s.proxyManager
+}
+
+func (s *Server) initLogging() error {
+	p := s.cfg.Logging.File
+	if !s.cfg.Logging.Disable && s.cfg.Logging.File != "" {
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(s.cfg.DataDir, p)
+		}
+	}
+
+	var err error
+	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
+	if err == nil {
+		s.log = s.logBackend.GetLogger("replica")
+		s.log.Noticef("Katzenpost replica version: %s", kpcommon.Version())
+		if s.cfg.DisableDecoyTraffic {
+			s.log.Notice("Decoy traffic is DISABLED")
+		} else {
+			s.log.Notice("Decoy traffic is enabled")
+		}
+		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
+	}
+	return err
+}
+
+// Shutdown cleanly shuts down a given Server instance.
+func (s *Server) Shutdown() {
+	s.haltOnce.Do(func() { s.halt() })
+}
+
+// Wait waits till the server is terminated for any reason.
+func (s *Server) Wait() {
+	<-s.haltedCh
+}
+
+func (s *Server) halt() {
+	s.log.Noticef("Starting graceful shutdown.")
+
+	// The PKI worker goes first. It is the last remaining source of new
+	// work, and it writes envelope key files into DataDir and rebalances
+	// through state, both of which are torn down below.
+	if s.PKIWorker != nil {
+		s.PKIWorker.Halt()
+	}
+
+	// Then halt all listeners to stop accepting new connections
+	for _, listener := range s.listeners {
+		listener.Halt()
+	}
+
+	// Listener.Halt closes closeAllCh and waits for the connection
+	// workers, so no further handler goroutines can be spawned. Drain
+	// the ones already in flight before tearing down what they use:
+	// every point they block on selects on closeAllCh, so this cannot
+	// stall.
+	s.handlerWg.Wait()
+
+	// Then halt the connector to stop outgoing connections
+	if s.connector != nil {
+		s.connector.Halt()
+	}
+
+	if s.proxyManager != nil {
+		s.proxyManager.Shutdown()
+	}
+
+	// Now it's safe to close the database since no more requests are coming in
+	if s.state != nil {
+		s.state.Close()
+	}
+
+	// Finally halt other components
+	if s.envelopeKeys != nil {
+		s.envelopeKeys.Halt()
+	}
+
+	s.log.Noticef("Shutdown complete.")
+	close(s.haltedCh)
+}
+
+// reportFatal hands err to the fatal error watcher, which shuts the
+// server down. The send is non-blocking and fatalErrCh is buffered,
+// so a caller never blocks: one queued error is enough to bring the
+// server down, and the watcher is gone once shutdown has begun. A
+// blocking send would deadlock the callers that halt() waits for, and
+// closing the channel to release them would panic any send that lost
+// the race.
+func (s *Server) reportFatal(err error) {
+	select {
+	case s.fatalErrCh <- err:
+	default:
+		if s.log != nil {
+			s.log.Warningf("Fatal error while already shutting down: %v", err)
+		}
+	}
+}
+
+// RotateLog rotates the log file
+// if logging to a file is enabled.
+func (s *Server) RotateLog() {
+	err := s.logBackend.Rotate()
+	if err != nil {
+		s.reportFatal(fmt.Errorf("failed to rotate log file, shutting down server"))
+	}
+}
+
+// New returns a new Server instance parameterized with the specific
+// configuration.
+func New(cfg *config.Config) (*Server, error) {
+	return NewWithPKI(cfg, nil)
+}
+
+// NewWithPKI returns a new Server instance with a custom PKI implementation.
+// If pkiFactory is nil, the default PKI worker is used.
+func NewWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Server, error) {
+	return newServerWithPKI(cfg, pkiClient)
+}
+
+// newServerWithPKI is the internal implementation that supports both PKI factory and PKI client
+func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Server, error) {
+	s := new(Server)
+	s.cfg = cfg
+
+	// Do the early initialization and bring up logging.
+	if err := s.initDataDir(); err != nil {
+		return nil, err
+	}
+	if err := s.initLogging(); err != nil {
+		return nil, err
+	}
+
+	s.state = newState(s)
+	s.state.initDB()
+
+	// Discard any stored boxes older than the retention window before we
+	// begin serving, then start the periodic GC worker.
+	if err := s.state.WipeStaleBoxes(); err != nil {
+		s.log.Errorf("startup wipe of stale boxes failed: %s", err)
+	}
+	s.state.startGCWorker()
+	s.state.startStorageWatcher()
+
+	s.fatalErrCh = make(chan error, 1)
+	s.haltedCh = make(chan interface{})
+
+	s.log.Notice("Starting Katzenpost Pigeonhole Storage Replica")
+	if s.cfg.Logging.Level == "DEBUG" {
+		s.log.Warning("Debug logging is enabled.")
+	}
+
+	// Initialize cryptographic keys
+	if err := s.initIdentityKeys(); err != nil {
+		return nil, err
+	}
+	if err := s.initLinkKeys(); err != nil {
+		return nil, err
+	}
+	if err := s.initEnvelopeKeys(); err != nil {
+		return nil, err
+	}
+
+	s.logNodeIdentity()
+
+	// Ensure config defaults are set (tests may skip FixupAndValidate).
+	s.cfg.SetDefaultTimeouts()
+
+	// Derive the Pigeonhole geometry once from the Sphinx geometry and the
+	// configured replica NIKE scheme; the message handlers reuse it rather
+	// than re-deriving it on every request.
+	pigeonholeNIKE := nikeSchemes.ByName(s.cfg.ReplicaNIKEScheme)
+	if pigeonholeNIKE == nil {
+		return nil, fmt.Errorf("replica: invalid ReplicaNIKEScheme %q", s.cfg.ReplicaNIKEScheme)
+	}
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, pigeonholeNIKE)
+	if err != nil {
+		return nil, fmt.Errorf("replica: cannot derive Pigeonhole geometry: %w", err)
+	}
+	s.pigeonholeGeo = pigeonholeGeo
+
+	// Startup CTIDH self-check. Measures the per-core MKEM Decapsulate
+	// ops/sec rate on this host so ops teams have a concrete throughput
+	// ceiling number to reason about, exposed both as a log notice and
+	// as prometheus gauges. The measurement also feeds
+	// ApplyRuntimeDefaults below.
+	//
+	// The result is cached to <DataDir>/selfcheck.toml after the first
+	// successful measurement, so a restart on the same host reuses
+	// the cached numbers instead of paying the multi-second CTIDH
+	// cost again. loadOrRunMKEMSelfCheck handles invalidation when
+	// hostname or NumCPU changes.
+	selfCheck := loadOrRunMKEMSelfCheck(s.log, s.cfg.DataDir)
+
+	// Auto-derive runtime-tunable config values that the operator
+	// left unset. Operators on a single-replica-per-host deployment
+	// should leave ProxyWorkerCount, IncomingQueueSize and
+	// ProxyRequestTimeout absent from their TOML so this picks
+	// sensible values from runtime.NumCPU and the self-check's
+	// saturated ops/sec; explicit TOML values win and are intended
+	// only for multi-tenant or research workloads.
+	s.cfg.ApplyRuntimeDefaults(selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
+	s.log.Noticef("Replica runtime defaults: ProxyWorkerCount=%d, IncomingQueueSize=%d, ProxyRequestTimeout=%ds (derived from runtime.NumCPU=%d, saturated CTIDH=%.2f ops/s)",
+		s.cfg.ProxyWorkerCount, s.cfg.IncomingQueueSize, s.cfg.ProxyRequestTimeout,
+		selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
+
+	// Per-op latency under saturation, by Little's Law: with NumCPU
+	// operations in flight and OpsPerSecSaturated completing per
+	// second, each one takes NumCPU/OpsPerSecSaturated to finish. Not
+	// 1/OpsPerSecSaturated, which is the interval between completions
+	// rather than the latency of any one of them.
+	if selfCheck.OpsPerSecSaturated > 0 && selfCheck.NumCPU > 0 {
+		s.mkemOpCost = time.Duration(float64(selfCheck.NumCPU) / selfCheck.OpsPerSecSaturated * float64(time.Second))
+		s.log.Noticef("Replica proxy attempt floor: %v (one saturated MKEM operation)", s.mkemOpCost)
+	}
+
+	// Initialize proxy request manager and concurrency limiter.
+	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
+	s.proxySema = make(chan struct{}, s.cfg.ProxyWorkerCount)
+
+	if s.cfg.GenerateOnly {
+		return nil, ErrGenerateOnly
+	}
+
+	// Past this point, failures need to call s.Shutdown() to do cleanup.
+	isOk := false
+	defer func() {
+		if !isOk {
+			s.Shutdown()
+		}
+	}()
+
+	if err := s.startServices(pkiClient); err != nil {
+		return nil, err
+	}
+
+	if cfg.MetricsAddress != "" {
+		s.log.Noticef("Starting prometheus metrics listener on %s", cfg.MetricsAddress)
+	} else {
+		s.log.Notice("Prometheus metrics listener disabled (MetricsAddress not set)")
+	}
+	instrument.StartPrometheusListener(cfg.MetricsAddress, s.log)
+
+	isOk = true
+
+	// Check if we have a PKI document before rebalancing
+	if s.PKIWorker.HasCurrentPKIDocument() {
+		s.maybeStartupRebalance()
+	} else {
+		s.log.Notice("skipping initial rebalance - no PKI document available yet")
+	}
+
+	return s, nil
+}
+
+// maybeStartupRebalance invokes state.Rebalance unless the persisted
+// fingerprint records that we have already rebalanced against the
+// storage-replica set advertised by the current PKI document. The
+// guard exists to spare a process that crashed and restarted, or that
+// was administratively bounced, the cost of a full database scan when
+// the network membership has not in fact changed.
+func (s *Server) maybeStartupRebalance() {
+	doc := s.PKIWorker.LastCachedPKIDocument()
+	if doc == nil {
+		s.log.Notice("skipping initial rebalance - PKIWorker returned no cached document")
+		return
+	}
+	current := replicaSetFingerprint(doc)
+	persisted, ok, err := s.state.loadLastRebalanceFingerprint()
+	switch {
+	case err != nil:
+		s.log.Warningf("startup rebalance: failed to read persisted fingerprint, proceeding: %s", err)
+	case !ok:
+		s.log.Notice("performing rebalance after startup (no prior fingerprint recorded)")
+	case persisted == current:
+		s.log.Notice("skipping startup rebalance: storage-replica set unchanged since last rebalance")
+		return
+	default:
+		s.log.Notice("performing rebalance after startup (storage-replica set changed since last rebalance)")
+	}
+	if err := s.state.Rebalance("startup"); err != nil {
+		s.log.Errorf("failed to rebalance shares after startup: %s", err)
+	}
+}
+
+// logNodeIdentity emits a consolidated summary of this replica's identity and
+// the configuration an operator most often needs when a node is rejected from
+// consensus. Each of these fields is pinned by the directory authority, and a
+// disagreement on any one of them (a ReplicaID that does not match the
+// authority's pin, a stale identity or link key, the wrong advertised address,
+// or a swapped DataDir) is the usual cause of a node failing to appear in the
+// PKI document. Logging them in one place lets an operator confirm the running
+// node's identity from its own log rather than cross-referencing the
+// authorities.
+func (s *Server) logNodeIdentity() {
+	idPubKeyHash := hash.Sum256From(s.identityPublicKey)
+	linkPubKeyHash := hash.Sum256From(s.linkKey.Public())
+	s.log.Noticef("Replica node identity: Identifier=%q ReplicaID=%d", s.cfg.Identifier, s.cfg.ReplicaID)
+	s.log.Noticef("Replica identity public key hash: %x", idPubKeyHash[:])
+	s.log.Noticef("Replica link public key hash: %x", linkPubKeyHash[:])
+	s.log.Noticef("Replica schemes: PKISignature=%q WireKEM=%q ReplicaNIKE=%q",
+		s.cfg.PKISignatureScheme, s.cfg.WireKEMScheme, s.cfg.ReplicaNIKEScheme)
+	s.log.Noticef("Replica addresses: announce=%v bind=%v DataDir=%q",
+		s.cfg.Addresses, s.cfg.BindAddresses, s.cfg.DataDir)
+	s.log.Noticef("Replica storage limits: MaxStorageMiB=%d MinFreeStorageMiB=%d",
+		s.cfg.MaxStorageMiB, s.cfg.MinFreeStorageMiB)
+}
+
+// initIdentityKeys initializes the server's identity keypair
+func (s *Server) initIdentityKeys() error {
+	s.log.Debug("ensuring identity keypair exists")
+	identityPrivateKeyFile := filepath.Join(s.cfg.DataDir, "identity.private.pem")
+	identityPublicKeyFile := filepath.Join(s.cfg.DataDir, "identity.public.pem")
+
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.PKISignatureScheme)
+	if pkiSignatureScheme == nil {
+		return errors.New("PKI Signature Scheme not found")
+	}
+
+	var err error
+	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
+	if err != nil {
+		return err
+	}
+
+	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.log.Noticef("Using Identity keypair which already exists: %s and %s", identityPrivateKeyFile, identityPublicKeyFile)
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
+		if err != nil {
+			return err
+		}
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
+		if err != nil {
+			return err
+		}
+	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.log.Noticef("Identity keypair does not exist, creating new keypair: %s and %s", identityPrivateKeyFile, identityPublicKeyFile)
+		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return err
+		}
+		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
+		if err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
+	}
+
+	idPubKeyHash := hash.Sum256From(s.identityPublicKey)
+	s.log.Noticef("Replica identity public key hash is: %x", idPubKeyHash[:])
+
+	return nil
+}
+
+// initLinkKeys initializes the server's link keypair
+func (s *Server) initLinkKeys() error {
+	s.log.Debug("ensuring link keypair exists")
+	scheme := kemSchemes.ByName(s.cfg.WireKEMScheme)
+	if scheme == nil {
+		return errors.New("KEM scheme not found in registry")
+	}
+	linkPrivateKeyFile := filepath.Join(s.cfg.DataDir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(s.cfg.DataDir, "link.public.pem")
+
+	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		return err
+	}
+
+	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		s.log.Noticef("Using Link keypair which already exists: %s and %s", linkPrivateKeyFile, linkPublicKeyFile)
+		linkPrivateKey, err = kempem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
+		if err != nil {
+			return err
+		}
+		_, err = kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
+		if err != nil {
+			return err
+		}
+	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		s.log.Noticef("Link keypair does not exist, creating new keypair: %s and %s", linkPrivateKeyFile, linkPublicKeyFile)
+		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
+		if err != nil {
+			return err
+		}
+		err = kempem.PublicKeyToFile(linkPublicKeyFile, linkPublicKey)
+		if err != nil {
+			return err
+		}
+	} else {
+		panic("Improbable: Only found one link PEM file.")
+	}
+
+	s.linkKey = linkPrivateKey
+	return nil
+}
+
+// initEnvelopeKeys initializes the server's envelope keys
+func (s *Server) initEnvelopeKeys() error {
+	s.log.Debug("ensuring replica NIKE keypair exists")
+	nikeScheme := nikeSchemes.ByName(s.cfg.ReplicaNIKEScheme)
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	var err error
+	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("replica envelopeKeys"), s.cfg.DataDir, replicaEpoch)
+	s.log.Debug("AFTER ensuring replica NIKE keypair exists")
+	if err != nil {
+		panic(err)
+	}
+	return nil
+}
+
+// startServices starts all the server services (PKI worker, listeners, connector)
+func (s *Server) startServices(pkiClient pki.ReplicaNodeClient) error {
+	// Start the fatal error watcher.
+	go func() {
+		select {
+		case err := <-s.fatalErrCh:
+			s.log.Warningf("Shutting down due to error: %v", err)
+			s.Shutdown()
+		case <-s.haltedCh:
+		}
+	}()
+
+	var addresses []string
+	if len(s.cfg.BindAddresses) > 0 {
+		s.log.Debugf("BindAddresses found")
+		addresses = s.cfg.BindAddresses
+	} else {
+		addresses = s.cfg.Addresses
+	}
+
+	// Start the PKI worker.
+	s.log.Notice("start PKI worker")
+	var pkiWorker *PKIWorker
+	var err error
+	if pkiClient != nil {
+		// Use the provided PKI client for testing
+		pkiWorker, err = newPKIWorkerWithClient(s, pkiClient, s.logBackend.GetLogger("replica pkiWorker"))
+	} else {
+		// Use the default PKI worker
+		pkiWorker, err = newPKIWorker(s, s.logBackend.GetLogger("replica pkiWorker"))
+	}
+	if err != nil {
+		panic(err)
+	}
+	// Publish the worker on the Server before starting its goroutine,
+	// so the worker's first iteration (which may call into Rebalance,
+	// reading s.PKIWorker) sees the assignment.
+	s.PKIWorker = pkiWorker
+
+	// Start the outgoing connection worker. The connector must be created
+	// before the PKI worker's goroutine is launched because
+	// handleDocumentUpdates reads p.server.connector.
+	s.log.Notice("start connector worker")
+	s.connector = newConnector(s)
+
+	pkiWorker.Start()
+
+	// Bring the listener(s) online.
+	s.log.Notice("start listener workers")
+	s.listeners = make([]GenericListener, 0, len(addresses))
+	for i, addr := range addresses {
+		l, err := newListener(s, i, addr)
+		if err != nil {
+			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
+			return err
+		}
+		s.listeners = append(s.listeners, l)
+	}
+
+	return nil
+}
+
+// ConnectionCount returns the number of active outgoing connections to other replicas.
+// This is useful for testing to verify inter-replica connections are established.
+func (s *Server) ConnectionCount() int {
+	if s.connector == nil {
+		return 0
+	}
+	return s.connector.ConnectionCount()
+}
+
+// ForceConnectorUpdate triggers the connector to rescan PKI and spawn new connections.
+func (s *Server) ForceConnectorUpdate() {
+	if s.connector != nil {
+		s.connector.ForceUpdate()
+	}
+}

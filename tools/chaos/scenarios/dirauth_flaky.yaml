@@ -1,0 +1,37 @@
+# Scenario: flaky dirauth (loss variant) exercises the state machine.
+#
+# Apply 5% packet loss to auth1 while leaving the other two healthy.
+# The voting FSM should still reach consensus on a 2-of-3 threshold;
+# auth1's votes may arrive late or get retransmitted via PeerRetry,
+# but the consensus document should still publish on schedule.
+#
+# This is the loss-only variant of the state-machine-violations
+# scenario for task #37. The companion `dirauth_slow.yaml` applies
+# latency instead. They are split because pumba's netem subcommand
+# (and Linux tc) admit only one root qdisc per interface; running
+# loss and delay on the same host requires two separate scenario
+# runs rather than one combined YAML.
+#
+# What to watch in prometheus:
+#
+#   - katzenpost_dirauth_consensus_reached_total continues to advance
+#     epoch by epoch across all three peers.
+#   - katzenpost_dirauth_votes_received_total{result="..."} should
+#     show mostly result="ok" with occasional result="too_late" or
+#     result="transient_error" for the flaky peer.
+#   - katzenpost_dirauth_voting_phase per dirauth should still rotate
+#     through accept_desc, accept_vote, accept_reveal, accept_cert,
+#     accept_signature in order.
+#   - katzenpost_dirauth_peer_send_attempt_total{peer, result} should
+#     show non-zero transient_error and deadline_exceeded outcomes to
+#     auth1; ok still dominant.
+#   - katzenpost_dirauth_peer_connected{peer="auth1"} oscillates
+#     between 1 and 0 as the loss causes attempts to fail and recover.
+#   - kpclientd should continue serving thin-client traffic; PKI
+#     fetches should succeed every epoch via the healthy peers.
+
+duration: 12m
+
+hosts:
+  auth1:
+    loss_pct: 5

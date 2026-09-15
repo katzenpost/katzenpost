@@ -26,14 +26,15 @@ import (
 	"net/url"
 	"sync"
 	"sync/atomic"
-
+	"time"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/quic-go/quic-go"
@@ -41,7 +42,7 @@ import (
 )
 
 type listener struct {
-	sync.Mutex
+	sync.RWMutex
 	worker.Worker
 
 	glue glue.Glue
@@ -50,12 +51,23 @@ type listener struct {
 	l     net.Listener
 	conns *list.List
 
+	// connsByID indexes the post-handshake connections by their
+	// AdditionalData (the client identity) so the gateway can wake
+	// the right sender goroutine when fresh spool work arrives.
+	// Populated in onInitializedConn and cleared in onClosedConn.
+	// Guarded by the embedded RWMutex.
+	connsByID map[[sConstants.RecipientIDLength]byte]*incomingConn
+
 	incomingCh chan<- interface{}
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
 
-	sendRatePerMinute uint64
-	sendBurst         uint64
+	// Token-bucket parameters derived from the consensus document's
+	// LambdaP and LambdaL by the PKI worker; consumed in the hot path
+	// by incomingConn.IsPeerValid. sendTokenIncrNs == 0 disables the
+	// rate limit.
+	sendTokenIncrNs uint64
+	maxSendTokens   uint64
 }
 
 func (l *listener) Halt() {
@@ -71,12 +83,13 @@ func (l *listener) Halt() {
 	l.closeAllWg.Wait()
 }
 
-func (l *listener) OnNewSendRatePerMinute(sendRatePerMinute uint64) {
-	atomic.StoreUint64(&l.sendRatePerMinute, sendRatePerMinute)
-}
-
-func (l *listener) OnNewSendBurst(sendBurst uint64) {
-	atomic.StoreUint64(&l.sendBurst, sendBurst)
+// OnNewBucketParams installs the latest token-bucket parameters on
+// this listener. The values are precomputed by the PKI worker once
+// per consensus document; the hot path on each incoming connection
+// reads both fields without locking.
+func (l *listener) OnNewBucketParams(sendTokenIncrNs, maxSendTokens uint64) {
+	atomic.StoreUint64(&l.sendTokenIncrNs, sendTokenIncrNs)
+	atomic.StoreUint64(&l.maxSendTokens, maxSendTokens)
 }
 
 func (l *listener) worker() {
@@ -101,10 +114,30 @@ func (l *listener) worker() {
 			continue
 		}
 
+		// If we hold no usable PKI document in the valid epoch window, we
+		// cannot validate any incoming peer credentials at IsPeerValid time
+		// and would produce spurious handshake failures on the initiator side
+		// during the boot convergence window. Refuse the connection at the TCP
+		// layer instead and let the initiator's Connector retry on its existing
+		// backoff once both sides have converged. We accept on any document in
+		// the window, not just the current epoch's, so a client can still be
+		// served from the previous document during the gap after an epoch
+		// rollover but before the new consensus has been fetched.
+		if !l.glue.PKI().HasUsableDocument() {
+			l.log.Debugf("Refusing connection from %v: no usable PKI document", conn.RemoteAddr())
+			conn.Close()
+			handshakeinstrument.IncomingRefusedNoPKIDoc()
+			continue
+		}
+
 		tcpConn, ok := conn.(*net.TCPConn)
 		if ok {
 			tcpConn.SetKeepAlive(true)
 			tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+			// Disable Nagle so the responder's finalisation NoOp does
+			// not wait on a coalesce timer behind the small handshake
+			// messages it follows.
+			tcpConn.SetNoDelay(true)
 		}
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
@@ -136,10 +169,21 @@ func (l *listener) onNewConn(conn net.Conn) {
 }
 
 func (l *listener) onInitializedConn(c *incomingConn) {
-	l.Lock()
-	defer l.Unlock()
+	// Use atomic store to avoid lock contention during handshake completion.
+	atomic.StoreUint32(&c.isInitialized, 1)
 
-	c.isInitialized = true
+	// Register the freshly authenticated conn in the by-ID map so the
+	// gateway can wake its sender when fresh spool work arrives.
+	creds, err := c.w.PeerCredentials()
+	if err != nil {
+		l.log.Errorf("onInitializedConn: PeerCredentials failed: %v", err)
+		return
+	}
+	var key [sConstants.RecipientIDLength]byte
+	copy(key[:], creds.AdditionalData)
+	l.Lock()
+	l.connsByID[key] = c
+	l.Unlock()
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
@@ -149,20 +193,55 @@ func (l *listener) onClosedConn(c *incomingConn) {
 		l.closeAllWg.Done()
 	}()
 	l.conns.Remove(c.e)
+
+	// Deregister the conn from the by-ID map if it was ever
+	// authenticated. PeerCredentials only returns a usable value once
+	// the handshake completed; pre-handshake conns were never
+	// registered so nothing to clear.
+	if c.w != nil {
+		if creds, err := c.w.PeerCredentials(); err == nil {
+			var key [sConstants.RecipientIDLength]byte
+			copy(key[:], creds.AdditionalData)
+			// Only delete if the entry still points at this conn:
+			// a reconnect by the same client may have overwritten
+			// it with the newer conn in onInitializedConn.
+			if l.connsByID[key] == c {
+				delete(l.connsByID, key)
+			}
+		}
+	}
+}
+
+// Notify wakes the sender goroutine of the connection matching
+// clientID, so it drains any fresh spool work the gateway just
+// enqueued. No-op if the client is not currently connected here.
+func (l *listener) Notify(clientID []byte) {
+	if len(clientID) < sConstants.RecipientIDLength {
+		return
+	}
+	var key [sConstants.RecipientIDLength]byte
+	copy(key[:], clientID[:sConstants.RecipientIDLength])
+	l.RLock()
+	c, ok := l.connsByID[key]
+	l.RUnlock()
+	if !ok {
+		return
+	}
+	c.notify()
 }
 
 // GetConnIdentities returns a slice of byte slices each corresponding
 // to a currently connected client identity.
 func (l *listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
-	l.Lock()
-	defer l.Unlock()
+	l.RLock()
+	defer l.RUnlock()
 
 	identitySet := make(map[[sConstants.RecipientIDLength]byte]interface{})
 	for e := l.conns.Front(); e != nil; e = e.Next() {
 		cc := e.Value.(*incomingConn)
 
 		// Skip checking against pre-handshake conns.
-		if cc.w == nil || !cc.isInitialized {
+		if cc.w == nil || atomic.LoadUint32(&cc.isInitialized) == 0 {
 			continue
 		}
 
@@ -181,20 +260,21 @@ func (l *listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]i
 func (l *listener) CloseOldConns(ptr interface{}) error {
 	c := ptr.(*incomingConn)
 
-	l.Lock()
-	defer l.Unlock()
-
 	a, err := c.w.PeerCredentials()
 	if err != nil {
 		l.log.Errorf("Session fail: %s", err)
 		return err
 	}
 
+	// Collect connections to close under read lock, then close outside lock.
+	var toClose []*incomingConn
+
+	l.RLock()
 	for e := l.conns.Front(); e != nil; e = e.Next() {
 		cc := e.Value.(*incomingConn)
 
 		// Skip checking a conn against itself, or against pre-handshake conns.
-		if cc == c || cc.w == nil || !cc.isInitialized {
+		if cc == c || cc.w == nil || atomic.LoadUint32(&cc.isInitialized) == 0 {
 			continue
 		}
 
@@ -210,6 +290,12 @@ func (l *listener) CloseOldConns(ptr interface{}) error {
 		if !a.PublicKey.Equal(b.PublicKey) {
 			continue
 		}
+		toClose = append(toClose, cc)
+	}
+	l.RUnlock()
+
+	// Close connections outside the lock to avoid blocking other operations.
+	for _, cc := range toClose {
 		cc.Close()
 	}
 
@@ -224,35 +310,50 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger(fmt.Sprintf("listener:%d", id)),
 		conns:      list.New(),
+		connsByID:  make(map[[sConstants.RecipientIDLength]byte]*incomingConn),
 		incomingCh: incomingCh,
 		closeAllCh: make(chan interface{}),
 	}
 
+	listenStart := time.Now()
+
 	// parse the Address line as a URL
 	u, err := url.Parse(addr)
-	if err == nil {
-		switch u.Scheme {
-		case "tcp", "tcp4", "tcp6":
-			l.l, err = net.Listen(u.Scheme, u.Host)
-			if err != nil {
-				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
-				return nil, err
-			}
-		case "http":
-			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
-			if err != nil {
-				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
-				return nil, err
-			}
-			// Wrap quic.Listener with common.QuicListener
-			// so it implements like net.Listener for a
-			// single QUIC Stream
-			l.l = &common.QuicListener{Listener: ql}
-		default:
-			return nil, fmt.Errorf("Unsupported listener scheme '%v': %v", addr, err)
-		}
+	if err != nil {
+		l.log.Errorf("Invalid listener address %q: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration.", addr, err)
+		return nil, err
 	}
 
+	switch u.Scheme {
+	case "tcp", "tcp4", "tcp6":
+		l.log.Noticef("Starting listener on: %q", addr)
+		l.l, err = net.Listen(u.Scheme, u.Host)
+		if err != nil {
+			l.log.Errorf("Failed to start listener %q after %v: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration, and check that the address is assigned and the port is available.", addr, time.Since(listenStart), err)
+			return nil, err
+		}
+	case "quic":
+		l.log.Noticef("Starting listener on: %q", addr)
+		ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+		if err != nil {
+			l.log.Errorf("Failed to start listener %q after %v: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration, and check that the address is assigned and the port is available.", addr, time.Since(listenStart), err)
+			return nil, err
+		}
+		// Wrap quic.Listener with common.QuicListener
+		// so it implements like net.Listener for a
+		// single QUIC Stream
+		l.l = &common.QuicListener{Listener: ql}
+	case "onion":
+		err = fmt.Errorf("unsupported listener scheme %q in address %q", u.Scheme, addr)
+		l.log.Errorf("%v. Please fix Server.Addresses or Server.BindAddresses in the server configuration.", err)
+		return nil, err
+	default:
+		err = fmt.Errorf("unsupported listener scheme %q in address %q", u.Scheme, addr)
+		l.log.Errorf("%v. Please fix Server.Addresses or Server.BindAddresses in the server configuration.", err)
+		return nil, err
+	}
+
+	l.log.Noticef("Started listener on: %v after %v", l.l.Addr(), time.Since(listenStart))
 	l.Go(l.worker)
 	return l, nil
 }

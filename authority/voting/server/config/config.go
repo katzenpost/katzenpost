@@ -19,28 +19,18 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
-	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/BurntSushi/toml"
 	"golang.org/x/net/idna"
 
-	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
-	"github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
-	signpem "github.com/katzenpost/hpqc/sign/pem"
-	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (
@@ -48,24 +38,17 @@ const (
 	defaultLogLevel         = "NOTICE"
 	defaultLayers           = 3
 	defaultMinNodesPerLayer = 2
-	absoluteMaxDelay        = 6 * 60 * 60 * 1000 // 6 hours.
-
-	// rate limiting of client connections
-	defaultSendRatePerMinute = 100
 
 	// Note: These values are picked primarily for debugging and need to
 	// be changed to something more suitable for a production deployment
-	// at some point.
-	defaultMu                   = 0.00025
-	defaultMuMaxPercentile      = 0.99999
-	defaultLambdaP              = 0.00025
-	defaultLambdaPMaxPercentile = 0.99999
-	defaultLambdaL              = 0.00025
-	defaultLambdaLMaxPercentile = 0.99999
-	defaultLambdaD              = 0.00025
-	defaultLambdaDMaxPercentile = 0.99999
-	defaultLambdaM              = 0.00025
-	defaultLambdaMMaxPercentile = 0.99999
+	// at some point. Sampling safety caps are derived inside
+	// common.SafetyCap from each rate, so no MaxDelay companion
+	// defaults are needed here.
+	defaultMu      = 0.00025
+	defaultLambdaP = 0.00025
+	defaultLambdaL = 0.00025
+	defaultLambdaM = 0.00025
+	defaultLambdaR = 0.00025
 
 	publicKeyHashSize = 32
 )
@@ -102,134 +85,71 @@ func (lCfg *Logging) validate() error {
 }
 
 // Parameters is the network parameters.
+//
+// Sampling safety caps are derived programmatically from each rate
+// inside common.SafetyCap and are not operator-tunable. The earlier
+// MuMaxDelay, LambdaPMaxDelay, LambdaLMaxDelay, LambdaMMaxDelay,
+// LambdaGMaxDelay, and LambdaRMaxDelay fields are removed from the
+// consensus parameter set; supplying them in authority.toml is no
+// longer accepted.
 type Parameters struct {
-	// SendRatePerMinute is the rate per minute.
-	SendRatePerMinute uint64
-
 	// Mu is the inverse of the mean of the exponential distribution
 	// that is used to select the delay for each hop.
 	Mu float64
-
-	// MuMaxDelay sets the maximum delay for Mu.
-	MuMaxDelay uint64
 
 	// LambdaP is the inverse of the mean of the exponential distribution
 	// that is used to select the delay between clients sending from their egress
 	// FIFO queue or drop decoy message.
 	LambdaP float64
 
-	// LambdaPMaxDelay sets the maximum delay for LambdaP.
-	LambdaPMaxDelay uint64
-
 	// LambdaL is the inverse of the mean of the exponential distribution
 	// that is used to select the delay between clients sending loop decoys.
 	LambdaL float64
-
-	// LambdaLMaxDelay sets the maximum delay for LambdaP.
-	LambdaLMaxDelay uint64
-
-	// LambdaD is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between clients sending deop decoys.
-	LambdaD float64
-
-	// LambdaDMaxDelay sets the maximum delay for LambdaP.
-	LambdaDMaxDelay uint64
 
 	// LambdaM is the inverse of the mean of the exponential distribution
 	// that is used to select the delay between sending mix node decoys.
 	LambdaM float64
 
-	// LambdaG is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between sending gateway node decoys.
-	//
-	// WARNING: This is not used via the TOML config file; this field is only
-	// used internally by the dirauth server state machine.
-	LambdaG float64
-
-	// LambdaMMaxDelay sets the maximum delay for LambdaP.
-	LambdaMMaxDelay uint64
-
-	// LambdaGMaxDelay sets the maximum delay for LambdaG.
-	LambdaGMaxDelay uint64
+	// LambdaR is the inverse of the mean of the exponential distribution
+	// that the courier and storage replicas will sample to determine the
+	// send timing of decoy traffic between each other.
+	LambdaR float64
 }
 
 func (pCfg *Parameters) validate() error {
 	if pCfg.Mu < 0 {
 		return fmt.Errorf("config: Parameters: Mu %v is invalid", pCfg.Mu)
 	}
-	if pCfg.MuMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: MuMaxDelay %v is out of range", pCfg.MuMaxDelay)
-	}
 	if pCfg.LambdaP < 0 {
 		return fmt.Errorf("config: Parameters: LambdaP %v is invalid", pCfg.LambdaP)
 	}
-	if pCfg.LambdaPMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaPMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
-	}
 	if pCfg.LambdaL < 0 {
-		return fmt.Errorf("config: Parameters: LambdaL %v is invalid", pCfg.LambdaP)
-	}
-	if pCfg.LambdaLMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaLMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
-	}
-	if pCfg.LambdaD < 0 {
-		return fmt.Errorf("config: Parameters: LambdaD %v is invalid", pCfg.LambdaP)
-	}
-	if pCfg.LambdaDMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaDMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+		return fmt.Errorf("config: Parameters: LambdaL %v is invalid", pCfg.LambdaL)
 	}
 	if pCfg.LambdaM < 0 {
-		return fmt.Errorf("config: Parameters: LambdaM %v is invalid", pCfg.LambdaP)
+		return fmt.Errorf("config: Parameters: LambdaM %v is invalid", pCfg.LambdaM)
 	}
-	if pCfg.LambdaMMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaMMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	if pCfg.LambdaR < 0 {
+		return fmt.Errorf("config: Parameters: LambdaR %v is invalid", pCfg.LambdaR)
 	}
-	if pCfg.LambdaGMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: LambdaGMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
-	}
-	if pCfg.LambdaGMaxDelay == 0 {
-		return errors.New("LambdaGMaxDelay must be set")
-	}
-
 	return nil
 }
 
 func (pCfg *Parameters) applyDefaults() {
-	if pCfg.SendRatePerMinute == 0 {
-		pCfg.SendRatePerMinute = defaultSendRatePerMinute
-	}
 	if pCfg.Mu == 0 {
 		pCfg.Mu = defaultMu
-	}
-	if pCfg.MuMaxDelay == 0 {
-		pCfg.MuMaxDelay = uint64(rand.ExpQuantile(pCfg.Mu, defaultMuMaxPercentile))
-		if pCfg.MuMaxDelay > absoluteMaxDelay {
-			pCfg.MuMaxDelay = absoluteMaxDelay
-		}
 	}
 	if pCfg.LambdaP == 0 {
 		pCfg.LambdaP = defaultLambdaP
 	}
-	if pCfg.LambdaPMaxDelay == 0 {
-		pCfg.LambdaPMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaP, defaultLambdaPMaxPercentile))
-	}
 	if pCfg.LambdaL == 0 {
 		pCfg.LambdaL = defaultLambdaL
-	}
-	if pCfg.LambdaLMaxDelay == 0 {
-		pCfg.LambdaLMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaL, defaultLambdaLMaxPercentile))
-	}
-	if pCfg.LambdaD == 0 {
-		pCfg.LambdaD = defaultLambdaD
-	}
-	if pCfg.LambdaDMaxDelay == 0 {
-		pCfg.LambdaDMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaD, defaultLambdaDMaxPercentile))
 	}
 	if pCfg.LambdaM == 0 {
 		pCfg.LambdaM = defaultLambdaM
 	}
-	if pCfg.LambdaMMaxDelay == 0 {
-		pCfg.LambdaMMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaM, defaultLambdaMMaxPercentile))
+	if pCfg.LambdaR == 0 {
+		pCfg.LambdaR = defaultLambdaR
 	}
 }
 
@@ -264,6 +184,16 @@ func (dCfg *Debug) applyDefaults() {
 	}
 }
 
+// LinkPublicKey wraps kem.PublicKey with PEM-based text marshaling
+// so that BurntSushi/toml can serialize it as a string.
+type LinkPublicKey struct {
+	kem.PublicKey
+}
+
+func (k LinkPublicKey) MarshalText() ([]byte, error) {
+	return []byte(kempem.ToPublicPEMString(k.PublicKey)), nil
+}
+
 // Authority is the authority configuration for a peer.
 type Authority struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
@@ -277,111 +207,15 @@ type Authority struct {
 	PKISignatureScheme string
 
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
-	LinkPublicKey kem.PublicKey
+	LinkPublicKey LinkPublicKey
 	// WireKEMScheme is the wire protocol KEM scheme to use.
 	WireKEMScheme string
-	// Addresses are the IP address/port combinations that the peer authority
-	// uses for the Directory Authority service.
+	// Addresses are the listener addresses specified by a URL, e.g. tcp://1.2.3.4:1234 or quic://1.2.3.4:1234
+	// Both IPv4 and IPv6 as well as hostnames are valid.
 	Addresses []string
-}
-
-// UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and kem.PublicKey
-func (a *Authority) UnmarshalTOML(v interface{}) error {
-
-	data, ok := v.(map[string]interface{})
-	if !ok {
-		return errors.New("type assertion failed")
-	}
-
-	pkiSignatureSchemeStr, ok := data["PKISignatureScheme"].(string)
-	if !ok {
-		return errors.New("PKISignatureScheme failed type assertion")
-	}
-	pkiSignatureScheme := signSchemes.ByName(pkiSignatureSchemeStr)
-	if pkiSignatureScheme == nil {
-		return fmt.Errorf("pki signature scheme `%s` not found", pkiSignatureScheme)
-	}
-	a.PKISignatureScheme = pkiSignatureSchemeStr
-
-	// identifier
-	var err error
-	a.IdentityPublicKey, _, err = pkiSignatureScheme.GenerateKey()
-	if err != nil {
-		return err
-	}
-	a.Identifier, ok = data["Identifier"].(string)
-	if !ok {
-		return errors.New("Authority.Identifier type assertion failed")
-	}
-
-	// identity key
-	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
-
-	a.IdentityPublicKey, err = signpem.FromPublicPEMString(idPublicKeyString, pkiSignatureScheme)
-	if err != nil {
-		return err
-	}
-
-	// link key
-	linkPublicKeyString, ok := data["LinkPublicKey"].(string)
-	if !ok {
-		return errors.New("type assertion failed")
-	}
-
-	kemSchemeName, ok := data["WireKEMScheme"].(string)
-	if !ok {
-		return errors.New("WireKEMScheme failed type assertion")
-	}
-
-	a.WireKEMScheme = kemSchemeName
-	s := schemes.ByName(kemSchemeName)
-	if s == nil {
-		return fmt.Errorf("scheme `%s` not found", a.WireKEMScheme)
-	}
-	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, s)
-	if err != nil {
-		return err
-	}
-
-	// address
-	addresses := make([]string, 0)
-	pos, ok := data["Addresses"]
-	if !ok {
-		return errors.New("map entry not found")
-	}
-	for _, addr := range pos.([]interface{}) {
-		addresses = append(addresses, addr.(string))
-	}
-	a.Addresses = addresses
-	return nil
-}
-
-// Validate parses and checks the Authority configuration.
-func (a *Authority) Validate() error {
-	if a.WireKEMScheme == "" {
-		return errors.New("WireKEMScheme is not set")
-	} else {
-		s := schemes.ByName(a.WireKEMScheme)
-		if s == nil {
-			return errors.New("KEM Scheme not found")
-		}
-	}
-	for _, v := range a.Addresses {
-		if u, err := url.Parse(v); err != nil {
-			return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
-		} else if u.Port() == "" {
-			return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
-		}
-	}
-	if a.IdentityPublicKey == nil {
-		return fmt.Errorf("config: %v: Authority is missing Identity Key", a)
-	}
-
-	if a.LinkPublicKey == nil {
-		return fmt.Errorf("config: %v: Authority is missing Link Key PEM filename", a)
-	}
-
-	return nil
+	// BindAddresses are the IP addresses to bind to for incoming connections.
+	// If left empty, Addresses will be used.
+	BindAddresses []string
 }
 
 // Node is an authority mix node or provider entry.
@@ -396,22 +230,45 @@ type Node struct {
 }
 
 func (n *Node) validate(isProvider bool) error {
-	section := "Mixes"
-	if isProvider {
-		section = "Providers"
-		if n.Identifier == "" {
-			return fmt.Errorf("config: %v: Node is missing Identifier", section)
-		}
-		var err error
-		n.Identifier, err = idna.Lookup.ToASCII(n.Identifier)
-		if err != nil {
-			return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
-		}
-	} else if n.Identifier != "" {
-		return fmt.Errorf("config: %v: Node has Identifier set", section)
+	if n.Identifier == "" {
+		return errors.New("config: Node is missing Identifier")
+	}
+	var err error
+	n.Identifier, err = idna.Lookup.ToASCII(n.Identifier)
+	if err != nil {
+		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
 	}
 	if n.IdentityPublicKeyPem == "" {
-		return fmt.Errorf("config: %v: Node is missing IdentityPublicKeyPem", section)
+		return errors.New("config: Node is missing IdentityPublicKeyPem")
+	}
+	return nil
+}
+
+// StorageReplicaNode is a storage replica node entry.
+type StorageReplicaNode struct {
+	// Identifier is the human readable node identifier.
+	Identifier string
+
+	// IdentityPublicKeyPem is the node's public signing key also known
+	// as the identity key.
+	IdentityPublicKeyPem string
+
+	// ReplicaID is the static uint8 identifier for this replica.
+	// All dirauths must agree on this value for each replica.
+	ReplicaID uint8
+}
+
+func (n *StorageReplicaNode) validate() error {
+	if n.Identifier == "" {
+		return errors.New("config: StorageReplicaNode is missing Identifier")
+	}
+	var err error
+	n.Identifier, err = idna.Lookup.ToASCII(n.Identifier)
+	if err != nil {
+		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
+	}
+	if n.IdentityPublicKeyPem == "" {
+		return errors.New("config: StorageReplicaNode is missing IdentityPublicKeyPem")
 	}
 	return nil
 }
@@ -430,52 +287,83 @@ type Server struct {
 	// to for incoming connections.
 	Addresses []string
 
+	// BindAddresses are the IP addresses to bind to for incoming connections.
+	// If left empty, Addresses will be used.
+	BindAddresses []string
+
 	// DataDir is the absolute path to the server's state files.
 	DataDir string
+
+	// Network timeout configuration for authority operations
+	// These timeouts are used for both incoming and outgoing connections
+	// and should be tuned for post-quantum crypto performance
+
+	// DialTimeoutSec is the timeout for TCP connection establishment (default: 30)
+	DialTimeoutSec int
+
+	// HandshakeTimeoutSec is the timeout for wire protocol handshake completion (default: 3)
+	HandshakeTimeoutSec int
+
+	// ResponseTimeoutSec is the timeout for command send/receive operations (default: 30)
+	ResponseTimeoutSec int
+
+	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
+	CloseDelaySec int
+
+	// Peer retry configuration for authority-to-authority communication
+
+	// PeerRetryMaxAttempts is the maximum number of retry attempts for peer communication
+	PeerRetryMaxAttempts int
+
+	// PeerRetryBaseDelay is the base delay for exponential backoff between retries
+	PeerRetryBaseDelay time.Duration
+
+	// PeerRetryMaxDelay is the maximum delay between retries
+	PeerRetryMaxDelay time.Duration
+
+	// PeerRetryJitter is the jitter factor (0.0-1.0) applied to retry delays
+	PeerRetryJitter float64
+
+	// DisableIPv4 disables IPv4 for peer connections
+	DisableIPv4 bool
+
+	// DisableIPv6 disables IPv6 for peer connections
+	DisableIPv6 bool
+
+	// MetricsAddress is the host:port that the dirauth's prometheus
+	// HTTP endpoint binds to. Empty disables the endpoint. The
+	// listener is wired in server.go after the wire listeners are
+	// started; the endpoint is independent of any wire-protocol
+	// listener and exposes only metrics, never any authority
+	// state.
+	MetricsAddress string
+
+	// AllowHostnameAddresses, when true, permits DNS hostnames in
+	// Addresses, BindAddresses, MetricsAddress and the per-authority
+	// Authority.Addresses lists. The default is false: a production
+	// dirauth deployment must use IP literals so the daemon never
+	// performs a DNS lookup at runtime. Genconfig sets this to true
+	// when generating docker-mixnet configs where dirauths reach
+	// each other via container hostnames resolved by the
+	// compose-runtime's embedded DNS. Onion addresses are always
+	// permitted.
+	AllowHostnameAddresses bool
 }
 
-// Validate parses and checks the Server configuration.
-func (sCfg *Server) validate() error {
-	if sCfg.WireKEMScheme == "" {
-		return errors.New("WireKEMScheme was not set")
-	} else {
-		s := schemes.ByName(sCfg.WireKEMScheme)
-		if s == nil {
-			return errors.New("KEM Scheme not found")
-		}
+// applyRetryDefaults sets default values for retry configuration
+func (sCfg *Server) applyRetryDefaults() {
+	if sCfg.PeerRetryMaxAttempts == 0 {
+		sCfg.PeerRetryMaxAttempts = retry.DefaultMaxAttempts
 	}
-
-	if sCfg.PKISignatureScheme == "" {
-		return errors.New("PKISignatureScheme was not set")
-	} else {
-		s := signSchemes.ByName(sCfg.PKISignatureScheme)
-		if s == nil {
-			return errors.New("PKI Signature Scheme not found")
-		}
+	if sCfg.PeerRetryBaseDelay == 0 {
+		sCfg.PeerRetryBaseDelay = retry.DefaultBaseDelay
 	}
-
-	if sCfg.Addresses != nil {
-		for _, v := range sCfg.Addresses {
-			if u, err := url.Parse(v); err != nil {
-				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
-			} else if u.Port() == "" {
-				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
-			}
-		}
-	} else {
-		// Try to guess a "suitable" external IPv4 address.  If people want
-		// to do loopback testing, they can manually specify one.  If people
-		// want to use IPng, they can manually specify that as well.
-		addr, err := utils.GetExternalIPv4Address()
-		if err != nil {
-			return err
-		}
-		sCfg.Addresses = []string{addr.String() + defaultAddress}
+	if sCfg.PeerRetryMaxDelay == 0 {
+		sCfg.PeerRetryMaxDelay = retry.DefaultMaxDelay
 	}
-	if !filepath.IsAbs(sCfg.DataDir) {
-		return fmt.Errorf("config: Authority: DataDir '%v' is not an absolute path", sCfg.DataDir)
+	if sCfg.PeerRetryJitter == 0 {
+		sCfg.PeerRetryJitter = retry.DefaultJitter
 	}
-	return nil
 }
 
 // Config is the top level authority configuration.
@@ -486,10 +374,11 @@ type Config struct {
 	Parameters  *Parameters
 	Debug       *Debug
 
-	Mixes        []*Node
-	GatewayNodes []*Node
-	ServiceNodes []*Node
-	Topology     *Topology
+	Mixes           []*Node
+	GatewayNodes    []*Node
+	ServiceNodes    []*Node
+	StorageReplicas []*StorageReplicaNode
+	Topology        *Topology
 
 	SphinxGeometry *geo.Geometry
 }
@@ -508,17 +397,9 @@ type Topology struct {
 // and tries to find a match in the dirauth peers. Returns an error if no
 // match is found. Dirauths must be their own peer.
 func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
-	linkblob1, err := linkPubKey.MarshalText()
-	if err != nil {
-		return err
-	}
 	match := false
 	for i := 0; i < len(cfg.Authorities); i++ {
-		linkblob, err := cfg.Authorities[i].LinkPublicKey.MarshalText()
-		if err != nil {
-			return err
-		}
-		if bytes.Equal(linkblob1, linkblob) {
+		if linkPubKey.Equal(cfg.Authorities[i].LinkPublicKey) {
 			match = true
 		}
 	}
@@ -526,154 +407,4 @@ func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
 		return errors.New("Authority must be it's own peer")
 	}
 	return nil
-}
-
-// FixupAndValidate applies defaults to config entries and validates the
-// supplied configuration.  Most people should call one of the Load variants
-// instead.
-func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
-
-	if cfg.SphinxGeometry == nil {
-		return errors.New("config: No SphinxGeometry block was present")
-	}
-
-	err := cfg.SphinxGeometry.Validate()
-	if err != nil {
-		return err
-	}
-
-	// Handle missing sections if possible.
-	if cfg.Server == nil {
-		return errors.New("config: No Authority block was present")
-	}
-	// Handle missing sections if possible.
-	if cfg.Logging == nil {
-		cfg.Logging = &defaultLogging
-	}
-	if cfg.Parameters == nil {
-		cfg.Parameters = &Parameters{}
-	}
-	if cfg.Debug == nil {
-		cfg.Debug = &Debug{}
-	}
-
-	// Validate and fixup the various sections.
-	if err := cfg.Server.validate(); err != nil {
-		return err
-	}
-	if err := cfg.Logging.validate(); err != nil {
-		return err
-	}
-	if err := cfg.Parameters.validate(); err != nil {
-		return err
-	}
-	if err := cfg.Debug.validate(); err != nil {
-		return err
-	}
-	cfg.Parameters.applyDefaults()
-	cfg.Debug.applyDefaults()
-
-	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
-
-	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.GatewayNodes)+len(cfg.ServiceNodes))
-	for _, v := range cfg.Mixes {
-		allNodes = append(allNodes, v)
-	}
-	for _, v := range cfg.GatewayNodes {
-		allNodes = append(allNodes, v)
-	}
-	for _, v := range cfg.ServiceNodes {
-		allNodes = append(allNodes, v)
-	}
-
-	var identityKey sign.PublicKey
-
-	if forceGenOnly {
-		return nil
-	}
-
-	idMap := make(map[string]*Node)
-	pkMap := make(map[[publicKeyHashSize]byte]*Node)
-	for _, v := range allNodes {
-		if _, ok := idMap[v.Identifier]; ok {
-			return fmt.Errorf("config: Node: Identifier '%v' is present more than once", v.Identifier)
-		}
-		if err := v.validate(true); err != nil {
-			return err
-		}
-		idMap[v.Identifier] = v
-
-		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), pkiSignatureScheme)
-		if err != nil {
-			return err
-		}
-
-		tmp := hash.Sum256From(identityKey)
-		if _, ok := pkMap[tmp]; ok {
-			return fmt.Errorf("config: Nodes: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
-		}
-		pkMap[tmp] = v
-	}
-
-	// if our own identity is not in cfg.Authorities return error
-	selfInAuthorities := false
-
-	ourPubKeyFile := filepath.Join(cfg.Server.DataDir, "identity.public.pem")
-	f, err := os.Open(ourPubKeyFile)
-	if err != nil {
-		return err
-	}
-	pemData, err := io.ReadAll(f)
-	if err != nil {
-		return err
-	}
-
-	ourPubKey, err := signpem.FromPublicPEMBytes(pemData, pkiSignatureScheme)
-	if err != nil {
-		return err
-	}
-	ourPubKeyHash := hash.Sum256From(ourPubKey)
-	for _, auth := range cfg.Authorities {
-		err := auth.Validate()
-		if err != nil {
-			return err
-		}
-
-		if hash.Sum256From(auth.IdentityPublicKey) == ourPubKeyHash {
-			selfInAuthorities = true
-		}
-	}
-	if !selfInAuthorities {
-		return errors.New("Authorities section must contain self")
-	}
-	return nil
-}
-
-// Load parses and validates the provided buffer b as a config file body and
-// returns the Config.
-func Load(b []byte, forceGenOnly bool) (*Config, error) {
-	cfg := new(Config)
-	err := toml.Unmarshal(b, cfg)
-	if err != nil {
-		return nil, err
-	}
-	if err := cfg.FixupAndValidate(forceGenOnly); err != nil {
-		return nil, err
-	}
-
-	if forceGenOnly {
-		cfg.Debug.GenerateOnly = true
-	}
-
-	return cfg, nil
-}
-
-// LoadFile loads, parses and validates the provided file and returns the
-// Config.
-func LoadFile(f string, forceGenOnly bool) (*Config, error) {
-	b, err := os.ReadFile(f)
-	if err != nil {
-		return nil, err
-	}
-	return Load(b, forceGenOnly)
 }

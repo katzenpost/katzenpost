@@ -1,123 +1,108 @@
-// timer_queue_test.go - Time delayed queue tests
-// Copyright (C) 2018  Masala, David Stainton.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package client
 
 import (
 	"io"
-	mrand "math/rand"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/core/queue"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
-func TestNewTimerQueue(t *testing.T) {
+func TestTimerQueueHalt(t *testing.T) {
 	t.Parallel()
-	// create a Queue for rescheduled messages
-	q := new(Queue)
-
-	a := NewTimerQueue(q)
-	a.Go(a.worker)
-	a.Halt()
+	noop := func(ignored interface{}) {
+		t.Log("action")
+	}
+	q := queue.NewTimerQueue(noop)
+	q.Start()
+	surbID := [sConstants.SURBIDLength]byte{}
+	_, err := rand.Reader.Read(surbID[:])
+	require.NoError(t, err)
+	go q.Halt()
+	q.Wait()
 }
 
 func TestTimerQueuePush(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	// create a queue for rescheduled messages
-	q := new(Queue)
+	surbidMap := make(map[[sConstants.SURBIDLength]byte]time.Time)
 
-	a := NewTimerQueue(q)
-	a.Go(a.worker)
+	actionsLock := new(sync.RWMutex)
+	actions := 0
+	numItems := 10
+	actionsDoneCh := make(chan struct{}, 0)
+	noop := func(rawSurbId interface{}) {
 
-	// enqueue 10 messages
-	for i := 0; i < 10; i++ {
-		m := &Message{}
-		m.ID = new([16]byte)
+		surbId, ok := rawSurbId.(*[sConstants.SURBIDLength]byte)
+		if !ok {
+			panic("not a surb id")
+		}
 
-		m.SentAt = time.Now()
-		m.ReplyETA = 200 * time.Millisecond
-		_, err := io.ReadFull(rand.Reader, m.ID[:])
+		t.Log("action")
+
+		actionsLock.Lock()
+		actions += 1
+		arrivalTime := surbidMap[*surbId]
+
+		now := time.Now()
+		delta := now.Sub(arrivalTime)
+
+		// Fail test if any of the queue items are more than halt a second late.
+		require.False(t, delta > (500*time.Millisecond))
+
+		if actions == numItems {
+			actionsLock.Unlock()
+			actionsDoneCh <- struct{}{}
+		} else {
+			actionsLock.Unlock()
+		}
+	}
+	q := queue.NewTimerQueue(noop)
+	q.Start()
+
+	require.Equal(t, 0, q.Len())
+
+	itemDelay := 4 * time.Second
+
+	for i := 0; i < numItems; i++ {
+		surbID := [sConstants.SURBIDLength]byte{}
+		_, err := io.ReadFull(rand.Reader, surbID[:])
 		assert.NoError(err)
 
-		a.Push(m)
-		<-time.After(1 * time.Millisecond)
-	}
-	t.Logf("Sent 10 messages")
+		rtt := itemDelay
+		duration := rtt
+		replyArrivalTime := time.Now().Add(duration)
+		surbidMap[surbID] = replyArrivalTime
+		priority := uint64(replyArrivalTime.UnixNano())
 
-	// wait for all of the timers to expire and each message to be enqueued in q
-	<-time.After(1 * time.Second)
-
-	j := 0
-	for {
-		_, err := q.Pop()
-		if err == ErrQueueEmpty {
-			break
-		}
-		j++
-	}
-	t.Logf("Pop() %d messages", j)
-
-	// Verify that all messages were placed into q
-	assert.Equal(10, j)
-	a.Halt()
-}
-
-func TestTimerQueueOrder(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-
-	// create a Queue for forwarded messages
-	q := new(Queue)
-
-	a := NewTimerQueue(q)
-	a.Go(a.worker)
-
-	r := mrand.New(mrand.NewSource(0))
-
-	for i := 0; i < 10; i++ {
-		m := &Message{}
-		m.ID = new([16]byte)
-		m.SentAt = time.Now()
-		m.ReplyETA = time.Duration(int(time.Millisecond) * r.Intn(100))
-		m.SetPriority(uint64((m.SentAt.Add(m.ReplyETA)).UnixNano()))
-		m.ID[0] = uint8(i)
-		t.Logf("Inserting: %x : %d", m.ID[0], m.Priority())
-		a.Push(m)
-		<-time.After(10 * time.Millisecond)
+		t.Logf("Push %d", i)
+		q.Push(priority, &surbID)
 	}
 
-	t.Logf("\n")
-	<-time.After(1 * time.Second)
-	j := 0
-	var last uint64
-	last = 0xEFFFFFFF
-	for {
-		n, err := q.Pop()
-		if err == ErrQueueEmpty {
-			break
-		}
-		t.Logf("Popping:   %x : %d", n.(*Message).ID[0], n.(*Message).Priority())
-		assert.True(n.(*Message).Priority() > last)
-		last = n.(*Message).Priority()
-		j++
-	}
-	t.Logf("Popped %d messages", j)
-	a.Halt()
+	<-actionsDoneCh
+
+	actionsLock.RLock()
+	queuedItems := numItems - actions
+	actionsLock.RUnlock()
+
+	require.Equal(t, queuedItems, q.Len())
+	t.Logf("queuedItems %d", queuedItems)
+
+	require.Equal(t, 0, queuedItems)
+
+	t.Logf("queue length %d", q.Len())
+
+	go q.Halt()
+	q.Wait()
 }

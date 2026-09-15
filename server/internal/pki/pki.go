@@ -18,18 +18,22 @@
 package pki
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/schemes"
-
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -46,11 +50,38 @@ import (
 
 var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
-	recheckInterval      = epochtime.Period / 32
+	recheckInterval      = epochtime.Period / 16
 	pkiEarlyConnectSlack = epochtime.Period / 8
 	PublishDeadline      = vServer.MixPublishDeadline
 	nextFetchTill        = epochtime.Period - PublishDeadline
+
+	// descriptorUploadSafety is the wall-clock margin we leave
+	// before MixPublishDeadline so a slow upload still finishes
+	// inside the descriptor-accept window. The hardcoded 10 s was
+	// fine for production 20-minute epochs (140 s upload budget)
+	// but broken under warped 2-minute epochs (5 s budget, too
+	// tight for a PQ-Noise handshake under chaos). Proportional
+	// safety keeps the trade-off uniform across epoch regimes;
+	// see the matching change in replica/pki.go (commit 4c1d9c85)
+	// for the full derivation and the surfacing chaos scenario
+	// (asymmetric_replica_latency).
+	//
+	// This is the SAME bug as the replica's hardcoded constant
+	// but on the mix-server side: surfaced by
+	// epoch_transition_latency at 80 ms / 25 ms, which caused
+	// mix1, mix2, and gateway1 to drop out of consensus when
+	// their descriptor uploads timed out.
+	descriptorUploadSafety = PublishDeadline / 6
 )
+
+// authDocsCache holds a snapshot of documents for authentication.
+// This allows lock-free reads during connection authentication.
+type authDocsCache struct {
+	docs   []*pkicache.Entry
+	nowDoc *pkicache.Entry
+	now    uint64
+	till   time.Duration
+}
 
 type pki struct {
 	sync.RWMutex
@@ -59,23 +90,147 @@ type pki struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	impl               cpki.Client
-	descAddrMap        map[string][]string
-	docs               map[uint64]*pkicache.Entry
-	rawDocs            map[uint64][]byte
-	failedFetches      map[uint64]error
+	impl        cpki.MixNodeClient
+	descAddrMap map[string][]string
+
+	docs          map[uint64]*pkicache.Entry
+	rawDocs       map[uint64][]byte
+	failedFetches map[uint64]error
+
 	lastPublishedEpoch uint64
 	lastWarnedEpoch    uint64
+
+	publicationMu           sync.Mutex
+	advertising             bool
+	activePublicationCancel context.CancelFunc
+	activePublicationDone   chan struct{}
+	lastAdvertisedEpoch     uint64
+
+	// cachedAuthDocs stores a snapshot of documents for lock-free authentication.
+	// Updated atomically when documents change.
+	cachedAuthDocs atomic.Value // stores *authDocsCache
 }
 
 func (p *pki) StartWorker() {
 	p.Go(p.worker)
 }
 
+// beginDescriptorPublication registers a publication pass so
+// StopAdvertising can cancel it and wait for it to finish. Descriptor
+// construction is included in the pass to close the race where withdrawal
+// begins after the worker checks the flag but before it calls Post.
+func (p *pki) beginDescriptorPublication(parent context.Context) (context.Context, chan struct{}, bool) {
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+
+	if !p.advertising {
+		return nil, nil, false
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+	p.activePublicationCancel = cancel
+	p.activePublicationDone = done
+	return ctx, done, true
+}
+
+func (p *pki) endDescriptorPublication(done chan struct{}) {
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+
+	if p.activePublicationDone != done {
+		return
+	}
+	p.activePublicationCancel()
+	p.activePublicationCancel = nil
+	p.activePublicationDone = nil
+	close(done)
+}
+
+func (p *pki) recordDescriptorAdvertisement(epoch uint64) {
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+
+	if epoch > p.lastAdvertisedEpoch {
+		p.lastAdvertisedEpoch = epoch
+	}
+}
+
+// StopAdvertising prevents future descriptor uploads, cancels any upload in
+// progress, and waits until the active publication pass has returned. The
+// returned epoch is the last one in which this node may appear, based on both
+// attempted uploads and consensus documents already cached by the node.
+// Fetching and traffic service continue until the server performs its final
+// shutdown.
+func (p *pki) StopAdvertising() uint64 {
+	p.publicationMu.Lock()
+	p.advertising = false
+	cancel := p.activePublicationCancel
+	done := p.activePublicationDone
+	p.publicationMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		// The wait is bounded only if Post returns when its ctx is canceled.
+		<-done
+	}
+
+	p.publicationMu.Lock()
+	lastEpoch := p.lastAdvertisedEpoch
+	p.publicationMu.Unlock()
+
+	// A cached document proves that the node is present in that epoch even
+	// when the descriptor was uploaded by an earlier process invocation.
+	p.RLock()
+	for epoch := range p.docs {
+		if epoch > lastEpoch {
+			lastEpoch = epoch
+		}
+	}
+	p.RUnlock()
+
+	return lastEpoch
+}
+
+// updateAuthDocsCache rebuilds and atomically stores the auth docs cache.
+// Must be called with p.RLock held or after document changes while holding p.Lock.
+func (p *pki) updateAuthDocsCache() {
+	now, _, till := epochtime.Now()
+
+	epochs := make([]uint64, 0, constants.NumMixKeys+1)
+	start := now
+	if till < pkiEarlyConnectSlack {
+		start = now + 1
+	}
+	for epoch := start; epoch > now-constants.NumMixKeys; epoch-- {
+		epochs = append(epochs, epoch)
+	}
+
+	var nowDoc *pkicache.Entry
+	docs := make([]*pkicache.Entry, 0, len(epochs))
+	for _, epoch := range epochs {
+		if e, ok := p.docs[epoch]; ok {
+			docs = append(docs, e)
+			if epoch == now {
+				nowDoc = e
+			}
+		}
+	}
+
+	p.cachedAuthDocs.Store(&authDocsCache{
+		docs:   docs,
+		nowDoc: nowDoc,
+		now:    now,
+		till:   till,
+	})
+}
+
 func (p *pki) worker() {
 	var initialSpawnDelay = epochtime.Period / 64
-
 	timer := time.NewTimer(initialSpawnDelay)
+
 	defer func() {
 		p.log.Debugf("Halting PKI worker.")
 		timer.Stop()
@@ -85,6 +240,7 @@ func (p *pki) worker() {
 		p.log.Warningf("No implementation is configured, disabling PKI interface.")
 		return
 	}
+
 	pkiCtx, cancelFn := context.WithCancel(context.Background())
 	go func() {
 		select {
@@ -94,6 +250,7 @@ func (p *pki) worker() {
 			p.log.Debug("<-pkiCtx.Done()")
 		}
 	}()
+
 	isCanceled := func() bool {
 		select {
 		case <-pkiCtx.Done():
@@ -106,8 +263,8 @@ func (p *pki) worker() {
 	// Note: The worker's start is delayed till after the Server's connector
 	// is initialized, so that force updating the outgoing connection table
 	// is guaranteed to work.
-
-	var lastUpdateEpoch, lastMuMaxDelay, lastSendTokenDuration uint64
+	var lastUpdateEpoch, lastMuSafetyCap uint64
+	var lastLambdaP, lastLambdaL float64
 
 	for {
 		var timerFired bool
@@ -121,6 +278,7 @@ func (p *pki) worker() {
 		case <-timer.C:
 			timerFired = true
 		}
+
 		if !timerFired && !timer.Stop() {
 			select {
 			case <-p.HaltCh():
@@ -134,15 +292,24 @@ func (p *pki) worker() {
 		// with all the key rotation bits.
 		err := p.publishDescriptorIfNeeded(pkiCtx)
 		if isCanceled() {
-			// Canceled mid-post
+			// Canceled mid-post.
 			p.log.Debug("Canceled mid-post")
 			return
 		}
 		if err != nil {
-			p.log.Warningf("Failed to post to PKI: %v", err)
+			p.log.Errorf("❌ PKI UPLOAD FAILURE: Failed to post to PKI: %s", strconv.QuoteToASCII(err.Error()))
+			p.log.Errorf("❌ PKI UPLOAD FAILURE: This service node will not appear in authority votes")
+			p.log.Errorf("❌ PKI UPLOAD FAILURE: Check detailed error messages above for specific failure reasons")
 		}
-		// Fetch the PKI documents as required.
+
+		// Fetch the PKI documents as required. Bound the whole fetch pass:
+		// pkiCtx only cancels on halt, so a GetPKIDocumentForEpoch that returns
+		// solely on cancellation (an unreachable or retrying dirauth during a
+		// consensus gap) would otherwise park this worker behind the current
+		// epoch, serving stale descriptors until an operator restart. Mirrors
+		// core/pki.WorkerBase.FetchDocuments.
 		var didUpdate bool
+		fetchCtx, cancelFetch := context.WithTimeout(pkiCtx, cpki.FetchTimeout)
 		for _, epoch := range p.documentsToFetch() {
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
@@ -152,9 +319,10 @@ func (p *pki) worker() {
 				continue
 			}
 
-			d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
+			d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(fetchCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
+				cancelFetch()
 				p.log.Debug("Canceled mid-fetch")
 				return
 			}
@@ -179,6 +347,7 @@ func (p *pki) worker() {
 				instrument.FailedPKICacheGeneration(fmt.Sprintf("%v", epoch))
 				continue
 			}
+
 			if err = p.validateCacheEntry(ent); err != nil {
 				p.log.Warningf("Generated PKI cache is invalid: %v", err)
 				p.setFailedFetch(epoch, err)
@@ -189,12 +358,16 @@ func (p *pki) worker() {
 			p.Lock()
 			p.rawDocs[epoch] = rawDoc
 			p.docs[epoch] = ent
+			p.updateAuthDocsCache()
 			p.Unlock()
+
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
 		}
+		cancelFetch()
 
 		p.pruneFailures()
+
 		if didUpdate {
 			// Dispose of the old PKI documents.
 			p.pruneDocuments()
@@ -203,25 +376,32 @@ func (p *pki) worker() {
 			p.glue.Connector().ForceUpdate()
 		}
 
-		// Internal component depend on network wide paramemters, and or the
-		// list of nodes.  Update if there is a new document for the current
+		// Internal components depend on network wide parameters, and or the
+		// list of nodes. Update if there is a new document for the current
 		// epoch.
 		if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
 			if ent := p.entryForEpoch(now); ent != nil {
-				if newMuMaxDelay := ent.MuMaxDelay(); newMuMaxDelay != lastMuMaxDelay {
-					p.log.Debugf("Updating scheduler MuMaxDelay for epoch %v: %v", now, newMuMaxDelay)
-					p.glue.Scheduler().OnNewMixMaxDelay(newMuMaxDelay)
-					lastMuMaxDelay = newMuMaxDelay
+				if newMuSafetyCap := ent.MuSafetyCap(); newMuSafetyCap != lastMuSafetyCap {
+					p.log.Debugf("Updating scheduler per-hop deadline for epoch %v: %v ms", now, newMuSafetyCap)
+					p.glue.Scheduler().OnNewMixMaxDelay(newMuSafetyCap)
+					lastMuSafetyCap = newMuSafetyCap
 				}
 
-				// send token duration
-				if newSendTokenDuration := ent.SendRatePerMinute(); newSendTokenDuration != lastSendTokenDuration {
-					p.log.Debugf("Updating listener SendTokenDuration for epoch %v: %v", now, newSendTokenDuration)
-
+				// Derive per-client token-bucket parameters from the
+				// consensus document's published Poisson rates. Only
+				// the gateway listener acts on these (mix and service
+				// listeners do not see client connections), but the
+				// glue.Listener interface is uniform so every listener
+				// receives the call.
+				lambdaP, lambdaL := ent.LambdaP(), ent.LambdaL()
+				if lambdaP != lastLambdaP || lambdaL != lastLambdaL {
+					incrNs, maxTokens := deriveBucketParams(lambdaP, lambdaL)
+					p.log.Debugf("Updating listener bucket params for epoch %v: LambdaP=%v LambdaL=%v -> incrNs=%d, maxTokens=%d",
+						now, lambdaP, lambdaL, incrNs, maxTokens)
 					for _, l := range p.glue.Listeners() {
-						l.OnNewSendRatePerMinute(newSendTokenDuration)
+						l.OnNewBucketParams(incrNs, maxTokens)
 					}
-					lastSendTokenDuration = newSendTokenDuration
+					lastLambdaP, lastLambdaL = lambdaP, lambdaL
 				}
 
 				p.log.Debugf("Updating decoy document for epoch %v.", now)
@@ -230,6 +410,7 @@ func (p *pki) worker() {
 				lastUpdateEpoch = now
 			}
 		}
+
 		p.updateTimer(timer)
 	}
 }
@@ -237,9 +418,40 @@ func (p *pki) worker() {
 // updateTimer is used by the worker loop to determine when next to wake and fetch.
 func (p *pki) updateTimer(timer *time.Timer) {
 	now, elapsed, till := epochtime.Now()
-	p.log.Debugf("pki woke %v into epoch %v with %v remaining", elapsed, now, till)
 
-	// it's after the consensus publication deadline
+	p.log.Debugf("serverpki woke %v into epoch %v with %v remaining", elapsed, now, till)
+
+	// Reflect the current epoch's document in the readiness gauges on every
+	// wake, not just inside the descriptor-upload window. Without this a
+	// node that restarts mid-epoch with persisted mix keys leaves the gauge
+	// at its boot value of 0 until the next epoch boundary, even though the
+	// current consensus is served and its keys match; updateReadiness also
+	// records ready=false when no current-epoch document is cached yet, so
+	// the loop re-polls at recheckInterval and flips ready as soon as one
+	// arrives.
+	p.updateReadiness(now)
+
+	// After the descriptor upload window closes we no longer need to
+	// re-post, but we must keep fetching until the current epoch's
+	// consensus document is cached; otherwise the node (and any clients
+	// that depend on it, like kpclientd) won't see the document until
+	// the next epoch boundary.
+	if elapsed >= PublishDeadline-descriptorUploadSafety {
+		if p.entryForEpoch(now) != nil {
+			interval := till
+			if interval < time.Second {
+				interval = time.Second
+			}
+			p.log.Debugf("descriptor upload window closed and document cached, reset to next epoch in %v", interval)
+			timer.Reset(interval)
+		} else {
+			p.log.Debugf("descriptor upload window closed but no document for %v yet, reset to %v", now, recheckInterval)
+			timer.Reset(recheckInterval)
+		}
+		return
+	}
+
+	// It is after the consensus publication deadline.
 	if elapsed > vServer.PublishConsensusDeadline {
 		p.log.Debugf("After deadline for next epoch publication")
 		if p.entryForEpoch(now+1) == nil {
@@ -252,27 +464,47 @@ func (p *pki) updateTimer(timer *time.Timer) {
 		}
 	} else {
 		p.log.Debugf("Not yet time for next epoch publication")
-		// no document for current epoch
+
+		// No document for current epoch.
 		if p.entryForEpoch(now) == nil {
 			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval)
 			timer.Reset(recheckInterval)
 		} else {
 			interval := vServer.PublishConsensusDeadline - elapsed
-			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, recheckInterval)
+			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, interval)
 			timer.Reset(interval)
 		}
 	}
 }
 
+// updateReadiness sets the node_ready gauge based on whether the descriptor
+// published in the current-epoch consensus carries the same per-epoch mix key
+// this instance currently holds. When they diverge — a restart that
+// regenerated the mix keys while the dirauths retained the old consensus, or
+// simply no current-epoch document yet — the gauge reads 0 and wait tooling
+// keeps polling instead of sending traffic into a first-hop MAC mismatch.
+func (p *pki) updateReadiness(epoch uint64) {
+	ready := false
+	if ent := p.entryForEpoch(epoch); ent != nil {
+		if self := ent.Self(); self != nil {
+			if local, ok := p.glue.MixKeys().Get(epoch); ok {
+				ready = bytes.Equal(self.MixKeys[epoch], local)
+			}
+		}
+	}
+	instrument.SetNodeReady(ready, epoch)
+}
+
 func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	// This just does light-weight validation on self, primarily to catch
-	// dumb bugs.  Anything more is somewhat silly because authorities are
+	// dumb bugs. Anything more is somewhat silly because authorities are
 	// a trust root, and no amount of checking here will save us if the
 	// authorities are malicious.
 	desc := ent.Self()
 	if desc.Name != p.glue.Config().Server.Identifier {
 		return fmt.Errorf("self Name field does not match Identifier")
 	}
+
 	blob, err := p.glue.IdentityPublicKey().MarshalBinary()
 	if err != nil {
 		return err
@@ -280,6 +512,7 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	if !hmac.Equal(desc.IdentityKey, blob) {
 		return fmt.Errorf("self identity key mismatch")
 	}
+
 	blob, err = p.glue.LinkKey().Public().MarshalBinary()
 	if err != nil {
 		return err
@@ -287,12 +520,14 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	if !hmac.Equal(desc.LinkKey, blob) {
 		return fmt.Errorf("self link key mismatch")
 	}
+
 	return nil
 }
 
 func (p *pki) getFailedFetch(epoch uint64) (bool, error) {
 	p.RLock()
 	defer p.RUnlock()
+
 	err, ok := p.failedFetches[epoch]
 	return ok, err
 }
@@ -300,6 +535,7 @@ func (p *pki) getFailedFetch(epoch uint64) (bool, error) {
 func (p *pki) setFailedFetch(epoch uint64, err error) {
 	p.Lock()
 	defer p.Unlock()
+
 	p.failedFetches[epoch] = err
 }
 
@@ -308,10 +544,9 @@ func (p *pki) pruneFailures() {
 	defer p.Unlock()
 
 	now, _, _ := epochtime.Now()
-
 	for epoch := range p.failedFetches {
 		// Be more aggressive about pruning failures than pruning documents,
-		// the worst that can happen is that we query the PKI unneccecarily.
+		// the worst that can happen is that we query the PKI unnecessarily.
 		if epoch < now-(constants.NumMixKeys-1) || epoch > now+1 {
 			delete(p.failedFetches, epoch)
 		}
@@ -323,6 +558,7 @@ func (p *pki) pruneDocuments() {
 
 	p.Lock()
 	defer p.Unlock()
+
 	for epoch := range p.docs {
 		if epoch < now-(constants.NumMixKeys-1) {
 			p.log.Debugf("Discarding PKI for epoch: %v", epoch)
@@ -337,43 +573,69 @@ func (p *pki) pruneDocuments() {
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
-
-	epoch, _, till := epochtime.Now()
-	doPublishEpoch := uint64(0)
-	switch p.lastPublishedEpoch {
-	case 0:
-		// Initial startup.  Regardless of the deadline, publish.
-		p.log.Debugf("Initial startup or correcting for time jump.")
-		doPublishEpoch = epoch
-	case epoch:
-		// Check the deadline for the next publication time.
-		if till > PublishDeadline {
-			p.log.Debugf("Within the publication time for epoch: %v", epoch+1)
-			doPublishEpoch = epoch + 1
-			break
-		}
-
-		// Well, we appeared to have missed the publication deadline for the
-		// next epoch, so give up till the transition.
-		if p.lastWarnedEpoch != epoch {
-			// Debounce this so we don't spam the log.
-			p.lastWarnedEpoch = epoch
-			return fmt.Errorf("missed publication deadline for epoch: %v", epoch+1)
-		}
+	publicationCtx, publicationDone, ok := p.beginDescriptorPublication(pkiCtx)
+	if !ok {
+		p.log.Debug("Descriptor advertising is disabled; skipping publication.")
 		return nil
-	case epoch + 1:
-		// The next epoch has been published.
-		return nil
-	default:
-		// What the fuck?  The last descriptor that we published is a time
-		// that we don't recognize.  The system's civil time probably jumped,
-		// even though the assumption is that all nodes run NTP.
-		p.log.Warningf("Last published epoch %v is wildly disjointed from %v.", p.lastPublishedEpoch, epoch)
-
-		// I don't even know what the sane thing to do here is, just treat it
-		// as if the node's just started and publish for the current I guess.
-		doPublishEpoch = epoch
 	}
+	defer p.endDescriptorPublication(publicationDone)
+
+	currentEpoch, elapsed, till := epochtime.Now()
+
+	uploadDeadline := PublishDeadline - descriptorUploadSafety
+	if uploadDeadline < 0 {
+		uploadDeadline = PublishDeadline
+	}
+
+	doPublishEpoch := currentEpoch + 1
+
+	// Test "already published" before "window closed". Once the descriptor for
+	// this epoch is posted there is nothing left to do, and reporting the upload
+	// window as closed here would wrongly suggest it never went out.
+	if p.lastPublishedEpoch >= doPublishEpoch {
+		p.log.Debugf("publishDescriptorIfNeeded: not needed (published: %d target: %d current: %d)", p.lastPublishedEpoch, doPublishEpoch, currentEpoch)
+		return nil
+	}
+
+	if elapsed >= uploadDeadline {
+		p.log.Noticef(
+			"DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: upload window closed; waiting for next epoch",
+			doPublishEpoch,
+			currentEpoch,
+			elapsed,
+			PublishDeadline,
+			descriptorUploadSafety,
+			till,
+		)
+		return nil
+	}
+
+	budget := uploadDeadline - elapsed
+	if budget <= 0 {
+		p.log.Noticef(
+			"DESCRIPTOR UPLOAD: not posting descriptor for epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v remaining=%v: no upload budget remains",
+			doPublishEpoch,
+			currentEpoch,
+			elapsed,
+			PublishDeadline,
+			descriptorUploadSafety,
+			till,
+		)
+		return nil
+	}
+
+	p.log.Noticef(
+		"DESCRIPTOR UPLOAD: selected upload epoch=%d current_epoch=%d elapsed=%v deadline=%v safety=%v budget=%v reason=current upload window open",
+		doPublishEpoch,
+		currentEpoch,
+		elapsed,
+		PublishDeadline,
+		descriptorUploadSafety,
+		budget,
+	)
+
+	uploadCtx, cancel := context.WithTimeout(publicationCtx, budget)
+	defer cancel()
 
 	// Note: Why, yes I *could* cache the descriptor and save a trivial amount
 	// of time and CPU, but this is invoked infrequently enough that it's
@@ -384,33 +646,37 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	idkeyblob, err := p.glue.IdentityPublicKey().MarshalBinary()
 	if err != nil {
 		return err
 	}
+
 	desc := &cpki.MixDescriptor{
 		Name:        p.glue.Config().Server.Identifier,
 		IdentityKey: idkeyblob,
 		LinkKey:     linkblob,
 		Addresses:   p.descAddrMap,
-		Epoch:       epoch,
+		Epoch:       doPublishEpoch,
 	}
+
 	if p.glue.Config().Server.IsGatewayNode {
-		// Only set the layer if the node is a provider.  Otherwise, nodes
+		// Only set the layer if the node is a provider. Otherwise, nodes
 		// shouldn't be self assigning this.
 		desc.IsGatewayNode = true
 
-		// Publish the AuthenticationType
+		// Publish the AuthenticationType.
 		desc.AuthenticationType = cpki.TrustOnFirstUseAuth
 	}
+
 	if p.glue.Config().Server.IsServiceNode {
-		// Only set the layer if the node is a provider.  Otherwise, nodes
+		// Only set the layer if the node is a provider. Otherwise, nodes
 		// shouldn't be self assigning this.
 		desc.IsServiceNode = true
 
 		// Publish currently running Kaetzchen.
 		var err error
-		desc.Kaetzchen, err = p.glue.ServiceNode().KaetzchenForPKI()
+		desc.KaetzchenAdvertizedData, desc.Kaetzchen, err = p.glue.ServiceNode().KaetzchenForPKI()
 		if err != nil {
 			return err
 		}
@@ -422,13 +688,13 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	// assuming that key rotation isn't disabled, and fill them into
 	// the descriptor.
 	if didGen, err := p.glue.MixKeys().Generate(doPublishEpoch); err == nil {
-		// Prune off the old mix keys.  Bad things happen if the epoch ever
+		// Prune off the old mix keys. Bad things happen if the epoch ever
 		// goes backwards, but everyone uses NTP right?
 		didPrune := p.glue.MixKeys().Prune()
 
 		// Add the keys to the descriptor.
 		for e := doPublishEpoch; e < doPublishEpoch+constants.NumMixKeys; e++ {
-			// Why, yes, this doesn't hold the lock.  The only time the map is
+			// Why, yes, this doesn't hold the lock. The only time the map is
 			// altered is in mixkeys.generateMixKeys(), and mixkeys.pruneMixKeys(),
 			// both of which are only called from this code path serially.
 			k, ok := p.glue.MixKeys().Get(e)
@@ -439,6 +705,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			}
 			desc.MixKeys[e] = k
 		}
+
 		if didGen || didPrune {
 			// Kick the crypto workers into reshadowing the mix keys,
 			// since there are either new keys, or less old keys.
@@ -450,20 +717,67 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
-	err = p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc, p.glue.Decoy().GetStats(doPublishEpoch))
+	nodeType := "mix"
+	if desc.IsGatewayNode {
+		nodeType = "gateway"
+	} else if desc.IsServiceNode {
+		nodeType = "service"
+	}
+
+	if err := cpki.IsDescriptorWellFormed(desc, doPublishEpoch); err != nil {
+		p.log.Noticef(
+			"DESCRIPTOR UPLOAD: Refusing to send malformed %s node descriptor %s for epoch %d: %s",
+			nodeType,
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+			strconv.QuoteToASCII(err.Error()),
+		)
+		return fmt.Errorf("refusing to send malformed descriptor for epoch %d: %w", doPublishEpoch, err)
+	}
+
+	p.log.Noticef(
+		"🔄 DESCRIPTOR UPLOAD: Attempting to upload %s node descriptor %s for epoch %d",
+		nodeType,
+		strconv.QuoteToASCII(desc.Name),
+		doPublishEpoch,
+	)
+	p.log.Noticef("🔄 DESCRIPTOR UPLOAD: Node details - IsGateway: %v, IsService: %v", desc.IsGatewayNode, desc.IsServiceNode)
+
+	// Record the epoch before calling Post. Even when Post returns an error, a
+	// subset of authorities may already have accepted the descriptor and may
+	// be sufficient to include it in a later vote. Waiting an extra epoch is
+	// safer than shutting down while the node may still be in consensus.
+	p.recordDescriptorAdvertisement(doPublishEpoch)
+	err = p.impl.Post(uploadCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc, p.glue.Decoy().GetStats(doPublishEpoch))
 	switch err {
 	case nil:
-		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
+		p.log.Noticef(
+			"✅ DESCRIPTOR UPLOAD: Successfully posted %s node descriptor %s for epoch %d",
+			nodeType,
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+		)
 		p.lastPublishedEpoch = doPublishEpoch
 	case cpki.ErrInvalidPostEpoch:
 		// Treat this class (conflict/late descriptor) as a permanent rejection
-		// and suppress further uploads.
-		p.log.Warningf("Authority rejected upload for epoch: %v (Conflict/Late)", doPublishEpoch)
+		// and suppress further uploads for this epoch.
+		p.log.Errorf(
+			"❌ DESCRIPTOR UPLOAD: Authority permanently rejected %s node %s upload for epoch %d; advancing past this epoch: %s",
+			nodeType,
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+			strconv.QuoteToASCII(err.Error()),
+		)
 		p.lastPublishedEpoch = doPublishEpoch
 	default:
-		// XXX: the voting authority implementation does not return any of the above error types...
-		// and the mix will continue to fail to submit the same descriptor repeatedly.
-		p.lastPublishedEpoch = doPublishEpoch
+		p.log.Errorf(
+			"❌ DESCRIPTOR UPLOAD: Failed to upload %s node %s descriptor for epoch %d: %s",
+			nodeType,
+			strconv.QuoteToASCII(desc.Name),
+			doPublishEpoch,
+			strconv.QuoteToASCII(err.Error()),
+		)
+		p.log.Errorf("❌ DESCRIPTOR UPLOAD: This means the %s node will not appear in the consensus", nodeType)
 	}
 
 	return err
@@ -476,12 +790,13 @@ func (p *pki) entryForEpoch(epoch uint64) *pkicache.Entry {
 	if d, ok := p.docs[epoch]; ok {
 		return d
 	}
+
 	return nil
 }
 
 func (p *pki) documentsToFetch() []uint64 {
-
 	ret := make([]uint64, 0, constants.NumMixKeys+1)
+
 	now, _, till := epochtime.Now()
 	start := now
 	if till < nextFetchTill {
@@ -501,6 +816,21 @@ func (p *pki) documentsToFetch() []uint64 {
 }
 
 func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, uint64, time.Duration) {
+	// Try to use the cached auth docs first (lock-free fast path).
+	if cached := p.cachedAuthDocs.Load(); cached != nil {
+		c := cached.(*authDocsCache)
+
+		// Check if cache is still valid for current epoch window.
+		now, _, till := epochtime.Now()
+
+		// Cache is valid if we're in the same epoch and slack window hasn't changed.
+		cacheValid := c.now == now || (till < pkiEarlyConnectSlack && c.now == now+1)
+		if cacheValid && len(c.docs) > 0 {
+			return c.docs, c.nowDoc, c.now, c.till
+		}
+	}
+
+	// Slow path: rebuild from docs map with lock.
 
 	// Figure out the list of epochs to consider valid.
 	//
@@ -532,6 +862,7 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 			}
 		}
 	}
+
 	return s, nowDoc, now, till
 }
 
@@ -545,9 +876,10 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 
 	// Ensure the additional data is valid.
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
-		p.log.Debugf("%v: '%x' AD not an IdentityKey?.", dirStr, c.AdditionalData)
+		p.log.Debugf("%v: %x AD not an IdentityKey?.", dirStr, c.AdditionalData)
 		return nil, false, false
 	}
+
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
@@ -562,10 +894,13 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		case false:
 			m = d.GetIncomingByID(&nodeID)
 		}
+
 		if m == nil {
 			continue
 		}
-		if desc == nil { // This is the most recent descriptor we have.
+
+		if desc == nil {
+			// This is the most recent descriptor we have.
 			desc = m
 		}
 
@@ -578,7 +913,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		}
 		if !hmac.Equal(m.LinkKey, blob) {
 			if desc == m || !hmac.Equal(m.LinkKey, blob) {
-				p.log.Warningf("%v: '%x' Public Key mismatch: '%x'", dirStr, c.AdditionalData, hash.Sum256(blob))
+				p.log.Warningf("%v: %x Public Key mismatch: %x", dirStr, c.AdditionalData, hash.Sum256(blob))
 				continue
 			}
 		}
@@ -588,20 +923,20 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 			// The node is listed in the document for the current epoch.
 			return desc, true, true
 		case now + 1:
-			// The node is listed in the document from the next epoch..
+			// The node is listed in the document from the next epoch.
 			if !isOutgoing && till < earlySendSlack {
 				// And this is an incoming connection, and it is less than
 				// the slack till the transition.
 				//
 				// Outgoing connections do not apply the early send slack
 				// as only one side needs to apply it to be somewhat clock
-				// skew tollerant.
+				// skew tolerant.
 				return desc, true, true
 			}
 			isValid = true
 		default:
 			// The node is listed in the document for one of the previous
-			// epochs for which there are still valid mix keys...
+			// epochs for which there are still valid mix keys.
 			if nowDoc == nil {
 				// If we do not have a document for the current epoch,
 				// we can't check to see if the node has been de-listed
@@ -623,8 +958,8 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 
 func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.MixDescriptor {
 	docs, nowDoc, now, _ := p.documentsForAuthentication()
-	descMap := make(map[[sConstants.NodeIDLength]byte]*cpki.MixDescriptor)
 
+	descMap := make(map[[sConstants.NodeIDLength]byte]*cpki.MixDescriptor)
 	for _, d := range docs {
 		docEpoch := d.Epoch()
 
@@ -650,18 +985,47 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 			}
 		}
 	}
+
 	return descMap
 }
 
 func (p *pki) CurrentDocument() (*cpki.Document, error) {
 	epoch, _, _ := epochtime.Now()
+
 	p.RLock()
 	defer p.RUnlock()
+
 	val, ok := p.docs[epoch]
 	if ok {
 		return val.Document(), nil
 	}
+
 	return nil, cpki.ErrNoDocument
+}
+
+// HasUsableDocument reports whether we hold at least one PKI document in the
+// valid epoch window [now+1 .. now-(NumMixKeys-1)]. This is the condition under
+// which the node can authenticate peers and serve clients, including the window
+// after an epoch rollover but before the new consensus has been fetched, when
+// only the previous epoch's document is cached. It is deliberately more lenient
+// than CurrentDocument(), which requires the document for the current epoch
+// specifically.
+func (p *pki) HasUsableDocument() bool {
+	docs, _, _, _ := p.documentsForAuthentication()
+	if len(docs) > 0 {
+		return true
+	}
+	// documentsForAuthentication() only includes now+1 inside the
+	// pkiEarlyConnectSlack window, but a document for the next epoch
+	// is sufficient to authenticate incoming connections (clients and
+	// peers) and serve consensus.  Check for it directly so that the
+	// gateway can accept connections as soon as the authority publishes
+	// the consensus, not only within 15 s of the epoch boundary.
+	now, _, _ := epochtime.Now()
+	p.RLock()
+	_, ok := p.docs[now+1]
+	p.RUnlock()
+	return ok
 }
 
 func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
@@ -669,22 +1033,27 @@ func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 		p.log.Debugf("GetRawConsensus failure: no cached PKI document for epoch %v: %v", epoch, err)
 		return nil, cpki.ErrNoDocument
 	}
+
 	p.RLock()
 	defer p.RUnlock()
+
 	val, ok := p.rawDocs[epoch]
 	if !ok {
 		now, _, _ := epochtime.Now()
+
 		// Return cpki.ErrNoDocument if documents will never exist.
 		if epoch < now-1 {
 			return nil, cpki.ErrNoDocument
 		}
+
 		p.log.Debugf("PKI cache miss for epoch %d", epoch)
 		return nil, errNotCached
 	}
+
 	return val, nil
 }
 
-// New reuturns a new pki.
+// New returns a new pki.
 func New(glue glue.Glue) (glue.PKI, error) {
 	p := &pki{
 		glue:          glue,
@@ -692,19 +1061,13 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		docs:          make(map[uint64]*pkicache.Entry),
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
+		advertising:   true,
 	}
 
 	var err error
-	if len(glue.Config().Server.OnlyAdvertiseAddresses) > 0 {
-		p.descAddrMap = make(map[string][]string)
-		// XXX: parse each address and update descAddrMap
-		panic("NotImplemented")
-	} else {
-		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
-			return nil, err
-		}
+	if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
+		return nil, err
 	}
-
 	if len(p.descAddrMap) == 0 {
 		return nil, errors.New("Descriptor address map is zero size.")
 	}
@@ -720,56 +1083,118 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		LogBackend:  glue.LogBackend(),
 		Authorities: glue.Config().PKI.Voting.Authorities,
 		Geo:         glue.Config().SphinxGeometry,
+
+		// Convert milliseconds to seconds for PKI client timeouts.
+		DialTimeoutSec:      glue.Config().Debug.ConnectTimeout / 1000,
+		HandshakeTimeoutSec: glue.Config().Debug.HandshakeTimeout / 1000,
 	}
+
 	p.impl, err = vClient.New(pkiCfg)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: Wire in a real PKI implementation in addition to the test one.
-
 	// Note: This does not start the worker immediately since the worker can
 	// make calls into the connector and crypto workers (on PKI updates),
 	// which are initialized after the pki object.
-
 	return p, nil
 }
 
 func makeDescAddrMap(addrs []string) (map[string][]string, error) {
 	m := make(map[string][]string)
+
 	for _, addr := range addrs {
 		u, err := url.Parse(addr)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("address %s failed to parse: %w", strconv.QuoteToASCII(addr), err)
 		}
+
 		switch u.Scheme {
-		case string(cpki.TransportHTTP):
-			m[cpki.TransportHTTP] = append(m[cpki.TransportHTTP], addr)
+		case string(cpki.TransportOnion):
+			if strings.HasSuffix(u.Hostname(), ".onion") {
+				m[cpki.TransportOnion] = append(m[cpki.TransportOnion], addr)
+			}
+
+		case string(cpki.TransportQUIC):
+			m[cpki.TransportQUIC] = append(m[cpki.TransportQUIC], addr)
+
 		case string(cpki.TransportTCP):
-			// See if the URL contains an IP
-			var ips = []net.IP{}
-			var err error
+			// See if the URL contains an IP.
+			var ips []net.IP
+
 			ip := net.ParseIP(u.Hostname())
 			if ip == nil {
-				// otherwise attempt to resolve a FQDN
+				// otherwise attempt to resolve a FQDN.
 				ips, err = net.LookupIP(u.Hostname())
 				if err != nil {
-					return nil, fmt.Errorf("address '%v' failed to resolve: %v", u.Hostname(), err)
+					return nil, fmt.Errorf("address %s failed to resolve: %v", strconv.QuoteToASCII(u.Hostname()), err)
 				}
 			} else {
 				ips = append(ips, ip)
 			}
+
+			port := u.Port()
+			if port == "" {
+				return nil, fmt.Errorf("address %s is missing a port", strconv.QuoteToASCII(addr))
+			}
+
 			for _, ip := range ips {
+				hostPort := net.JoinHostPort(ip.String(), port)
 				if ip.To4() != nil {
-					m[cpki.TransportTCPv4] = append(m[cpki.TransportTCPv4], "tcp://"+ip.String()+":"+u.Port())
+					m[cpki.TransportTCPv4] = append(m[cpki.TransportTCPv4], "tcp://"+hostPort)
 				} else if ip.To16() != nil {
-					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp://"+ip.String()+":"+u.Port())
+					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp://"+hostPort)
 				}
 			}
-		default:
-			return nil, fmt.Errorf("address '%v' is invalid", addr)
-		}
 
+		default:
+			return nil, fmt.Errorf("address %s is invalid", strconv.QuoteToASCII(addr))
+		}
 	}
+
 	return m, nil
+}
+
+const (
+	// bucketHeadroomFactor sets how much faster than the client's
+	// natural mean rate the gateway refills its per-connection token
+	// bucket. A factor of 1.1 gives a utilisation ratio
+	// ρ = (LambdaP + LambdaL) / refillRate = 1/1.1 ≈ 0.909, which
+	// drives the M/M/1/K blocking probability below 10^-9 at the
+	// bucketCap chosen below. The headroom exists to absorb the
+	// Poisson variance of the client's emission process, not to
+	// permit the client to exceed the published rate; the long-run
+	// admitted rate is still bounded by the refill rate.
+	bucketHeadroomFactor = 1.1
+
+	// bucketCap is the per-connection token-bucket cap. At
+	// ρ ≈ 0.909, P_block ≈ ρ^bucketCap, so 256 puts the blocking
+	// probability for an honest Poisson client around 10^-12 in
+	// steady state. The cap also bounds how much instantaneous
+	// burst an abusive client can obtain before being throttled
+	// to the refill rate.
+	bucketCap = 256
+)
+
+// deriveBucketParams converts the consensus document's published
+// client Poisson rates into the listener-side token-bucket parameters
+// the gateway daemon enforces. Both rates are in events per
+// millisecond; lambdaP is the message-or-loop-decoy stream, lambdaL
+// is the loop-decoy-only stream, and the gateway-bound rate from a
+// single client is their sum.
+//
+// Returns (0, 0) when no positive rate is published, which the
+// incomingConn hot path treats as "rate limit disabled".
+func deriveBucketParams(lambdaP, lambdaL float64) (incrNs, maxTokens uint64) {
+	lambdaTotal := lambdaP + lambdaL
+	if lambdaTotal <= 0 {
+		return 0, 0
+	}
+	refillRate := lambdaTotal * bucketHeadroomFactor // events/ms
+	// One event / (events/ms) = 1 ms = 10^6 ns; ceil keeps the
+	// integer interval at least one nanosecond.
+	incrNs = uint64(math.Ceil(1e6 / refillRate))
+	maxTokens = bucketCap
+	return
 }

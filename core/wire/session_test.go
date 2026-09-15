@@ -17,6 +17,7 @@
 package wire
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"net"
@@ -26,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -139,7 +141,7 @@ func TestSessionIntegration(t *testing.T) {
 		defer wg.Done()
 
 		t.Log("before Alice Initialize")
-		err := s.Initialize(conn)
+		err := s.Initialize(context.Background(), conn)
 		require.NoError(err, "Integration: Alice Initialize()")
 
 		t.Logf("ClockSkew: %v", s.ClockSkew())
@@ -152,11 +154,11 @@ func TestSessionIntegration(t *testing.T) {
 			SphinxPacket: []byte(testPayload1),
 			Cmds:         s.GetCommands(),
 		}
-		err = s.SendCommand(cmd)
+		err = s.SendCommand(context.Background(), cmd)
 		require.NoError(err, "Integration: Alice SendCommand() 1")
 
 		cmd.SphinxPacket = []byte(testPayload2)
-		err = s.SendCommand(cmd)
+		err = s.SendCommand(context.Background(), cmd)
 		require.NoError(err, "Integration: Alice SendCommand() 2")
 	}(sAlice, connAlice)
 
@@ -167,7 +169,7 @@ func TestSessionIntegration(t *testing.T) {
 		defer s.Close()
 		defer wg.Done()
 
-		err := s.Initialize(conn)
+		err := s.Initialize(context.Background(), conn)
 		require.NoError(err, "Integration: Bob Initialize()")
 
 		assert.Panics(func() { s.ClockSkew() }, "Integration: Bob ClockSkew()")
@@ -176,11 +178,11 @@ func TestSessionIntegration(t *testing.T) {
 		require.Equal(credsAlice.AdditionalData, creds.AdditionalData, "Integration: Bob PeerCredentials")
 		require.True(credsAlice.PublicKey.Equal(creds.PublicKey), "Integration: BobPeerCredentials")
 
-		cmd, err := s.RecvCommand()
+		cmd, err := s.RecvCommand(context.Background())
 		require.NoError(err, "Integration: Bob RecvCommand() 1")
 		requireSendPktEq(cmd, []byte(testPayload1))
 
-		cmd, err = s.RecvCommand()
+		cmd, err = s.RecvCommand(context.Background())
 		require.NoError(err, "Integration: Bob RecvCommand() 2")
 		requireSendPktEq(cmd, []byte(testPayload2))
 	}(sBob, connBob)
@@ -367,4 +369,72 @@ func TestErrorInvalidStateClockSkew(t *testing.T) {
 		_ = s.ClockSkew()
 	}
 	require.Panics(t, f)
+}
+
+func TestSessionMaxMessageSize(t *testing.T) {
+	require := require.New(t)
+
+	// Helper for packet comparison.
+
+	// Generate the credentials used for authentication.  In a real deployment,
+	// this information is conveyed out of band somehow to the peer a priori.
+	scheme := testingScheme
+	authKEMKeyAlicePub, authKEMKeyAlice, err := scheme.GenerateKeyPair()
+	require.NoError(err)
+
+	credsAlice := &PeerCredentials{
+		AdditionalData: []byte("alice@example.com"),
+		PublicKey:      authKEMKeyAlicePub,
+	}
+
+	authKEMKeyBobPub, _, err := scheme.GenerateKeyPair()
+	require.NoError(err)
+
+	credsBob := &PeerCredentials{
+		AdditionalData: []byte("katzenpost.example.com"),
+		PublicKey:      authKEMKeyBobPub,
+	}
+
+	nike := ecdh.Scheme(rand.Reader)
+	userForwardPayloadLength := 3000
+	withSURB := true
+	nrHops := 5
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
+		userForwardPayloadLength,
+		withSURB,
+		nrHops,
+	)
+
+	// Alice's session setup.
+	cfgAlice := &SessionConfig{
+		KEMScheme:         testingScheme,
+		Geometry:          geometry,
+		Authenticator:     &stubAuthenticator{creds: credsBob},
+		AdditionalData:    credsAlice.AdditionalData,
+		AuthenticationKey: authKEMKeyAlice,
+		RandomReader:      rand.Reader,
+	}
+	sAlice, err := NewSession(cfgAlice, true)
+	require.NoError(err, "Integration: Alice NewSession()")
+
+	size := sAlice.MaxMesgSize()
+	t.Logf("max message size %d", size)
+	t.Logf("yo %d", sAlice.commands.MaxCommandSize())
+	require.NotZero(size)
+
+	sAlice, err = NewPKISession(cfgAlice, true)
+	require.NoError(err)
+	size = sAlice.MaxMesgSize()
+	t.Logf("max message size %d", size)
+	t.Logf("yo %d", sAlice.commands.MaxCommandSize())
+	require.NotZero(size)
+
+	nikeScheme := schemes.ByName("X25519")
+	sAlice, err = NewStorageReplicaSession(cfgAlice, nikeScheme, true)
+	require.NoError(err)
+	size = sAlice.MaxMesgSize()
+	t.Logf("max message size %d", size)
+	t.Logf("yo %d", sAlice.commands.MaxCommandSize())
+	require.NotZero(size)
+
 }

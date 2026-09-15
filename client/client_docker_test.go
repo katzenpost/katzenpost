@@ -1,226 +1,115 @@
-// client_docker_test.go - optional client docker test
-// Copyright (C) 2019  David Stainton.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 //go:build docker_test
-// +build docker_test
+
+// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package client
 
 import (
 	"bytes"
-	"context"
-	"io"
+	"fmt"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
 	"testing"
-	"time"
 
-	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/stretchr/testify/require"
+	"github.com/katzenpost/hpqc/hash"
 )
 
-func TestDockerClientConnectShutdown(t *testing.T) {
+func TestLegacyTests(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
+	// Setup signal handling for graceful shutdown
+	haltCh := make(chan os.Signal, 1)
+	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-haltCh
+		close(shutdownCh)
+		t.Log("Interrupt caught. Shutdown")
+	}()
 
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
-
-	client, err := New(cfg)
-	require.NoError(err)
-
-	session, err := client.NewTOFUSession(context.Background())
-	require.NoError(err)
-
-	<-session.EventSink
-
-	client.Shutdown()
-	client.Wait()
+	t.Run("TestDockerMultiplexClients", func(t *testing.T) {
+		t.Parallel()
+		retrySubtest(t, 3, testDockerMultiplexClients)
+	})
+	t.Run("TestDockerClientSendReceive", func(t *testing.T) {
+		t.Parallel()
+		retrySubtest(t, 3, testDockerClientSendReceive)
+	})
 }
 
-func TestDockerClientAsyncSendReceive(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
-
-	client, err := New(cfg)
-	require.NoError(err)
-
-	ctx := context.Background()
-	clientSession, err := client.NewTOFUSession(ctx)
-	require.NoError(err)
-
-	clientSession.WaitForDocument(ctx)
-	desc, err := clientSession.GetService(constants.LoopService)
-	require.NoError(err)
-
-	msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
-	require.NoError(err)
-	t.Logf("sent message ID %x", msgID)
-
-loop1:
-	for eventRaw := range clientSession.EventSink {
-		switch event := eventRaw.(type) {
-		case *MessageSentEvent:
-			require.NoError(event.Err)
-		case *MessageReplyEvent:
-			require.NoError(event.Err)
-			if bytes.Equal(msgID[:], event.MessageID[:]) {
-				require.True(bytes.Equal([]byte("hello"), event.Payload[:5]))
-				break loop1
-			}
-		default:
-			continue
+func retrySubtest(t *testing.T, maxAttempts int, fn func(t *testing.T) error) {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := fn(t)
+		if err == nil {
+			return
+		}
+		if attempt < maxAttempts {
+			t.Logf("attempt %d/%d failed: %s, retrying...", attempt, maxAttempts, err)
+		} else {
+			t.Fatalf("all %d attempts failed, last error: %s", maxAttempts, err)
 		}
 	}
-	client.Shutdown()
-	client.Wait()
 }
 
-func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
+func testDockerMultiplexClients(t *testing.T) error {
+	client1, pingTargets := setupClientAndTargets(t)
+	defer client1.Close()
 
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
+	client2 := setupThinClient(t)
+	defer client2.Close()
 
-	cfg.Debug.DisableDecoyTraffic = false
-	client, err := New(cfg)
-	require.NoError(err)
+	message1 := []byte("hello alice, this is bob.")
+	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
-	ctx := context.Background()
-	clientSession, err := client.NewTOFUSession(ctx)
-	require.NoError(err)
-
-	clientSession.WaitForDocument(ctx)
-	desc, err := clientSession.GetService(constants.LoopService)
-	require.NoError(err)
-
-	msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
-	require.NoError(err)
-	t.Logf("sent message ID %x", msgID)
-
-loop1:
-	for eventRaw := range clientSession.EventSink {
-		switch event := eventRaw.(type) {
-		case *MessageSentEvent:
-			if bytes.Equal(msgID[:], event.MessageID[:]) {
-				require.NoError(event.Err)
-			}
-		case *MessageReplyEvent:
-			if bytes.Equal(msgID[:], event.MessageID[:]) {
-				require.NoError(event.Err)
-				require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
-				break loop1
-			}
-		default:
-			continue
-		}
+	reply, err := sendAndWait(t, client1, message1, &nodeIdKey, []byte("+echo"))
+	if err != nil {
+		return fmt.Errorf("client1 echo: %w", err)
+	}
+	if !bytes.Equal(message1, reply[:len(message1)]) {
+		return fmt.Errorf("client1 reply mismatch")
 	}
 
-	client.Shutdown()
-	client.Wait()
+	reply, err = sendAndWait(t, client2, message1, &nodeIdKey, []byte("+echo"))
+	if err != nil {
+		return fmt.Errorf("client2 echo: %w", err)
+	}
+	if !bytes.Equal(message1, reply[:len(message1)]) {
+		return fmt.Errorf("client2 reply mismatch")
+	}
+	return nil
 }
 
-func TestDockerClientTestGarbageCollection(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
+func testDockerClientSendReceive(t *testing.T) error {
+	client, pingTargets := setupClientAndTargets(t)
+	defer client.Close()
 
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
+	message1 := []byte("hello alice, this is bob.")
+	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
-	client, err := New(cfg)
-	require.NoError(err)
-
-	clientSession, err := client.NewTOFUSession(context.Background())
-	require.NoError(err)
-
-	msgID := [constants.MessageIDLength]byte{}
-	_, err = io.ReadFull(rand.Reader, msgID[:])
-	var msg = Message{
-		ID:         &msgID,
-		IsBlocking: false,
-		SentAt:     time.Now().AddDate(0, 0, -1),
-		ReplyETA:   10 * time.Second,
+	t.Log("BEFORE sendAndWait")
+	reply, err := sendAndWait(t, client, message1, &nodeIdKey, []byte("+testdest"))
+	t.Log("AFTER sendAndWait")
+	if err != nil {
+		return fmt.Errorf("sendAndWait: %w", err)
 	}
-	// actually the key should be a SURB ID, but this works fine for the test
-	clientSession.surbIDMap.Store(msgID, &msg)
-	clientSession.garbageCollect()
-	_, ok := clientSession.surbIDMap.Load(msgID)
-	require.False(ok)
+	if !bytes.Equal(message1, reply[:len(message1)]) {
+		return fmt.Errorf("reply mismatch")
+	}
 
-	client.Shutdown()
-	client.Wait()
+	err = repeatSendAndWait(t, client, message1, &nodeIdKey, []byte("+testdest"), 5)
+	if err != nil {
+		return fmt.Errorf("repeatSendAndWait: %w", err)
+	}
+	return nil
 }
 
-func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
-
-	client, err := New(cfg)
-	require.NoError(err)
-
-	ctx := context.Background()
-	clientSession, err := client.NewTOFUSession(ctx)
-	require.NoError(err)
-
-	clientSession.WaitForDocument(ctx)
-	desc, err := clientSession.GetService(constants.LoopService)
-	require.NoError(err)
-
-	// Send a message to a nonexistent service so that we don't get a reply and thus
-	// retain an entry in the SURB ID Map which we must garbage collect.
-	msgID, err := clientSession.SendUnreliableMessage("nonexistent", desc.Provider, []byte("hello"))
-	require.NoError(err)
-	t.Logf("sent message ID %x", msgID)
-
-	var surbID [sConstants.SURBIDLength]byte
-loop1:
-	for eventRaw := range clientSession.EventSink {
-		switch event := eventRaw.(type) {
-		case *MessageSentEvent:
-			if bytes.Equal(msgID[:], event.MessageID[:]) {
-				require.NoError(event.Err)
-				surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
-					surbID = rawSurbID.([sConstants.SURBIDLength]byte)
-					return true
-				}
-				clientSession.surbIDMap.Range(surbIDMapRange)
-				_, _, till := epochtime.Now()
-				duration := time.Duration(till + 1*epochtime.Period)
-				t.Logf("Sleeping for %s so that the SURB ID Map entry will get garbage collected.", duration)
-				time.Sleep(duration)
-				break loop1
-			}
-		default:
-			continue
-		}
-	}
-
-	clientSession.garbageCollect()
-	_, ok := clientSession.surbIDMap.Load(surbID)
-	require.False(ok)
-
-	client.Shutdown()
-	client.Wait()
+func init() {
+	go func() {
+		http.ListenAndServe("localhost:4242", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
 }

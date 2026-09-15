@@ -55,7 +55,9 @@ func (q *PriorityQueue) Push(x interface{}) {
 	q.heap = append(q.heap, entry)
 }
 
-// Pop removes and returns the 0th entry (lowest priority) if any.
+// Pop implements heap.Interface Pop method.
+// It removes and returns the last element (used internally by container/heap).
+// External callers should use Dequeue() instead for correct min-priority ordering.
 func (q *PriorityQueue) Pop() interface{} {
 	if q.Len() <= 0 {
 		return nil
@@ -64,6 +66,14 @@ func (q *PriorityQueue) Pop() interface{} {
 	e := q.heap[n-1]
 	q.heap = q.heap[:n-1]
 	return e
+}
+
+// Dequeue removes and returns the lowest priority entry, maintaining heap order.
+func (q *PriorityQueue) Dequeue() interface{} {
+	if q.Len() <= 0 {
+		return nil
+	}
+	return heap.Pop(q)
 }
 
 // Peek returns the 0th entry (lowest priority) if any, leaving the

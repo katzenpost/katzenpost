@@ -17,9 +17,13 @@
 // Package epochtime implements Katzenpost epoch related timekeeping functions.
 package epochtime
 
-import "time"
+import (
+	"os"
+	"time"
+)
 
-// Period is the duration of a Katzenpost epoch.
+// Period is the default duration of a Katzenpost epoch
+// if no environment variable is set.
 var Period = 20 * time.Minute
 
 // WarpedEpoch is a flag that can be passed at build time to set the epoch Period
@@ -78,4 +82,15 @@ func init() {
 	if WarpedEpoch == "true" {
 		Period = 2 * time.Minute
 	}
+
+	durationText := os.Getenv("KATZENPOST_EPOCH_DURATION")
+	if durationText == "" {
+		return
+	}
+
+	duration, err := time.ParseDuration(durationText)
+	if err != nil {
+		panic(err)
+	}
+	Period = duration
 }

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -99,7 +100,7 @@ Level = "DEBUG"
       Identifier = "auth1"
       IdentityPublicKey = "-----BEGIN ED25519 PUBLIC KEY-----\nxwPliuI1LbUbWbkDYQsL8gwYfYzsaxhdcY4kwp+f2W8=\n-----END ED25519 PUBLIC KEY-----\n"
       LinkPublicKey = "%s"
-      Addresses = ["127.0.0.1:30001"]
+      Addresses = ["tcp://127.0.0.1:30001"]
 `
 
 	tempDir, err := os.MkdirTemp("", "server_config_test")
@@ -143,7 +144,7 @@ func TestIncompleteConfig(t *testing.T) {
 
 [server]
 Identifier = "katzenpost.example.com"
-Addresses = [ "http://127.0.0.1:29483", "tcp://[::1]:29483" ]
+Addresses = [ "quic://127.0.0.1:29483", "tcp://[::1]:29483" ]
 DataDir = "/var/lib/katzenpost"
 IsProvider = true
 
@@ -186,7 +187,7 @@ Level = "DEBUG"
 
 [server]
 Identifier = ""
-Addresses = [ "tcp://127.0.0.1:29483", "http://[::1]:29483" ]
+Addresses = [ "tcp://127.0.0.1:29483", "quic://[::1]:29483" ]
 DataDir = "/var/lib/katzenpost"
 IsProvider = true
 
@@ -212,4 +213,133 @@ PublicKeyPem = "auth_id_pub_key.pem"
 	require.Error(err, "Load() with incomplete config")
 	require.EqualError(err, "config: Server: Identifier is not set")
 
+}
+
+func TestPersistMixKeysOnShutdownDirValidation(t *testing.T) {
+	base := func(t *testing.T) *Server {
+		return &Server{
+			Identifier:         "mix1",
+			WireKEM:            "xwing",
+			PKISignatureScheme: "Ed25519",
+			Addresses:          []string{"tcp://127.0.0.1:29483"},
+			DataDir:            t.TempDir(),
+		}
+	}
+
+	t.Run("relative dir rejected", func(t *testing.T) {
+		require := require.New(t)
+		// A relative key store dir is rejected: the daemon may chdir at
+		// runtime, and a relative path would silently resolve to the
+		// wrong place.
+		cfg := base(t)
+		cfg.PersistMixKeysOnShutdown = true
+		cfg.PersistMixKeysOnShutdownDir = "mixkeys"
+		require.EqualError(cfg.validate(),
+			"config: Server: PersistMixKeysOnShutdownDir 'mixkeys' is not an absolute path")
+	})
+
+	t.Run("dir without bool rejected", func(t *testing.T) {
+		require := require.New(t)
+		// Specifying a key store dir without explicitly enabling
+		// PersistMixKeysOnShutdown is rejected, so operators cannot
+		// expect the dir to silently enable the feature (genconfig is the
+		// only place that sets both together).
+		cfg := base(t)
+		cfg.PersistMixKeysOnShutdownDir = filepath.Join(t.TempDir(), "mixkeys")
+		require.EqualError(cfg.validate(),
+			"config: Server: PersistMixKeysOnShutdownDir is set but PersistMixKeysOnShutdown is not enabled")
+	})
+
+	t.Run("absolute dir with bool accepted", func(t *testing.T) {
+		require := require.New(t)
+		cfg := base(t)
+		cfg.PersistMixKeysOnShutdown = true
+		cfg.PersistMixKeysOnShutdownDir = filepath.Join(t.TempDir(), "mixkeys")
+		require.NoError(cfg.validate())
+	})
+
+	t.Run("consensus withdrawal and key persistence are mutually exclusive", func(t *testing.T) {
+		require := require.New(t)
+		cfg := base(t)
+		cfg.WaitForConsensusExitOnShutdown = true
+		cfg.PersistMixKeysOnShutdown = true
+		require.EqualError(cfg.validate(),
+			"config: Server: WaitForConsensusExitOnShutdown and PersistMixKeysOnShutdown are mutually exclusive")
+	})
+}
+
+func TestApplyRuntimeDefaults_SchedulerMaxBurst(t *testing.T) {
+	// Auto-derivation: SchedulerMaxBurst = clamp(
+	//   round(targetYieldMs / perOpMs), NumSphinxWorkers, 256
+	// ) where perOpMs = numCPU * 1000 / saturatedOpsPerSec and
+	// targetYieldMs = 10. Floor at NumSphinxWorkers so every worker
+	// can be fed within one burst; cap at 256 to keep the
+	// anti-monopolisation property on very fast Sphinx hosts.
+	tests := []struct {
+		name               string
+		preset             int // operator's TOML value; 0 = auto-derive
+		numCPU             int
+		saturatedOpsPerSec float64
+		wantMaxBurst       int
+	}{
+		{
+			name:               "no measurement: floor at NumSphinxWorkers",
+			numCPU:             4,
+			saturatedOpsPerSec: 0,
+			wantMaxBurst:       4,
+		},
+		{
+			name:               "negative measurement: floor at NumSphinxWorkers",
+			numCPU:             4,
+			saturatedOpsPerSec: -1.0,
+			wantMaxBurst:       4,
+		},
+		{
+			name:               "namenlos-like (NumCPU=4, ~400 ops/s → 10ms per op): floor binds",
+			numCPU:             4,
+			saturatedOpsPerSec: 400,
+			wantMaxBurst:       4, // derived 1, floor 4
+		},
+		{
+			name:               "CI-like (NumCPU=4, ~1000 ops/s → 4ms per op): floor binds",
+			numCPU:             4,
+			saturatedOpsPerSec: 1000,
+			wantMaxBurst:       4, // derived 3, floor 4
+		},
+		{
+			name:               "typical VPS (NumCPU=4, ~4000 ops/s → 1ms per op): derived 10",
+			numCPU:             4,
+			saturatedOpsPerSec: 4000,
+			wantMaxBurst:       10,
+		},
+		{
+			name:               "fast host (NumCPU=8, ~80000 ops/s → 0.1ms per op): derived 100",
+			numCPU:             8,
+			saturatedOpsPerSec: 80000,
+			wantMaxBurst:       100,
+		},
+		{
+			name:               "very fast host: cap at 256",
+			numCPU:             16,
+			saturatedOpsPerSec: 1_000_000_000, // 0.000016ms per op
+			wantMaxBurst:       256,
+		},
+		{
+			name:               "operator override preserved",
+			preset:             42,
+			numCPU:             4,
+			saturatedOpsPerSec: 4000,
+			wantMaxBurst:       42,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &Debug{SchedulerMaxBurst: tc.preset}
+			d.ApplyRuntimeDefaults(tc.numCPU, tc.saturatedOpsPerSec)
+			require.Equal(t, tc.wantMaxBurst, d.SchedulerMaxBurst,
+				"SchedulerMaxBurst (preset=%d numCPU=%d saturatedOpsPerSec=%v)",
+				tc.preset, tc.numCPU, tc.saturatedOpsPerSec)
+		})
+	}
 }

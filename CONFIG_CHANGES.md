@@ -1,0 +1,473 @@
+# Config file changes from v0.0.71 to main
+
+This document enumerates the config-file changes between the v0.0.71
+release tag and the current head of `main`. It is organised by component;
+each component owns a TOML file and the schema is derived from a Go
+`Config` struct in `<component>/config/config.go` (or analogous location).
+Default-value changes that take effect even when the operator's TOML is
+otherwise unchanged are noted at the bottom of each section.
+
+The TOML field names below match the corresponding Go struct field
+names exactly. Required actions for an operator upgrading from v0.0.71
+are marked **[breaking]**; everything else is opt-in.
+
+## A note on decoding behaviour
+
+Every component except the thin client decodes its TOML with
+BurntSushi's `toml.Unmarshal`, which is lenient: a key or table that no
+longer maps to a Go struct field is silently ignored, not rejected. A
+config carrying a **removed** field therefore still loads; the field
+simply has no effect. The required operator action for a removed field
+is housekeeping (delete the dead lines so the file reflects reality),
+not an emergency: leaving it in place will not stop the daemon.
+
+The genuine hard failures are narrower and are called out explicitly
+where they occur:
+
+- **validation requirements**: a field whose *absence* fails
+  `FixupAndValidate`, e.g. the client daemon's `[Listen]`.
+- **the thin client's strict check**: `thinclient.toml` is decoded with
+  `toml.NewDecoder(...).Decode` followed by a `MetaData.Undecoded()`
+  check, so an unknown or stale key there *is* rejected at load.
+- **semantic collisions**: a field that decodes cleanly but whose value
+  is then rejected by a consistency rule, e.g. duplicate replica
+  `ReplicaID`.
+
+"**[breaking]**" below means "the operator must act to preserve
+previous behaviour or to satisfy a new requirement", which is not
+always the same as "the file fails to parse".
+
+## Directory authority (`authority.toml`)
+
+Source: `authority/voting/server/config/config.go`.
+
+### `[Parameters]`
+
+- **Added** `LambdaR` (float64). Inverse of the mean of the exponential
+  distribution that the courier and storage replicas sample for
+  decoy traffic between each other. Defaulted to `0.00025` if unset.
+- **Removed** `MuMaxDelay`, `LambdaPMaxDelay`, `LambdaLMaxDelay`,
+  `LambdaMMaxDelay`, `LambdaGMaxDelay`, `LambdaRMaxDelay` (all uint64).
+  These six operator-tunable safety caps no longer exist. Sampling
+  safety caps are derived programmatically inside the library by
+  `common.SafetyCap`, which returns the `1 - 10^-12` quantile of the
+  exponential distribution with rate parameter `lambda`: about
+  `27.63 / lambda` milliseconds. The previous defaults (and the
+  docker-mixnet defaults of `1000` ms) sat at or below the mean of the
+  corresponding exponential and silently biased the realised
+  inter-arrival rate upward, breaking the memorylessness property
+  that the traffic-coupling argument relies on. Stale `*MaxDelay`
+  lines in `authority.toml` are silently ignored by the lenient
+  BurntSushi loader and may be deleted at the operator's
+  convenience.
+- **Removed** `SendRatePerMinute` (uint64). The gateway daemon now
+  derives its per-client token-bucket parameters internally on every
+  PKI-document update from `doc.LambdaP + doc.LambdaL`, with a
+  10 percent refill headroom and a bucket cap of 256. No operator
+  surface is exposed; the consensus document publishes the rates,
+  the gateway enforces them. A stale `SendRatePerMinute` line in the
+  authority TOML is silently ignored by the lenient loader (and the
+  field is also no longer carried in the signed PKI document; see
+  the PKI document section).
+- **Removed** `LambdaD` (float64) and `LambdaDMaxDelay` (uint64).
+  These governed the now-retired drop-decoy Poisson process; the
+  client collapsed to a two-ticker model (`LambdaP` for
+  message-or-loop-decoy, `LambdaL` for loop-decoy-only) and no
+  client code samples `LambdaD` any more. Silently ignored if left
+  in `authority.toml`.
+- **Removed** `LambdaG` (float64). **[breaking]** The field has been
+  deleted from the `Parameters` struct entirely; the dirauth now
+  derives the published `Document.LambdaG` from the network
+  topology via the Coupon Collector's Bound (`computeLambdaG` in
+  `authority/voting/server/server.go`):
+
+  ```
+  LambdaG = (n^2 * log(n) / g) * Mu       events/ms
+  ```
+
+  where `n` is the maximum number of nodes in any mix layer and
+  `g` is the number of gateway nodes. The previous formula
+  (`n * log(n)`, with `n` taken from mix layer 0 alone) was
+  unit-confused and produced rates several orders of magnitude
+  faster than the paper intends. A stale `LambdaG = X` line in
+  `authority.toml` is silently ignored by the lenient BurntSushi
+  loader and the operator action is to delete it; `Document.LambdaG`
+  in the consensus document is unaffected.
+
+### `[[StorageReplicas]]`
+
+The replica entries are now their own table type rather than re-using
+the `[[Mixes]]`/`[[GatewayNodes]]`/`[[ServiceNodes]]` `Node` shape.
+
+- **Added** `ReplicaID` (uint8). **[breaking]** A static identifier
+  unique within the replica set. Every dirauth, and the replica itself,
+  must agree on the same `ReplicaID` for each replica's
+  `IdentityPublicKeyPem`. The field is not checked by
+  `StorageReplicaNode.validate()` (which only rejects a missing
+  `Identifier` or `IdentityPublicKeyPem`), and uint8 has no
+  distinguished "unset" value: an omitted `ReplicaID` decodes as `0`.
+  The breaking effect is therefore semantic, not a decode error. If
+  more than one replica omits the field they collide on `0` and
+  `FixupAndValidate` fails with `config: Storage Replica Node:
+  ReplicaID '0' is used by both '<a>' and '<b>'`; and a `ReplicaID`
+  that decodes cleanly but disagrees with the value the replica and the
+  other dirauths use yields an inconsistent consensus and misrouted
+  shards rather than a startup error. Set it explicitly on every
+  replica entry.
+
+  Example:
+
+  ```toml
+  [[StorageReplicas]]
+    Identifier = "replica1"
+    IdentityPublicKeyPem = "../replica1/identity.public.pem"
+    ReplicaID = 0
+  ```
+
+### `[[Authorities]]`
+
+No TOML-visible changes. The Go type of `LinkPublicKey` was wrapped in
+a new `LinkPublicKey` struct so that BurntSushi/toml can serialise it
+back to PEM via `MarshalText`; the on-disk encoding is unchanged.
+
+### Removed fields
+
+None.
+
+## Mix server, gateway, and service node (`katzenpost.toml`)
+
+Source: `server/config/config.go`.
+
+### `[Server]`
+
+- **Added** `WaitForConsensusExitOnShutdown` (bool, default `false`). When
+  enabled, SIGINT or SIGTERM stops new descriptor uploads while the node
+  continues serving traffic and fetching PKI documents. The daemon exits
+  after the last epoch in which it may still appear has ended. The wait is
+  conservative: an upload attempt counts even if it returned an error,
+  because enough directory authorities may already have accepted it. If the
+  next epoch's descriptor was uploaded before the signal, shutdown can take
+  almost two complete epochs. With the default 20-minute epoch, configure a
+  systemd `TimeoutStopSec` comfortably above 40 minutes, for example `45min`.
+  This option and `PersistMixKeysOnShutdown` are mutually exclusive; enabling
+  both is a configuration error.
+
+### `[Server.Gateway]`
+
+- **Removed** `[Gateway.UserDB]` table (and its `[Gateway.UserDB.Bolt]`
+  and `[Gateway.UserDB.Extern]` inner tables). **[breaking]** The userdb
+  backend has been removed entirely. The server `Gateway` struct now
+  exposes only `SpoolDB`, so a stale `[Gateway.UserDB]` table is
+  silently ignored at load (BurntSushi is lenient); the operator action
+  is to delete it, since the functionality it configured is gone.
+- **Removed** `[Gateway.SQLDB]` table. **[breaking]** SQL-backed
+  storage is no longer supported; only the BoltDB spool
+  (`[Gateway.SpoolDB.Bolt]`) remains. As above, a leftover
+  `[Gateway.SQLDB]` table is silently ignored rather than rejected, so
+  the operator must remove it to regain a config that reflects reality.
+
+### `[Debug]`
+
+The four worker-count fields are unchanged in name and type from
+v0.0.71, but their default semantics shifted during the
+v0.0.71→main window.
+
+- `NumSphinxWorkers`, `NumGatewayWorkers`, `NumServiceWorkers`,
+  `NumKaetzchenWorkers` (all int). The previous fixed defaults
+  (`runtime.NumCPU()` for Sphinx, `3` for the other three) have been
+  replaced by a zero-value-as-sentinel pattern. Zero in the TOML now
+  triggers an auto-derivation step at startup driven by a
+  Sphinx-unwrap self-check (`server/selfcheck.go`):
+  `NumSphinxWorkers` lands at `runtime.NumCPU()`; the three sibling
+  pools at `NumCPU/2`, floored at 1. An explicit non-zero value in
+  the operator's TOML still wins. Operators should leave the four
+  fields unset on single-tenant hosts and let the runtime size them;
+  the startup self-check publishes
+  `katzenpost_server_selfcheck_sphinx_*` gauges so the chosen
+  values are visible to Prometheus.
+
+### Defaults
+
+- `defaultSchedulerSlack` raised from `150` to `450` ms.
+
+### Removed fields
+
+- The exported constants `BackendSQL` and `BackendExtern` are gone.
+  Operators using `Backend = "sql"` or `Backend = "extern"` in either
+  the SpoolDB or UserDB tables must drop those settings; only `"bolt"`
+  is now valid.
+
+### Management socket commands
+
+Not a TOML change, but operator-visible. The thwack handlers
+`SEND_RATE` and `SEND_BURST` have both been removed from the gateway
+daemon. The management socket is intended for emergency live
+overrides only; the per-client rate limit is now derived entirely
+from the consensus document's `LambdaP` and `LambdaL` and applied at
+each PKI-document update, with no operator action required. Scripts
+that issued `SEND_RATE <n>` or `SEND_BURST <n>` against
+`/var/lib/katzenpost/management_sock` will receive a "command not
+found" error from thwack and should be retired.
+
+## Replica (`replica.toml`)
+
+Source: `replica/config/config.go`.
+
+### Top level
+
+- **Added** `ReplicaID` (uint8). **[breaking]** Must match the
+  corresponding `ReplicaID` in every dirauth's `[[StorageReplicas]]`
+  entry for this replica.
+- **Added** `IncomingQueueSize` (int). Buffer size for the
+  incoming-connection sender queue. Zero in the TOML triggers
+  auto-derivation at startup, sized to absorb roughly 10 seconds of
+  the measured saturated CTIDH ops-per-second, floored at
+  `ProxyWorkerCount * 32`. The earlier fixed default of `1000` is
+  gone; operators should omit the field on a single-tenant host.
+- **Added** `ProxyRequestTimeout` (int). Timeout in seconds for proxy
+  requests to other replicas. Zero in the TOML triggers
+  auto-derivation at startup, sized to be order-of-magnitude generous
+  against the measured CTIDH rate. The earlier fixed default of
+  `300` seconds is gone.
+- **Added** `ProxyWorkerCount` (int). Cap on concurrently-in-flight
+  proxy-request handlers. Zero in the TOML triggers auto-derivation
+  at startup to `max(1, runtime.NumCPU())`. The earlier fixed default
+  of `8` is gone. The startup CTIDH self-check publishes
+  `katzenpost_replica_selfcheck_*` gauges so the chosen values are
+  visible to Prometheus.
+- **Added** `MetricsAddress` (string). Address/port for the Prometheus
+  metrics endpoint, e.g. `"127.0.0.1:33001"` or `"replica1:31100"`.
+  Empty disables the listener. Hostnames are accepted as well as IP
+  literals (the validator switched from `netip.ParseAddrPort` to
+  `net.SplitHostPort` so a bridge-network service may bind on its
+  docker-compose hostname).
+- **Added** `MaxStorageMiB` (int64). Optional hard quota on the
+  replica database's on-disk size in mebibytes (Pebble disk-space
+  usage, including WAL and obsolete tables). Writes that would exceed
+  it are rejected with
+  `ReplicaErrorStorageFull`. Defaults to `0`, meaning no database-size
+  quota; only the filesystem reserve below applies. Must not be
+  negative. (Renamed from `MaxStorageBytes` during the v0.0.71→main
+  window; the units are now operator-friendly MiB rather than raw
+  bytes. A stale `MaxStorageBytes` is silently ignored by the lenient
+  loader.)
+- **Added** `MinFreeStorageMiB` (int64). Filesystem free-space
+  reserve on the `DataDir` filesystem in mebibytes: new writes are
+  rejected with `ReplicaErrorStorageFull` once fewer than this many
+  MiB remain available, regardless of `MaxStorageMiB`. `0` selects
+  the 500 MiB default; a positive value overrides it. Must not be
+  negative. Tombstones (deletions) are never gated by either limit,
+  so a full replica can still be reclaimed. (Renamed from
+  `MinFreeStorageBytes` for the same units-friendliness reason; the
+  stale name is silently ignored.)
+- **Removed** `ReplicationQueueLength` (int). No longer consumed. The
+  replica decodes via the lenient common loader, so a leftover
+  `ReplicationQueueLength` is silently ignored and does not block
+  startup; remove it from existing TOML as housekeeping.
+- **No longer a field** `MaxConcurrentReplications` (int). The field
+  briefly existed in a transitional revision between v0.0.71 and main
+  with a default of `4`, and is now gone again. The bounded work
+  (the `DispatchReplication` goroutine in `replica/connector.go`) is
+  sub-millisecond per goroutine (PKI snapshot lookup, blake2b hashes,
+  GetShards, per-peer channel send; no MKEM, no DB write, no wait
+  for peer acknowledgement), so the cap is a hard ceiling against
+  unbounded goroutine spawn rather than a tuning knob. Hard-coded to
+  256 at `replica/connector.go:maxConcurrentReplications`, mirroring
+  the courier's analogous `maxConcurrentReplicaDispatch`. A stale
+  `MaxConcurrentReplications = N` line is silently ignored.
+
+### Defaults
+
+- With `MinFreeStorageMiB` unset, a replica now stops accepting new
+  writes once its `DataDir` filesystem has under 500 MiB free. This
+  takes effect even if the operator's TOML is otherwise unchanged.
+  Previously writes were accepted until the disk filled and the
+  condition surfaced only as transient database errors that clients
+  retried. Set `MinFreeStorageMiB` and/or `MaxStorageMiB` to tune.
+
+## Courier (`courier.toml`)
+
+Source: `courier/server/config/config.go`.
+
+### Top level
+
+- **Added** `MetricsAddress` (string). Address/port for the Prometheus
+  metrics endpoint. Empty disables the listener. Hostnames are
+  accepted as well as IP literals (the validator switched from
+  `netip.ParseAddrPort` to `net.SplitHostPort` so a bridge-network
+  courier may bind on its docker-compose hostname).
+
+### Defaults
+
+- `[Logging]` `File` now defaults to `courier.log` (resolved against
+  `DataDir`) when left empty, instead of stdout. The courier is always
+  launched as a CBOR plugin and announces its socket path on stdout, so
+  an empty `File` previously corrupted that handshake and the service
+  node refused to start. Set an absolute `File` to override the
+  location, or `Disable = true` to silence logging entirely. This takes
+  effect even if the operator's TOML is otherwise unchanged.
+
+No removals or breaking changes.
+
+## Client daemon, kpclientd (`client.toml`)
+
+Source: `client/config/config.go`.
+
+The client TOML had the most substantial reshape, driven by the
+`client2 → client` rename and the new transport-abstraction layer.
+
+### Top level
+
+- **Added** `[Listen]`. **[breaking]** Required. The daemon's
+  thin-client listen socket configuration. The table is
+  subtable-discriminated; exactly one of its inner subtables must be
+  populated:
+
+  ```toml
+  [Listen]
+    [Listen.Tcp]
+      Address = "kpclientd:64331"
+      Network = "tcp"
+  ```
+
+  or:
+
+  ```toml
+  [Listen]
+    [Listen.Unix]
+      Address = "/var/run/katzenpost/kpclientd.sock"
+  ```
+
+- **Added** `[Listen.Unix].Addresses` (string array). Optional. The unix
+  listener already bound a single `Address`; with `Addresses` it can bind
+  any number of unix sockets, each a filesystem path or, on Linux, an
+  abstract-namespace name with a leading `@`, in any combination. A
+  thin_client may connect on any of them. An abstract socket has no
+  filesystem permissions, so any process in the network namespace can
+  connect; access control relies on kpclientd running per user (a systemd
+  user service or run by the user), and a peer-credential check is
+  deferred until there is a system-wide daemon.
+
+- **Added** `PigeonholeGeometry` (table). Pigeonhole protocol
+  parameters; required for new pigeonhole channel operations.
+
+- **Added** `[CachedDocument]`. Optional. Holds a serialised PKI
+  document so the client can connect to its pinned gateway without
+  contacting an authority on first start.
+
+- **Added** `[PinnedGateways]` with repeating `[[PinnedGateways.Gateways]]`
+  entries. Each entry has `WireKEMScheme`, `Name`, `IdentityKey`,
+  `LinkKey`, `PKISignatureScheme`, and `Addresses`. The `IdentityKey`
+  and `LinkKey` are PEM-encoded inline.
+
+- **Removed** `RatchetNIKEScheme` (string). No longer consumed. The
+  client daemon decodes with the lenient `toml.Unmarshal`, so a
+  leftover `RatchetNIKEScheme` is silently ignored rather than rejected;
+  remove it from existing TOML as housekeeping. (The genuinely breaking
+  client change is the now-required `[Listen]`, above.)
+
+- **Added** top-level `MetricsAddress` (string). Bind address of the
+  kpclientd Prometheus listener. The listener is compiled in only when
+  the `kpclientd_metrics` build tag is set; production builds without
+  the tag treat the field as inert. Convention is `127.0.0.1` only;
+  binding to a public address is not supported.
+
+### `[Debug]`
+
+- **Added** `EnableTimeSync` (bool). Use skewed remote provider time
+  instead of system time when available.
+
+### `[[VotingAuthority.Peers]]` and the new `[[PinnedGateways.Gateways]]`
+
+The `LinkPublicKey` (in `VotingAuthority.Peers`) and `LinkKey` (in
+`PinnedGateways.Gateways`) Go types were wrapped in a `LinkPublicKey`
+struct so BurntSushi/toml can serialise them back to PEM via
+`MarshalText`; the on-disk PEM encoding is unchanged.
+
+## Thin client (`thinclient.toml`)
+
+Source: `client/thin/thin.go`, `Config` type.
+
+### Top level
+
+- **Removed** `Network` (string) and `Address` (string). **[breaking]**
+  Both top-level fields are gone.
+- **Added** `[Dial]`. **[breaking]** Required. Mirrors the daemon's
+  `[Listen]` subtable shape; exactly one of `[Dial.Unix]` or
+  `[Dial.Tcp]` must be populated:
+
+  ```toml
+  [Dial]
+    [Dial.Tcp]
+      Address = "localhost:32000"
+      Network = "tcp"
+  ```
+
+  or:
+
+  ```toml
+  [Dial]
+    [Dial.Unix]
+      Address = "/var/run/katzenpost/kpclientd.sock"
+  ```
+
+- **Removed** `[SphinxGeometry]` and `[PigeonholeGeometry]`.
+  **[breaking]** Both sections are gone from `thinclient.toml`; only
+  `[Dial]` remains. The daemon now delivers both geometries to the
+  thin client over the handshake (in its `ConnectionStatusEvent`),
+  exposed via `GetSphinxGeometry()` and `GetPigeonholeGeometry()`.
+  genconfig no longer writes them into the generated file. A config
+  that still carries either section is rejected at load (unknown-key
+  check), and a daemon that omits the geometries is rejected at
+  `Dial`. This removes the foot-gun of a thin-client geometry drifting
+  silently out of step with the daemon's.
+
+## PKI document format (informational)
+
+This is not a config-file change but consequences propagate to
+operators: the signed PKI document version was bumped from `v0` to
+`v1` because new fields (`LambdaR`, `ConfiguredReplicaIdentityKeys`,
+`ReplicaEnvelopeKeys`) are now present. v0 readers will refuse a v1
+document via the `ParseDocument` version check rather than deserialise
+it incorrectly. All clients, dirauths, mix nodes, replicas, and
+couriers must run the matching code base; mixed-version networks are
+not supported.
+
+Three further field removals after the version bump:
+
+- `SendRatePerMinute` (uint64). Gone from `core/pki/document.go`;
+  gateway daemons now derive their per-client token-bucket parameters
+  from `LambdaP` and `LambdaL` locally rather than reading the
+  consensus document's published cap. Older code paths that read the
+  field will see zero (the Go zero value when the CBOR decoder finds
+  no matching key), which matches the historical "rate limit
+  disabled" semantics and degrades gracefully.
+
+- `LambdaD` (float64). Gone for the same reason as in the dirauth
+  `[Parameters]`: drop decoys are retired and the client samples no
+  separate `LambdaD` process.
+
+- `MuMaxDelay`, `LambdaPMaxDelay`, `LambdaLMaxDelay`, `LambdaMMaxDelay`,
+  `LambdaGMaxDelay`, `LambdaRMaxDelay` (all uint64). The six
+  exponential-distribution safety caps are derived programmatically
+  inside the library via `common.SafetyCap` and are no longer carried
+  in the consensus document. Field-absent CBOR yields the Go zero
+  value; the `SafetyCap` helper produces a non-zero cap derived from
+  the rate parameter, so the absence of the document field is
+  invisible to callers. The pre-existing per-hop clamping site in
+  `core/sphinx/path/path.go` and the mix-decoy clamping site in
+  `server/internal/decoy/decoy.go` both now consult `SafetyCap`
+  directly.
+
+These removals do not trigger a further version bump; CBOR decoding of
+a field absent from the wire payload yields the type's zero value, and
+no code now depends on the removed fields being present.
+
+## Common defaults
+
+Source: `common/config/config.go`. These values are inherited by
+several components.
+
+- No changes since v0.0.71. `DefaultHandshakeTimeout`,
+  `DefaultConnectTimeout`, and `DefaultReauthInterval` retain their
+  v0.0.71 values (60, 60, and 30 seconds respectively).

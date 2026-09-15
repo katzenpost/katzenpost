@@ -8,11 +8,14 @@ import (
 	mRand "math/rand"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/queue"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type memoryQueue struct {
@@ -59,6 +62,9 @@ func (q *memoryQueue) doEnqueue(prio time.Time, pkt *packet.Packet) {
 	if maxCapacity > 0 && q.q.Len() > maxCapacity {
 		drop := q.q.DequeueRandom(q.mRand).Value.(*packet.Packet)
 		q.log.Debugf("Queue size limit reached, discarding: %v", drop.ID)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("scheduler_queue_overflow")
+		instrument.MixPacketsDropped()
 		drop.Dispose()
 	}
 }

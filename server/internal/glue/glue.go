@@ -32,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/spool"
-	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 // Glue is the structure that binds the internal components together.
@@ -67,15 +66,16 @@ type MixKeys interface {
 type PKI interface {
 	Halt()
 	StartWorker()
+	StopAdvertising() uint64
 	OutgoingDestinations() map[[constants.NodeIDLength]byte]*pki.MixDescriptor
 	AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool)
 	GetRawConsensus(uint64) ([]byte, error)
 	CurrentDocument() (*pki.Document, error)
+	HasUsableDocument() bool
 }
 
 type Gateway interface {
 	Halt()
-	UserDB() userdb.UserDB
 	Spool() spool.Spool
 	AuthenticateClient(*wire.PeerCredentials) bool
 	OnPacket(*packet.Packet)
@@ -84,7 +84,7 @@ type Gateway interface {
 type ServiceNode interface {
 	Halt()
 	OnPacket(*packet.Packet)
-	KaetzchenForPKI() (map[string]map[string]interface{}, error)
+	KaetzchenForPKI() (map[string]map[string]interface{}, map[string]map[string]interface{}, error)
 }
 
 type Scheduler interface {
@@ -104,8 +104,18 @@ type Listener interface {
 	Halt()
 	CloseOldConns(interface{}) error
 	GetConnIdentities() (map[[constants.RecipientIDLength]byte]interface{}, error)
-	OnNewSendRatePerMinute(uint64)
-	OnNewSendBurst(uint64)
+	// OnNewBucketParams delivers freshly derived token-bucket
+	// parameters to each listener after a consensus-document update.
+	// sendTokenIncrNs is the refill interval in nanoseconds (one
+	// token added per increment); maxSendTokens is the bucket cap.
+	// Both zero disables the rate limit on this listener.
+	OnNewBucketParams(sendTokenIncrNs, maxSendTokens uint64)
+	// Notify signals that fresh spool work has been enqueued for the
+	// given client identity (the first RecipientIDLength bytes of the
+	// recipient). The listener nudges the matching connection's sender
+	// to drain the spool, or no-ops if the client is not connected
+	// here.
+	Notify(clientID []byte)
 }
 
 type Decoy interface {

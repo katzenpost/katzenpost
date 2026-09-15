@@ -1,0 +1,6 @@
+Hostname = "gateway1"
+MeasuredAt = 2026-05-23T19:31:55.774931384Z
+NumCPU = 4
+OpsPerSecPerCore = 1322.1818751077578
+OpsPerSecSaturated = 1086.2227900512203
+IterationTime = "756.325µs"

@@ -2,7 +2,12 @@ package wire
 
 import (
 	"bytes"
+	"context"
+	"crypto/subtle"
+	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
@@ -11,11 +16,11 @@ import (
 	"github.com/katzenpost/nyquist/pattern"
 	"github.com/katzenpost/nyquist/seec"
 
-	"github.com/katzenpost/hpqc/kem/adapter"
-	kemhybrid "github.com/katzenpost/hpqc/kem/hybrid"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 func BenchmarkPQNoise(b *testing.B) {
@@ -26,13 +31,9 @@ func BenchmarkPQNoise(b *testing.B) {
 
 	protocol := &nyquist.Protocol{
 		Pattern: pattern.PqXX,
-		KEM: kemhybrid.New(
-			"Kyber768-X25519",
-			adapter.FromNIKE(ecdh.Scheme(rand.Reader)),
-			schemes.ByName("Kyber768"),
-		),
-		Cipher: cipher.ChaChaPoly,
-		Hash:   hash.BLAKE2s,
+		KEM:     schemes.ByName("Kyber768-X25519"),
+		Cipher:  cipher.ChaChaPoly,
+		Hash:    hash.BLAKE2s,
 	}
 
 	_, clientStatic := nyquistkem.GenerateKeypair(protocol.KEM, seecGenRand)
@@ -161,6 +162,374 @@ func BenchmarkPQNoise(b *testing.B) {
 
 	if !bytes.Equal(serverMsg3Plaintext[:], []byte(plaintext)) {
 		b.Fatal("decrypted plaintext does not match")
+	}
+}
+
+// benchAuthenticator is a simple authenticator for benchmarking
+type benchAuthenticator struct {
+	expectedCreds *PeerCredentials
+}
+
+func (a *benchAuthenticator) IsPeerValid(peer *PeerCredentials) bool {
+	if subtle.ConstantTimeCompare(a.expectedCreds.AdditionalData, peer.AdditionalData) != 1 {
+		return false
+	}
+	blob1, err := a.expectedCreds.PublicKey.MarshalBinary()
+	if err != nil {
+		return false
+	}
+	blob2, err := peer.PublicKey.MarshalBinary()
+	if err != nil {
+		return false
+	}
+	return subtle.ConstantTimeCompare(blob1, blob2) == 1
+}
+
+// BenchmarkPQNoiseSessionTCP benchmarks the full wire.Session handshake over TCP
+func BenchmarkPQNoiseSessionTCP(b *testing.B) {
+	scheme := testingScheme
+
+	// Generate credentials for client and server
+	clientPubKey, clientPrivKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		b.Fatalf("failed to generate client keypair: %v", err)
+	}
+	clientCreds := &PeerCredentials{
+		AdditionalData: []byte("client@benchmark.test"),
+		PublicKey:      clientPubKey,
+	}
+
+	serverPubKey, serverPrivKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		b.Fatalf("failed to generate server keypair: %v", err)
+	}
+	serverCreds := &PeerCredentials{
+		AdditionalData: []byte("server@benchmark.test"),
+		PublicKey:      serverPubKey,
+	}
+
+	// Create sphinx geometry for session
+	nike := ecdh.Scheme(rand.Reader)
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike, 2000, true, 5)
+
+	// Start TCP listener
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		b.Fatalf("failed to start listener: %v", err)
+	}
+	defer listener.Close()
+	addr := listener.Addr().String()
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		var wg sync.WaitGroup
+		var clientErr, serverErr error
+
+		// Server goroutine
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			conn, err := listener.Accept()
+			if err != nil {
+				serverErr = err
+				return
+			}
+			defer conn.Close()
+
+			serverCfg := &SessionConfig{
+				KEMScheme:         scheme,
+				Geometry:          geometry,
+				Authenticator:     &benchAuthenticator{expectedCreds: clientCreds},
+				AdditionalData:    serverCreds.AdditionalData,
+				AuthenticationKey: serverPrivKey,
+				RandomReader:      rand.Reader,
+			}
+
+			session, err := NewSession(serverCfg, false)
+			if err != nil {
+				serverErr = err
+				return
+			}
+			defer session.Close()
+
+			if err := session.Initialize(context.Background(), conn); err != nil {
+				serverErr = err
+				return
+			}
+		}()
+
+		// Client goroutine
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			conn, err := net.Dial("tcp", addr)
+			if err != nil {
+				clientErr = err
+				return
+			}
+			defer conn.Close()
+
+			clientCfg := &SessionConfig{
+				KEMScheme:         scheme,
+				Geometry:          geometry,
+				Authenticator:     &benchAuthenticator{expectedCreds: serverCreds},
+				AdditionalData:    clientCreds.AdditionalData,
+				AuthenticationKey: clientPrivKey,
+				RandomReader:      rand.Reader,
+			}
+
+			session, err := NewSession(clientCfg, true)
+			if err != nil {
+				clientErr = err
+				return
+			}
+			defer session.Close()
+
+			if err := session.Initialize(context.Background(), conn); err != nil {
+				clientErr = err
+				return
+			}
+		}()
+
+		wg.Wait()
+
+		if serverErr != nil {
+			b.Fatalf("server error: %v", serverErr)
+		}
+		if clientErr != nil {
+			b.Fatalf("client error: %v", clientErr)
+		}
+	}
+}
+
+// BenchmarkPQNoiseSessionPipe benchmarks the full wire.Session handshake over net.Pipe
+// This isolates the handshake from TCP overhead
+func BenchmarkPQNoiseSessionPipe(b *testing.B) {
+	scheme := testingScheme
+
+	// Generate credentials for client and server
+	clientPubKey, clientPrivKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		b.Fatalf("failed to generate client keypair: %v", err)
+	}
+	clientCreds := &PeerCredentials{
+		AdditionalData: []byte("client@benchmark.test"),
+		PublicKey:      clientPubKey,
+	}
+
+	serverPubKey, serverPrivKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		b.Fatalf("failed to generate server keypair: %v", err)
+	}
+	serverCreds := &PeerCredentials{
+		AdditionalData: []byte("server@benchmark.test"),
+		PublicKey:      serverPubKey,
+	}
+
+	// Create sphinx geometry for session
+	nike := ecdh.Scheme(rand.Reader)
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike, 2000, true, 5)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		clientConn, serverConn := net.Pipe()
+		var wg sync.WaitGroup
+		var clientErr, serverErr error
+
+		// Server goroutine
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer serverConn.Close()
+
+			serverCfg := &SessionConfig{
+				KEMScheme:         scheme,
+				Geometry:          geometry,
+				Authenticator:     &benchAuthenticator{expectedCreds: clientCreds},
+				AdditionalData:    serverCreds.AdditionalData,
+				AuthenticationKey: serverPrivKey,
+				RandomReader:      rand.Reader,
+			}
+
+			session, err := NewSession(serverCfg, false)
+			if err != nil {
+				serverErr = err
+				return
+			}
+			defer session.Close()
+
+			if err := session.Initialize(context.Background(), serverConn); err != nil {
+				serverErr = err
+				return
+			}
+		}()
+
+		// Client goroutine
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer clientConn.Close()
+
+			clientCfg := &SessionConfig{
+				KEMScheme:         scheme,
+				Geometry:          geometry,
+				Authenticator:     &benchAuthenticator{expectedCreds: serverCreds},
+				AdditionalData:    clientCreds.AdditionalData,
+				AuthenticationKey: clientPrivKey,
+				RandomReader:      rand.Reader,
+			}
+
+			session, err := NewSession(clientCfg, true)
+			if err != nil {
+				clientErr = err
+				return
+			}
+			defer session.Close()
+
+			if err := session.Initialize(context.Background(), clientConn); err != nil {
+				clientErr = err
+				return
+			}
+		}()
+
+		wg.Wait()
+
+		if serverErr != nil {
+			b.Fatalf("server error: %v", serverErr)
+		}
+		if clientErr != nil {
+			b.Fatalf("client error: %v", clientErr)
+		}
+	}
+}
+
+// BenchmarkPQNoiseSessionPipeDetailed benchmarks each phase of the handshake separately
+// to identify where time is spent
+func BenchmarkPQNoiseSessionPipeDetailed(b *testing.B) {
+	scheme := testingScheme
+
+	// Generate credentials for client and server
+	clientPubKey, clientPrivKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		b.Fatalf("failed to generate client keypair: %v", err)
+	}
+	clientCreds := &PeerCredentials{
+		AdditionalData: []byte("client@benchmark.test"),
+		PublicKey:      clientPubKey,
+	}
+
+	serverPubKey, serverPrivKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		b.Fatalf("failed to generate server keypair: %v", err)
+	}
+	serverCreds := &PeerCredentials{
+		AdditionalData: []byte("server@benchmark.test"),
+		PublicKey:      serverPubKey,
+	}
+
+	// Create sphinx geometry for session
+	nike := ecdh.Scheme(rand.Reader)
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike, 2000, true, 5)
+
+	// Run benchmark and collect timing stats
+	var totalTime, minTime, maxTime int64
+	minTime = int64(^uint64(0) >> 1) // max int64
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		clientConn, serverConn := net.Pipe()
+		var wg sync.WaitGroup
+		var clientErr, serverErr error
+		var handshakeDuration int64
+
+		// Server goroutine
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer serverConn.Close()
+
+			serverCfg := &SessionConfig{
+				KEMScheme:         scheme,
+				Geometry:          geometry,
+				Authenticator:     &benchAuthenticator{expectedCreds: clientCreds},
+				AdditionalData:    serverCreds.AdditionalData,
+				AuthenticationKey: serverPrivKey,
+				RandomReader:      rand.Reader,
+			}
+
+			session, err := NewSession(serverCfg, false)
+			if err != nil {
+				serverErr = err
+				return
+			}
+			defer session.Close()
+
+			if err := session.Initialize(context.Background(), serverConn); err != nil {
+				serverErr = err
+				return
+			}
+		}()
+
+		// Client goroutine with timing
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer clientConn.Close()
+
+			clientCfg := &SessionConfig{
+				KEMScheme:         scheme,
+				Geometry:          geometry,
+				Authenticator:     &benchAuthenticator{expectedCreds: serverCreds},
+				AdditionalData:    clientCreds.AdditionalData,
+				AuthenticationKey: clientPrivKey,
+				RandomReader:      rand.Reader,
+			}
+
+			session, err := NewSession(clientCfg, true)
+			if err != nil {
+				clientErr = err
+				return
+			}
+			defer session.Close()
+
+			start := time.Now()
+			if err := session.Initialize(context.Background(), clientConn); err != nil {
+				clientErr = err
+				return
+			}
+			handshakeDuration = time.Since(start).Nanoseconds()
+		}()
+
+		wg.Wait()
+
+		if serverErr != nil {
+			b.Fatalf("server error: %v", serverErr)
+		}
+		if clientErr != nil {
+			b.Fatalf("client error: %v", clientErr)
+		}
+
+		totalTime += handshakeDuration
+		if handshakeDuration < minTime {
+			minTime = handshakeDuration
+		}
+		if handshakeDuration > maxTime {
+			maxTime = handshakeDuration
+		}
+	}
+
+	b.StopTimer()
+
+	if b.N > 0 {
+		avgTime := time.Duration(totalTime / int64(b.N))
+		b.ReportMetric(float64(avgTime.Microseconds()), "avg_µs/handshake")
+		b.ReportMetric(float64(time.Duration(minTime).Microseconds()), "min_µs/handshake")
+		b.ReportMetric(float64(time.Duration(maxTime).Microseconds()), "max_µs/handshake")
 	}
 }
 

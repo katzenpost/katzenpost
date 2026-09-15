@@ -26,7 +26,6 @@ import (
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
-	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
@@ -45,8 +44,15 @@ const (
 	SharedRandomLength      = 40
 	SharedRandomValueLength = 32
 
-	// DocumentVersion identifies the document format version
-	DocumentVersion = "v0"
+	// DocumentVersion identifies the document format version.
+	// v1 introduced LambdaR and ConfiguredReplicaIdentityKeys, which
+	// were not present in v0 documents. v1 also drops the six *MaxDelay
+	// companion fields that previously accompanied
+	// Mu/LambdaP/LambdaL/LambdaM/LambdaG/LambdaR; sampling safety caps
+	// are derived programmatically inside the library now. The optional
+	// v1 ReplicaEnvelopeKeys field was later removed: per-descriptor
+	// EnvelopeKeys in StorageReplicas are the sole carrier.
+	DocumentVersion = "v1"
 )
 
 var (
@@ -86,55 +92,40 @@ type Document struct {
 	// GenesisEpoch is the epoch on which authorities started consensus
 	GenesisEpoch uint64
 
-	// SendRatePerMinute is the number of packets per minute a client can send.
-	SendRatePerMinute uint64
-
 	// Mu is the inverse of the mean of the exponential distribution
 	// that the Sphinx packet per-hop mixing delay will be sampled from.
+	// Sampling safety caps are derived programmatically inside
+	// common.SafetyCap from this rate; there is no companion
+	// MuMaxDelay field, as no operator setting produces a useful
+	// trade-off (cf. plan: declarative-sauteeing-crystal.md).
 	Mu float64
-
-	// MuMaxDelay is the maximum Sphinx packet per-hop mixing delay in
-	// milliseconds.
-	MuMaxDelay uint64
 
 	// LambdaP is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine the time interval between sending
 	// messages from it's FIFO egress queue or drop decoy messages if the queue
-	// is empty.
+	// is empty. Safety cap derived from common.SafetyCap.
 	LambdaP float64
-
-	// LambdaPMaxDelay is the maximum time interval in milliseconds.
-	LambdaPMaxDelay uint64
 
 	// LambdaL is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine the time interval between sending
-	// decoy loop messages.
+	// decoy loop messages. Safety cap derived from common.SafetyCap.
 	LambdaL float64
-
-	// LambdaLMaxDelay is the maximum time interval in milliseconds.
-	LambdaLMaxDelay uint64
-
-	// LambdaD is the inverse of the mean of the exponential distribution
-	// that clients will sample to determine the time interval between sending
-	// decoy drop messages.
-	LambdaD float64
-
-	// LambdaDMaxDelay is the maximum time interval in milliseconds.
-	LambdaDMaxDelay uint64
 
 	// LambdaM is the inverse of the mean of the exponential distribution
 	// that mixes will sample to determine send timing of mix loop decoy traffic.
+	// Safety cap derived from common.SafetyCap.
 	LambdaM float64
-
-	// LambdaMMaxDelay is the maximum send interval in milliseconds.
-	LambdaMMaxDelay uint64
 
 	// LambdaG is the inverse of the mean of the exponential distribution
 	// that mixes will sample to determine send timing of gateway node loop decoy traffic.
+	// Safety cap derived from common.SafetyCap.
 	LambdaG float64
 
-	// LambdaMMaxDelay is the maximum send interval in milliseconds.
-	LambdaGMaxDelay uint64
+	// LambdaR is the inverse of the mean of the exponential distribution
+	// that the courier and storage replicas will sample to determine the
+	// send timing of decoy traffic between each other.
+	// Safety cap derived from common.SafetyCap.
+	LambdaR float64
 
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
@@ -146,6 +137,21 @@ type Document struct {
 	// ServiceNodes is the list of nodes that can allow services to interact
 	// with tehe mix network.
 	ServiceNodes []*MixDescriptor
+
+	// StorageReplicas is the list of Storage Replica nodes that do not talk over the mixnet
+	// but are expected to handle connections from the Service Nodes and the other replicas.
+	StorageReplicas []*ReplicaDescriptor
+
+	// ConfiguredReplicaIDs is the complete set of ReplicaIDs configured for this network.
+	// This set is stable and does not change when replicas go offline.
+	// It is used for consistent sharding so that shard assignments remain stable
+	// even when replicas are temporarily unavailable.
+	ConfiguredReplicaIDs []uint8 `cbor:"ConfiguredReplicaIDs,omitempty"`
+
+	// ConfiguredReplicaIdentityKeys is the complete set of identity public keys
+	// for all configured replicas. This set is stable and does not change when replicas
+	// go offline. It is used for consistent hashing to determine shard assignments.
+	ConfiguredReplicaIdentityKeys [][]byte `cbor:"ConfiguredReplicaIdentityKeys,omitempty"`
 
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
@@ -189,7 +195,7 @@ func (d *Document) String() string {
 	}
 	psrv += "]"
 
-	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nSendRatePerMinute: %v Mu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaD:%v LambdaDMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.SendRatePerMinute, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaD, d.LambdaDMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv, psrv)
+	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nMu: %v LambdaP: %v LambdaL: %v LambdaM: %v LambdaG: %v LambdaR: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.Mu, d.LambdaP, d.LambdaL, d.LambdaM, d.LambdaG, d.LambdaR, srv, psrv)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("  [%v]{", l)
 		s += fmt.Sprintf("%v", nodes)
@@ -202,6 +208,10 @@ func (d *Document) String() string {
 
 	s += "}\n"
 	s += fmt.Sprintf("ServiceNodes:[]{%v}", d.ServiceNodes)
+	s += "}}\n"
+
+	s += "}\n"
+	s += fmt.Sprintf("StorageReplicas:[]{%v}", d.StorageReplicas)
 	s += "}}\n"
 
 	for id, signedCommit := range d.SharedRandomCommit {
@@ -272,6 +282,41 @@ func (d *Document) GetServiceNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, e
 		}
 	}
 	return nil, fmt.Errorf("pki: service not found")
+}
+
+func (d *Document) GetReplicaIDByIdentityKey(idkey sign.PublicKey) (uint8, error) {
+	keyblob, err := idkey.MarshalBinary()
+	if err != nil {
+		return 0, err
+	}
+	for _, replica := range d.StorageReplicas {
+		if hmac.Equal(keyblob, replica.IdentityKey) {
+			return replica.ReplicaID, nil
+		}
+	}
+	return 0, errors.New("replica not found")
+}
+
+func (d *Document) GetReplicaNodeByReplicaID(replicaID uint8) (*ReplicaDescriptor, error) {
+	for _, replica := range d.StorageReplicas {
+		if replica.ReplicaID == replicaID {
+			return replica, nil
+		}
+	}
+	return nil, fmt.Errorf("replica with ID %d not found", replicaID)
+}
+
+func (d *Document) GetReplicaNodeByKeyHash(keyhash *[32]byte) (*ReplicaDescriptor, error) {
+	for _, v := range d.StorageReplicas {
+		if v.IdentityKey == nil {
+			return nil, fmt.Errorf("pki: document contains invalid descriptors")
+		}
+		idKeyHash := hash.Sum256(v.IdentityKey)
+		if hmac.Equal(idKeyHash[:], keyhash[:]) {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("pki: replica not found")
 }
 
 // GetMix returns the MixDescriptor for the given mix Name.
@@ -383,17 +428,20 @@ var (
 	// TransportTCPv6 is TCP over IPv6.
 	TransportTCPv6 string = "tcp6"
 
-	// TransportHTTP is QUIC, with the IP version determined by the results
+	// TransportQUIC is QUIC, with the IP version determined by the results
 	// of a name server lookup
-	TransportHTTP string = "http"
+	TransportQUIC string = "quic"
+
+	// TransportOnion is a tor hidden service, to be announced in PKI
+	TransportOnion string = "onion"
 
 	// InternalTransports is the list of transports used for non-client related
 	// communications.
-	InternalTransports = []string{TransportTCPv4, TransportTCPv6, TransportHTTP}
+	InternalTransports = []string{TransportTCPv4, TransportTCPv6, TransportQUIC}
 
 	// ClientTransports is the list of transports used by default for client
 	// to provider communication.
-	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6, TransportHTTP, TransportWS}
+	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC, TransportWS, TransportOnion}
 )
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
@@ -403,7 +451,7 @@ func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 		return nil, err
 	}
 	d := new(Document)
-	if err := d.UnmarshalBinary(payload); err != nil {
+	if err := d.UnmarshalCertificate(payload); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -413,7 +461,7 @@ func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 func SignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
 	// Marshal the document including any existing d.Signatures
-	certified, err := d.MarshalBinary()
+	certified, err := d.MarshalCertificate()
 	if err != nil {
 		panic("failed to marshal our own doc")
 	}
@@ -423,7 +471,7 @@ func SignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *Document) 
 	}
 	// re-deserialize the recertified certificate to extract our own signature
 	// to d.Signatures etc:
-	err = d.UnmarshalBinary(recertified)
+	err = d.UnmarshalCertificate(recertified)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +511,7 @@ func MultiSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, peerSign
 func ParseDocument(b []byte) (*Document, error) {
 	// Parse the payload.
 	d := new(Document)
-	err := d.UnmarshalBinary(b)
+	err := d.UnmarshalCertificate(b)
 	if err != nil {
 		return nil, err
 	}
@@ -593,15 +641,24 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 		pks[pk] = true
 	}
 
+	for _, desc := range d.StorageReplicas {
+		if err := IsReplicaDescriptorWellFormed(desc, d.Epoch); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler interface
 // and wraps a Document with a cert.Certificate
-func (d *Document) MarshalBinary() ([]byte, error) {
-	// Serialize Document without calling this method
-	d.Version = DocumentVersion
-	payload, err := ccbor.Marshal((*document)(d))
+func (d *Document) MarshalCertificate() ([]byte, error) {
+	// Create a copy to avoid modifying the original document (prevents data races)
+	docCopy := *d
+	docCopy.Version = DocumentVersion
+
+	// Serialize Document copy without calling this method
+	payload, err := ccbor.Marshal((*document)(&docCopy))
 	if err != nil {
 		return nil, err
 	}
@@ -617,7 +674,7 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 // and populates Document with detached Signatures
-func (d *Document) UnmarshalBinary(data []byte) error {
+func (d *Document) UnmarshalCertificate(data []byte) error {
 	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
 	certified, err := cert.GetCertified(data)
 	if err != nil {
@@ -643,7 +700,7 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 // AddSignature will add a Signature over this Document if it is signed by verifier.
 func (d *Document) AddSignature(verifier sign.PublicKey, signature cert.Signature) error {
 	// Serialize this Document
-	payload, err := d.MarshalBinary()
+	payload, err := d.MarshalCertificate()
 	if err != nil {
 		return err
 	}
@@ -658,11 +715,11 @@ func (d *Document) AddSignature(verifier sign.PublicKey, signature cert.Signatur
 }
 
 func (d *Document) Sum256() [32]byte {
-	b, err := d.MarshalBinary()
+	b, err := d.MarshalCertificate()
 	if err != nil {
 		panic(err)
 	}
-	return blake2b.Sum256(b)
+	return hash.Sum256(b)
 }
 
 func init() {

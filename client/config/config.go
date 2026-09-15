@@ -1,40 +1,25 @@
-// config.go - Katzenpost client configuration.
-// Copyright (C) 2018  Yawning Angel, David Stainton.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Copyright (C) 2018-2023  Yawning Angel, David Stainton.
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package config implements the configuration for the Katzenpost client.
 package config
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"strings"
-
-	"github.com/BurntSushi/toml"
-	"golang.org/x/crypto/blake2b"
+	"time"
 
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/schemes"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/sign"
 
-	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/client/internal/proxy"
-	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/pki"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+
+	"github.com/katzenpost/katzenpost/client/proxy"
+	"github.com/katzenpost/katzenpost/client/transport"
 )
 
 const (
@@ -67,11 +52,11 @@ func (lCfg *Logging) validate() error {
 	switch lvl {
 	case "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG":
 	case "":
-		lCfg.Level = defaultLogLevel
+		lvl = defaultLogLevel
 	default:
 		return fmt.Errorf("config: Logging: Level '%v' is invalid", lCfg.Level)
 	}
-	lCfg.Level = lvl // Force uppercase.
+	lCfg.Level = lvl
 	return nil
 }
 
@@ -89,14 +74,14 @@ type Debug struct {
 
 	// PollingInterval is the interval in seconds that will be used to
 	// poll the receive queue.  By default this is 10 seconds.  Reducing
-	// the value too far WILL result in unnecessary Provider load, and
+	// the value too far WILL result in unnecessary Gateway load, and
 	// increasing the value too far WILL adversely affect large message
 	// transmit performance.
 	PollingInterval int
 
-	// PreferedTransports is a list of the transports will be used to make
-	// outgoing network connections, with the most prefered first.
-	PreferedTransports []string
+	// EnableTimeSync enables the use of skewed remote provider time
+	// instead of system time when available.
+	EnableTimeSync bool
 }
 
 func (d *Debug) fixup() {
@@ -109,54 +94,6 @@ func (d *Debug) fixup() {
 	if d.SessionDialTimeout == 0 {
 		d.SessionDialTimeout = defaultSessionDialTimeout
 	}
-}
-
-// VotingAuthority is a voting authority configuration.
-type VotingAuthority struct {
-	Peers []*vServerConfig.Authority
-}
-
-// New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey, scheme kem.Scheme, mygeo *geo.Geometry) (pki.Client, error) {
-	if scheme == nil {
-		return nil, errors.New("KEM scheme cannot be nil")
-	}
-
-	blob, err := linkKey.Public().MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-	linkHash := blake2b.Sum256(blob)
-	cfg := &vClient.Config{
-		KEMScheme:     scheme,
-		LinkKey:       linkKey,
-		LogBackend:    l,
-		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash)),
-		Geo:           mygeo,
-	}
-	return vClient.New(cfg)
-}
-
-func (vACfg *VotingAuthority) validate() error {
-	if vACfg.Peers == nil || len(vACfg.Peers) == 0 {
-		return errors.New("error VotingAuthority failure, must specify at least one peer")
-	}
-	for _, peer := range vACfg.Peers {
-		if peer.IdentityPublicKey == nil || peer.LinkPublicKey == nil || len(peer.Addresses) == 0 {
-			return errors.New("invalid voting authority peer")
-		}
-	}
-	return nil
-}
-
-// NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey, mygeo *geo.Geometry) (pki.Client, error) {
-	switch {
-	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg, linkKey, schemes.ByName(c.WireKEMScheme), mygeo)
-	}
-	return nil, errors.New("no Authority found")
 }
 
 // UpstreamProxy is the outgoing connection proxy configuration.
@@ -193,17 +130,138 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 	return cfg, nil
 }
 
+// LinkPublicKey wraps kem.PublicKey with PEM-based text marshaling
+// so that BurntSushi/toml can serialize it as a string.
+type LinkPublicKey struct {
+	kem.PublicKey
+}
+
+func (k LinkPublicKey) MarshalText() ([]byte, error) {
+	return []byte(kempem.ToPublicPEMString(k.PublicKey)), nil
+}
+
+// Gateway describes all necessary Gateway connection information
+// so that clients can connect to the Gateway and use the mixnet
+// and retrieve cached PKI documents.
+type Gateway struct {
+	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
+	WireKEMScheme string
+
+	// Name is the human readable (descriptive) node identifier.
+	Name string
+
+	// IdentityKey is the node's identity (signing) key.
+	IdentityKey sign.PublicKey
+
+	// LinkKey is the node's wire protocol public key.
+	LinkKey LinkPublicKey
+
+	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
+	PKISignatureScheme string
+
+	// Addresses are the URLs specifying the endpoints that can be used to reach the node.
+	// Valid schemes are tcp:// and quic:// for TCP and quic (UDP)
+	Addresses []string
+}
+
+type Gateways struct {
+	Gateways []*Gateway
+}
+
+type Callbacks struct {
+	// OnConnFn is the callback function that will be called when the
+	// connection status changes.  The error parameter will be nil on
+	// successful connection establishment, otherwise it will be set
+	// with the reason why a connection has been torn down (or a connect
+	// attempt has failed).
+	OnConnFn func(error)
+
+	// OnACKFn is the callback function that will be called when a
+	// message CK is retreived from the user's server side spool.  Callers
+	// MUST be prepared to receive multiple callbacks with the same
+	// SURB ID and SURB ciphertext.  Calls to the callback that return
+	// an error will be treated as a signal to tear down the connection.
+	OnACKFn func(*[constants.SURBIDLength]byte, []byte) error
+
+	// OnDocumentFn is the callback function taht will be called when a
+	// new directory document is retreived for the current epoch.
+	OnDocumentFn func(*cpki.Document)
+}
+
 // Config is the top level client configuration.
 type Config struct {
-	RatchetNIKEScheme  string
-	WireKEMScheme      string
+
+	// Listen is the subtable-discriminated listen-transport
+	// configuration. Exactly one of its inner subtables (Unix, Tcp,
+	// and in future Ssh / Pigeonhole) must be populated.
+	Listen *transport.ListenConfig
+
+	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
 	PKISignatureScheme string
-	SphinxGeometry     *geo.Geometry
-	Logging            *Logging
-	UpstreamProxy      *UpstreamProxy
-	Debug              *Debug
-	VotingAuthority    *VotingAuthority
-	upstreamProxy      *proxy.Config
+
+	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
+	WireKEMScheme string
+
+	// SphinxGeometry
+	SphinxGeometry *geo.Geometry
+
+	// Logging
+	Logging *Logging
+
+	// UpstreamProxy can be used to setup a SOCKS proxy for use with a VPN or Tor.
+	UpstreamProxy *UpstreamProxy
+
+	// Debug is used to set various parameters.
+	Debug *Debug
+
+	// CachedDocument is a PKI Document that has a MixDescriptor
+	// containg the Addresses and LinkKeys of minclient's Gateway
+	// so that it can connect directly without contacting an Authority.
+	CachedDocument *cpki.Document
+
+	// PinnedGateways is information about a set of Gateways; the required information that lets clients initially
+	// connect and download a cached PKI document.
+	PinnedGateways *Gateways
+
+	// VotingAuthority contains the voting authority peer public configuration.
+	VotingAuthority *VotingAuthority
+
+	// Callbacks should not be set by the config file.
+	Callbacks *Callbacks
+
+	// PreferedTransports is a list of the transports will be used to make
+	// outgoing network connections, with the most prefered first.
+	PreferedTransports []string
+
+	// MetricsAddress is the bind address of the kpclientd prometheus
+	// listener. The listener is only compiled in when the
+	// `kpclientd_metrics` build tag is set; production builds without
+	// the tag treat this field as inert. Convention is 127.0.0.1
+	// only; binding to a public address is not supported.
+	MetricsAddress string
+
+	// AllowHostnameAddresses, when true, permits DNS hostnames in
+	// the Listen Tcp address, MetricsAddress, PinnedGateways
+	// addresses and VotingAuthority peer addresses. The default is
+	// false: production clients must use IP literals so the daemon
+	// never performs a DNS lookup at runtime. Genconfig sets this
+	// to true for the docker-mixnet thin-client config because the
+	// embedded compose DNS resolves daemon hostnames such as
+	// kpclientd, gateway1, auth1. Onion addresses are always
+	// permitted.
+	AllowHostnameAddresses bool
+
+	// SessionGracePeriod sets how long the daemon preserves
+	// per-app state (ARQ entries, reply queues, the AppID-to-token
+	// mapping) after a thin client's underlying connection drops
+	// without a thin_close. A reconnect within the window restores
+	// the prior session; an absence beyond it reaps the state.
+	// Zero (the unset default) means the compile-time fallback in
+	// listener.go applies. Parsed from a Go duration string such as
+	// "10m" or "30s".
+	SessionGracePeriod time.Duration
+
+	upstreamProxy *proxy.Config
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for
@@ -212,78 +270,7 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 	return c.upstreamProxy
 }
 
-// FixupAndValidate applies defaults to config entries and validates the
-// configuration sections.
-func (c *Config) FixupAndValidate() error {
-	if c.WireKEMScheme == "" {
-		return errors.New("config: WireKEMScheme was not set")
-	}
-	if c.PKISignatureScheme == "" {
-		return errors.New("config: PKISignatureScheme was not set")
-	}
-	if c.SphinxGeometry == nil {
-		return errors.New("config: No SphinxGeometry block was present")
-	}
-	err := c.SphinxGeometry.Validate()
-	if err != nil {
-		return err
-	}
-	// Handle missing sections if possible.
-	if c.Logging == nil {
-		c.Logging = &defaultLogging
-	}
-	if c.Debug == nil {
-		c.Debug = &Debug{
-			PollingInterval:             defaultPollingInterval,
-			InitialMaxPKIRetrievalDelay: defaultInitialMaxPKIRetrievalDelay,
-		}
-	} else {
-		c.Debug.fixup()
-	}
-
-	// Validate/fixup the various sections.
-	if err := c.Logging.validate(); err != nil {
-		return err
-	}
-	if uCfg, err := c.UpstreamProxy.toProxyConfig(); err == nil {
-		c.upstreamProxy = uCfg
-	} else {
-		return err
-	}
-	switch {
-	case c.VotingAuthority != nil:
-		if err := c.VotingAuthority.validate(); err != nil {
-			return fmt.Errorf("config: VotingAuthority is invalid: %s", err)
-		}
-	case c.VotingAuthority == nil:
-		return fmt.Errorf("config: VotingAuthority is invalid: %s", err)
-	default:
-		return fmt.Errorf("config: Authority configuration is invalid")
-	}
-
-	return nil
-}
-
-// Load parses and validates the provided buffer b as a config file body and
-// returns the Config.
-func Load(b []byte) (*Config, error) {
-	cfg := new(Config)
-	err := toml.Unmarshal(b, cfg)
-	if err != nil {
-		return nil, err
-	}
-	if err := cfg.FixupAndValidate(); err != nil {
-		return nil, err
-	}
-	return cfg, nil
-}
-
-// LoadFile loads, parses, and validates the provided file and returns the
-// Config.
-func LoadFile(f string) (*Config, error) {
-	b, err := os.ReadFile(f)
-	if err != nil {
-		return nil, err
-	}
-	return Load(b)
+// VotingAuthority is a voting authority peer public configuration: key material, connection info etc.
+type VotingAuthority struct {
+	Peers []*vServerConfig.Authority
 }

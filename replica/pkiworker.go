@@ -1,0 +1,296 @@
+// SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package replica
+
+import (
+	"context"
+	"crypto/hmac"
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
+	"golang.org/x/crypto/blake2b"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/schemes"
+
+	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
+	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/replica/instrument"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+)
+
+const PKIDocNum = 3
+
+var (
+	PublishDeadline = vServer.MixPublishDeadline
+)
+
+type PKIWorker struct {
+	worker.Worker
+
+	server *Server
+	*pki.WorkerBase
+
+	replicas *replicaCommon.ReplicaMap
+
+	impl pki.ReplicaNodeClient // fetches consensus and posts ReplicaDescriptor
+
+	descAddrMap        map[string][]string
+	lastPublishedEpoch uint64
+}
+
+// newPKIWorker creates a PKIWorker with the default voting client
+func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
+	kemscheme := schemes.ByName(server.cfg.WireKEMScheme)
+	if kemscheme == nil {
+		return nil, errors.New("kem scheme not found in registry")
+	}
+	pkiCfg := &vClient.Config{
+		KEMScheme:   kemscheme,
+		LinkKey:     server.linkKey,
+		LogBackend:  server.LogBackend(),
+		Authorities: server.cfg.PKI.Voting.Authorities,
+		Geo:         server.cfg.SphinxGeometry,
+		// Convert milliseconds to seconds for PKI client timeouts
+		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
+		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,
+	}
+
+	pkiClient, err := vClient.New(pkiCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return newPKIWorkerWithClient(server, pkiClient, log)
+}
+
+// newPKIWorkerWithClient creates a PKIWorker with a custom pki.ReplicaNodeClient for testing
+func newPKIWorkerWithClient(server *Server, pkiClient pki.ReplicaNodeClient, log *logging.Logger) (*PKIWorker, error) {
+	// Reduce PKI worker and PKI client log verbosity to WARNING level to reduce log noise
+	// This suppresses DEBUG and INFO messages from the PKI worker, PKI client, and connector
+	server.logBackend.SetLevel(logging.WARNING, "replica pkiWorker")
+	server.logBackend.SetLevel(logging.WARNING, "pki/voting/client/connector")
+	server.logBackend.SetLevel(logging.WARNING, "pki/voting/Client")
+	// Keep replica Connector at DEBUG for now to debug replication issues
+	// server.logBackend.SetLevel(logging.WARNING, "replica Connector")
+
+	p := &PKIWorker{
+		server:      server,
+		WorkerBase:  pki.NewWorkerBase(pkiClient, log),
+		replicas:    replicaCommon.NewReplicaMap(),
+		descAddrMap: make(map[string][]string),
+		impl:        pkiClient,
+	}
+
+	for _, v := range server.cfg.Addresses {
+		u, err := url.Parse(v)
+		if err != nil {
+			return nil, fmt.Errorf("parse address %q: %w", v, err)
+		}
+		scheme := strings.ToLower(u.Scheme)
+		if scheme == "" {
+			return nil, fmt.Errorf("address missing scheme: %q", v)
+		}
+		p.descAddrMap[scheme] = append(p.descAddrMap[scheme], v)
+	}
+
+	return p, nil
+}
+
+// Start launches the PKI worker's background goroutine. The caller
+// must have assigned the worker to server.PKIWorker first: the
+// worker's first iteration may call into state.Rebalance, which reads
+// server.PKIWorker, and a goroutine spawned before that assignment
+// would race with, or precede, it.
+func (p *PKIWorker) Start() {
+	p.Go(p.worker)
+}
+func replicaMap(doc *pki.Document) map[[32]byte]*pki.ReplicaDescriptor {
+	newReplicas := make(map[[32]byte]*pki.ReplicaDescriptor)
+	for _, replica := range doc.StorageReplicas {
+		replicaIdHash := blake2b.Sum256(replica.IdentityKey)
+		newReplicas[replicaIdHash] = replica
+	}
+	return newReplicas
+}
+
+// isSubset returns true is a is a subset of b
+func isSubset(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
+	for key := range a {
+		_, ok := b[key]
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func equal(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
+	for key := range a {
+		_, ok := b[key]
+		if !ok {
+			return false
+		}
+	}
+	for key := range b {
+		_, ok := a[key]
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *PKIWorker) updateReplicas(doc *pki.Document) {
+	newReplicas := replicaMap(doc)
+	switch {
+	case equal(p.replicas.Copy(), newReplicas):
+		// no op
+	case !isSubset(p.replicas.Copy(), newReplicas):
+		// removing replica(s)
+		fallthrough
+	case !isSubset(newReplicas, p.replicas.Copy()):
+		// adding replica(s)
+		p.replicas.Replace(newReplicas)
+		err := p.server.state.Rebalance("pki_change")
+		if err != nil {
+			p.GetLogger().Errorf("Rebalance failure: %s", err)
+		}
+	}
+}
+
+// ReplicasCopy returns a copy of the replicas map
+func (p *PKIWorker) ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor {
+	return p.replicas.Copy()
+}
+
+// Keep the documentForEpoch method public so it can be used by IsPeerValid
+func (p *PKIWorker) documentForEpoch(epoch uint64) *pki.Document {
+	return p.EntryForEpoch(epoch)
+}
+
+// replicaDescriptorsForAuth returns every descriptor for nodeID across
+// the cached documents for the previous, current, and next epochs.
+// Authenticating against this window keeps healthy links alive when the
+// dirauths publish late or a peer's descriptor churns during staggered
+// upgrades; each descriptor still binds the identity to its published
+// link key.
+func (p *PKIWorker) replicaDescriptorsForAuth(nodeID *[32]byte) []*pki.ReplicaDescriptor {
+	epoch, _, _ := epochtime.Now()
+	var out []*pki.ReplicaDescriptor
+	for _, e := range []uint64{epoch, epoch - 1, epoch + 1} {
+		doc := p.documentForEpoch(e)
+		if doc == nil {
+			continue
+		}
+		desc, err := doc.GetReplicaNodeByKeyHash(nodeID)
+		if err != nil {
+			continue
+		}
+		out = append(out, desc)
+	}
+	return out
+}
+
+// ForceFetchPKI forces the PKI worker to fetch a new PKI document for the current epoch.
+// This is useful for integration tests where you want to ensure the replica has the latest
+// PKI document without waiting for the normal fetch cycle.
+func (p *PKIWorker) ForceFetchPKI() error {
+	if p.impl == nil {
+		return errors.New("no PKI client configured")
+	}
+
+	epoch, _, _ := epochtime.Now()
+
+	// Clear any failed fetch record for this epoch to allow retry
+	p.ClearFailedFetch(epoch)
+
+	p.GetLogger().Debugf("Force fetching PKI document for epoch %v", epoch)
+
+	// Fetch the PKI document. Bound it: an unreachable/retrying dirauth must
+	// not block this call indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), pki.FetchTimeout)
+	defer cancel()
+	d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(ctx, epoch)
+	if err != nil {
+		p.GetLogger().Warningf("Force fetch failed for epoch %v: %v", epoch, err)
+		return err
+	}
+
+	// Validate sphinx geometry
+	if !hmac.Equal(d.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
+		return errors.New("sphinx geometry mismatch")
+	}
+
+	// Update replicas and store the document
+	p.updateReplicas(d)
+	p.StoreDocument(epoch, d, rawDoc)
+
+	// Refresh the readiness gauges.
+	p.updateReadiness()
+
+	p.GetLogger().Debugf("Successfully force fetched PKI document for epoch %v", epoch)
+
+	// Kick the connector to update connections
+	p.server.connector.ForceUpdate()
+
+	return nil
+}
+
+// HasCurrentPKIDocument returns true if the replica has a PKI document for the current epoch.
+// This is useful for integration tests to check if the replica is ready.
+func (p *PKIWorker) HasCurrentPKIDocument() bool {
+	epoch, _, _ := epochtime.Now()
+	return p.documentForEpoch(epoch) != nil
+}
+
+// updateReadiness recomputes the replica readiness gauges. A replica is
+// ready only when it holds a PKI document for the current mixnet epoch
+// whose ReplicaDescriptor for this instance carries the same per-replica
+// envelope public key for the current replica epoch as the local keypair.
+// Anything else (no current document, descriptor missing, key mismatch)
+// reports not ready, so a restarted replica is never reported ready until
+// the consensus actually agrees with its persisted envelope keys.
+func (p *PKIWorker) updateReadiness() {
+	epoch, _, _ := epochtime.Now()
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	ready := false
+	if doc := p.documentForEpoch(epoch); doc != nil {
+		idKeyHash := hash.Sum256From(p.server.identityPublicKey)
+		if desc, err := doc.GetReplicaNodeByKeyHash(&idKeyHash); err == nil {
+			if key, err := p.server.envelopeKeys.GetKeypair(replicaEpoch); err == nil {
+				ready = hmac.Equal(desc.EnvelopeKeys[replicaEpoch], key.PublicKey.Bytes())
+			}
+		}
+	}
+	instrument.SetReplicaReady(ready, replicaEpoch)
+}
+
+// ReplyJitterBound returns the uniform per-reply delay upper bound
+// derived from the consensus LambdaR (see replyJitterFromLambdaR).
+// During the epoch-rotation gap the most recently cached document is
+// consulted; only when no document exists at all (or it carries an
+// unusable LambdaR) does the code fall back to fallbackReplyJitter.
+func (p *PKIWorker) ReplyJitterBound() time.Duration {
+	epoch, _, _ := epochtime.Now()
+	doc := p.documentForEpoch(epoch)
+	if doc == nil {
+		doc = p.LastCachedPKIDocument()
+	}
+	if doc == nil {
+		return fallbackReplyJitter
+	}
+	bound, err := replyJitterFromLambdaR(doc.LambdaR)
+	if err != nil {
+		return fallbackReplyJitter
+	}
+	return bound
+}

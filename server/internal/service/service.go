@@ -47,7 +47,7 @@ func (p *serviceNode) OnPacket(pkt *packet.Packet) {
 	p.ch <- pkt
 }
 
-func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
+func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[string]map[string]interface{}, error) {
 	map1 := p.kaetzchenWorker.KaetzchenForPKI()
 	map2 := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
 
@@ -68,7 +68,20 @@ func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, erro
 		}
 	}
 
-	return merged, nil
+	kaetzchenAdvertizedData := make(map[string]map[string]interface{})
+	cfg := p.glue.Config()
+	for _, v := range cfg.ServiceNode.CBORPluginKaetzchen {
+		if v.PKIAdvertizedData != nil {
+			_, ok := v.PKIAdvertizedData[v.Capability]
+			if ok {
+				kaetzchenAdvertizedData[v.Capability] = v.PKIAdvertizedData[v.Capability]
+			}
+		}
+	}
+
+	p.log.Infof("kaetzchenAdvertizedData %v", kaetzchenAdvertizedData)
+
+	return kaetzchenAdvertizedData, merged, nil
 }
 
 func (p *serviceNode) worker() {
@@ -90,6 +103,7 @@ func (p *serviceNode) worker() {
 			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("service_dwell_exceeded")
 				pkt.Dispose()
 				continue
 			}
@@ -109,6 +123,7 @@ func (p *serviceNode) worker() {
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("service_kaetzchen_surb_reply")
 				pkt.Dispose()
 			} else {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
@@ -122,6 +137,7 @@ func (p *serviceNode) worker() {
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
 				instrument.PacketsDropped()
+				instrument.PacketsDroppedByReason("service_cbor_kaetzchen_surb_reply")
 				pkt.Dispose()
 			} else {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
@@ -133,6 +149,7 @@ func (p *serviceNode) worker() {
 
 		p.log.Debugf("Dropping packet: %v because recipient %x is not found", pkt.ID, pkt.Recipient.ID)
 		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("service_unknown_recipient")
 		pkt.Dispose()
 	}
 }

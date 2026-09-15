@@ -1,0 +1,29 @@
+# apt-family base image. Covers debian-<tag> and ubuntu-<tag>; the exact
+# distro version is selected purely by the BASE_IMAGE build arg, so there
+# is no per-version code here (debian-trixie, debian-testing, ubuntu-25.10,
+# ubuntu-26.04, ... are all this file with a different FROM).
+ARG BASE_IMAGE=docker.io/debian:trixie
+FROM ${BASE_IMAGE}
+
+ARG TARGETARCH
+# GO_VERSION is supplied by the Makefile, which reads it from ../go.mod as
+# the single source of truth for the toolchain version. It is intentionally
+# not defaulted here so a direct build fails rather than pinning a stale Go.
+ARG GO_VERSION
+
+RUN useradd -m -s /bin/bash katzenpost
+
+# Install build tools. Go needs a C toolchain (build-essential) for the
+# cgo components; git is used to fetch Go modules during the docker
+# build.
+RUN apt-get update && apt-get upgrade -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        build-essential make pv curl netcat-openbsd \
+        bash perl coreutils git
+
+# Install Go
+RUN set -eu; \
+    test -n "$GO_VERSION" || { echo "GO_VERSION build-arg is required (the Makefile passes it from go.mod)" >&2; exit 1; }; \
+    curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz | tar -C /usr/local -xzf -; \
+    ln -s /usr/local/go/bin/go /usr/bin/go; \
+    ln -s /usr/local/go/bin/gofmt /usr/bin/gofmt

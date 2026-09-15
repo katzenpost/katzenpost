@@ -22,7 +22,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"gitlab.com/yawning/aez.git"
 	"gopkg.in/op/go-logging.v1"
@@ -39,6 +41,8 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -81,6 +85,7 @@ type Server struct {
 	periodic      *periodicTimer
 	mixKeys       glue.MixKeys
 	pki           glue.PKI
+	shutdownPKI   glue.PKI
 	listeners     []glue.Listener
 	connector     glue.Connector
 	gateway       glue.Gateway
@@ -88,9 +93,10 @@ type Server struct {
 	decoy         glue.Decoy
 	management    *thwack.Server
 
-	fatalErrCh chan error
-	haltedCh   chan interface{}
-	haltOnce   sync.Once
+	fatalErrCh   chan error
+	haltedCh     chan interface{}
+	haltOnce     sync.Once
+	gracefulOnce sync.Once
 }
 
 func (s *Server) initLogging() error {
@@ -116,9 +122,37 @@ func (s *Server) reshadowCryptoWorkers() {
 	}
 }
 
+// firstLine returns the first non-empty line of err's message, summarizing
+// a multi-line error (e.g. one carrying a captured plugin stderr tail) to a
+// single log line. The full error text still reaches stderr via fang at
+// process exit.
+func firstLine(err error) string {
+	if err == nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.SplitN(err.Error(), "\n", 2)[0])
+}
+
 // IdentityKey returns the running server's identity public key.
 func (s *Server) IdentityKey() sign.PublicKey {
 	return s.identityPublicKey
+}
+
+// reportFatal hands err to the fatal error watcher, which shuts the
+// server down. The send is non-blocking and fatalErrCh is buffered,
+// so a caller never blocks: one queued error is enough to bring the
+// server down, and the watcher is gone once shutdown has begun. A
+// blocking send would deadlock the callers that halt() waits for, and
+// closing the channel to release them would panic any send that lost
+// the race.
+func (s *Server) reportFatal(err error) {
+	select {
+	case s.fatalErrCh <- err:
+	default:
+		if s.log != nil {
+			s.log.Warningf("Fatal error while already shutting down: %v", err)
+		}
+	}
 }
 
 // RotateLog rotates the log file
@@ -126,13 +160,65 @@ func (s *Server) IdentityKey() sign.PublicKey {
 func (s *Server) RotateLog() {
 	err := s.logBackend.Rotate()
 	if err != nil {
-		s.fatalErrCh <- fmt.Errorf("failed to rotate log file, shutting down server")
+		s.reportFatal(fmt.Errorf("failed to rotate log file, shutting down server"))
 	}
 }
 
 // Shutdown cleanly shuts down a given Server instance.
 func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
+}
+
+// ShutdownGracefully withdraws the node from future consensus documents
+// before shutting it down when WaitForConsensusExitOnShutdown is enabled.
+// Fatal-error paths continue to use Shutdown so a broken node is not kept
+// alive merely to complete an operator-requested drain.
+func (s *Server) ShutdownGracefully() {
+	s.gracefulOnce.Do(func() {
+		if s.cfg.Server.WaitForConsensusExitOnShutdown {
+			s.waitForConsensusExit()
+		}
+		s.Shutdown()
+	})
+	<-s.haltedCh
+}
+
+func (s *Server) waitForConsensusExit() {
+	if s.shutdownPKI == nil {
+		return
+	}
+
+	lastEpoch := s.shutdownPKI.StopAdvertising()
+	currentEpoch, _, till := epochtime.Now()
+	wait := consensusExitWait(lastEpoch, currentEpoch, till, epochtime.Period)
+	if wait <= 0 {
+		s.log.Noticef("Consensus withdrawal complete: node is not advertised in epoch %d.", currentEpoch)
+		return
+	}
+
+	s.log.Noticef(
+		"Consensus withdrawal started: descriptor advertising stopped; last potentially advertised epoch=%d current_epoch=%d; continuing to serve traffic for %v before shutdown.",
+		lastEpoch,
+		currentEpoch,
+		wait,
+	)
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		s.log.Noticef("Consensus withdrawal complete after epoch %d.", lastEpoch)
+	case <-s.haltedCh:
+		// An immediate shutdown, normally caused by a fatal error, won the
+		// race. Do not keep the graceful caller blocked.
+	}
+}
+
+func consensusExitWait(lastAdvertisedEpoch, currentEpoch uint64, tillNextEpoch, epochPeriod time.Duration) time.Duration {
+	if lastAdvertisedEpoch < currentEpoch {
+		return 0
+	}
+	return tillNextEpoch + time.Duration(lastAdvertisedEpoch-currentEpoch)*epochPeriod
 }
 
 // Wait waits till the server is terminated for any reason.
@@ -220,8 +306,6 @@ func (s *Server) halt() {
 		close(s.inboundPackets)
 	}
 
-	close(s.fatalErrCh)
-
 	s.log.Noticef("Shutdown complete.")
 	close(s.haltedCh)
 }
@@ -229,9 +313,12 @@ func (s *Server) halt() {
 // New returns a new Server instance parameterized with the specified
 // configuration.
 func New(cfg *config.Config) (*Server, error) {
+	startupStart := time.Now()
+	stepStart := startupStart
+
 	s := &Server{
 		cfg:        cfg,
-		fatalErrCh: make(chan error),
+		fatalErrCh: make(chan error, 1),
 		haltedCh:   make(chan interface{}),
 	}
 	goo := &serverGlue{s}
@@ -243,12 +330,45 @@ func New(cfg *config.Config) (*Server, error) {
 	if err := s.initLogging(); err != nil {
 		return nil, err
 	}
+	logStartupStep := func(step string) {
+		now := time.Now()
+		s.log.Debugf("server startup: %s completed in %v total=%v", step, now.Sub(stepStart), now.Sub(startupStart))
+		stepStart = now
+	}
+	logStartupStep("data directory and logging")
+
 	instrument.StartPrometheusListener(goo)
+	logStartupStep("prometheus listener")
+
+	// Startup Sphinx self-check. Measures the per-core Unwrap rate on
+	// this host so ops teams have a concrete throughput ceiling number
+	// to reason about, exposed both as a log notice and as prometheus
+	// gauges. The measurement also feeds Debug.ApplyRuntimeDefaults
+	// below, which fills in the worker-count knobs if the operator
+	// left them at 0.
+	//
+	// The result is cached to <DataDir>/selfcheck.toml after the
+	// first successful measurement, so a restart on the same host
+	// reuses the cached numbers instead of re-measuring. The cache
+	// is invalidated automatically when hostname or NumCPU changes;
+	// see loadOrRunSphinxSelfCheck.
+	selfCheck := loadOrRunSphinxSelfCheck(s.log, s.cfg.SphinxGeometry, s.cfg.Server.DataDir)
+	s.cfg.Debug.ApplyRuntimeDefaults(selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
+	s.log.Noticef("Server runtime defaults: NumSphinxWorkers=%d, NumGatewayWorkers=%d, NumServiceWorkers=%d, NumKaetzchenWorkers=%d (derived from runtime.NumCPU=%d, saturated Sphinx=%.2f ops/s)",
+		s.cfg.Debug.NumSphinxWorkers,
+		s.cfg.Debug.NumGatewayWorkers,
+		s.cfg.Debug.NumServiceWorkers,
+		s.cfg.Debug.NumKaetzchenWorkers,
+		selfCheck.NumCPU,
+		selfCheck.OpsPerSecSaturated)
+	logStartupStep("Sphinx self-check + runtime defaults")
 
 	if err := profiling.Start(s.log); err != nil {
 		return nil, fmt.Errorf("failed to start profiling: %w", err)
 	}
+	logStartupStep("profiling")
 
+	s.log.Noticef("Katzenpost server version: %s", kpcommon.Version())
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
@@ -260,6 +380,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
 	s.log.Noticef("Sphinx Geometry: %s", cfg.SphinxGeometry.Display())
+	logStartupStep("version and hardware checks")
 
 	// Initialize the server identity and link keys.
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
@@ -296,6 +417,8 @@ func New(cfg *config.Config) (*Server, error) {
 
 	idPubKeyHash := hash.Sum256From(s.identityPublicKey)
 	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
+	logStartupStep("identity key initialization")
+
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 	scheme := schemes.ByName(cfg.Server.WireKEM)
@@ -342,6 +465,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	linkPubKeyHash := hash.Sum256(blob)
 	s.log.Noticef("Server link public key hash is: %x", linkPubKeyHash[:])
+	logStartupStep("link key initialization")
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
@@ -352,6 +476,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}
+	logStartupStep("mix keys")
 
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
 	isOk := false
@@ -365,14 +490,15 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start the fatal error watcher.
 	go func() {
-		err, ok := <-s.fatalErrCh
-		if !ok {
+		select {
+		case err := <-s.fatalErrCh:
+			s.log.Warningf("Shutting down due to error: %v", err)
+			s.Shutdown()
+		case <-s.haltedCh:
 			// Graceful termination.
-			return
 		}
-		s.log.Warningf("Shutting down due to error: %v", err)
-		s.Shutdown()
 	}()
+	logStartupStep("fatal error watcher")
 
 	// Initialize the management interface if enabled.
 	//
@@ -381,7 +507,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warningf("Warning: management socket file '%s' already exists, deleting it.", s.cfg.Management.Path)
 		err := os.Remove(s.cfg.Management.Path)
 		if err != nil {
-			s.fatalErrCh <- fmt.Errorf("failed to delete mgmt socket file, shutting down now")
+			s.reportFatal(fmt.Errorf("failed to delete mgmt socket file, shutting down now"))
 			return nil, err
 		}
 	}
@@ -401,16 +527,28 @@ func New(cfg *config.Config) (*Server, error) {
 
 		const shutdownCmd = "SHUTDOWN"
 		s.management.RegisterCommand(shutdownCmd, func(c *thwack.Conn, l string) error {
-			s.fatalErrCh <- fmt.Errorf("user requested shutdown via mgmt interface")
+			if err := c.WriteReply(thwack.StatusOk); err != nil {
+				return err
+			}
+			s.log.Warningf("Shutting down due to operator request via management interface")
+			// ShutdownGracefully drains when the option is enabled and is a
+			// plain Shutdown otherwise; run it async so the management
+			// connection is not held open through a long withdrawal.
+			go s.ShutdownGracefully()
 			return nil
 		})
 	}
+	logStartupStep("management interface")
 
 	// Initialize the PKI interface.
 	if s.pki, err = pki.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize PKI client: %v", err)
 		return nil, err
 	}
+	// Keep an immutable reference for a signal-triggered consensus withdrawal.
+	// The regular pki field is cleared during an immediate shutdown.
+	s.shutdownPKI = s.pki
+	logStartupStep("PKI client")
 
 	// Initialize the gateway backend.
 	if s.cfg.Server.IsGatewayNode {
@@ -419,20 +557,27 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	}
+	logStartupStep("gateway backend")
 
 	// Initialize the provider backend.
 	if s.cfg.Server.IsServiceNode {
+		// Log a one-line summary to the log backend so operators who log to
+		// a file (rather than stdout/stderr) still see startup failures. The
+		// full error, including any captured plugin stderr tail, is carried
+		// to stderr via fang at process exit.
 		if s.serviceNode, err = service.New(goo); err != nil {
-			s.log.Errorf("Failed to initialize provider backend: %v", err)
+			s.log.Errorf("Failed to initialize provider backend: %s", firstLine(err))
 			return nil, err
 		}
 	}
+	logStartupStep("service node backend")
 
 	// Initialize and start the the scheduler.
 	if s.scheduler, err = scheduler.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize scheduler: %v", err)
 		return nil, err
 	}
+	logStartupStep("scheduler")
 
 	// Initialize and start the Sphinx workers.
 	s.inboundPackets = make(chan interface{}, InboundPacketsChannelSize)
@@ -441,30 +586,48 @@ func New(cfg *config.Config) (*Server, error) {
 		w := cryptoworker.New(goo, s.inboundPackets, i)
 		s.cryptoWorkers = append(s.cryptoWorkers, w)
 	}
+	logStartupStep("sphinx workers")
 
 	// Initialize the outgoing connection manager, decoy source/sink, and then
 	// start the PKI worker.
 	s.connector = outgoing.New(goo)
+	logStartupStep("outgoing connector")
+
 	if s.decoy, err = decoy.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize decoy source/sink: %v", err)
 		return nil, err
 	}
+	logStartupStep("decoy source/sink")
+
+	var addresses []string
+	if len(s.cfg.Server.BindAddresses) > 0 {
+		s.log.Debugf("BindAddresses found")
+		addresses = s.cfg.Server.BindAddresses
+	} else {
+		addresses = s.cfg.Server.Addresses
+	}
+	logStartupStep("listener address selection")
 
 	// Bring the listener(s) online.
-	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
-	for i, addr := range s.cfg.Server.Addresses {
+	s.listeners = make([]glue.Listener, 0, len(addresses))
+	for i, addr := range addresses {
+		listenerStart := time.Now()
 		l, err := incoming.New(goo, s.inboundPackets, i, addr)
 		if err != nil {
-			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
+			s.log.Errorf("Failed to spawn listener on address: %v after %v (%v).", addr, time.Since(listenerStart), err)
 			return nil, err
 		}
+		s.log.Debugf("server startup: listener %d for %q completed in %v", i, addr, time.Since(listenerStart))
 		s.listeners = append(s.listeners, l)
 	}
+	logStartupStep("listeners")
 
 	s.pki.StartWorker()
+	logStartupStep("PKI worker start")
 
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
+	logStartupStep("periodic timer")
 
 	// Start listening on the management interface if enabled, now that every
 	// subsystem that wants to register commands has had the opportunity to do
@@ -472,6 +635,9 @@ func New(cfg *config.Config) (*Server, error) {
 	if s.management != nil {
 		s.management.Start()
 	}
+	logStartupStep("management interface start")
+
+	s.log.Debugf("server startup: completed in %v", time.Since(startupStart))
 
 	isOk = true
 	return s, nil

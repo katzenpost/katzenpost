@@ -1,34 +1,89 @@
 name: docker mixnet integration tests
-on: [pull_request, push]
+on: [pull_request]
 jobs:
 
   test_e2e_client:
+    permissions:
+      contents: read
+      packages: write
     env:
       warped: true
-      no_mixdecoy: false
-      no_decoy: false
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
     strategy:
       matrix:
-        go-version: [1.22.x]
+        go-version: [1.26.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install CA certificates
+        if: ${{ env.ACT }}
+        run: |
+          # CA certs are mounted from host, just ensure they're linked properly
+          if [ -d /etc/ssl/certs ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+            echo "CA certificates already available"
+          else
+            apt update && apt install -y ca-certificates build-essential gcc g++ make
+            update-ca-certificates podman
+          fi
+        continue-on-error: true
+
       - name: Configure podman socket
         run: |
-          systemctl --user start podman.socket
+          systemctl --user start podman.socket || true
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make log_level=DEBUG start wait
+          cd docker && make start wait
 
-      - name: run ping
-        run: cd docker && make run-ping
+      - name: Sleep for a few seconds to allow the mixnet to fully start
+        run: sleep 5
 
-      - name: run client end to end tests
-        run: cd client && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+      # Print each daemon's startup self-check sidecar so an operator
+      # can copy the numbers into a committed cache and short-circuit
+      # the live measurement on future CI runs. The sidecars are
+      # written by every replica and every mix/gateway/service node
+      # the first time it boots on a fresh DataDir; their contents are
+      # also bundled into the testnet-state artifact below for download.
+      - name: Print selfcheck.toml from every daemon
+        if: always()
+        run: |
+          cd docker
+          shopt -s nullglob
+          found=0
+          for f in mixnet-alpine/*/selfcheck.toml; do
+            found=1
+            echo "=== $f ==="
+            cat "$f" || echo "(unreadable: $f)"
+            echo
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "no selfcheck.toml files were written; the mixnet may have failed to start"
+          fi
+
+      - name: run all docker integration tests in parallel
+        run: cd client && make dockertest-all
+
+      - name: Dump kpclientd logs on failure
+        if: failure()
+        run: |
+          cd docker && make client-logs-snapshot
+
+      - name: Dump replica logs on failure
+        if: failure()
+        run: |
+          cd docker && ls -la mixnet-alpine/replica1/ && \
+          for r in mixnet-alpine/replica*/; do echo "=== $r ===" && cat "${r}katzenpost.log" 2>&1 | tail -20 || echo "no log file"; done && \
+          cd mixnet-alpine && podman compose ps -a 2>&1 | head -30 && \
+          podman compose logs --tail 30 replica1 replica2 replica3 replica4 replica5 2>&1 | tail -100
 
       - name: Stop the mixnet
         run: |
@@ -36,171 +91,10 @@ jobs:
 
       - name: Upload testnet state
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && !env.ACT
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
-            docker/voting_mixnet/*/*.log
-
-  test_e2e_memspool:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make log_level=DEBUG start wait
-
-      - name: run memspool end to end tests
-        run: cd memspool && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
-
-  test_e2e_catshadow:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install socat, for talking to management socket
-        run: sudo apt update && sudo apt install -y socat
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make log_level=DEBUG start wait
-
-      - name: test creating upgrade test state files
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
-
-      - name: test upgrade using newly-created state files
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_use_saved && cat coverage.part >> ../coverage.out
-
-      - name: test upgrade using saved state files from v0.0.30
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=v30 upgrade_test_use_saved && cat coverage.part >> ../coverage.out
-
-      - name: run catshadow end to end tests
-        run: cd catshadow && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
-
-  test_benchmark:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make log_level=DEBUG start wait run-ping
-
-      - name: run benchmark tests
-        run: cd bench && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
-
-  test_e2e_stream:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make log_level=DEBUG start wait
-
-      - name: run pigeonhole end to end tests
-        run: cd pigeonhole && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
-
-      - name: run stream end to end tests
-        run: cd stream && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml

@@ -17,7 +17,9 @@
 package cborplugin
 
 import (
+	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -66,7 +68,12 @@ func NewCommandIO(log *logging.Logger) *CommandIO {
 	}
 }
 
-func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder CommandBuilder) {
+// Start connects (initiator) or listens (!initiator) on socketFile. For the
+// initiator case, abortCh lets a caller cut the dial-retry loop short as
+// soon as it knows the plugin process has already died, rather than
+// exhausting the full retry budget against a socket that will never accept.
+// abortCh may be nil, in which case the loop always runs its full budget.
+func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder CommandBuilder, abortCh <-chan interface{}) error {
 	c.commandBuilder = commandBuilder
 
 	if initiator {
@@ -74,31 +81,44 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 		// it's possible that the plugin has written the socketFile to its stdout
 		// but the call to Accept hasn't happened yet, so backoff and wait a bit
 		// https://github.com/katzenpost/katzenpost/issues/477
+		const maxTries = 40
 		var err error
 		started := false
-		for tries := 0; tries < 3; tries++ {
+		tries := 0
+		for ; tries < maxTries; tries++ {
 			err = c.dial(socketFile)
-			if err != nil {
-				time.Sleep(time.Second)
-				continue
-			} else {
+			if err == nil {
 				started = true
 				break
 			}
+			select {
+			case <-abortCh:
+				return fmt.Errorf("gave up dialing %q after %d/%d tries, plugin process exited: %w", socketFile, tries+1, maxTries, err)
+			case <-time.After(time.Second):
+			}
 		}
-		if started != true {
-			panic(err)
+		if !started {
+			return fmt.Errorf("gave up dialing %q after %d tries: %w", socketFile, maxTries, err)
 		}
 		c.Go(c.reader)
 		c.Go(c.writer)
 	} else {
 		c.log.Debugf("listening to unix domain socket file: %s", socketFile)
+
 		var err error
 		c.listener, err = net.Listen("unix", socketFile)
 		if err != nil {
-			c.log.Fatal("listen error:", err)
+			// 99% of the time the problem is that the old socketFile
+			// is still there from previous time we ran, so let's
+			// try to remove it and see if that works:
+			os.Remove(socketFile)
+			c.listener, err = net.Listen("unix", socketFile)
+			if err != nil {
+				c.log.Fatal("listen error:", err)
+			}
 		}
 	}
+	return nil
 }
 
 func (c *CommandIO) Accept() {

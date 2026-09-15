@@ -1,264 +1,211 @@
-// commands.go - Wire protocol commands.
-// Copyright (C) 2017  David Anthony Stainton, Yawning Angel
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Copyright (C) 2017  David Anthony Stainton, Yawning Angel
+// SPDX-License-Identifier: AGPL-3.0-only
 
+// Wire protocol commands.
 package commands
 
 import (
 	"encoding/binary"
 	"errors"
+
+	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/sign"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-)
-
-const (
-	cmdOverhead = 1 + 1 + 4
-
-	retreiveMessageLength = 4
-	messageBaseLength     = 1 + 1 + 4
-
-	getConsensusLength  = 8
-	consensusBaseLength = 1
-
-	postDescriptorStatusLength = 1
-	postDescriptorLength       = 8
-
-	certStatusLength   = 1
-	revealStatusLength = 1
-	sigStatusLength    = 1
-	voteStatusLength   = 1
-
-	messageTypeMessage messageType = 0
-	messageTypeACK     messageType = 1
-	messageTypeEmpty   messageType = 2
-
-	// Generic commands.
-	noOp       commandID = 0
-	disconnect commandID = 1
-	sendPacket commandID = 2
-
-	// Implementation defined commands.
-	retreiveMessage      commandID = 16
-	message              commandID = 17
-	getConsensus         commandID = 18
-	consensus            commandID = 19
-	postDescriptor       commandID = 20
-	postDescriptorStatus commandID = 21
-	vote                 commandID = 22
-	voteStatus           commandID = 23
-	getVote              commandID = 24
-	reveal               commandID = 25
-	revealStatus         commandID = 26
-	sig                  commandID = 27
-	sigStatus            commandID = 28
-	certificate          commandID = 29
-	certStatus           commandID = 30
-
-	// ConsensusOk signifies that the GetConsensus request has completed
-	// successfully.
-	ConsensusOk = 0
-
-	// ConsensusNotFound signifies that the document document corresponding
-	// to the epoch in the GetConsensus was not found, but retrying later
-	// may be successful.
-	ConsensusNotFound = 1
-
-	// ConsensusGone signifies that the document corresponding to the epoch
-	// in the GetConsensus was not found, and that retrying later will
-	// not be successful.
-	ConsensusGone = 2
-
-	// DescriptorOk signifies that the PostDescriptor request has completed
-	// succcessfully.
-	DescriptorOk = 0
-
-	// DescriptorInvalid signifies that the PostDescriptor request has failed
-	// due to an unspecified error.
-	DescriptorInvalid = 1
-
-	// DescriptorConflict signifies that the PostDescriptor request has
-	// failed due to the uploaded descriptor conflicting with a previously
-	// uploaded descriptor.
-	DescriptorConflict = 2
-
-	// DescriptorForbidden signifies that the PostDescriptor request has
-	// failed due to an authentication error.
-	DescriptorForbidden = 3
-
-	// VoteOk signifies that the vote was accepted by the peer.
-	VoteOk = 0
-
-	// VoteTooLate signifies that the vote was too late.
-	VoteTooLate = 1
-
-	// VoteTooEarly signifies that the vote was too late.
-	VoteTooEarly = 2
-
-	// VoteNotAuthorized signifies that the voting entity's key is not authorized.
-	VoteNotAuthorized = 3
-
-	// VoteNotSigned signifies that the vote payload failed signature verification.
-	VoteNotSigned = 4
-
-	// VoteMalformed signifies that the vote payload was invalid.
-	VoteMalformed = 5
-
-	// VoteAlreadyReceived signifies that the vote from that peer was already received.
-	VoteAlreadyReceived = 6
-
-	// VoteNotFound signifies that the vote was not found.
-	VoteNotFound = 7
-
-	// RevealOk signifies that the reveal was accepted by the peer.
-	RevealOk = 8
-
-	// RevealTooEarly signifies that the peer is breaking protocol.
-	RevealTooEarly = 9
-
-	// RevealNotAuthorized signifies that the revealing entity's key is not authorized.
-	RevealNotAuthorized = 10
-
-	// RevealNotSigned signifies that the reveal payload failed signature verification.
-	RevealNotSigned = 11
-
-	// RevealAlreadyReceived signifies that the reveal from that peer was already received.
-	RevealAlreadyReceived = 12
-
-	// RevealTooLate signifies that the reveal from that peer arrived too late.
-	RevealTooLate = 13
-
-	// CertOk signifies that the certificate was accepted by the peer.
-	CertOk = 14
-
-	// CertTooEarly signifies that the peer is breaking protocol.
-	CertTooEarly = 15
-
-	// CertNotAuthorized signifies that the certifying entity's key is not
-	CertNotAuthorized = 16
-
-	// CertNotSigned signifies that the certficiate payload failed signature verification.
-	CertNotSigned = 17
-
-	// CertAlreadyReceived signifies that the certificate from that peer was already received.
-	CertAlreadyReceived = 18
-
-	// CertTooLate signifies that the certificate from that peer arrived too late.
-	CertTooLate = 19
-
-	// SigOK signifies that the signature was accepted by the peer.
-	SigOk = 20
-
-	// SigNotAuthorized signifies that the entity's key is not authorized.
-	SigNotAuthorized = 21
-
-	// SigNotSigned signifies that the signature command failed signature verification.
-	SigNotSigned = 22
-
-	// SigTooEarly signifies that the peer is breaking protocol.
-	SigTooEarly = 23
-
-	// SigTooLate signifies that the signature from that peer arrived too late.
-	SigTooLate = 24
-
-	// SigAlreadyReceived signifies that the signature from that peer was already received.
-	SigAlreadyReceived = 25
-
-	// SigInvalid signifies that the signature failed to deserialiez.
-	SigInvalid = 26
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 var (
 	errInvalidCommand = errors.New("wire: invalid wire protocol command")
 )
 
-type (
-	commandID   byte
-	messageType byte
-)
-
-func voteOverhead(scheme sign.Scheme) int {
-	return 8 + scheme.PublicKeySize()
-}
-func revealOverhead(scheme sign.Scheme) int {
-	return 8 + scheme.PublicKeySize()
-}
-func certOverhead(scheme sign.Scheme) int {
-	return 8 + scheme.PublicKeySize()
-}
-func sigOverhead(scheme sign.Scheme) int {
-	return 8 + scheme.PublicKeySize()
-}
+type commandID byte
 
 // Command is the common interface exposed by all message command structures.
 type Command interface {
 	// ToBytes serializes the command and returns the resulting slice.
 	ToBytes() []byte
+
+	// Length returns the length in bytes of the given command.
+	Length() int
 }
 
 // Commands encapsulates all of the wire protocol commands so that it can
 // pass around a sphinx geometry where needed.
 type Commands struct {
-	geo                *geo.Geometry
-	pkiSignatureScheme sign.Scheme
+	geo                         *geo.Geometry
+	pkiSignatureScheme          sign.Scheme
+	replicaNikeScheme           nike.Scheme
+	clientToServerCommands      []Command
+	serverToClientCommands      []Command
+	MaxMessageLenServerToClient int
+	MaxMessageLenClientToServer int
+	shouldPad                   bool
 }
 
-// NewCommands returns a Commands given a sphinx geometry.
-func NewCommands(geo *geo.Geometry, pkiSignatureScheme sign.Scheme) *Commands {
-	return &Commands{
+// NewMixnetCommands creates a Commands instance suitale to be used by mixnet nodes.
+func NewMixnetCommands(geo *geo.Geometry) *Commands {
+	c := &Commands{
 		geo:                geo,
-		pkiSignatureScheme: pkiSignatureScheme,
+		pkiSignatureScheme: nil,
+		shouldPad:          true,
 	}
-}
-
-func (c *Commands) messageMsgLength() int {
-	return messageBaseLength + c.messageMsgPaddingLength()
-}
-
-func messageACKLength() int {
-	return messageBaseLength + constants.SURBIDLength
-}
-
-func (c *Commands) messageEmptyLength() int {
-	return messageACKLength() + c.geo.PayloadTagLength + c.geo.ForwardPayloadLength
-}
-
-func (c *Commands) messageMsgPaddingLength() int {
-	return constants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
-}
-
-func (c *Commands) maxMessageLenServerToClient() int {
-	return cmdOverhead + c.messageMsgLength() + c.geo.UserForwardPayloadLength
-}
-
-func (c *Commands) maxMessageLenClientToServer() int {
-	return cmdOverhead + c.geo.PacketLength
-}
-
-func (c *Commands) maxMessageLen(cmd Command) int {
-	switch cmd.(type) {
-	case *NoOp, *SendPacket, *Disconnect, *RetrieveMessage, *GetConsensus:
-		// These are client to server commands
-		return c.maxMessageLenClientToServer()
-	case *Message, *MessageACK, *MessageEmpty:
-		// These are server to client commands
-		return c.maxMessageLenServerToClient()
-	default:
-		panic("unhandled command type passed to maxMessageLen")
+	c.clientToServerCommands = []Command{
+		&NoOp{}, &SendPacket{
+			Cmds: c,
+		}, &Disconnect{}, &RetrieveMessage{}, &MessageDelivered{}, &GetConsensus{}, &GetConsensus2{}, &SendRetrievePacket{
+			Geo:  geo,
+			Cmds: c,
+		},
 	}
+	c.serverToClientCommands = []Command{
+		&Consensus{}, // can be arbitrarily large
+		&Consensus2{},
+		&Message{
+			Geo:  geo,
+			Cmds: c,
+		}, &SendRetrievePacketReply{
+			Geo:  geo,
+			Cmds: c,
+		},
+	}
+	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
+	return c
+}
+
+// NewStorageReplicaCommands creates a Commands instance suitale to be used by storage replica nodes
+// and couriers. This ensures all messages are padded to the same size.
+func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands {
+	c := &Commands{
+		geo:                geo,
+		pkiSignatureScheme: nil,
+		replicaNikeScheme:  scheme,
+	}
+	payload := make([]byte, geo.PacketLength) // XXX TODO(David): Pick a more precise size.
+
+	// Create pigeonhole geometry from sphinx geometry for proper length calculations
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(geo, scheme)
+	if err != nil {
+		panic(err) // This should not happen in normal operation
+	}
+
+	c.clientToServerCommands = []Command{
+		&ReplicaMessage{
+			PigeonholeGeometry: pigeonholeGeo,
+			Cmds:               c,
+			Scheme:             scheme,
+
+			SenderEPubKey: make([]byte, HybridKeySize(scheme)),
+			DEK:           &[mkem.DEKSize]byte{},
+			Ciphertext:    payload,
+		},
+		&ReplicaMessageReply{
+			Cmds:               c,
+			PigeonholeGeometry: pigeonholeGeo,
+		},
+		&ReplicaWrite{
+			Cmds:               c,
+			PigeonholeGeometry: pigeonholeGeo,
+		},
+		&ReplicaWriteReply{
+			Cmds: c,
+		},
+		&ReplicaDecoy{
+			Cmds: c,
+		},
+		&NoOp{
+			Cmds: c,
+		},
+		&Disconnect{
+			Cmds: c,
+		},
+	}
+
+	c.serverToClientCommands = c.clientToServerCommands
+
+	c.shouldPad = true
+	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
+	return c
+}
+
+// NewPKICommands creates a Commands instance suitale to be used by PKI nodes.
+func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
+	const defaultReplicaDescriptorSize = 123
+	c := &Commands{
+		geo:                    nil,
+		pkiSignatureScheme:     pkiSignatureScheme,
+		clientToServerCommands: nil,
+		serverToClientCommands: nil,
+		shouldPad:              false,
+
+		// XXX arbitrarily set to some large max
+		// such that we have a reasonable chance
+		// of our Vote/Consensus commands fitting within this size maximum.
+		// These larger commands contain the entire PKI document and can be
+		// very large depending on the ciphersuites, the Sphinx KEM/NIKE and PKI Signature scheme.
+		// Increase the size if your PKI doc doesn't fit.
+		MaxMessageLenClientToServer: 50000000,
+		MaxMessageLenServerToClient: 50000000,
+	}
+	return c
+}
+
+func (c *Commands) MaxCommandSize() int {
+	if c.MaxMessageLenServerToClient > c.MaxMessageLenClientToServer {
+		return c.MaxMessageLenServerToClient
+	}
+	return c.MaxMessageLenClientToServer
+}
+
+func (c *Commands) calcMaxMessageLenServerToClient() int {
+	m := 0
+	for _, c := range c.serverToClientCommands {
+		if c.Length() > m {
+			m = c.Length()
+		}
+	}
+	return m
+}
+
+func (c *Commands) calcMaxMessageLenClientToServer() int {
+	m := 0
+	for _, c := range c.clientToServerCommands {
+		if c.Length() > m {
+			m = c.Length()
+		}
+	}
+	return m
+}
+
+// padToMaxCommandSize takes a slice of bytes representing a serialized command and pads it to maxCommandSize.
+func (c *Commands) padToMaxCommandSize(data []byte, isUpstream bool) []byte {
+	// PKI sessions set shouldPad false: their MaxMessageLen is only an upper
+	// bound for the size check (Vote/Consensus may be large), not a padding
+	// target. Padding a NoOp to it would ship tens of megabytes per handshake.
+	if !c.shouldPad {
+		return data
+	}
+	var maxMessageLen int
+	if isUpstream {
+		maxMessageLen = c.MaxMessageLenClientToServer
+	} else {
+		maxMessageLen = c.MaxMessageLenServerToClient
+	}
+	if maxMessageLen == 0 {
+		return data
+	}
+	paddingSize := maxMessageLen - len(data)
+	if paddingSize <= 0 {
+		return data
+	}
+
+	padding := make([]byte, paddingSize)
+	return append(data, padding...)
 }
 
 // NoOp is a de-serialized noop command.
@@ -266,410 +213,17 @@ type NoOp struct {
 	Cmds *Commands
 }
 
+func (c *NoOp) String() string { return "NoOp" }
+
 // ToBytes serializes the NoOp and returns the resulting slice.
 func (c *NoOp) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(noOp)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
-// GetConsensus is a de-serialized get_consensus command.
-type GetConsensus struct {
-	Epoch              uint64
-	Cmds               *Commands
-	MixnetTransmission bool // if GetConsensus is sent over the mixnet, if true we need to pad the message
-}
-
-// ToBytes serializes the GetConsensus and returns the resulting byte slice.
-func (c *GetConsensus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+getConsensusLength)
-	out[0] = byte(getConsensus)
-	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
-	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	if c.MixnetTransmission {
-		// only pad if we are sending over the mixnet
-		return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
-	}
-	return out
-}
-
-func getConsensusFromBytes(b []byte, cmds *Commands) (Command, error) {
-	if len(b) != getConsensusLength {
-		return nil, errInvalidCommand
-	}
-
-	r := new(GetConsensus)
-	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	r.Cmds = cmds
-	return r, nil
-}
-
-// GetVote is a de-serialized get_vote command.
-type GetVote struct {
-	Epoch     uint64
-	PublicKey sign.PublicKey
-}
-
-// ToBytes serializes the GetVote and returns the resulting slice.
-func (v *GetVote) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8, cmdOverhead+voteOverhead(v.PublicKey.Scheme()))
-	out[0] = byte(getVote)
-	binary.BigEndian.PutUint32(out[2:6], uint32(voteOverhead(v.PublicKey.Scheme())))
-	binary.BigEndian.PutUint64(out[6:14], v.Epoch)
-	blob, err := v.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	out = append(out, blob...)
-	return out
-}
-
-func getVoteFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
-	if len(b) != voteOverhead(scheme) {
-		return nil, errInvalidCommand
-	}
-	r := new(GetVote)
-	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	var err error
-	r.PublicKey, err = scheme.UnmarshalBinaryPublicKey(b[8 : scheme.PublicKeySize()+8])
-	if err != nil {
-		return nil, err
-	}
-	return r, nil
-}
-
-// Consensus is a de-serialized consensus command.
-type Consensus struct {
-	ErrorCode uint8
-	Payload   []byte
-}
-
-// ToBytes serializes the Consensus and returns the resulting byte slice.
-func (c *Consensus) ToBytes() []byte {
-	consensusLength := uint32(consensusBaseLength + len(c.Payload))
-	out := make([]byte, cmdOverhead+consensusBaseLength, cmdOverhead+consensusLength)
-	out[0] = byte(consensus) // out[1] is reserved
-	binary.BigEndian.PutUint32(out[2:6], consensusLength)
-	out[6] = c.ErrorCode
-	out = append(out, c.Payload...)
-	return out
-}
-
-func consensusFromBytes(b []byte) (Command, error) {
-	if len(b) < consensusBaseLength {
-		return nil, errInvalidCommand
-	}
-
-	r := new(Consensus)
-	r.ErrorCode = b[0]
-	if payloadLength := len(b) - consensusBaseLength; payloadLength > 0 {
-		r.Payload = make([]byte, 0, payloadLength)
-		r.Payload = append(r.Payload, b[consensusBaseLength:]...)
-	}
-	return r, nil
-}
-
-// PostDescriptor is a de-serialized post_descriptor command.
-type PostDescriptor struct {
-	Epoch   uint64
-	Payload []byte
-}
-
-// ToBytes serializes the PostDescriptor and returns the resulting byte slice.
-func (c *PostDescriptor) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+postDescriptorLength, cmdOverhead+postDescriptorLength+len(c.Payload))
-	out[0] = byte(postDescriptor)
-	binary.BigEndian.PutUint32(out[2:6], postDescriptorLength+uint32(len(c.Payload)))
-	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	out = append(out, c.Payload...)
-	return out
-}
-
-func postDescriptorFromBytes(b []byte) (Command, error) {
-	if len(b) < postDescriptorLength {
-		return nil, errInvalidCommand
-	}
-
-	r := new(PostDescriptor)
-	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	r.Payload = make([]byte, 0, len(b)-postDescriptorLength)
-	r.Payload = append(r.Payload, b[postDescriptorLength:]...)
-	return r, nil
-}
-
-// PostDescriptorStatus is a de-serialized post_descriptor_status command.
-type PostDescriptorStatus struct {
-	ErrorCode uint8
-}
-
-func postDescriptorStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != postDescriptorStatusLength {
-		return nil, errInvalidCommand
-	}
-
-	r := new(PostDescriptorStatus)
-	r.ErrorCode = b[0]
-	return r, nil
-}
-
-// ToBytes serializes the PostDescriptorStatus and returns the resulting byte
-// slice.
-func (c *PostDescriptorStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+postDescriptorStatusLength)
-	out[0] = byte(postDescriptorStatus)
-	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
-	out[6] = c.ErrorCode
-	return out
-}
-
-// Reveal is a de-serialized reveal command exchanged by authorities.
-type Reveal struct {
-	Epoch     uint64
-	PublicKey sign.PublicKey
-	Payload   []byte
-}
-
-// ToBytes serializes the Reveal and returns the resulting byte slice.
-func (r *Reveal) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+revealOverhead(r.PublicKey.Scheme()))
-	out[0] = byte(reveal)
-	// out[1] reserved
-	binary.BigEndian.PutUint32(out[2:6], uint32(revealOverhead(r.PublicKey.Scheme())+len(r.Payload)))
-	binary.BigEndian.PutUint64(out[6:14], r.Epoch)
-	blob, err := r.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	copy(out[14:14+r.PublicKey.Scheme().PublicKeySize()], blob)
-	out = append(out, r.Payload...)
-	return out
-}
-
-func revealFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
-	if len(b) < revealOverhead(scheme) {
-		return nil, errors.New(" wtf: errInvalidCommand")
-	}
-
-	r := new(Reveal)
-	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	var err error
-	r.PublicKey, err = scheme.UnmarshalBinaryPublicKey(b[8 : 8+scheme.PublicKeySize()])
-	if err != nil {
-		return nil, err
-	}
-	r.Payload = make([]byte, 0, len(b)-revealOverhead(scheme))
-	r.Payload = append(r.Payload, b[revealOverhead(scheme):]...)
-	return r, nil
-}
-
-// RevealStatus is a de-serialized revealStatus command.
-type RevealStatus struct {
-	ErrorCode uint8
-}
-
-func revealStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != revealStatusLength {
-		return nil, errors.New(" wtf: errInvalidCommand")
-	}
-
-	r := new(RevealStatus)
-	r.ErrorCode = b[0]
-	return r, nil
-}
-
-// ToBytes serializes the RevealStatus and returns the resulting byte slice.
-func (r *RevealStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+revealStatusLength)
-	out[0] = byte(revealStatus)
-	binary.BigEndian.PutUint32(out[2:6], revealStatusLength)
-	out[6] = r.ErrorCode
-	return out
-}
-
-// Vote is a vote which is exchanged by Directory Authorities.
-type Vote struct {
-	Epoch     uint64
-	PublicKey sign.PublicKey
-	Payload   []byte
-}
-
-func voteFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
-	r := new(Vote)
-	if len(b) < voteOverhead(scheme) {
-		return nil, errInvalidCommand
-	}
-	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	var err error
-	r.PublicKey, err = scheme.UnmarshalBinaryPublicKey(b[8 : 8+scheme.PublicKeySize()])
-	if err != nil {
-		return nil, err
-	}
-	r.Payload = make([]byte, 0, len(b)-voteOverhead(scheme))
-	r.Payload = append(r.Payload, b[voteOverhead(scheme):]...)
-	return r, nil
-}
-
-// ToBytes serializes the Vote and returns the resulting slice.
-func (c *Vote) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8, cmdOverhead+voteOverhead(c.PublicKey.Scheme())+len(c.Payload))
-	out[0] = byte(vote)
-	binary.BigEndian.PutUint32(out[2:6], uint32(voteOverhead(c.PublicKey.Scheme())+len(c.Payload)))
-	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	blob, err := c.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	out = append(out, blob...)
-	out = append(out, c.Payload...)
-	return out
-}
-
-// VoteStatus is a resonse status for a Vote command.
-type VoteStatus struct {
-	ErrorCode uint8
-}
-
-// ToBytes serializes the VoteStatus and returns the resulting slice.
-func (c *VoteStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+voteStatusLength)
-	out[0] = byte(voteStatus)
-	binary.BigEndian.PutUint32(out[2:6], voteStatusLength)
-	out[6] = c.ErrorCode
-	return out
-}
-
-func voteStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != voteStatusLength {
-		return nil, errInvalidCommand
-	}
-
-	r := new(VoteStatus)
-	r.ErrorCode = b[0]
-	return r, nil
-}
-
-// Cert is a potential consensus which is exchanged by Directory Authorities.
-type Cert struct {
-	Epoch     uint64
-	PublicKey sign.PublicKey
-	Payload   []byte
-}
-
-func certFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
-	r := new(Cert)
-	if len(b) < certOverhead(scheme) {
-		return nil, errInvalidCommand
-	}
-	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	var err error
-	r.PublicKey, err = scheme.UnmarshalBinaryPublicKey(b[8 : 8+scheme.PublicKeySize()])
-	if err != nil {
-		return nil, err
-	}
-	r.Payload = make([]byte, 0, len(b)-certOverhead(scheme))
-	r.Payload = append(r.Payload, b[certOverhead(scheme):]...)
-	return r, nil
-}
-
-// ToBytes serializes the Cert and returns the resulting slice.
-func (c *Cert) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8, cmdOverhead+certOverhead(c.PublicKey.Scheme())+len(c.Payload))
-	out[0] = byte(certificate)
-	binary.BigEndian.PutUint32(out[2:6], uint32(certOverhead(c.PublicKey.Scheme())+len(c.Payload)))
-	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	blob, err := c.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	out = append(out, blob...)
-	out = append(out, c.Payload...)
-	return out
-}
-
-// CertStatus is a resonse status for a Cert command.
-type CertStatus struct {
-	ErrorCode uint8
-}
-
-// ToBytes serializes the CertStatus and returns the resulting slice.
-func (c *CertStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+certStatusLength)
-	out[0] = byte(certStatus)
-	binary.BigEndian.PutUint32(out[2:6], certStatusLength)
-	out[6] = c.ErrorCode
-	return out
-}
-
-func certStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != certStatusLength {
-		return nil, errInvalidCommand
-	}
-
-	r := new(CertStatus)
-	r.ErrorCode = b[0]
-	return r, nil
-}
-
-// Sig is a signature which is exchanged by Directory Authorities.
-type Sig struct {
-	Epoch     uint64
-	PublicKey sign.PublicKey
-	Payload   []byte
-}
-
-func sigFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
-	r := new(Sig)
-	if len(b) < sigOverhead(scheme) {
-		return nil, errInvalidCommand
-	}
-	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	var err error
-	r.PublicKey, err = scheme.UnmarshalBinaryPublicKey(b[8 : 8+scheme.PublicKeySize()])
-	if err != nil {
-		return nil, err
-	}
-	r.Payload = make([]byte, 0, len(b)-sigOverhead(scheme))
-	r.Payload = append(r.Payload, b[sigOverhead(scheme):]...)
-	return r, nil
-}
-
-// ToBytes serializes the Sig and returns the resulting slice.
-func (c *Sig) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8, cmdOverhead+sigOverhead(c.PublicKey.Scheme())+len(c.Payload))
-	out[0] = byte(sig)
-	binary.BigEndian.PutUint32(out[2:6], uint32(sigOverhead(c.PublicKey.Scheme())+len(c.Payload)))
-	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	blob, err := c.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	out = append(out, blob...)
-	out = append(out, c.Payload...)
-	return out
-}
-
-// SigStatus is a resonse status for a Sig command.
-type SigStatus struct {
-	ErrorCode uint8
-}
-
-// ToBytes serializes the Status and returns the resulting slice.
-func (c *SigStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+sigStatusLength)
-	out[0] = byte(sigStatus)
-	binary.BigEndian.PutUint32(out[2:6], sigStatusLength)
-	out[6] = c.ErrorCode
-	return out
-}
-
-func sigStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != sigStatusLength {
-		return nil, errInvalidCommand
-	}
-
-	r := new(SigStatus)
-	r.ErrorCode = b[0]
-	return r, nil
+func (c *NoOp) Length() int {
+	return cmdOverhead
 }
 
 // Disconnect is a de-serialized disconnect command.
@@ -677,195 +231,87 @@ type Disconnect struct {
 	Cmds *Commands
 }
 
+func (c *Disconnect) String() string { return "Disconnect" }
+
 // ToBytes serializes the Disconnect and returns the resulting slice.
 func (c *Disconnect) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(disconnect)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
-// SendPacket is a de-serialized send_packet command.
-type SendPacket struct {
+func (c *Disconnect) Length() int {
+	return cmdOverhead
+}
+
+// SendRetrievePacket is a command that sends a message
+// or decoy and also retrieves a new message or decoy.
+type SendRetrievePacket struct {
+	Geo  *geo.Geometry
+	Cmds *Commands
+
 	SphinxPacket []byte
-	Cmds         *Commands
 }
 
-// ToBytes serializes the SendPacket and returns the resulting slice.
-func (c *SendPacket) ToBytes() []byte {
+func (c *SendRetrievePacket) String() string { return "SendRetrievePacket" }
+
+func (c *SendRetrievePacket) ToBytes() []byte {
+	if len(c.SphinxPacket) != c.Geo.PacketLength {
+		panic("SphinxPacket must be set to Geo.PacketLength")
+	}
 	out := make([]byte, cmdOverhead, cmdOverhead+len(c.SphinxPacket))
-	out[0] = byte(sendPacket)
+	out[0] = byte(sendRetrievePacket)
 	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.SphinxPacket)))
 	out = append(out, c.SphinxPacket...)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
-func sendPacketFromBytes(b []byte, cmds *Commands) (Command, error) {
-	r := new(SendPacket)
+func (c *SendRetrievePacket) Length() int {
+	return cmdOverhead + c.Geo.PacketLength
+}
+
+func sendRetrievePacketFromBytes(b []byte, cmds *Commands) (Command, error) {
+	r := new(SendRetrievePacket)
 	r.SphinxPacket = make([]byte, 0, len(b))
 	r.SphinxPacket = append(r.SphinxPacket, b...)
 	r.Cmds = cmds
+	r.Geo = cmds.geo
 	return r, nil
 }
 
-// RetrieveMessage is a de-serialized retrieve_message command.
-type RetrieveMessage struct {
-	Sequence uint32
-	Cmds     *Commands
-}
-
-// ToBytes serializes the RetrieveMessage and returns the resulting slice.
-func (c *RetrieveMessage) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+retreiveMessageLength)
-	out[0] = byte(retreiveMessage)
-	binary.BigEndian.PutUint32(out[2:6], retreiveMessageLength)
-	binary.BigEndian.PutUint32(out[6:10], c.Sequence)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
-}
-
-func retreiveMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
-	if len(b) != retreiveMessageLength {
-		return nil, errInvalidCommand
-	}
-
-	r := new(RetrieveMessage)
-	r.Sequence = binary.BigEndian.Uint32(b[0:4])
-	r.Cmds = cmds
-	return r, nil
-}
-
-// MessageACK is a de-serialized message command containing an ACK.
-type MessageACK struct {
-	Geo  *geo.Geometry
+// SendRetrievePacketReply is the reply command for a previously
+// sent `SendRetrievePacket`
+type SendRetrievePacketReply struct {
 	Cmds *Commands
+	Geo  *geo.Geometry
 
-	QueueSizeHint uint8
-	Sequence      uint32
-	ID            [constants.SURBIDLength]byte
-	Payload       []byte
+	SURBID  [constants.SURBIDLength]byte
+	Payload []byte
 }
 
-// ToBytes serializes the MessageACK and returns the resulting slice.
-func (c *MessageACK) ToBytes() []byte {
-	if len(c.Payload) != c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength {
-		panic("wire: invalid MessageACK payload when serializing")
-	}
+func (c *SendRetrievePacketReply) String() string { return "SendRetrievePacketReply" }
 
-	out := make([]byte, cmdOverhead+messageACKLength(), cmdOverhead+messageACKLength()+c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength)
-
-	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], uint32(messageACKLength()+len(c.Payload)))
-	out[6] = byte(messageTypeACK)
-	out[7] = c.QueueSizeHint
-	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	copy(out[12:12+constants.SURBIDLength], c.ID[:])
+func (c *SendRetrievePacketReply) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+constants.SURBIDLength, cmdOverhead+constants.SURBIDLength+len(c.Payload))
+	out[0] = byte(sendRetrievePacketReply)
+	binary.BigEndian.PutUint32(out[2:6], uint32(constants.SURBIDLength+len(c.Payload)))
+	copy(out[cmdOverhead:cmdOverhead+constants.SURBIDLength], c.SURBID[:])
 	out = append(out, c.Payload...)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, false)
 }
 
-// Message is a de-serialized message command containing a message.
-type Message struct {
-	Geo  *geo.Geometry
-	Cmds *Commands
-
-	QueueSizeHint uint8
-	Sequence      uint32
-	Payload       []byte
+func (c *SendRetrievePacketReply) Length() int {
+	return cmdOverhead + constants.SURBIDLength + c.Geo.UserForwardPayloadLength
 }
 
-// ToBytes serializes the Message and returns the resulting slice.
-func (c *Message) ToBytes() []byte {
-	if len(c.Payload) != c.Geo.UserForwardPayloadLength {
-		panic("wire: invalid Message payload when serializing")
-	}
-
-	out := make([]byte, cmdOverhead+c.Cmds.messageMsgLength()+len(c.Payload))
-	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageMsgLength()+len(c.Payload)))
-	out[6] = byte(messageTypeMessage)
-	out[7] = c.QueueSizeHint
-	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	copy(out[12:], c.Payload)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
-}
-
-// MessageEmpty is a de-serialized message command signifying a empty queue.
-type MessageEmpty struct {
-	Cmds *Commands
-
-	Sequence uint32
-}
-
-// ToBytes serializes the MessageEmpty and returns the resulting slice.
-func (c *MessageEmpty) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+c.Cmds.messageEmptyLength())
-
-	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageEmptyLength()))
-	out[6] = byte(messageTypeEmpty)
-	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
-}
-
-func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
-	if len(b) < messageBaseLength {
-		return nil, errInvalidCommand
-	}
-
-	// Parse the common components belonging to all 3 message types.
-	t := messageType(b[0])
-	hint := b[1]
-	seq := binary.BigEndian.Uint32(b[2:6])
-	b = b[messageBaseLength:]
-
-	switch t {
-	case messageTypeACK:
-		if len(b) != constants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
-			return nil, errInvalidCommand
-		}
-
-		r := new(MessageACK)
-		r.QueueSizeHint = hint
-		r.Sequence = seq
-		copy(r.ID[:], b[:constants.SURBIDLength])
-		b = b[constants.SURBIDLength:]
-		r.Payload = make([]byte, 0, len(b))
-		r.Payload = append(r.Payload, b...)
-		r.Cmds = cmds
-		return r, nil
-	case messageTypeMessage:
-		if len(b) != c.messageMsgPaddingLength()+c.geo.UserForwardPayloadLength {
-			return nil, errInvalidCommand
-		}
-
-		padding := b[c.geo.UserForwardPayloadLength:]
-		if !utils.CtIsZero(padding) {
-			return nil, errInvalidCommand
-		}
-		b = b[:c.geo.UserForwardPayloadLength]
-
-		r := new(Message)
-		r.QueueSizeHint = hint
-		r.Sequence = seq
-		r.Payload = make([]byte, 0, len(b))
-		r.Payload = append(r.Payload, b...)
-		r.Cmds = cmds
-		return r, nil
-	case messageTypeEmpty:
-		if len(b) != c.messageEmptyLength()-messageBaseLength {
-			return nil, errInvalidCommand
-		}
-
-		if !utils.CtIsZero(b) {
-			return nil, errInvalidCommand
-		}
-
-		r := new(MessageEmpty)
-		r.Sequence = seq
-		r.Cmds = cmds
-		return r, nil
-	default:
-		return nil, errInvalidCommand
-	}
+func sendRetrievePacketReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
+	c := new(SendRetrievePacketReply)
+	copy(c.SURBID[:], b[:constants.SURBIDLength])
+	c.Payload = make([]byte, len(b[constants.SURBIDLength:]))
+	copy(c.Payload, b[constants.SURBIDLength:])
+	c.Cmds = cmds
+	c.Geo = cmds.geo
+	return c, nil
 }
 
 // FromBytes de-serializes the command in the buffer b, returning a Command or
@@ -903,7 +349,11 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 			return &Disconnect{
 				Cmds: c,
 			}, nil
-		case sendPacket, postDescriptor:
+		case replicaDecoy:
+			return &ReplicaDecoy{
+				Cmds: c,
+			}, nil
+		case sendPacket, postDescriptor, sendRetrievePacket, sendRetrievePacketReply:
 			// Shouldn't happen, but the caller should reject this, not the
 			// de-serialization.
 		default:
@@ -914,14 +364,38 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	// Handle the commands that require actual parsing.
 	b = b[:cmdLen]
 	switch commandID(id) {
+	case consensus2:
+		return consensus2FromBytes(b)
+	case postReplicaDescriptor:
+		return postReplicaDescriptorFromBytes(b)
+	case postReplicaDescriptorStatus:
+		return postReplicaDescriptorStatusFromBytes(b)
+	case replicaWrite:
+		return replicaWriteFromBytes(b, c)
+	case replicaWriteReply:
+		return replicaWriteReplyFromBytes(b, c)
+	case replicaMessage:
+		return replicaMessageFromBytes(b, c)
+	case replicaMessageReply:
+		return replicaMessageReplyFromBytes(b, c)
+	case replicaDecoy:
+		return replicaDecoyFromBytes(b, c)
+	case sendRetrievePacket:
+		return sendRetrievePacketFromBytes(b, c)
+	case sendRetrievePacketReply:
+		return sendRetrievePacketReplyFromBytes(b, c)
 	case sendPacket:
 		return sendPacketFromBytes(b, c)
 	case retreiveMessage:
 		return retreiveMessageFromBytes(b, c)
+	case messageDelivered:
+		return messageDeliveredFromBytes(b, c)
 	case message:
 		return c.messageFromBytes(b, c)
 	case getConsensus:
 		return getConsensusFromBytes(b, c)
+	case getConsensus2:
+		return getConsensus2FromBytes(b, c)
 	case consensus:
 		return consensusFromBytes(b)
 	case postDescriptor:
@@ -949,15 +423,4 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	default:
 		return nil, errInvalidCommand
 	}
-}
-
-// padToMaxCommandSize takes a slice of bytes representing a serialized command and pads it to maxCommandSize.
-func padToMaxCommandSize(data []byte, maxMessageLen int) []byte {
-	paddingSize := maxMessageLen - len(data)
-	if paddingSize <= 0 {
-		return data
-	}
-
-	padding := make([]byte, paddingSize)
-	return append(data, padding...)
 }

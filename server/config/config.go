@@ -20,12 +20,11 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/mail"
-	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -41,36 +40,29 @@ import (
 )
 
 const (
-	defaultAddress             = ":3219"
-	defaultLogLevel            = "NOTICE"
-	defaultNumGatewayWorkers   = 3
-	defaultNumServiceWorkers   = 3
-	defaultNumKaetzchenWorkers = 3
-	defaultUnwrapDelay         = 250 // 250 ms.
-	defaultSchedulerSlack      = 150 // 150 ms.
-	defaultSchedulerMaxBurst   = 16
-	defaultSendSlack           = 50        // 50 ms.
-	defaultDecoySlack          = 15 * 1000 // 15 sec.
-	defaultConnectTimeout      = 60 * 1000 // 60 sec.
-	defaultHandshakeTimeout    = 30 * 1000 // 30 sec.
-	defaultReauthInterval      = 30 * 1000 // 30 sec.
-	defaultGatewayDelay        = 500       // 500 ms.
-	defaultServiceDelay        = 500       // 500 ms.
-	defaultKaetzchenDelay      = 750       // 750 ms.
-	defaultUserDB              = "users.db"
-	defaultSpoolDB             = "spool.db"
-	defaultManagementSocket    = "management_sock"
-
-	backendPgx = "pgx"
-
-	// BackendSQL is a SQL based backend.
-	BackendSQL = "sql"
+	defaultAddress  = ":3219"
+	defaultLogLevel = "NOTICE"
+	// NumSphinxWorkers, NumGatewayWorkers, NumServiceWorkers and
+	// NumKaetzchenWorkers intentionally have no fixed defaults here.
+	// Zero in the config signals "auto-derive at server.New from
+	// runtime.NumCPU and the startup Sphinx self-check"; see
+	// Debug.ApplyRuntimeDefaults.
+	defaultUnwrapDelay       = 250 // 250 ms.
+	defaultSchedulerSlack    = 450 // 450 ms.
+	defaultSchedulerMaxBurst = 16
+	defaultSendSlack         = 50        // 50 ms.
+	defaultDecoySlack        = 15 * 1000 // 15 sec.
+	defaultConnectTimeout    = 60 * 1000 // 60 sec.
+	defaultHandshakeTimeout  = 3 * 1000  // 3 sec.
+	defaultReauthInterval    = 30 * 1000 // 30 sec.
+	defaultGatewayDelay      = 500       // 500 ms.
+	defaultServiceDelay      = 500       // 500 ms.
+	defaultKaetzchenDelay    = 750       // 750 ms.
+	defaultSpoolDB           = "spool.db"
+	defaultManagementSocket  = "management_sock"
 
 	// BackendBolt is a BoltDB based backend.
 	BackendBolt = "bolt"
-
-	// BackendExtern is a External (RESTful http) backend.
-	BackendExtern = "extern"
 )
 
 var defaultLogging = Logging{
@@ -91,13 +83,13 @@ type Server struct {
 	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 
-	// Addresses are the IP address/port combinations that the server will bind
-	// to for incoming connections.
+	// Addresses are the IP listener addresses that the server will advertise
+	// in the PKI and bind to for incoming connections unless BindAddresses is specified.
 	Addresses []string
 
-	// If present then only advertise to the PKI these Addresses
-	// and do NOT send any of the Addresses.
-	OnlyAdvertiseAddresses []string
+	// BindAddresses are the listener addresses that the server will bind to and accept connections on
+	// These Addresses are not advertised in the PKI.
+	BindAddresses []string
 
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	MetricsAddress string
@@ -110,6 +102,60 @@ type Server struct {
 
 	// IsServiceNode specifies if the server is a service node or not.
 	IsServiceNode bool
+
+	// AllowHostnameAddresses, when true, permits DNS hostnames in
+	// Addresses, BindAddresses, MetricsAddress and the configured
+	// PKI authority Addresses lists. The default is false: a
+	// production deployment must use IP literals for every address
+	// the daemon will dial or advertise, so that the daemon never
+	// performs a DNS lookup at runtime. This flag is set to true by
+	// genconfig when generating docker-mixnet configurations, where
+	// service hostnames (auth1, mix2, replica3, ...) resolve via
+	// the docker-compose embedded DNS rather than the system
+	// resolver. Onion addresses are always permitted because Tor
+	// resolves them inside its local proxy, not via DNS.
+	AllowHostnameAddresses bool
+
+	// WaitForConsensusExitOnShutdown, when true, makes SIGINT and SIGTERM
+	// stop descriptor publication and wait until every epoch for which this
+	// node may have advertised has ended before shutting down. The node keeps
+	// serving traffic and fetching PKI documents while it waits, allowing it
+	// to leave the consensus without disrupting traffic assigned to it.
+	//
+	// With the default 20-minute epoch, the conservative wait can approach
+	// 40 minutes when the next epoch's descriptor was already uploaded.
+	// Service managers must allow enough stop time (for example, systemd's
+	// TimeoutStopSec) or they may kill the process before withdrawal completes.
+	// This option is mutually exclusive with PersistMixKeysOnShutdown.
+	WaitForConsensusExitOnShutdown bool
+
+	// PersistMixKeysOnShutdown, when true, writes every live mix key to
+	// the mix key store on clean shutdown and reloads it on the next
+	// boot. A clean restart (e.g. a software upgrade) then keeps the
+	// keypairs that were already published in the consensus, so clients
+	// keep unwrapping across the restart instead of failing the first-hop
+	// MAC check until the next epoch. A crash never reaches the shutdown
+	// path, so mix keys still rotate on a hard failure. Key files are
+	// deleted as soon as they are loaded on the next boot, so key
+	// material exists on the filesystem only between a clean shutdown and the
+	// immediately following boot. The default is false to preserve
+	// fresh-per-boot forward secrecy unless an operator opts in.
+	PersistMixKeysOnShutdown bool
+
+	// PersistMixKeysOnShutdownDir is the directory mix keys are
+	// persisted to on clean shutdown and loaded from on the next boot.
+	// It is only consulted when PersistMixKeysOnShutdown is true; when
+	// empty, the daemon uses a per-node subdirectory of /dev/shm (tmpfs)
+	// derived from a hash of the node's long-term identity key, so key
+	// material never touches durable storage. Windows has no tmpfs, so
+	// this must be set explicitly there when the feature is enabled.
+	// Deployments that need the
+	// keys to survive a host reboot or container recreation (e.g. a
+	// docker testnet whose node dirs are bind-mounted volumes) should
+	// point this at the node's DataDir. Specifying a directory without
+	// enabling PersistMixKeysOnShutdown is a configuration error, since
+	// the directory would silently have no effect.
+	PersistMixKeysOnShutdownDir string
 }
 
 func (sCfg *Server) validate() error {
@@ -126,12 +172,23 @@ func (sCfg *Server) validate() error {
 	}
 
 	if sCfg.Addresses != nil {
-		for _, v := range sCfg.Addresses {
+		for _, v := range append(sCfg.Addresses, sCfg.BindAddresses...) {
 			if u, err := url.Parse(v); err != nil {
 				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
 			} else if u.Port() == "" {
 				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 			}
+		}
+		// Production deployments must not perform DNS resolution; the
+		// daemon expects every advertised or bind address to be a
+		// literal IP. AllowHostnameAddresses is the operator opt-out
+		// for docker-mixnet testing where service hostnames resolve
+		// via an embedded DNS runtime.
+		if err := utils.RejectDNSAddrs(sCfg.Addresses, sCfg.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Server: Addresses: %w", err)
+		}
+		if err := utils.RejectDNSAddrs(sCfg.BindAddresses, sCfg.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Server: BindAddresses: %w", err)
 		}
 	} else {
 		// Try to guess a "suitable" external IPv4 address.  If people want
@@ -153,9 +210,21 @@ func (sCfg *Server) validate() error {
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
 	}
+	if sCfg.PersistMixKeysOnShutdownDir != "" && !sCfg.PersistMixKeysOnShutdown {
+		return errors.New("config: Server: PersistMixKeysOnShutdownDir is set but PersistMixKeysOnShutdown is not enabled")
+	}
+	if sCfg.PersistMixKeysOnShutdownDir != "" && !filepath.IsAbs(sCfg.PersistMixKeysOnShutdownDir) {
+		return fmt.Errorf("config: Server: PersistMixKeysOnShutdownDir '%v' is not an absolute path", sCfg.PersistMixKeysOnShutdownDir)
+	}
+	if sCfg.WaitForConsensusExitOnShutdown && sCfg.PersistMixKeysOnShutdown {
+		return errors.New("config: Server: WaitForConsensusExitOnShutdown and PersistMixKeysOnShutdown are mutually exclusive")
+	}
 	if sCfg.MetricsAddress != "" {
-		if _, err := netip.ParseAddrPort(sCfg.MetricsAddress); err != nil {
+		if _, _, err := net.SplitHostPort(sCfg.MetricsAddress); err != nil {
 			return fmt.Errorf("config: Server: MetricsAddress '%v' is invalid: %v", sCfg.MetricsAddress, err)
+		}
+		if err := utils.RejectDNSMetricsAddr(sCfg.MetricsAddress, sCfg.AllowHostnameAddresses); err != nil {
+			return fmt.Errorf("config: Server: %w", err)
 		}
 	}
 	return nil
@@ -163,20 +232,28 @@ func (sCfg *Server) validate() error {
 
 // Debug is the Katzenpost server debug configuration.
 type Debug struct {
-	// NumSphinxWorkers specifies the number of worker instances to use for
-	// inbound Sphinx packet processing.
+	// NumSphinxWorkers is the inbound Sphinx-packet processing worker
+	// pool size. Omit this field (or set it to 0) so the runtime
+	// picks runtime.NumCPU, regardless of how many katzenpost
+	// processes share the host; an explicit non-zero value overrides
+	// and is intended for unusual deployments (research workloads,
+	// hosts with reserved cores for other work, etc.).
 	NumSphinxWorkers int
 
-	// NumServiceWorkers specifies the number of worker instances to use for
-	// provider specific packet processing.
+	// NumServiceWorkers is the service-node worker pool size. Omit
+	// (or set to 0) for the runtime to pick a sensible default
+	// matched to the auto-derived NumSphinxWorkers; an explicit
+	// non-zero value overrides.
 	NumServiceWorkers int
 
-	// NumGatewayWorkers specifies the number of worker instances to use for
-	// provider specific packet processing.
+	// NumGatewayWorkers is the gateway worker pool size. Omit (or
+	// set to 0) for the runtime to pick a sensible default; an
+	// explicit non-zero value overrides.
 	NumGatewayWorkers int
 
-	// NumKaetzchenWorkers specifies the number of worker instances to use for
-	// Kaetzchen specific packet processing.
+	// NumKaetzchenWorkers is the Kaetzchen-plugin worker pool size.
+	// Omit (or set to 0) for the runtime to pick a sensible default;
+	// an explicit non-zero value overrides.
 	NumKaetzchenWorkers int
 
 	// SchedulerExternalMemoryQueue will enable the experimental external
@@ -249,29 +326,10 @@ type Debug struct {
 }
 
 func (dCfg *Debug) applyDefaults() {
-	if dCfg.NumSphinxWorkers <= 0 {
-		// Pick a sane default for the number of workers.
-		//
-		// TODO/perf: This should detect the number of physical cores, since
-		// the AES-NI unit is a per-core resource.
-		dCfg.NumSphinxWorkers = runtime.NumCPU()
-	}
-	if dCfg.NumGatewayWorkers <= 0 {
-		// TODO/perf: This should do something clever as well, though 1 is
-		// the right number for something that uses the boltspool due to all
-		// write spool operations being serialized.
-		dCfg.NumGatewayWorkers = defaultNumGatewayWorkers
-	}
-	if dCfg.NumServiceWorkers <= 0 {
-		// TODO/perf: This should do something clever as well, though 1 is
-		// the right number for something that uses the boltspool due to all
-		// write spool operations being serialized.
-		dCfg.NumServiceWorkers = defaultNumServiceWorkers
-	}
-
-	if dCfg.NumKaetzchenWorkers <= 0 {
-		dCfg.NumKaetzchenWorkers = defaultNumKaetzchenWorkers
-	}
+	// NumSphinxWorkers, NumGatewayWorkers, NumServiceWorkers and
+	// NumKaetzchenWorkers are auto-derived later, in server.New, via
+	// ApplyRuntimeDefaults. Leave zero values alone here so they
+	// propagate as the "auto-derive" sentinel.
 	if dCfg.UnwrapDelay <= 0 {
 		dCfg.UnwrapDelay = defaultUnwrapDelay
 	}
@@ -288,9 +346,10 @@ func (dCfg *Debug) applyDefaults() {
 		// TODO/perf: Tune this.
 		dCfg.SchedulerSlack = defaultSchedulerSlack
 	}
-	if dCfg.SchedulerMaxBurst <= 0 {
-		dCfg.SchedulerMaxBurst = defaultSchedulerMaxBurst
-	}
+	// SchedulerMaxBurst is auto-derived later, in server.New, via
+	// ApplyRuntimeDefaults from the Sphinx self-check's saturated
+	// rate. Leave zero values alone here so they propagate as the
+	// "auto-derive" sentinel.
 	if dCfg.SendSlack < defaultSendSlack {
 		// TODO/perf: Tune this, probably upwards to be more tolerant of poor
 		// networking conditions.
@@ -307,6 +366,84 @@ func (dCfg *Debug) applyDefaults() {
 	}
 	if dCfg.ReauthInterval <= 0 {
 		dCfg.ReauthInterval = defaultReauthInterval
+	}
+}
+
+// ApplyRuntimeDefaults fills in any zero-valued worker-count fields
+// based on the host's CPU count and the saturated Sphinx unwrap rate
+// measured at startup. Operators should leave NumSphinxWorkers,
+// NumGatewayWorkers, NumServiceWorkers and NumKaetzchenWorkers unset
+// in their TOML so the runtime picks sensible values; an explicit
+// non-zero value in the TOML wins.
+//
+// `numCPU` should be `runtime.NumCPU()`. `saturatedOpsPerSec` is the
+// saturated Sphinx rate from the startup self-check; pass 0 if no
+// measurement is available, in which case the worker counts fall
+// back to NumCPU-only defaults.
+//
+// Note: an earlier revision divided the worker counts by an
+// operator-declared CoTenancyFactor. Empirical parallel-load
+// measurements on the analogous replica change showed the divisor
+// caused a 2.5x throughput regression and a 12x p99 latency
+// increase because the application-layer pool serialised pipeline
+// parallelism more aggressively than the OS scheduler would have
+// shared the cores. NumSphinxWorkers = runtime.NumCPU regardless of
+// how many katzenpost processes share the host; the
+// saturatedOpsPerSec measurement already captures realised
+// contention for queue-and-timeout derivations.
+func (dCfg *Debug) ApplyRuntimeDefaults(numCPU int, saturatedOpsPerSec float64) {
+	if numCPU < 1 {
+		numCPU = 1
+	}
+	if dCfg.NumSphinxWorkers <= 0 {
+		dCfg.NumSphinxWorkers = numCPU
+	}
+	// Gateway, service and kaetzchen workers do strictly less
+	// CPU-heavy work per request than the Sphinx unwrapper; size them
+	// to half the Sphinx pool, floored at 1, so they take some of
+	// the load without claiming all cores for non-crypto work.
+	siblingPool := numCPU / 2
+	if siblingPool < 1 {
+		siblingPool = 1
+	}
+	if dCfg.NumGatewayWorkers <= 0 {
+		dCfg.NumGatewayWorkers = siblingPool
+	}
+	if dCfg.NumServiceWorkers <= 0 {
+		dCfg.NumServiceWorkers = siblingPool
+	}
+	if dCfg.NumKaetzchenWorkers <= 0 {
+		dCfg.NumKaetzchenWorkers = siblingPool
+	}
+	// SchedulerMaxBurst caps how many packets the scheduler dispatches
+	// per wakeup before yielding to the runtime. The constraint is
+	// anti-monopolisation: dispatching one burst should not take so
+	// long that the scheduler is locked out of competing with other
+	// goroutines. Target a 10ms yield interval; if a single Sphinx
+	// op costs perOpMs, MaxBurst = round(10 / perOpMs). Floor at
+	// NumSphinxWorkers so every worker can be fed within one burst;
+	// cap at 256 to keep the anti-monopolisation property even on
+	// hosts with very fast Sphinx Unwrap.
+	if dCfg.SchedulerMaxBurst <= 0 {
+		const targetYieldMs = 10.0
+		const burstCap = 256
+		burst := numCPU // fallback when no measurement is available
+		if saturatedOpsPerSec > 0 {
+			perOpMs := float64(numCPU) * 1000.0 / saturatedOpsPerSec
+			if perOpMs > 0 {
+				derived := int(targetYieldMs/perOpMs + 0.5)
+				if derived > burst {
+					burst = derived
+				}
+			}
+		}
+		if burst < dCfg.NumSphinxWorkers {
+			burst = dCfg.NumSphinxWorkers
+		}
+		if burst > burstCap {
+			burst = burstCap
+		}
+		dCfg.SchedulerMaxBurst = burst
 	}
 }
 
@@ -353,67 +490,8 @@ type Gateway struct {
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
 	AltAddresses map[string][]string
 
-	// SQLDB is the SQL database backend configuration.
-	SQLDB *SQLDB
-
-	// UserDB is the userdb backend configuration.
-	UserDB *UserDB
-
 	// SpoolDB is the user message spool configuration.
 	SpoolDB *SpoolDB
-}
-
-// SQLDB is the SQL database backend configuration.
-type SQLDB struct {
-	// Backend is the active database backend (driver).
-	//
-	//  - pgx: Postgresql.
-	Backend string
-
-	// DataSourceName is the SQL data source name or URI.  The format
-	// of this parameter is dependent on the database driver being used.
-	//
-	//  - pgx: https://godoc.org/github.com/jackc/pgx#ParseConnectionString
-	DataSourceName string
-}
-
-func (sCfg *SQLDB) validate() error {
-	switch sCfg.Backend {
-	case backendPgx:
-	default:
-		return fmt.Errorf("config: SQLDB: Backend '%v' is invalid", sCfg.Backend)
-	}
-	if sCfg.DataSourceName == "" {
-		return fmt.Errorf("config: SQLDB: DataSourceName '%v' is invalid", sCfg.DataSourceName)
-	}
-	return nil
-}
-
-// UserDB is the userdb backend configuration.
-type UserDB struct {
-	// Backend is the active userdb backend.  If left empty, the BoltUserDB
-	// backend will be used (`bolt`).
-	Backend string
-
-	// BoltDB backed userdb (`bolt`).
-	Bolt *BoltUserDB
-
-	// Externally defined (RESTful http) userdb (`extern`).
-	Extern *ExternUserDB
-}
-
-// BoltUserDB is the BoltDB implementation of userdb.
-type BoltUserDB struct {
-	// UserDB is the path to the user database.  If left empty it will use
-	// `users.db` under the DataDir.
-	UserDB string
-}
-
-// ExternUserDB is the external http user authentication.
-type ExternUserDB struct {
-	// GatewayURL is the base url used for the external provider authentication API.
-	// It should be in the form `http://localhost:8080/`
-	GatewayURL string
 }
 
 // SpoolDB is the user message spool configuration.
@@ -483,8 +561,14 @@ type CBORPluginKaetzchen struct {
 	// address.
 	Endpoint string
 
-	// Config is the extra per agent arguments to be passed to the agent's
-	// initialization routine.
+	// PKIAdvertizedData is data that is specific to a given service and
+	// should be advertized in the PKI doc along with the other service
+	// information in the `KaetzchenAdvertizedData` field of the descriptor.
+	PKIAdvertizedData map[string]map[string]interface{}
+
+	// Config contains optional per plugin arguments. They are transposed
+	// into commandline arguments to be passed to the plugin executable binary.
+	// Each map key must not begin with "-" and a "-" will be prepended to each key.
 	Config map[string]interface{}
 
 	// Command is the full file path to the external plugin program
@@ -523,23 +607,6 @@ func (kCfg *CBORPluginKaetzchen) validate() error {
 }
 
 func (pCfg *Gateway) applyDefaults(sCfg *Server) {
-	if pCfg.UserDB == nil {
-		pCfg.UserDB = &UserDB{}
-	}
-	if pCfg.UserDB.Backend == "" {
-		pCfg.UserDB.Backend = BackendBolt
-	}
-	switch pCfg.UserDB.Backend {
-	case BackendBolt:
-		if pCfg.UserDB.Bolt == nil {
-			pCfg.UserDB.Bolt = &BoltUserDB{}
-		}
-		if pCfg.UserDB.Bolt.UserDB == "" {
-			pCfg.UserDB.Bolt.UserDB = filepath.Join(sCfg.DataDir, defaultUserDB)
-		}
-	default:
-	}
-
 	if pCfg.SpoolDB == nil {
 		pCfg.SpoolDB = &SpoolDB{}
 	}
@@ -582,54 +649,10 @@ func (pCfg *ServiceNode) validate() error {
 }
 
 func (pCfg *Gateway) validate() error {
-	internalTransports := make(map[string]bool)
-	for _, v := range pki.InternalTransports {
-		internalTransports[strings.ToLower(string(v))] = true
-	}
-
-	if pCfg.SQLDB != nil {
-		if err := pCfg.SQLDB.validate(); err != nil {
-			return err
-		}
-	}
-
-	switch pCfg.UserDB.Backend {
-	case BackendBolt:
-		if !filepath.IsAbs(pCfg.UserDB.Bolt.UserDB) {
-			return fmt.Errorf("config: Provider: UserDB '%v' is not an absolute path", pCfg.UserDB.Bolt.UserDB)
-		}
-	case BackendExtern:
-		if pCfg.UserDB.Extern == nil {
-			return fmt.Errorf("config: Provider: Extern section should be defined")
-		}
-		if pCfg.UserDB.Extern.GatewayURL == "" {
-			return fmt.Errorf("config: Provider: ProviderURL should be defined for Extern")
-		}
-		providerURL, err := url.Parse(pCfg.UserDB.Extern.GatewayURL)
-		if err != nil {
-			return fmt.Errorf("config: Provider: ProviderURL should be a valid url: %v", err)
-		}
-		switch providerURL.Scheme {
-		case "http", "https":
-		default:
-			return fmt.Errorf("config: Provider: ProviderURL should be of http schema")
-		}
-	case BackendSQL:
-		if pCfg.SQLDB == nil {
-			return fmt.Errorf("config: Provider: UserDB configured for an SQL backend without a SQLDB block")
-		}
-	default:
-		return fmt.Errorf("config: Provider: Invalid UserDB Backend: '%v'", pCfg.UserDB.Backend)
-	}
-
 	switch pCfg.SpoolDB.Backend {
 	case BackendBolt:
 		if !filepath.IsAbs(pCfg.SpoolDB.Bolt.SpoolDB) {
 			return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB.Bolt.SpoolDB)
-		}
-	case BackendSQL:
-		if pCfg.SQLDB == nil {
-			return fmt.Errorf("config: Provider: SpoolDB configured for an SQL backend without a SQLDB block")
 		}
 	default:
 		return fmt.Errorf("config: Provider: Invalid SpoolDB Backend: '%v'", pCfg.SpoolDB.Backend)
@@ -745,6 +768,17 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 	if err := cfg.PKI.validate(cfg.Server.DataDir); err != nil {
 		return err
+	}
+	// Refuse DNS hostnames in any configured PKI authority address
+	// unless the operator explicitly opted in (docker-mixnet only).
+	// Auth.Validate above checks well-formedness; this loop applies
+	// the no-DNS-in-production policy.
+	if cfg.PKI != nil && cfg.PKI.Voting != nil {
+		for _, auth := range cfg.PKI.Voting.Authorities {
+			if err := utils.RejectDNSAddrs(auth.Addresses, cfg.Server.AllowHostnameAddresses); err != nil {
+				return fmt.Errorf("config: PKI authority %q: %w", auth.Identifier, err)
+			}
+		}
 	}
 	if cfg.Server.IsGatewayNode {
 		if cfg.Gateway == nil {

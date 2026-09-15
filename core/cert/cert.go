@@ -27,6 +27,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
@@ -190,10 +191,7 @@ func Sign(signer sign.PrivateKey, verifier sign.PublicKey, data []byte, expirati
 		return nil, err
 	}
 	cert.Signatures = make(map[[32]byte]Signature)
-	sig, err := signer.Sign(nil, mesg, nil)
-	if err != nil {
-		return nil, err
-	}
+	sig := signer.Scheme().Sign(signer, mesg, nil)
 	cert.Signatures[hash.Sum256From(verifier)] = Signature{
 		PublicKeySum256: hash.Sum256From(verifier),
 		Payload:         sig,
@@ -294,10 +292,7 @@ func SignMulti(signer sign.PrivateKey, verifier sign.PublicKey, rawCert []byte) 
 	if err != nil {
 		return nil, err
 	}
-	sig, err := signer.Sign(nil, mesg, nil)
-	if err != nil {
-		return nil, err
-	}
+	sig := signer.Scheme().Sign(signer, mesg, nil)
 	signature := Signature{
 		PublicKeySum256: hash.Sum256From(verifier),
 		Payload:         sig,

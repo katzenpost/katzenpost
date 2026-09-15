@@ -1,0 +1,25 @@
+# Scenario: slow dirauth exercises the state machine under latency.
+#
+# Apply 400 ms / 100 ms jitter to auth1 while leaving the other two
+# at baseline. Companion to `dirauth_flaky.yaml` (loss variant); see
+# that file for full rationale. They are split because pumba's
+# netem subcommand admits only one primitive per host.
+#
+# What to watch in prometheus:
+#
+#   - katzenpost_dirauth_consensus_reached_total per peer should
+#     still advance, but auth1 may briefly lag by an epoch as
+#     descriptors and votes arrive past their phase deadlines.
+#   - katzenpost_dirauth_document_generation_seconds p99 should
+#     remain bounded; if it climbs without bound, the FSM is
+#     stalled.
+#   - katzenpost_dirauth_peer_send_attempt_total to auth1 should
+#     show non-zero deadline_exceeded outcomes since the slow link
+#     pushes individual sends past their per-attempt timeouts.
+
+duration: 12m
+
+hosts:
+  auth1:
+    latency_ms: 400
+    jitter_ms: 100

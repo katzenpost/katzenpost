@@ -1,0 +1,588 @@
+// SPDX-FileCopyrightText: Copyright (C) 2017  Yawning Angel.
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package replica
+
+import (
+	"container/list"
+	"context"
+	"crypto/hmac"
+	"errors"
+	"fmt"
+	"net"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/pem"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
+	"github.com/katzenpost/katzenpost/core/worker"
+)
+
+var incomingConnID uint64
+
+type incomingConn struct {
+	worker.Worker
+
+	scheme        kem.Scheme
+	pkiSignScheme sign.Scheme
+
+	l   *Listener
+	log *logging.Logger
+
+	c   net.Conn
+	e   *list.Element
+	w   wire.SessionInterface
+	geo *geo.Geometry
+
+	id      uint64
+	retrSeq uint32
+
+	isInitialized bool // Set by listener.
+
+	// peerIsReplica is true when the authenticated peer on this
+	// connection is another replica (its AdditionalData carries a node
+	// ID) rather than a courier (empty AdditionalData). Set once in
+	// processCommands after the handshake, read-only thereafter. A
+	// ReplicaMessage that arrives from a replica peer is already a
+	// proxied request, so it must be served locally (or answered
+	// not-found) instead of being proxied again: that caps proxy depth
+	// at one hop and prevents the re-proxy chains and cycles that can
+	// form when replicas transiently disagree on a box's shard set.
+	peerIsReplica bool
+
+	// unknownCmdSeen dedups unhandled-command warnings per type.
+	// Touched only by the command loop goroutine.
+	unknownCmdSeen map[string]bool
+
+	closeConnectionCh chan bool
+
+	// Mutex to protect session access
+	sessionMutex sync.RWMutex
+
+	// closed is set the first time the listener observes this
+	// connection as closed. onClosedConn uses it as an idempotency
+	// guard so duplicate cleanup calls (e.g. the unit-test path that
+	// invokes onClosedConn directly while the worker goroutine is
+	// still in its handshake) do not double-Done the listener's
+	// closeAllWg and panic with a negative counter.
+	closed atomic.Bool
+}
+
+func (c *incomingConn) Close() {
+	c.closeConnectionCh <- true
+}
+
+// getSession safely gets the session with read lock
+func (c *incomingConn) getSession() wire.SessionInterface {
+	c.sessionMutex.RLock()
+	defer c.sessionMutex.RUnlock()
+	return c.w
+}
+
+// setSession safely sets the session with write lock
+func (c *incomingConn) setSession(session wire.SessionInterface) {
+	c.sessionMutex.Lock()
+	defer c.sessionMutex.Unlock()
+	c.w = session
+}
+
+func (c *incomingConn) worker() {
+	defer func() {
+		c.log.Debugf("Closing.")
+		c.c.Close()
+		c.l.onClosedConn(c) // Remove from the connection list.
+	}()
+
+	// Initialize session
+	session, err := c.initializeSession()
+	if err != nil {
+		return
+	}
+	defer session.Close()
+
+	// Perform handshake and authentication
+	creds, err := c.performHandshakeAndAuth(session)
+	if err != nil {
+		return
+	}
+
+	// Close old connections from the same peer
+	if err := c.closeOldConnections(); err != nil {
+		return
+	}
+
+	// Egress channel: the emitter pushes scheduled replies here; the
+	// egressSender goroutine drains it onto the wire as fast as the
+	// session allows. There is no longer a paced consumer with a
+	// bounded inbound queue and an explicit outbound queue: the
+	// TimerQueue inside the emitter is the only buffer.
+	outCh := make(chan *senderRequest, c.l.server.cfg.IncomingQueueSize)
+	emitter := newDelayedReplyEmitter(outCh, c.l.server.logBackend, fmt.Sprintf("%d", c.id), c.l.server.PKIWorker.ReplyJitterBound)
+
+	// Channel to signal egress sender to drain and exit
+	egressDoneCh := make(chan struct{})
+
+	// Start egress sender goroutine (must be ready before processCommands sends responses)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.egressSender(session, outCh, egressDoneCh)
+	}()
+
+	// Run command processing loop synchronously - blocks until connection closes
+	c.processCommands(session, creds, emitter)
+
+	// Connection closed - begin shutdown sequence:
+	// 1. Halt the emitter so its TimerQueue worker stops scheduling
+	//    new sends and the action goroutines unblock via the
+	//    TimerQueue's halt channel.
+	emitter.Halt()
+
+	// 2. Signal egressSender to drain remaining messages and exit
+	close(egressDoneCh)
+
+	// 3. Wait for egressSender to finish
+	wg.Wait()
+}
+
+func (c *incomingConn) egressSender(session *wire.Session, outCh chan *senderRequest, doneCh <-chan struct{}) {
+	for {
+		select {
+		case <-doneCh:
+			// Drain any remaining messages before returning
+			for {
+				select {
+				case resp := <-outCh:
+					c.sendResponse(session, resp)
+				default:
+					return
+				}
+			}
+		case resp := <-outCh:
+			c.sendResponse(session, resp)
+		}
+	}
+}
+
+// sendResponse sends a response command if one is provided
+func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) {
+	if resp == nil {
+		return
+	}
+	cmd := resp.command()
+	if cmd == nil {
+		c.log.Debugf("Failed to send response: nil command")
+		return
+	}
+	_, isDecoy := cmd.(*commands.ReplicaDecoy)
+	if err := session.SendCommand(context.Background(), cmd); err != nil {
+		c.log.Debugf("Failed to send response: %v", err)
+	} else if !isDecoy {
+		c.log.Debugf("Sent response: %T", cmd)
+	}
+}
+
+// initializeSession creates and configures the wire session
+// noIdleReadTimeout effectively disables the wire session's idle read
+// deadline; dead peers are detected by TCP keepalive.
+const noIdleReadTimeout = 24 * 365 * time.Hour
+
+func (c *incomingConn) initializeSession() (*wire.Session, error) {
+	// Allocate the session struct.
+	identityHash := hash.Sum256From(c.l.server.identityPublicKey)
+	cfg := &wire.SessionConfig{
+		KEMScheme:         c.scheme,
+		Geometry:          c.geo,
+		Authenticator:     c,
+		AdditionalData:    identityHash[:],
+		AuthenticationKey: c.l.server.linkKey,
+		RandomReader:      rand.Reader,
+		HandshakeTimeout:  time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond,
+		ReadTimeout:       noIdleReadTimeout,
+	}
+	var err error
+	c.l.Lock()
+
+	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+	session, err := wire.NewStorageReplicaSession(cfg, nikeScheme, false)
+
+	c.l.Unlock()
+
+	if err == nil {
+		c.setSession(session)
+	}
+
+	if err != nil {
+		c.log.Errorf("Failed to allocate session: %v", err)
+		return nil, err
+	}
+
+	sessionInterface := c.getSession()
+	if sessionInterface == nil {
+		c.log.Errorf("Failed to get session")
+		return nil, errors.New("failed to get session")
+	}
+	session, ok := sessionInterface.(*wire.Session)
+	if !ok {
+		c.log.Errorf("Failed to cast session to *wire.Session")
+		return nil, errors.New("failed to cast session to *wire.Session")
+	}
+
+	return session, nil
+}
+
+// performHandshakeAndAuth handles the handshake and authentication process
+func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.PeerCredentials, error) {
+	timeoutMs := time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond
+
+	localAddr := "<unknown>"
+	if c.c.LocalAddr() != nil {
+		localAddr = c.c.LocalAddr().String()
+	}
+
+	remoteAddr := "<unknown>"
+	if c.c.RemoteAddr() != nil {
+		remoteAddr = c.c.RemoteAddr().String()
+	}
+
+	handshakeStart := time.Now()
+	if err := session.Initialize(context.Background(), c.c); err != nil {
+		handshakeElapsed := time.Since(handshakeStart)
+		state := "other"
+		if he, ok := wire.GetHandshakeError(err); ok {
+			state = string(he.State)
+		} else if wire.IsNoHandshakeBytesError(err) {
+			state = "premature_close"
+		}
+		handshakeinstrument.HandshakeFailure("incoming", state)
+		handshakeinstrument.HandshakeDuration("incoming", "failure", handshakeElapsed)
+
+		if wire.IsNoHandshakeBytesError(err) {
+			c.log.Debugf(
+				"TCP connection closed before Noise handshake bytes local=%s remote=%s after=%v timeout=%v: %v",
+				localAddr,
+				remoteAddr,
+				handshakeElapsed,
+				timeoutMs,
+				err,
+			)
+			return nil, err
+		}
+
+		c.log.Errorf(
+			"Handshake failed local=%s remote=%s after=%v timeout=%v: %v",
+			localAddr,
+			remoteAddr,
+			handshakeElapsed,
+			timeoutMs,
+			err,
+		)
+		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
+		return nil, err
+	}
+	handshakeinstrument.HandshakeDuration("incoming", "success", time.Since(handshakeStart))
+
+	c.log.Debugf(
+		"Handshake completed local=%s remote=%s in %v",
+		localAddr,
+		remoteAddr,
+		time.Since(handshakeStart),
+	)
+
+	c.l.onInitializedConn(c)
+
+	creds, err := session.PeerCredentials()
+	if err != nil {
+		c.log.Debugf("Session failure local=%s remote=%s: %s", localAddr, remoteAddr, err)
+		return nil, err
+	}
+
+	return creds, nil
+}
+
+// closeOldConnections ensures only one connection per peer
+func (c *incomingConn) closeOldConnections() error {
+	// Ensure that there's only one incoming conn from any given peer, though
+	// this only really matters for user sessions. Newest connection wins.
+	for _, s := range c.l.server.listeners {
+		err := s.CloseOldConns(c)
+		if err != nil {
+			c.log.Errorf("Closing new connection because something is broken: " + err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+// processCommands handles the main command processing loop
+func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCredentials, emitter *delayedReplyEmitter) {
+	// Record whether the authenticated peer is a replica (node-ID-length
+	// AdditionalData) or a courier (empty). A ReplicaMessage from a
+	// replica peer is an already-proxied request and must not be proxied
+	// again. Set before the command loop so the async ReplicaMessage
+	// handlers observe it.
+	c.peerIsReplica = len(creds.AdditionalData) == sConstants.NodeIDLength
+
+	// Start the reauthenticate ticker.
+	reauthMs := time.Duration(c.l.server.cfg.ReauthInterval) * time.Millisecond
+	reauth := time.NewTicker(reauthMs)
+	defer reauth.Stop()
+
+	// Start reading from the peer.
+	commandCh, commandCloseCh := c.startCommandReader(session)
+	defer close(commandCloseCh)
+
+	// Process incoming packets.
+	for {
+		rawCmd, shouldContinue := c.handleSelectCases(reauth.C, creds, commandCh)
+		if !shouldContinue {
+			return
+		}
+		if rawCmd == nil {
+			continue
+		}
+
+		recvAt := time.Now()
+
+		// Handle all of the storage replica commands.
+		resp, allGood := c.onReplicaCommand(rawCmd, emitter)
+		if !allGood {
+			c.log.Debugf("Got a disconnect or we failed to handle replica command: %v", rawCmd)
+			return
+		}
+
+		if resp != nil {
+			if resp.ReplicaDecoy == nil {
+				c.log.Debugf("Enqueueing response: %T", resp)
+			}
+			select {
+			case <-c.l.closeAllCh:
+				return
+			default:
+			}
+			resp.recvAt = recvAt
+			emitter.Enqueue(resp)
+		}
+	}
+}
+
+// startCommandReader starts a goroutine to read commands from the session
+func (c *incomingConn) startCommandReader(session *wire.Session) (chan commands.Command, chan any) {
+	commandCh := make(chan commands.Command)
+	commandCloseCh := make(chan any)
+
+	go func() {
+		defer close(commandCh)
+		for {
+			rawCmd, err := session.RecvCommand(context.Background())
+			if err != nil {
+				c.log.Debugf("Failed to receive command: %v", err)
+				return
+			}
+			select {
+			case commandCh <- rawCmd:
+			case <-commandCloseCh:
+				return
+			}
+		}
+	}()
+
+	return commandCh, commandCloseCh
+}
+
+// handleSelectCases handles the main select statement cases
+func (c *incomingConn) handleSelectCases(reauthCh <-chan time.Time, creds *wire.PeerCredentials, commandCh <-chan commands.Command) (commands.Command, bool) {
+	select {
+	case <-c.l.closeAllCh:
+		return nil, false
+	case <-reauthCh:
+		if !c.IsPeerValid(creds) {
+			c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+			return nil, false
+		}
+		return nil, true
+	case <-c.closeConnectionCh:
+		c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
+		return nil, false
+	case rawCmd, ok := <-commandCh:
+		if !ok {
+			return nil, false
+		}
+		return rawCmd, true
+	}
+}
+
+func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme, pkiSignScheme sign.Scheme) *incomingConn {
+	c := &incomingConn{
+		scheme:            scheme,
+		pkiSignScheme:     pkiSignScheme,
+		l:                 l,
+		c:                 conn,
+		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
+		closeConnectionCh: make(chan bool),
+		geo:               geo,
+	}
+	c.log = l.server.logBackend.GetLogger(fmt.Sprintf("replica incoming:%d", c.id))
+	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
+
+	// Note: Unlike most other things, this does not spawn the worker here,
+	// because the worker needs to be spawned after the struct is added to
+	// the connection list.
+
+	return c
+}
+
+func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
+	// Check if this is a courier connection (empty AdditionalData)
+	if len(creds.AdditionalData) == 0 {
+		return c.authenticateCourier(creds)
+	}
+
+	// Check if this is a replica connection (AdditionalData is node ID hash)
+	if len(creds.AdditionalData) == sConstants.NodeIDLength {
+		return c.authenticateReplica(creds)
+	}
+
+	c.log.Warningf("replica/incoming: IsPeerValid(): Authentication failed, invalid AdditionalData length")
+	c.log.Warningf("replica/incoming: IsPeerValid(): Remote Peer Credentials: ad_length=%d (expected: 0 or %d), link_key=%s",
+		len(creds.AdditionalData), sConstants.NodeIDLength, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+	return false
+}
+
+// authenticateCourier handles authentication for courier connections
+func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
+	doc := c.findPKIDocument()
+	if doc == nil {
+		c.log.Warningf("replica/incoming: authenticateCourier(): No PKI document available")
+		c.log.Warningf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key=%s",
+			strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+		return false
+	}
+
+	// Check if the public key matches any courier in the PKI document
+	for _, desc := range doc.ServiceNodes {
+		if desc.Kaetzchen == nil {
+			continue
+		}
+		if c.validateCourierKey(desc, creds.PublicKey) {
+			return true
+		}
+	}
+
+	c.log.Warningf("replica/incoming: authenticateCourier(): Courier authentication failed")
+	c.log.Warningf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key=%s",
+		strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+	c.log.Warningf("replica/incoming: authenticateCourier(): Available service nodes with courier capability:")
+	for _, desc := range doc.ServiceNodes {
+		if desc.Kaetzchen != nil {
+			rawLinkKey, err := desc.GetRawCourierLinkKey()
+			if err == nil {
+				c.log.Warningf("replica/incoming: authenticateCourier():   - name=%s, link_key=%s",
+					desc.Name, strings.TrimSpace(rawLinkKey))
+			}
+		}
+	}
+	return false
+}
+
+// authenticateReplica handles authentication for replica connections
+func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
+	var nodeID [sConstants.NodeIDLength]byte
+	copy(nodeID[:], creds.AdditionalData)
+
+	// Get replica descriptor from the replica map, falling back to the
+	// cached-document grace window (late dirauth publication or
+	// staggered-upgrade descriptor churn must not sever the mesh).
+	replicaDesc, isReplica := c.l.server.PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
+	if !isReplica {
+		for _, desc := range c.l.server.PKIWorker.replicaDescriptorsForAuth(&nodeID) {
+			replicaDesc, isReplica = desc, true
+			c.log.Noticef("replica/incoming: authenticated %s via cached-document grace window", desc.Name)
+			break
+		}
+	}
+	if !isReplica {
+		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: node ID %x not found in replica list", nodeID)
+		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: node_id=%x, link_key=%s",
+			nodeID, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+
+		// Log available replicas for debugging
+		c.log.Warningf("replica/incoming: authenticateReplica(): Available replicas:")
+		allReplicas := c.l.server.PKIWorker.replicas.Copy()
+		for replicaID, replica := range allReplicas {
+			c.log.Warningf("replica/incoming: authenticateReplica():   - name=%s, node_id=%x, link_key=%x",
+				replica.Name, replicaID[:], replica.LinkKey)
+		}
+		return false
+	}
+
+	// Verify link key matches
+	blob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(replicaDesc.LinkKey, blob) {
+		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: link key mismatch for replica '%s'", replicaDesc.Name)
+		c.log.Warningf("replica/incoming: authenticateReplica(): Expected link key: %x", replicaDesc.LinkKey)
+		c.log.Warningf("replica/incoming: authenticateReplica(): Received link key: %s",
+			strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: name=%s, node_id=%x",
+			replicaDesc.Name, nodeID)
+		return false
+	}
+
+	return true
+}
+
+// findPKIDocument finds a PKI document for current, next, or previous epoch
+func (c *incomingConn) findPKIDocument() *pki.Document {
+	epoch, _, _ := epochtime.Now()
+
+	// Try current, next, and previous epochs
+	doc := c.l.server.PKIWorker.documentForEpoch(epoch)
+	if doc == nil {
+		doc = c.l.server.PKIWorker.documentForEpoch(epoch + 1)
+		if doc == nil {
+			doc = c.l.server.PKIWorker.documentForEpoch(epoch - 1)
+			if doc == nil {
+				c.log.Errorf("No PKI docs available for epochs %d, %d, or %d", epoch-1, epoch, epoch+1)
+				return nil
+			}
+		}
+	}
+	return doc
+}
+
+// validateCourierKey validates a courier's link key against the provided public key
+func (c *incomingConn) validateCourierKey(desc *pki.MixDescriptor, publicKey kem.PublicKey) bool {
+	rawLinkPubKey, err := desc.GetRawCourierLinkKey()
+	if err != nil {
+		c.log.Errorf("desc.GetRawCourierLinkKey() failure: %s", err)
+		return false
+	}
+	linkScheme := kemschemes.ByName(c.l.server.cfg.WireKEMScheme)
+	linkPubKey, err := pem.FromPublicPEMString(rawLinkPubKey, linkScheme)
+	if err != nil {
+		c.log.Errorf("Failed to unmarshal courier link key: %s", err)
+		return false
+	}
+	return publicKey.Equal(linkPubKey)
+}

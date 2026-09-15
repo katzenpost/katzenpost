@@ -1,0 +1,1603 @@
+// SPDX-FileCopyrightText: © 2024 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package server
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
+
+	"github.com/katzenpost/katzenpost/client/constants"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/courier/server/instrument"
+	"github.com/katzenpost/katzenpost/pigeonhole"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
+)
+
+// CourierBookKeeping is used for:
+// 1. deduping writes
+// 2. deduping reads
+// 3. caching replica replies
+type CourierBookKeeping struct {
+	Epoch                uint64
+	CreatedAt            time.Time
+	QueryType            uint8
+	IntermediateReplicas [2]uint8 // Store the replica IDs that were contacted
+	EnvelopeReplies      [2]*commands.ReplicaMessageReply
+
+	// RedispatchAttempts bounds how many times a client poll may
+	// trigger a fresh dispatch to the replicas for this envelope.
+	RedispatchAttempts int
+}
+
+// CopyCommandState tracks the state of a copy command for idempotency.
+// This allows copy commands to be safely retried via ARQ without duplicating work.
+type CopyCommandState struct {
+	InProgress  bool
+	Done        chan struct{}                 // Closed when the copy command completes
+	Result      *pigeonhole.CourierQueryReply // Cached result (nil if still in progress)
+	CompletedAt time.Time                     // When the copy command completed
+}
+
+// Courier handles the CBOR plugin interface for our courier service.
+type Courier struct {
+	// worker.Worker manages the background replica-dispatch
+	// goroutines so they can be halted gracefully. Its zero value is
+	// usable (lazy initOnce), so no explicit construction is needed.
+	worker.Worker
+
+	write  func(cborplugin.Command)
+	server *Server
+	log    *logging.Logger
+
+	cmds           *commands.Commands
+	geo            *geo.Geometry
+	envelopeScheme nike.Scheme
+	pigeonholeGeo  *pigeonholeGeo.Geometry
+
+	dedupCacheLock sync.RWMutex
+	dedupCache     map[[hash.HashSize]byte]*CourierBookKeeping
+
+	copyCacheLock sync.RWMutex
+	copyCache     map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply
+
+	// Copy command deduplication cache — tracks in-progress and
+	// completed copy commands. The client daemon polls the same
+	// WriteCap to learn the terminal Status; this map is the source of
+	// truth for those polls.
+	copyDedupCacheLock sync.RWMutex
+	copyDedupCache     map[[hash.HashSize]byte]*CopyCommandState
+
+	// dispatchSem bounds the number of concurrent replica-dispatch
+	// goroutines. Replica dispatch is performed off the single
+	// serialised OnCommand goroutine (a slow replica must not be able
+	// to head-of-line block all client request handling, including
+	// cache-hit ACKs). This is the project's "Semaphore over Worker
+	// Pools" idiom: a goroutine per dispatch, capped by a buffered
+	// channel, rather than a pool of idle workers.
+	dispatchSem chan struct{}
+
+	// inFlightLock guards inFlight, the set of EnvelopeHashes that
+	// currently have a dispatch goroutine outstanding. It collapses
+	// duplicate concurrent (re-)dispatches of the same envelope to a
+	// single in-flight attempt, so a client ARQ-retransmitting a
+	// not-yet-resolved envelope cannot spawn an unbounded fan of
+	// replica traffic.
+	inFlightLock sync.Mutex
+	inFlight     map[[hash.HashSize]byte]struct{}
+
+	// processCopyCommandFn is the worker that performs the actual Copy
+	// work in a background goroutine. Defaults to
+	// (*Courier).processCopyCommand in production; tests swap it for a
+	// fake that doesn't need real replica connectivity.
+	processCopyCommandFn func(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply
+}
+
+// CopyDedupCacheTTL bounds how long a completed Copy command's status
+// stays retrievable by the client via polling. Long enough to cover a
+// reconnecting client that missed earlier polls, short enough that the
+// cache stays bounded in memory.
+const CopyDedupCacheTTL = 30 * time.Minute
+
+// unservedReadWarnAfter is purely observability: a read still unserved
+// past this age logs a WARNING naming each intermediary replica's state
+// (ok, err=N, or silent). It imposes no deadline; the reply is still an
+// ACK and the client's ARQ keeps polling.
+const unservedReadWarnAfter = 3 * time.Minute
+
+const (
+	// maxCopyReadTransientAttempts is how many times a single shard
+	// replica is re-queried on a temporary error (per the classifier)
+	// before the read path fails over to the shard peer.
+	maxCopyReadTransientAttempts = 10
+
+	// copyReadReplyTimeout bounds how long the courier waits for a
+	// reply from one shard replica during a Copy read, measured from
+	// enqueue onto the sender. A live reply on a real network takes far
+	// longer than a LAN round trip: the query waits its turn in the
+	// LambdaR-paced sender queue, the replica deliberately delays the
+	// reply with uniform jitter to hide read/write timing, the reply
+	// rides the paced return link, and the envelope crypto (e.g. CTIDH)
+	// is not cheap. A short deadline abandons replies that are merely
+	// slow, and because each retry re-enqueues behind the same backlog
+	// it times out again, so a slow-but-live replica is never caught and
+	// the Copy fails with "no replica reply" even though the box is
+	// there. The budget (attempts x this timeout, per shard, x2 shards)
+	// is deliberately generous: a Copy is a background all-or-nothing
+	// reliability operation the client polls for, so eventual success
+	// matters far more than failing fast.
+	copyReadReplyTimeout = 60 * time.Second
+
+	// maxCopyWriteAttempts is how many times the courier tries to
+	// dispatch a single copy-stream envelope to its intermediate
+	// replicas before aborting the Copy command. Write-side failover
+	// between shard peers is not available — the intermediate replicas
+	// are baked into the client's MKEM envelope.
+	maxCopyWriteAttempts = 10
+
+	// copyWriteReplyTimeout bounds how long the courier waits for
+	// both intermediate-replica replies after dispatching a Copy
+	// envelope. Same reasoning as copyReadReplyTimeout: on a real
+	// network the acknowledgement is paced, jittered and crypto-bound,
+	// so the deadline must be generous or a live intermediate is
+	// wrongly given up on. One unresponsive intermediate cannot pin the
+	// Copy goroutine; if only one reply arrives within this window, it
+	// is treated as the authoritative outcome.
+	copyWriteReplyTimeout = 60 * time.Second
+
+	// copyBackoffBase is the base backoff between attempts for both
+	// read and write retry loops; each attempt doubles up to
+	// copyBackoffCap.
+	copyBackoffBase = 500 * time.Millisecond
+	copyBackoffCap  = 10 * time.Second
+
+	// maxCopyStreamBoxes and maxCopyStreamEnvelopes bound a single
+	// Copy. BACAP yields an infinite deterministic box sequence and
+	// the temp-stream loop ends only on a read failure or the
+	// client-controlled isFinal flag, so without a ceiling one small
+	// CopyCommand could drive the courier to read an unbounded number
+	// of boxes (each costing replica round-trips and a slot in
+	// boxIDList) and dispatch an unbounded number of envelopes
+	// (security audit finding H3). These are deliberately generous
+	// sanity ceilings, far above any legitimate AllOrNothing transfer
+	// yet finite; exceeding either aborts the Copy as Failed.
+	maxCopyStreamBoxes     = 1 << 16
+	maxCopyStreamEnvelopes = 1 << 16
+)
+
+// copyAttemptBackoff returns the sleep between attempt n and attempt
+// n+1 within the same loop, capped at copyBackoffCap.
+func copyAttemptBackoff(attempt int) time.Duration {
+	shift := attempt
+	if shift > 8 {
+		shift = 8
+	}
+	d := copyBackoffBase * time.Duration(1<<uint(shift))
+	if d > copyBackoffCap {
+		d = copyBackoffCap
+	}
+	return d
+}
+
+// copySucceededReply is the terminal reply for a successful Copy.
+func copySucceededReply() *pigeonhole.CourierQueryReply {
+	return &pigeonhole.CourierQueryReply{
+		ReplyType: 1,
+		CopyCommandReply: &pigeonhole.CopyCommandReply{
+			Status: pigeonhole.CopyStatusSucceeded,
+		},
+	}
+}
+
+// copyFailedReply is the terminal reply for an aborted Copy. replicaErr
+// is the replica ErrorCode that triggered the abort (0 if the failure
+// was purely on the courier side). failedEnvelopeIndex is the 1-based
+// sequential position in the copy stream that could not be completed
+// — successfully_processed_envelopes + 1. 0 if not applicable.
+func copyFailedReply(replicaErr uint8, failedEnvelopeIndex uint64) *pigeonhole.CourierQueryReply {
+	return &pigeonhole.CourierQueryReply{
+		ReplyType: 1,
+		CopyCommandReply: &pigeonhole.CopyCommandReply{
+			Status:              pigeonhole.CopyStatusFailed,
+			ErrorCode:           replicaErr,
+			FailedEnvelopeIndex: failedEnvelopeIndex,
+		},
+	}
+}
+
+// DedupCacheTTL bounds how long a CourierBookKeeping entry stays in
+// dedupCache. Long enough to cover an active ARQ retry cycle for a single
+// envelope, short enough that dedupCache size stays bounded under load.
+const DedupCacheTTL = 5 * time.Minute
+
+// maxConcurrentReplicaDispatch caps the number of replica-dispatch
+// goroutines running at once. Each does only two SendMessage calls
+// (which enqueue into per-replica bounded sender queues), so a
+// generous bound keeps the replicas busy without letting a slow
+// replica turn into unbounded goroutine growth. The set of distinct
+// in-flight envelopes is itself bounded by the TTL-pruned dedupCache,
+// so any goroutines briefly parked on this semaphore are bounded too.
+const maxConcurrentReplicaDispatch = 256
+
+// NewCourier returns a new Courier type.
+func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
+	pigeonholeGeo, err := pigeonholeGeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, scheme)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create pigeonhole geometry: %v", err))
+	}
+
+	courier := &Courier{
+		server:         s,
+		log:            s.logBackend.GetLogger("courier"),
+		cmds:           cmds,
+		geo:            s.cfg.SphinxGeometry,
+		envelopeScheme: scheme,
+		pigeonholeGeo:  pigeonholeGeo,
+		dedupCache:     make(map[[hash.HashSize]byte]*CourierBookKeeping),
+		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
+		copyDedupCache: make(map[[hash.HashSize]byte]*CopyCommandState),
+		dispatchSem:    make(chan struct{}, maxConcurrentReplicaDispatch),
+		inFlight:       make(map[[hash.HashSize]byte]struct{}),
+	}
+	courier.processCopyCommandFn = courier.processCopyCommand
+	return courier
+}
+
+// StartPlugin starts the CBOR plugin service which listens for socket connections
+// from the service node.
+func (s *Server) StartPlugin() {
+	socketFile := filepath.Join(s.cfg.DataDir, fmt.Sprintf("%d.courier.socket", os.Getpid()))
+
+	scheme := schemes.ByName(s.cfg.EnvelopeScheme)
+	cmds := commands.NewStorageReplicaCommands(s.cfg.SphinxGeometry, scheme)
+
+	courier := NewCourier(s, cmds, scheme)
+	s.Courier = courier
+
+	// Force a PKI refresh on startup to ensure we have current documents
+	// even if there were previous fetch failures
+	go func() {
+		time.Sleep(2 * time.Second) // Give the PKI worker time to start
+		if err := s.PKI.ForceFetchPKI(); err != nil {
+			s.log.Warningf("Failed to force fetch PKI on startup: %v", err)
+		} else {
+			s.log.Debugf("Successfully force fetched PKI on startup")
+		}
+	}()
+
+	server := cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestFactory), courier)
+	fmt.Printf("%s\n", socketFile)
+	server.Accept()
+	server.Wait()
+	err := os.Remove(socketFile)
+	if err != nil {
+		panic(err)
+	}
+
+}
+
+func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
+	e.copyCacheLock.RLock()
+	ch, isCopy := e.copyCache[*reply.EnvelopeHash]
+	e.copyCacheLock.RUnlock()
+
+	if isCopy {
+		// Hand the reply to the waiting copy-command goroutine. The channel is
+		// buffered to the expected number of replies, so a non-blocking send
+		// suffices; if a replica sends a duplicate/extra reply for the same
+		// envelope (buffer full, waiter already satisfied or gone) we drop it
+		// rather than block this connection's event loop forever.
+		select {
+		case ch <- reply:
+		default:
+			e.log.Debugf("HandleReply: copy reply channel for %x full, dropping extra reply", reply.EnvelopeHash[:8])
+		}
+		return
+	}
+	e.CacheReply(reply)
+}
+
+func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
+	e.log.Debugf("CacheReply called with envelope hash: %x from replica ID: %d", reply.EnvelopeHash, reply.ReplicaID)
+
+	if !e.validateReply(reply) {
+		e.log.Errorf("courier/!e.validateReply(reply:%v)", reply)
+		return
+	}
+
+	// DEBUG: Log which replica sent this reply
+	e.dedupCacheLock.Lock()
+	entry, ok := e.dedupCache[*reply.EnvelopeHash]
+	e.dedupCacheLock.Unlock()
+	if ok {
+		e.log.Debugf("CacheReply: Reply from replica %d, intermediaries are: %v", reply.ReplicaID, entry.IntermediateReplicas)
+	}
+
+	// NOTE: We do NOT send immediate replies for read requests.
+	// The ARQ protocol requires:
+	// 1. Client sends first request with SURB #1 → Courier sends ACK on SURB #1
+	// 2. Client receives ACK, sends second request with SURB #2 (same envelope hash)
+	// 3. Courier returns cached payload on SURB #2 via handleOldMessage
+	// Trying to send the payload on SURB #1 would fail because the client has moved on to SURB #2.
+
+	e.dedupCacheLock.Lock()
+	defer e.dedupCacheLock.Unlock()
+
+	entry2, ok2 := e.dedupCache[*reply.EnvelopeHash]
+	if ok2 {
+		e.handleExistingEntry(entry2, reply)
+		e.logFinalCacheState(reply)
+	} else {
+		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
+	}
+}
+
+// validateReply checks if the reply should be cached
+func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
+	if reply.EnvelopeHash == nil {
+		e.log.Debugf("CacheReply: envelope hash is nil, not caching")
+		return false
+	}
+
+	e.log.Debug("CacheReply: caching reply")
+
+	return true
+}
+
+// handleExistingEntry processes replies for existing cache entries
+func (e *Courier) handleExistingEntry(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply) {
+	e.log.Debugf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
+
+	replyIndex := e.findReplicaIndex(entry, reply.ReplicaID)
+	if replyIndex >= 0 {
+		e.storeOrReplaceReply(entry, reply, replyIndex)
+	} else {
+		// Check if we can accommodate this replica in an unused slot (marked as 255)
+		for i, id := range entry.IntermediateReplicas {
+			if id == 255 && entry.EnvelopeReplies[i] == nil {
+				e.log.Debugf("CacheReply: storing reply from replica %d in unused slot %d", reply.ReplicaID, i)
+				entry.IntermediateReplicas[i] = reply.ReplicaID
+				entry.EnvelopeReplies[i] = reply
+				return
+			}
+		}
+		e.log.Warningf("CacheReply: replica ID %d not found in IntermediateReplicas %v and no unused slots available for envelope hash %x", reply.ReplicaID, entry.IntermediateReplicas, reply.EnvelopeHash)
+	}
+}
+
+// findReplicaIndex finds the index for a replica ID in IntermediateReplicas
+func (e *Courier) findReplicaIndex(entry *CourierBookKeeping, replicaID uint8) int {
+	for i, id := range entry.IntermediateReplicas {
+		if id == replicaID {
+			return i
+		}
+	}
+	return -1
+}
+
+// storeOrReplaceReply stores the reply, replacing any existing error reply with a successful one
+func (e *Courier) storeOrReplaceReply(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply, replyIndex int) {
+	existing := entry.EnvelopeReplies[replyIndex]
+	if existing == nil {
+		// No existing reply, store the new one
+		e.log.Infof("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
+		entry.EnvelopeReplies[replyIndex] = reply
+	} else if existing.ErrorCode != 0 {
+		// Overwrite cached errors with newer replies. Errors may be transient
+		// (e.g. BoxIDNotFound that resolves when data propagates).
+		e.log.Infof("CacheReply: replacing cached error (err=%d) with new reply (err=%d) from replica %d at index %d",
+			existing.ErrorCode, reply.ErrorCode, reply.ReplicaID, replyIndex)
+		entry.EnvelopeReplies[replyIndex] = reply
+	} else {
+		e.log.Debugf("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
+	}
+}
+
+// pruneDedupCacheLocked removes entries whose age (now - CreatedAt) is
+// strictly greater than ttl. Returns the number of entries removed.
+// The caller MUST hold e.dedupCacheLock.Lock().
+func (e *Courier) pruneDedupCacheLocked(now time.Time, ttl time.Duration) int {
+	pruned := 0
+	for key, entry := range e.dedupCache {
+		if now.Sub(entry.CreatedAt) > ttl {
+			delete(e.dedupCache, key)
+			pruned++
+		}
+	}
+	return pruned
+}
+
+// pruneCopyDedupCacheLocked removes completed copy entries whose age
+// (now - CompletedAt) is strictly greater than ttl. In-progress
+// entries are never pruned: their worker goroutine still owns the
+// state and the client is still polling. Returns the number removed.
+// The caller MUST hold e.copyDedupCacheLock.Lock().
+//
+// This mirrors pruneDedupCacheLocked: copyDedupCache previously had no
+// pruner at all, so a client issuing Copy commands with distinct
+// WriteCaps and never re-polling grew it without bound (security audit
+// finding C3). It is swept opportunistically on each new Copy, exactly
+// as the envelope dedup cache is swept on each new envelope.
+func (e *Courier) pruneCopyDedupCacheLocked(now time.Time, ttl time.Duration) int {
+	pruned := 0
+	for key, state := range e.copyDedupCache {
+		if state.InProgress {
+			continue
+		}
+		if now.Sub(state.CompletedAt) > ttl {
+			delete(e.copyDedupCache, key)
+			pruned++
+		}
+	}
+	return pruned
+}
+
+// getCurrentEpoch gets the current epoch from PKI document
+func (e *Courier) getCurrentEpoch() uint64 {
+	if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
+		return pkiDoc.Epoch
+	}
+	return 0
+}
+
+// pkiDocForSharding returns the current epoch's document, or the most recently
+// cached one during the window after an epoch rotation before the new document
+// has been fetched. Shard membership is stable across adjacent epochs, so a
+// one-epoch-stale document yields the shards every peer computes.
+func (e *Courier) pkiDocForSharding() *cpki.Document {
+	doc := e.server.PKI.PKIDocument()
+	if doc == nil {
+		doc = e.server.PKI.LastCachedPKIDocument()
+	}
+	return doc
+}
+
+// logFinalCacheState logs the final state of the cache entry
+func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
+	finalEntry := e.dedupCache[*reply.EnvelopeHash]
+	reply0Available := finalEntry.EnvelopeReplies[0] != nil
+	reply1Available := finalEntry.EnvelopeReplies[1] != nil
+	e.log.Debugf("CacheReply: final cache state for %x - Reply[0]: %v, Reply[1]: %v", reply.EnvelopeHash, reply0Available, reply1Available)
+}
+
+func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnvelope) error {
+	e.log.Debugf("handleCourierEnvelope: Starting to handle envelope with intermediate replicas [%d, %d]",
+		courierMessage.IntermediateReplicas[0], courierMessage.IntermediateReplicas[1])
+
+	firstReplicaID := courierMessage.IntermediateReplicas[0]
+	e.log.Debugf("handleCourierEnvelope: Preparing message for first replica ID %d", firstReplicaID)
+	replicaMsg1 := &commands.ReplicaMessage{
+		Cmds:               e.cmds,
+		PigeonholeGeometry: e.pigeonholeGeo,
+		Scheme:             e.envelopeScheme,
+
+		SenderEPubKey: courierMessage.SenderPubkey,
+		DEK:           &courierMessage.Dek1,
+		Ciphertext:    courierMessage.Ciphertext,
+	}
+	e.log.Debugf("handleCourierEnvelope: Sending message to first replica ID %d", firstReplicaID)
+	if err := e.server.SendMessage(firstReplicaID, replicaMsg1); err != nil {
+		e.log.Errorf("handleCourierEnvelope: Failed to send message to first replica %d: %s", firstReplicaID, err)
+		return fmt.Errorf("failed to dispatch to replica %d: %w", firstReplicaID, err)
+	}
+
+	secondReplicaID := courierMessage.IntermediateReplicas[1]
+	e.log.Debugf("handleCourierEnvelope: Preparing message for second replica ID %d", secondReplicaID)
+	replicaMsg2 := &commands.ReplicaMessage{
+		Cmds:               e.cmds,
+		PigeonholeGeometry: e.pigeonholeGeo,
+		Scheme:             e.envelopeScheme,
+
+		SenderEPubKey: courierMessage.SenderPubkey,
+		DEK:           &courierMessage.Dek2,
+		Ciphertext:    courierMessage.Ciphertext,
+	}
+	e.log.Debugf("handleCourierEnvelope: Sending message to second replica ID %d", secondReplicaID)
+	if err := e.server.SendMessage(secondReplicaID, replicaMsg2); err != nil {
+		e.log.Errorf("handleCourierEnvelope: Failed to send message to second replica %d: %s", secondReplicaID, err)
+		return fmt.Errorf("failed to dispatch to replica %d: %w", secondReplicaID, err)
+	}
+
+	e.log.Debugf("handleCourierEnvelope: Successfully dispatched messages to both replicas")
+	return nil
+}
+
+// ackReply builds the immediate ACK returned to the client the moment
+// an envelope is accepted. Replica dispatch happens asynchronously
+// (see scheduleReplicaDispatch); the actual data reply arrives later
+// via CacheReply and is served on a subsequent ARQ retransmission. The
+// client is expected to keep resending the identical CourierEnvelope
+// until it receives a PAYLOAD reply (see specs/pigeonhole.md).
+func (e *Courier) ackReply(envHash *[hash.HashSize]byte, replyIndex uint8) *pigeonhole.CourierQueryReply {
+	return &pigeonhole.CourierQueryReply{
+		ReplyType: 0, // 0 = envelope_reply
+		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
+			EnvelopeHash: *envHash,
+			ReplyIndex:   replyIndex,
+			ReplyType:    pigeonhole.ReplyTypeACK,
+			PayloadLen:   0,
+			Payload:      nil,
+			ErrorCode:    pigeonhole.EnvelopeErrorSuccess,
+		},
+	}
+}
+
+// scheduleReplicaDispatch dispatches an envelope to its intermediate
+// replicas on a bounded background goroutine, off the single
+// serialised OnCommand path. This is the fix for the head-of-line
+// stall: propagateQueryToReplicas can block on a full per-replica
+// sender queue, and doing it inline would freeze all client request
+// handling (including cheap cache-hit ACKs) behind one slow replica.
+//
+// Two guards keep this bounded:
+//
+//   - The inFlight set collapses concurrent (re-)dispatches of the
+//     same EnvelopeHash to one outstanding attempt, so a client
+//     ARQ-retransmitting an unresolved envelope cannot fan out
+//     unbounded replica traffic. The distinct in-flight set is itself
+//     bounded by the TTL-pruned dedupCache.
+//   - dispatchSem caps the number of dispatches doing work at once.
+//
+// The goroutine uses the project's two-step HaltCh select so a
+// shutdown is observed promptly rather than blocking behind the
+// semaphore or a stalled send.
+func (e *Courier) scheduleReplicaDispatch(envHash *[hash.HashSize]byte, courierMessage *pigeonhole.CourierEnvelope) {
+	e.inFlightLock.Lock()
+	if _, busy := e.inFlight[*envHash]; busy {
+		e.inFlightLock.Unlock()
+		e.log.Debugf("scheduleReplicaDispatch: dispatch already in flight for %x, skipping", envHash[:8])
+		return
+	}
+	e.inFlight[*envHash] = struct{}{}
+	e.inFlightLock.Unlock()
+
+	hashCopy := *envHash
+	e.Go(func() {
+		defer func() {
+			e.inFlightLock.Lock()
+			delete(e.inFlight, hashCopy)
+			e.inFlightLock.Unlock()
+		}()
+
+		// Fast-path: bail immediately if we are already shutting down.
+		select {
+		case <-e.HaltCh():
+			return
+		default:
+		}
+
+		// Acquire a semaphore slot, or exit on shutdown. The waiters
+		// gauge is incremented around the blocking select so an operator
+		// can see whether the maxConcurrentReplicaDispatch cap is acting
+		// as a constraint.
+		instrument.DispatchSemWaitStart()
+		select {
+		case <-e.HaltCh():
+			instrument.DispatchSemWaitEnd()
+			return
+		case e.dispatchSem <- struct{}{}:
+		}
+		instrument.DispatchSemWaitEnd()
+		defer func() { <-e.dispatchSem }()
+
+		if err := e.propagateQueryToReplicas(courierMessage); err != nil {
+			e.log.Errorf("scheduleReplicaDispatch: dispatch for %x failed: %s", hashCopy[:8], err)
+			instrument.DroppedByReason("replica_dispatch_failed")
+		}
+	})
+}
+
+func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[hash.HashSize]byte, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
+	e.log.Debugf("handleOldMessage called for envelope hash: %x, requested ReplyIndex: %d", envHash, courierMessage.ReplyIndex)
+
+	// Bound ReplyIndex to the size of EnvelopeReplies. The field is
+	// client-supplied, and anything outside [0, 1] would panic the
+	// courier goroutine on the indexed lookups below.
+	if courierMessage.ReplyIndex > 1 {
+		e.log.Warningf("handleOldMessage: rejecting out-of-range ReplyIndex=%d for envelope hash %x", courierMessage.ReplyIndex, envHash)
+		instrument.DroppedByReason("invalid_reply_index")
+		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorInvalidEnvelope, 0)
+	}
+
+	// Check if cacheEntry is nil before accessing its fields
+	if cacheEntry == nil {
+		e.log.Debugf("Cache entry is nil, no replies available")
+		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorCacheCorruption, courierMessage.ReplyIndex)
+	}
+
+	// Log cache state
+	reply0Available := cacheEntry.EnvelopeReplies[0] != nil
+	reply1Available := cacheEntry.EnvelopeReplies[1] != nil
+	e.log.Debugf("Cache state - Reply[0]: %v, Reply[1]: %v envHash:%v", reply0Available, reply1Available, envHash)
+
+	var payload []byte
+
+	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
+		entry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
+		payload = entry.EnvelopeReply
+		e.log.Debugf("Found reply [len:%d err:%d] at requested index %d for %v", len(payload), entry.ErrorCode, courierMessage.ReplyIndex, envHash)
+		// If the payload at requested index is empty, try the other index
+		if len(payload) == 0 && cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
+			oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1]
+			if len(oentry.EnvelopeReply) > 0 {
+				e.log.Debugf("entry at idx %v is empty; using other index with [len:%d err:%d]", courierMessage.ReplyIndex, len(oentry.EnvelopeReply), oentry.ErrorCode)
+				courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
+				payload = oentry.EnvelopeReply
+			}
+		}
+	} else {
+		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
+		if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
+			courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
+			payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
+			e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
+		} else {
+			payload = nil
+		}
+	}
+
+	// An empty payload means no servable reply is available yet: either no
+	// replica reply has arrived, or an intermediate returned a transport
+	// error with no forwardable ciphertext. ACK it and let the client
+	// re-poll. The courier imposes no give-up deadline of its own: the
+	// client daemon owns the read ARQ and retries uncapped, so it, not a
+	// fixed courier-side clock, decides when a read is hopeless. A
+	// courier-side deadline here terminated reads that were merely riding
+	// out real replication lag or a slow replica, which broke pigeonhole
+	// on higher-latency networks.
+	if len(payload) == 0 && time.Since(cacheEntry.CreatedAt) > unservedReadWarnAfter {
+		e.log.Warningf("handleOldMessage: envelope %x unserved after %s by replicas [%s]",
+			envHash[:8], time.Since(cacheEntry.CreatedAt).Round(time.Second), e.describeIntermediaries(cacheEntry))
+	}
+
+	// Determine reply type based on whether there's actual payload data
+	var replyType uint8
+	if len(payload) > 0 {
+		replyType = pigeonhole.ReplyTypePayload // Has actual data (including error responses)
+	} else {
+		replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
+	}
+
+	reply := &pigeonhole.CourierQueryReply{
+		ReplyType: 0, // 0 = envelope_reply
+		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
+			EnvelopeHash: *envHash,
+			ReplyIndex:   courierMessage.ReplyIndex,
+			ReplyType:    replyType,
+			PayloadLen:   uint32(len(payload)),
+			Payload:      payload,
+			ErrorCode:    pigeonhole.EnvelopeErrorSuccess,
+		},
+	}
+
+	e.log.Debugf("handleOldMessage returning payload length: %d, ReplyType=%d", len(payload), replyType)
+	return reply
+}
+
+// OnCommand is only called when we receive queries from the client via the mixnet
+func (e *Courier) OnCommand(cmd cborplugin.Command) error {
+	instrument.MessagesReceived()
+
+	var request *cborplugin.Request
+	switch r := cmd.(type) {
+	case *cborplugin.Request:
+		request = r
+	default:
+		return errors.New("bug in courier-plugin: received invalid Command type")
+	}
+
+	courierQuery, err := pigeonhole.CourierQueryFromBytes(request.Payload)
+	if err != nil {
+		return errors.New("CBOR decoding failed")
+	}
+
+	switch {
+	case courierQuery.Envelope != nil:
+		reply := e.cacheHandleCourierEnvelope(courierQuery.QueryType, courierQuery.Envelope)
+
+		// Only send reply if it's not nil (nil means ARQ should retry)
+		if reply != nil {
+			go func() {
+				// send reply
+				e.write(&cborplugin.Response{
+					ID:      request.ID,
+					SURB:    request.SURB,
+					Payload: reply.Bytes(),
+				})
+			}()
+		}
+	case courierQuery.CopyCommand != nil:
+		reply := e.handleCopyCommand(courierQuery.CopyCommand)
+		go func() {
+			e.write(&cborplugin.Response{
+				ID:      request.ID,
+				SURB:    request.SURB,
+				Payload: reply.Bytes(),
+			})
+		}()
+	}
+
+	return nil
+}
+
+func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
+	envHash := courierMessage.EnvelopeHash()
+
+	// Epoch validation happens before any cache work: an envelope whose
+	// replica epoch is outside the tolerance window cannot decapsulate
+	// at any replica we can reach (see specs/pigeonhole.md "Epoch
+	// tolerance for CourierEnvelope"), so there's nothing productive to
+	// cache and we shouldn't spend a dispatch on it.
+	currentReplicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	if !isEnvelopeEpochAcceptable(courierMessage.Epoch, currentReplicaEpoch) {
+		e.log.Warningf("cacheHandleCourierEnvelope: rejecting envelope %x with epoch %d (current replica epoch %d)",
+			envHash[:8], courierMessage.Epoch, currentReplicaEpoch)
+		instrument.DroppedByReason("stale_epoch_envelope")
+		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorInvalidEpoch, courierMessage.ReplyIndex)
+	}
+
+	// Single locked check-and-insert. This is the only site that
+	// creates a dedupCache entry, so performing the membership test
+	// and the insert under one write-lock makes a concurrent pair of
+	// identical envelopes resolve to exactly one new entry and one
+	// dispatch (the loser becomes a cache hit), rather than both
+	// missing and double-dispatching to the replicas. This closes the
+	// check-then-act race that was previously masked only by
+	// OnCommand being single-threaded.
+	e.dedupCacheLock.Lock()
+	cacheEntry, ok := e.dedupCache[*envHash]
+	if !ok {
+		e.pruneDedupCacheLocked(time.Now(), DedupCacheTTL)
+		e.dedupCache[*envHash] = &CourierBookKeeping{
+			Epoch:                e.getCurrentEpoch(),
+			CreatedAt:            time.Now(),
+			QueryType:            queryType,
+			IntermediateReplicas: courierMessage.IntermediateReplicas,
+			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+		}
+		e.dedupCacheLock.Unlock()
+
+		e.log.Debugf("cacheHandleCourierEnvelope: new envelope %x, scheduling dispatch", envHash[:8])
+		e.scheduleReplicaDispatch(envHash, courierMessage)
+		return e.ackReply(envHash, courierMessage.ReplyIndex)
+	}
+	e.dedupCacheLock.Unlock()
+
+	// Cache hit. If every reply so far is an error (e.g. BoxIDNotFound
+	// while data is still propagating), or no reply has arrived at all
+	// past the grace age (the original dispatch died with a session),
+	// schedule a bounded re-dispatch so the cache can refresh for the
+	// client's next ARQ retry. The cached state is still returned
+	// immediately via handleOldMessage so that NoRetry clients stop;
+	// the inFlight guard keeps repeated client retries from stacking
+	// dispatches, and RedispatchAttempts bounds the total.
+	e.dedupCacheLock.Lock()
+	redispatch := e.cacheEntryNeedsRedispatch(cacheEntry)
+	if redispatch {
+		cacheEntry.RedispatchAttempts++
+	}
+	e.dedupCacheLock.Unlock()
+	if redispatch {
+		e.log.Debugf("cacheHandleCourierEnvelope: cached entry for %x needs re-dispatch (attempt %d)", envHash[:8], cacheEntry.RedispatchAttempts)
+		e.scheduleReplicaDispatch(envHash, courierMessage)
+	}
+	e.log.Debugf("cacheHandleCourierEnvelope: found cached entry for %x, calling handleOldMessage", envHash)
+	return e.handleOldMessage(cacheEntry, envHash, courierMessage)
+}
+
+// describeIntermediaries renders the two intermediary replicas of a
+// bookkeeping entry as "name(reply-state)" for a diagnostic log line,
+// resolving replica IDs to names via the PKI document. Reply state is
+// "silent" (no reply), "err=N", or "ok".
+func (e *Courier) describeIntermediaries(entry *CourierBookKeeping) string {
+	var doc *cpki.Document
+	if e.server != nil && e.server.PKI != nil {
+		doc = e.server.PKI.PKIDocument()
+	}
+	parts := make([]string, 0, len(entry.IntermediateReplicas))
+	for i, id := range entry.IntermediateReplicas {
+		name := fmt.Sprintf("replicaID=%d", id)
+		if doc != nil {
+			if desc, err := doc.GetReplicaNodeByReplicaID(id); err == nil {
+				name = desc.Name
+			}
+		}
+		state := "silent"
+		if reply := entry.EnvelopeReplies[i]; reply != nil {
+			if reply.ErrorCode == 0 {
+				state = "ok"
+			} else {
+				state = fmt.Sprintf("err=%d", reply.ErrorCode)
+			}
+		}
+		parts = append(parts, fmt.Sprintf("%s(%s)", name, state))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// redispatchGrace is how long an envelope with no replica replies at all
+// may age before a client poll triggers a fresh dispatch. Young entries
+// are simply still in flight; old silent ones mean the original dispatch
+// (or its replies) died with a session and will never arrive on their own.
+const redispatchGrace = 30 * time.Second
+
+// maxRedispatchAttempts caps client-poll-triggered dispatches per
+// envelope so an aggressive ARQ cannot amplify replica load unboundedly.
+const maxRedispatchAttempts = 5
+
+// cacheEntryNeedsRedispatch reports whether a client poll should trigger
+// a fresh dispatch to the replicas: either every reply that has arrived
+// is an error (e.g. BoxIDNotFound while data propagates), or no reply
+// has arrived at all and the entry has aged past redispatchGrace (pure
+// in-flight loss: the replies died with a session). A successful reply
+// or an exhausted attempt budget means no re-dispatch.
+func (e *Courier) cacheEntryNeedsRedispatch(entry *CourierBookKeeping) bool {
+	if entry == nil {
+		return false
+	}
+	if entry.RedispatchAttempts >= maxRedispatchAttempts {
+		return false
+	}
+	hasAny := false
+	for _, reply := range entry.EnvelopeReplies {
+		if reply == nil {
+			continue
+		}
+		if reply.ErrorCode == 0 {
+			return false // at least one successful reply exists
+		}
+		hasAny = true
+	}
+	if hasAny {
+		return true
+	}
+	return time.Since(entry.CreatedAt) > redispatchGrace
+}
+
+// handleCopyCommand is the dispatch layer for an incoming Copy command.
+// It is non-blocking: the actual work of reading the temp stream,
+// decoding envelopes, dispatching them to replicas, and tombstoning
+// the temp stream runs in a background goroutine.
+//
+// The client drives completion by polling with the same WriteCap.
+// Replies carry a Status field:
+//
+//   - InProgress: courier is still working (or just received the
+//     command). Client should keep polling.
+//   - Succeeded:  all copy tasks completed.
+//   - Failed:     processing aborted; CopyCommandReply.ErrorCode and
+//     FailedEnvelopeIndex identify the specific replica error and the
+//     1-based sequential position in the copy stream.
+//
+// Dedup is by blake2b hash of the serialized WriteCap. Terminal
+// results stay in copyDedupCache for CopyDedupCacheTTL so a client
+// that reconnects or polls late still sees the outcome.
+func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply {
+	e.log.Debugf("handleCopyCommand: Processing copy command with WriteCap length %d", copyCmd.WriteCapLen)
+
+	copyKey := hash.Sum256(copyCmd.WriteCap)
+
+	e.copyDedupCacheLock.Lock()
+	state, exists := e.copyDedupCache[copyKey]
+	if exists {
+		if state.InProgress {
+			e.copyDedupCacheLock.Unlock()
+			e.log.Debugf("handleCopyCommand: %x still in progress, returning InProgress", copyKey[:8])
+			return inProgressReply()
+		}
+		// Completed: return cached result if within TTL, else drop and
+		// reprocess.
+		if time.Since(state.CompletedAt) < CopyDedupCacheTTL {
+			result := state.Result
+			e.copyDedupCacheLock.Unlock()
+			e.log.Debugf("handleCopyCommand: %x returning cached terminal status", copyKey[:8])
+			return result
+		}
+		e.log.Debugf("handleCopyCommand: cached result for %x expired, reprocessing", copyKey[:8])
+		delete(e.copyDedupCache, copyKey)
+	}
+
+	// New (or TTL-expired) copy: sweep stale completed entries (this
+	// is the bound on copyDedupCache growth), then mark InProgress,
+	// spawn worker, ACK.
+	e.pruneCopyDedupCacheLocked(time.Now(), CopyDedupCacheTTL)
+	state = &CopyCommandState{
+		InProgress: true,
+		Done:       make(chan struct{}),
+	}
+	e.copyDedupCache[copyKey] = state
+	e.copyDedupCacheLock.Unlock()
+
+	go e.runCopyCommand(copyCmd, copyKey, state)
+
+	return inProgressReply()
+}
+
+// runCopyCommand executes the Copy work in the background and stores
+// the terminal reply in copyDedupCache so later polls can return it.
+// It is the sole writer of the transition from InProgress=true to
+// InProgress=false for a given copyKey.
+func (e *Courier) runCopyCommand(copyCmd *pigeonhole.CopyCommand, copyKey [hash.HashSize]byte, state *CopyCommandState) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log.Errorf("runCopyCommand: panic for %x: %v", copyKey[:8], r)
+			e.copyDedupCacheLock.Lock()
+			state.InProgress = false
+			state.Result = &pigeonhole.CourierQueryReply{
+				ReplyType: 1,
+				CopyCommandReply: &pigeonhole.CopyCommandReply{
+					Status: pigeonhole.CopyStatusFailed,
+				},
+			}
+			state.CompletedAt = time.Now()
+			close(state.Done)
+			e.copyDedupCacheLock.Unlock()
+		}
+	}()
+
+	result := e.processCopyCommandFn(copyCmd)
+
+	e.copyDedupCacheLock.Lock()
+	state.InProgress = false
+	state.Result = result
+	state.CompletedAt = time.Now()
+	close(state.Done)
+	e.copyDedupCacheLock.Unlock()
+	e.log.Debugf("runCopyCommand: %x finished with Status=%d", copyKey[:8], result.CopyCommandReply.Status)
+}
+
+// inProgressReply is the empty-ACK-equivalent reply the courier uses to
+// acknowledge receipt of a Copy command (and to answer polls while
+// processing continues).
+func inProgressReply() *pigeonhole.CourierQueryReply {
+	return &pigeonhole.CourierQueryReply{
+		ReplyType: 1,
+		CopyCommandReply: &pigeonhole.CopyCommandReply{
+			Status: pigeonhole.CopyStatusInProgress,
+		},
+	}
+}
+
+// processCopyCommand does the actual work of processing a copy command.
+// This is separated from handleCopyCommand to support the deduplication logic.
+func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply {
+	writeCap, err := bacap.NewWriteCapFromBytes(copyCmd.WriteCap)
+	if err != nil {
+		e.log.Errorf("processCopyCommand: deserialize WriteCap: %v", err)
+		return copyFailedReply(0, 0)
+	}
+	readCap := writeCap.ReadCap()
+	reader, err := bacap.NewStatefulReader(readCap, constants.PIGEONHOLE_CTX)
+	if err != nil {
+		e.log.Errorf("processCopyCommand: NewStatefulReader: %v", err)
+		return copyFailedReply(0, 0)
+	}
+
+	// envelopesProcessed is the count of copy-stream envelopes that have
+	// been successfully dispatched to their intermediate replicas. When
+	// a later step fails, the reported FailedEnvelopeIndex is
+	// envelopesProcessed + 1 — the 1-based position of the next
+	// envelope the courier would have handled.
+	var boxIDList [][bacap.BoxIDSize]byte
+	decoder := pigeonhole.NewCopyStreamEnvelopeDecoder(e.pigeonholeGeo)
+	envelopesProcessed := uint64(0)
+	sawFinal := false
+
+	for !sawFinal {
+		if len(boxIDList) >= maxCopyStreamBoxes {
+			e.log.Errorf("processCopyCommand: copy stream exceeded %d boxes without isFinal, aborting", maxCopyStreamBoxes)
+			return copyFailedReply(0, envelopesProcessed+1)
+		}
+		if envelopesProcessed >= maxCopyStreamEnvelopes {
+			e.log.Errorf("processCopyCommand: copy stream exceeded %d envelopes, aborting", maxCopyStreamEnvelopes)
+			return copyFailedReply(0, envelopesProcessed+1)
+		}
+		boxID, err := reader.NextBoxID()
+		if err != nil {
+			e.log.Errorf("processCopyCommand: NextBoxID: %v", err)
+			return copyFailedReply(0, envelopesProcessed+1)
+		}
+		boxIDList = append(boxIDList, *boxID)
+
+		boxPlaintext, replicaCode, err := e.readNextBox(reader, boxID)
+		if err != nil {
+			e.log.Errorf("processCopyCommand: readNextBox box %x: replicaCode=%d err=%v", boxID[:8], replicaCode, err)
+			return copyFailedReply(replicaCode, envelopesProcessed+1)
+		}
+
+		decoder.AddBoxData(boxPlaintext)
+		envelopes, isFinal, err := decoder.DecodeEnvelopes()
+		if err != nil {
+			e.log.Errorf("processCopyCommand: DecodeEnvelopes: %v", err)
+			return copyFailedReply(0, envelopesProcessed+1)
+		}
+
+		for _, envelope := range envelopes {
+			ok, replicaErr := e.dispatchCopyEnvelope(envelope)
+			if !ok {
+				return copyFailedReply(replicaErr, envelopesProcessed+1)
+			}
+			envelopesProcessed++
+		}
+
+		if isFinal {
+			e.log.Debugf("processCopyCommand: saw final element in box %x", boxID[:])
+			sawFinal = true
+		}
+	}
+
+	if decoder.Remaining() > 0 {
+		e.log.Warningf("processCopyCommand: %d bytes remaining in decoder buffer after processing", decoder.Remaining())
+	}
+
+	e.log.Debugf("processCopyCommand: processed %d envelopes from %d boxes", envelopesProcessed, len(boxIDList))
+
+	// Tombstones are best-effort: the destination envelopes are
+	// already written, so an incomplete temp-stream cleanup is a cache
+	// inefficiency, not a correctness failure. It must therefore not
+	// gate the terminal Copy reply: the daemon polls InProgress until
+	// processCopyCommand returns, and a run of replica-rejected
+	// tombstone writes can span minutes per box, hanging the client.
+	// Run it off the reply path; boxIDList and writeCap are local and
+	// no longer touched here, so the goroutine owns them safely.
+	go e.writeTombstonesToTempChannel(writeCap, boxIDList)
+
+	return copySucceededReply()
+}
+
+// dispatchCopyEnvelope sends one copy-stream CourierEnvelope to its
+// client-chosen intermediate replicas, waits for replies (with a
+// timeout), and classifies the outcome.
+//
+// Return values:
+//
+//   - (true, 0)
+//     at least one intermediate's reply indicates success; with K=2
+//     shard redundancy this means the data reached a shard and the
+//     Copy can continue.
+//
+//   - (false, replicaErrorCode)
+//     a reply rejected the write (e.g. BoxAlreadyExists,
+//     InvalidSignature) or the transport layer exhausted its attempt
+//     budget. replicaErrorCode is the best signal the courier has
+//     to propagate to the client. 0 means the failure was transport-
+//     only (no replica reply ever arrived).
+//
+// The replica state layer treats byte-identical retries as idempotent
+// success (see replica/state.go). A permanent non-Success reply (e.g.
+// BoxAlreadyExists) reflects a genuine conflict and aborts the dispatch
+// at once; a transient one (e.g. a ReplicationFailed peer-replica blip)
+// is retried with backoff, as are transport-level failures (SendMessage
+// errors and "no replies before the deadline"). No shard-level failover
+// is available on the write path because the two intermediate replicas
+// are MKEM-baked into the client's envelope.
+func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bool, uint8) {
+	envHash := envelope.EnvelopeHash()
+
+	lastTransientErr := uint8(0)
+	for attempt := 0; attempt < maxCopyWriteAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(copyAttemptBackoff(attempt - 1))
+		}
+
+		// Buffer 2 so both intermediates can land without blocking
+		// the HandleReply goroutine.
+		ch := make(chan *commands.ReplicaMessageReply, 2)
+		e.copyCacheLock.Lock()
+		e.copyCache[*envHash] = ch
+		e.copyCacheLock.Unlock()
+
+		sendErr := e.propagateQueryToReplicas(envelope)
+		if sendErr != nil {
+			e.copyCacheLock.Lock()
+			delete(e.copyCache, *envHash)
+			e.copyCacheLock.Unlock()
+			e.log.Warningf("dispatchCopyEnvelope: attempt %d SendMessage failed: %v", attempt+1, sendErr)
+			continue
+		}
+
+		var replies []*commands.ReplicaMessageReply
+		deadline := time.After(copyWriteReplyTimeout)
+		collecting := true
+		for collecting && len(replies) < 2 {
+			select {
+			case r := <-ch:
+				replies = append(replies, r)
+			case <-deadline:
+				collecting = false
+			}
+		}
+
+		e.copyCacheLock.Lock()
+		delete(e.copyCache, *envHash)
+		e.copyCacheLock.Unlock()
+
+		// K=2 redundancy: any Success reply means the data is
+		// stored at a shard.
+		for _, r := range replies {
+			if r.ErrorCode == pigeonhole.ReplicaSuccess {
+				if attempt > 0 {
+					e.log.Debugf("dispatchCopyEnvelope: success on attempt %d", attempt+1)
+				}
+				return true, 0
+			}
+		}
+
+		// A permanent non-Success reply aborts at once (preferring
+		// BoxAlreadyExists as the most diagnostic code); a transient one
+		// falls through to the retry loop.
+		permanentErr := uint8(0)
+		for _, r := range replies {
+			if classifyReplicaErrorForCopyWrite(r.ErrorCode) == replicaErrorPermanent {
+				if permanentErr == 0 || r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
+					permanentErr = r.ErrorCode
+				}
+			} else {
+				lastTransientErr = r.ErrorCode
+			}
+		}
+		if permanentErr != 0 {
+			e.log.Warningf("dispatchCopyEnvelope: replica error %d, aborting Copy", permanentErr)
+			return false, permanentErr
+		}
+		if len(replies) > 0 {
+			e.log.Warningf("dispatchCopyEnvelope: attempt %d transient replica error %d, retrying", attempt+1, lastTransientErr)
+			continue
+		}
+
+		// No replies before the deadline — transport failure. Retry.
+		e.log.Warningf("dispatchCopyEnvelope: attempt %d got no replies before deadline, retrying", attempt+1)
+	}
+
+	e.log.Errorf("dispatchCopyEnvelope: exhausted %d attempts, aborting Copy", maxCopyWriteAttempts)
+	instrument.DroppedByReason("copy_dispatch_exhausted")
+	return false, lastTransientErr
+}
+
+// readNextBox reads a single box from the shard replicas, decrypts it,
+// and returns the CopyStreamElement bytes plus the replica ErrorCode
+// that caused failure (0 on success). Used by the Copy command to
+// walk the temp stream.
+func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDSize]byte) ([]byte, uint8, error) {
+	replicaReadReply, replicaCode, err := e.readBoxFromShardReplicas(boxID)
+	if err != nil {
+		return nil, replicaCode, err
+	}
+
+	sig := [bacap.SignatureSize]byte{}
+	copy(sig[:], replicaReadReply.Signature[:])
+	decryptedPadded, err := reader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, sig)
+	if err != nil {
+		e.log.Errorf("readNextBox: Failed to decrypt box %x: %v", boxID[:8], err)
+		instrument.DroppedByReason("copy_read_decrypt_failed")
+		return nil, 0, err
+	}
+
+	decryptedPayload, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedPadded)
+	if err != nil {
+		e.log.Errorf("readNextBox: Failed to extract payload from padded data: %v", err)
+		instrument.DroppedByReason("copy_read_extract_failed")
+		return nil, 0, err
+	}
+
+	return decryptedPayload, 0, nil
+}
+
+// readBoxFromShardReplicas reads a temp-stream box directly from its
+// shard replicas, iterating each shard with a bounded number of
+// transient retries before failing over to the shard peer. Returns the
+// last observed replica ErrorCode (for a Failed CopyCommandReply) and
+// a non-nil error if every shard exhausted.
+//
+// Every attempt uses a fresh ephemeral MKEM keypair so its EnvelopeHash
+// is unique in the copyCache reply-demux table.
+func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole.ReplicaReadReply, uint8, error) {
+	e.log.Debugf("readBoxFromShardReplicas: Reading box %x", boxID[:8])
+
+	doc := e.pkiDocForSharding()
+	if doc == nil {
+		return nil, 0, fmt.Errorf("PKI document is nil")
+	}
+
+	shards, err := replicaCommon.GetShards(boxID, doc)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get shards: %w", err)
+	}
+	if len(shards) == 0 {
+		return nil, 0, fmt.Errorf("no shards available for box")
+	}
+
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+
+	var lastReplicaCode uint8
+	var lastErr error
+
+	for _, shard := range shards {
+		keyBytes, exists := shard.EnvelopeKeys[replicaEpoch]
+		if !exists || len(keyBytes) == 0 {
+			lastErr = fmt.Errorf("no envelope key for shard %d at epoch %d", shard.ReplicaID, replicaEpoch)
+			continue
+		}
+		shardPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
+		if err != nil {
+			lastErr = fmt.Errorf("unmarshal shard %d key: %w", shard.ReplicaID, err)
+			continue
+		}
+
+		failover := false
+		for attempt := 0; attempt < maxCopyReadTransientAttempts && !failover; attempt++ {
+			if attempt > 0 {
+				time.Sleep(copyAttemptBackoff(attempt - 1))
+			}
+			reply, replicaCode, attemptErr := e.tryReadFromShardReplica(boxID, shard, shardPubKey)
+			if attemptErr != nil {
+				// Transport/crypto hiccup — retry same shard under
+				// the transient-attempts budget.
+				lastErr = attemptErr
+				e.log.Debugf("readBoxFromShardReplicas: shard %d attempt %d transport error: %v", shard.ReplicaID, attempt+1, attemptErr)
+				continue
+			}
+			if replicaCode == pigeonhole.ReplicaSuccess {
+				return reply, 0, nil
+			}
+			lastReplicaCode = replicaCode
+			switch classifyReplicaErrorForCopyRead(replicaCode) {
+			case replicaErrorTemporary:
+				e.log.Debugf("readBoxFromShardReplicas: shard %d attempt %d temporary replica error %d", shard.ReplicaID, attempt+1, replicaCode)
+			case replicaErrorPermanent:
+				e.log.Debugf("readBoxFromShardReplicas: shard %d permanent replica error %d, failing over", shard.ReplicaID, replicaCode)
+				failover = true
+			}
+		}
+	}
+
+	if lastErr == nil {
+		if lastReplicaCode != 0 {
+			lastErr = fmt.Errorf("all shard replicas exhausted (last replica code: %d)", lastReplicaCode)
+		} else {
+			lastErr = fmt.Errorf("all shard replicas exhausted")
+		}
+	}
+	return nil, lastReplicaCode, lastErr
+}
+
+// tryReadFromShardReplica performs a single MKEM-encrypted read to one
+// specific shard replica, waits for the reply with a timeout, and
+// returns the parsed ReplicaReadReply plus the replica's ErrorCode
+// (0 on success). A non-nil error signals a transport / crypto /
+// timeout failure — the caller should retry under its transient budget.
+func (e *Courier) tryReadFromShardReplica(
+	boxID *[bacap.BoxIDSize]byte,
+	shard *cpki.ReplicaDescriptor,
+	shardPubKey nike.PublicKey,
+) (*pigeonhole.ReplicaReadReply, uint8, error) {
+	readMsg := &pigeonhole.ReplicaRead{BoxID: *boxID}
+	innerMsg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 0,
+		ReadMsg:     readMsg,
+	}
+
+	// Length-prefix-and-pad so the replica's
+	// ExtractMessageFromPaddedPayload recovers the exact bytes after MKEM
+	// decryption. The pigeonhole protocol pads every inbound inner
+	// message regardless of read vs write.
+	paddedInnerMsg, err := pigeonhole.PadInnerMessageForEncryption(innerMsg, e.pigeonholeGeo)
+	if err != nil {
+		return nil, 0, fmt.Errorf("pad inner read message: %w", err)
+	}
+
+	mkemScheme := mkem.NewScheme(e.envelopeScheme)
+	totalStart := time.Now()
+	encapStart := totalStart
+	mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encapsulate: %w", err)
+	}
+	computeElapsed := time.Since(encapStart)
+
+	query := &commands.ReplicaMessage{
+		Cmds:               e.cmds,
+		PigeonholeGeometry: e.pigeonholeGeo,
+		Scheme:             e.envelopeScheme,
+		SenderEPubKey:      mkemPrivateKey.Public().Bytes(),
+		DEK:                (*[mkem.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[0]),
+		Ciphertext:         mkemCiphertext.Envelope,
+	}
+	envHash := query.EnvelopeHash()
+
+	ch := make(chan *commands.ReplicaMessageReply, 1)
+	e.copyCacheLock.Lock()
+	e.copyCache[*envHash] = ch
+	e.copyCacheLock.Unlock()
+	defer func() {
+		e.copyCacheLock.Lock()
+		delete(e.copyCache, *envHash)
+		e.copyCacheLock.Unlock()
+	}()
+
+	if err := e.server.SendMessage(shard.ReplicaID, query); err != nil {
+		return nil, 0, fmt.Errorf("SendMessage to shard %d: %w", shard.ReplicaID, err)
+	}
+
+	var reply *commands.ReplicaMessageReply
+	select {
+	case reply = <-ch:
+	case <-time.After(copyReadReplyTimeout):
+		return nil, 0, fmt.Errorf("shard %d: reply timeout after %v", shard.ReplicaID, copyReadReplyTimeout)
+	}
+
+	if reply.ErrorCode != pigeonhole.ReplicaSuccess {
+		return nil, reply.ErrorCode, nil
+	}
+
+	decapStart := time.Now()
+	raw, err := mkemScheme.DecryptEnvelope(mkemPrivateKey, shardPubKey, reply.EnvelopeReply)
+	if err != nil {
+		return nil, 0, fmt.Errorf("shard %d: decrypt envelope: %w", shard.ReplicaID, err)
+	}
+	computeElapsed += time.Since(decapStart)
+	instrument.CopyShardReadCompute(computeElapsed)
+	instrument.CopyShardReadTotal(time.Since(totalStart))
+	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(raw)
+	if err != nil {
+		return nil, 0, fmt.Errorf("shard %d: extract padded inner: %w", shard.ReplicaID, err)
+	}
+	replyInner, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
+	if err != nil {
+		return nil, 0, fmt.Errorf("shard %d: parse inner: %w", shard.ReplicaID, err)
+	}
+	if replyInner.ReadReply == nil {
+		return nil, 0, fmt.Errorf("shard %d: reply is not a ReadReply", shard.ReplicaID)
+	}
+	return replyInner.ReadReply, 0, nil
+}
+
+// writeTombstonesToTempChannel writes tombstones to clean up the temporary channel
+func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs [][bacap.BoxIDSize]byte) {
+	e.log.Debugf("writeTombstonesToTempChannel: Writing %d tombstones", len(boxIDs))
+
+	// Create StatefulWriter from WriteCap
+	writer, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
+	if err != nil {
+		e.log.Errorf("writeTombstonesToTempChannel: Failed to create StatefulWriter: %v", err)
+		instrument.DroppedByReason("tombstone_writer_create_failed")
+		return
+	}
+
+	// Get PKI document for replica selection
+	doc := e.pkiDocForSharding()
+	if doc == nil {
+		e.log.Errorf("writeTombstonesToTempChannel: PKI document is nil")
+		instrument.DroppedByReason("tombstone_nil_pki")
+		return
+	}
+
+	// Write tombstones for each box
+	for i, boxID := range boxIDs {
+		// Create properly padded tombstone payload (empty message padded to required size)
+		// This ensures tombstones are indistinguishable from regular writes to prevent traffic analysis
+		paddedPayload, err := pigeonhole.CreatePaddedPayload([]byte{}, e.pigeonholeGeo.PaddedPayloadLength())
+		if err != nil {
+			e.log.Errorf("writeTombstonesToTempChannel: Failed to create padded tombstone %d: %v", i, err)
+			continue
+		}
+
+		// Encrypt and sign the tombstone
+		encBoxID, ciphertext, sig, err := writer.EncryptNext(paddedPayload)
+		if err != nil {
+			e.log.Errorf("writeTombstonesToTempChannel: Failed to encrypt tombstone %d: %v", i, err)
+			continue
+		}
+
+		// Verify the BoxID matches
+		if encBoxID != boxID {
+			e.log.Errorf("writeTombstonesToTempChannel: BoxID mismatch for tombstone %d", i)
+			continue
+		}
+
+		// Get the actual storage shard replicas for this box (not intermediates)
+		shards, err := replicaCommon.GetShards(&boxID, doc)
+		if err != nil {
+			e.log.Errorf("writeTombstonesToTempChannel: Failed to get shards for box %d: %v", i, err)
+			continue
+		}
+		if len(shards) != 2 {
+			e.log.Errorf("writeTombstonesToTempChannel: Expected 2 shards, got %d for box %d", len(shards), i)
+			continue
+		}
+
+		// Collect the shards whose envelope pubkey is usable. With K=2
+		// redundancy a single good key is sufficient — the peer shard
+		// picks the tombstone up via replica-to-replica replication.
+		// If BOTH keys are unusable, skip this box.
+		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+		usableReplicaIDs := make([]uint8, 0, 2)
+		usablePubKeys := make([]nike.PublicKey, 0, 2)
+		for _, shard := range shards {
+			keyBytes, exists := shard.EnvelopeKeys[replicaEpoch]
+			if !exists {
+				e.log.Warningf("writeTombstonesToTempChannel: No envelope key for replica %d at epoch %d", shard.ReplicaID, replicaEpoch)
+				continue
+			}
+			pk, err := e.envelopeScheme.UnmarshalBinaryPublicKey(keyBytes)
+			if err != nil {
+				e.log.Warningf("writeTombstonesToTempChannel: Failed to unmarshal key for replica %d: %v", shard.ReplicaID, err)
+				continue
+			}
+			usableReplicaIDs = append(usableReplicaIDs, shard.ReplicaID)
+			usablePubKeys = append(usablePubKeys, pk)
+		}
+		if len(usablePubKeys) == 0 {
+			e.log.Errorf("writeTombstonesToTempChannel: no usable shard keys for box %d, skipping", i)
+			continue
+		}
+
+		// Create ReplicaWrite with the tombstone
+		sigArray := [bacap.SignatureSize]byte{}
+		copy(sigArray[:], sig)
+
+		writeMsg := &pigeonhole.ReplicaWrite{
+			BoxID:      boxID,
+			Signature:  sigArray,
+			PayloadLen: uint32(len(ciphertext)),
+			Payload:    ciphertext,
+		}
+
+		// Wrap in ReplicaInnerMessage
+		innerMsg := &pigeonhole.ReplicaInnerMessage{
+			MessageType: 1, // 1 = write
+			WriteMsg:    writeMsg,
+		}
+
+		// Length-prefix-and-pad to match the inbound inner-message
+		// format the replica expects after MKEM decryption.
+		paddedInnerMsg, err := pigeonhole.PadInnerMessageForEncryption(innerMsg, e.pigeonholeGeo)
+		if err != nil {
+			e.log.Errorf("writeTombstone: pad inner message: %v", err)
+			continue
+		}
+
+		// Encrypt using MKEM for whichever shard keys we have.
+		mkemScheme := mkem.NewScheme(e.envelopeScheme)
+		mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
+		if err != nil {
+			e.log.Errorf("writeTombstone: encapsulate: %v", err)
+			continue
+		}
+		mkemPublicKey := mkemPrivateKey.Public()
+
+		// Build per-replica ReplicaMessages (all share SenderEPubKey +
+		// Envelope, so they produce the same EnvelopeHash; reply demux
+		// in copyCache uses that single key).
+		messages := make([]*commands.ReplicaMessage, len(usableReplicaIDs))
+		for j := range usableReplicaIDs {
+			messages[j] = &commands.ReplicaMessage{
+				Cmds:               e.cmds,
+				PigeonholeGeometry: e.pigeonholeGeo,
+				Scheme:             e.envelopeScheme,
+				SenderEPubKey:      mkemPublicKey.Bytes(),
+				DEK:                (*[mkem.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[j]),
+				Ciphertext:         mkemCiphertext.Envelope,
+			}
+		}
+		envHash := messages[0].EnvelopeHash()
+		if !e.dispatchTombstone(envHash, usableReplicaIDs, messages) {
+			e.log.Warningf("writeTombstonesToTempChannel: exhausted retries for tombstone of box %x (%d usable shards) — box remains in replica storage",
+				boxID[:], len(usableReplicaIDs))
+		}
+	}
+
+	e.log.Debugf("writeTombstonesToTempChannel: Finished writing %d tombstones", len(boxIDs))
+}
+
+// dispatchTombstone sends one tombstone to its shard replicas and
+// waits for at least one ReplicaSuccess reply within
+// copyWriteReplyTimeout, retrying up to maxCopyWriteAttempts with
+// copyAttemptBackoff. Returns true on any confirmed write, false
+// after exhausting all attempts.
+func (e *Courier) dispatchTombstone(
+	envHash *[hash.HashSize]byte,
+	replicaIDs []uint8,
+	messages []*commands.ReplicaMessage,
+) bool {
+	for attempt := 0; attempt < maxCopyWriteAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(copyAttemptBackoff(attempt - 1))
+		}
+
+		ch := make(chan *commands.ReplicaMessageReply, len(replicaIDs))
+		e.copyCacheLock.Lock()
+		e.copyCache[*envHash] = ch
+		e.copyCacheLock.Unlock()
+
+		for j, replicaID := range replicaIDs {
+			if err := e.server.SendMessage(replicaID, messages[j]); err != nil {
+				e.log.Warningf("dispatchTombstone: attempt %d SendMessage to replica %d failed: %v", attempt+1, replicaID, err)
+			}
+		}
+
+		var replies []*commands.ReplicaMessageReply
+		deadline := time.After(copyWriteReplyTimeout)
+		collecting := true
+		for collecting && len(replies) < len(replicaIDs) {
+			select {
+			case r := <-ch:
+				replies = append(replies, r)
+			case <-deadline:
+				collecting = false
+			}
+		}
+
+		e.copyCacheLock.Lock()
+		delete(e.copyCache, *envHash)
+		e.copyCacheLock.Unlock()
+
+		for _, r := range replies {
+			if r.ErrorCode == pigeonhole.ReplicaSuccess {
+				if attempt > 0 {
+					e.log.Debugf("dispatchTombstone: success on attempt %d", attempt+1)
+				}
+				return true
+			}
+		}
+		for _, r := range replies {
+			if r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
+				// A box-already-exists rejection is permanent: the
+				// destination holds differing data and writes are
+				// immutable, so every escalating-backoff retry will
+				// be rejected identically (this is the run that spans
+				// minutes per box and hung the client). Bail at once.
+				// Transient errors (e.g. DatabaseFailure) still fall
+				// through to the retry below.
+				e.log.Debugf("dispatchTombstone: attempt %d permanently rejected (box already exists), not retrying", attempt+1)
+				instrument.DroppedByReason("tombstone_already_exists")
+				return false
+			}
+		}
+		e.log.Debugf("dispatchTombstone: attempt %d produced %d replies, none successful", attempt+1, len(replies))
+	}
+	instrument.DroppedByReason("tombstone_dispatch_exhausted")
+	return false
+}
+
+// createEnvelopeErrorReply creates a CourierEnvelopeReply with the specified error code
+func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8, replyIndex uint8) *pigeonhole.CourierQueryReply {
+	e.log.Errorf("Envelope operation failed with error code %d", errorCode)
+	return &pigeonhole.CourierQueryReply{
+		ReplyType: 0, // 0 = envelope_reply
+		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
+			EnvelopeHash: *envHash,
+			ReplyIndex:   replyIndex,
+			ReplyType:    pigeonhole.ReplyTypeACK, // Use ACK type for error replies (errors during dispatch)
+			PayloadLen:   0,
+			Payload:      nil,
+			ErrorCode:    errorCode, // Use the actual error code
+		},
+	}
+}
+
+func (e *Courier) RegisterConsumer(s *cborplugin.Server) {
+	e.write = s.Write
+}
+
+func (e *Courier) SetWriteFunc(writeFunc func(cborplugin.Command)) {
+	e.write = writeFunc
+}

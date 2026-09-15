@@ -1,0 +1,6 @@
+Hostname = "servicenode3"
+MeasuredAt = 2026-05-23T19:31:55.695761226Z
+NumCPU = 4
+OpsPerSecPerCore = 719.369809027458
+OpsPerSecSaturated = 297.40571655126604
+IterationTime = "1.390105ms"

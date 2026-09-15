@@ -1,0 +1,35 @@
+# Scenario: pause a single mix layer for one minute.
+#
+# Each mix layer holds exactly one mix in the default 3x3 docker
+# topology, so pausing mix2 effectively severs the routing path
+# during the pause. No traffic should be able to traverse layer 2
+# while it sits paused; ARQ on the client side should retransmit
+# after the deadline, finding the next epoch's PKI doc has the same
+# mix2 (because the warped epoch is short and dirauths still
+# publish mix2 as participating, however non-responsive).
+#
+# This is the scenario for the availability-under-degradation bug
+# category (task #38). What to watch:
+#
+#   - katzenpost_dropped_reason_total{reason="outgoing_send_deadline_blown"}
+#     should spike on mix1 and gateway1 during the pause as packets
+#     destined to mix2 time out in their per-peer queues.
+#   - katzenpost_dropped_reason_total{reason="outgoing_peer_not_connected"}
+#     same expectation: any peer that severed its session to mix2
+#     will discard packets for it.
+#   - katzenpost_client_arq_inflight should rise as ARQ retries
+#     accumulate; ARQRoundTrip p99 should grow visibly.
+#   - katzenpost_client_send_queue_depth should stay bounded
+#     (back-pressured by ARQ semantics).
+#   - After the pause ends, every counter should recover to its
+#     pre-pause rate within an epoch or two.
+#
+# A failure would be: a non-zero leak in arq_inflight, a hung
+# kpclientd that does not recover after the pause, or persistent
+# rate-limit drops on the gateway that do not subside.
+
+duration: 5m
+
+hosts:
+  mix2:
+    pause_for_sec: 60
