@@ -50,8 +50,8 @@ func namenlosCfg(wireKEM string) *config.Config {
 // primitive yields a larger ceiling with no config change. McEliece keys are
 // far larger than MLKEM ones, so the McEliece network's ceiling must be higher.
 func TestEstimatedCeilingScalesWithWireKEM(t *testing.T) {
-	mlkem := estimatedMaxConsensusSize(namenlosCfg("MLKEM768-X25519"))
-	mce := estimatedMaxConsensusSize(namenlosCfg("mceliece348864-X25519"))
+	mlkem := estimatedMaxConsensusSize(topoCfg("Ed25519", "MLKEM768-X25519", "x25519", 7, 5, 4, 4, 6))
+	mce := estimatedMaxConsensusSize(topoCfg("Ed25519", "mceliece348864-X25519", "x25519", 7, 5, 4, 4, 6))
 	require.Greater(t, mce, mlkem, "McEliece link keys must yield a larger ceiling than MLKEM")
 }
 
