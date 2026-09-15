@@ -957,6 +957,7 @@ interop-ref-binaries: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	@for ref in $(release_refs); do \
 	  refdir=$(cache_dir)/refbins/$$ref; mkdir -p $$refdir; \
 	  if [ -x $$refdir/server.$(distro).$$ref ]; then \
+	    rm -f $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref; \
 	    cp $$refdir/dirauth.$(distro).$$ref $$refdir/replica.$(distro).$$ref $$refdir/server.$(distro).$$ref $(net_name)/; \
 	  else \
 	    src=$$(mktemp -d); git -C .. archive $$ref | tar -x -C $$src; \
