@@ -140,7 +140,7 @@ net_name=mixnet-$(distro)
 base_port?=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; printf '%s%s' '$(net_name)' "$$(cat .base_port_seed)" | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
-compose_project_name=$(net_name)_$(shell cat .base_port_seed|sha1sum|head -c 5)
+compose_project_name=$(net_name)_$(shell cat .base_port_seed 2>/dev/null|sha1sum|head -c 5)
 # docker-compose normalizes the project name (directory name) by stripping
 # dots; compute the actual network name the same way so --network= matches
 # the bridge compose creates.  Only the wait target uses this (fetch
