@@ -1,5 +1,5 @@
 name: docker mixnet integration tests
-on: [pull_request]
+on: workflow_dispatch
 jobs:
 
   test_e2e_client:
@@ -83,7 +83,7 @@ jobs:
           cd docker && ls -la mixnet-alpine/replica1/ && \
           for r in mixnet-alpine/replica*/; do echo "=== $r ===" && cat "${r}katzenpost.log" 2>&1 | tail -20 || echo "no log file"; done && \
           cd mixnet-alpine && podman compose ps -a 2>&1 | head -30 && \
-          podman compose logs --tail 30 replica1 replica2 replica3 replica4 replica5 2>&1 | tail -100
+          podman compose logs --tail 30 replica1 replica2 replica3 replica4 2>&1 | tail -100
 
       - name: Stop the mixnet
         run: |

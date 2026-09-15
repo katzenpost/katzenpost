@@ -1,0 +1,118 @@
+name: docker interop gate
+on:
+  pull_request:
+
+jobs:
+
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      client: ${{ steps.filter.outputs.client }}
+      server: ${{ steps.filter.outputs.server }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            client:
+              - 'client/**'
+              - 'cmd/kpclientd/**'
+              - 'cmd/ping/**'
+              - 'docker/client-configs/**'
+            server:
+              - 'authority/**'
+              - 'server/**'
+              - 'replica/**'
+              - 'courier/**'
+              - 'core/**'
+              - 'pki/**'
+              - 'cmd/dirauth/**'
+              - 'cmd/server/**'
+              - 'cmd/replica/**'
+              - 'cmd/courier/**'
+              - 'cmd/http-proxy-server/**'
+              - 'cmd/genconfig/**'
+              - 'cmd/fetch/**'
+              - 'cmd/echo-plugin/**'
+              - 'docker/**'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/docker-interop-gate.yml'
+
+  namenlos:
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Run the working-tree client against namenlos
+        run: cd docker && make client-check
+
+  interop:
+    needs: [changes, namenlos]
+    if: always() && (needs.changes.outputs.server == 'true' || needs.namenlos.result == 'failure')
+    permissions:
+      contents: read
+      packages: write
+    env:
+      warped: true
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
+    strategy:
+      matrix:
+        go-version: [1.26.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Cache the go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: docker/cache
+          key: interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
+      - name: Run the client suite, then the interop gate against one and two releases
+        run: |
+          cd docker
+          make test
+          make interop-gate
+          make interop-gate release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)"
+      - name: Dump logs on failure
+        if: failure()
+        run: cd docker && make client-logs-snapshot || true
+      - name: Stop the testnet
+        if: always()
+        run: cd docker && make stop || true
+
+  gate:
+    needs: [changes, namenlos, interop]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the namenlos client or the docker interop lane to pass
+        run: |
+          echo "changes=${{ needs.changes.result }} namenlos=${{ needs.namenlos.result }} interop=${{ needs.interop.result }}"
+          if [ "${{ needs.changes.result }}" != "success" ]; then echo "changes job did not succeed" >&2; exit 1; fi
+          if [ "${{ needs.namenlos.result }}" = "success" ]; then exit 0; fi
+          if [ "${{ needs.interop.result }}" = "success" ]; then exit 0; fi
+          if [ "${{ needs.namenlos.result }}" = "skipped" ] && [ "${{ needs.interop.result }}" = "skipped" ]; then exit 0; fi
+          echo "neither the namenlos client nor the docker interop lane passed" >&2
+          exit 1
