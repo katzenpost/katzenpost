@@ -371,9 +371,10 @@ Individual legs are useful while diagnosing a failure::
    make interop-clean-all
 
 ``interop-clean`` removes ``interop-alpine`` while retaining cached versioned
-sources, binaries, reports, and the interoperability image. The cache, results,
+sources, binaries, reports, and the shared base image. The cache, results,
 and image targets remove those layers independently; ``interop-clean-all``
-removes all of them.
+removes all of them; ``interop-clean-image`` only sweeps a standalone interop
+image left by an older checkout.
 The global ``stop-all`` and ``clean`` targets also discover and cover
 interoperability networks and images.
 
@@ -383,11 +384,16 @@ Enable the pre-push hook from ``docker/``::
 
 The hook is disabled by default and is never enabled by build or test targets.
 Run ``make disable-git-hooks`` to remove the local setting. When enabled, it
-checks pushed commits and runs ``interop-smoke`` for relevant changes. Use
-``KATZENPOST_FORCE_INTEROP=1`` to force the smoke test or
-``KATZENPOST_SKIP_INTEROP=1`` to skip it. The separate
+inspects the commits being pushed and runs ``interop-smoke`` when any of them
+touch ``docker/``, ``*.go``, ``go.mod``, ``go.sum``, or
+``.github/workflows/docker-interop.yml``; it also runs
+``git diff-tree --check`` on those commits and aborts the push on a whitespace
+error. Use
+``KATZENPOST_FORCE_INTEROP=1`` to force the smoke test,
+``KATZENPOST_SKIP_INTEROP=1`` to skip it, or ``git push --no-verify`` to bypass
+the hook entirely. The separate
 ``docker-interop.yml`` workflow follows the structure of
-``docker-mixnet.yml``, builds the revisions and container image once, shares
+``docker-mixnet.yml``, builds the revisions and base image once, shares
 those artifacts, and defines the full baseline and role matrix. It runs on
 ``workflow_dispatch`` rather than on every push, so the suite is triggered
 manually until it is ready to become a required CI check.
