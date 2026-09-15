@@ -74,6 +74,7 @@ auths=3
 gateways=1
 serviceNodes=3
 storageNodes=5
+layers=3
 
 # number of pings sent by run-ping target
 npings?=10
@@ -308,6 +309,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 
 interop_genconfig_args=--wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --nodes $(mixes) \
 	--gateways $(gateways) --serviceNodes $(serviceNodes) --storageNodes $(storageNodes) \
+	--layers $(layers) \
 	--nike "$(nike)" --kem "$(kem)" --noMixDecoy=$(no_mixdecoy) \
 	--noGatewayDecoy=$(no_gatewaydecoy) --noDecoy --noMetrics --epochDuration "$(interop_epoch_duration)" \
 	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
@@ -778,7 +780,14 @@ $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 # non-rocksdb release is tagged (see interop_release_refs).
 interop-build: $(addprefix interop-build-,$(interop_versions))
 
-interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-test interop-report interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all: net_name=$(interop_net_name)
+interop_scoped_targets=interop-compose interop-selfcheck-cache-restore interop-start interop-wait interop-run-ping interop-http-check interop-check interop-check-role interop-smoke interop-client-check interop-activate interop-record-artifact interop-swap-mix interop-swap-gateway interop-swap-servicenode interop-swap-dirauth interop-swap-replica interop-swap-courier interop-swap-http interop-swap-client2 interop-restore-role interop-test interop-validate interop-report interop-test-baseline interop-test-role interop-test-mixed-network interop-test-quorums interop-stop interop-clean interop-clean-dryrun interop-clean-cache interop-clean-results interop-clean-image interop-clean-all
+$(interop_scoped_targets): net_name=$(interop_net_name)
+$(interop_scoped_targets): mixes=8
+$(interop_scoped_targets): auths=6
+$(interop_scoped_targets): gateways=5
+$(interop_scoped_targets): serviceNodes=4
+$(interop_scoped_targets): storageNodes=4
+$(interop_scoped_targets): layers=3
 
 # Ensure the alpine base image the interop recipes run in is built.
 interop-image-check: $(distro)_base.stamp
@@ -1189,12 +1198,12 @@ interop-test-mixed-network: interop-build
 	  $(MAKE) -j1 BASELINE=candidate interop-activate; \
 	  auth_expect=''; \
 	  for spec in \
-	    'mix mix2 current' 'mix mix3 previous' \
-	    'servicenode servicenode2 current' 'servicenode servicenode3 previous' \
-	    'dirauth auth2 current' 'dirauth auth3 previous' \
-	    'replica replica2 current' 'replica replica3 previous' 'replica replica5 current' \
-	    'courier servicenode1 previous' 'courier servicenode2 current' \
-	    'http servicenode1 current' 'http servicenode3 previous'; do \
+	    'mix mix2 current' 'mix mix3 current' \
+	    'servicenode servicenode2 current' 'servicenode servicenode3 current' \
+	    'dirauth auth2 current' 'dirauth auth3 current' 'dirauth auth4 current' \
+	    'replica replica2 current' 'replica replica3 current' 'replica replica4 current' \
+	    'courier servicenode1 current' 'courier servicenode2 current' \
+	    'http servicenode1 current' 'http servicenode3 current'; do \
 	    set -- $$spec; role=$$1; service=$$2; component=$$3; \
 	    case " $(interop_versions) " in *" $$component "*) ;; *) echo "PHASE baseline=candidate role=$$role component=$$component service=$$service action=skip reason=no-$$component-release"; continue;; esac; \
 	    echo "PHASE baseline=candidate role=$$role component=$$component service=$$service action=activate-all-version"; \
@@ -1203,7 +1212,7 @@ interop-test-mixed-network: interop-build
 	  done; \
 	  cd $(net_name) && $(docker_compose) up --remove-orphans --force-recreate -d; cd ..; touch $(net_name)/running.stamp; \
 	  echo 'PHASE baseline=candidate role=mixed-network check=all-version-network'; \
-	  if $(MAKE) -j1 BASELINE=candidate CHECK_CLIENT_VERSION=candidate CHECK_HTTP_VERSION=$(if $(strip $(previous_ref)),previous,current) EXPECT_AUTHS='auth1 auth2 auth3' interop-check; then \
+	  if $(MAKE) -j1 BASELINE=candidate CHECK_CLIENT_VERSION=candidate CHECK_HTTP_VERSION=$(if $(strip $(previous_ref)),previous,current) EXPECT_AUTHS='$(interop_services_dirauth)' interop-check; then \
 	    echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=PASS'; \
 	  else echo 'CHECK baseline=candidate role=mixed-network component=all service=all result=FAIL'; exit 1; fi; \
 	  echo 'PHASE baseline=candidate role=mixed-network check=dirauth-quorum-revisions'; \
@@ -1242,7 +1251,7 @@ interop-test-quorums: interop-build
 	      [ "$$ok" = true ] || { echo "quorum swap verify: $$service did not come up running rev $$commit" >&2; exit 1; }; \
 	      $(MAKE) --no-print-directory SERVICE=$$service ROLE=$$bin BINS="$$bin" VERSION=$$version interop-record-artifact; \
 	    done; \
-	    $(MAKE) -j1 net_name=$(interop_net_name) WAIT_AFTER_EPOCH=$$wait_after EXPECT_AUTHS="auth1 auth2 auth3" CHECK_CLIENT_VERSION=$(BASELINE) $(interop_check_target); \
+	    $(MAKE) -j1 net_name=$(interop_net_name) WAIT_AFTER_EPOCH=$$wait_after EXPECT_AUTHS="$(interop_services_dirauth)" CHECK_CLIENT_VERSION=$(BASELINE) $(interop_check_target); \
 	    wait_after=$$(cat $(net_name)/interop.last_epoch); \
 	  done
 
