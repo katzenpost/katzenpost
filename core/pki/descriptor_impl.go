@@ -153,24 +153,33 @@ func getIPVer(h string) (int, error) {
 }
 
 func (d *ReplicaDescriptor) DisplayWithSchemes(linkScheme kem.Scheme, identityScheme sign.Scheme, envelopeScheme nike.Scheme) string {
-	idPubKey, err := identityScheme.UnmarshalBinaryPublicKey(d.IdentityKey)
-	if err != nil {
-		panic(err)
+	// This is a debug/logging path reachable with attacker-influenced
+	// descriptors, so a short or malformed key must never crash the caller.
+	// UnmarshalBinaryPublicKey on some schemes (the hybrid Ed25519 Sphincs+)
+	// slices the input with no length check and panics on a too-short key, so
+	// length-check every key against its scheme and render a placeholder instead
+	// of unmarshaling a wrong-sized one.
+	idKey := "<invalid identity key>"
+	if len(d.IdentityKey) == identityScheme.PublicKeySize() {
+		if idPubKey, err := identityScheme.UnmarshalBinaryPublicKey(d.IdentityKey); err == nil {
+			idKey = signpem.ToPublicPEMString(idPubKey)
+		}
 	}
-	idKey := signpem.ToPublicPEMString(idPubKey)
-	linkPubKey, err := linkScheme.UnmarshalBinaryPublicKey(d.LinkKey)
-	if err != nil {
-		panic(err)
+	linkKey := "<invalid link key>"
+	if len(d.LinkKey) == linkScheme.PublicKeySize() {
+		if linkPubKey, err := linkScheme.UnmarshalBinaryPublicKey(d.LinkKey); err == nil {
+			linkKey = kempem.ToPublicPEMString(linkPubKey)
+		}
 	}
-	linkKey := kempem.ToPublicPEMString(linkPubKey)
 
 	envelopeKeys := []string{}
 	for epoch, rawkey := range d.EnvelopeKeys {
-		nikePubkey, err := envelopeScheme.UnmarshalBinaryPublicKey(rawkey)
-		if err != nil {
-			panic(err)
+		nikeKey := "<invalid envelope key>"
+		if len(rawkey) == envelopeScheme.PublicKeySize() {
+			if nikePubkey, err := envelopeScheme.UnmarshalBinaryPublicKey(rawkey); err == nil {
+				nikeKey = nikepem.ToPublicPEMString(nikePubkey, envelopeScheme)
+			}
 		}
-		nikeKey := nikepem.ToPublicPEMString(nikePubkey, envelopeScheme)
 		envelopeKeys = append(envelopeKeys, fmt.Sprintf("epoch %d -> %s", epoch, nikeKey))
 	}
 
