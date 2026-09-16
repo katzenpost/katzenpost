@@ -54,6 +54,7 @@ jobs:
       contents: read
       packages: write
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Configure podman socket
@@ -78,6 +79,7 @@ jobs:
         go-version: [1.26.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
