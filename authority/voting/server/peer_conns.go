@@ -209,14 +209,26 @@ func (s *state) sendPeerKeepalives() {
 			continue
 		}
 		if pc.session != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), peerKeepaliveWriteTimeout)
-			noop := &commands.NoOp{Cmds: pc.session.GetCommands()}
-			err := pc.session.SendCommand(ctx, noop)
-			cancel()
-			if err != nil {
+			if err := s.keepaliveSend(pc.session); err != nil {
 				pc.closeLocked()
 			}
 		}
 		pc.mu.Unlock()
 	}
+}
+
+// keepaliveSend writes a single keepalive NoOp on session, recovering from a
+// panic the same way doSendCommand does so a bug in the send path drops the
+// connection instead of crashing the whole authority through the keepalive
+// worker goroutine.
+func (s *state) keepaliveSend(session *wire.Session) (rerr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Errorf("recovered from panic in keepalive send: %v", r)
+			rerr = fmt.Errorf("recovered from panic in keepalive send: %v", r)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), peerKeepaliveWriteTimeout)
+	defer cancel()
+	return session.SendCommand(ctx, &commands.NoOp{Cmds: session.GetCommands()})
 }
