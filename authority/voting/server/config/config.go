@@ -341,14 +341,9 @@ type Server struct {
 	// document is larger than the default allows.
 	MaxConsensusSize int
 
-	// MaxConcurrentConns bounds the number of incoming connections handled
-	// at once, so a connection flood cannot exhaust goroutines or memory
-	// (default: 64).
-	MaxConcurrentConns int
-
 	// MaxConnsPerPeer bounds the number of concurrent incoming connections
 	// handled at once from a single authenticated peer identity, so one peer
-	// cannot camp all of the MaxConcurrentConns accept slots. The cap is keyed
+	// cannot camp all of the peer pool's accept slots. The cap is keyed
 	// by the wire-authenticated identity and therefore applies only to
 	// identified peers (mixes, gateways, service nodes, replicas, authorities);
 	// anonymous clients are not capped by identity. Zero selects the default

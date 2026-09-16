@@ -228,10 +228,10 @@ func (s *Server) onConn(conn net.Conn) {
 	)
 
 	// Bound concurrent connections per authenticated peer identity so one peer
-	// cannot camp all of the MaxConcurrentConns accept slots. Only identified
-	// peers carry an identity hash; anonymous clients are not capped here. The
-	// global semaphore already bounds the total and stays before the handshake,
-	// so a handshake flood is still bounded; this check is necessarily after the
+	// cannot camp all of the peer pool's accept slots. Only identified peers
+	// carry an identity hash; anonymous clients are not capped here. The peer
+	// pool cap already bounds the total and stays before the handshake, so a
+	// handshake flood is still bounded; this check is necessarily after the
 	// handshake because the peer identity is only known once it completes.
 	if len(auth.peerIdentityKeyHash) == hash.HashSize {
 		var peerSlotID [hash.HashSize]byte
