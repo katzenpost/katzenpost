@@ -552,9 +552,27 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 	var zeros [32]byte
 	srv := zeros[:]
 	certificate := s.getDocument(mixes, replicas, params, srv)
-	// add the SharedRandomCommit and SharedRandomReveal that we have seen
-	certificate.SharedRandomCommit = s.commits[epoch]
-	certificate.SharedRandomReveal = s.reveals[epoch]
+	// Embed only the commit/reveal pairs we hold BOTH halves for. An
+	// authority whose commit (vote) we saw but whose reveal never arrived is
+	// dropped from our certificate rather than allowed to poison it: a commit
+	// without its reveal fails IsDocumentWellFormed below, which would stop us
+	// emitting any certificate at all, so a single non-revealing authority
+	// would break the whole round. Dropping non-revealers preserves liveness
+	// as long as at least threshold authorities revealed; the missing half is
+	// logged and complained about, not treated as fatal.
+	commits := make(map[[publicKeyHashSize]byte][]byte)
+	reveals := make(map[[publicKeyHashSize]byte][]byte)
+	for pk, commit := range s.commits[epoch] {
+		reveal, ok := s.reveals[epoch][pk]
+		if !ok {
+			s.log.Warningf("getCertificate: commit from %s has no matching reveal; dropping it from our certificate", s.authorityNames[pk])
+			continue
+		}
+		commits[pk] = commit
+		reveals[pk] = reveal
+	}
+	certificate.SharedRandomCommit = commits
+	certificate.SharedRandomReveal = reveals
 	// if there are no prior SRV values, copy the current srv twice
 	if len(s.priorSRV) == 0 {
 		s.priorSRV = [][]byte{srv, srv}
@@ -604,7 +622,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, fmt.Errorf("No way to make consensus with too few SharedRandom commits!, only %d commits", len(commits))
 	}
 	if len(commits) != len(reveals) {
-		panic("ShouldNotBePossible")
+		return nil, fmt.Errorf("shared-random commit/reveal mismatch: %d commits, %d reveals", len(commits), len(reveals))
 	}
 
 	// compute the shared random for the consensus
@@ -2109,6 +2127,24 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	if _, ok := s.commits[s.votingEpoch][pk]; !ok {
 		s.log.Errorf("Reveal from %s received before peer's vote.", s.authorityNames[pk])
 		resp.ErrorCode = commands.RevealTooEarly
+		return &resp
+	}
+
+	// Verify the reveal actually opens this peer's commit before storing it.
+	// A signed-but-mismatched reveal must be rejected here: otherwise it would
+	// be embedded in our certificate and later fail the cross-check at every
+	// other authority, which frames us (the honest observer) as the bad node.
+	innerCommit, err := cert.Verify(reveal.PublicKey, s.commits[s.votingEpoch][pk])
+	if err != nil {
+		s.log.Errorf("Reveal from %s: stored commit failed to verify: %v", s.authorityNames[pk], err)
+		resp.ErrorCode = commands.RevealNotSigned
+		return &resp
+	}
+	srvCheck := new(pki.SharedRandom)
+	srvCheck.SetCommit(innerCommit)
+	if !srvCheck.Verify(certified) {
+		s.log.Errorf("Reveal from %s does not open its commit", s.authorityNames[pk])
+		resp.ErrorCode = commands.RevealNotSigned
 		return &resp
 	}
 
