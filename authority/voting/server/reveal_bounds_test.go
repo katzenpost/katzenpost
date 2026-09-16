@@ -19,7 +19,7 @@ import (
 
 // newSingleAuthorityState builds a minimal state with one authorized authority,
 // enough to drive the authority upload handlers directly.
-func newSingleAuthorityState(t *testing.T) (*state, peerKeys, uint64) {
+func newSingleAuthorityState(t testing.TB) (*state, peerKeys, uint64) {
 	t.Helper()
 	require := require.New(t)
 

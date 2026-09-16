@@ -1,0 +1,6 @@
+bin/
+*.a
+*.h
+corpus/*/*
+!corpus/*/seed-*
+!corpus/.gitkeep
