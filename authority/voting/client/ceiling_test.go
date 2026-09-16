@@ -72,3 +72,22 @@ func TestClientCeilingWithSchemesIsNotFallback(t *testing.T) {
 	require.Equal(t, wire.DefaultMaxPKIMessageSize, noSchemes,
 		"a consumer without schemes keeps the flat default ceiling")
 }
+
+// TestClientDefaultCeilingCoversRealNetwork proves the default node allowance
+// covers the dirauth's estimate for the real network shape (namenlos, roughly
+// doubled), so the client does not reject a valid consensus as oversized. A
+// genuinely larger network raises MaxConsensusSize rather than the default
+// growing to an arbitrary fixed cap.
+func TestClientDefaultCeilingCoversRealNetwork(t *testing.T) {
+	cfg := clientCfg(signschemes.ByName("Ed25519"), kemschemes.ByName("Xwing"), "x25519", 6)
+	require.NotNil(t, cfg.PKISignatureScheme)
+	require.NotNil(t, cfg.KEMScheme)
+
+	clientCeiling := cfg.deriveMaxMessageSize()
+	// namenlos is on the order of 17 nodes and 4 replicas; the default must
+	// comfortably cover roughly double that.
+	realistic := cfg.estimateConsensusSize(34, 8)
+	require.GreaterOrEqual(t, clientCeiling, realistic,
+		"default client ceiling (%d) must cover a ~2x-namenlos network (%d)",
+		clientCeiling, realistic)
+}
