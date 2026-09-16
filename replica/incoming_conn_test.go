@@ -145,7 +145,7 @@ func TestIncomingConn(t *testing.T) {
 	listener, err := newListener(server, id, addr)
 	require.NoError(t, err)
 
-	listener.onNewConn(connRx)
+	listener.onNewConn(connRx, nil)
 
 	// Give the worker goroutine a moment to start and fail
 	// since we're using a broken pipe connection

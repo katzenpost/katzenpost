@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -162,6 +163,18 @@ type Debug struct {
 	// form a valid Document.
 	MinNodesPerLayer int
 
+	// MaxClientConns caps concurrent inbound connections from non-peer
+	// source IPs; 0 uses connlimit.DefaultMaxClientConns.
+	MaxClientConns int
+
+	// MaxPeerConns caps concurrent inbound connections from known
+	// mixnet peer source IPs; 0 uses connlimit.DefaultMaxPeerConns.
+	MaxPeerConns int
+
+	// MaxConnsPerIP caps concurrent inbound connections per source IP
+	// within each pool; 0 uses connlimit.DefaultMaxConnsPerIP.
+	MaxConnsPerIP int
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -181,6 +194,15 @@ func (dCfg *Debug) applyDefaults() {
 	}
 	if dCfg.MinNodesPerLayer <= 0 {
 		dCfg.MinNodesPerLayer = defaultMinNodesPerLayer
+	}
+	if dCfg.MaxClientConns <= 0 {
+		dCfg.MaxClientConns = connlimit.DefaultMaxClientConns
+	}
+	if dCfg.MaxPeerConns <= 0 {
+		dCfg.MaxPeerConns = connlimit.DefaultMaxPeerConns
+	}
+	if dCfg.MaxConnsPerIP <= 0 {
+		dCfg.MaxConnsPerIP = connlimit.DefaultMaxConnsPerIP
 	}
 }
 
