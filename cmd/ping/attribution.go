@@ -22,6 +22,7 @@ import (
 type observation struct {
 	at      time.Time
 	ok      bool
+	cat     category
 	forward []string
 	back    []string
 }

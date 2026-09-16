@@ -83,6 +83,11 @@ type Config struct {
 	// requested service. Off by default so a plain ping keeps pinning a
 	// single destination as it always has.
 	RotateServices bool
+
+	// Strict restores the old gate where anything short of a delivered
+	// reply fails the run. By default only genuine mixnet loss fails, so
+	// client-side pacing and connection limits do not false-positive.
+	Strict bool
 }
 
 // newRootCommand creates the root cobra command
@@ -131,9 +136,13 @@ full client mode where this ping tool starts it's own client daemon.`,
 				os.Exit(0)
 			}()
 
-			failed := executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff, cfg.RotateServices)
+			tally := executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff, cfg.RotateServices)
+			failed := tally.failing(cfg.Strict)
 			if failed > 0 {
-				return fmt.Errorf("ping success rate below 100%%: %d/%d pings failed", failed, cfg.Count)
+				if cfg.Strict {
+					return fmt.Errorf("%d/%d pings did not deliver", failed, cfg.Count)
+				}
+				return fmt.Errorf("%d/%d pings lost in the mixnet", failed, cfg.Count)
 			}
 			return nil
 		},
@@ -146,6 +155,7 @@ full client mode where this ping tool starts it's own client daemon.`,
 	cmd.Flags().IntVarP(&cfg.Concurrency, "concurrency", "C", 1, "number of concurrent ping operations")
 	cmd.Flags().BoolVar(&cfg.PrintDiff, "print-diff", false, "print payload contents if reply is different than original")
 	cmd.Flags().BoolVar(&cfg.RotateServices, "rotate-services", false, "spread the batch across every node offering the service, instead of pinning one")
+	cmd.Flags().BoolVar(&cfg.Strict, "strict", false, "fail the run on any outcome short of delivery, not only genuine mixnet loss")
 	cmd.Flags().BoolVar(&cfg.ThinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
 	cmd.Flags().StringVar(&cfg.LogLevel, "log-level", "DEBUG", "logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
 
@@ -225,7 +235,7 @@ func initializeFullClient(configFile string, logPath string, logLevel string) (*
 // With rotate set the batch is spread across every node offering the service
 // rather than pinned to one. That varies the destination hop, which otherwise
 // sits on every route of a run and so cannot be told apart from the baseline.
-func executePing(thinClient *thin.ThinClient, service string, count, concurrency int, printDiff, rotate bool) uint64 {
+func executePing(thinClient *thin.ThinClient, service string, count, concurrency int, printDiff, rotate bool) counts {
 	var services []*clientcommon.ServiceDescriptor
 	if rotate {
 		var err error
