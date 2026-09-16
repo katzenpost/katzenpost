@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	"github.com/katzenpost/katzenpost/authority/voting/server/profiling"
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -69,6 +70,9 @@ type Server struct {
 
 	state     *state
 	listeners []net.Listener
+
+	connLimiter *connlimit.Limiter
+	peerSet     *connlimit.PeerSet
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -202,6 +206,14 @@ func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
 }
 
+func dirauthStaticAuthorityAddresses(cfg *config.Config) []string {
+	var addrs []string
+	for _, auth := range cfg.Authorities {
+		addrs = append(addrs, auth.Addresses...)
+	}
+	return addrs
+}
+
 func (s *Server) listenWorker(l net.Listener) {
 	addr := l.Addr()
 	s.log.Noticef("Listening on: %v", addr)
@@ -227,7 +239,16 @@ func (s *Server) listenWorker(l net.Listener) {
 			continue
 		}
 
+		isPeer := s.peerSet.Contains(connlimit.AddrIP(conn.RemoteAddr()))
+		token, ok := s.connLimiter.TryAcquire(conn.RemoteAddr(), isPeer)
+		if !ok {
+			s.log.Debugf("Refusing connection from %v: connection cap reached (peer=%v)", conn.RemoteAddr(), isPeer)
+			conn.Close()
+			continue
+		}
+
 		s.state.Go(func() {
+			defer token.Release()
 			s.onConn(conn)
 		})
 	}
@@ -420,6 +441,10 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("This fatal error has triggered an emergency shutdown of the authority")
 		s.Shutdown()
 	}()
+
+	s.connLimiter = connlimit.New(s.cfg.Debug.MaxClientConns, s.cfg.Debug.MaxPeerConns, s.cfg.Debug.MaxConnsPerIP)
+	s.peerSet = connlimit.NewPeerSet()
+	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
 
 	// Start up the state worker.
 	if s.state, err = newState(s); err != nil {

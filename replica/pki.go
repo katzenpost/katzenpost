@@ -214,9 +214,21 @@ func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled 
 			"REPLICA PKI FETCH: stored %d PKI document(s); connector/authentication state will be refreshed",
 			stored,
 		)
+		p.rebuildPeerSet()
 	}
 
 	return didUpdate
+}
+
+func (p *PKIWorker) rebuildPeerSet() {
+	now, _, _ := epochtime.Now()
+	doc := p.documentForEpoch(now)
+	if doc == nil {
+		return
+	}
+	addrs := doc.AllNodeAddresses()
+	addrs = append(addrs, replicaStaticAuthorityAddresses(p.server.cfg)...)
+	p.server.peerSet.Rebuild(addrs)
 }
 
 // handleDocumentUpdates handles cleanup and updates when documents change.
