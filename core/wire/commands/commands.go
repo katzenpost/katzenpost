@@ -305,6 +305,9 @@ func (c *SendRetrievePacketReply) Length() int {
 }
 
 func sendRetrievePacketReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
+	if len(b) < constants.SURBIDLength {
+		return nil, errInvalidCommand
+	}
 	c := new(SendRetrievePacketReply)
 	copy(c.SURBID[:], b[:constants.SURBIDLength])
 	c.Payload = make([]byte, len(b[constants.SURBIDLength:]))
