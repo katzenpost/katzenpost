@@ -1162,7 +1162,7 @@ func runBlockingSendMessage(ctx context.Context, tc *ThinClient, payload []byte)
 // TestBlockingSendMessageDisconnectReturnsError pins that receipt of a
 // ConnectionStatusEvent with IsConnected=false while BlockingSendMessage
 // is waiting on its reply does NOT panic the process but returns the
-// errConnectionLost sentinel. Prior behaviour panic()'d.
+// ErrConnectionLost sentinel. Prior behaviour panic()'d.
 func TestBlockingSendMessageDisconnectReturnsError(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	t.Cleanup(func() {
@@ -1192,8 +1192,8 @@ func TestBlockingSendMessageDisconnectReturnsError(t *testing.T) {
 	select {
 	case r := <-resultCh:
 		require.Nil(t, r.panicked, "must not panic on disconnect")
-		require.True(t, errors.Is(r.err, errConnectionLost),
-			"expected errConnectionLost, got %v", r.err)
+		require.True(t, errors.Is(r.err, ErrConnectionLost),
+			"expected ErrConnectionLost, got %v", r.err)
 	case <-time.After(2 * time.Second):
 		t.Fatal("BlockingSendMessage did not return after disconnect")
 	}

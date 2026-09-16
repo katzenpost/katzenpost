@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -159,6 +160,7 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, t
 	// A result accompanies a failed send whenever the packet actually went
 	// out, so build the observation from it either way.
 	o := observation{at: time.Now()}
+	sent := res != nil && !res.SentAt.IsZero()
 	if res != nil {
 		o.forward = res.ForwardRoute
 		o.back = res.ReturnRoute
@@ -169,7 +171,7 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, t
 
 	if err != nil {
 		fmt.Printf("\nerror: %v\n", err)
-		fmt.Printf("%s", failureStyle.Render(".")) // Fail, did not receive a reply.
+		o.cat = classify(sent, false, err)
 		return o
 	}
 
@@ -181,22 +183,19 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, t
 		panic(err)
 	}
 
-	if bytes.Equal(replyPayload, pingPayload) {
-		// OK, received identical payload in reply.
-		o.ok = true
-		return o
-	}
-	// Fail, received unexpected payload in reply.
-	if printDiff {
+	payloadOK := bytes.Equal(replyPayload, pingPayload)
+	if !payloadOK && printDiff {
 		fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
 	}
+	o.cat = classify(sent, payloadOK, nil)
+	o.ok = o.cat == catDelivered
 	return o
 }
 
-// sendPings sends count pings and returns how many failed. Callers use the
-// return value to set a non-zero process exit code so the ping can be used
-// as a smoke-test gate.
-func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, count int, concurrency int, printDiff bool) uint64 {
+// sendPings sends count pings and returns the per-category outcome counts.
+// Callers decide from these which categories gate a non-zero exit, so the
+// ping can be used as a smoke-test that fails only on genuine mixnet loss.
+func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, count int, concurrency int, printDiff bool) counts {
 	// Extract service name from RecipientQueueID (remove leading '+' if present)
 	serviceName := string(services[0].RecipientQueueID)
 	nodeName := services[0].MixDescriptor.Name
@@ -223,7 +222,7 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 		"Sending %d Sphinx packets to %s@%s (reply due + %s, hard cap %s)",
 		count, serviceName, nodeName, slop, timeout)))
 
-	var passed, failed uint64
+	var tally counts
 	attrib := new(attribution)
 
 	wg := new(sync.WaitGroup)
@@ -243,12 +242,11 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 		go func() {
 			o := sendPing(session, desc, timeout, slop, printDiff)
 			attrib.record(o)
+			atomic.AddUint64(&tally[o.cat], 1)
 			if o.ok {
 				fmt.Printf("%s", successStyle.Render("!"))
-				atomic.AddUint64(&passed, 1)
 			} else {
 				fmt.Printf("%s", failureStyle.Render("~"))
-				atomic.AddUint64(&failed, 1)
 			}
 			wg.Done()
 			<-sem
@@ -258,6 +256,7 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 	wg.Wait()
 	fmt.Printf("\n")
 
+	passed := tally[catDelivered]
 	percent := (float64(passed) * float64(100)) / float64(count)
 	successMsg := fmt.Sprintf("Success rate is %.0f percent (%d/%d)", percent, passed, count)
 	if percent >= 90.0 {
@@ -268,7 +267,17 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 		fmt.Printf("%s\n", failureStyle.Render(successMsg))
 	}
 
+	reportCategories(os.Stdout, tally)
 	attrib.report(os.Stdout, session.PKIDocument())
 
-	return failed
+	return tally
+}
+
+func reportCategories(w io.Writer, tally counts) {
+	fmt.Fprintf(w, "%s\n", headerStyle.Render("Outcomes by category:"))
+	fmt.Fprintf(w, "  %-10s %6d  reply received within budget\n", catDelivered.label(), tally[catDelivered])
+	fmt.Fprintf(w, "  %-10s %6d  genuine mixnet loss: dispatched, no reply\n", catLost.label(), tally[catLost])
+	fmt.Fprintf(w, "  %-10s %6d  never dispatched (client pacing/limit), not a loss\n", catNotSent.label(), tally[catNotSent])
+	fmt.Fprintf(w, "  %-10s %6d  connection lost before send, not a loss\n", catRefused.label(), tally[catRefused])
+	fmt.Fprintf(w, "  %-10s %6d  reply late past ReplyETA+slop, weaker evidence\n", catOverdue.label(), tally[catOverdue])
 }
