@@ -36,7 +36,9 @@ func clientCfg(signScheme sign.Scheme, kemScheme kem.Scheme, sphinx string, nAut
 // because it holds the scheme objects and the authority count.
 func TestClientCeilingScalesWithWireKEM(t *testing.T) {
 	signScheme := signschemes.ByName("Ed25519 Sphincs+")
-	require.NotNil(t, signScheme)
+	if signScheme == nil {
+		t.Skip("Ed25519 Sphincs+ is not built on this platform")
+	}
 	small := clientCfg(signScheme, kemschemes.ByName("MLKEM768-X25519"), "x25519", 6).deriveMaxMessageSize()
 	big := clientCfg(signScheme, kemschemes.ByName("mceliece348864-X25519"), "x25519", 6).deriveMaxMessageSize()
 	require.Greater(t, big, small, "McEliece link keys must yield a larger client ceiling than MLKEM")
@@ -56,7 +58,9 @@ func TestClientCeilingFallsBackWithoutSchemes(t *testing.T) {
 // its schemes are wired into the Config rather than left unset.
 func TestClientCeilingWithSchemesIsNotFallback(t *testing.T) {
 	signScheme := signschemes.ByName("Ed25519 Sphincs+")
-	require.NotNil(t, signScheme)
+	if signScheme == nil {
+		t.Skip("Ed25519 Sphincs+ is not built on this platform")
+	}
 	kemScheme := kemschemes.ByName("MLKEM768-X25519")
 	require.NotNil(t, kemScheme)
 
@@ -67,4 +71,23 @@ func TestClientCeilingWithSchemesIsNotFallback(t *testing.T) {
 	noSchemes := (&Config{Authorities: []*config.Authority{{}}}).deriveMaxMessageSize()
 	require.Equal(t, wire.DefaultMaxPKIMessageSize, noSchemes,
 		"a consumer without schemes keeps the flat default ceiling")
+}
+
+// TestClientDefaultCeilingCoversRealNetwork proves the default node allowance
+// covers the dirauth's estimate for the real network shape (namenlos, roughly
+// doubled), so the client does not reject a valid consensus as oversized. A
+// genuinely larger network raises MaxConsensusSize rather than the default
+// growing to an arbitrary fixed cap.
+func TestClientDefaultCeilingCoversRealNetwork(t *testing.T) {
+	cfg := clientCfg(signschemes.ByName("Ed25519"), kemschemes.ByName("Xwing"), "x25519", 6)
+	require.NotNil(t, cfg.PKISignatureScheme)
+	require.NotNil(t, cfg.KEMScheme)
+
+	clientCeiling := cfg.deriveMaxMessageSize()
+	// namenlos is on the order of 17 nodes and 4 replicas; the default must
+	// comfortably cover roughly double that.
+	realistic := cfg.estimateConsensusSize(34, 8)
+	require.GreaterOrEqual(t, clientCeiling, realistic,
+		"default client ceiling (%d) must cover a ~2x-namenlos network (%d)",
+		clientCeiling, realistic)
 }

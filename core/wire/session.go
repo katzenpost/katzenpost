@@ -203,6 +203,16 @@ type Session struct {
 	rxKeyMutex *sync.Mutex
 	txKeyMutex *sync.Mutex
 
+	// sendMu and recvMu serialize a whole logical send/receive as one unit.
+	// The per-cipher-op key mutexes above only guard each individual cipher
+	// operation, so two concurrent SendCommand calls could interleave the
+	// header encrypt, body encrypt and rekey of one message with another's and
+	// desync (or reuse) the ChaChaPoly nonce stream. Holding one exclusive lock
+	// across the entire send (through the wire write) and the entire receive
+	// keeps each frame's cipher operations contiguous and in nonce order.
+	sendMu sync.Mutex
+	recvMu sync.Mutex
+
 	clockSkew   time.Duration
 	state       uint32
 	isInitiator bool
@@ -272,7 +282,7 @@ func (s *Session) MaxMesgSize() int {
 		return s.maxMesgSize
 	}
 	mesgLenths := []int{
-		s.commands.MaxCommandSize() + macLen,
+		s.commands.MaxSerializedCommandSize() + macLen,
 		s.msg1Len(),
 		s.msg2Len(),
 		s.msg3Len(),
@@ -591,6 +601,13 @@ func (s *Session) SendCommand(ctx context.Context, cmd commands.Command) error {
 		return errInvalidState
 	}
 
+	// Serialize the whole logical send: header encrypt, body encrypt, rekey and
+	// the wire write must happen as one uninterrupted unit so a concurrent
+	// SendCommand cannot interleave its cipher operations and desync the nonce
+	// stream.
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
 	// XXX: Figure out if padding is actually needed, and append it as
 	// neccecary.  As it stands right now, it might not be, as the `message`
 	// command's various responses all have identical sizes.
@@ -635,6 +652,15 @@ func (s *Session) SendCommand(ctx context.Context, cmd commands.Command) error {
 	return err
 }
 
+// SetReadTimeout adjusts the default read deadline that RecvCommand arms when
+// its context carries no earlier deadline. The persistent authority serve loop
+// uses this to wait out its idle keepalive interval, which is longer than the
+// per-response ReadTimeout the session is built with. It is only safe to call
+// when no RecvCommand is concurrently in flight on this session.
+func (s *Session) SetReadTimeout(d time.Duration) {
+	s.readTimeout = d
+}
+
 // RecvCommand receives a wire protocol command off the network. ctx bounds the
 // receive; a context with no deadline is still capped at the session's read
 // timeout, so a silent peer can never wedge the caller.
@@ -668,6 +694,12 @@ func (s *Session) recvCommandImpl(ctx context.Context) (commands.Command, error)
 	if atomic.LoadUint32(&s.state) != stateEstablished {
 		return nil, errInvalidState
 	}
+
+	// Serialize the whole logical receive as one unit, mirroring SendCommand, so
+	// two concurrent receivers cannot interleave the header and body decrypts of
+	// different frames and desync the nonce stream.
+	s.recvMu.Lock()
+	defer s.recvMu.Unlock()
 
 	// One deadline covers BOTH reads below (header and body): a peer that sends
 	// the header then stalls on the body must still time out.
@@ -882,7 +914,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		rxKeyMutex:     new(sync.Mutex),
 		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewMixnetCommands(cfg.Geometry),
-		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, -1),
+		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, 0),
 
 		handshakeTimeout: timeoutOr(cfg.HandshakeTimeout, DefaultHandshakeTimeout),
 		readTimeout:      timeoutOr(cfg.ReadTimeout, DefaultReadTimeout),

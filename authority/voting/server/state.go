@@ -43,12 +43,10 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/schemes"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	kpcommon "github.com/katzenpost/katzenpost/common"
@@ -552,9 +550,27 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 	var zeros [32]byte
 	srv := zeros[:]
 	certificate := s.getDocument(mixes, replicas, params, srv)
-	// add the SharedRandomCommit and SharedRandomReveal that we have seen
-	certificate.SharedRandomCommit = s.commits[epoch]
-	certificate.SharedRandomReveal = s.reveals[epoch]
+	// Embed only the commit/reveal pairs we hold BOTH halves for. An
+	// authority whose commit (vote) we saw but whose reveal never arrived is
+	// dropped from our certificate rather than allowed to poison it: a commit
+	// without its reveal fails IsDocumentWellFormed below, which would stop us
+	// emitting any certificate at all, so a single non-revealing authority
+	// would break the whole round. Dropping non-revealers preserves liveness
+	// as long as at least threshold authorities revealed; the missing half is
+	// logged and complained about, not treated as fatal.
+	commits := make(map[[publicKeyHashSize]byte][]byte)
+	reveals := make(map[[publicKeyHashSize]byte][]byte)
+	for pk, commit := range s.commits[epoch] {
+		reveal, ok := s.reveals[epoch][pk]
+		if !ok {
+			s.log.Warningf("getCertificate: commit from %s has no matching reveal; dropping it from our certificate", s.authorityNames[pk])
+			continue
+		}
+		commits[pk] = commit
+		reveals[pk] = reveal
+	}
+	certificate.SharedRandomCommit = commits
+	certificate.SharedRandomReveal = reveals
 	// if there are no prior SRV values, copy the current srv twice
 	if len(s.priorSRV) == 0 {
 		s.priorSRV = [][]byte{srv, srv}
@@ -604,7 +620,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, fmt.Errorf("No way to make consensus with too few SharedRandom commits!, only %d commits", len(commits))
 	}
 	if len(commits) != len(reveals) {
-		panic("ShouldNotBePossible")
+		return nil, fmt.Errorf("shared-random commit/reveal mismatch: %d commits, %d reveals", len(commits), len(reveals))
 	}
 
 	// compute the shared random for the consensus
@@ -703,6 +719,16 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		// Persist the document to disk.
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
+		// signedConsensus is exactly what documentForEpoch serves for this
+		// epoch. Cache it now so the first GetConsensus does not re-marshal the
+		// document; a consensus is write-once per epoch, so the bytes never go
+		// stale.
+		s.serializedDocsMu.Lock()
+		if s.serializedDocs == nil {
+			s.serializedDocs = make(map[uint64][]byte)
+		}
+		s.serializedDocs[epoch] = signedConsensus
+		s.serializedDocsMu.Unlock()
 		return ourConsensus, nil
 	} else {
 		s.log.Errorf("VerifyThreshold failed!: %s", err)
@@ -1116,8 +1142,32 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 	// dial a fresh one. A reused session that the peer has since closed fails
 	// the round trip, so evict it and redial once.
 	pc := s.peerConnFor(peer.Identifier)
-	pc.mu.Lock()
+
+	// The per-peer lock is shared across all four voting phases. If a send in an
+	// earlier phase is still in flight on the cached connection, do not queue
+	// behind it: that could blow this (later) phase's deadline. Fall back to a
+	// one-shot dial+handshake for this command instead, so a slow send never
+	// head-of-line-blocks a different phase.
+	if !pc.mu.TryLock() {
+		session, conn, err := s.dialAndHandshakePeer(peer, addrs)
+		if err != nil {
+			return nil, err
+		}
+		defer session.Close()
+		return s.peerRoundTrip(session, conn, cmd)
+	}
 	defer pc.mu.Unlock()
+
+	// A panic during a round trip below skips the closeLocked() eviction that
+	// every normal error path performs, which would leave a possibly-corrupted
+	// session cached for the next reuse. Evict it here while still holding pc.mu
+	// and re-panic so the outer recover turns it into an error return.
+	defer func() {
+		if r := recover(); r != nil {
+			pc.closeLocked()
+			panic(r)
+		}
+	}()
 
 	if pc.session != nil {
 		resp, err := s.peerRoundTrip(pc.session, pc.conn, cmd)
@@ -1133,6 +1183,7 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 		return nil, err
 	}
 	pc.session, pc.conn = session, conn
+	pc.setLive(conn)
 	resp, err = s.peerRoundTrip(pc.session, pc.conn, cmd)
 	if err != nil {
 		pc.closeLocked()
@@ -2052,11 +2103,20 @@ func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []b
 	return &resp
 }
 
-func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
+func (s *state) onRevealUpload(reveal *commands.Reveal, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.RevealStatus{}
 	pk := hash.Sum256From(reveal.PublicKey)
+
+	// Bind the reveal's declared PublicKey to the wire-authenticated peer, the
+	// same way onCertUpload binds a certificate, so a byzantine authority cannot
+	// relay another authority's genuine reveal on its own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Reveal PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		resp.ErrorCode = commands.RevealNotAuthorized
+		return &resp
+	}
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]
@@ -2112,6 +2172,24 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 
+	// Verify the reveal actually opens this peer's commit before storing it.
+	// A signed-but-mismatched reveal must be rejected here: otherwise it would
+	// be embedded in our certificate and later fail the cross-check at every
+	// other authority, which frames us (the honest observer) as the bad node.
+	innerCommit, err := cert.Verify(reveal.PublicKey, s.commits[s.votingEpoch][pk])
+	if err != nil {
+		s.log.Errorf("Reveal from %s: stored commit failed to verify: %v", s.authorityNames[pk], err)
+		resp.ErrorCode = commands.RevealNotSigned
+		return &resp
+	}
+	srvCheck := new(pki.SharedRandom)
+	srvCheck.SetCommit(innerCommit)
+	if !srvCheck.Verify(certified) {
+		s.log.Errorf("Reveal from %s does not open its commit", s.authorityNames[pk])
+		resp.ErrorCode = commands.RevealNotSigned
+		return &resp
+	}
+
 	// the first reveal received this round
 	if _, ok := s.reveals[s.votingEpoch]; !ok {
 		s.reveals[s.votingEpoch] = make(map[[publicKeyHashSize]byte][]byte)
@@ -2129,11 +2207,22 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	return &resp
 }
 
-func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
+func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.VoteStatus{}
 	pk := hash.Sum256From(vote.PublicKey)
+
+	// Bind the vote's declared PublicKey to the wire-authenticated peer, the
+	// same way onCertUpload binds a certificate. Without this, an authorized but
+	// byzantine authority could relay another authority's genuine vote on its
+	// own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Vote PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		instrument.VoteReceived("not_authorized")
+		resp.ErrorCode = commands.VoteNotAuthorized
+		return &resp
+	}
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]
@@ -2225,11 +2314,20 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	return &resp
 }
 
-func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
+func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.SigStatus{}
 	pk := hash.Sum256From(sig.PublicKey)
+
+	// Bind the signature's declared PublicKey to the wire-authenticated peer, the
+	// same way onCertUpload binds a certificate, so a byzantine authority cannot
+	// relay another authority's genuine signature on its own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Signature PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		resp.ErrorCode = commands.SigNotAuthorized
+		return &resp
+	}
 
 	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
@@ -2796,50 +2894,70 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 		panic("write lock not held in backgroundFetchConsensus(epoch)")
 	}
 
-	// If there isn't a consensus for the previous epoch, ask the other
-	// authorities for a consensus.
-	_, ok := s.documents[epoch]
-	if !ok {
-		kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-		if kemscheme == nil {
-			panic("kem scheme not found in registry")
+	// If there isn't a consensus for this epoch, ask the other authorities for
+	// one. Route the fetch through the outbound send path (doSendCommand) so it
+	// reuses a cached persistent peer connection instead of dialing a second,
+	// uncoordinated connection to a peer we already hold one to.
+	if _, ok := s.documents[epoch]; ok {
+		return
+	}
+	pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+	if pkiSignatureScheme == nil {
+		panic("pki signature scheme not found in registry")
+	}
+	s.Go(func() {
+		cmd := &commands.GetConsensus{
+			Epoch:              epoch,
+			Cmds:               commands.NewPKICommands(pkiSignatureScheme),
+			MixnetTransmission: false,
 		}
-		pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
-		if pkiSignatureScheme == nil {
-			panic("pki signature scheme not found in registry")
-		}
-		s.Go(func() {
-			cfg := &client.Config{
-				KEMScheme:          kemscheme,
-				PKISignatureScheme: pkiSignatureScheme,
-				LinkKey:            s.s.linkKey,
-				LogBackend:         s.s.logBackend,
-				Authorities:        s.s.cfg.Authorities,
-				DialContextFn:      nil,
-				Geo:                s.geo,
-				MaxConsensusSize:   s.s.maxMessageSize,
+		deadline := time.Now().Add(time.Minute * 2)
+		for _, peer := range s.s.cfg.Authorities {
+			peer := peer
+			if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
+				continue
 			}
-			c, err := client.New(cfg)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
-				return
+				s.log.Debugf("backgroundFetchConsensus: %s: %v", peer.Identifier, err)
+				continue
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
-			defer cancel()
-			doc, _, err := c.GetPKIDocumentForEpoch(ctx, epoch)
+			r, ok := resp.(*commands.Consensus)
+			if !ok || r.ErrorCode != commands.ConsensusOk {
+				continue
+			}
+			// Verify the fetched consensus exactly as the standalone client
+			// would: threshold-many dirauth signatures, a parseable and
+			// well-formed document, and the requested epoch.
+			if _, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, r.Payload); err != nil {
+				s.log.Errorf("backgroundFetchConsensus: %s: threshold verify failed: %v", peer.Identifier, err)
+				continue
+			}
+			doc, err := s.doParseDocument(r.Payload)
 			if err != nil {
-				return
+				s.log.Errorf("backgroundFetchConsensus: %s: parse failed: %v", peer.Identifier, err)
+				continue
 			}
-			s.Lock()
-			defer s.Unlock()
+			if err := pki.IsDocumentWellFormed(doc, s.getVerifiers()); err != nil {
+				s.log.Errorf("backgroundFetchConsensus: %s: malformed document: %v", peer.Identifier, err)
+				continue
+			}
+			if doc.Epoch != epoch {
+				s.log.Errorf("backgroundFetchConsensus: %s: epoch mismatch doc=%d want=%d", peer.Identifier, doc.Epoch, epoch)
+				continue
+			}
 
-			// It's possible that the state has changed
-			// if backgroundFetchConsensus was called
-			// multiple times during bootstrapping
+			s.Lock()
+			// It's possible that the state has changed if
+			// backgroundFetchConsensus was called multiple times during
+			// bootstrapping.
 			if _, ok := s.documents[epoch]; !ok {
 				s.documents[epoch] = doc
 			}
-		})
-	}
+			s.Unlock()
+			return
+		}
+	})
 }
 
 func epochToBytes(e uint64) []byte {

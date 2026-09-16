@@ -190,6 +190,12 @@ func (sCfg *Server) validate() error {
 		}
 	}
 
+	// The server PKI signature scheme is intentionally defaulted, not required:
+	// a blank config must load and run with sane defaults rather than failing to
+	// load. Peer authority blocks that omit it inherit the same default in their
+	// own unmarshaler, and the Windows build falls back to Ed25519 because
+	// Sphincs+ needs cgo -- a consistency this default already surfaced and
+	// handles. An explicitly set scheme is still validated below.
 	sCfg.applyPKISignatureSchemeDefault()
 	if s := signSchemes.ByName(sCfg.PKISignatureScheme); s == nil {
 		return errors.New("PKI Signature Scheme not found")

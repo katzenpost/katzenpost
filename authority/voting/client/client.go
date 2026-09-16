@@ -126,19 +126,27 @@ type Config struct {
 }
 
 // clientNodeAllowance and clientReplicaAllowance bound the topology the client
-// assumes when deriving its ceiling. The client does not know the exact node
-// counts before fetching, but the counts are scalars: a generous static
-// allowance keeps the ceiling scaling with the PKI primitives (the property
-// that matters) while covering any current network. A larger network raises
-// MaxConsensusSize explicitly.
+// assumes when deriving its ceiling before it has fetched a consensus. They are
+// a small multiple of the real network shape (namenlos is on the order of 17
+// nodes and 4 storage replicas), giving headroom without over-provisioning. A
+// genuinely larger network sets MaxConsensusSize explicitly; this default is
+// deliberately a sane multiple of the deployed topology, not an arbitrarily
+// large fixed cap.
 const (
-	clientNodeAllowance    = 128
-	clientReplicaAllowance = 32
+	clientNodeAllowance    = 64
+	clientReplicaAllowance = 16
 )
 
 // deriveMaxMessageSize computes the wire ceiling from the configured PKI
-// schemes, the authority count, and the node-count allowance.
+// schemes, the authority count, and the default node-count allowance.
 func (cfg *Config) deriveMaxMessageSize() int {
+	return cfg.estimateConsensusSize(clientNodeAllowance, clientReplicaAllowance)
+}
+
+// estimateConsensusSize computes the wire ceiling from the configured PKI
+// schemes and authority count for the given node and replica counts, matching
+// the dirauth's own topology-exact estimate for the same schemes.
+func (cfg *Config) estimateConsensusSize(numNodes, numReplicas int) int {
 	if cfg.KEMScheme == nil || cfg.PKISignatureScheme == nil {
 		return wire.DefaultMaxPKIMessageSize
 	}
@@ -165,8 +173,8 @@ func (cfg *Config) deriveMaxMessageSize() int {
 		LinkKEMPubSize:  cfg.KEMScheme.PublicKeySize(),
 		SphinxPubSize:   sphinxPub,
 		EnvelopePubSize: envPub,
-		NumNodes:        clientNodeAllowance,
-		NumReplicas:     clientReplicaAllowance,
+		NumNodes:        numNodes,
+		NumReplicas:     numReplicas,
 		NumAuthorities:  len(cfg.Authorities),
 	})
 }

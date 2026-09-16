@@ -57,6 +57,7 @@ func TestShutdownClosesIdleAuthorityConn(t *testing.T) {
 
 	db, err := bolt.Open(filepath.Join(t.TempDir(), "state.db"), 0600, nil)
 	require.NoError(err)
+	t.Cleanup(func() { _ = db.Close() })
 
 	srv := &Server{
 		cfg: &config.Config{Server: &config.Server{
@@ -95,8 +96,20 @@ func TestShutdownClosesIdleAuthorityConn(t *testing.T) {
 
 	srvConn, cliConn := net.Pipe()
 
+	// Tear everything down even if an assertion below fails before the explicit
+	// Shutdown: close both pipe endpoints so the handler's blocked read returns,
+	// and call Shutdown (idempotent via haltOnce) so the handler goroutine, which
+	// runs under the state worker, is joined rather than leaked.
+	handlerDone := make(chan struct{})
+	t.Cleanup(func() {
+		cliConn.Close()
+		srvConn.Close()
+		srv.Shutdown()
+		<-handlerDone
+	})
+
 	// Run the responder handler the way an accepting listenWorker does.
-	srv.state.Go(func() { srv.handleConn(srvConn) })
+	srv.state.Go(func() { defer close(handlerDone); srv.handleConn(srvConn) })
 
 	cliCfg := &wire.SessionConfig{
 		KEMScheme:          kemScheme,
@@ -137,6 +150,4 @@ func TestShutdownClosesIdleAuthorityConn(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("Shutdown blocked on an idle authority connection")
 	}
-
-	cliConn.Close()
 }

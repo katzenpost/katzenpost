@@ -254,14 +254,13 @@ func (s *Server) listenWorker(l net.Listener) {
 		}
 
 		// Bound concurrent handlers so a connection flood cannot exhaust
-		// goroutines or memory. Full means accept parks here until a
-		// handler finishes; the kernel backlog absorbs the wait.
-		select {
-		case s.connSem <- struct{}{}:
-		case <-s.haltedCh:
-			conn.Close()
-			return
-		}
+		// goroutines or memory. Full means this parks until a handler frees a
+		// slot; the kernel backlog absorbs the wait. A watch on haltedCh here
+		// would be dead code: haltedCh is closed only at the end of halt(), after
+		// the WaitGroup drain that waits for this worker, and shutdown already
+		// closes the listener (ending Accept) and every accepted connection, so
+		// handlers drain and free slots and this send makes progress.
+		s.connSem <- struct{}{}
 		s.state.Go(func() {
 			defer func() { <-s.connSem }()
 			s.handleConn(conn)
@@ -369,6 +368,15 @@ func (s *Server) halt() {
 	}
 	s.conns = nil
 	s.connMu.Unlock()
+
+	// Unblock any outbound send wedged on a cached persistent peer connection by
+	// closing the underlying connections now. Otherwise a stuck write would hold
+	// up the WaitGroup drain below until its own deadline, and state.Halt() (the
+	// full peer-connection teardown) only runs after that drain. The teardown
+	// still runs later; this just releases wedged writes first.
+	if s.state != nil {
+		s.state.closeLivePeerConns()
+	}
 
 	// Wait for all the connections to terminate.
 	s.WaitGroup.Wait()

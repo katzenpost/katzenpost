@@ -33,6 +33,7 @@ func TestOnCertUploadBindsDocumentEpoch(t *testing.T) {
 
 	backend, err := log.New(filepath.Join(t.TempDir(), "test.log"), "ERROR", false)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = backend.Close() })
 
 	now, _, _ := epochtime.Now()
 	votingEpoch := now

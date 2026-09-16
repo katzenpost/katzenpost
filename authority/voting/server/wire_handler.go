@@ -390,8 +390,14 @@ func (s *Server) onConn(conn net.Conn) {
 func (s *Server) serveAuthorityConn(conn net.Conn, wireConn *wire.Session, peerID string, peerIdentityKeyHash []byte) {
 	idle := time.Duration(s.cfg.Server.KeepaliveTimeoutSec) * time.Second
 	responseTimeout := time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second
+	// The session was built with ReadTimeout=ResponseTimeoutSec, and
+	// RecvCommand's armIO caps every read deadline at that value. Raise it to
+	// the keepalive/idle timeout so the wait for the next command spans a full
+	// keepalive interval instead of being clobbered back down to the short
+	// per-response timeout, which would close the connection between rounds and
+	// defeat the persistent-connection feature.
+	wireConn.SetReadTimeout(idle)
 	for {
-		conn.SetDeadline(time.Now().Add(idle))
 		cmd, err := wireConn.RecvCommand(context.Background())
 		if err != nil {
 			s.log.Debugf("Peer %s: reused authority connection ended: %v", peerID, err)
@@ -533,16 +539,16 @@ func (s *Server) onAuthority(peerID string, cmd commands.Command, peerIdentityKe
 		resp = s.onGetConsensus(peerID, c)
 	case *commands.Vote:
 		s.log.Debugf("onAuthority: Processing Vote upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onVoteUpload(c)
+		resp = s.state.onVoteUpload(c, peerIdentityKeyHash)
 	case *commands.Cert:
 		s.log.Debugf("onAuthority: Processing Certificate upload from authority %s for epoch %d", peerID, c.Epoch)
 		resp = s.state.onCertUpload(c, peerIdentityKeyHash)
 	case *commands.Reveal:
 		s.log.Debugf("onAuthority: Processing Reveal upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onRevealUpload(c)
+		resp = s.state.onRevealUpload(c, peerIdentityKeyHash)
 	case *commands.Sig:
 		s.log.Debugf("onAuthority: Processing Signature upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onSigUpload(c)
+		resp = s.state.onSigUpload(c, peerIdentityKeyHash)
 	default:
 		s.log.Errorf("onAuthority: INVALID REQUEST from authority peer %s: unsupported command type %T", peerID, c)
 		return nil
