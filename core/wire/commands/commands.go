@@ -162,6 +162,17 @@ func (c *Commands) MaxCommandSize() int {
 	return c.MaxMessageLenClientToServer
 }
 
+// MaxSerializedCommandSize returns the largest serialized command size this set
+// can produce, accounting for a full Consensus2 chunk whose payload reaches
+// MaxMessageLenServerToClient (not reflected in any command's Length()).
+func (c *Commands) MaxSerializedCommandSize() int {
+	consensus2Max := CmdOverhead + consensus2BaseLength + c.MaxMessageLenServerToClient
+	if consensus2Max > c.MaxCommandSize() {
+		return consensus2Max
+	}
+	return c.MaxCommandSize()
+}
+
 func (c *Commands) calcMaxMessageLenServerToClient() int {
 	m := 0
 	for _, c := range c.serverToClientCommands {

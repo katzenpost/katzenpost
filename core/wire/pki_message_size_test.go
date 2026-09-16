@@ -44,6 +44,18 @@ func TestPKISessionConfiguredMaxMessageSize(t *testing.T) {
 	require.Equal(t, 4242, s.MaxMesgSize())
 }
 
+// TestMixnetSessionDefaultCeilingIsComputed pins that a generic mixnet session
+// with no configured ceiling derives it from the command set rather than the
+// 500 MB backstop, so a mix peer cannot force a 500 MB receive allocation.
+func TestMixnetSessionDefaultCeilingIsComputed(t *testing.T) {
+	alice, _ := deadlineTestConfigs(t)
+	alice.MaxMessageSize = 0
+	s, err := NewSession(alice, true)
+	require.NoError(t, err)
+	require.Less(t, s.MaxMesgSize(), MaxMessageSize)
+	require.GreaterOrEqual(t, s.MaxMesgSize(), s.GetCommands().MaxSerializedCommandSize()+macLen)
+}
+
 // TestSessionRejectsOversizedCommandOnReceive proves the ceiling is enforced on
 // receive: a command whose length exceeds the receiver's ceiling is rejected
 // after the header, before the body is read.
