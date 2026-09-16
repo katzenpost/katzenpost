@@ -404,6 +404,14 @@ func (p *pki) worker() {
 					lastLambdaP, lastLambdaL = lambdaP, lambdaL
 				}
 
+				addrs := ent.Document().AllNodeAddresses()
+				if cfg := p.glue.Config(); cfg.PKI != nil && cfg.PKI.Voting != nil {
+					for _, auth := range cfg.PKI.Voting.Authorities {
+						addrs = append(addrs, auth.Addresses...)
+					}
+				}
+				p.glue.PeerConnSet().Rebuild(addrs)
+
 				p.log.Debugf("Updating decoy document for epoch %v.", now)
 				p.glue.Decoy().OnNewDocument(ent)
 
