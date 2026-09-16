@@ -357,8 +357,15 @@ type Server struct {
 	// (the default) each command uses its own dial and handshake.
 	PersistentPeerConns bool
 
-	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
+	// CloseDelaySec is fixed and not consumed: close and NoOp timing is owned
+	// by the wire session. Only 0 or the default 10 is accepted.
 	CloseDelaySec int
+
+	// PreserveForPastEpochs is how many past epochs of state to retain (default 3).
+	PreserveForPastEpochs uint64
+
+	// DescriptorEpochTolerance is the accepted epoch window for descriptor uploads (default 1).
+	DescriptorEpochTolerance uint64
 
 	// Peer retry configuration for authority-to-authority communication
 
