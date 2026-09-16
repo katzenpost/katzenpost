@@ -1134,7 +1134,20 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 	// dial a fresh one. A reused session that the peer has since closed fails
 	// the round trip, so evict it and redial once.
 	pc := s.peerConnFor(peer.Identifier)
-	pc.mu.Lock()
+
+	// The per-peer lock is shared across all four voting phases. If a send in an
+	// earlier phase is still in flight on the cached connection, do not queue
+	// behind it: that could blow this (later) phase's deadline. Fall back to a
+	// one-shot dial+handshake for this command instead, so a slow send never
+	// head-of-line-blocks a different phase.
+	if !pc.mu.TryLock() {
+		session, conn, err := s.dialAndHandshakePeer(peer, addrs)
+		if err != nil {
+			return nil, err
+		}
+		defer session.Close()
+		return s.peerRoundTrip(session, conn, cmd)
+	}
 	defer pc.mu.Unlock()
 
 	// A panic during a round trip below skips the closeLocked() eviction that
