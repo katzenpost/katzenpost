@@ -370,6 +370,15 @@ func (s *Server) halt() {
 	s.conns = nil
 	s.connMu.Unlock()
 
+	// Unblock any outbound send wedged on a cached persistent peer connection by
+	// closing the underlying connections now. Otherwise a stuck write would hold
+	// up the WaitGroup drain below until its own deadline, and state.Halt() (the
+	// full peer-connection teardown) only runs after that drain. The teardown
+	// still runs later; this just releases wedged writes first.
+	if s.state != nil {
+		s.state.closeLivePeerConns()
+	}
+
 	// Wait for all the connections to terminate.
 	s.WaitGroup.Wait()
 

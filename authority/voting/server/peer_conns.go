@@ -30,6 +30,30 @@ type peerConn struct {
 	mu      sync.Mutex
 	session *wire.Session
 	conn    net.Conn
+
+	// closeMu guards live, the underlying connection, independently of mu.
+	// Shutdown closes live via closeLive without taking mu, so it can unblock a
+	// send goroutine that holds mu across a wedged network write.
+	closeMu sync.Mutex
+	live    net.Conn
+}
+
+// setLive records the underlying connection so shutdown can close it without
+// taking pc.mu. Pass nil to clear it.
+func (pc *peerConn) setLive(conn net.Conn) {
+	pc.closeMu.Lock()
+	pc.live = conn
+	pc.closeMu.Unlock()
+}
+
+// closeLive closes the underlying connection without taking pc.mu, unblocking a
+// send goroutine wedged on a write while it holds pc.mu.
+func (pc *peerConn) closeLive() {
+	pc.closeMu.Lock()
+	if pc.live != nil {
+		pc.live.Close()
+	}
+	pc.closeMu.Unlock()
 }
 
 // closeLocked tears down the session; the caller must hold pc.mu.
@@ -39,6 +63,7 @@ func (pc *peerConn) closeLocked() {
 	}
 	pc.session = nil
 	pc.conn = nil
+	pc.setLive(nil)
 }
 
 // peerConnFor returns the peerConn for id, creating an empty one on first use.
@@ -66,6 +91,22 @@ func (s *state) closeAllPeerConns() {
 		pc.mu.Lock()
 		pc.closeLocked()
 		pc.mu.Unlock()
+	}
+}
+
+// closeLivePeerConns closes the underlying connection of every cached peer conn
+// without taking pc.mu. Called early in shutdown so a send goroutine wedged on
+// a write (which holds pc.mu) is unblocked and the daemon's goroutine drain
+// does not stall on it. The full teardown still runs later via closeAllPeerConns.
+func (s *state) closeLivePeerConns() {
+	s.peerConnsMu.Lock()
+	pcs := make([]*peerConn, 0, len(s.peerConns))
+	for _, pc := range s.peerConns {
+		pcs = append(pcs, pc)
+	}
+	s.peerConnsMu.Unlock()
+	for _, pc := range pcs {
+		pc.closeLive()
 	}
 }
 

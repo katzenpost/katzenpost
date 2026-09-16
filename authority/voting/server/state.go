@@ -1183,6 +1183,7 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 		return nil, err
 	}
 	pc.session, pc.conn = session, conn
+	pc.setLive(conn)
 	resp, err = s.peerRoundTrip(pc.session, pc.conn, cmd)
 	if err != nil {
 		pc.closeLocked()
