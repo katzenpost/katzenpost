@@ -43,12 +43,10 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/schemes"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	kpcommon "github.com/katzenpost/katzenpost/common"
@@ -2885,50 +2883,70 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 		panic("write lock not held in backgroundFetchConsensus(epoch)")
 	}
 
-	// If there isn't a consensus for the previous epoch, ask the other
-	// authorities for a consensus.
-	_, ok := s.documents[epoch]
-	if !ok {
-		kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-		if kemscheme == nil {
-			panic("kem scheme not found in registry")
+	// If there isn't a consensus for this epoch, ask the other authorities for
+	// one. Route the fetch through the outbound send path (doSendCommand) so it
+	// reuses a cached persistent peer connection instead of dialing a second,
+	// uncoordinated connection to a peer we already hold one to.
+	if _, ok := s.documents[epoch]; ok {
+		return
+	}
+	pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+	if pkiSignatureScheme == nil {
+		panic("pki signature scheme not found in registry")
+	}
+	s.Go(func() {
+		cmd := &commands.GetConsensus{
+			Epoch:              epoch,
+			Cmds:               commands.NewPKICommands(pkiSignatureScheme),
+			MixnetTransmission: false,
 		}
-		pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
-		if pkiSignatureScheme == nil {
-			panic("pki signature scheme not found in registry")
-		}
-		s.Go(func() {
-			cfg := &client.Config{
-				KEMScheme:          kemscheme,
-				PKISignatureScheme: pkiSignatureScheme,
-				LinkKey:            s.s.linkKey,
-				LogBackend:         s.s.logBackend,
-				Authorities:        s.s.cfg.Authorities,
-				DialContextFn:      nil,
-				Geo:                s.geo,
-				MaxConsensusSize:   s.s.maxMessageSize,
+		deadline := time.Now().Add(time.Minute * 2)
+		for _, peer := range s.s.cfg.Authorities {
+			peer := peer
+			if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
+				continue
 			}
-			c, err := client.New(cfg)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
-				return
+				s.log.Debugf("backgroundFetchConsensus: %s: %v", peer.Identifier, err)
+				continue
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
-			defer cancel()
-			doc, _, err := c.GetPKIDocumentForEpoch(ctx, epoch)
+			r, ok := resp.(*commands.Consensus)
+			if !ok || r.ErrorCode != commands.ConsensusOk {
+				continue
+			}
+			// Verify the fetched consensus exactly as the standalone client
+			// would: threshold-many dirauth signatures, a parseable and
+			// well-formed document, and the requested epoch.
+			if _, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, r.Payload); err != nil {
+				s.log.Errorf("backgroundFetchConsensus: %s: threshold verify failed: %v", peer.Identifier, err)
+				continue
+			}
+			doc, err := s.doParseDocument(r.Payload)
 			if err != nil {
-				return
+				s.log.Errorf("backgroundFetchConsensus: %s: parse failed: %v", peer.Identifier, err)
+				continue
 			}
-			s.Lock()
-			defer s.Unlock()
+			if err := pki.IsDocumentWellFormed(doc, s.getVerifiers()); err != nil {
+				s.log.Errorf("backgroundFetchConsensus: %s: malformed document: %v", peer.Identifier, err)
+				continue
+			}
+			if doc.Epoch != epoch {
+				s.log.Errorf("backgroundFetchConsensus: %s: epoch mismatch doc=%d want=%d", peer.Identifier, doc.Epoch, epoch)
+				continue
+			}
 
-			// It's possible that the state has changed
-			// if backgroundFetchConsensus was called
-			// multiple times during bootstrapping
+			s.Lock()
+			// It's possible that the state has changed if
+			// backgroundFetchConsensus was called multiple times during
+			// bootstrapping.
 			if _, ok := s.documents[epoch]; !ok {
 				s.documents[epoch] = doc
 			}
-		})
-	}
+			s.Unlock()
+			return
+		}
+	})
 }
 
 func epochToBytes(e uint64) []byte {
