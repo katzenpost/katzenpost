@@ -255,7 +255,6 @@ func TestIncomingConn(t *testing.T) {
 	// Expect an error reply since we're using invalid cryptographic material
 	require.NotEqual(t, uint8(0), reply3.ErrorCode)
 
-	// 30 seconds is too slow
-	//inConn.Close()
+	inConn.Close()
 	listener.Halt()
 }
