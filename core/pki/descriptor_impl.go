@@ -88,6 +88,11 @@ func (s *SignedUpload) Sign(privKey sign.PrivateKey, pubKey sign.PublicKey) erro
 }
 
 func (s *SignedUpload) Verify(pubKey sign.PublicKey) bool {
+	// A missing or wrong-sized signature is invalid: reject it before the
+	// scheme's Verify, which may panic on a nil deref or a malformed length.
+	if s.Signature == nil || len(s.Signature.Payload) != pubKey.Scheme().SignatureSize() {
+		return false
+	}
 	ss := &SignedUpload{
 		Signature:     nil,
 		MixDescriptor: s.MixDescriptor,
@@ -213,6 +218,11 @@ func (s *SignedReplicaUpload) Sign(privKey sign.PrivateKey, pubKey sign.PublicKe
 }
 
 func (s *SignedReplicaUpload) Verify(pubKey sign.PublicKey) bool {
+	// A missing or wrong-sized signature is invalid: reject it before the
+	// scheme's Verify, which may panic on a nil deref or a malformed length.
+	if s.Signature == nil || len(s.Signature.Payload) != pubKey.Scheme().SignatureSize() {
+		return false
+	}
 	ss := &SignedReplicaUpload{
 		Signature:         nil,
 		ReplicaDescriptor: s.ReplicaDescriptor,
