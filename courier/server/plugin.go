@@ -1418,6 +1418,20 @@ func (e *Courier) tryReadFromShardReplica(
 
 // writeTombstonesToTempChannel writes tombstones to clean up the temporary channel
 func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs [][bacap.BoxIDSize]byte) {
+	// This runs as a detached goroutine spawned by processCopyCommand,
+	// outside runCopyCommand's recover (F2). A panic here (e.g. from
+	// crypto on a crafted WriteCap, or a nil dependency) would otherwise
+	// take down the whole courier process. Recover, log, and abandon the
+	// tombstone cleanup gracefully; the temporary boxes simply remain in
+	// replica storage until they expire, which is the same outcome as an
+	// exhausted-retries failure below.
+	defer func() {
+		if r := recover(); r != nil {
+			e.log.Errorf("writeTombstonesToTempChannel: recovered from panic: %v", r)
+			instrument.DroppedByReason("tombstone_panic")
+		}
+	}()
+
 	e.log.Debugf("writeTombstonesToTempChannel: Writing %d tombstones", len(boxIDs))
 
 	// Create StatefulWriter from WriteCap
