@@ -33,6 +33,7 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -180,6 +181,10 @@ func (g *mockGlue) ReshadowCryptoWorkers() {}
 
 func (g *mockGlue) Decoy() glue.Decoy {
 	return &mockDecoy{}
+}
+
+func (g *mockGlue) PeerConnSet() *connlimit.PeerSet {
+	return nil
 }
 
 func (m *mockGlue) Management() *thwack.Server {
