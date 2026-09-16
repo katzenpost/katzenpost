@@ -95,6 +95,20 @@ type Courier struct {
 	// channel, rather than a pool of idle workers.
 	dispatchSem chan struct{}
 
+	// replyWriteSem bounds the number of reply-write goroutines
+	// OnCommand may have outstanding at once. Each client reply is
+	// written on its own goroutine so a stalled socket write cannot
+	// head-of-line block OnCommand's single serialised request-handling
+	// goroutine. Without a cap, a stalled or slow socket would leave one
+	// goroutine parked on the write channel per client request, growing
+	// without bound. This is the same "Semaphore over Worker Pools"
+	// idiom as dispatchSem: a slot is acquired (non-blocking) before the
+	// goroutine is spawned, so at most maxConcurrentReplyWrites of them
+	// can exist; when the bound is hit the reply is dropped and counted
+	// rather than letting goroutines accumulate (the client's ARQ
+	// retransmits and hits the dedup cache).
+	replyWriteSem chan struct{}
+
 	// inFlightLock guards inFlight, the set of EnvelopeHashes that
 	// currently have a dispatch goroutine outstanding. It collapses
 	// duplicate concurrent (re-)dispatches of the same envelope to a
@@ -237,6 +251,15 @@ const DedupCacheTTL = 5 * time.Minute
 // so any goroutines briefly parked on this semaphore are bounded too.
 const maxConcurrentReplicaDispatch = 256
 
+// maxConcurrentReplyWrites caps the number of reply-write goroutines
+// OnCommand may have parked on the socket write channel at once. Under
+// normal operation a write completes promptly and this bound is never
+// approached; it only bites when the socket stalls, at which point
+// excess replies are dropped and counted rather than spawning an
+// unbounded number of goroutines. Generous enough to absorb a transient
+// write-channel backlog without dropping legitimate replies.
+const maxConcurrentReplyWrites = 256
+
 // NewCourier returns a new Courier type.
 func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
 	pigeonholeGeo, err := pigeonholeGeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, scheme)
@@ -255,6 +278,7 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
 		copyDedupCache: make(map[[hash.HashSize]byte]*CopyCommandState),
 		dispatchSem:    make(chan struct{}, maxConcurrentReplicaDispatch),
+		replyWriteSem:  make(chan struct{}, maxConcurrentReplyWrites),
 		inFlight:       make(map[[hash.HashSize]byte]struct{}),
 	}
 	courier.processCopyCommandFn = courier.processCopyCommand
@@ -715,27 +739,49 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 		// Only send reply if it's not nil (nil means ARQ should retry)
 		if reply != nil {
-			go func() {
-				// send reply
-				e.write(&cborplugin.Response{
-					ID:      request.ID,
-					SURB:    request.SURB,
-					Payload: reply.Bytes(),
-				})
-			}()
-		}
-	case courierQuery.CopyCommand != nil:
-		reply := e.handleCopyCommand(courierQuery.CopyCommand)
-		go func() {
-			e.write(&cborplugin.Response{
+			e.spawnReplyWrite(&cborplugin.Response{
 				ID:      request.ID,
 				SURB:    request.SURB,
 				Payload: reply.Bytes(),
 			})
-		}()
+		}
+	case courierQuery.CopyCommand != nil:
+		reply := e.handleCopyCommand(courierQuery.CopyCommand)
+		e.spawnReplyWrite(&cborplugin.Response{
+			ID:      request.ID,
+			SURB:    request.SURB,
+			Payload: reply.Bytes(),
+		})
 	}
 
 	return nil
+}
+
+// spawnReplyWrite writes resp to the client socket on a bounded
+// background goroutine. Writing off the OnCommand goroutine keeps a
+// stalled socket write from head-of-line blocking all further request
+// handling; the replyWriteSem bounds how many such writes may be parked
+// on the write channel at once. The semaphore slot is acquired here,
+// synchronously and non-blocking, BEFORE the goroutine is spawned, so
+// the number of outstanding reply-write goroutines never exceeds
+// maxConcurrentReplyWrites. When no slot is free (the socket is stalled
+// and the bound is already saturated) the reply is dropped and counted
+// rather than accumulating goroutines without bound; the client's ARQ
+// retransmits and the dedup cache serves the cached result. Returns
+// true if a goroutine was spawned, false if the reply was dropped.
+func (e *Courier) spawnReplyWrite(resp *cborplugin.Response) bool {
+	select {
+	case e.replyWriteSem <- struct{}{}:
+	default:
+		e.log.Warningf("spawnReplyWrite: reply-write bound (%d) saturated, dropping reply for request %x", maxConcurrentReplyWrites, resp.ID)
+		instrument.DroppedByReason("reply_write_sem_saturated")
+		return false
+	}
+	go func() {
+		defer func() { <-e.replyWriteSem }()
+		e.write(resp)
+	}()
+	return true
 }
 
 func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
