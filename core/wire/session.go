@@ -652,6 +652,15 @@ func (s *Session) SendCommand(ctx context.Context, cmd commands.Command) error {
 	return err
 }
 
+// SetReadTimeout adjusts the default read deadline that RecvCommand arms when
+// its context carries no earlier deadline. The persistent authority serve loop
+// uses this to wait out its idle keepalive interval, which is longer than the
+// per-response ReadTimeout the session is built with. It is only safe to call
+// when no RecvCommand is concurrently in flight on this session.
+func (s *Session) SetReadTimeout(d time.Duration) {
+	s.readTimeout = d
+}
+
 // RecvCommand receives a wire protocol command off the network. ctx bounds the
 // receive; a context with no deadline is still capped at the session's read
 // timeout, so a silent peer can never wedge the caller.
