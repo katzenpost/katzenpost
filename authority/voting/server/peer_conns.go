@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -81,10 +82,12 @@ func (s *state) dialAndHandshakePeer(peer *config.Authority, addrs []string) (*w
 	}
 
 	var conn net.Conn
-	for i, a := range addrs {
+	var errs []error
+	for _, a := range addrs {
 		u, err := url.Parse(a)
 		if err != nil {
 			s.log.Debugf("peer %s: invalid URL %s: %v", peer.Identifier, a, err)
+			errs = append(errs, fmt.Errorf("invalid URL %s: %w", a, err))
 			continue
 		}
 		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
@@ -94,11 +97,16 @@ func (s *state) dialAndHandshakePeer(peer *config.Authority, addrs []string) (*w
 			break
 		}
 		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)
-		if i == len(addrs)-1 {
-			return nil, nil, fmt.Errorf("all addresses exhausted: %w", err)
-		}
+		errs = append(errs, fmt.Errorf("dial %s failed: %w", a, err))
 	}
 	if conn == nil {
+		// Report every failure, whether an address failed to parse or to dial,
+		// so a trailing parse error can no longer bury an earlier informative
+		// dial failure. Fall back to the generic message only when there were no
+		// addresses at all.
+		if len(errs) > 0 {
+			return nil, nil, fmt.Errorf("peer %s: all addresses exhausted: %w", peer.Identifier, errors.Join(errs...))
+		}
 		return nil, nil, fmt.Errorf("peer %s: no usable address could be dialed", peer.Identifier)
 	}
 
