@@ -1137,6 +1137,17 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 
+	// A panic during a round trip below skips the closeLocked() eviction that
+	// every normal error path performs, which would leave a possibly-corrupted
+	// session cached for the next reuse. Evict it here while still holding pc.mu
+	// and re-panic so the outer recover turns it into an error return.
+	defer func() {
+		if r := recover(); r != nil {
+			pc.closeLocked()
+			panic(r)
+		}
+	}()
+
 	if pc.session != nil {
 		resp, err := s.peerRoundTrip(pc.session, pc.conn, cmd)
 		if err == nil {
