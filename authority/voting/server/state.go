@@ -719,6 +719,16 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		// Persist the document to disk.
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
+		// signedConsensus is exactly what documentForEpoch serves for this
+		// epoch. Cache it now so the first GetConsensus does not re-marshal the
+		// document; a consensus is write-once per epoch, so the bytes never go
+		// stale.
+		s.serializedDocsMu.Lock()
+		if s.serializedDocs == nil {
+			s.serializedDocs = make(map[uint64][]byte)
+		}
+		s.serializedDocs[epoch] = signedConsensus
+		s.serializedDocsMu.Unlock()
 		return ourConsensus, nil
 	} else {
 		s.log.Errorf("VerifyThreshold failed!: %s", err)
