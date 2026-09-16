@@ -544,6 +544,15 @@ func ParseDocument(b []byte) (*Document, error) {
 	return d, nil
 }
 
+var ErrGeometryMismatch = errors.New("pki: document SphinxGeometryHash does not match configured geometry")
+
+func (d *Document) CheckGeometryHash(expected []byte) error {
+	if !hmac.Equal(d.SphinxGeometryHash, expected) {
+		return ErrGeometryMismatch
+	}
+	return nil
+}
+
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
