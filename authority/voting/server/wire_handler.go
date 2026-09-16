@@ -539,16 +539,16 @@ func (s *Server) onAuthority(peerID string, cmd commands.Command, peerIdentityKe
 		resp = s.onGetConsensus(peerID, c)
 	case *commands.Vote:
 		s.log.Debugf("onAuthority: Processing Vote upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onVoteUpload(c)
+		resp = s.state.onVoteUpload(c, peerIdentityKeyHash)
 	case *commands.Cert:
 		s.log.Debugf("onAuthority: Processing Certificate upload from authority %s for epoch %d", peerID, c.Epoch)
 		resp = s.state.onCertUpload(c, peerIdentityKeyHash)
 	case *commands.Reveal:
 		s.log.Debugf("onAuthority: Processing Reveal upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onRevealUpload(c)
+		resp = s.state.onRevealUpload(c, peerIdentityKeyHash)
 	case *commands.Sig:
 		s.log.Debugf("onAuthority: Processing Signature upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onSigUpload(c)
+		resp = s.state.onSigUpload(c, peerIdentityKeyHash)
 	default:
 		s.log.Errorf("onAuthority: INVALID REQUEST from authority peer %s: unsupported command type %T", peerID, c)
 		return nil

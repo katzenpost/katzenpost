@@ -24,9 +24,10 @@ func TestOnVoteUploadGarbagePayloadRejected(t *testing.T) {
 	signed, err := cert.Sign(key.idKey, key.idPubKey, []byte("not-a-document"), votingEpoch+100)
 	require.NoError(err)
 	vote := &commands.Vote{Epoch: votingEpoch, PublicKey: key.idPubKey, Payload: signed}
+	keyHash := hash.Sum256From(key.idPubKey)
 
 	var resp commands.Command
-	require.NotPanics(func() { resp = st.onVoteUpload(vote) })
+	require.NotPanics(func() { resp = st.onVoteUpload(vote, keyHash[:]) })
 	vs, ok := resp.(*commands.VoteStatus)
 	require.True(ok, "expected *VoteStatus, got %T", resp)
 	require.True(vs.ErrorCode != commands.VoteOk, "garbage vote must be rejected, got %d", vs.ErrorCode)
@@ -53,9 +54,10 @@ func TestOnSigUploadGarbagePayloadRejected(t *testing.T) {
 	signed, err := cert.Sign(key.idKey, key.idPubKey, []byte("not-a-signature"), votingEpoch+100)
 	require.NoError(err)
 	sig := &commands.Sig{Epoch: votingEpoch, PublicKey: key.idPubKey, Payload: signed}
+	keyHash := hash.Sum256From(key.idPubKey)
 
 	var resp commands.Command
-	require.NotPanics(func() { resp = st.onSigUpload(sig) })
+	require.NotPanics(func() { resp = st.onSigUpload(sig, keyHash[:]) })
 	ss, ok := resp.(*commands.SigStatus)
 	require.True(ok, "expected *SigStatus, got %T", resp)
 	require.True(ss.ErrorCode != commands.SigOk, "garbage sig must be rejected, got %d", ss.ErrorCode)

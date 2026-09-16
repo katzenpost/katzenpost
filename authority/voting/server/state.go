@@ -2070,11 +2070,20 @@ func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []b
 	return &resp
 }
 
-func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
+func (s *state) onRevealUpload(reveal *commands.Reveal, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.RevealStatus{}
 	pk := hash.Sum256From(reveal.PublicKey)
+
+	// Bind the reveal's declared PublicKey to the wire-authenticated peer, the
+	// same way onCertUpload binds a certificate, so a byzantine authority cannot
+	// relay another authority's genuine reveal on its own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Reveal PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		resp.ErrorCode = commands.RevealNotAuthorized
+		return &resp
+	}
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]
@@ -2165,11 +2174,22 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	return &resp
 }
 
-func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
+func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.VoteStatus{}
 	pk := hash.Sum256From(vote.PublicKey)
+
+	// Bind the vote's declared PublicKey to the wire-authenticated peer, the
+	// same way onCertUpload binds a certificate. Without this, an authorized but
+	// byzantine authority could relay another authority's genuine vote on its
+	// own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Vote PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		instrument.VoteReceived("not_authorized")
+		resp.ErrorCode = commands.VoteNotAuthorized
+		return &resp
+	}
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]
@@ -2261,11 +2281,20 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	return &resp
 }
 
-func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
+func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.SigStatus{}
 	pk := hash.Sum256From(sig.PublicKey)
+
+	// Bind the signature's declared PublicKey to the wire-authenticated peer, the
+	// same way onCertUpload binds a certificate, so a byzantine authority cannot
+	// relay another authority's genuine signature on its own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Signature PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		resp.ErrorCode = commands.SigNotAuthorized
+		return &resp
+	}
 
 	_, ok := s.authorizedAuthorities[pk]
 	if !ok {

@@ -84,9 +84,10 @@ func TestOnRevealUploadShortCertifiedDoesNotPanic(t *testing.T) {
 	for _, n := range []int{1, 7} {
 		st, key, votingEpoch := newSingleAuthorityState(t)
 		reveal := signedReveal(t, key, votingEpoch, make([]byte, n))
+		keyHash := hash.Sum256From(key.idPubKey)
 
 		var resp commands.Command
-		require.NotPanics(func() { resp = st.onRevealUpload(reveal) },
+		require.NotPanics(func() { resp = st.onRevealUpload(reveal, keyHash[:]) },
 			"onRevealUpload panicked on a %d-byte certified reveal", n)
 		rs, ok := resp.(*commands.RevealStatus)
 		require.True(ok, "expected *RevealStatus, got %T", resp)
@@ -102,9 +103,10 @@ func TestOnRevealUploadEightByteCertifiedIsHandled(t *testing.T) {
 	require := require.New(t)
 	st, key, votingEpoch := newSingleAuthorityState(t)
 	reveal := signedReveal(t, key, votingEpoch, make([]byte, 8))
+	keyHash := hash.Sum256From(key.idPubKey)
 
 	var resp commands.Command
-	require.NotPanics(func() { resp = st.onRevealUpload(reveal) })
+	require.NotPanics(func() { resp = st.onRevealUpload(reveal, keyHash[:]) })
 	_, ok := resp.(*commands.RevealStatus)
 	require.True(ok, "expected *RevealStatus, got %T", resp)
 }
