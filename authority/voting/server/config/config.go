@@ -307,6 +307,39 @@ type Server struct {
 	// ResponseTimeoutSec is the timeout for command send/receive operations (default: 30)
 	ResponseTimeoutSec int
 
+	// KeepaliveTimeoutSec bounds how long a reused authority connection waits
+	// idle for the next command before it is closed (default: 120). A larger
+	// value keeps persistent inter-authority connections warm across phase
+	// gaps so a voting round does not re-handshake per command.
+	KeepaliveTimeoutSec int
+
+	// MaxConsensusSize is the per-connection send and receive ceiling in bytes
+	// for PKI wire commands. Zero selects the built-in default
+	// (wire.DefaultMaxPKIMessageSize). Raise it for a network whose consensus
+	// document is larger than the default allows.
+	MaxConsensusSize int
+
+	// MaxConcurrentConns bounds the number of incoming connections handled
+	// at once, so a connection flood cannot exhaust goroutines or memory
+	// (default: 64).
+	MaxConcurrentConns int
+
+	// MaxConnsPerPeer bounds the number of concurrent incoming connections
+	// handled at once from a single authenticated peer identity, so one peer
+	// cannot camp all of the MaxConcurrentConns accept slots. The cap is keyed
+	// by the wire-authenticated identity and therefore applies only to
+	// identified peers (mixes, gateways, service nodes, replicas, authorities);
+	// anonymous clients are not capped by identity. Zero selects the default
+	// (8).
+	MaxConnsPerPeer int
+
+	// PersistentPeerConns opts into outbound persistent inter-authority
+	// connections, which reuse one authenticated session per peer across a
+	// voting round instead of dialing and handshaking per command. Persistent
+	// inter-authority connections are opt-in and off by default; when false
+	// (the default) each command uses its own dial and handshake.
+	PersistentPeerConns bool
+
 	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
 	CloseDelaySec int
 
@@ -363,6 +396,20 @@ func (sCfg *Server) applyRetryDefaults() {
 	}
 	if sCfg.PeerRetryJitter == 0 {
 		sCfg.PeerRetryJitter = retry.DefaultJitter
+	}
+}
+
+// DefaultPKISignatureScheme is the PKI signature scheme used when none is
+// configured. SPHINCS+ hybridized with Ed25519 is the default for its
+// conservative, hash-based assumptions at the PKI trust root; operators may
+// select a different registered scheme.
+const DefaultPKISignatureScheme = "Ed25519 Sphincs+"
+
+// applyPKISignatureSchemeDefault sets the default PKI signature scheme when
+// none is configured.
+func (sCfg *Server) applyPKISignatureSchemeDefault() {
+	if sCfg.PKISignatureScheme == "" {
+		sCfg.PKISignatureScheme = DefaultPKISignatureScheme
 	}
 }
 

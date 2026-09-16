@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
+	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -51,6 +52,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/quic/common"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 var defaultDialer = &net.Dialer{}
@@ -64,6 +66,10 @@ type authorityAuthenticator struct {
 
 // IsPeerValid authenticates the remote peer's credentials.
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
+	if len(creds.AdditionalData) < hash.HashSize {
+		a.log.Warningf("voting/Client: IsPeerValid(): AD too short: %d", len(creds.AdditionalData))
+		return false
+	}
 	identityHash := hash.Sum256From(a.IdentityPublicKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
@@ -111,6 +117,58 @@ type Config struct {
 	RetryBaseDelay   time.Duration
 	RetryMaxDelay    time.Duration
 	RetryJitter      float64
+
+	// MaxConsensusSize is the per-connection send and receive ceiling in bytes.
+	// Zero derives it from the configured PKI schemes and a node-count
+	// allowance (deriveMaxMessageSize), so it scales with the primitives in
+	// use. Raise it for a network larger than the allowance.
+	MaxConsensusSize int
+}
+
+// clientNodeAllowance and clientReplicaAllowance bound the topology the client
+// assumes when deriving its ceiling. The client does not know the exact node
+// counts before fetching, but the counts are scalars: a generous static
+// allowance keeps the ceiling scaling with the PKI primitives (the property
+// that matters) while covering any current network. A larger network raises
+// MaxConsensusSize explicitly.
+const (
+	clientNodeAllowance    = 128
+	clientReplicaAllowance = 32
+)
+
+// deriveMaxMessageSize computes the wire ceiling from the configured PKI
+// schemes, the authority count, and the node-count allowance.
+func (cfg *Config) deriveMaxMessageSize() int {
+	if cfg.KEMScheme == nil || cfg.PKISignatureScheme == nil {
+		return wire.DefaultMaxPKIMessageSize
+	}
+	sphinxPub := 0
+	if cfg.Geo != nil {
+		switch {
+		case cfg.Geo.NIKEName != "":
+			if s := nikeschemes.ByName(cfg.Geo.NIKEName); s != nil {
+				sphinxPub = s.PublicKeySize()
+			}
+		case cfg.Geo.KEMName != "":
+			if s := schemes.ByName(cfg.Geo.KEMName); s != nil {
+				sphinxPub = s.PublicKeySize()
+			}
+		}
+	}
+	envPub := 0
+	if replicaCommon.NikeScheme != nil {
+		envPub = replicaCommon.NikeScheme.PublicKeySize()
+	}
+	return pki.EstimateConsensusSize(pki.ConsensusSizeParams{
+		SignPubSize:     cfg.PKISignatureScheme.PublicKeySize(),
+		SignSigSize:     cfg.PKISignatureScheme.SignatureSize(),
+		LinkKEMPubSize:  cfg.KEMScheme.PublicKeySize(),
+		SphinxPubSize:   sphinxPub,
+		EnvelopePubSize: envPub,
+		NumNodes:        clientNodeAllowance,
+		NumReplicas:     clientReplicaAllowance,
+		NumAuthorities:  len(cfg.Authorities),
+	})
 }
 
 func (cfg *Config) validate() error {
@@ -134,6 +192,9 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.RetryJitter <= 0 {
 		cfg.RetryJitter = retry.DefaultJitter
+	}
+	if cfg.MaxConsensusSize <= 0 {
+		cfg.MaxConsensusSize = cfg.deriveMaxMessageSize()
 	}
 	if cfg.LogBackend == nil {
 		return fmt.Errorf("voting/client: LogBackend is mandatory")
@@ -264,6 +325,12 @@ func (p *connector) initSession(
 			return nil, fmt.Errorf("%s: all connection attempts failed: %v", peerInfo(), lastErr)
 		}
 	}
+	if conn == nil {
+		if lastErr == nil {
+			lastErr = fmt.Errorf("%s: no usable address", peerInfo())
+		}
+		return nil, lastErr
+	}
 
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peer.IdentityPublicKey,
@@ -303,6 +370,7 @@ func (p *connector) initSession(
 		HandshakeTimeout: handshakeTimeout,
 		ReadTimeout:      responseTimeout,
 		WriteTimeout:     responseTimeout,
+		MaxMessageSize:   p.cfg.MaxConsensusSize,
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
@@ -1520,6 +1588,7 @@ func New(cfg *Config) (pki.PostingClient, error) {
 		log:  cfg.LogBackend.GetLogger("pki/voting/Client"),
 		pool: newConnector(cfg),
 	}
+	c.log.Debugf("PKI wire message ceiling=%d bytes", cfg.MaxConsensusSize)
 
 	c.verifiers = make([]sign.PublicKey, 0, len(cfg.Authorities))
 	for _, auth := range cfg.Authorities {

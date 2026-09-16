@@ -56,3 +56,23 @@ func TestSharedRandomSetCommit(t *testing.T) {
 	srv.SetCommit(commit)
 	require.True(bytes.Equal(commit, srv.GetCommit()))
 }
+
+func TestSharedRandomSetCommitShort(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	srv := new(SharedRandom)
+	// A commit shorter than SharedRandomLength must be ignored, not panic on
+	// the epoch slice; the short commit is not stored.
+	srv.SetCommit([]byte{0, 1, 2, 3})
+	require.Nil(srv.GetCommit())
+}
+
+func TestSharedRandomVerifyShortCommit(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	srv := new(SharedRandom)
+	// With no valid commit stored, a well-formed reveal must fail verification
+	// rather than panic while slicing the short commit.
+	reveal := make([]byte, SharedRandomLength)
+	require.False(srv.Verify(reveal))
+}
