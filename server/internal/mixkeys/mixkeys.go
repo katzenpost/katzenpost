@@ -166,6 +166,7 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 			}
 		}
 		k.SetUnlinkIfExpired(true)
+		k.SetLogger(m.log)
 		m.keys[e] = k
 	}
 
