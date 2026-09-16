@@ -2981,7 +2981,10 @@ func epochToBytes(e uint64) []byte {
 }
 
 func epochFromBytes(b []byte) uint64 {
-	return binary.BigEndian.Uint64(b[0:8])
+	if len(b) < 8 {
+		return 0
+	}
+	return binary.BigEndian.Uint64(b)
 }
 
 func sortReplicaNodesByPublicKey(nodes []*pki.ReplicaDescriptor) {
