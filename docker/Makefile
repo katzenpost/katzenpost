@@ -994,4 +994,4 @@ client-check: | $(cache_dir)
 	$(MAKE) warped=false net_name=namenlos-client namenlos-client/kpclientd.$(distro) namenlos-client/fetch.$(distro)
 	$(docker) rm -f namenlos-client 2>/dev/null; $(docker) run -d --name namenlos-client --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/kpclientd.$(distro) -c /namenlos-client/client/client.toml
 	sleep 15
-	$(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/fetch.$(distro) -f /namenlos-client/client/thinclient.toml; st=$$?; $(docker) rm -f namenlos-client 2>/dev/null; exit $$st
+	timeout 120 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/fetch.$(distro) -f /namenlos-client/client/thinclient.toml; st=$$?; $(docker) rm -f namenlos-client 2>/dev/null; exit $$st

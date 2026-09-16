@@ -55,16 +55,20 @@ jobs:
       packages: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      ok: ${{ steps.check.outcome }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure podman socket
         run: systemctl --user start podman.socket || true
       - name: Run the working-tree client against namenlos
+        id: check
+        continue-on-error: true
         run: cd docker && make client-check
 
   interop:
     needs: [changes, namenlos]
-    if: always() && (needs.changes.outputs.server == 'true' || needs.namenlos.result == 'failure')
+    if: always() && (needs.changes.outputs.server == 'true' || needs.namenlos.outputs.ok != 'success')
     permissions:
       contents: read
       packages: write
@@ -113,9 +117,9 @@ jobs:
     steps:
       - name: Require the namenlos client or the docker interop lane to pass
         run: |
-          echo "changes=${{ needs.changes.result }} namenlos=${{ needs.namenlos.result }} interop=${{ needs.interop.result }}"
+          echo "changes=${{ needs.changes.result }} namenlos_ok=${{ needs.namenlos.outputs.ok }} interop=${{ needs.interop.result }}"
           if [ "${{ needs.changes.result }}" != "success" ]; then echo "changes job did not succeed" >&2; exit 1; fi
-          if [ "${{ needs.namenlos.result }}" = "success" ]; then exit 0; fi
+          if [ "${{ needs.namenlos.outputs.ok }}" = "success" ]; then exit 0; fi
           if [ "${{ needs.interop.result }}" = "success" ]; then exit 0; fi
           if [ "${{ needs.namenlos.result }}" = "skipped" ] && [ "${{ needs.interop.result }}" = "skipped" ]; then exit 0; fi
           echo "neither the namenlos client nor the docker interop lane passed" >&2
