@@ -59,29 +59,22 @@ func mkAuthState(t *testing.T, name, wireKEM string) (st *state, idPub sign.Publ
 	return st, idPub, linkPriv
 }
 
-// TestDoSendCommandReusesConnection proves the sender reuses one handshaked
-// session across commands: two sends to the same peer dial (and handshake)
-// exactly once.
-func TestDoSendCommandReusesConnection(t *testing.T) {
-	require := require.New(t)
-	const wireKEM = "Xwing"
-
-	sender, senderID, _ := mkAuthState(t, "sender", wireKEM)
-	responder, respID, respLink := mkAuthState(t, "responder", wireKEM)
-
-	// Authorize each other.
+func installPeerResponder(t *testing.T, sender, responder *state, senderID, respID sign.PublicKey, respLink kem.PrivateKey, wireKEM string) *int32 {
+	t.Helper()
 	sh := hash.Sum256From(senderID)
 	rh := hash.Sum256From(respID)
 	responder.authorizedAuthorities[sh] = true
 	sender.authorizedAuthorities[rh] = true
 
-	kemScheme := kemschemes.ByName(wireKEM)
 	respCfg := &wire.SessionConfig{
-		KEMScheme:         kemScheme,
+		KEMScheme:         kemschemes.ByName(wireKEM),
 		Authenticator:     responder,
 		AdditionalData:    rh[:],
 		AuthenticationKey: respLink,
 		RandomReader:      rand.Reader,
+	}
+	if scheme := responder.s.cfg.Server.PKISignatureScheme; scheme != "" {
+		respCfg.PKISignatureScheme = signschemes.ByName(scheme)
 	}
 
 	var dials int32
@@ -102,6 +95,17 @@ func TestDoSendCommandReusesConnection(t *testing.T) {
 		}()
 		return cli, nil
 	}
+	return &dials
+}
+
+func TestDoSendCommandReusesConnection(t *testing.T) {
+	require := require.New(t)
+	const wireKEM = "Xwing"
+
+	sender, senderID, _ := mkAuthState(t, "sender", wireKEM)
+	responder, respID, respLink := mkAuthState(t, "responder", wireKEM)
+
+	dials := installPeerResponder(t, sender, responder, senderID, respID, respLink, wireKEM)
 
 	peer := &config.Authority{Identifier: "responder", Addresses: []string{"tcp://127.0.0.1:1"}}
 	epoch, _, _ := epochtime.Now()
@@ -112,7 +116,7 @@ func TestDoSendCommandReusesConnection(t *testing.T) {
 		_, ok := resp.(*commands.Consensus)
 		require.True(ok, "send %d: expected *Consensus, got %T", i, resp)
 	}
-	require.Equal(int32(1), atomic.LoadInt32(&dials), "expected exactly one handshake for three commands")
+	require.Equal(int32(1), atomic.LoadInt32(dials), "expected exactly one handshake for three commands")
 
 	sender.closeAllPeerConns()
 }
