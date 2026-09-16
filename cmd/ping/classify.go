@@ -36,9 +36,6 @@ func (c category) label() string {
 	}
 }
 
-// classify buckets one ping from the signals the thin client exposes: whether
-// the daemon reported dispatching the packet, whether the reply matched, and
-// the error the send returned.
 func classify(sent, payloadOK bool, err error) category {
 	switch {
 	case err == nil:
@@ -59,11 +56,9 @@ func classify(sent, payloadOK bool, err error) category {
 	}
 }
 
-// counts tallies ping outcomes by category.
 type counts [numCategories]uint64
 
-// failing returns how many outcomes count as failures for the exit gate. By
-// default only genuine mixnet loss does; strict fails anything not delivered.
+// failing returns the outcome count that gates a non-zero exit.
 func (c counts) failing(strict bool) uint64 {
 	if strict {
 		var total uint64

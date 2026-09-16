@@ -84,9 +84,7 @@ type Config struct {
 	// single destination as it always has.
 	RotateServices bool
 
-	// Strict restores the old gate where anything short of a delivered
-	// reply fails the run. By default only genuine mixnet loss fails, so
-	// client-side pacing and connection limits do not false-positive.
+	// Strict fails the run on any non-delivery, not only genuine mixnet loss.
 	Strict bool
 }
 
@@ -230,7 +228,7 @@ func initializeFullClient(configFile string, logPath string, logLevel string) (*
 	return thinClient, daemon
 }
 
-// executePing performs the ping operation and returns how many pings failed.
+// executePing performs the ping operation and returns the per-category counts.
 //
 // With rotate set the batch is spread across every node offering the service
 // rather than pinned to one. That varies the destination hop, which otherwise

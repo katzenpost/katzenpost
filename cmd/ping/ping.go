@@ -273,8 +273,6 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 	return tally
 }
 
-// reportCategories prints the per-category breakdown, so a run's failures can
-// be told apart from packets a client-side limit stopped before the mixnet.
 func reportCategories(w io.Writer, tally counts) {
 	fmt.Fprintf(w, "%s\n", headerStyle.Render("Outcomes by category:"))
 	fmt.Fprintf(w, "  %-10s %6d  reply received within budget\n", catDelivered.label(), tally[catDelivered])
