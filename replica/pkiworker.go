@@ -17,14 +17,15 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/schemes"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/replica/instrument"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
 const PKIDocNum = 3
@@ -53,12 +54,17 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 	if kemscheme == nil {
 		return nil, errors.New("kem scheme not found in registry")
 	}
+	pkiSignatureScheme := signSchemes.ByName(server.cfg.PKISignatureScheme)
+	if pkiSignatureScheme == nil {
+		return nil, errors.New("pki signature scheme not found in registry")
+	}
 	pkiCfg := &vClient.Config{
-		KEMScheme:   kemscheme,
-		LinkKey:     server.linkKey,
-		LogBackend:  server.LogBackend(),
-		Authorities: server.cfg.PKI.Voting.Authorities,
-		Geo:         server.cfg.SphinxGeometry,
+		KEMScheme:          kemscheme,
+		PKISignatureScheme: pkiSignatureScheme,
+		LinkKey:            server.linkKey,
+		LogBackend:         server.LogBackend(),
+		Authorities:        server.cfg.PKI.Voting.Authorities,
+		Geo:                server.cfg.SphinxGeometry,
 		// Convert milliseconds to seconds for PKI client timeouts
 		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
 		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,
