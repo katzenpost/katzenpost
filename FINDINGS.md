@@ -34,3 +34,22 @@ on first use. This is the same crafted-cap DoS class as the courier WriteCap
 crash. The fix belongs in hpqc: reject an invalid or uninitialized key in
 NewStatefulReaderFromBytes, or make ed25519.Blind return an error rather than
 panic. Add the reproducer as a bacap regression once hpqc is fixed.
+
+## 3. SendRetrievePacket accepts a wrong-length Sphinx packet  [katzenpost]
+
+Target: FuzzMixnetCommandsFromBytes (fuzzing-kit, core/wire/commands/).
+sendRetrievePacketFromBytes (core/wire/commands/commands.go) copies every
+remaining byte into SphinxPacket without checking len == geo.PacketLength, so a
+peer's SendRetrievePacket with a wrong-length body is accepted; SendRetrievePacket.ToBytes
+then panics "SphinxPacket must be set to Geo.PacketLength". Fix: reject
+len(b) != cmds.geo.PacketLength in sendRetrievePacketFromBytes.
+
+## 4. Consensus2 parsed by FromBytes is not re-encodable  [low, harness]
+
+Target: FuzzPKICommandsFromBytes (fuzzing-kit, core/wire/commands/).
+consensus2FromBytes does not set the Cmds back-reference (it has no access to
+it), so Consensus2.ToBytes nil-derefs on c.Cmds.padToMaxCommandSize. A received
+Consensus2 is read for its payload and never re-encoded in production, so this
+is a decode/encode asymmetry the round-trip check surfaced, not a network DoS.
+Either hand the decoder the Commands set, or relax the fuzz target round-trip
+for decode-only commands.
