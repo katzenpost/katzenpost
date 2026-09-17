@@ -345,6 +345,14 @@ func IsMessageSizeError(err error) bool {
 	return ok
 }
 
+// IsOversizedMessageError reports whether err is the rejection RecvCommand or
+// SendCommand return when a message exceeds the session's configured
+// MaxMessageSize ceiling, as opposed to a MessageSizeError (a handshake-phase
+// classification only).
+func IsOversizedMessageError(err error) bool {
+	return errors.Is(err, errMsgSize)
+}
+
 // GetDebugError returns detailed error information if available.
 // WARNING: This output contains sensitive information (IP addresses, key material)
 // and should ONLY be logged at DEBUG level.
