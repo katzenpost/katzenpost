@@ -35,7 +35,7 @@ crash. The fix belongs in hpqc: reject an invalid or uninitialized key in
 NewStatefulReaderFromBytes, or make ed25519.Blind return an error rather than
 panic. Add the reproducer as a bacap regression once hpqc is fixed.
 
-## 3. SendRetrievePacket accepts a wrong-length Sphinx packet  [katzenpost]
+## 3. SendRetrievePacket accepts a wrong-length Sphinx packet  [fixed here]
 
 Target: FuzzMixnetCommandsFromBytes (fuzzing-kit, core/wire/commands/).
 sendRetrievePacketFromBytes (core/wire/commands/commands.go) copies every
