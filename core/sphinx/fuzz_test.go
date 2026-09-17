@@ -33,3 +33,21 @@ func FuzzUnwrapNike(f *testing.F) {
 		}
 	})
 }
+
+func FuzzNewPacketFromSURB(f *testing.F) {
+	scheme := nikeSchemes.ByName("x25519")
+	g := geo.GeometryFromUserForwardPayloadLength(scheme, 2000, true, 5)
+	s := NewSphinx(g)
+	payload := make([]byte, g.ForwardPayloadLength)
+
+	f.Add([]byte(nil))
+	f.Add([]byte{})
+	f.Add(make([]byte, 2))
+	f.Add(make([]byte, g.SURBLength))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		pkt, id, err := s.NewPacketFromSURB(data, payload)
+		if err == nil && (pkt == nil || id == nil) {
+			t.Fatal("NewPacketFromSURB returned nil packet or nil id and nil error")
+		}
+	})
+}
