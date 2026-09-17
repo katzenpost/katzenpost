@@ -150,15 +150,9 @@ func TestPKIUpdateDocumentBadSphinxHash(t *testing.T) {
 	}
 
 	myMockPKIClient.doc = testDoc
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("The code did not panic")
-		}
-	}()
 
-	// panic with bad sphinx geometry hash
 	err = p.updateDocument(epoch)
-	require.Error(t, err)
+	require.ErrorIs(t, err, cpki.ErrGeometryMismatch)
 }
 
 func TestPKIUpdateDocument(t *testing.T) {

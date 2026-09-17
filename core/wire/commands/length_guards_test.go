@@ -55,13 +55,39 @@ func TestConsensus2ShortBodyRejected(t *testing.T) {
 		require.ErrorIs(err, errInvalidCommand, "consensus2 body length %d", bodyLen)
 	}
 
-	// A full-length body still parses.
 	body := make([]byte, consensus2BaseLength)
 	_, err := rand.Reader.Read(body)
 	require.NoError(err)
 	cmd, err := cmds.FromBytes(rawCommandFrame(consensus2, body))
 	require.NoError(err)
 	require.IsType(&Consensus2{}, cmd)
+}
+
+func TestGetConsensus2ShortBodyRejected(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	cmds := testMixnetCommands(t)
+
+	for bodyLen := 0; bodyLen < getConsensusLength; bodyLen++ {
+		body := make([]byte, bodyLen)
+		frame := rawCommandFrame(getConsensus2, body)
+
+		var (
+			cmd Command
+			err error
+		)
+		require.NotPanics(func() { cmd, err = cmds.FromBytes(frame) },
+			"get_consensus2 body length %d must not panic", bodyLen)
+		require.Nil(cmd, "get_consensus2 body length %d", bodyLen)
+		require.ErrorIs(err, errInvalidCommand, "get_consensus2 body length %d", bodyLen)
+	}
+
+	body := make([]byte, getConsensusLength)
+	_, err := rand.Reader.Read(body)
+	require.NoError(err)
+	cmd, err := cmds.FromBytes(rawCommandFrame(getConsensus2, body))
+	require.NoError(err)
+	require.IsType(&GetConsensus2{}, cmd)
 }
 
 // TestSendRetrievePacketReplyShortBodyRejected exercises C2: a

@@ -72,7 +72,6 @@ func newResponderConn(t *testing.T, persistent bool) *wire.Session {
 		log:               lb.GetLogger("resp"),
 		logBackend:        lb,
 		haltedCh:          make(chan interface{}),
-		connSem:           make(chan struct{}, 8),
 	}
 	st := &state{
 		log:                   lb.GetLogger("resp-state"),

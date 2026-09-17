@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -61,6 +62,9 @@ type listener struct {
 	incomingCh chan<- interface{}
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
+
+	connLimiter *connlimit.Limiter
+	peerSet     *connlimit.PeerSet
 
 	// Token-bucket parameters derived from the consensus document's
 	// LambdaP and LambdaL by the PKI worker; consumed in the hot path
@@ -130,6 +134,14 @@ func (l *listener) worker() {
 			continue
 		}
 
+		isPeer := l.peerSet.Contains(connlimit.AddrIP(conn.RemoteAddr()))
+		token, ok := l.connLimiter.TryAcquire(conn.RemoteAddr(), isPeer)
+		if !ok {
+			l.log.Debugf("Refusing connection from %v: connection cap reached (peer=%v)", conn.RemoteAddr(), isPeer)
+			conn.Close()
+			continue
+		}
+
 		tcpConn, ok := conn.(*net.TCPConn)
 		if ok {
 			tcpConn.SetKeepAlive(true)
@@ -142,13 +154,13 @@ func (l *listener) worker() {
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
-		l.onNewConn(conn)
+		l.onNewConn(conn, token)
 	}
 
 	// NOTREACHED
 }
 
-func (l *listener) onNewConn(conn net.Conn) {
+func (l *listener) onNewConn(conn net.Conn, token *connlimit.Token) {
 	scheme := schemes.ByName(l.glue.Config().Server.WireKEM)
 	if scheme == nil {
 		panic("KEM scheme not found in registry")
@@ -158,6 +170,7 @@ func (l *listener) onNewConn(conn net.Conn) {
 		panic("PKI signature scheme not found in registry")
 	}
 	c := newIncomingConn(l, conn, l.glue.Config().SphinxGeometry, scheme, pkiScheme)
+	c.connToken = token
 
 	l.closeAllWg.Add(1)
 	l.Lock()
@@ -187,6 +200,7 @@ func (l *listener) onInitializedConn(c *incomingConn) {
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
+	c.connToken.Release()
 	l.Lock()
 	defer func() {
 		l.Unlock()
@@ -303,16 +317,18 @@ func (l *listener) CloseOldConns(ptr interface{}) error {
 }
 
 // New creates a new listener.
-func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (glue.Listener, error) {
+func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string, limiter *connlimit.Limiter, peerSet *connlimit.PeerSet) (glue.Listener, error) {
 	var err error
 
 	l := &listener{
-		glue:       glue,
-		log:        glue.LogBackend().GetLogger(fmt.Sprintf("listener:%d", id)),
-		conns:      list.New(),
-		connsByID:  make(map[[sConstants.RecipientIDLength]byte]*incomingConn),
-		incomingCh: incomingCh,
-		closeAllCh: make(chan interface{}),
+		glue:        glue,
+		log:         glue.LogBackend().GetLogger(fmt.Sprintf("listener:%d", id)),
+		conns:       list.New(),
+		connsByID:   make(map[[sConstants.RecipientIDLength]byte]*incomingConn),
+		incomingCh:  incomingCh,
+		closeAllCh:  make(chan interface{}),
+		connLimiter: limiter,
+		peerSet:     peerSet,
 	}
 
 	listenStart := time.Now()

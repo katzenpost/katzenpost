@@ -232,8 +232,8 @@ func (p *PKIWorker) ForceFetchPKI() error {
 	}
 
 	// Validate sphinx geometry
-	if !hmac.Equal(d.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
-		return errors.New("sphinx geometry mismatch")
+	if err := d.CheckGeometryHash(p.server.cfg.SphinxGeometry.Hash()); err != nil {
+		return err
 	}
 
 	// Update replicas and store the document

@@ -40,7 +40,6 @@ func TestShutdownClosesWedgedPeerConn(t *testing.T) {
 		log:        lb.GetLogger("srv"),
 		logBackend: lb,
 		haltedCh:   make(chan interface{}),
-		connSem:    make(chan struct{}, 8),
 	}
 	st := &state{log: lb.GetLogger("state"), s: srv, db: db}
 	srv.state = st

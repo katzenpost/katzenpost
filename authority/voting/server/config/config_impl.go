@@ -171,14 +171,20 @@ func (sCfg *Server) validate() error {
 	if sCfg.KeepaliveTimeoutSec == 0 {
 		sCfg.KeepaliveTimeoutSec = 120
 	}
-	if sCfg.MaxConcurrentConns == 0 {
-		sCfg.MaxConcurrentConns = 64
-	}
 	if sCfg.MaxConnsPerPeer <= 0 {
 		sCfg.MaxConnsPerPeer = 8
 	}
+	if sCfg.CloseDelaySec != 0 && sCfg.CloseDelaySec != 10 {
+		return fmt.Errorf("config: CloseDelaySec=%d is not supported: the field is currently fixed and not consumed, only 0 (the default) or its fixed default of 10 are accepted", sCfg.CloseDelaySec)
+	}
 	if sCfg.CloseDelaySec == 0 {
 		sCfg.CloseDelaySec = 10
+	}
+	if sCfg.PreserveForPastEpochs == 0 {
+		sCfg.PreserveForPastEpochs = 3
+	}
+	if sCfg.DescriptorEpochTolerance == 0 {
+		sCfg.DescriptorEpochTolerance = 1
 	}
 
 	if sCfg.WireKEMScheme == "" {

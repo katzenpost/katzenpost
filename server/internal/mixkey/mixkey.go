@@ -28,6 +28,7 @@ import (
 
 	"github.com/yawning/bloom"
 	bolt "go.etcd.io/bbolt"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/nike"
@@ -64,8 +65,16 @@ type MixKey struct {
 
 	f *bloom.Filter
 
+	log             *logging.Logger
+	saturatedLogged bool
+
 	refCount        int32
 	unlinkIfExpired bool
+}
+
+// SetLogger attaches a logger used to report replay-filter saturation.
+func (k *MixKey) SetLogger(l *logging.Logger) {
+	k.log = l
 }
 
 // SetUnlinkIfExpired sets if the key will be deleted when closed if it is
@@ -123,10 +132,12 @@ func (k *MixKey) IsReplay(rawTag []byte) bool {
 	k.Lock()
 	defer k.Unlock()
 
-	// If the filter is saturated then probability of a false replay is increased
-	// XXX: the filter size should be tuned for the maximum line rate expected so that this does not happen
 	if k.f.Entries() >= k.f.MaxEntries() {
-		panic("MixKey bloom filter size too small")
+		if k.log != nil && !k.saturatedLogged {
+			k.saturatedLogged = true
+			k.log.Warningf("Replay filter for epoch %d saturated (%d entries); treating all further packets as replays until this key rotates out.", k.epoch, k.f.Entries())
+		}
+		return true
 	}
 	if !k.f.TestAndSet(tag[:]) {
 		return false

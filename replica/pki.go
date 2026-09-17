@@ -5,7 +5,6 @@ package replica
 
 import (
 	"context"
-	"crypto/hmac"
 	"errors"
 	"fmt"
 	"strconv"
@@ -188,9 +187,11 @@ func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled 
 		}
 
 		// Validate sphinx geometry.
-		if !hmac.Equal(result.Doc.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
-			p.GetLogger().Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.server.cfg.SphinxGeometry.Display())
-			panic("Sphinx Geometry mismatch!")
+		if err := result.Doc.CheckGeometryHash(p.server.cfg.SphinxGeometry.Hash()); err != nil {
+			failed++
+			p.GetLogger().Errorf("Rejecting consensus for epoch %d: %v", result.Epoch, err)
+			p.GetLogger().Errorf("Configured Sphinx Geometry: \n %s\n", p.server.cfg.SphinxGeometry.Display())
+			continue
 		}
 
 		// Take note of the service nodes and storage replicas.
@@ -214,9 +215,21 @@ func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled 
 			"REPLICA PKI FETCH: stored %d PKI document(s); connector/authentication state will be refreshed",
 			stored,
 		)
+		p.rebuildPeerSet()
 	}
 
 	return didUpdate
+}
+
+func (p *PKIWorker) rebuildPeerSet() {
+	now, _, _ := epochtime.Now()
+	doc := p.documentForEpoch(now)
+	if doc == nil {
+		return
+	}
+	addrs := doc.AllNodeAddresses()
+	addrs = append(addrs, replicaStaticAuthorityAddresses(p.server.cfg)...)
+	p.server.peerSet.Rebuild(addrs)
 }
 
 // handleDocumentUpdates handles cleanup and updates when documents change.
