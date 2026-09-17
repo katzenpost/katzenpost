@@ -4,6 +4,9 @@ FUZZ      ?= ./core/pki/
 FUZZFUNC  ?= FuzzParseDocument
 FUZZTIME  ?= 30s
 OVERNIGHT ?= 28800
+SAN       ?=
+
+comma := ,
 
 NPROC   := $(shell nproc)
 IDLE    ?= 0
@@ -30,6 +33,7 @@ help:
 	@echo "  laptop     overnight-all, niced, IDLE=2 (gentle: leaves 2 cores free)"
 	@echo "  clean      remove built binaries"
 	@echo "IDLE=<n> leaves n cores free (default 0); e.g. IDLE=2 keeps 2 cores idle."
+	@echo "SAN=<check> links build/run/overnight with -fsanitize=fuzzer,<check> (e.g. SAN=address for cgo under ASan)."
 
 list:
 	cd $(MODROOT) && go test -tags=fuzz -list '^Fuzz' ./...
@@ -47,7 +51,7 @@ build: tool seed
 	@mkdir -p $(BINDIR)
 	cd $(MODROOT) && GOFLAGS=-mod=mod $(TOOL) -tags fuzz -o $(ARCHIVE) -func $(FUZZFUNC) $(FUZZ) || { \
 		echo "go-118-fuzz-build failed; recover with: git -C $(MODROOT) checkout -- $(FUZZ) && rm -f $(MODROOT)/$(FUZZ)/*_fuzz.go $(MODROOT)/main.*.go"; exit 1; }
-	clang -fsanitize=fuzzer $(ARCHIVE) -o $(BINARY) -lpthread -lm
+	clang -fsanitize=fuzzer$(if $(SAN),$(comma)$(SAN)) $(ARCHIVE) -o $(BINARY) -lpthread -lm
 	@echo "built $(BINARY)"
 
 run: build
