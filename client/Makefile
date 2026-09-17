@@ -1,5 +1,7 @@
 warped?=true
 ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+dockertest_race?=-race
+dockertest_timeout?=1h
 
 uid=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
@@ -29,88 +31,88 @@ coverage-html:
 dockertest-legacy:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestLegacyTests"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestLegacyTests"
 
 dockertest_new_pigeonhole_alice_sends_bob:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNewPigeonholeAPIAliceSendsBob"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestNewPigeonholeAPIAliceSendsBob"
 
 dockertest_new_pigeonhole_multiple_messages:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNewPigeonholeAPIMultipleMessages$$"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestNewPigeonholeAPIMultipleMessages$$"
 
 dockertest_new_pigeonhole_multiple_messages_bulk:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNewPigeonholeAPIMultipleMessagesBulk"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestNewPigeonholeAPIMultipleMessagesBulk"
 
 dockertest_copy_command:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCreateCourierEnvelopesFromPayload"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestCreateCourierEnvelopesFromPayload"
 
 dockertest_multichannel:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyCommandMultiChannel$$"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestCopyCommandMultiChannel$$"
 
 dockertest_multichannel_efficient:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyCommandMultiChannelEfficient"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestCopyCommandMultiChannelEfficient"
 
 dockertest_tombstone_box:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestTombstoning"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestTombstoning"
 
 dockertest_tombstone_range:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestTombstoneRange"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestTombstoneRange"
 
 dockertest_box_id_not_found:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestBoxIDNotFoundError"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestBoxIDNotFoundError"
 
 dockertest_box_already_exists:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestBoxAlreadyExistsError"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestBoxAlreadyExistsError"
 
 dockertest_read_before_write:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestReadBeforeWrite"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestReadBeforeWrite"
 
 dockertest_tombstone_copy:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCreateCourierEnvelopesFromTombstoneRange"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestCreateCourierEnvelopesFromTombstoneRange"
 
 dockertest_copy_onto_already_existing_box_error:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyOntoAlreadyExistingBoxError"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestCopyOntoAlreadyExistingBoxError"
 
 dockertest_pki_raw:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestGetPKIDocumentRaw|TestGetDirectoryAuthorities"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestGetPKIDocumentRaw|TestGetDirectoryAuthorities"
 
 dockertest_all_pigeonhole:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) \
 		-run "TestNewPigeonholeAPI|TestCreateCourierEnvelopesFromPayload|TestCreateCourierEnvelopesFromTombstoneRange|TestCopyCommandMultiChannel|TestCopyOntoAlreadyExistingBoxError|TestTombston|TestBoxIDNotFoundError|TestBoxAlreadyExistsError|TestReadBeforeWrite|TestNestedCopyCommands"
 
 dockertest-all:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -parallel 5 -timeout 1h \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -parallel 5 -timeout $(dockertest_timeout) \
 		-run "TestLegacyTests|TestNewPigeonholeAPI|TestCreateCourierEnvelopesFromPayload|TestCreateCourierEnvelopesFromTombstoneRange|TestCopyCommandMultiChannel|TestCopyOntoAlreadyExistingBoxError|TestTombston|TestBoxIDNotFoundError|TestBoxAlreadyExistsError|TestReadBeforeWrite|TestNestedCopyCommands|TestFromPayloadMultiCall|TestFromMultiPayloadMultiCall"
 
 all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages dockertest_new_pigeonhole_multiple_messages_bulk dockertest_copy_command dockertest_multichannel dockertest_multichannel_efficient dockertest_tombstone_box dockertest_tombstone_range dockertest_tombstone_copy dockertest_box_id_not_found dockertest_box_already_exists dockertest_read_before_write dockertest_copy_onto_already_existing_box_error
