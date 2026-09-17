@@ -81,7 +81,7 @@ func (c *Consensus2) Length() int {
 }
 
 func consensus2FromBytes(b []byte) (Command, error) {
-	if len(b) < consensusBaseLength {
+	if len(b) < consensus2BaseLength {
 		return nil, errInvalidCommand
 	}
 	r := new(Consensus2)
