@@ -117,12 +117,34 @@ func (s *state) dialAndHandshakePeer(peer *config.Authority, addrs []string) (*w
 	handshakeTimeout := time.Duration(s.s.cfg.Server.HandshakeTimeoutSec) * time.Second
 	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
 
+	conn, err := s.dialPeerAddrs(peer, addrs, dialTimeout)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	session, err := s.newOutboundSession(conn, handshakeTimeout, responseTimeout)
+	if err != nil {
+		conn.Close()
+		return nil, nil, err
+	}
+
+	if err := s.handshakeOutboundSession(session, conn, peer, handshakeTimeout); err != nil {
+		return nil, nil, err
+	}
+	return session, conn, nil
+}
+
+// dialPeerAddrs tries each address in turn and returns the first successful
+// connection. On failure it reports every address that failed, whether to
+// parse or to dial, so a trailing parse error can no longer bury an earlier
+// informative dial failure; it falls back to a generic message only when
+// there were no addresses at all.
+func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeout time.Duration) (net.Conn, error) {
 	dialFn := s.dialContextFn
 	if dialFn == nil {
 		dialFn = (&net.Dialer{Timeout: dialTimeout}).DialContext
 	}
 
-	var conn net.Conn
 	var errs []error
 	for _, a := range addrs {
 		u, err := url.Parse(a)
@@ -132,25 +154,23 @@ func (s *state) dialAndHandshakePeer(peer *config.Authority, addrs []string) (*w
 			continue
 		}
 		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
-		conn, err = common.DialURL(u, ctx, dialFn)
+		conn, err := common.DialURL(u, ctx, dialFn)
 		cancelFn()
 		if err == nil {
-			break
+			return conn, nil
 		}
 		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)
 		errs = append(errs, fmt.Errorf("dial %s failed: %w", a, err))
 	}
-	if conn == nil {
-		// Report every failure, whether an address failed to parse or to dial,
-		// so a trailing parse error can no longer bury an earlier informative
-		// dial failure. Fall back to the generic message only when there were no
-		// addresses at all.
-		if len(errs) > 0 {
-			return nil, nil, fmt.Errorf("peer %s: all addresses exhausted: %w", peer.Identifier, errors.Join(errs...))
-		}
-		return nil, nil, fmt.Errorf("peer %s: no usable address could be dialed", peer.Identifier)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("peer %s: all addresses exhausted: %w", peer.Identifier, errors.Join(errs...))
 	}
+	return nil, fmt.Errorf("peer %s: no usable address could be dialed", peer.Identifier)
+}
 
+// newOutboundSession builds an outbound wire session to be handshaked over
+// conn, closing conn if the configured KEM scheme is unregistered.
+func (s *state) newOutboundSession(conn net.Conn, handshakeTimeout, responseTimeout time.Duration) (*wire.Session, error) {
 	identityHash := hash.Sum256From(s.s.identityPublicKey)
 	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
 	if kemscheme == nil {
@@ -170,15 +190,15 @@ func (s *state) dialAndHandshakePeer(peer *config.Authority, addrs []string) (*w
 		WriteTimeout:       responseTimeout,
 		MaxMessageSize:     s.s.maxMessageSize,
 	}
-	session, err := wire.NewPKISession(cfg, true)
-	if err != nil {
-		conn.Close()
-		return nil, nil, err
-	}
+	return wire.NewPKISession(cfg, true)
+}
 
+// handshakeOutboundSession completes the wire handshake on session over
+// conn, instrumenting and closing the session on failure.
+func (s *state) handshakeOutboundSession(session *wire.Session, conn net.Conn, peer *config.Authority, handshakeTimeout time.Duration) error {
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
-	if err = session.Initialize(context.Background(), conn); err != nil {
+	if err := session.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		st := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -193,12 +213,12 @@ func (s *state) dialAndHandshakePeer(peer *config.Authority, addrs []string) (*w
 		}
 		s.log.Debugf("peer %s: handshake failure details:\n%s", peer.Identifier, wire.GetDebugError(err))
 		session.Close()
-		return nil, nil, err
+		return err
 	}
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
 	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, handshakeElapsed)
-	return session, conn, nil
+	return nil
 }
 
 // peerRoundTrip sends cmd over an established session and returns the reply.
