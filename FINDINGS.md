@@ -53,3 +53,13 @@ Consensus2 is read for its payload and never re-encoded in production, so this
 is a decode/encode asymmetry the round-trip check surfaced, not a network DoS.
 Either hand the decoder the Commands set, or relax the fuzz target round-trip
 for decode-only commands.
+
+## 5. hybrid signature UnmarshalBinaryPublicKey/PrivateKey slice panic  [fixed in hpqc #118]
+
+Target: FuzzSignUntrustedInput (fuzzing-kit, hpqcfuzz/). Against hpqc v0.0.87,
+sign/hybrid UnmarshalBinaryPublicKey/PrivateKey slice b[:first.PublicKeySize()]
+without a length check, so a short input panics (slice out of range). Every
+hybrid signature scheme shares it, including the dirauth default Ed25519 Sphincs+,
+so it is reachable wherever a hybrid public or private key is unmarshaled from the
+wire. Already fixed by hpqc PR #118, which adds a len(b) != Size() guard; resolves
+once #118 merges and the dependency is bumped.
