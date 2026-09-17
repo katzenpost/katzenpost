@@ -2049,12 +2049,12 @@ func (s *state) verifyCertUpload(certificate *commands.Cert, peerIdentityKeyHash
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if certificate.Epoch < s.votingEpoch {
-		s.log.Errorf("Certificate from %s received too early: %d < %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
-		return nil, commands.CertTooEarly
+		s.log.Errorf("Certificate from %s received too late: %d < %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
+		return nil, commands.CertTooLate
 	}
 	if certificate.Epoch > s.votingEpoch {
-		s.log.Errorf("Certificate from %s too late: %d > %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
-		return nil, commands.CertTooLate
+		s.log.Errorf("Certificate from %s received too early: %d > %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
+		return nil, commands.CertTooEarly
 	}
 
 	// ensure certificate.PublicKey verifies the payload (ie Vote has a signature from this peer)
@@ -2247,15 +2247,15 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if vote.Epoch < s.votingEpoch {
-		s.log.Errorf("Vote from %s received too early: %d < %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
-		instrument.VoteReceived("too_early")
-		resp.ErrorCode = commands.VoteTooEarly
+		s.log.Errorf("Vote from %s received too late: %d < %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		instrument.VoteReceived("too_late")
+		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
 	if vote.Epoch > s.votingEpoch {
-		s.log.Errorf("Vote from %s received too late: %d > %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
-		instrument.VoteReceived("too_late")
-		resp.ErrorCode = commands.VoteTooLate
+		s.log.Errorf("Vote from %s received too early: %d > %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		instrument.VoteReceived("too_early")
+		resp.ErrorCode = commands.VoteTooEarly
 		return &resp
 	}
 
@@ -2347,13 +2347,13 @@ func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) comma
 		return &resp
 	}
 	if sig.Epoch < s.votingEpoch {
-		s.log.Errorf("Signature from %s received too early: %d < %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.SigTooEarly
+		s.log.Errorf("Signature from %s received too late: %d < %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
+		resp.ErrorCode = commands.SigTooLate
 		return &resp
 	}
 	if sig.Epoch > s.votingEpoch {
-		s.log.Errorf("Signature from %s received too late: %d > %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.SigTooLate
+		s.log.Errorf("Signature from %s received too early: %d > %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
+		resp.ErrorCode = commands.SigTooEarly
 		return &resp
 	}
 	verified, err := cert.Verify(sig.PublicKey, sig.Payload)
