@@ -44,6 +44,16 @@ type Commands struct {
 	MaxMessageLenServerToClient int
 	MaxMessageLenClientToServer int
 	shouldPad                   bool
+
+	validCommands map[commandID]bool
+}
+
+func commandIDSet(ids ...commandID) map[commandID]bool {
+	set := make(map[commandID]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
 }
 
 // NewMixnetCommands creates a Commands instance suitale to be used by mixnet nodes.
@@ -72,6 +82,12 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 			Cmds: c,
 		},
 	}
+	c.validCommands = commandIDSet(
+		noOp, disconnect,
+		sendPacket, sendRetrievePacket, sendRetrievePacketReply,
+		messageDelivered, retreiveMessage, message,
+		getConsensus, consensus, getConsensus2, consensus2,
+	)
 	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
 	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
 	return c
@@ -127,6 +143,13 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 
 	c.serverToClientCommands = c.clientToServerCommands
 
+	c.validCommands = commandIDSet(
+		noOp, disconnect,
+		replicaMessage, replicaMessageReply,
+		replicaWrite, replicaWriteReply,
+		replicaDecoy,
+	)
+
 	c.shouldPad = true
 	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
 	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
@@ -152,6 +175,16 @@ func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
 		MaxMessageLenClientToServer: 50000000,
 		MaxMessageLenServerToClient: 50000000,
 	}
+	c.validCommands = commandIDSet(
+		noOp, disconnect,
+		getConsensus, consensus, getConsensus2, consensus2,
+		postDescriptor, postDescriptorStatus,
+		postReplicaDescriptor, postReplicaDescriptorStatus,
+		vote, voteStatus, getVote,
+		reveal, revealStatus,
+		sig, sigStatus,
+		certificate, certStatus,
+	)
 	return c
 }
 
@@ -308,6 +341,9 @@ func (c *SendRetrievePacketReply) Length() int {
 }
 
 func sendRetrievePacketReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
+	if len(b) < constants.SURBIDLength {
+		return nil, errInvalidCommand
+	}
 	c := new(SendRetrievePacketReply)
 	copy(c.SURBID[:], b[:constants.SURBIDLength])
 	c.Payload = make([]byte, len(b[constants.SURBIDLength:]))
@@ -329,6 +365,11 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	if b[1] != 0 {
 		return nil, errInvalidCommand
 	}
+
+	if c.validCommands != nil && !c.validCommands[commandID(id)] {
+		return nil, errInvalidCommand
+	}
+
 	cmdLen := binary.BigEndian.Uint32(b[2:6])
 	b = b[cmdOverhead:]
 	if uint32(len(b)) < cmdLen {
