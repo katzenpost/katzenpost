@@ -78,14 +78,25 @@ func newPKIWorkerWithDefaultClient(server *Server, log *logging.Logger) (*PKIWor
 	}
 	// The courier has no PKI signature scheme of its own; it only fetches and
 	// verifies the consensus signed by the authorities. The consensus carries
-	// a single PKISignatureScheme, so every authority shares it: take it from
-	// the configured peer set to derive the wire ceiling. Leaving it unset
-	// keeps the flat default ceiling.
+	// a single PKISignatureScheme, so every authority is expected to share it
+	// (a deployment picks one scheme and never migrates): take it from the
+	// configured peer set to derive the wire ceiling. Leaving it unset keeps
+	// the flat default ceiling. Verify the peers actually agree instead of
+	// assuming it from an arbitrary entry: a heterogeneous config would
+	// otherwise silently under-estimate the ceiling for whichever authority
+	// was not consulted, and reject its legitimate traffic as oversized.
 	var pkiSignatureScheme sign.Scheme
 	if peers := server.cfg.PKI.Voting.Authorities; len(peers) > 0 && peers[0].PKISignatureScheme != "" {
-		pkiSignatureScheme = signSchemes.ByName(peers[0].PKISignatureScheme)
+		schemeName := peers[0].PKISignatureScheme
+		for _, peer := range peers[1:] {
+			if peer.PKISignatureScheme != schemeName {
+				return nil, fmt.Errorf("configured authorities do not agree on a PKI signature scheme: %q (%s) != %q (%s)",
+					schemeName, peers[0].Identifier, peer.PKISignatureScheme, peer.Identifier)
+			}
+		}
+		pkiSignatureScheme = signSchemes.ByName(schemeName)
 		if pkiSignatureScheme == nil {
-			return nil, fmt.Errorf("pki signature scheme %q not found in registry", peers[0].PKISignatureScheme)
+			return nil, fmt.Errorf("pki signature scheme %q not found in registry", schemeName)
 		}
 	}
 	pkiCfg := &vClient.Config{

@@ -2027,6 +2027,21 @@ func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []b
 	resp := commands.CertStatus{}
 	pk := hash.Sum256From(certificate.PublicKey)
 
+	doc, code := s.verifyCertUpload(certificate, peerIdentityKeyHash, pk)
+	if code != commands.CertOk {
+		resp.ErrorCode = code
+		return &resp
+	}
+
+	resp.ErrorCode = s.storeCert(pk, doc)
+	return &resp
+}
+
+// verifyCertUpload runs every acceptance check for an uploaded certificate
+// except the already-received check, which storeCert performs as part of
+// committing it (both must run under the same lock as one atomic
+// check-and-store). The caller must hold the write lock.
+func (s *state) verifyCertUpload(certificate *commands.Cert, peerIdentityKeyHash []byte, pk [publicKeyHashSize]byte) (*pki.Document, uint8) {
 	// Bind the certificate's declared PublicKey to the wire-authenticated peer
 	// identity, the same way the descriptor upload path binds a descriptor's
 	// identity key to the connected peer. Without this, an authorized but
@@ -2034,37 +2049,31 @@ func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []b
 	// on its own connection.
 	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
 		s.log.Errorf("Certificate PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
-		resp.ErrorCode = commands.CertNotAuthorized
-		return &resp
+		return nil, commands.CertNotAuthorized
 	}
 
 	// if not authorized
-	_, ok := s.authorizedAuthorities[pk]
-	if !ok {
+	if _, ok := s.authorizedAuthorities[pk]; !ok {
 		s.log.Error("Voter not authorized.")
-		resp.ErrorCode = commands.CertNotAuthorized
-		return &resp
+		return nil, commands.CertNotAuthorized
 	}
 
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if certificate.Epoch < s.votingEpoch {
 		s.log.Errorf("Certificate from %s received too early: %d < %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.CertTooEarly
-		return &resp
+		return nil, commands.CertTooEarly
 	}
 	if certificate.Epoch > s.votingEpoch {
 		s.log.Errorf("Certificate from %s too late: %d > %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.CertTooLate
-		return &resp
+		return nil, commands.CertTooLate
 	}
 
 	// ensure certificate.PublicKey verifies the payload (ie Vote has a signature from this peer)
 	_, err := cert.Verify(certificate.PublicKey, certificate.Payload)
 	if err != nil {
 		s.log.Error("Certificate from %s failed to verify.", s.authorityNames[pk])
-		resp.ErrorCode = commands.CertNotSigned
-		return &resp
+		return nil, commands.CertNotSigned
 	}
 
 	// verify the structure of the certificate
@@ -2072,8 +2081,7 @@ func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []b
 	if err != nil {
 		s.log.Errorf("Certificate from %s failed to verify: %s", s.authorityNames[pk], err)
 		s.log.Debugf("Certificate from %s failed to verify: %s %s", s.authorityNames[pk], certificate.PublicKey, err)
-		resp.ErrorCode = commands.CertNotSigned
-		return &resp
+		return nil, commands.CertNotSigned
 	}
 
 	// Bind the document epoch to the voting epoch, like onVoteUpload. Otherwise a
@@ -2081,25 +2089,28 @@ func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []b
 	// within the epoch+5 window) into this epoch's first-write-wins slot.
 	if doc.Epoch != s.votingEpoch {
 		s.log.Errorf("Certificate from %s contains wrong Epoch %d != %d", s.authorityNames[pk], doc.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.CertNotSigned
-		return &resp
+		return nil, commands.CertNotSigned
 	}
 
 	// A real certificate carries shared-random reveals; a vote does not, so a
 	// reveal-less signed document is a vote replayed into the cert slot.
 	if len(doc.SharedRandomReveal) == 0 {
 		s.log.Errorf("Certificate from %s carries no shared-random reveals", s.authorityNames[pk])
-		resp.ErrorCode = commands.CertNotSigned
-		return &resp
+		return nil, commands.CertNotSigned
 	}
 
 	// haven't received a vote from this peer yet for this epoch
 	if _, ok := s.votes[s.votingEpoch][pk]; !ok {
 		s.log.Errorf("Certficate from %s received before peer's vote?.", s.authorityNames[pk])
-		resp.ErrorCode = commands.CertTooEarly
-		return &resp
+		return nil, commands.CertTooEarly
 	}
 
+	return doc, commands.CertOk
+}
+
+// storeCert records doc as pk's certificate for the current voting epoch,
+// rejecting a duplicate. The caller must hold the write lock.
+func (s *state) storeCert(pk [publicKeyHashSize]byte, doc *pki.Document) uint8 {
 	// the first certificate received this round
 	if _, ok := s.certificates[s.votingEpoch]; !ok {
 		s.certificates[s.votingEpoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
@@ -2108,13 +2119,11 @@ func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []b
 	// already received a certificate for this round
 	if _, ok := s.certificates[s.votingEpoch][pk]; ok {
 		s.log.Error("Another Cert received from peer %s", s.authorityNames[pk])
-		resp.ErrorCode = commands.CertAlreadyReceived
-		return &resp
+		return commands.CertAlreadyReceived
 	}
 	s.log.Noticef("Cert OK from: %s\n%s", s.authorityNames[pk], doc)
 	s.certificates[s.votingEpoch][pk] = doc
-	resp.ErrorCode = commands.CertOk
-	return &resp
+	return commands.CertOk
 }
 
 func (s *state) onRevealUpload(reveal *commands.Reveal, peerIdentityKeyHash []byte) commands.Command {

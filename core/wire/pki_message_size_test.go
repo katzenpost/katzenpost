@@ -74,4 +74,14 @@ func TestSessionRejectsOversizedCommandOnReceive(t *testing.T) {
 
 	_, err := sB.RecvCommand(context.Background())
 	require.Equal(t, errMsgSize, err)
+	require.True(t, IsOversizedMessageError(err))
+}
+
+// TestIsOversizedMessageErrorRejectsUnrelatedErrors proves
+// IsOversizedMessageError only matches the RecvCommand/SendCommand oversized
+// rejection, not an unrelated error or the handshake-phase MessageSizeError.
+func TestIsOversizedMessageErrorRejectsUnrelatedErrors(t *testing.T) {
+	require.False(t, IsOversizedMessageError(errInvalidState))
+	require.False(t, IsOversizedMessageError(&MessageSizeError{}))
+	require.False(t, IsOversizedMessageError(nil))
 }

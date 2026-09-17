@@ -354,6 +354,7 @@ func (p *connector) initSession(
 
 	kemScheme := schemes.ByName(peer.WireKEMScheme)
 	if kemScheme == nil {
+		conn.Close()
 		return nil, fmt.Errorf("%s: unsupported KEM scheme: %s", peerInfo(), peer.WireKEMScheme)
 	}
 
@@ -361,6 +362,7 @@ func (p *connector) initSession(
 	if peer.PKISignatureScheme != "" {
 		pkiSignatureScheme = signSchemes.ByName(peer.PKISignatureScheme)
 		if pkiSignatureScheme == nil {
+			conn.Close()
 			return nil, fmt.Errorf("%s: unsupported PKI signature scheme: %s", peerInfo(), peer.PKISignatureScheme)
 		}
 	}
@@ -497,7 +499,20 @@ func (p *connector) roundTrip(ctx context.Context, s *wire.Session, cmd commands
 		return nil, err
 	}
 	p.log.Debugf("Sent %s in %v", cmd, time.Since(sendStart))
-	return s.RecvCommand(ctx)
+	resp, err := s.RecvCommand(ctx)
+	if err != nil && wire.IsOversizedMessageError(err) {
+		// deriveMaxMessageSize assumes a bounded topology (clientNodeAllowance,
+		// clientReplicaAllowance) since a client cannot know the real topology
+		// before it has fetched a consensus. A network that has grown past that
+		// allowance, or an operator-set MaxConsensusSize that is too small,
+		// rejects every legitimate reply as oversized with no other signal.
+		p.log.Warningf(
+			"%s: reply exceeded our MaxConsensusSize ceiling (%d bytes); "+
+				"if the network has grown, set MaxConsensusSize explicitly",
+			cmd, p.cfg.MaxConsensusSize,
+		)
+	}
+	return resp, err
 }
 
 type PeerResponse struct {

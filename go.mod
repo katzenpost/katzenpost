@@ -16,7 +16,7 @@ require (
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20 v0.0.1
 	github.com/katzenpost/chacha20poly1305 v0.0.1
-	github.com/katzenpost/hpqc v0.0.88
+	github.com/katzenpost/hpqc v0.0.89
 	github.com/katzenpost/nyquist v0.0.13
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
 	github.com/leanovate/gopter v0.2.11
