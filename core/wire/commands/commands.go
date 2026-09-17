@@ -304,6 +304,9 @@ func (c *SendRetrievePacket) Length() int {
 }
 
 func sendRetrievePacketFromBytes(b []byte, cmds *Commands) (Command, error) {
+	if len(b) != cmds.geo.PacketLength {
+		return nil, errInvalidCommand
+	}
 	r := new(SendRetrievePacket)
 	r.SphinxPacket = make([]byte, 0, len(b))
 	r.SphinxPacket = append(r.SphinxPacket, b...)
