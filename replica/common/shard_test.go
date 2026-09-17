@@ -132,9 +132,12 @@ func generateReplica(t *testing.T, name string, replicaID uint8, pkiScheme sign.
 	pubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 
+	// Use the real marshaled public key as the identity: it is valid (a
+	// point on the curve) and distinct per replica. Overwriting it with
+	// random bytes, as this used to, produced identity keys that hpqc
+	// v0.0.87 silently accepted but v0.0.88 correctly rejects with
+	// "eddsa: invalid key" when the replica descriptor is unmarshaled.
 	idkey, err := pubkey.MarshalBinary()
-	require.NoError(t, err)
-	_, err = rand.Reader.Read(idkey)
 	require.NoError(t, err)
 
 	linkkey := make([]byte, linkScheme.PublicKeySize())
