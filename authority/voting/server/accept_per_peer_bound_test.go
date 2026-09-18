@@ -82,7 +82,6 @@ func newPerPeerHarness(t *testing.T, maxConnsPerPeer int, persistent bool) *perP
 		log:               lb.GetLogger("resp"),
 		logBackend:        lb,
 		haltedCh:          make(chan interface{}),
-		connSem:           make(chan struct{}, 64),
 	}
 	st := &state{
 		log:                   lb.GetLogger("resp-state"),

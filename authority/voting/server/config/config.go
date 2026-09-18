@@ -341,14 +341,9 @@ type Server struct {
 	// document is larger than the default allows.
 	MaxConsensusSize int
 
-	// MaxConcurrentConns bounds the number of incoming connections handled
-	// at once, so a connection flood cannot exhaust goroutines or memory
-	// (default: 64).
-	MaxConcurrentConns int
-
 	// MaxConnsPerPeer bounds the number of concurrent incoming connections
 	// handled at once from a single authenticated peer identity, so one peer
-	// cannot camp all of the MaxConcurrentConns accept slots. The cap is keyed
+	// cannot camp all of the peer pool's accept slots. The cap is keyed
 	// by the wire-authenticated identity and therefore applies only to
 	// identified peers (mixes, gateways, service nodes, replicas, authorities);
 	// anonymous clients are not capped by identity. Zero selects the default
@@ -362,8 +357,15 @@ type Server struct {
 	// (the default) each command uses its own dial and handshake.
 	PersistentPeerConns bool
 
-	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
+	// CloseDelaySec is fixed and not consumed: close and NoOp timing is owned
+	// by the wire session. Only 0 or the default 10 is accepted.
 	CloseDelaySec int
+
+	// PreserveForPastEpochs is how many past epochs of state to retain (default 3).
+	PreserveForPastEpochs uint64
+
+	// DescriptorEpochTolerance is the accepted epoch window for descriptor uploads (default 1).
+	DescriptorEpochTolerance uint64
 
 	// Peer retry configuration for authority-to-authority communication
 

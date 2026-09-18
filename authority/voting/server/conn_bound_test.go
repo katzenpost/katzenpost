@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 )
 
@@ -22,18 +23,22 @@ type fakeAddr struct{}
 func (fakeAddr) Network() string { return "fake" }
 func (fakeAddr) String() string  { return "fake" }
 
-// blockingConn is a net.Conn whose RemoteAddr blocks until release is closed,
-// recording how many handlers are parked there at once. onConn's first act is
-// conn.RemoteAddr and the listen worker holds a concurrency slot for the whole
-// life of the handler, so the peak of active is the number of handlers run
-// concurrently.
+// blockingConn is a net.Conn whose LocalAddr blocks until release is closed,
+// recording how many handlers are parked there at once. onConn's first use of
+// LocalAddr (wire_handler.go, right after RemoteAddr) is the first call the
+// accept loop itself does not make, so it parks the handler while it holds a
+// connLimiter token, and the peak of active is the number of handlers run
+// concurrently. RemoteAddr must not block: the accept loop calls it to classify
+// and acquire a token before the handler runs.
 type blockingConn struct {
 	active    *atomic.Int32
 	maxActive *atomic.Int32
 	release   chan struct{}
 }
 
-func (c *blockingConn) RemoteAddr() net.Addr {
+func (c *blockingConn) RemoteAddr() net.Addr { return fakeAddr{} }
+
+func (c *blockingConn) LocalAddr() net.Addr {
 	n := c.active.Add(1)
 	for {
 		m := c.maxActive.Load()
@@ -45,8 +50,6 @@ func (c *blockingConn) RemoteAddr() net.Addr {
 	c.active.Add(-1)
 	return fakeAddr{}
 }
-
-func (c *blockingConn) LocalAddr() net.Addr              { return fakeAddr{} }
 func (c *blockingConn) Read([]byte) (int, error)         { return 0, errors.New("closed") }
 func (c *blockingConn) Write([]byte) (int, error)        { return 0, errors.New("closed") }
 func (c *blockingConn) Close() error                     { return nil }
@@ -74,8 +77,9 @@ func (l *stubListener) Close() error   { l.closeOnce.Do(func() { close(l.done) }
 func (l *stubListener) Addr() net.Addr { return fakeAddr{} }
 
 // TestListenWorkerBoundsConcurrentConns floods listenWorker with more
-// connections than the configured cap and asserts the number of handlers
-// running at once never exceeds MaxConcurrentConns.
+// connections than the dual-pool limiter's cap and asserts the number of
+// handlers running at once never exceeds that cap; the excess connections are
+// refused at accept rather than parked.
 func TestListenWorkerBoundsConcurrentConns(t *testing.T) {
 	const capConns = 2
 	const flood = 5
@@ -92,7 +96,8 @@ func TestListenWorkerBoundsConcurrentConns(t *testing.T) {
 		haltedCh:   make(chan interface{}),
 	}
 	s.state = &state{s: s}
-	s.connSem = make(chan struct{}, capConns)
+	s.connLimiter = connlimit.New(capConns, capConns, 0)
+	s.peerSet = connlimit.NewPeerSet()
 
 	active := &atomic.Int32{}
 	maxActive := &atomic.Int32{}
@@ -113,10 +118,12 @@ func TestListenWorkerBoundsConcurrentConns(t *testing.T) {
 	// Give an unbounded worker time to spawn more than the cap.
 	time.Sleep(200 * time.Millisecond)
 	require.Equal(t, int32(capConns), maxActive.Load(),
-		"listenWorker must not run more than MaxConcurrentConns handlers at once")
+		"listenWorker must not run more than the dual-pool cap of handlers at once")
 
-	// Release the parked handlers and shut the worker down.
+	// Release the parked handlers and shut the worker down. Closing the listener
+	// unblocks the worker parked in Accept; closing haltedCh stops it looping.
 	close(release)
+	ln.Close()
 	close(s.haltedCh)
 	require.Eventually(t, func() bool { return active.Load() == 0 },
 		2*time.Second, 5*time.Millisecond, "handlers should drain")

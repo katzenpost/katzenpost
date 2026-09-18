@@ -1826,10 +1826,13 @@ func (s *state) pruneDocuments() {
 	// Looking a bit into the past is probably ok, if more past documents
 	// need to be accessible, then methods that query the DB could always
 	// be added.
-	const preserveForPastEpochs = 3
+	preserveForPastEpochs := s.s.cfg.Server.PreserveForPastEpochs
 
 	now, _, _ := epochtime.Now()
-	cmpEpoch := now - preserveForPastEpochs
+	var cmpEpoch uint64
+	if now > preserveForPastEpochs {
+		cmpEpoch = now - preserveForPastEpochs
+	}
 
 	for e := range s.documents {
 		if e < cmpEpoch {
