@@ -5,7 +5,6 @@ package client
 
 import (
 	"context"
-	"crypto/hmac"
 	"errors"
 	"fmt"
 	"sync"
@@ -426,9 +425,10 @@ func (p *pki) updateDocument(epoch uint64) error {
 	if err != nil {
 		return err
 	}
-	if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
-		p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.c.cfg.SphinxGeometry.Display())
-		panic("Sphinx Geometry mismatch!")
+	if err := d.CheckGeometryHash(p.c.cfg.SphinxGeometry.Hash()); err != nil {
+		p.log.Errorf("Rejecting consensus for epoch %v: %v", epoch, err)
+		p.log.Errorf("Configured Sphinx Geometry: \n %s\n", p.c.cfg.SphinxGeometry.Display())
+		return err
 	}
 	p.docs.Store(epoch, &CachedDoc{
 		Doc:           d,

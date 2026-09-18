@@ -336,9 +336,12 @@ func (p *pki) worker() {
 				continue
 			}
 
-			if !hmac.Equal(d.SphinxGeometryHash, p.glue.Config().SphinxGeometry.Hash()) {
-				p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.glue.Config().SphinxGeometry.Display())
-				panic("Sphinx Geometry mismatch!")
+			if err := d.CheckGeometryHash(p.glue.Config().SphinxGeometry.Hash()); err != nil {
+				p.log.Errorf("Rejecting consensus for epoch %v: %v", epoch, err)
+				p.log.Errorf("Configured Sphinx Geometry: \n %s\n", p.glue.Config().SphinxGeometry.Display())
+				p.setFailedFetch(epoch, err)
+				instrument.InvalidPKICache(fmt.Sprintf("%v", epoch))
+				continue
 			}
 
 			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsGatewayNode, p.glue.Config().Server.IsServiceNode)

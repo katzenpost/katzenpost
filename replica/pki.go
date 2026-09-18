@@ -5,7 +5,6 @@ package replica
 
 import (
 	"context"
-	"crypto/hmac"
 	"errors"
 	"fmt"
 	"strconv"
@@ -188,9 +187,11 @@ func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled 
 		}
 
 		// Validate sphinx geometry.
-		if !hmac.Equal(result.Doc.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
-			p.GetLogger().Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.server.cfg.SphinxGeometry.Display())
-			panic("Sphinx Geometry mismatch!")
+		if err := result.Doc.CheckGeometryHash(p.server.cfg.SphinxGeometry.Hash()); err != nil {
+			failed++
+			p.GetLogger().Errorf("Rejecting consensus for epoch %d: %v", result.Epoch, err)
+			p.GetLogger().Errorf("Configured Sphinx Geometry: \n %s\n", p.server.cfg.SphinxGeometry.Display())
+			continue
 		}
 
 		// Take note of the service nodes and storage replicas.
