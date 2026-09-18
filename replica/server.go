@@ -24,6 +24,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -71,6 +72,9 @@ type Server struct {
 	state     *state
 	connector GenericConnector
 
+	connLimiter *connlimit.Limiter
+	peerSet     *connlimit.PeerSet
+
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
 	linkKey            kem.PrivateKey
@@ -87,6 +91,9 @@ type Server struct {
 
 	// proxySema limits the number of concurrent proxy request goroutines
 	proxySema chan struct{}
+
+	// decapSema bounds concurrent local MKEM decapsulations.
+	decapSema chan struct{}
 
 	// firstShardCandidate overrides which of a box's shard holders a
 	// proxy sweep tries first. Nil in production, where the choice is
@@ -251,6 +258,16 @@ func (s *Server) RotateLog() {
 	}
 }
 
+func replicaStaticAuthorityAddresses(cfg *config.Config) []string {
+	var addrs []string
+	if cfg.PKI != nil && cfg.PKI.Voting != nil {
+		for _, auth := range cfg.PKI.Voting.Authorities {
+			addrs = append(addrs, auth.Addresses...)
+		}
+	}
+	return addrs
+}
+
 // New returns a new Server instance parameterized with the specific
 // configuration.
 func New(cfg *config.Config) (*Server, error) {
@@ -311,6 +328,10 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	// Ensure config defaults are set (tests may skip FixupAndValidate).
 	s.cfg.SetDefaultTimeouts()
 
+	s.connLimiter = connlimit.New(s.cfg.MaxClientConns, s.cfg.MaxPeerConns, s.cfg.MaxConnsPerIP)
+	s.peerSet = connlimit.NewPeerSet()
+	s.peerSet.Rebuild(replicaStaticAuthorityAddresses(s.cfg))
+
 	// Derive the Pigeonhole geometry once from the Sphinx geometry and the
 	// configured replica NIKE scheme; the message handlers reuse it rather
 	// than re-deriving it on every request.
@@ -362,6 +383,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	// Initialize proxy request manager and concurrency limiter.
 	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
 	s.proxySema = make(chan struct{}, s.cfg.ProxyWorkerCount)
+	s.decapSema = make(chan struct{}, s.cfg.ProxyWorkerCount)
 
 	if s.cfg.GenerateOnly {
 		return nil, ErrGenerateOnly

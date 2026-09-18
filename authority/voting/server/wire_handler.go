@@ -228,10 +228,10 @@ func (s *Server) onConn(conn net.Conn) {
 	)
 
 	// Bound concurrent connections per authenticated peer identity so one peer
-	// cannot camp all of the MaxConcurrentConns accept slots. Only identified
-	// peers carry an identity hash; anonymous clients are not capped here. The
-	// global semaphore already bounds the total and stays before the handshake,
-	// so a handshake flood is still bounded; this check is necessarily after the
+	// cannot camp all of the peer pool's accept slots. Only identified peers
+	// carry an identity hash; anonymous clients are not capped here. The peer
+	// pool cap already bounds the total and stays before the handshake, so a
+	// handshake flood is still bounded; this check is necessarily after the
 	// handshake because the peer identity is only known once it completes.
 	if len(auth.peerIdentityKeyHash) == hash.HashSize {
 		var peerSlotID [hash.HashSize]byte
@@ -581,6 +581,16 @@ func (s *Server) onGetConsensus(peerID string, cmd *commands.GetConsensus) comma
 	return resp
 }
 
+func (s *Server) descriptorEpochOK(now, epoch uint64) bool {
+	var diff uint64
+	if epoch >= now {
+		diff = epoch - now
+	} else {
+		diff = now - epoch
+	}
+	return diff <= s.cfg.Server.DescriptorEpochTolerance
+}
+
 func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplicaDescriptor, pubKeyHash []byte) commands.Command {
 	phase, timeRemaining := s.state.PhaseInfo()
 	s.log.Debugf("onPostReplicaDescriptor: Received from peer %s for epoch %d (phase: %s, time remaining: %v)", peerID, cmd.Epoch, phase, timeRemaining)
@@ -590,14 +600,9 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 
 	// Ensure the epoch is somewhat sane.
 	now, _, _ := epochtime.Now()
-	switch cmd.Epoch {
-	case now - 1, now, now + 1:
-		// Nodes will always publish the descriptor for the current epoch on
-		// launch, which may be off by one period, depending on how skewed
-		// the node's clock is and the current time.
-	default:
-		// The peer is publishing for an epoch that's invalid.
-		s.log.Errorf("Peer %s: Invalid descriptor epoch '%v'", peerID, cmd.Epoch)
+	if !s.descriptorEpochOK(now, cmd.Epoch) {
+		tol := s.cfg.Server.DescriptorEpochTolerance
+		s.log.Errorf("Peer %s: Invalid descriptor epoch '%v' (current: %d, acceptable: %d-%d)", peerID, cmd.Epoch, now, now-tol, now+tol)
 		instrument.DescriptorRejected("replica", "invalid_epoch")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
@@ -715,20 +720,16 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 
 	// Ensure the epoch is somewhat sane.
 	now, _, _ := epochtime.Now()
-	s.log.Debugf("onPostDescriptor: Validating epoch from peer %s: descriptor epoch %d, current epoch %d", peerID, cmd.Epoch, now)
-	switch cmd.Epoch {
-	case now - 1, now, now + 1:
-		// Nodes will always publish the descriptor for the current epoch on
-		// launch, which may be off by one period, depending on how skewed
-		// the node's clock is and the current time.
-		s.log.Debugf("onPostDescriptor: Epoch validation passed from peer %s: epoch %d is within acceptable range", peerID, cmd.Epoch)
-	default:
+	tol := s.cfg.Server.DescriptorEpochTolerance
+	s.log.Debugf("onPostDescriptor: Validating epoch from peer %s: descriptor epoch %d, current epoch %d, tolerance %d", peerID, cmd.Epoch, now, tol)
+	if !s.descriptorEpochOK(now, cmd.Epoch) {
 		// The peer is publishing for an epoch that's invalid.
-		s.log.Errorf("onPostDescriptor: EPOCH VALIDATION FAILED from peer %s: invalid descriptor epoch %d (current: %d, acceptable: %d-%d)", peerID, cmd.Epoch, now, now-1, now+1)
+		s.log.Errorf("onPostDescriptor: EPOCH VALIDATION FAILED from peer %s: invalid descriptor epoch %d (current: %d, acceptable: %d-%d)", peerID, cmd.Epoch, now, now-tol, now+tol)
 		instrument.DescriptorRejected("mix", "invalid_epoch")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
+	s.log.Debugf("onPostDescriptor: Epoch validation passed from peer %s: epoch %d is within acceptable range", peerID, cmd.Epoch)
 
 	// Validate and deserialize the SignedUpload.
 	s.log.Debugf("onPostDescriptor: Deserializing SignedUpload from peer %s", strconv.QuoteToASCII(peerID))

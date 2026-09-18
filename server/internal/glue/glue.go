@@ -21,6 +21,7 @@ package glue
 import (
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -51,6 +52,9 @@ type Glue interface {
 	Connector() Connector
 	Listeners() []Listener
 	Decoy() Decoy
+
+	// PeerConnSet returns the epoch-updatable set of known peer source IPs.
+	PeerConnSet() *connlimit.PeerSet
 
 	ReshadowCryptoWorkers()
 }

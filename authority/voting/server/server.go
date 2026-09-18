@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	"github.com/katzenpost/katzenpost/authority/voting/server/profiling"
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -69,7 +70,6 @@ type Server struct {
 
 	state     *state
 	listeners []net.Listener
-	connSem   chan struct{}
 
 	// connMu guards conns and halting. conns tracks every accepted connection
 	// whose handler is running so shutdown can close them, and halting records
@@ -80,9 +80,10 @@ type Server struct {
 	halting bool
 
 	// peerSlotMu guards peerSlots, which counts the in-flight handlers per
-	// authenticated peer identity so a single peer cannot camp all of the
-	// MaxConcurrentConns accept slots. Keyed by the wire-authenticated identity
-	// hash; anonymous clients (no identity) are not tracked here.
+	// authenticated peer identity so a single peer cannot camp all of the peer
+	// pool's accept slots (connlimit.DefaultMaxPeerConns by default). Keyed by the
+	// wire-authenticated identity hash; anonymous clients (no identity) are not
+	// tracked here.
 	peerSlotMu sync.Mutex
 	peerSlots  map[[hash.HashSize]byte]int
 
@@ -95,6 +96,9 @@ type Server struct {
 	// override; kept so the FSM can log observed consensus size against what we
 	// predicted.
 	maxMessageSizeEstimate int
+
+	connLimiter *connlimit.Limiter
+	peerSet     *connlimit.PeerSet
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -228,6 +232,14 @@ func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
 }
 
+func dirauthStaticAuthorityAddresses(cfg *config.Config) []string {
+	var addrs []string
+	for _, auth := range cfg.Authorities {
+		addrs = append(addrs, auth.Addresses...)
+	}
+	return addrs
+}
+
 func (s *Server) listenWorker(l net.Listener) {
 	addr := l.Addr()
 	s.log.Noticef("Listening on: %v", addr)
@@ -253,16 +265,16 @@ func (s *Server) listenWorker(l net.Listener) {
 			continue
 		}
 
-		// Bound concurrent handlers so a connection flood cannot exhaust
-		// goroutines or memory. Full means this parks until a handler frees a
-		// slot; the kernel backlog absorbs the wait. A watch on haltedCh here
-		// would be dead code: haltedCh is closed only at the end of halt(), after
-		// the WaitGroup drain that waits for this worker, and shutdown already
-		// closes the listener (ending Accept) and every accepted connection, so
-		// handlers drain and free slots and this send makes progress.
-		s.connSem <- struct{}{}
+		isPeer := s.peerSet.Contains(connlimit.AddrIP(conn.RemoteAddr()))
+		token, ok := s.connLimiter.TryAcquire(conn.RemoteAddr(), isPeer)
+		if !ok {
+			s.log.Debugf("Refusing connection from %v: connection cap reached (peer=%v)", conn.RemoteAddr(), isPeer)
+			conn.Close()
+			continue
+		}
+
 		s.state.Go(func() {
-			defer func() { <-s.connSem }()
+			defer token.Release()
 			s.handleConn(conn)
 		})
 	}
@@ -298,8 +310,8 @@ func (s *Server) unregisterConn(conn net.Conn) {
 // identity id, returning false if the peer already holds MaxConnsPerPeer
 // concurrent handlers. The caller must releasePeerSlot when its handler returns.
 // This is checked after the handshake, because the peer identity is only known
-// then; the global MaxConcurrentConns semaphore stays before the handshake so a
-// handshake flood is still bounded.
+// then; the peer pool cap stays before the handshake so a handshake flood is
+// still bounded.
 func (s *Server) acquirePeerSlot(id [hash.HashSize]byte) bool {
 	limit := s.cfg.Server.MaxConnsPerPeer
 	if limit <= 0 {
@@ -400,11 +412,6 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.fatalErrCh = make(chan error, 1)
 	s.haltedCh = make(chan interface{})
-	maxConns := cfg.Server.MaxConcurrentConns
-	if maxConns <= 0 {
-		maxConns = 64
-	}
-	s.connSem = make(chan struct{}, maxConns)
 
 	// Do the early initialization and bring up logging.
 	if err := s.initDataDir(); err != nil {
@@ -589,6 +596,10 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("This fatal error has triggered an emergency shutdown of the authority")
 		s.Shutdown()
 	}()
+
+	s.connLimiter = connlimit.New(s.cfg.Debug.MaxClientConns, s.cfg.Debug.MaxPeerConns, s.cfg.Debug.MaxConnsPerIP)
+	s.peerSet = connlimit.NewPeerSet()
+	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
 
 	// Start up the state worker.
 	if s.state, err = newState(s); err != nil {
