@@ -4,6 +4,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -41,6 +42,8 @@ const (
 	// grow indefinitely. 60s is generous for any healthy client while
 	// still bounding memory in the pathological case.
 	perClientWriteDeadline = 60 * time.Second
+
+	perClientReadBodyDeadline = 60 * time.Second
 )
 
 // errConnClosed is returned by sendResponse when the incoming conn has
@@ -148,14 +151,14 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 	if blobLen > thin.MaxMessageSize {
 		return nil, fmt.Errorf("client request frame too large: %d bytes (max %d)", blobLen, thin.MaxMessageSize)
 	}
-	blob := make([]byte, blobLen)
-	if count, err = io.ReadFull(c.conn, blob); err != nil {
+	var blob bytes.Buffer
+	_ = c.conn.SetReadDeadline(time.Now().Add(perClientReadBodyDeadline))
+	_, err = io.CopyN(&blob, c.conn, int64(blobLen))
+	_ = c.conn.SetReadDeadline(time.Time{})
+	if err != nil {
 		return nil, err
 	}
-	if uint32(count) != blobLen {
-		return nil, errors.New("failed to read blob")
-	}
-	err = cbor.Unmarshal(blob[:count], &req)
+	err = cbor.Unmarshal(blob.Bytes(), &req)
 	if err != nil {
 		c.log.Infof("error decoding cbor from client: %s\n", err)
 		return nil, err
