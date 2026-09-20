@@ -164,3 +164,26 @@ func TestLeanMLKEM768X25519Vectors(t *testing.T) {
 			return k.UnmarshalBinaryPrivateKey(rawKey)
 		})
 }
+
+// TestLeanMLKEM768X25519BLAKE2bXOFVectors is TestLeanMLKEM768X25519Vectors's counterpart under
+// the deployed BLAKE2b-XOF adapter PRF, now that CryptWalker's Lean port has it
+// (KEM/Schemes.lean's kemMLKEM768X25519Blake2b) -- matching hpqc's registered "MLKEM768-X25519"
+// scheme exactly, not just a portable stand-in.
+func TestLeanMLKEM768X25519BLAKE2bXOFVectors(t *testing.T) {
+	k, err := combiner.New("MLKEM768-X25519-blake2bxof", []kem.Scheme{
+		adapter.FromNIKEWithPRF(ecdhnike.Scheme(rand.Reader), adapter.BLAKE2bXOF),
+		mlkem768.Scheme(),
+	})
+	require.NoError(t, err)
+	unwrapLeanVectors(t, "testdata/lean_kem_hybrid_blake2bxof_vectors.json",
+		func(withSURB bool) *Sphinx {
+			return NewKEMSphinx(k, geo.KEMGeometryFromUserForwardPayloadLength(k, 103, withSURB, 5))
+		},
+		func(hexKey string) (interface{}, error) {
+			rawKey, err := hex.DecodeString(hexKey)
+			if err != nil {
+				return nil, err
+			}
+			return k.UnmarshalBinaryPrivateKey(rawKey)
+		})
+}
