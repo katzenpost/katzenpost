@@ -8,8 +8,10 @@ nodes, couriers, storage replicas. Tracks all five operator-tunable
 emission rates (LambdaP, LambdaL, LambdaM, LambdaG, LambdaR) and the
 two cryptographic ceilings that matter in practice: per-mix-node
 Sphinx unwrap throughput, and per-replica MKEM (CTIDH1024-X25519)
-Decapsulate throughput. Predicts pigeonhole-cp wall-clock and
-bytes/sec for a chosen payload size given the Sphinx geometry.
+Decapsulate throughput -- including how many concurrently-active
+users that CTIDH throughput can support. Predicts pigeonhole-cp
+wall-clock and bytes/sec for a chosen payload size given the Sphinx
+geometry.
 
 Exposed as the ``mixnet-params`` entry point by the package's
 pyproject.toml; see :func:`main` for the click command itself.
@@ -32,6 +34,22 @@ from mixnet_params.cp_throughput import (
     DEFAULT_PROPAGATION_SECONDS,
     predict_bytes_per_second,
 )
+from mixnet_params.sphinx_geo import (
+    derive_forward_payload_length,
+    header_length,
+    packet_length,
+    per_hop_routing_info_length,
+    routing_info_length,
+    surb_length,
+)
+from mixnet_params.replica_capacity import (
+    concurrent_users_ceiling,
+    default_decaps_per_request,
+    parse_selfcheck_toml,
+    replica_inbound_connections,
+    replica_mesh_pps,
+    system_ctidh_ops_per_sec,
+)
 
 
 @click.command()
@@ -39,7 +57,10 @@ from mixnet_params.cp_throughput import (
 @click.option("--benchmark", default=385069, help="Sphinx unwrap nanoseconds/op on the operator's hardware")
 @click.option("--average-delay", default=0.2, help="seconds per hop (per-mix-node sphinx delay)")
 @click.option("--gateways", default=2)
-@click.option("--nodes-per-layer", default=2)
+@click.option("--nodes-per-layer", default=2, help="uniform per-layer mix node count; overridden by --layer-sizes")
+@click.option("--layer-sizes", default=None, type=str,
+              help='comma-separated per-layer mix-node counts, e.g. "2,2,3" (see namenlos '
+                   'SSOT/topology.toml), for a non-uniform topology; overrides --nodes-per-layer')
 @click.option("--services", default=2)
 @click.option("--users", default=2000)
 @click.option("--hops", default=11)
@@ -53,16 +74,43 @@ from mixnet_params.cp_throughput import (
 @click.option("-L", "--LambdaL", "LambdaL", type=float, default=None, help="LambdaL (overrides --user-loops)")
 @click.option("-M", "--LambdaM", "LambdaM", type=float, default=None, help="LambdaM (overrides --node-loops)")
 @click.option("-G", "--LambdaG", "LambdaG", type=float, default=None, help="LambdaG, per-gateway decoy rate (overrides --gateway-loops)")
-@click.option("-R", "--LambdaR", "LambdaR", type=float, default=0.005, help="LambdaR, per-courier-replica connection drain rate")
+@click.option("-R", "--LambdaR", "LambdaR", type=float, default=0.00025,
+              help="LambdaR, per-courier/replica-connection decoy rate. Defaults to the katzenpost "
+                   "code default (authority/voting/server/config/config.go); pass your deployment's "
+                   "real value, e.g. -R 0.02 for namenlos (SSOT/topology.toml [Parameters]).")
 # Pigeonhole / BACAP / Sphinx geometry.
 @click.option("--user-forward-payload", default=2000, help="Sphinx UserForwardPayloadLength")
+@click.option("--sphinx-nike-pubkey-bytes", default=32, help="Sphinx transport NIKE public-key size (default 32, x25519)")
+@click.option("--with-surb/--no-with-surb", "with_surb", default=True, help="whether the forward payload carries a SURB")
 @click.option("--couriers", default=3, help="number of courier-running service nodes")
 @click.option("--replicas", default=5, help="number of storage replicas")
-@click.option("--shard-k", default=2, help="K-way fan-out per pigeonhole request (consistent-hashing K)")
 @click.option("--replica-nike-pubkey-bytes", default=DEFAULT_REPLICA_NIKE_PUBKEY_SIZE,
               help="bytes of the replica's MKEM sender public key (default 160 for CTIDH1024-X25519)")
+# Replica CTIDH capacity: real self-check data, in priority order over the legacy constant.
+@click.option("--selfcheck-toml", "selfcheck_toml", multiple=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="path to a real replica's <DataDir>/selfcheck.toml (may be given more than "
+                   "once, one per replica); OpsPerSecSaturated is summed across all given. "
+                   "Every replica already measures this at startup -- no separate benchmarking "
+                   "needed, just point this at the files.")
+@click.option("--replica-ops-per-sec", type=float, default=None,
+              help="manual CTIDH ops/sec for ONE replica (saturated), used instead of "
+                   "--selfcheck-toml when the files aren't handy; total budget = this x --replicas")
 @click.option("--replica-decap-seconds", default=0.66,
-              help="cost of one MKEM Decapsulate op on the replica (saturated, from the startup self-check)")
+              help="legacy fallback: assumed cost of one MKEM Decapsulate op per replica, only "
+                   "used when neither --selfcheck-toml nor --replica-ops-per-sec is given")
+@click.option("--decaps-per-request-min", type=float, default=None,
+              help="override the minimum CTIDH decaps one pigeonhole request costs replica-set-wide "
+                   "(default derived from --replicas; see --help output's capacity section)")
+@click.option("--decaps-per-request-typical", type=float, default=None,
+              help="override the typical CTIDH decaps one pigeonhole request costs replica-set-wide")
+@click.option("--decaps-per-request-max", type=float, default=None,
+              help="override the worst-case CTIDH decaps one pigeonhole request costs replica-set-wide")
+@click.option("--user-pigeonhole-rate", type=float, default=None,
+              help="ASSUMPTION, not a protocol constant: pigeonhole (BACAP) requests/sec issued by "
+                   "one concurrently-active user. Pigeonhole requests share the ordinary LambdaP-paced "
+                   "send queue -- there is no independent per-user pigeonhole rate anywhere in the "
+                   "protocol, so this must come from the operator's own traffic-mix estimate.")
 # cp-throughput prediction inputs.
 @click.option("--cp-payload-bytes", default=65536, help="payload size for the pigeonhole-cp throughput prediction")
 @click.option("--cp-per-chunk-seconds", default=DEFAULT_PER_CHUNK_SECONDS,
@@ -74,6 +122,7 @@ def main(
     average_delay,
     gateways,
     nodes_per_layer,
+    layer_sizes,
     services,
     users,
     hops,
@@ -87,11 +136,18 @@ def main(
     LambdaG,
     LambdaR,
     user_forward_payload,
+    sphinx_nike_pubkey_bytes,
+    with_surb,
     couriers,
     replicas,
-    shard_k,
     replica_nike_pubkey_bytes,
+    selfcheck_toml,
+    replica_ops_per_sec,
     replica_decap_seconds,
+    decaps_per_request_min,
+    decaps_per_request_typical,
+    decaps_per_request_max,
+    user_pigeonhole_rate,
     cp_payload_bytes,
     cp_per_chunk_seconds,
     cp_propagation_seconds,
@@ -121,30 +177,63 @@ def main(
     else:
         gateway_loops = LambdaG * 1e3
 
-    # Total node count for the mix-node decoy contribution.
-    mix_nodes = nodes_per_layer * 3
-    nodes = gateways + services + mix_nodes
+    # Topology: either a uniform per-layer count, or the real per-layer
+    # sizes for a non-uniform deployment (e.g. namenlos's 2/2/3 layers).
+    if layer_sizes:
+        layer_size_list = [int(x.strip()) for x in layer_sizes.split(",")]
+        mix_nodes = sum(layer_size_list)
+        narrowest_layer = min(layer_size_list)
+    else:
+        layer_size_list = None
+        mix_nodes = nodes_per_layer * 3
+        narrowest_layer = nodes_per_layer
 
     per_node_load = traffic_per_node(
         users=users,
         user_loops=user_loops,
         user_traffic=user_traffic,
-        nodes=nodes,
         node_loops=node_loops,
         gateways=gateways,
         gateway_loops=gateway_loops,
-        nodes_per_layer=nodes_per_layer,
+        narrowest_layer=narrowest_layer,
         services=services,
+        mix_nodes=mix_nodes,
     )
 
     # Print the copy-pastable invocation summarising every input.
     print_invocation(locals())
 
     print()
-    print(f"Topology: {gateways} gateways, {mix_nodes} mix nodes ({nodes_per_layer}/layer × 3 layers), {services} service nodes, {couriers} couriers, {replicas} replicas.")
+    if layer_size_list:
+        layer_desc = f"{mix_nodes} mix nodes (layers: {'/'.join(map(str, layer_size_list))})"
+    else:
+        layer_desc = f"{mix_nodes} mix nodes ({nodes_per_layer}/layer × 3 layers)"
+    print(f"Topology: {gateways} gateways, {layer_desc}, {services} service nodes, {couriers} couriers, {replicas} replicas.")
+
+    # Sphinx packet geometry (NIKE Sphinx only for now -- namenlos and the
+    # docker mixnet both run NIKE Sphinx; the KEM variant is available in
+    # sphinx_geo.per_hop_routing_info_length but not wired in here yet).
     print()
+    print("=== Sphinx packet geometry ===")
+    one_hop = per_hop_routing_info_length()
+    routing_info = routing_info_length(hops, one_hop)
+    sphinx_hdr = header_length(sphinx_nike_pubkey_bytes, routing_info)
+    sphinx_surb = surb_length(sphinx_hdr)
+    if with_surb:
+        sphinx_fwd = derive_forward_payload_length(user_forward_payload, sphinx_surb)
+    else:
+        sphinx_fwd = user_forward_payload
+    sphinx_pkt = packet_length(sphinx_hdr, sphinx_fwd)
+    print(f"NrHops: {hops}")
+    print(f"PerHopRoutingInfoLength: {one_hop} bytes")
+    print(f"RoutingInfoLength: {routing_info} bytes")
+    print(f"HeaderLength: {sphinx_hdr} bytes")
+    print(f"SURBLength: {sphinx_surb} bytes")
+    print(f"ForwardPayloadLength: {sphinx_fwd} bytes (with-SURB={with_surb})")
+    print(f"PacketLength: {sphinx_pkt} bytes")
 
     # Mix-node ceiling (existing logic).
+    print()
     mix_ceiling = max_ops(benchmark)
     print("=== Mix-node Sphinx unwrap ===")
     print(f"Average traffic per mix node: {per_node_load:.1f} packets/sec (narrowest layer)")
@@ -155,32 +244,109 @@ def main(
         headroom = mix_ceiling - per_node_load
         print(f"Headroom: {headroom:.1f} ops/sec.")
 
-    # Courier ceiling. Each of the `couriers * replicas` connections
-    # is paced at LambdaR (events per millisecond), so the aggregate
-    # courier→replica throughput is the product.
+    # Courier <-> replica mesh. Every courier maintains a LambdaR-paced
+    # connection to every replica, AND every replica maintains one to
+    # every OTHER replica ("Connect to all replicas for replication
+    # purposes", replica/connector.go); both use the same paced sender
+    # (replica/sender.go). Decoy traffic on these links is free CTIDH-wise
+    # (replica/handlers.go) -- this section is connection/bandwidth budget
+    # only, not a CTIDH constraint.
     print()
-    print("=== Courier → replica drain ===")
+    print("=== Courier ↔ replica drain ===")
     courier_aggregate_pps = couriers * replicas * LambdaR * 1e3
+    mesh_pps = replica_mesh_pps(replicas, LambdaR)
+    total_pps = courier_aggregate_pps + mesh_pps
     print(f"LambdaR: {LambdaR} events/ms ({LambdaR * 1e3:.1f} per-connection events/sec)")
-    print(f"Aggregate courier→replica throughput: {courier_aggregate_pps:.1f} ReplicaMessages/sec")
+    print(f"Courier→replica throughput: {courier_aggregate_pps:.1f} ReplicaMessages/sec")
     print(f"  (= {couriers} couriers × {replicas} replicas × {LambdaR * 1e3:.1f} events/sec)")
+    print(f"Replica↔replica mesh throughput: {mesh_pps:.1f} ReplicaMessages/sec")
+    print(f"  (= {replicas} replicas × {replicas - 1} peer(s) × {LambdaR * 1e3:.1f} events/sec)")
+    print(f"Total aggregate drain (courier mesh + replica mesh): {total_pps:.1f} ReplicaMessages/sec")
+    print(f"Per-replica inbound connections: {replica_inbound_connections(couriers, replicas)} "
+          f"(= {couriers} couriers + {replicas - 1} other replica(s))")
+    print("  Note: decoy traffic on these links costs zero CTIDH; this is a connection/bandwidth "
+          "budget only, separate from the CTIDH capacity section below.")
 
-    # Replica ceiling. Each pigeonhole request lands as `shard_k`
-    # ReplicaMessages (the courier's fan-out to K intermediate
-    # replicas). Each ReplicaMessage costs one MKEM Decapsulate.
-    # System-wide CTIDH op budget is `replicas / replica_decap_seconds`.
+    # Replica CTIDH capacity. Real replicas self-benchmark MKEM Decapsulate
+    # at startup and cache the result (replica/selfcheck.go,
+    # core/selfcheckcache/cache.go); operators should point --selfcheck-toml
+    # at those real files rather than guess a seconds-per-op constant.
     print()
-    print("=== Replica MKEM (CTIDH) ===")
-    if replica_decap_seconds <= 0:
-        print("WARNING: --replica-decap-seconds must be > 0; skipping replica ceiling math.")
-        replica_iter_ceiling = float("inf")
+    print("=== Replica MKEM (CTIDH) capacity ===")
+    selfcheck_sources = []
+    if selfcheck_toml:
+        saturated_list = []
+        for path in selfcheck_toml:
+            with open(path, "rb") as f:
+                raw = f.read()
+            try:
+                parsed = parse_selfcheck_toml(raw)
+            except KeyError as exc:
+                print(f"ERROR: {path}: {exc}")
+                sys.exit(1)
+            saturated_list.append(parsed["OpsPerSecSaturated"])
+            selfcheck_sources.append((path, parsed))
+        system_ops_per_sec = system_ctidh_ops_per_sec(saturated_list)
+        budget_source = f"{len(selfcheck_toml)} --selfcheck-toml file(s)"
+        if len(selfcheck_toml) != replicas:
+            print(f"WARNING: {len(selfcheck_toml)} --selfcheck-toml file(s) given but --replicas={replicas}; "
+                  f"summing only the {len(selfcheck_toml)} measured replica(s).")
+    elif replica_ops_per_sec is not None:
+        system_ops_per_sec = replicas * replica_ops_per_sec
+        budget_source = f"--replica-ops-per-sec={replica_ops_per_sec} × {replicas} replicas"
+    elif replica_decap_seconds > 0:
+        system_ops_per_sec = replicas / replica_decap_seconds
+        budget_source = (f"legacy --replica-decap-seconds={replica_decap_seconds} "
+                          f"(no self-check data given)")
     else:
-        replica_ops_per_sec_system = replicas / replica_decap_seconds
-        replica_iter_ceiling = replica_ops_per_sec_system / shard_k
-        print(f"Replica MKEM ops/sec (system-wide, saturated): {replica_ops_per_sec_system:.2f}")
-        print(f"  (= {replicas} replicas / {replica_decap_seconds:.3f} s/op)")
-        print(f"Pigeonhole iter/sec ceiling: {replica_iter_ceiling:.2f}")
-        print(f"  (= replica ops/sec / shard-K of {shard_k})")
+        print("WARNING: --replica-decap-seconds must be > 0; skipping replica ceiling math.")
+        system_ops_per_sec = 0.0
+        budget_source = "none (invalid --replica-decap-seconds)"
+
+    print(f"CTIDH budget source: {budget_source}")
+    for path, parsed in selfcheck_sources:
+        print(f"  {path}: host={parsed.get('Hostname', '?')} NumCPU={parsed.get('NumCPU', '?')} "
+              f"OpsPerSecSaturated={parsed['OpsPerSecSaturated']:.2f}")
+    print(f"System-wide CTIDH ops/sec (saturated; decoy traffic is free): {system_ops_per_sec:.2f}")
+
+    default_min, default_typical, default_max = default_decaps_per_request(replicas)
+    d_min = decaps_per_request_min if decaps_per_request_min is not None else default_min
+    d_typical = decaps_per_request_typical if decaps_per_request_typical is not None else default_typical
+    d_max = decaps_per_request_max if decaps_per_request_max is not None else default_max
+
+    print()
+    print(f"Decaps per pigeonhole request (replica-set-wide): min={d_min:g} typical={d_typical:g} max={d_max:g}")
+    if replicas < 4:
+        print(f"  ({replicas} replicas < 4: the 2 intermediate replicas ARE the K=2 shard holders, "
+              f"no proxy hop -- pigeonhole/pki.go)")
+    else:
+        print(f"  ({replicas} replicas >= 4: intermediates exclude the K=2 shard holders, so every "
+              f"request is also proxied to them -- pigeonhole/pki.go)")
+
+    if system_ops_per_sec > 0:
+        iter_ceiling_best = system_ops_per_sec / d_min
+        iter_ceiling_typical = system_ops_per_sec / d_typical
+        iter_ceiling_worst = system_ops_per_sec / d_max
+    else:
+        iter_ceiling_best = iter_ceiling_typical = iter_ceiling_worst = 0.0
+
+    print()
+    print(f"Pigeonhole request/sec ceiling (system-wide, saturated): "
+          f"{iter_ceiling_typical:.2f} typical / {iter_ceiling_worst:.2f} worst-case")
+
+    print()
+    if user_pigeonhole_rate:
+        users_best = concurrent_users_ceiling(system_ops_per_sec, d_min, user_pigeonhole_rate)
+        users_typical = concurrent_users_ceiling(system_ops_per_sec, d_typical, user_pigeonhole_rate)
+        users_worst = concurrent_users_ceiling(system_ops_per_sec, d_max, user_pigeonhole_rate)
+        print(f"Concurrent users supported (CTIDH-bound) at "
+              f"--user-pigeonhole-rate={user_pigeonhole_rate:g} req/sec/user:")
+        print(f"  best case  (min decaps/req): {users_best:.0f} users")
+        print(f"  typical    (typical decaps/req): {users_typical:.0f} users")
+        print(f"  worst case (max decaps/req): {users_worst:.0f} users")
+    else:
+        print("Pass --user-pigeonhole-rate <req/sec/user> (an operator assumption, not a protocol "
+              "constant -- see README) to get a concurrent-users estimate.")
 
     # Pigeonhole + Sphinx geometry. Compute the
     # MaxPlaintextPayloadLength precisely from UFPL, then derive the
@@ -224,13 +390,12 @@ def main(
     print(f"  predicted wall-clock: {total_s:.1f} s "
           f"(propagation {cp_propagation_seconds:.0f} s + {chunks} × {cp_per_chunk_seconds:.1f} s/chunk)")
     print(f"  predicted throughput: {bps:.1f} bytes/sec")
-    if replica_iter_ceiling != float("inf"):
+    if iter_ceiling_typical > 0:
         # System-wide cp throughput ceiling = elements-per-second the
-        # replicas can handle, times bytes/element.
-        chunks_per_sec_ceiling = replica_iter_ceiling
-        sys_bps_ceiling = chunks_per_sec_ceiling * element_cap
-        print(f"  system-wide aggregate cp ceiling (saturated): "
-              f"{chunks_per_sec_ceiling:.2f} chunks/sec → {sys_bps_ceiling:.0f} B/s "
+        # replicas can handle (typical case), times bytes/element.
+        sys_bps_ceiling = iter_ceiling_typical * element_cap
+        print(f"  system-wide aggregate cp ceiling (saturated, typical case): "
+              f"{iter_ceiling_typical:.2f} chunks/sec → {sys_bps_ceiling:.0f} B/s "
               f"summed across concurrent transfers")
 
     # genconfig-friendly footer.
@@ -243,17 +408,19 @@ def main(
 def print_invocation(params):
     """Emit a copy-pastable command line with every option resolved."""
     args = [
-        "benchmark", "average_delay", "gateways", "nodes_per_layer",
+        "benchmark", "average_delay", "gateways", "nodes_per_layer", "layer_sizes",
         "services", "users", "user_loops", "user_traffic", "node_loops",
         "gateway_loops", "hops", "LambdaP", "LambdaL", "LambdaM",
-        "LambdaG", "LambdaR", "user_forward_payload", "couriers",
-        "replicas", "shard_k", "replica_nike_pubkey_bytes",
-        "replica_decap_seconds", "cp_payload_bytes",
+        "LambdaG", "LambdaR", "user_forward_payload", "sphinx_nike_pubkey_bytes",
+        "with_surb", "couriers", "replicas", "replica_nike_pubkey_bytes",
+        "replica_ops_per_sec", "replica_decap_seconds",
+        "decaps_per_request_min", "decaps_per_request_typical", "decaps_per_request_max",
+        "user_pigeonhole_rate", "cp_payload_bytes",
         "cp_per_chunk_seconds", "cp_propagation_seconds",
     ]
     lines = [sys.argv[0] + " \\"]
     for key in args:
-        if key not in params:
+        if key not in params or params[key] is None:
             continue
         flag = "--" + key.replace("_", "-")
         # click maps -P/--LambdaP to the python identifier "LambdaP"
@@ -262,6 +429,10 @@ def print_invocation(params):
         if key in ("LambdaP", "LambdaL", "LambdaM", "LambdaG", "LambdaR"):
             flag = "--" + key
         lines.append(f"  {flag:>30} {params[key]} \\")
+    # --selfcheck-toml is host-specific and may be repeated; list each
+    # path given rather than trying to fold it into the generic loop above.
+    for path in params.get("selfcheck_toml") or ():
+        lines.append(f"  {'--selfcheck-toml':>30} {path} \\")
     # Strip the trailing backslash on the last line so the output is
     # actually pasteable.
     lines[-1] = lines[-1].rstrip(" \\")
@@ -304,16 +475,22 @@ def traffic_per_node(
     users,
     user_loops,
     user_traffic,
-    nodes,
     node_loops,
     gateways,
     gateway_loops,
-    nodes_per_layer,
+    narrowest_layer,
     services,
+    mix_nodes=None,
 ):
-    """Per-node load in the narrowest layer."""
-    a = min(gateways, nodes_per_layer, services)
-    mix_nodes = nodes_per_layer * 3
+    """Per-node load in the narrowest layer. ``narrowest_layer`` is the
+    node count of whichever layer (gateways, a mix layer, or services) is
+    smallest; ``mix_nodes`` is the total mix-node count across all layers
+    (defaults to ``narrowest_layer * 3`` for the classic uniform-3-layer
+    topology, but callers with a non-uniform topology -- e.g. --layer-sizes
+    -- should pass the real total)."""
+    a = min(gateways, narrowest_layer, services)
+    if mix_nodes is None:
+        mix_nodes = narrowest_layer * 3
     total = traffic_per_layer(
         users=users,
         user_loops=user_loops,
