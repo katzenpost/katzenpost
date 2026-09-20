@@ -23,51 +23,14 @@ file:line citation):
   real cost.
 - There is no protocol-level "requests per second per user" for pigeonhole
   traffic; it must be an operator-supplied assumption.
+- Operators supply the replica CTIDH rate as a single approximate number
+  (``--replica-ops-per-sec``), read off one replica's real
+  ``<DataDir>/selfcheck.toml`` (or its startup log) themselves -- every
+  replica already measures this at startup (``replica/selfcheck.go``), so
+  it's a lookup, not a benchmark. Collecting and feeding in every replica's
+  file individually was judged more trouble than it's worth for what is,
+  either way, a best-effort estimate.
 """
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    import tomli as tomllib
-
-
-def parse_selfcheck_toml(raw: bytes) -> dict:
-    """Parse the contents of one replica's self-check cache file.
-
-    Every real replica measures its own CTIDH (MKEM Decapsulate) throughput
-    at startup and persists the result to ``<DataDir>/selfcheck.toml``
-    (``replica/selfcheck_cache.go``), using the untagged struct defined in
-    ``core/selfcheckcache/cache.go:48-55``:
-
-        Hostname, MeasuredAt, NumCPU, OpsPerSecPerCore, OpsPerSecSaturated,
-        IterationTime
-
-    Since the struct carries no ``toml:"..."`` tags, the TOML keys are
-    exactly these Go field names, and the file is plain, flat TOML -- no
-    nesting, no version field, no scheme name. This function just parses it;
-    callers that need ``OpsPerSecSaturated`` should index the returned dict
-    and let the resulting ``KeyError`` explain a malformed/wrong file.
-    """
-    data = tomllib.loads(raw.decode("utf-8"))
-    if "OpsPerSecSaturated" not in data:
-        raise KeyError(
-            "selfcheck.toml missing 'OpsPerSecSaturated' -- is this really a "
-            "replica self-check cache file (core/selfcheckcache/cache.go)?"
-        )
-    return data
-
-
-def system_ctidh_ops_per_sec(saturated_ops_per_replica: list) -> float:
-    """Aggregate real CTIDH throughput across replicas.
-
-    Sums each replica's measured ``OpsPerSecSaturated`` -- the NumCPU-goroutine
-    saturated measurement (``replica/selfcheck.go``'s "saturated" mode), not
-    the single-goroutine "solo" figure. ``selfcheck.go`` documents saturated
-    as "the realistic ceiling for one replica process when its own request
-    handlers ... are fully utilising the host", which is exactly the regime a
-    concurrent-users estimate needs.
-    """
-    return float(sum(saturated_ops_per_replica))
 
 
 def default_decaps_per_request(num_replicas: int) -> tuple:

@@ -84,16 +84,14 @@ have 2/2/3 nodes rather than a uniform count), pass `--layer-sizes
 CTIDH (MKEM Decapsulate) is typically the CPU bottleneck on storage
 replicas, not bandwidth. **Operators do not need to run a separate
 CTIDH benchmark** — every replica already self-benchmarks MKEM
-Decapsulate at startup and caches the result to
-`<DataDir>/selfcheck.toml`. Point the tool at those real files:
+Decapsulate at startup and logs/caches the result (`OpsPerSecSaturated`)
+to `<DataDir>/selfcheck.toml`. Read that one number off any one
+replica's file or startup log and pass it as an approximation for the
+whole fleet — collecting every replica's file individually is more
+trouble than it's worth for what is, either way, a best-effort estimate:
 
 ```
-mixnet-params --replicas 4 \
-  --selfcheck-toml /path/to/replica0/selfcheck.toml \
-  --selfcheck-toml /path/to/replica1/selfcheck.toml \
-  --selfcheck-toml /path/to/replica2/selfcheck.toml \
-  --selfcheck-toml /path/to/replica3/selfcheck.toml \
-  --user-pigeonhole-rate 0.01
+mixnet-params --replicas 4 --replica-ops-per-sec 6.08 --user-pigeonhole-rate 0.01
 ```
 
 `--user-pigeonhole-rate` (pigeonhole requests/sec one concurrently-active
@@ -112,8 +110,7 @@ typically costing 4 (up to 6 under failover). The tool derives this
 automatically from `--replicas`; override with `--decaps-per-request-min/
 -typical/-max` if you've measured your own network's actual proxy rate.
 
-If you don't have the `selfcheck.toml` files handy, `--replica-ops-per-sec`
-takes a manual per-replica ops/sec number instead, and
+If you don't have a `selfcheck.toml`/log handy at all,
 `--replica-decap-seconds` remains as a last-resort legacy constant.
 
 ## License

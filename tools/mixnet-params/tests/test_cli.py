@@ -23,22 +23,13 @@ def test_layer_sizes_overrides_uniform_topology():
     assert "7 mix nodes" in result.output
 
 
-def test_selfcheck_toml_sums_ops_per_sec(tmp_path):
-    f1 = tmp_path / "replica0-selfcheck.toml"
-    f1.write_text('Hostname = "annares0"\nNumCPU = 4\nOpsPerSecSaturated = 30.0\n')
-    f2 = tmp_path / "replica1-selfcheck.toml"
-    f2.write_text('Hostname = "annares1"\nNumCPU = 4\nOpsPerSecSaturated = 28.0\n')
-
+def test_replica_ops_per_sec_multiplies_by_replica_count():
     result = CliRunner().invoke(
         main,
-        [
-            "--replicas", "2",
-            "--selfcheck-toml", str(f1),
-            "--selfcheck-toml", str(f2),
-        ],
+        ["--replicas", "4", "--replica-ops-per-sec", "28"],
     )
     assert result.exit_code == 0, result.output
-    assert "System-wide CTIDH ops/sec (saturated; decoy traffic is free): 58.00" in result.output
+    assert "System-wide CTIDH ops/sec (saturated; decoy traffic is free): 112.00" in result.output
 
 
 def test_missing_user_pigeonhole_rate_prints_guidance_not_a_number():

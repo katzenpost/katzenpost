@@ -45,10 +45,8 @@ from mixnet_params.sphinx_geo import (
 from mixnet_params.replica_capacity import (
     concurrent_users_ceiling,
     default_decaps_per_request,
-    parse_selfcheck_toml,
     replica_inbound_connections,
     replica_mesh_pps,
-    system_ctidh_ops_per_sec,
 )
 
 
@@ -86,19 +84,16 @@ from mixnet_params.replica_capacity import (
 @click.option("--replicas", default=5, help="number of storage replicas")
 @click.option("--replica-nike-pubkey-bytes", default=DEFAULT_REPLICA_NIKE_PUBKEY_SIZE,
               help="bytes of the replica's MKEM sender public key (default 160 for CTIDH1024-X25519)")
-# Replica CTIDH capacity: real self-check data, in priority order over the legacy constant.
-@click.option("--selfcheck-toml", "selfcheck_toml", multiple=True,
-              type=click.Path(exists=True, dir_okay=False),
-              help="path to a real replica's <DataDir>/selfcheck.toml (may be given more than "
-                   "once, one per replica); OpsPerSecSaturated is summed across all given. "
-                   "Every replica already measures this at startup -- no separate benchmarking "
-                   "needed, just point this at the files.")
+# Replica CTIDH capacity: an approximate per-replica ops/sec number, in
+# priority order over the legacy seconds-per-op constant.
 @click.option("--replica-ops-per-sec", type=float, default=None,
-              help="manual CTIDH ops/sec for ONE replica (saturated), used instead of "
-                   "--selfcheck-toml when the files aren't handy; total budget = this x --replicas")
+              help="approximate CTIDH ops/sec for ONE replica (saturated). Every replica already "
+                   "measures this at startup and logs/caches it to <DataDir>/selfcheck.toml -- "
+                   "read OpsPerSecSaturated off one replica's file or startup log and pass it "
+                   "here; total budget = this x --replicas.")
 @click.option("--replica-decap-seconds", default=0.66,
               help="legacy fallback: assumed cost of one MKEM Decapsulate op per replica, only "
-                   "used when neither --selfcheck-toml nor --replica-ops-per-sec is given")
+                   "used when --replica-ops-per-sec is not given")
 @click.option("--decaps-per-request-min", type=float, default=None,
               help="override the minimum CTIDH decaps one pigeonhole request costs replica-set-wide "
                    "(default derived from --replicas; see --help output's capacity section)")
@@ -141,7 +136,6 @@ def main(
     couriers,
     replicas,
     replica_nike_pubkey_bytes,
-    selfcheck_toml,
     replica_ops_per_sec,
     replica_decap_seconds,
     decaps_per_request_min,
@@ -269,44 +263,25 @@ def main(
 
     # Replica CTIDH capacity. Real replicas self-benchmark MKEM Decapsulate
     # at startup and cache the result (replica/selfcheck.go,
-    # core/selfcheckcache/cache.go); operators should point --selfcheck-toml
-    # at those real files rather than guess a seconds-per-op constant.
+    # core/selfcheckcache/cache.go); operators read the approximate
+    # OpsPerSecSaturated number off one replica's file or log themselves and
+    # pass it via --replica-ops-per-sec, rather than the tool collecting
+    # every replica's file (more trouble than it's worth for what is, either
+    # way, a best-effort estimate).
     print()
     print("=== Replica MKEM (CTIDH) capacity ===")
-    selfcheck_sources = []
-    if selfcheck_toml:
-        saturated_list = []
-        for path in selfcheck_toml:
-            with open(path, "rb") as f:
-                raw = f.read()
-            try:
-                parsed = parse_selfcheck_toml(raw)
-            except KeyError as exc:
-                print(f"ERROR: {path}: {exc}")
-                sys.exit(1)
-            saturated_list.append(parsed["OpsPerSecSaturated"])
-            selfcheck_sources.append((path, parsed))
-        system_ops_per_sec = system_ctidh_ops_per_sec(saturated_list)
-        budget_source = f"{len(selfcheck_toml)} --selfcheck-toml file(s)"
-        if len(selfcheck_toml) != replicas:
-            print(f"WARNING: {len(selfcheck_toml)} --selfcheck-toml file(s) given but --replicas={replicas}; "
-                  f"summing only the {len(selfcheck_toml)} measured replica(s).")
-    elif replica_ops_per_sec is not None:
+    if replica_ops_per_sec is not None:
         system_ops_per_sec = replicas * replica_ops_per_sec
         budget_source = f"--replica-ops-per-sec={replica_ops_per_sec} × {replicas} replicas"
     elif replica_decap_seconds > 0:
         system_ops_per_sec = replicas / replica_decap_seconds
-        budget_source = (f"legacy --replica-decap-seconds={replica_decap_seconds} "
-                          f"(no self-check data given)")
+        budget_source = f"legacy --replica-decap-seconds={replica_decap_seconds}"
     else:
         print("WARNING: --replica-decap-seconds must be > 0; skipping replica ceiling math.")
         system_ops_per_sec = 0.0
         budget_source = "none (invalid --replica-decap-seconds)"
 
-    print(f"CTIDH budget source: {budget_source}")
-    for path, parsed in selfcheck_sources:
-        print(f"  {path}: host={parsed.get('Hostname', '?')} NumCPU={parsed.get('NumCPU', '?')} "
-              f"OpsPerSecSaturated={parsed['OpsPerSecSaturated']:.2f}")
+    print(f"CTIDH budget source: {budget_source} (ASSUMES all replicas are equally capable)")
     print(f"System-wide CTIDH ops/sec (saturated; decoy traffic is free): {system_ops_per_sec:.2f}")
 
     default_min, default_typical, default_max = default_decaps_per_request(replicas)
@@ -429,10 +404,6 @@ def print_invocation(params):
         if key in ("LambdaP", "LambdaL", "LambdaM", "LambdaG", "LambdaR"):
             flag = "--" + key
         lines.append(f"  {flag:>30} {params[key]} \\")
-    # --selfcheck-toml is host-specific and may be repeated; list each
-    # path given rather than trying to fold it into the generic loop above.
-    for path in params.get("selfcheck_toml") or ():
-        lines.append(f"  {'--selfcheck-toml':>30} {path} \\")
     # Strip the trailing backslash on the last line so the output is
     # actually pasteable.
     lines[-1] = lines[-1].rstrip(" \\")
