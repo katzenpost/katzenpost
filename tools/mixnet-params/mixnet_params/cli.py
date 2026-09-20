@@ -102,10 +102,11 @@ from mixnet_params.replica_capacity import (
 @click.option("--decaps-per-request-max", type=float, default=None,
               help="override the worst-case CTIDH decaps one pigeonhole request costs replica-set-wide")
 @click.option("--user-pigeonhole-rate", type=float, default=None,
-              help="ASSUMPTION, not a protocol constant: pigeonhole (BACAP) requests/sec issued by "
-                   "one concurrently-active user. Pigeonhole requests share the ordinary LambdaP-paced "
-                   "send queue -- there is no independent per-user pigeonhole rate anywhere in the "
-                   "protocol, so this must come from the operator's own traffic-mix estimate.")
+              help="pigeonhole (BACAP) requests/sec issued by one concurrently-active user. "
+                   "Defaults to LambdaP (a real, code-grounded ceiling: pigeonhole requests share "
+                   "the ordinary LambdaP-paced send queue, so no user can exceed it), which gives "
+                   "the conservative bound where every packet is a pigeonhole request. Pass your "
+                   "own measured fraction of LambdaP for a realistic, higher estimate.")
 # cp-throughput prediction inputs.
 @click.option("--cp-payload-bytes", default=65536, help="payload size for the pigeonhole-cp throughput prediction")
 @click.option("--cp-per-chunk-seconds", default=DEFAULT_PER_CHUNK_SECONDS,
@@ -312,18 +313,32 @@ def main(
           f"{iter_ceiling_typical:.2f} typical / {iter_ceiling_worst:.2f} worst-case")
 
     print()
-    if user_pigeonhole_rate:
-        users_best = concurrent_users_ceiling(system_ops_per_sec, d_min, user_pigeonhole_rate)
-        users_typical = concurrent_users_ceiling(system_ops_per_sec, d_typical, user_pigeonhole_rate)
-        users_worst = concurrent_users_ceiling(system_ops_per_sec, d_max, user_pigeonhole_rate)
-        print(f"Concurrent users supported (CTIDH-bound) at "
-              f"--user-pigeonhole-rate={user_pigeonhole_rate:g} req/sec/user:")
+    # Pigeonhole requests share the ordinary LambdaP-paced send queue -- a
+    # user cannot issue them faster than LambdaP (client/sender.go), so
+    # LambdaP is a real, code-grounded ceiling, not a guess. Default to it
+    # (the conservative worst case: every packet is a pigeonhole request)
+    # when the operator hasn't measured their own real fraction, so the
+    # tool always prints a concrete capacity number instead of punting.
+    rate_defaulted = user_pigeonhole_rate is None
+    effective_rate = user_pigeonhole_rate if not rate_defaulted else user_traffic
+    if effective_rate <= 0:
+        print("Cannot compute concurrent users: the effective pigeonhole rate is 0 "
+              "(--user-pigeonhole-rate or LambdaP/--user-traffic).")
+    else:
+        users_best = concurrent_users_ceiling(system_ops_per_sec, d_min, effective_rate)
+        users_typical = concurrent_users_ceiling(system_ops_per_sec, d_typical, effective_rate)
+        users_worst = concurrent_users_ceiling(system_ops_per_sec, d_max, effective_rate)
+        if rate_defaulted:
+            print(f"Concurrent users supported (CTIDH-bound), CONSERVATIVE bound at "
+                  f"{effective_rate:g} req/sec/user (defaulted to LambdaP -- assumes EVERY "
+                  f"packet a user sends is a pigeonhole request; pass --user-pigeonhole-rate "
+                  f"with your own measured fraction of LambdaP for a realistic, higher estimate):")
+        else:
+            print(f"Concurrent users supported (CTIDH-bound) at "
+                  f"--user-pigeonhole-rate={effective_rate:g} req/sec/user:")
         print(f"  best case  (min decaps/req): {users_best:.0f} users")
         print(f"  typical    (typical decaps/req): {users_typical:.0f} users")
         print(f"  worst case (max decaps/req): {users_worst:.0f} users")
-    else:
-        print("Pass --user-pigeonhole-rate <req/sec/user> (an operator assumption, not a protocol "
-              "constant -- see README) to get a concurrent-users estimate.")
 
     # Pigeonhole + Sphinx geometry. Compute the
     # MaxPlaintextPayloadLength precisely from UFPL, then derive the

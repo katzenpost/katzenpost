@@ -33,20 +33,28 @@ def test_replica_ops_per_sec_multiplies_by_replica_count():
     assert "System-wide CTIDH ops/sec (saturated; decoy traffic is free): 112.00" in result.output
 
 
-def test_missing_user_pigeonhole_rate_prints_guidance_not_a_number():
-    result = CliRunner().invoke(main, [])
+def test_missing_user_pigeonhole_rate_defaults_to_lambdap_and_prints_a_number():
+    # --user-traffic 1 (the default) -> LambdaP -> 1.0 req/sec/user ceiling.
+    result = CliRunner().invoke(
+        main, ["--replicas", "4", "--replica-ops-per-sec", "28"],
+    )
     assert result.exit_code == 0, result.output
-    assert "Pass --user-pigeonhole-rate" in result.output
-    assert "Concurrent users supported" not in result.output
+    assert "Concurrent users supported" in result.output
+    assert "CONSERVATIVE bound" in result.output
+    assert "defaulted to LambdaP" in result.output
+    # 112 ops/sec / (4 decaps * 1.0 req/sec) = 28 users typical.
+    assert "typical    (typical decaps/req): 28 users" in result.output
 
 
-def test_user_pigeonhole_rate_prints_concurrent_users():
+def test_user_pigeonhole_rate_overrides_the_lambdap_default():
     result = CliRunner().invoke(
         main,
         ["--replicas", "4", "--replica-ops-per-sec", "28", "--user-pigeonhole-rate", "0.01"],
     )
     assert result.exit_code == 0, result.output
     assert "Concurrent users supported" in result.output
+    assert "CONSERVATIVE bound" not in result.output
+    assert "typical    (typical decaps/req): 2800 users" in result.output
 
 
 def test_shard_k_option_no_longer_exists():
