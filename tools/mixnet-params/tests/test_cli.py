@@ -12,6 +12,7 @@ def test_default_invocation_runs_clean_and_prints_new_sections():
     result = CliRunner().invoke(main, [])
     assert result.exit_code == 0, result.output
     assert "=== Sphinx packet geometry ===" in result.output
+    assert "UserForwardPayloadLength: 2000 bytes" in result.output
     assert "=== Replica MKEM (CTIDH) capacity ===" in result.output
     assert "=== Courier ↔ replica drain ===" in result.output
 

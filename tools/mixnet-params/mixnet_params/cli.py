@@ -223,6 +223,8 @@ def main(
     print(f"RoutingInfoLength: {routing_info} bytes")
     print(f"HeaderLength: {sphinx_hdr} bytes")
     print(f"SURBLength: {sphinx_surb} bytes")
+    print(f"UserForwardPayloadLength: {user_forward_payload} bytes "
+          f"(the application-usable payload -- what a client actually gets to fill with data)")
     print(f"ForwardPayloadLength: {sphinx_fwd} bytes (with-SURB={with_surb})")
     print(f"PacketLength: {sphinx_pkt} bytes")
 
