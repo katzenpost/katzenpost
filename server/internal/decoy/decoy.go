@@ -269,7 +269,7 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	}
 
 	if _, err := d.sphinx.DecryptSURBPayload(pkt.Payload, ctx.sprpKey); err != nil {
-		d.log.Debugf("Dropping packet: %v (SURB ID: 0x08x%): %v", pkt.ID, id, err)
+		d.log.Debugf("Dropping packet: %v (SURB ID: 0x%08x): %v", pkt.ID, id, err)
 		instrument.PacketsDropped()
 		instrument.PacketsDroppedByReason("decoy_surb_decrypt_failed")
 		return
@@ -340,7 +340,7 @@ func (d *decoy) worker() {
 				lambda = doc.LambdaM
 			}
 
-			d.log.Debug("DECOY LAMBDA %f", lambda)
+			d.log.Debugf("DECOY LAMBDA %f", lambda)
 
 			// The safety cap is the (1 - 1e-12) quantile of the
 			// configured exponential, derived programmatically so
