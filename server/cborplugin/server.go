@@ -18,6 +18,7 @@ package cborplugin
 
 import (
 	//"net"
+	"runtime/debug"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -63,11 +64,20 @@ func (s *Server) worker() {
 		case <-s.HaltCh():
 			return
 		case cmd := <-s.socket.ReadChan():
-			err := s.plugin.OnCommand(cmd)
-			if err != nil {
-				s.log.Debugf("plugin returned err: %s", err)
-			}
+			s.handleCommand(cmd)
 		}
+	}
+}
+
+// handleCommand confines a plugin panic to the one command that caused it.
+func (s *Server) handleCommand(cmd Command) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Errorf("plugin panicked handling command: %v\n%s", r, debug.Stack())
+		}
+	}()
+	if err := s.plugin.OnCommand(cmd); err != nil {
+		s.log.Debugf("plugin returned err: %s", err)
 	}
 }
 
