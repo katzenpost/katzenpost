@@ -584,13 +584,6 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 	}
 	certificate.SharedRandomCommit = commits
 	certificate.SharedRandomReveal = reveals
-	// if there are no prior SRV values, copy the current srv twice
-	if len(s.priorSRV) == 0 {
-		s.priorSRV = [][]byte{srv, srv}
-	} else if epoch%epochtime.WeekOfEpochs == 0 {
-		// rotate the weekly epochs if it is time to do so.
-		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
-	}
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, certificate)
 	if err != nil {
 		return nil, err
@@ -642,7 +635,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	// if there are no prior SRV values, copy the current srv twice
-	if epoch == s.genesisEpoch {
+	if len(s.priorSRV) == 0 || epoch == s.genesisEpoch {
 		s.priorSRV = [][]byte{srv, srv}
 	} else if epoch%epochtime.WeekOfEpochs == 0 {
 		// rotate the weekly epochs if it is time to do so.

@@ -79,13 +79,15 @@ func TestMalformedConsensusWithEmptyTopologyIsRejected(t *testing.T) {
 // testVoteWithAuthorities is a parameterized test function that tests voting
 // with different numbers of directory authorities
 func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsensus int) {
-	require := require.New(t)
-
 	t.Logf("=== TESTING %d AUTHORITIES SCENARIO ===", authNum)
 	t.Logf("Expected successful consensus: %d", expectedSuccessfulConsensus)
-	stateAuthority := make([]*state, authNum)
 	votingEpoch, _, _ := epochtime.Now()
-	votingEpoch += 5
+	runVoteScenario(t, authNum, votingEpoch+5, nil)
+}
+
+func runVoteScenario(t *testing.T, authNum int, votingEpoch uint64, prior *pki.Document) []*pki.Document {
+	require := require.New(t)
+	stateAuthority := make([]*state, authNum)
 	parameters := &config.Parameters{
 		Mu:      0.001,
 		LambdaP: 0.002,
@@ -163,6 +165,12 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 		// create all the db cruft
 		err = st.restorePersistence()
 		require.NoError(err)
+	}
+
+	if prior != nil {
+		for _, st := range stateAuthority {
+			st.documents[votingEpoch-1] = prior
+		}
 	}
 
 	// create a voting PKI configuration
@@ -410,6 +418,7 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 	}
 	// verify that each authority produced an identital consensus
 	consensusHash := ""
+	docs := make([]*pki.Document, 0, authNum)
 	for _, s := range stateAuthority {
 		s.Lock()
 		doc, err := s.getThresholdConsensus(s.votingEpoch)
@@ -421,7 +430,9 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 		} else {
 			require.Equal(consensusHash, string(hash[:]))
 		}
+		docs = append(docs, doc)
 	}
+	return docs
 }
 
 // Test functions for different numbers of authorities
