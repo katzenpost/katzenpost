@@ -427,6 +427,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			surb, k, err := d.sphinx.NewSURB(rand.Reader, revPath)
 			if err != nil {
 				d.log.Debugf("Failed to generate SURB: %v", err)
+				continue
 			}
 			payload = append(payload, surb...)
 			payload = append(payload, zeroBytes...)
