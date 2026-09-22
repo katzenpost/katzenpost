@@ -124,14 +124,16 @@ const (
 var (
 	// Error variables for reuse
 	errContextCannotBeNil = errors.New("context cannot be nil")
-	errConnectionLost     = errors.New("connection lost")
 	errHalting            = errors.New("halting")
 
-	// errReplyOverdue reports that a reply did not arrive by the time the
-	// daemon said it was due, plus the caller's slop. It is a lost packet
-	// as far as the caller is concerned, distinguished from a context
-	// deadline so that the caller can tell its own bound from ours.
-	errReplyOverdue = errors.New("reply overdue")
+	// ErrConnectionLost reports the daemon's mixnet link went down before a reply.
+	ErrConnectionLost = errors.New("connection lost")
+
+	// ErrReplyOverdue reports a reply did not arrive by ReplyETA plus the slop.
+	ErrReplyOverdue = errors.New("reply overdue")
+
+	// ErrSendFailed reports the daemon could not dispatch the packet onto the mixnet.
+	ErrSendFailed = errors.New("send failed")
 
 	// Pigeonhole ARQ error sentinels
 	// These errors can be returned by StartResendingEncryptedMessage and can be
@@ -1150,7 +1152,7 @@ func (t *ThinClient) readUntilDisconnect() (disconnectErr error, graceful bool) 
 			continue
 		}
 		if message == nil {
-			return errConnectionLost, graceful
+			return ErrConnectionLost, graceful
 		}
 
 		if message.ShutdownEvent != nil {
@@ -1900,7 +1902,7 @@ func (t *ThinClient) BlockingSendMessageWithResult(ctx context.Context, payload 
 		case <-ctx.Done():
 			return res, ctx.Err()
 		case <-due:
-			return res, errReplyOverdue
+			return res, ErrReplyOverdue
 		case event = <-eventSink:
 		case <-t.HaltCh():
 			return res, errHalting
@@ -1911,7 +1913,7 @@ func (t *ThinClient) BlockingSendMessageWithResult(ctx context.Context, payload 
 			// Ignore garbage collection events
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return res, errConnectionLost
+				return res, ErrConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
@@ -1919,6 +1921,9 @@ func (t *ThinClient) BlockingSendMessageWithResult(ctx context.Context, payload 
 			// Record our own send, matched by SURB ID because the sink
 			// carries every event on this connection, not only ours.
 			if v.SURBID != nil && hmac.Equal(surbID[:], v.SURBID[:]) {
+				if v.Err != "" {
+					return res, fmt.Errorf("%w: %s", ErrSendFailed, v.Err)
+				}
 				res.SentAt = v.SentAt
 				res.ReplyETA = v.ReplyETA
 				res.ForwardRoute = v.ForwardRoute

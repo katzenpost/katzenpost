@@ -18,10 +18,12 @@ import (
 // observation is one ping's outcome together with the hops it travelled.
 // Routes are empty when the daemon did not report them, which is not the
 // same as a route of no hops, so an observation without routes contributes
-// to the totals and to nothing else.
+// to the totals and to nothing else. Only dispatched outcomes are recorded
+// at all; see category.dispatched.
 type observation struct {
 	at      time.Time
 	ok      bool
+	cat     category
 	forward []string
 	back    []string
 }
@@ -112,6 +114,12 @@ type attribution struct {
 }
 
 func (a *attribution) record(o observation) {
+	// A ping that never entered the mixnet implicates no hop and belongs in
+	// no denominator; recorded, it would inflate the headline loss rate and
+	// dilute every contrast drawn from it.
+	if !o.cat.dispatched() {
+		return
+	}
 	a.mu.Lock()
 	a.obs = append(a.obs, o)
 	a.mu.Unlock()
