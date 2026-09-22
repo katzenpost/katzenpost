@@ -1,5 +1,9 @@
 name: docker mixnet integration tests
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 jobs:
 
   test_e2e_client:
