@@ -73,6 +73,10 @@ layers=3
 # number of pings sent by run-ping target
 npings?=10
 
+# extra flags handed to the ping binary by the run-ping target, e.g.
+#   make run-ping ping_args=--strict
+ping_args?=
+
 # Parameters. Sampling safety caps for each rate are derived inside the
 # library (common.SafetyCap) from the rate itself, so no MaxDelay knobs
 # are passed to genconfig.
@@ -791,7 +795,7 @@ clean: stop-all
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings)
+        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings) $(ping_args)
 
 # parallel-load knobs. Override on the make command line:
 #   make run-parallel-load clients=8 duration=5m
@@ -926,8 +930,11 @@ test: wait
 # cache). Serial by default; with `make -j N test-distros` each
 # test-distro-<distro> leg runs concurrently on its own mixnet-<distro>
 # network and base_port band derived from the DISTROS order, so legs never
-# share state. Each leg runs run-ping, which exits non-zero unless every
-# ping is answered, so a leg's exit code asserts a healthy network. Legs
+# share state. Each leg runs run-ping, which exits non-zero on any packet
+# lost in the mixnet and on a run that delivered nothing at all, so a leg's
+# exit code asserts a healthy network. A ping the client never dispatched
+# (its own pacing, or a dropped daemon link) does not fail the leg on its
+# own; pass --strict to run-ping to gate on those too. Legs
 # deliberately leave their networks running; tear everything down with
 # `make clean` (or one `make distro=<d> stop` per network).
 DISTRO_PORTS=$(foreach d,$(DISTROS),$(d):$(shell set -- $(DISTROS); i=0; for x; do [ "$$x" = "$(d)" ] && printf '%s' $$((30000 + i * 10000)) && break; i=$$((i+1)); done))

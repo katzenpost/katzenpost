@@ -88,6 +88,9 @@ type Server struct {
 	// proxySema limits the number of concurrent proxy request goroutines
 	proxySema chan struct{}
 
+	// decapSema bounds concurrent local MKEM decapsulations.
+	decapSema chan struct{}
+
 	// firstShardCandidate overrides which of a box's shard holders a
 	// proxy sweep tries first. Nil in production, where the choice is
 	// random; see Server.proxyFirstCandidate. A test pins it to drive
@@ -362,6 +365,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	// Initialize proxy request manager and concurrency limiter.
 	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
 	s.proxySema = make(chan struct{}, s.cfg.ProxyWorkerCount)
+	s.decapSema = make(chan struct{}, s.cfg.ProxyWorkerCount)
 
 	if s.cfg.GenerateOnly {
 		return nil, ErrGenerateOnly
