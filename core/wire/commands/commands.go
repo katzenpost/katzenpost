@@ -420,7 +420,7 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	b = b[:cmdLen]
 	switch commandID(id) {
 	case consensus2:
-		return consensus2FromBytes(b)
+		return consensus2FromBytes(b, c)
 	case postReplicaDescriptor:
 		return postReplicaDescriptorFromBytes(b)
 	case postReplicaDescriptorStatus:
