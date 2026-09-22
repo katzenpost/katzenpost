@@ -156,6 +156,7 @@ sh?=bash
 cache_dir=cache
 dockertest_race?=-race
 dockertest_timeout?=1h
+dockertest_parallel?=5
 # The go module cache (source content, read-only) is shared across distros.
 # The go build cache holds compiled archives that are sensitive to the C
 # library (musl vs glibc, and glibc versions), and Go's cache key does not
@@ -923,7 +924,7 @@ rootshell: $(distro)_base.stamp
 #   dockertest_pki_raw PASS  TestGetPKIDocumentRaw{,CurrentEpoch,UnknownEpoch}
 #                            and TestGetDirectoryAuthorities.
 test: wait
-	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest-all
+	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_parallel=$(dockertest_parallel) dockertest-all
 	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_pki_raw
 
 # Bring the testnet up on every supported distro (uses the shared build

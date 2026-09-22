@@ -83,7 +83,7 @@ jobs:
       - name: Configure podman socket
         run: systemctl --user start podman.socket || true
       - name: Run the local testnet client suite with -short
-        run: cd docker && make dockertest_race= dockertest_timeout=1h testargs=-short test
+        run: cd docker && make dockertest_race= dockertest_timeout=1h dockertest_parallel=2 testargs=-short test
       - name: Dump logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true
