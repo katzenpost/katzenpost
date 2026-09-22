@@ -282,7 +282,7 @@ func (s *Session) MaxMesgSize() int {
 		return s.maxMesgSize
 	}
 	mesgLenths := []int{
-		s.commands.MaxCommandSize() + macLen,
+		s.commands.MaxSerializedCommandSize() + macLen,
 		s.msg1Len(),
 		s.msg2Len(),
 		s.msg3Len(),
@@ -914,7 +914,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		rxKeyMutex:     new(sync.Mutex),
 		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewMixnetCommands(cfg.Geometry),
-		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, -1),
+		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, 0),
 
 		handshakeTimeout: timeoutOr(cfg.HandshakeTimeout, DefaultHandshakeTimeout),
 		readTimeout:      timeoutOr(cfg.ReadTimeout, DefaultReadTimeout),
