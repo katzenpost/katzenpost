@@ -65,6 +65,32 @@ jobs:
         continue-on-error: true
         run: cd docker && make client-check
 
+  local:
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
+    permissions:
+      contents: read
+    env:
+      warped: true
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+      - name: Run the local testnet client suite with -short
+        run: cd docker && make dockertest_race= dockertest_timeout=1h testargs=-short test
+      - name: Dump logs on failure
+        if: failure()
+        run: cd docker && make client-logs-snapshot || true
+      - name: Stop the testnet
+        if: always()
+        run: cd docker && make stop || true
+
   interop:
     needs: [changes, namenlos]
     if: always() && needs.changes.result == 'success' && (needs.changes.outputs.server == 'true' || needs.namenlos.outputs.ok != 'success')
@@ -109,14 +135,15 @@ jobs:
         run: cd docker && make stop || true
 
   gate:
-    needs: [changes, namenlos, interop]
+    needs: [changes, namenlos, interop, local]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require the namenlos client or the docker interop lane to pass
+      - name: Require the local testnet, and the namenlos client or the docker interop lane, to pass
         run: |
-          echo "changes=${{ needs.changes.result }} namenlos_ok=${{ needs.namenlos.outputs.ok }} interop=${{ needs.interop.result }}"
+          echo "changes=${{ needs.changes.result }} local=${{ needs.local.result }} namenlos_ok=${{ needs.namenlos.outputs.ok }} interop=${{ needs.interop.result }}"
           if [ "${{ needs.changes.result }}" != "success" ]; then echo "changes job did not succeed" >&2; exit 1; fi
+          if [ "${{ needs.local.result }}" != "success" ] && [ "${{ needs.local.result }}" != "skipped" ]; then echo "local -short testnet failed" >&2; exit 1; fi
           if [ "${{ needs.namenlos.outputs.ok }}" = "success" ]; then exit 0; fi
           if [ "${{ needs.interop.result }}" = "success" ]; then exit 0; fi
           if [ "${{ needs.namenlos.result }}" = "skipped" ] && [ "${{ needs.interop.result }}" = "skipped" ]; then exit 0; fi

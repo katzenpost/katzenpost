@@ -132,6 +132,9 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 // to verify that state management (PrepareNext/AdvanceState) works correctly
 // in the real Docker environment.
 func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
+	if testing.Short() {
+		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
+	}
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -241,6 +244,9 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 // This exercises multiple concurrent ARQ retry operations on the daemon — the pattern
 // that was broken when arqResendCh had a buffer of 2 and silently dropped resends.
 func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
+	}
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -337,6 +343,9 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 // - The courier can decode the copy stream and execute all writes atomically
 // - Bob can read and reconstruct the original large payload
 func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
+	if testing.Short() {
+		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
+	}
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -504,6 +513,9 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 // - Multiple calls to CreateCourierEnvelopesFromPayload work correctly
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
+	}
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -664,6 +676,9 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 // - Multiple destination payloads are packed efficiently into the copy stream
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannelEfficient(t *testing.T) {
+	if testing.Short() {
+		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
+	}
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -901,6 +916,9 @@ func TestTombstoning(t *testing.T) {
 // 3. Alice tombstones all boxes using TombstoneRange
 // 4. Bob reads again and verifies all boxes are tombstoned
 func TestTombstoneRange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
+	}
 	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
@@ -1357,6 +1375,9 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 // 4. Alice writes all temp stream elements and sends the copy command
 // 5. Bob reads from the destination channel and verifies the reconstructed payload
 func TestFromPayloadMultiCall(t *testing.T) {
+	if testing.Short() {
+		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
+	}
 	t.Parallel()
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -1484,6 +1505,9 @@ func TestFromPayloadMultiCall(t *testing.T) {
 // 4. Alice writes all temp stream elements and sends the copy command
 // 5. Bob reads from both destination channels and verifies
 func TestFromMultiPayloadMultiCall(t *testing.T) {
+	if testing.Short() {
+		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
+	}
 	t.Parallel()
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -1627,6 +1651,9 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 // 4. Alice sends a Copy command to the courier
 // 5. Bob reads from the destination boxes and verifies all return ErrTombstone
 func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
+	}
 	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
