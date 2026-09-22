@@ -68,9 +68,10 @@ type Server struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	state     *state
-	listeners []net.Listener
-	connSem   chan struct{}
+	state       *state
+	listeners   []net.Listener
+	connSem     chan struct{}
+	connReserve int
 
 	// connMu guards conns and halting. conns tracks every accepted connection
 	// whose handler is running so shutdown can close them, and halting records
@@ -273,24 +274,25 @@ func (s *Server) listenWorker(l net.Listener) {
 			continue
 		}
 
-		// Bound concurrent client handlers so a client flood cannot exhaust
-		// goroutines or memory. Peer and loopback connections skip this gate so
-		// a client flood that fills connSem cannot starve them; the limiter's
-		// peer and loopback pools bound those classes instead. Full means this
-		// parks until a handler frees a slot; the kernel backlog absorbs the
-		// wait. A watch on haltedCh here would be dead code: haltedCh is closed
-		// only at the end of halt(), after the WaitGroup drain that waits for
-		// this worker, and shutdown already closes the listener (ending Accept)
-		// and every accepted connection, so handlers drain and free slots and
-		// this send makes progress.
-		gated := token.IsClient()
-		if gated {
+		if token.IsClient() {
+			if len(s.connSem) >= cap(s.connSem)-s.connReserve {
+				s.log.Debugf("Refusing client connection from %v: reserving accept slots for peers and loopback", conn.RemoteAddr())
+				token.Release()
+				conn.Close()
+				continue
+			}
+			select {
+			case s.connSem <- struct{}{}:
+			default:
+				token.Release()
+				conn.Close()
+				continue
+			}
+		} else {
 			s.connSem <- struct{}{}
 		}
 		s.state.Go(func() {
-			if gated {
-				defer func() { <-s.connSem }()
-			}
+			defer func() { <-s.connSem }()
 			defer token.Release()
 			s.handleConn(conn)
 		})
@@ -434,6 +436,17 @@ func New(cfg *config.Config) (*Server, error) {
 		maxConns = 64
 	}
 	s.connSem = make(chan struct{}, maxConns)
+	reserve := maxConns / 2
+	if pl := cfg.Debug.MaxPeerConns + cfg.Debug.MaxLoopbackConns; pl < reserve {
+		reserve = pl
+	}
+	if reserve > maxConns-1 {
+		reserve = maxConns - 1
+	}
+	if reserve < 0 {
+		reserve = 0
+	}
+	s.connReserve = reserve
 
 	// Do the early initialization and bring up logging.
 	if err := s.initDataDir(); err != nil {

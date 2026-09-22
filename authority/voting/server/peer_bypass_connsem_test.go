@@ -38,7 +38,7 @@ func (c *addrConn) SetDeadline(time.Time) error      { return nil }
 func (c *addrConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *addrConn) SetWriteDeadline(time.Time) error { return nil }
 
-func TestListenWorkerPeerAndLoopbackBypassSaturatedConnSem(t *testing.T) {
+func TestListenWorkerReservesHeadroomForPeerAndLoopback(t *testing.T) {
 	logBackend, err := log.New("", "ERROR", false)
 	require.NoError(t, err)
 
@@ -47,11 +47,13 @@ func TestListenWorkerPeerAndLoopbackBypassSaturatedConnSem(t *testing.T) {
 			Server: &config.Server{WireKEMScheme: "x25519"},
 		},
 		logBackend: logBackend,
-		log:        logBackend.GetLogger("peer_bypass_test"),
+		log:        logBackend.GetLogger("peer_reserve_test"),
 		haltedCh:   make(chan interface{}),
 	}
 	s.state = &state{s: s}
-	s.connSem = make(chan struct{}, 1)
+	s.connSem = make(chan struct{}, 4)
+	s.connReserve = 2
+	s.connSem <- struct{}{}
 	s.connSem <- struct{}{}
 	s.connLimiter = connlimit.New(1024, 1024, 64, 1024)
 	s.peerSet = connlimit.NewPeerSet()
@@ -69,7 +71,7 @@ func TestListenWorkerPeerAndLoopbackBypassSaturatedConnSem(t *testing.T) {
 
 	require.Eventually(t, func() bool { return active.Load() == 2 },
 		2*time.Second, 5*time.Millisecond,
-		"peer and loopback handlers must run even though connSem is saturated by clients")
+		"peer and loopback handlers must run in the reserved headroom while clients hold every non-reserved slot")
 
 	close(release)
 	close(s.haltedCh)

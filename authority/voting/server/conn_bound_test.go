@@ -120,6 +120,7 @@ func TestListenWorkerBoundsConcurrentConns(t *testing.T) {
 	// Release the parked handlers and shut the worker down.
 	close(release)
 	close(s.haltedCh)
+	ln.Close()
 	require.Eventually(t, func() bool { return active.Load() == 0 },
 		2*time.Second, 5*time.Millisecond, "handlers should drain")
 	s.WaitGroup.Wait()
