@@ -1568,6 +1568,22 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 	e.log.Debugf("writeTombstonesToTempChannel: Finished writing %d tombstones", len(boxIDs))
 }
 
+// dispatchTombstoneCacheStore registers ch as the reply channel for
+// envHash. defer-protected so a panic mid-critical-section (e.g. a nil
+// copyCache) cannot leave copyCacheLock held, since this call runs
+// inside a goroutine whose caller recovers panics.
+func (e *Courier) dispatchTombstoneCacheStore(envHash *[hash.HashSize]byte, ch chan *commands.ReplicaMessageReply) {
+	e.copyCacheLock.Lock()
+	defer e.copyCacheLock.Unlock()
+	e.copyCache[*envHash] = ch
+}
+
+func (e *Courier) dispatchTombstoneCacheDelete(envHash *[hash.HashSize]byte) {
+	e.copyCacheLock.Lock()
+	defer e.copyCacheLock.Unlock()
+	delete(e.copyCache, *envHash)
+}
+
 // dispatchTombstone sends one tombstone to its shard replicas and
 // waits for at least one ReplicaSuccess reply within
 // copyWriteReplyTimeout, retrying up to maxCopyWriteAttempts with
@@ -1584,9 +1600,7 @@ func (e *Courier) dispatchTombstone(
 		}
 
 		ch := make(chan *commands.ReplicaMessageReply, len(replicaIDs))
-		e.copyCacheLock.Lock()
-		e.copyCache[*envHash] = ch
-		e.copyCacheLock.Unlock()
+		e.dispatchTombstoneCacheStore(envHash, ch)
 
 		for j, replicaID := range replicaIDs {
 			if err := e.server.SendMessage(replicaID, messages[j]); err != nil {
@@ -1606,9 +1620,7 @@ func (e *Courier) dispatchTombstone(
 			}
 		}
 
-		e.copyCacheLock.Lock()
-		delete(e.copyCache, *envHash)
-		e.copyCacheLock.Unlock()
+		e.dispatchTombstoneCacheDelete(envHash)
 
 		for _, r := range replies {
 			if r.ErrorCode == pigeonhole.ReplicaSuccess {
