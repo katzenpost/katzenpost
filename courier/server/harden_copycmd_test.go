@@ -19,15 +19,15 @@ import (
 // WriteCap regression: a CopyCommand carries an unauthenticated client's
 // WriteCap, and a crafted WriteCap whose root public key is an off-curve
 // point reaches ed25519.Blind (via NextBoxID) and panics. With the hpqc
-// ed25519 off-curve FromBytes fix, bacap.NewWriteCapFromBytes rejects it
-// and processCopyCommand's existing error path fails the copy cleanly.
+// ed25519 off-curve FromBytes fix (katzenpost/hpqc#118, released in
+// v0.0.88), bacap.NewWriteCapFromBytes rejects it and
+// processCopyCommand's existing error path fails the copy cleanly.
 //
-// The fix lives in hpqc, which is not yet released. Against the current
-// v0.0.87 the crafted blob still parses (the panic would come later, at
-// box-ID derivation), so the probe below skips the test to keep CI
-// green. Once hpqc is bumped, NewWriteCapFromBytes returns an error, the
-// probe falls through, and the assertion runs against the fixed
-// behavior.
+// go.mod currently pins hpqc >= v0.0.88, so NewWriteCapFromBytes already
+// returns an error and the assertion below runs against the fixed
+// behavior. The probe still guards against a future downgrade below the
+// fix: without it, this test would silently skip instead of catching the
+// crafted-WriteCap panic regression.
 func TestProcessCopyCommandRejectsOffCurveWriteCapWithoutPanic(t *testing.T) {
 	backendLog, err := log.New("", "ERROR", false)
 	require.NoError(t, err)
