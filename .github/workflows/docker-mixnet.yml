@@ -1,5 +1,11 @@
 name: docker mixnet integration tests
-on: [pull_request]
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+  push:
+    tags:
+      - 'v*'
 jobs:
 
   test_e2e_client:
