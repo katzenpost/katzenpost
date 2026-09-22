@@ -321,3 +321,25 @@ func TestZForTestsTightensWithMoreComparisons(t *testing.T) {
 	require.Greater(t, zForTests(1000), zForTests(120))
 	require.Equal(t, zForTests(1), zForTests(0))
 }
+
+// TestRecordSkipsUndispatched pins that a ping the client never put on the
+// wire stays out of the attribution set, so it neither implicates a hop nor
+// enters the denominator of the headline loss rate.
+func TestRecordSkipsUndispatched(t *testing.T) {
+	a := new(attribution)
+	route := []string{"gateway1", "mix1", "mix2", "mix3", "servicenode1"}
+
+	for _, cat := range []category{catNotSent, catRefused} {
+		a.record(observation{cat: cat})
+	}
+	if len(a.obs) != 0 {
+		t.Fatalf("recorded %d undispatched observations, want 0", len(a.obs))
+	}
+
+	for _, cat := range []category{catDelivered, catLost, catOverdue} {
+		a.record(observation{cat: cat, ok: cat == catDelivered, forward: route, back: route})
+	}
+	if len(a.obs) != 3 {
+		t.Fatalf("recorded %d dispatched observations, want 3", len(a.obs))
+	}
+}

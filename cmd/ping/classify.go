@@ -37,6 +37,14 @@ func (c category) label() string {
 	}
 }
 
+// dispatched reports whether the packet entered the mixnet, and so whether the
+// outcome is evidence about it. A refused ping is excluded too: the daemon's
+// link died before the reply could be observed, so the outcome is unknown
+// rather than bad, whether or not the packet went out.
+func (c category) dispatched() bool {
+	return c == catDelivered || c == catLost || c == catOverdue
+}
+
 func classify(sent, payloadOK bool, err error) category {
 	switch {
 	case err == nil:

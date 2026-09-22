@@ -279,6 +279,6 @@ func reportCategories(w io.Writer, tally counts) {
 	fmt.Fprintf(w, "  %-10s %6d  dispatched, no reply before the hard cap\n", catLost.label(), tally[catLost])
 	fmt.Fprintf(w, "  %-10s %6d  dispatched, no reply before the daemon dropped the SURB\n", catOverdue.label(), tally[catOverdue])
 	fmt.Fprintf(w, "  %-10s %6d  never dispatched (client pacing/limit), not a mixnet loss\n", catNotSent.label(), tally[catNotSent])
-	fmt.Fprintf(w, "  %-10s %6d  connection lost before send, not a mixnet loss\n", catRefused.label(), tally[catRefused])
+	fmt.Fprintf(w, "  %-10s %6d  client daemon link went down, outcome unknown\n", catRefused.label(), tally[catRefused])
 	fmt.Fprintf(w, "  gate: %s + %s (--strict: everything but %s)\n", catLost.label(), catOverdue.label(), catDelivered.label())
 }
