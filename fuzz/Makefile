@@ -20,6 +20,12 @@ ARCHIVE   := $(BINDIR)/$(FUZZFUNC).a
 BINARY    := $(BINDIR)/$(FUZZFUNC)
 CORPUSDIR := $(CURDIR)/corpus/$(FUZZFUNC)
 
+# go test builds and execs test binaries under GOTMPDIR; a noexec /tmp (e.g.
+# on power9) makes that fail with "fork/exec ...: permission denied". Keep the
+# temp dir on an exec-mounted path under bin/. Override with GOTMPDIR=<path>.
+export GOTMPDIR ?= $(BINDIR)/gotmp
+$(shell mkdir -p $(GOTMPDIR))
+
 .PHONY: help list tool seed build run overnight overnight-all laptop quick clean
 
 help:
