@@ -24,6 +24,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -70,6 +71,9 @@ type Server struct {
 	listeners []GenericListener
 	state     *state
 	connector GenericConnector
+
+	connLimiter *connlimit.Limiter
+	peerSet     *connlimit.PeerSet
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
@@ -254,6 +258,16 @@ func (s *Server) RotateLog() {
 	}
 }
 
+func replicaStaticAuthorityAddresses(cfg *config.Config) []string {
+	var addrs []string
+	if cfg.PKI != nil && cfg.PKI.Voting != nil {
+		for _, auth := range cfg.PKI.Voting.Authorities {
+			addrs = append(addrs, auth.Addresses...)
+		}
+	}
+	return addrs
+}
+
 // New returns a new Server instance parameterized with the specific
 // configuration.
 func New(cfg *config.Config) (*Server, error) {
@@ -313,6 +327,10 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 
 	// Ensure config defaults are set (tests may skip FixupAndValidate).
 	s.cfg.SetDefaultTimeouts()
+
+	s.connLimiter = connlimit.New(s.cfg.MaxClientConns, s.cfg.MaxPeerConns, s.cfg.MaxConnsPerIP, s.cfg.MaxLoopbackConns)
+	s.peerSet = connlimit.NewPeerSet()
+	s.peerSet.Rebuild(replicaStaticAuthorityAddresses(s.cfg))
 
 	// Derive the Pigeonhole geometry once from the Sphinx geometry and the
 	// configured replica NIKE scheme; the message handlers reuse it rather

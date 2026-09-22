@@ -42,6 +42,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
@@ -87,6 +88,8 @@ type Server struct {
 	pki           glue.PKI
 	shutdownPKI   glue.PKI
 	listeners     []glue.Listener
+	connLimiter   *connlimit.Limiter
+	peerSet       *connlimit.PeerSet
 	connector     glue.Connector
 	gateway       glue.Gateway
 	serviceNode   glue.ServiceNode
@@ -609,10 +612,13 @@ func New(cfg *config.Config) (*Server, error) {
 	logStartupStep("listener address selection")
 
 	// Bring the listener(s) online.
+	s.connLimiter = connlimit.New(s.cfg.Debug.MaxClientConns, s.cfg.Debug.MaxPeerConns, s.cfg.Debug.MaxConnsPerIP, s.cfg.Debug.MaxLoopbackConns)
+	s.peerSet = connlimit.NewPeerSet()
+	s.peerSet.Rebuild(staticAuthorityAddresses(s.cfg))
 	s.listeners = make([]glue.Listener, 0, len(addresses))
 	for i, addr := range addresses {
 		listenerStart := time.Now()
-		l, err := incoming.New(goo, s.inboundPackets, i, addr)
+		l, err := incoming.New(goo, s.inboundPackets, i, addr, s.connLimiter, s.peerSet)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v after %v (%v).", addr, time.Since(listenerStart), err)
 			return nil, err
@@ -697,6 +703,20 @@ func (g *serverGlue) Connector() glue.Connector {
 
 func (g *serverGlue) Listeners() []glue.Listener {
 	return g.s.listeners
+}
+
+func (g *serverGlue) PeerConnSet() *connlimit.PeerSet {
+	return g.s.peerSet
+}
+
+func staticAuthorityAddresses(cfg *config.Config) []string {
+	var addrs []string
+	if cfg.PKI != nil && cfg.PKI.Voting != nil {
+		for _, auth := range cfg.PKI.Voting.Authorities {
+			addrs = append(addrs, auth.Addresses...)
+		}
+	}
+	return addrs
 }
 
 func (g *serverGlue) Decoy() glue.Decoy {

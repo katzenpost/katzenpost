@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/common/config"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -104,6 +105,14 @@ type Config struct {
 
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
+
+	MaxClientConns int
+
+	MaxPeerConns int
+
+	MaxConnsPerIP int
+
+	MaxLoopbackConns int
 
 	// ProxyRequestTimeout is the wall-clock budget in seconds for one
 	// whole proxied request, across every shard holder tried. It is not
@@ -254,6 +263,18 @@ func (c *Config) SetDefaultTimeouts() {
 	}
 	if c.KeepAliveInterval <= 0 {
 		c.KeepAliveInterval = defaultKeepAliveInterval
+	}
+	if c.MaxClientConns <= 0 {
+		c.MaxClientConns = connlimit.DefaultMaxClientConns
+	}
+	if c.MaxPeerConns <= 0 {
+		c.MaxPeerConns = connlimit.DefaultMaxPeerConns
+	}
+	if c.MaxConnsPerIP <= 0 {
+		c.MaxConnsPerIP = connlimit.DefaultMaxConnsPerIP
+	}
+	if c.MaxLoopbackConns <= 0 {
+		c.MaxLoopbackConns = connlimit.DefaultMaxLoopbackConns
 	}
 	// IncomingQueueSize, ProxyRequestTimeout and ProxyWorkerCount are
 	// auto-derived later, in server.New, via ApplyRuntimeDefaults.

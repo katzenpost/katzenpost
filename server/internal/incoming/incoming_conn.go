@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -57,6 +58,8 @@ type incomingConn struct {
 	e   *list.Element
 	w   *wire.Session
 	geo *geo.Geometry
+
+	connToken *connlimit.Token
 
 	id      uint64
 	retrSeq uint32

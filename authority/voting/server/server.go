@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	"github.com/katzenpost/katzenpost/authority/voting/server/profiling"
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -95,6 +96,9 @@ type Server struct {
 	// override; kept so the FSM can log observed consensus size against what we
 	// predicted.
 	maxMessageSizeEstimate int
+
+	connLimiter *connlimit.Limiter
+	peerSet     *connlimit.PeerSet
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -228,6 +232,14 @@ func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
 }
 
+func dirauthStaticAuthorityAddresses(cfg *config.Config) []string {
+	var addrs []string
+	for _, auth := range cfg.Authorities {
+		addrs = append(addrs, auth.Addresses...)
+	}
+	return addrs
+}
+
 func (s *Server) listenWorker(l net.Listener) {
 	addr := l.Addr()
 	s.log.Noticef("Listening on: %v", addr)
@@ -253,16 +265,33 @@ func (s *Server) listenWorker(l net.Listener) {
 			continue
 		}
 
-		// Bound concurrent handlers so a connection flood cannot exhaust
-		// goroutines or memory. Full means this parks until a handler frees a
-		// slot; the kernel backlog absorbs the wait. A watch on haltedCh here
-		// would be dead code: haltedCh is closed only at the end of halt(), after
-		// the WaitGroup drain that waits for this worker, and shutdown already
-		// closes the listener (ending Accept) and every accepted connection, so
-		// handlers drain and free slots and this send makes progress.
-		s.connSem <- struct{}{}
+		isPeer := s.peerSet.Contains(connlimit.AddrIP(conn.RemoteAddr()))
+		token, ok := s.connLimiter.TryAcquire(conn.RemoteAddr(), isPeer)
+		if !ok {
+			s.log.Debugf("Refusing connection from %v: connection cap reached (peer=%v)", conn.RemoteAddr(), isPeer)
+			conn.Close()
+			continue
+		}
+
+		// Bound concurrent client handlers so a client flood cannot exhaust
+		// goroutines or memory. Peer and loopback connections skip this gate so
+		// a client flood that fills connSem cannot starve them; the limiter's
+		// peer and loopback pools bound those classes instead. Full means this
+		// parks until a handler frees a slot; the kernel backlog absorbs the
+		// wait. A watch on haltedCh here would be dead code: haltedCh is closed
+		// only at the end of halt(), after the WaitGroup drain that waits for
+		// this worker, and shutdown already closes the listener (ending Accept)
+		// and every accepted connection, so handlers drain and free slots and
+		// this send makes progress.
+		gated := token.IsClient()
+		if gated {
+			s.connSem <- struct{}{}
+		}
 		s.state.Go(func() {
-			defer func() { <-s.connSem }()
+			if gated {
+				defer func() { <-s.connSem }()
+			}
+			defer token.Release()
 			s.handleConn(conn)
 		})
 	}
@@ -589,6 +618,10 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("This fatal error has triggered an emergency shutdown of the authority")
 		s.Shutdown()
 	}()
+
+	s.connLimiter = connlimit.New(s.cfg.Debug.MaxClientConns, s.cfg.Debug.MaxPeerConns, s.cfg.Debug.MaxConnsPerIP, s.cfg.Debug.MaxLoopbackConns)
+	s.peerSet = connlimit.NewPeerSet()
+	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
 
 	// Start up the state worker.
 	if s.state, err = newState(s); err != nil {
