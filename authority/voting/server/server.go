@@ -69,6 +69,32 @@ type Server struct {
 
 	state     *state
 	listeners []net.Listener
+	connSem   chan struct{}
+
+	// connMu guards conns and halting. conns tracks every accepted connection
+	// whose handler is running so shutdown can close them, and halting records
+	// that shutdown has begun so a connection accepted during shutdown is
+	// closed immediately instead of leaking a blocked handler.
+	connMu  sync.Mutex
+	conns   map[net.Conn]struct{}
+	halting bool
+
+	// peerSlotMu guards peerSlots, which counts the in-flight handlers per
+	// authenticated peer identity so a single peer cannot camp all of the
+	// MaxConcurrentConns accept slots. Keyed by the wire-authenticated identity
+	// hash; anonymous clients (no identity) are not tracked here.
+	peerSlotMu sync.Mutex
+	peerSlots  map[[hash.HashSize]byte]int
+
+	// maxMessageSize is the effective PKI wire message ceiling: the operator
+	// override if set, else the estimate derived from the configured PKI and
+	// topology.
+	maxMessageSize int
+
+	// maxMessageSizeEstimate is the derived estimate regardless of any operator
+	// override; kept so the FSM can log observed consensus size against what we
+	// predicted.
+	maxMessageSizeEstimate int
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -227,12 +253,95 @@ func (s *Server) listenWorker(l net.Listener) {
 			continue
 		}
 
+		// Bound concurrent handlers so a connection flood cannot exhaust
+		// goroutines or memory. Full means this parks until a handler frees a
+		// slot; the kernel backlog absorbs the wait. A watch on haltedCh here
+		// would be dead code: haltedCh is closed only at the end of halt(), after
+		// the WaitGroup drain that waits for this worker, and shutdown already
+		// closes the listener (ending Accept) and every accepted connection, so
+		// handlers drain and free slots and this send makes progress.
+		s.connSem <- struct{}{}
 		s.state.Go(func() {
-			s.onConn(conn)
+			defer func() { <-s.connSem }()
+			s.handleConn(conn)
 		})
 	}
 
 	// NOTREACHED
+}
+
+// registerConn tracks an accepted connection so shutdown can close it and
+// unblock its handler. If shutdown has already begun it closes the connection
+// and returns false, so the caller returns without serving.
+func (s *Server) registerConn(conn net.Conn) bool {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if s.halting {
+		conn.Close()
+		return false
+	}
+	if s.conns == nil {
+		s.conns = make(map[net.Conn]struct{})
+	}
+	s.conns[conn] = struct{}{}
+	return true
+}
+
+// unregisterConn stops tracking a connection once its handler returns.
+func (s *Server) unregisterConn(conn net.Conn) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	delete(s.conns, conn)
+}
+
+// acquirePeerSlot reserves a per-peer accept slot for the authenticated peer
+// identity id, returning false if the peer already holds MaxConnsPerPeer
+// concurrent handlers. The caller must releasePeerSlot when its handler returns.
+// This is checked after the handshake, because the peer identity is only known
+// then; the global MaxConcurrentConns semaphore stays before the handshake so a
+// handshake flood is still bounded.
+func (s *Server) acquirePeerSlot(id [hash.HashSize]byte) bool {
+	limit := s.cfg.Server.MaxConnsPerPeer
+	if limit <= 0 {
+		limit = 8
+	}
+	s.peerSlotMu.Lock()
+	defer s.peerSlotMu.Unlock()
+	if s.peerSlots == nil {
+		s.peerSlots = make(map[[hash.HashSize]byte]int)
+	}
+	if s.peerSlots[id] >= limit {
+		return false
+	}
+	s.peerSlots[id]++
+	return true
+}
+
+// releasePeerSlot frees a per-peer accept slot reserved by acquirePeerSlot.
+func (s *Server) releasePeerSlot(id [hash.HashSize]byte) {
+	s.peerSlotMu.Lock()
+	defer s.peerSlotMu.Unlock()
+	if s.peerSlots[id] <= 1 {
+		delete(s.peerSlots, id)
+		return
+	}
+	s.peerSlots[id]--
+}
+
+// handleConn runs onConn with panic recovery so a bug in command handling
+// drops the offending connection instead of crashing the whole authority.
+func (s *Server) handleConn(conn net.Conn) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Errorf("onConn: recovered from panic, dropping connection: %v", r)
+			conn.Close()
+		}
+	}()
+	if !s.registerConn(conn) {
+		return
+	}
+	defer s.unregisterConn(conn)
+	s.onConn(conn)
 }
 
 func (s *Server) halt() {
@@ -244,6 +353,29 @@ func (s *Server) halt() {
 			l.Close()
 		}
 		s.listeners[idx] = nil
+	}
+
+	// Close every accepted connection. A handler blocked reading a peer that
+	// holds the connection open (for example an authority connection kept warm
+	// between voting rounds) does not otherwise return until the long idle
+	// timeout, which would stall shutdown for that whole window. Setting
+	// halting under the same lock closes any connection accepted from here on
+	// as soon as its handler registers, so none escapes this pass.
+	s.connMu.Lock()
+	s.halting = true
+	for c := range s.conns {
+		c.Close()
+	}
+	s.conns = nil
+	s.connMu.Unlock()
+
+	// Unblock any outbound send wedged on a cached persistent peer connection by
+	// closing the underlying connections now. Otherwise a stuck write would hold
+	// up the WaitGroup drain below until its own deadline, and state.Halt() (the
+	// full peer-connection teardown) only runs after that drain. The teardown
+	// still runs later; this just releases wedged writes first.
+	if s.state != nil {
+		s.state.closeLivePeerConns()
 	}
 
 	// Wait for all the connections to terminate.
@@ -268,6 +400,11 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.fatalErrCh = make(chan error, 1)
 	s.haltedCh = make(chan interface{})
+	maxConns := cfg.Server.MaxConcurrentConns
+	if maxConns <= 0 {
+		maxConns = 64
+	}
+	s.connSem = make(chan struct{}, maxConns)
 
 	// Do the early initialization and bring up logging.
 	if err := s.initDataDir(); err != nil {
@@ -281,6 +418,25 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
+	}
+
+	// Derive the PKI wire message ceiling from the configured PKI schemes and
+	// topology so it scales with the primitives in use, unless the operator
+	// pinned it explicitly.
+	estimated := estimatedMaxConsensusSize(cfg)
+	s.maxMessageSizeEstimate = estimated
+	s.maxMessageSize = effectiveMaxMessageSize(cfg)
+	s.log.Debugf(
+		"PKI wire message ceiling=%d bytes (configured=%d, estimated=%d)",
+		s.maxMessageSize,
+		cfg.Server.MaxConsensusSize,
+		estimated,
+	)
+	if cfg.Server.MaxConsensusSize > 0 && cfg.Server.MaxConsensusSize < estimated {
+		s.log.Warningf(
+			"MaxConsensusSize=%d is below the estimated consensus size %d for the configured schemes and topology; consensus documents may exceed it and be rejected as oversized, which is hard to diagnose. Raise MaxConsensusSize to at least %d, or unset it to track the estimate.",
+			cfg.Server.MaxConsensusSize, estimated, estimated,
+		)
 	}
 
 	if err := profiling.Start(s.log); err != nil {
@@ -397,6 +553,19 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)
 	}
 
+	// Log the per-role authorized counts so an operator can compare them
+	// against the per-role counts that actually land in each assembled
+	// consensus (logged in getMyConsensus) and spot a configured node that is
+	// missing from consensus.
+	s.log.Noticef(
+		"Authorized nodes: mixes=%d gateways=%d serviceNodes=%d replicas=%d authorities=%d",
+		len(cfg.Mixes),
+		len(cfg.GatewayNodes),
+		len(cfg.ServiceNodes),
+		len(cfg.StorageReplicas),
+		len(cfg.Authorities),
+	)
+
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
 	isOk := false
 	defer func() {
@@ -426,6 +595,9 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 	s.state.Go(s.state.worker)
+	if s.cfg.Server.PersistentPeerConns {
+		s.state.Go(s.state.peerKeepaliveWorker)
+	}
 
 	// Start up the listeners.
 	listenAddresses := s.cfg.Server.Addresses

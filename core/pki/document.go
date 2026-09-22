@@ -555,7 +555,13 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 		} else {
 			return fmt.Errorf("Document has invalid SharedRandomCommit")
 		}
-		// Votes and Certificates or Consensus differ in that a Consensus has a SharedRandomValue and the set of SharedRandomCommit and SharedRandomReveals that produced it; otherwise there must be only one SharedRandomCommit, and no SharedRandomReveal
+		// Only Votes and Certificates carry the signed SharedRandomCommit and
+		// SharedRandomReveal blobs, so this loop runs for them alone. A Vote
+		// carries exactly one SharedRandomCommit and no SharedRandomReveal. A
+		// Certificate carries the full set of commits and matching reveals. A
+		// Consensus carries neither blob: it keeps only the computed
+		// SharedRandomValue that they produced, so its SharedRandomCommit map is
+		// empty and this loop does not execute for it.
 		switch len(d.SharedRandomCommit) {
 		case 1:
 			// This Document is a Vote and must have only one SharedRandomCommit
