@@ -7,6 +7,7 @@ package pki
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/katzenpost/katzenpost/fuzz/seed"
 	"testing"
 
 	fuzz "github.com/AdaLogics/go-fuzz-headers"
@@ -22,6 +23,9 @@ func FuzzParseDocument(f *testing.F) {
 	f.Add([]byte("not-a-document"))
 	f.Add([]byte{0xa0})
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		doc, err := ParseDocument(data)
 		if err == nil && doc == nil {
 			t.Fatal("ParseDocument returned nil doc and nil error")
@@ -35,6 +39,9 @@ func FuzzDocumentUnmarshalCertificate(f *testing.F) {
 	f.Add([]byte{0xa0})
 	f.Add([]byte("garbage"))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		d := new(Document)
 		_ = d.UnmarshalCertificate(data)
 	})
@@ -46,6 +53,9 @@ func FuzzMixDescriptorUnmarshalBinary(f *testing.F) {
 	f.Add([]byte{0xa0})
 	f.Add([]byte("garbage"))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		d := new(MixDescriptor)
 		_ = d.UnmarshalBinary(data)
 	})
@@ -57,6 +67,9 @@ func FuzzReplicaDescriptorUnmarshal(f *testing.F) {
 	f.Add([]byte{0xa0})
 	f.Add([]byte("garbage"))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		d := new(ReplicaDescriptor)
 		_ = d.Unmarshal(data)
 	})
@@ -68,6 +81,9 @@ func FuzzSignedUploadUnmarshal(f *testing.F) {
 	f.Add([]byte{0xa0})
 	f.Add([]byte("garbage"))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		s := new(SignedUpload)
 		_ = s.Unmarshal(data)
 	})
@@ -76,6 +92,9 @@ func FuzzSignedUploadUnmarshal(f *testing.F) {
 func FuzzMixDescriptorStructured(f *testing.F) {
 	f.Add(structuredSeed())
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		d := new(MixDescriptor)
 		if err := fuzz.NewConsumer(data).GenerateStruct(d); err != nil {
 			return
@@ -110,6 +129,9 @@ func FuzzMixDescriptorStructured(f *testing.F) {
 func FuzzReplicaDescriptorStructured(f *testing.F) {
 	f.Add(structuredSeed())
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		d := new(ReplicaDescriptor)
 		if err := fuzz.NewConsumer(data).GenerateStruct(d); err != nil {
 			return
@@ -144,6 +166,9 @@ func FuzzReplicaDescriptorStructured(f *testing.F) {
 func FuzzDocumentStructured(f *testing.F) {
 	f.Add(structuredSeed())
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		d := new(Document)
 		if err := fuzz.NewConsumer(data).GenerateStruct(d); err != nil {
 			return
@@ -168,6 +193,9 @@ func FuzzSharedRandomSetCommitAndVerify(f *testing.F) {
 	f.Add(short, short)
 	f.Add(full, full)
 	f.Fuzz(func(t *testing.T, commit, reveal []byte) {
+		if seed.Export(commit, reveal) {
+			return
+		}
 		s := new(SharedRandom)
 		s.SetCommit(commit)
 		if len(commit) >= SharedRandomLength {

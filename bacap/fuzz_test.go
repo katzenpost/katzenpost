@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	"github.com/katzenpost/hpqc/bacap"
 )
 
@@ -16,6 +18,9 @@ func FuzzWriteCapFromBytes(f *testing.F) {
 	f.Add([]byte{})
 	f.Add(make([]byte, bacap.WriteCapSize))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		wc, err := bacap.NewWriteCapFromBytes(data)
 		if err != nil {
 			return
@@ -38,6 +43,9 @@ func FuzzReadCapFromBytes(f *testing.F) {
 	f.Add([]byte{})
 	f.Add(make([]byte, bacap.ReadCapSize))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		rc, err := bacap.ReadCapFromBytes(data)
 		if err != nil {
 			return
@@ -60,6 +68,9 @@ func FuzzMessageBoxIndexUnmarshal(f *testing.F) {
 	f.Add([]byte{})
 	f.Add(make([]byte, bacap.MessageBoxIndexSize))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		idx := new(bacap.MessageBoxIndex)
 		if err := idx.UnmarshalBinary(data); err != nil {
 			return
@@ -79,6 +90,9 @@ func FuzzStatefulReaderFromBytesNextBoxID(f *testing.F) {
 	f.Add([]byte{})
 	f.Add(make([]byte, bacap.ReadCapSize))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		sr, err := bacap.NewStatefulReaderFromBytes(data)
 		if err != nil {
 			return

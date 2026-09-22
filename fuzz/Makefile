@@ -50,6 +50,7 @@ tool:
 
 seed:
 	@mkdir -p $(CORPUSDIR)
+	cd $(MODROOT) && FUZZ_EXPORT_DIR=$(CORPUSDIR) go test -tags=fuzz -run '^$(FUZZFUNC)$$' $(FUZZ)
 	@[ -n "$$(ls -A $(CORPUSDIR) 2>/dev/null)" ] || head -c 512 /dev/zero > $(CORPUSDIR)/seed-zeros
 
 build: tool seed
