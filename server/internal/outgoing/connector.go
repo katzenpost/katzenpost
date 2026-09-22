@@ -73,11 +73,10 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 	defer co.RUnlock()
 
 	if pkt == nil {
-		co.log.Debug("Dropping packet: packet is nil, wtf")
+		co.log.Debug("Dropping packet: packet is nil")
 		instrument.InvalidPacketsDropped()
 		instrument.PacketsDropped()
 		instrument.PacketsDroppedByReason("dispatch_nil_packet")
-		pkt.Dispose()
 		return
 	}
 	if pkt.NextNodeHop == nil {
