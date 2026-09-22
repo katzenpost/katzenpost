@@ -52,7 +52,6 @@ jobs:
     if: needs.changes.outputs.client == 'true'
     permissions:
       contents: read
-      packages: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -68,10 +67,9 @@ jobs:
 
   interop:
     needs: [changes, namenlos]
-    if: always() && (needs.changes.outputs.server == 'true' || needs.namenlos.outputs.ok != 'success')
+    if: always() && needs.changes.result == 'success' && (needs.changes.outputs.server == 'true' || needs.namenlos.outputs.ok != 'success')
     permissions:
       contents: read
-      packages: write
     env:
       warped: true
       no_mixdecoy: true
