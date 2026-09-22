@@ -17,15 +17,20 @@
 package mixkey
 
 import (
+	"bytes"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yawning/bloom"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/x25519"
@@ -255,6 +260,41 @@ func doBenchIsReplayHit(b *testing.B) {
 	if count != b.N {
 		b.Fatalf("replays (%v) != iterations (%v)", count, b.N)
 	}
+}
+
+func TestIsReplaySaturationNoPanic(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	mynike := x25519.Scheme(rand.Reader)
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	k, err := New(testEpoch, g)
+	require.NoError(err, "New()")
+	defer k.Deref()
+
+	var buf bytes.Buffer
+	logging.SetBackend(logging.NewLogBackend(&buf, "", 0))
+	k.SetLogger(logging.MustGetLogger("mixkey-test"))
+
+	small, err := bloom.New(rand.Reader, 13, 0.001)
+	require.NoError(err, "bloom.New()")
+	k.f = small
+
+	max := k.f.MaxEntries()
+	for i := 0; k.f.Entries() < max && i < max*100; i++ {
+		var tag [TagLength]byte
+		binary.BigEndian.PutUint64(tag[:], uint64(i))
+		k.IsReplay(tag[:])
+	}
+	require.GreaterOrEqual(k.f.Entries(), max, "filter did not reach saturation")
+
+	for i := 0; i < 5; i++ {
+		var fresh [TagLength]byte
+		binary.BigEndian.PutUint64(fresh[:], uint64(0xdeadbeef+i))
+		assert.True(k.IsReplay(fresh[:]), "saturated filter must treat the packet as a replay")
+	}
+	assert.Equal(1, strings.Count(buf.String(), "saturated"), "saturation must be logged exactly once")
 }
 
 func init() {
