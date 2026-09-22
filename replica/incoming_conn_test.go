@@ -250,7 +250,7 @@ func TestIncomingConn(t *testing.T) {
 		DEK:           dek,
 		Ciphertext:    ciphertext,
 	}
-	reply3 := inConn.handleReplicaMessage(replicaMessage)
+	reply3 := inConn.handleReplicaMessage(replicaMessage, func() {})
 	require.NotNil(t, reply3)
 	// Expect an error reply since we're using invalid cryptographic material
 	require.NotEqual(t, uint8(0), reply3.ErrorCode)
