@@ -388,7 +388,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	var err error
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
-	if s == nil {
+	if pkiSignatureScheme == nil {
 		return nil, errors.New("PKI Signature Scheme not found")
 	}
 	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()

@@ -25,7 +25,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/adapter"
+	"github.com/katzenpost/hpqc/kem/combiner"
+	"github.com/katzenpost/hpqc/kem/mlkem768"
 	ecdhnike "github.com/katzenpost/hpqc/nike/x25519"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
@@ -126,6 +129,53 @@ func TestLeanNikeVectors(t *testing.T) {
 func TestLeanKEMVectors(t *testing.T) {
 	k := adapter.FromNIKEWithPRF(ecdhnike.Scheme(rand.Reader), adapter.SHA256v1)
 	unwrapLeanVectors(t, "testdata/lean_kem_vectors.json",
+		func(withSURB bool) *Sphinx {
+			return NewKEMSphinx(k, geo.KEMGeometryFromUserForwardPayloadLength(k, 103, withSURB, 5))
+		},
+		func(hexKey string) (interface{}, error) {
+			rawKey, err := hex.DecodeString(hexKey)
+			if err != nil {
+				return nil, err
+			}
+			return k.UnmarshalBinaryPrivateKey(rawKey)
+		})
+}
+
+// TestLeanMLKEM768X25519Vectors is TestLeanKEMVectors's counterpart for the X25519 + ML-KEM-768
+// hybrid combiner. As generate_kem_hybrid/main.go, this builds the combiner directly with
+// adapter.SHA256v1 rather than using hpqc's registered "MLKEM768-X25519" (which defaults to the
+// deployed BLAKE2b-XOF PRF, not ported to CryptWalker's Lean side) -- matching
+// CryptWalker's kemMLKEM768X25519 (KEM/Schemes.lean) exactly.
+func TestLeanMLKEM768X25519Vectors(t *testing.T) {
+	k, err := combiner.New("MLKEM768-X25519-sha256v1", []kem.Scheme{
+		adapter.FromNIKEWithPRF(ecdhnike.Scheme(rand.Reader), adapter.SHA256v1),
+		mlkem768.Scheme(),
+	})
+	require.NoError(t, err)
+	unwrapLeanVectors(t, "testdata/lean_kem_hybrid_vectors.json",
+		func(withSURB bool) *Sphinx {
+			return NewKEMSphinx(k, geo.KEMGeometryFromUserForwardPayloadLength(k, 103, withSURB, 5))
+		},
+		func(hexKey string) (interface{}, error) {
+			rawKey, err := hex.DecodeString(hexKey)
+			if err != nil {
+				return nil, err
+			}
+			return k.UnmarshalBinaryPrivateKey(rawKey)
+		})
+}
+
+// TestLeanMLKEM768X25519BLAKE2bXOFVectors is TestLeanMLKEM768X25519Vectors's counterpart under
+// the deployed BLAKE2b-XOF adapter PRF, now that CryptWalker's Lean port has it
+// (KEM/Schemes.lean's kemMLKEM768X25519Blake2b) -- matching hpqc's registered "MLKEM768-X25519"
+// scheme exactly, not just a portable stand-in.
+func TestLeanMLKEM768X25519BLAKE2bXOFVectors(t *testing.T) {
+	k, err := combiner.New("MLKEM768-X25519-blake2bxof", []kem.Scheme{
+		adapter.FromNIKEWithPRF(ecdhnike.Scheme(rand.Reader), adapter.BLAKE2bXOF),
+		mlkem768.Scheme(),
+	})
+	require.NoError(t, err)
+	unwrapLeanVectors(t, "testdata/lean_kem_hybrid_blake2bxof_vectors.json",
 		func(withSURB bool) *Sphinx {
 			return NewKEMSphinx(k, geo.KEMGeometryFromUserForwardPayloadLength(k, 103, withSURB, 5))
 		},
