@@ -612,7 +612,7 @@ func New(cfg *config.Config) (*Server, error) {
 	logStartupStep("listener address selection")
 
 	// Bring the listener(s) online.
-	s.connLimiter = connlimit.New(s.cfg.Debug.MaxClientConns, s.cfg.Debug.MaxPeerConns, s.cfg.Debug.MaxConnsPerIP, s.cfg.Debug.MaxLoopbackConns)
+	s.connLimiter = connlimit.New(*s.cfg.Debug.MaxClientConns, *s.cfg.Debug.MaxPeerConns, *s.cfg.Debug.MaxConnsPerIP, *s.cfg.Debug.MaxLoopbackConns)
 	s.peerSet = connlimit.NewPeerSet()
 	s.peerSet.Rebuild(staticAuthorityAddresses(s.cfg))
 	s.listeners = make([]glue.Listener, 0, len(addresses))

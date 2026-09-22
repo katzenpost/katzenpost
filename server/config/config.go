@@ -321,13 +321,13 @@ type Debug struct {
 	// should only be used for testing.
 	DisableRateLimit bool
 
-	MaxClientConns int
+	MaxClientConns *int
 
-	MaxPeerConns int
+	MaxPeerConns *int
 
-	MaxConnsPerIP int
+	MaxConnsPerIP *int
 
-	MaxLoopbackConns int
+	MaxLoopbackConns *int
 
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
@@ -376,17 +376,21 @@ func (dCfg *Debug) applyDefaults() {
 	if dCfg.ReauthInterval <= 0 {
 		dCfg.ReauthInterval = defaultReauthInterval
 	}
-	if dCfg.MaxClientConns <= 0 {
-		dCfg.MaxClientConns = connlimit.DefaultMaxClientConns
+	if dCfg.MaxClientConns == nil {
+		v := connlimit.DefaultMaxClientConns
+		dCfg.MaxClientConns = &v
 	}
-	if dCfg.MaxPeerConns <= 0 {
-		dCfg.MaxPeerConns = connlimit.DefaultMaxPeerConns
+	if dCfg.MaxPeerConns == nil {
+		v := connlimit.DefaultMaxPeerConns
+		dCfg.MaxPeerConns = &v
 	}
-	if dCfg.MaxConnsPerIP <= 0 {
-		dCfg.MaxConnsPerIP = connlimit.DefaultMaxConnsPerIP
+	if dCfg.MaxConnsPerIP == nil {
+		v := connlimit.DefaultMaxConnsPerIP
+		dCfg.MaxConnsPerIP = &v
 	}
-	if dCfg.MaxLoopbackConns <= 0 {
-		dCfg.MaxLoopbackConns = connlimit.DefaultMaxLoopbackConns
+	if dCfg.MaxLoopbackConns == nil {
+		v := connlimit.DefaultMaxLoopbackConns
+		dCfg.MaxLoopbackConns = &v
 	}
 }
 

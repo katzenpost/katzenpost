@@ -328,7 +328,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	// Ensure config defaults are set (tests may skip FixupAndValidate).
 	s.cfg.SetDefaultTimeouts()
 
-	s.connLimiter = connlimit.New(s.cfg.MaxClientConns, s.cfg.MaxPeerConns, s.cfg.MaxConnsPerIP, s.cfg.MaxLoopbackConns)
+	s.connLimiter = connlimit.New(*s.cfg.MaxClientConns, *s.cfg.MaxPeerConns, *s.cfg.MaxConnsPerIP, *s.cfg.MaxLoopbackConns)
 	s.peerSet = connlimit.NewPeerSet()
 	s.peerSet.Rebuild(replicaStaticAuthorityAddresses(s.cfg))
 

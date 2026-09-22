@@ -437,8 +437,9 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	s.connSem = make(chan struct{}, maxConns)
 	reserve := maxConns / 2
-	if pl := cfg.Debug.MaxPeerConns + cfg.Debug.MaxLoopbackConns; pl < reserve {
-		reserve = pl
+	peerCap, loopCap := *cfg.Debug.MaxPeerConns, *cfg.Debug.MaxLoopbackConns
+	if peerCap > 0 && loopCap > 0 && peerCap+loopCap < reserve {
+		reserve = peerCap + loopCap
 	}
 	if reserve > maxConns-1 {
 		reserve = maxConns - 1
@@ -632,7 +633,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.Shutdown()
 	}()
 
-	s.connLimiter = connlimit.New(s.cfg.Debug.MaxClientConns, s.cfg.Debug.MaxPeerConns, s.cfg.Debug.MaxConnsPerIP, s.cfg.Debug.MaxLoopbackConns)
+	s.connLimiter = connlimit.New(*s.cfg.Debug.MaxClientConns, *s.cfg.Debug.MaxPeerConns, *s.cfg.Debug.MaxConnsPerIP, *s.cfg.Debug.MaxLoopbackConns)
 	s.peerSet = connlimit.NewPeerSet()
 	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
 

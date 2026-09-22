@@ -106,13 +106,13 @@ type Config struct {
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
 
-	MaxClientConns int
+	MaxClientConns *int
 
-	MaxPeerConns int
+	MaxPeerConns *int
 
-	MaxConnsPerIP int
+	MaxConnsPerIP *int
 
-	MaxLoopbackConns int
+	MaxLoopbackConns *int
 
 	// ProxyRequestTimeout is the wall-clock budget in seconds for one
 	// whole proxied request, across every shard holder tried. It is not
@@ -264,17 +264,21 @@ func (c *Config) SetDefaultTimeouts() {
 	if c.KeepAliveInterval <= 0 {
 		c.KeepAliveInterval = defaultKeepAliveInterval
 	}
-	if c.MaxClientConns <= 0 {
-		c.MaxClientConns = connlimit.DefaultMaxClientConns
+	if c.MaxClientConns == nil {
+		v := connlimit.DefaultMaxClientConns
+		c.MaxClientConns = &v
 	}
-	if c.MaxPeerConns <= 0 {
-		c.MaxPeerConns = connlimit.DefaultMaxPeerConns
+	if c.MaxPeerConns == nil {
+		v := connlimit.DefaultMaxPeerConns
+		c.MaxPeerConns = &v
 	}
-	if c.MaxConnsPerIP <= 0 {
-		c.MaxConnsPerIP = connlimit.DefaultMaxConnsPerIP
+	if c.MaxConnsPerIP == nil {
+		v := connlimit.DefaultMaxConnsPerIP
+		c.MaxConnsPerIP = &v
 	}
-	if c.MaxLoopbackConns <= 0 {
-		c.MaxLoopbackConns = connlimit.DefaultMaxLoopbackConns
+	if c.MaxLoopbackConns == nil {
+		v := connlimit.DefaultMaxLoopbackConns
+		c.MaxLoopbackConns = &v
 	}
 	// IncomingQueueSize, ProxyRequestTimeout and ProxyWorkerCount are
 	// auto-derived later, in server.New, via ApplyRuntimeDefaults.
