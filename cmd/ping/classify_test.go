@@ -40,3 +40,36 @@ func TestClassify(t *testing.T) {
 		})
 	}
 }
+
+// TestFailingCountsOverdueAsLoss pins that the default gate treats an overdue
+// reply as loss. Every dispatched packet that never comes back lands in
+// catOverdue, not catLost, because the overdue timer always fires first.
+func TestFailingCountsOverdueAsLoss(t *testing.T) {
+	var c counts
+	c[catDelivered] = 7
+	c[catOverdue] = 2
+	c[catNotSent] = 1
+
+	if got := c.failing(false); got != 2 {
+		t.Fatalf("failing(false) = %d, want 2", got)
+	}
+	if got := c.failing(true); got != 3 {
+		t.Fatalf("failing(true) = %d, want 3", got)
+	}
+}
+
+// TestFailingIgnoresClientSideLimits pins the other half: a run held back by
+// the client's own pacing is not a mixnet failure.
+func TestFailingIgnoresClientSideLimits(t *testing.T) {
+	var c counts
+	c[catDelivered] = 5
+	c[catNotSent] = 3
+	c[catRefused] = 2
+
+	if got := c.failing(false); got != 0 {
+		t.Fatalf("failing(false) = %d, want 0", got)
+	}
+	if got := c.failing(true); got != 5 {
+		t.Fatalf("failing(true) = %d, want 5", got)
+	}
+}

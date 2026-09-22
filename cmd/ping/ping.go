@@ -276,8 +276,9 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 func reportCategories(w io.Writer, tally counts) {
 	fmt.Fprintf(w, "%s\n", headerStyle.Render("Outcomes by category:"))
 	fmt.Fprintf(w, "  %-10s %6d  reply received within budget\n", catDelivered.label(), tally[catDelivered])
-	fmt.Fprintf(w, "  %-10s %6d  genuine mixnet loss: dispatched, no reply\n", catLost.label(), tally[catLost])
-	fmt.Fprintf(w, "  %-10s %6d  never dispatched (client pacing/limit), not a loss\n", catNotSent.label(), tally[catNotSent])
-	fmt.Fprintf(w, "  %-10s %6d  connection lost before send, not a loss\n", catRefused.label(), tally[catRefused])
-	fmt.Fprintf(w, "  %-10s %6d  reply late past ReplyETA+slop, weaker evidence\n", catOverdue.label(), tally[catOverdue])
+	fmt.Fprintf(w, "  %-10s %6d  dispatched, no reply before the hard cap\n", catLost.label(), tally[catLost])
+	fmt.Fprintf(w, "  %-10s %6d  dispatched, no reply before the daemon dropped the SURB\n", catOverdue.label(), tally[catOverdue])
+	fmt.Fprintf(w, "  %-10s %6d  never dispatched (client pacing/limit), not a mixnet loss\n", catNotSent.label(), tally[catNotSent])
+	fmt.Fprintf(w, "  %-10s %6d  connection lost before send, not a mixnet loss\n", catRefused.label(), tally[catRefused])
+	fmt.Fprintf(w, "  gate: %s + %s (--strict: everything but %s)\n", catLost.label(), catOverdue.label(), catDelivered.label())
 }

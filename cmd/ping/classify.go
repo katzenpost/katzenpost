@@ -58,14 +58,31 @@ func classify(sent, payloadOK bool, err error) category {
 
 type counts [numCategories]uint64
 
+func (c counts) total() uint64 {
+	var total uint64
+	for _, n := range c {
+		total += n
+	}
+	return total
+}
+
 // failing returns the outcome count that gates a non-zero exit.
+//
+// An overdue reply counts as loss. The overdue deadline is ReplyETA plus
+// replySlop, which is the same budget the daemon gives a SURB ID before it
+// drops the map entry: the same hop count and the same per-hop figure, so the
+// two deadlines coincide. A reply arriving after it can no longer be matched
+// to its request and is discarded, which makes overdue an unrecoverable loss
+// rather than a wait cut short.
+//
+// It is also where in-transit loss actually lands. The overdue timer always
+// fires at or before the hard cap, since ReplyETA is bounded by hops times
+// SafetyCap and the cap is hops times SafetyCap plus the same slop. Gating on
+// catLost alone would therefore gate on a category a healthy run and a dead
+// one both leave empty.
 func (c counts) failing(strict bool) uint64 {
 	if strict {
-		var total uint64
-		for _, n := range c {
-			total += n
-		}
-		return total - c[catDelivered]
+		return c.total() - c[catDelivered]
 	}
-	return c[catLost]
+	return c[catLost] + c[catOverdue]
 }
