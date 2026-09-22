@@ -315,6 +315,9 @@ func (c *SendRetrievePacket) Length() int {
 }
 
 func sendRetrievePacketFromBytes(b []byte, cmds *Commands) (Command, error) {
+	if len(b) != cmds.geo.PacketLength {
+		return nil, errInvalidCommand
+	}
 	r := new(SendRetrievePacket)
 	r.SphinxPacket = make([]byte, 0, len(b))
 	r.SphinxPacket = append(r.SphinxPacket, b...)
@@ -417,7 +420,7 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	b = b[:cmdLen]
 	switch commandID(id) {
 	case consensus2:
-		return consensus2FromBytes(b)
+		return consensus2FromBytes(b, c)
 	case postReplicaDescriptor:
 		return postReplicaDescriptorFromBytes(b)
 	case postReplicaDescriptorStatus:
