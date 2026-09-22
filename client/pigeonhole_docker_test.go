@@ -58,8 +58,10 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	t.Log("Alice: Created WriteCap and derived ReadCap for Bob")
 
 	// Verify that Alice's write box ID matches Bob's read box ID
-	aliceBoxID := aliceFirstIndex.BoxIDForContext(aliceWriteCap.ReadCap(), constants.PIGEONHOLE_CTX)
-	bobBoxID := aliceFirstIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+	aliceBoxID, err := aliceFirstIndex.BoxIDForContext(aliceWriteCap.ReadCap(), constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+	bobBoxID, err := aliceFirstIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
 	require.Equal(t, aliceBoxID.Bytes(), bobBoxID.Bytes(), "Box IDs must match: Alice's write box ID != Bob's read box ID")
 	t.Logf("✓ Verified: Alice and Bob box IDs match: %x", aliceBoxID.Bytes())
 
@@ -392,7 +394,8 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	t.Log("=== Destination Box IDs ===")
 	currentDestIndex := destFirstIndex
 	for i := 0; i < numChunks; i++ {
-		boxID := currentDestIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+		boxID, err := currentDestIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+		require.NoError(t, err)
 		t.Logf("Chunk %d/%d: Box ID = %x", i+1, numChunks, boxID.Bytes())
 		currentDestIndex, err = aliceThinClient.NextMessageBoxIndex(currentDestIndex)
 		require.NoError(t, err)
@@ -1080,7 +1083,8 @@ func TestReadBeforeWrite(t *testing.T) {
 	require.NotNil(t, bobReadCap, "Bob: ReadCap is nil")
 
 	// Log the box ID both will be using
-	boxID := firstIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+	boxID, err := firstIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
 	t.Logf("Shared Box ID: %x", boxID.Bytes())
 
 	// Channel to receive Bob's read result
