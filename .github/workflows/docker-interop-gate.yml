@@ -77,13 +77,13 @@ jobs:
       epoch_duration: 2m
       no_metrics: true
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Configure podman socket
         run: systemctl --user start podman.socket || true
       - name: Run the local testnet client suite with -short
-        run: cd docker && make dockertest_race= dockertest_timeout=1h dockertest_parallel=2 testargs=-short test
+        run: cd docker && make dockertest_race= dockertest_timeout=20m dockertest_parallel=2 testargs=-short test
       - name: Dump logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true

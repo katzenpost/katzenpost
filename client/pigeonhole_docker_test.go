@@ -840,6 +840,9 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 // 3. Alice tombstones the box (deletes it with an empty payload)
 // 4. Bob reads again and verifies the tombstone
 func TestTombstoning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
+	}
 	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
@@ -1018,6 +1021,9 @@ func TestTombstoneRange(t *testing.T) {
 // - Reading from a non-existent box returns ErrBoxIDNotFound
 // - The error can be checked using errors.Is()
 func TestBoxIDNotFoundError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
+	}
 	t.Parallel()
 	// Setup Bob thin client (reader)
 	bobThinClient := setupThinClient(t)
@@ -1078,6 +1084,9 @@ func TestBoxIDNotFoundError(t *testing.T) {
 // This test validates that the default retry behavior (NoRetryOnBoxIDNotFound=false)
 // correctly handles the case where data hasn't been replicated yet.
 func TestReadBeforeWrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
+	}
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -1197,6 +1206,9 @@ func TestReadBeforeWrite(t *testing.T) {
 // - Writing to the same box again returns ErrBoxAlreadyExists
 // - The error can be checked using errors.Is()
 func TestBoxAlreadyExistsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
+	}
 	t.Parallel()
 	// Setup thin client
 	thinClient := setupThinClient(t)
@@ -1269,6 +1281,9 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 }
 
 func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
+	}
 	t.Parallel()
 	// Setup thin client
 	thinClient := setupThinClient(t)
