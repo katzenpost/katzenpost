@@ -7,11 +7,14 @@ import (
 	"context"
 	"crypto/hmac"
 	"errors"
+	"fmt"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/sign"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
@@ -73,12 +76,36 @@ func newPKIWorkerWithDefaultClient(server *Server, log *logging.Logger) (*PKIWor
 	if kemscheme == nil {
 		return nil, errors.New("kem scheme not found in registry")
 	}
+	// The courier has no PKI signature scheme of its own; it only fetches and
+	// verifies the consensus signed by the authorities. The consensus carries
+	// a single PKISignatureScheme, so every authority is expected to share it
+	// (a deployment picks one scheme and never migrates): take it from the
+	// configured peer set to derive the wire ceiling. Leaving it unset keeps
+	// the flat default ceiling. Verify the peers actually agree instead of
+	// assuming it from an arbitrary entry: a heterogeneous config would
+	// otherwise silently under-estimate the ceiling for whichever authority
+	// was not consulted, and reject its legitimate traffic as oversized.
+	var pkiSignatureScheme sign.Scheme
+	if peers := server.cfg.PKI.Voting.Authorities; len(peers) > 0 && peers[0].PKISignatureScheme != "" {
+		schemeName := peers[0].PKISignatureScheme
+		for _, peer := range peers[1:] {
+			if peer.PKISignatureScheme != schemeName {
+				return nil, fmt.Errorf("configured authorities do not agree on a PKI signature scheme: %q (%s) != %q (%s)",
+					schemeName, peers[0].Identifier, peer.PKISignatureScheme, peer.Identifier)
+			}
+		}
+		pkiSignatureScheme = signSchemes.ByName(schemeName)
+		if pkiSignatureScheme == nil {
+			return nil, fmt.Errorf("pki signature scheme %q not found in registry", schemeName)
+		}
+	}
 	pkiCfg := &vClient.Config{
-		KEMScheme:   kemscheme,
-		LinkKey:     server.linkPrivKey,
-		LogBackend:  server.LogBackend(),
-		Authorities: server.cfg.PKI.Voting.Authorities,
-		Geo:         server.cfg.SphinxGeometry,
+		KEMScheme:          kemscheme,
+		PKISignatureScheme: pkiSignatureScheme,
+		LinkKey:            server.linkPrivKey,
+		LogBackend:         server.LogBackend(),
+		Authorities:        server.cfg.PKI.Voting.Authorities,
+		Geo:                server.cfg.SphinxGeometry,
 		// Convert milliseconds to seconds for PKI client timeouts
 		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
 		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,

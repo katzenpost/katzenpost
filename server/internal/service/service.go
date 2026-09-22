@@ -5,6 +5,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -51,7 +52,7 @@ func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[
 	map1 := p.kaetzchenWorker.KaetzchenForPKI()
 	map2 := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
 
-	// merge sets, panic on duplicate
+	// merge sets, refuse duplicates
 	setsToMerge := []map[kaetzchen.PluginName]kaetzchen.PluginParameters{
 		map1, map2,
 	}
@@ -62,7 +63,7 @@ func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[
 		for k, v := range currentSet {
 			if _, ok := merged[k]; ok {
 				p.log.Debug("WARNING: duplicate plugin entries")
-				panic("WARNING: duplicate plugin entries")
+				return nil, nil, fmt.Errorf("provider: Kaetzchen: plugin '%v' registered more than once", k)
 			}
 			merged[k] = v
 		}
