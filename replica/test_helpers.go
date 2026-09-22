@@ -204,6 +204,7 @@ func CreateTestServer(t *testing.T, cfg *config.Config, keys *TestKeys, logBacke
 		cfg:                cfg,
 		PKIWorker:          pkiWorker,
 		proxySema:          make(chan struct{}, cfg.ProxyWorkerCount),
+		decapSema:          make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 
 	if logBackend != nil {
@@ -371,6 +372,7 @@ func newTestState(t *testing.T, dataDir string) *state {
 		cfg:               cfg,
 		PKIWorker:         pkiWorker,
 		proxySema:         make(chan struct{}, cfg.ProxyWorkerCount),
+		decapSema:         make(chan struct{}, cfg.ProxyWorkerCount),
 	}
 	require.NoError(t, s.initLogging())
 	pkiWorker.server = s
