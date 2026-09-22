@@ -3,12 +3,16 @@
 package connlimit
 
 import (
+	"context"
 	"net"
 	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
+
+const resolveTimeout = 2 * time.Second
 
 const DefaultMaxClientConns = 1024
 
@@ -186,7 +190,19 @@ func (s *PeerSet) Contains(ip net.IP) bool {
 	return ok
 }
 
-var lookupIP = net.LookupIP
+var lookupIP = func(host string) ([]net.IP, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), resolveTimeout)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	ips := make([]net.IP, len(addrs))
+	for i := range addrs {
+		ips[i] = addrs[i].IP
+	}
+	return ips, nil
+}
 
 func resolveAddr(a string) []net.IP {
 	host := hostOf(a)
