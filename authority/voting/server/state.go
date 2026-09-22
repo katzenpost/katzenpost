@@ -209,10 +209,10 @@ func (s *state) rebuildPeerSet() {
 	s.RLock()
 	doc := s.documents[epoch]
 	s.RUnlock()
-	var addrs []string
-	if doc != nil {
-		addrs = doc.AllNodeAddresses()
+	if doc == nil {
+		return
 	}
+	addrs := doc.AllNodeAddresses()
 	addrs = append(addrs, dirauthStaticAuthorityAddresses(s.s.cfg)...)
 	s.s.peerSet.Rebuild(addrs)
 }
