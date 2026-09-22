@@ -922,8 +922,11 @@ test: wait
 # cache). Serial by default; with `make -j N test-distros` each
 # test-distro-<distro> leg runs concurrently on its own mixnet-<distro>
 # network and base_port band derived from the DISTROS order, so legs never
-# share state. Each leg runs run-ping, which exits non-zero unless every
-# ping is answered, so a leg's exit code asserts a healthy network. Legs
+# share state. Each leg runs run-ping, which exits non-zero on any packet
+# lost in the mixnet and on a run that delivered nothing at all, so a leg's
+# exit code asserts a healthy network. A ping the client never dispatched
+# (its own pacing, or a dropped daemon link) does not fail the leg on its
+# own; pass --strict to run-ping to gate on those too. Legs
 # deliberately leave their networks running; tear everything down with
 # `make clean` (or one `make distro=<d> stop` per network).
 DISTRO_PORTS=$(foreach d,$(DISTROS),$(d):$(shell set -- $(DISTROS); i=0; for x; do [ "$$x" = "$(d)" ] && printf '%s' $$((30000 + i * 10000)) && break; i=$$((i+1)); done))

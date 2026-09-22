@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/katzenpost/katzenpost/client/thin"
 )
@@ -81,8 +82,32 @@ func (c counts) total() uint64 {
 // catLost alone would therefore gate on a category a healthy run and a dead
 // one both leave empty.
 func (c counts) failing(strict bool) uint64 {
+	notDelivered := c.total() - c[catDelivered]
 	if strict {
-		return c.total() - c[catDelivered]
+		return notDelivered
+	}
+	// Floor: a run that delivered nothing at all fails whatever the
+	// categories say. Not-sent and refused are excused individually
+	// because the rest of the batch still measured the network; a batch
+	// where they are the whole story measured nothing.
+	if c[catDelivered] == 0 {
+		return notDelivered
 	}
 	return c[catLost] + c[catOverdue]
+}
+
+// gateError reports the run's exit condition: nil when it passes, otherwise an
+// error naming what failed.
+func (c counts) gateError(strict bool, count int) error {
+	failed := c.failing(strict)
+	switch {
+	case failed == 0:
+		return nil
+	case strict:
+		return fmt.Errorf("%d/%d pings did not deliver", failed, count)
+	case c[catDelivered] == 0:
+		return fmt.Errorf("%d/%d pings failed and none delivered", failed, count)
+	default:
+		return fmt.Errorf("%d/%d pings lost in the mixnet", failed, count)
+	}
 }

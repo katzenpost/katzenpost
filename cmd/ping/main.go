@@ -135,14 +135,7 @@ full client mode where this ping tool starts it's own client daemon.`,
 			}()
 
 			tally := executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff, cfg.RotateServices)
-			failed := tally.failing(cfg.Strict)
-			if failed > 0 {
-				if cfg.Strict {
-					return fmt.Errorf("%d/%d pings did not deliver", failed, cfg.Count)
-				}
-				return fmt.Errorf("%d/%d pings lost in the mixnet", failed, cfg.Count)
-			}
-			return nil
+			return tally.gateError(cfg.Strict, cfg.Count)
 		},
 	}
 

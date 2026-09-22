@@ -73,3 +73,48 @@ func TestFailingIgnoresClientSideLimits(t *testing.T) {
 		t.Fatalf("failing(true) = %d, want 5", got)
 	}
 }
+
+// TestFailingFloorsOnNoDelivery pins that a batch which delivered nothing
+// fails even when every outcome is individually excused. A network that is
+// simply down must not exit zero on the strength of client-side excuses.
+func TestFailingFloorsOnNoDelivery(t *testing.T) {
+	var c counts
+	c[catNotSent] = 6
+	c[catRefused] = 4
+
+	if got := c.failing(false); got != 10 {
+		t.Fatalf("failing(false) = %d, want 10", got)
+	}
+	if got := c.failing(true); got != 10 {
+		t.Fatalf("failing(true) = %d, want 10", got)
+	}
+}
+
+func TestGateError(t *testing.T) {
+	cases := []struct {
+		name   string
+		c      counts
+		strict bool
+		want   string
+	}{
+		{"clean run passes", counts{catDelivered: 10}, false, ""},
+		{"client-side limits pass", counts{catDelivered: 8, catNotSent: 2}, false, ""},
+		{"strict fails on limits", counts{catDelivered: 8, catNotSent: 2}, true, "2/10 pings did not deliver"},
+		{"loss fails", counts{catDelivered: 8, catOverdue: 2}, false, "2/10 pings lost in the mixnet"},
+		{"no delivery fails", counts{catNotSent: 10}, false, "10/10 pings failed and none delivered"},
+		{"empty run passes", counts{}, false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.c.gateError(tc.strict, int(tc.c.total()))
+			switch {
+			case tc.want == "" && err != nil:
+				t.Fatalf("gateError = %v, want nil", err)
+			case tc.want != "" && err == nil:
+				t.Fatalf("gateError = nil, want %q", tc.want)
+			case tc.want != "" && err.Error() != tc.want:
+				t.Fatalf("gateError = %q, want %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
