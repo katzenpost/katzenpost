@@ -20,6 +20,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -159,8 +160,10 @@ func (d *Daemon) encryptRead(request *Request) {
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
+	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
+	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to serialize envelope descriptor: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
@@ -323,8 +326,10 @@ func (d *Daemon) encryptWrite(request *Request) {
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
+	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
+	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to serialize envelope descriptor: %v", err)
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
@@ -447,6 +452,7 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 		return nil, fmt.Errorf("failed to encapsulate: %w", err)
 	}
 	senderPubkey := mkemPrivateKey.Public().Bytes()
+	mkemPrivateKey.Reset()
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
 		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
@@ -2081,11 +2087,13 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 
 	// Reconstruct the NIKE private key
 	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
+	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("decryptPigeonholeReply: Failed to unmarshal private key: %v", err)
 		return nil, err
 	}
 	d.log.Debugf("decryptPigeonholeReply: Private key reconstructed")
+	defer privateKey.Reset()
 
 	// Reuse the existing decryptMKEMEnvelope function
 	innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)

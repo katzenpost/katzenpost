@@ -600,6 +600,12 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("encapsulate for %s: %v", targetShard.Name, err)
 	}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			mkemPrivateKey.Reset()
+		}
+	}()
 	replicaMessage := &commands.ReplicaMessage{
 		Cmds:               commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 		PigeonholeGeometry: nil,
@@ -624,6 +630,7 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 	if reply == nil {
 		return nil, nil, nil, errors.New("nil reply from target replica")
 	}
+	handedOff = true
 	return reply, mkemPrivateKey, targetEnvelopeKey, nil
 }
 
@@ -823,11 +830,13 @@ func (c *incomingConn) proxyReadSweep(shards []*pki.ReplicaDescriptor, first int
 			continue
 		}
 		if len(reply.EnvelopeReply) == 0 {
+			mkemPrivateKey.Reset()
 			c.log.Warningf("proxyReadRequest: %s replied without an envelope, error code %d", candidate.Name, reply.ErrorCode)
 			result.bareReply = reply
 			continue
 		}
 		readReply, err := c.decryptProxyReadReply(reply, mkemPrivateKey, targetEnvelopeKey, scheme)
+		mkemPrivateKey.Reset()
 		if err != nil {
 			c.log.Errorf("proxyReadRequest: unusable reply from %s: %v", candidate.Name, err)
 			continue
@@ -1042,6 +1051,7 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 	if reply == nil {
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorReplicationFailed, originalEnvelopeHash, []byte{}, replicaID)
 	}
+	defer mkemPrivateKey.Reset()
 
 	c.log.Debugf("proxyWriteRequest: Received proxy reply from %s with error code: %d", targetShard.Name, reply.ErrorCode)
 
