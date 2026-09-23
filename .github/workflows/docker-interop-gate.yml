@@ -93,7 +93,7 @@ jobs:
 
   interop:
     needs: [changes, namenlos]
-    if: always() && needs.changes.result == 'success' && (needs.changes.outputs.server == 'true' || needs.namenlos.outputs.ok != 'success')
+    if: always() && needs.changes.result == 'success' && (needs.changes.outputs.server == 'true' || (needs.changes.outputs.client == 'true' && needs.namenlos.outputs.ok != 'success'))
     permissions:
       contents: read
     env:
