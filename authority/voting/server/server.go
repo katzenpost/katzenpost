@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	"github.com/katzenpost/katzenpost/authority/voting/server/profiling"
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -67,9 +68,10 @@ type Server struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	state     *state
-	listeners []net.Listener
-	connSem   chan struct{}
+	state       *state
+	listeners   []net.Listener
+	connSem     chan struct{}
+	connReserve int
 
 	// connMu guards conns and halting. conns tracks every accepted connection
 	// whose handler is running so shutdown can close them, and halting records
@@ -95,6 +97,9 @@ type Server struct {
 	// override; kept so the FSM can log observed consensus size against what we
 	// predicted.
 	maxMessageSizeEstimate int
+
+	connLimiter *connlimit.Limiter
+	peerSet     *connlimit.PeerSet
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -228,6 +233,14 @@ func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
 }
 
+func dirauthStaticAuthorityAddresses(cfg *config.Config) []string {
+	var addrs []string
+	for _, auth := range cfg.Authorities {
+		addrs = append(addrs, auth.Addresses...)
+	}
+	return addrs
+}
+
 func (s *Server) listenWorker(l net.Listener) {
 	addr := l.Addr()
 	s.log.Noticef("Listening on: %v", addr)
@@ -253,16 +266,34 @@ func (s *Server) listenWorker(l net.Listener) {
 			continue
 		}
 
-		// Bound concurrent handlers so a connection flood cannot exhaust
-		// goroutines or memory. Full means this parks until a handler frees a
-		// slot; the kernel backlog absorbs the wait. A watch on haltedCh here
-		// would be dead code: haltedCh is closed only at the end of halt(), after
-		// the WaitGroup drain that waits for this worker, and shutdown already
-		// closes the listener (ending Accept) and every accepted connection, so
-		// handlers drain and free slots and this send makes progress.
-		s.connSem <- struct{}{}
+		isPeer := s.peerSet.Contains(connlimit.AddrIP(conn.RemoteAddr()))
+		token, ok := s.connLimiter.TryAcquire(conn.RemoteAddr(), isPeer)
+		if !ok {
+			s.log.Debugf("Refusing connection from %v: connection cap reached (peer=%v)", conn.RemoteAddr(), isPeer)
+			conn.Close()
+			continue
+		}
+
+		if token.IsClient() {
+			if len(s.connSem) >= cap(s.connSem)-s.connReserve {
+				s.log.Debugf("Refusing client connection from %v: reserving accept slots for peers and loopback", conn.RemoteAddr())
+				token.Release()
+				conn.Close()
+				continue
+			}
+			select {
+			case s.connSem <- struct{}{}:
+			default:
+				token.Release()
+				conn.Close()
+				continue
+			}
+		} else {
+			s.connSem <- struct{}{}
+		}
 		s.state.Go(func() {
 			defer func() { <-s.connSem }()
+			defer token.Release()
 			s.handleConn(conn)
 		})
 	}
@@ -405,6 +436,18 @@ func New(cfg *config.Config) (*Server, error) {
 		maxConns = 64
 	}
 	s.connSem = make(chan struct{}, maxConns)
+	reserve := maxConns / 2
+	peerCap, loopCap := *cfg.Debug.MaxPeerConns, *cfg.Debug.MaxLoopbackConns
+	if peerCap > 0 && loopCap > 0 && peerCap+loopCap < reserve {
+		reserve = peerCap + loopCap
+	}
+	if reserve > maxConns-1 {
+		reserve = maxConns - 1
+	}
+	if reserve < 0 {
+		reserve = 0
+	}
+	s.connReserve = reserve
 
 	// Do the early initialization and bring up logging.
 	if err := s.initDataDir(); err != nil {
@@ -589,6 +632,10 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("This fatal error has triggered an emergency shutdown of the authority")
 		s.Shutdown()
 	}()
+
+	s.connLimiter = connlimit.New(*s.cfg.Debug.MaxClientConns, *s.cfg.Debug.MaxPeerConns, *s.cfg.Debug.MaxConnsPerIP, *s.cfg.Debug.MaxLoopbackConns)
+	s.peerSet = connlimit.NewPeerSet()
+	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
 
 	// Start up the state worker.
 	if s.state, err = newState(s); err != nil {
