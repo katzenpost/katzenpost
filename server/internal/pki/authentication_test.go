@@ -184,9 +184,6 @@ func (failingAuthKey) MarshalBinary() ([]byte, error) { return nil, errors.New("
 func TestAuthenticateConnectionInvalidCredentials(t *testing.T) {
 	f := newAuthFixture(t)
 	id := hash.Sum256(f.peerBlob)
-	now, _, _ := epochtime.Now()
-	entry, _ := f.entry(t, now, 0, 0)
-	f.p.docs = map[uint64]*pkicache.Entry{now: entry}
 	for _, tc := range []struct {
 		name  string
 		creds *wire.PeerCredentials
@@ -205,9 +202,12 @@ func TestAuthenticateConnectionInvalidCredentials(t *testing.T) {
 			}
 		})
 	}
-	// Exercise the public method with the same real cache used above.
-	_, send, valid := f.p.AuthenticateConnection(&wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}, false)
-	if !send || !valid {
-		t.Fatal("current peer rejected by public method")
+	// Positive path via the snapshot evaluator, so the test never depends on
+	// the wall clock or the document-selection cache.
+	const now = uint64(42)
+	entry, _ := f.entry(t, now, 0, 0)
+	desc, send, valid := f.p.authenticateConnection(&wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}, false, []*pkicache.Entry{entry}, entry, now, 0)
+	if desc == nil || !send || !valid {
+		t.Fatal("current peer rejected via snapshot")
 	}
 }
