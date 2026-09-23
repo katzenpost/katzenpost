@@ -337,10 +337,7 @@ func (p *pki) worker() {
 				continue
 			}
 
-			if !hmac.Equal(d.SphinxGeometryHash, p.glue.Config().SphinxGeometry.Hash()) {
-				p.log.Errorf("Rejecting PKI document for epoch %v: its Sphinx geometry hash does not match the local geometry:\n%s", epoch, p.glue.Config().SphinxGeometry.Display())
-				p.setFailedFetch(epoch, errSphinxGeometryMismatch)
-				instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
+			if p.rejectForeignGeometry(epoch, d) {
 				continue
 			}
 
@@ -534,6 +531,16 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	}
 
 	return nil
+}
+
+func (p *pki) rejectForeignGeometry(epoch uint64, d *cpki.Document) bool {
+	if hmac.Equal(d.SphinxGeometryHash, p.glue.Config().SphinxGeometry.Hash()) {
+		return false
+	}
+	p.log.Errorf("Rejecting PKI document for epoch %v: its Sphinx geometry hash does not match the local geometry:\n%s", epoch, p.glue.Config().SphinxGeometry.Display())
+	p.setFailedFetch(epoch, errSphinxGeometryMismatch)
+	instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
+	return true
 }
 
 func (p *pki) getFailedFetch(epoch uint64) (bool, error) {
