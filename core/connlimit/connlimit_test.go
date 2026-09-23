@@ -3,6 +3,7 @@
 package connlimit
 
 import (
+	"errors"
 	"net"
 	"strings"
 	"testing"
@@ -252,5 +253,27 @@ func TestPeerSetContains(t *testing.T) {
 	}
 	if !ps.Contains(net.ParseIP("7.7.7.7")) {
 		t.Fatal("the swapped-in set's peer must be present")
+	}
+}
+
+func TestRebuildKeepsExistingSetWhenResolutionFindsNothing(t *testing.T) {
+	orig := lookupIP
+	lookupIP = func(host string) ([]net.IP, error) {
+		return nil, errors.New("resolution failed")
+	}
+	defer func() { lookupIP = orig }()
+
+	ps := NewPeerSet()
+	ps.Rebuild([]string{"tcp://1.2.3.4:1"})
+	if !ps.Contains(net.ParseIP("1.2.3.4")) {
+		t.Fatal("setup: literal-IP peer must be in the set")
+	}
+
+	// Every address is now hostname-form and fails to resolve, as
+	// during a transient DNS outage. The existing set must survive
+	// rather than being replaced by an empty one.
+	ps.Rebuild([]string{"tcp://relay.example.com:1"})
+	if !ps.Contains(net.ParseIP("1.2.3.4")) {
+		t.Fatal("total resolution failure must not wipe the existing peer set")
 	}
 }

@@ -175,6 +175,13 @@ func (s *PeerSet) Rebuild(addrs []string) {
 			m[string(ip.To16())] = struct{}{}
 		}
 	}
+	if len(m) == 0 && s.ips.Load() != nil {
+		// addrs resolved to nothing, most likely every address failed
+		// DNS resolution rather than there being no peers at all.
+		// Keep the existing set rather than replacing known-good
+		// peers with an empty one.
+		return
+	}
 	s.ips.Store(&m)
 }
 
