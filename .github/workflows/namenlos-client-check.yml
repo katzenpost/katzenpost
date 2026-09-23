@@ -1,0 +1,19 @@
+name: namenlos client check
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 */6 * * *'
+
+jobs:
+
+  client-check:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+      - name: Run the working-tree client against namenlos
+        run: cd docker && make client-check
