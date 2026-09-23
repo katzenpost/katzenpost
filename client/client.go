@@ -15,6 +15,7 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/client/config"
@@ -47,6 +48,13 @@ type Client struct {
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
+}
+
+func (c *Client) haltConnection() {
+	if c.conn != nil {
+		c.conn.isShutdown.Store(true)
+		c.conn.Halt()
+	}
 }
 
 // Shutdown cleanly shuts down a given Client instance.
@@ -100,10 +108,13 @@ func (c *Client) Start() error {
 		return err
 	}
 	pkiClientConfig := &client.Config{
-		LinkKey:       pkilinkKey,
-		LogBackend:    c.logbackend,
-		Authorities:   c.cfg.VotingAuthority.Peers,
-		DialContextFn: nil,
+		KEMScheme:          c.wireKEMScheme,
+		PKISignatureScheme: signSchemes.ByName(c.cfg.PKISignatureScheme),
+		LinkKey:            pkilinkKey,
+		LogBackend:         c.logbackend,
+		Authorities:        c.cfg.VotingAuthority.Peers,
+		Geo:                c.cfg.SphinxGeometry,
+		DialContextFn:      nil,
 	}
 	c.PKIClient, err = client.New(pkiClientConfig)
 	if err != nil {

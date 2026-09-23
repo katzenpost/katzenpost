@@ -244,6 +244,30 @@ func (d *Document) GetGateway(name string) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: gateway node '%v' not found", name)
 }
 
+func (d *Document) AllNodeAddresses() []string {
+	var addrs []string
+	appendAddrs := func(m map[string][]string) {
+		for _, list := range m {
+			addrs = append(addrs, list...)
+		}
+	}
+	for _, layer := range d.Topology {
+		for _, desc := range layer {
+			appendAddrs(desc.Addresses)
+		}
+	}
+	for _, desc := range d.GatewayNodes {
+		appendAddrs(desc.Addresses)
+	}
+	for _, desc := range d.ServiceNodes {
+		appendAddrs(desc.Addresses)
+	}
+	for _, desc := range d.StorageReplicas {
+		appendAddrs(desc.Addresses)
+	}
+	return addrs
+}
+
 // GetService returns the MixDescriptor for the given service Name.
 func (d *Document) GetServiceNode(name string) (*MixDescriptor, error) {
 	for _, v := range d.ServiceNodes {
@@ -555,7 +579,13 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 		} else {
 			return fmt.Errorf("Document has invalid SharedRandomCommit")
 		}
-		// Votes and Certificates or Consensus differ in that a Consensus has a SharedRandomValue and the set of SharedRandomCommit and SharedRandomReveals that produced it; otherwise there must be only one SharedRandomCommit, and no SharedRandomReveal
+		// Only Votes and Certificates carry the signed SharedRandomCommit and
+		// SharedRandomReveal blobs, so this loop runs for them alone. A Vote
+		// carries exactly one SharedRandomCommit and no SharedRandomReveal. A
+		// Certificate carries the full set of commits and matching reveals. A
+		// Consensus carries neither blob: it keeps only the computed
+		// SharedRandomValue that they produced, so its SharedRandomCommit map is
+		// empty and this loop does not execute for it.
 		switch len(d.SharedRandomCommit) {
 		case 1:
 			// This Document is a Vote and must have only one SharedRandomCommit

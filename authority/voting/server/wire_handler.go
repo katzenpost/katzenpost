@@ -45,6 +45,15 @@ func isQUICConn(conn net.Conn) bool {
 	return ok
 }
 
+// firstCommandTimeout bounds how long the responder waits for the first command
+// after a completed handshake, distinct from and shorter than the per-command
+// ReadTimeout. A peer that finishes the handshake and then stalls releases its
+// accept slot at this deadline instead of tying it up for the full ReadTimeout.
+// Every legitimate first command (GetConsensus, a descriptor or vote upload) is
+// sent immediately after the handshake, so this does not clip a real flow. It
+// is a package var so a test can shorten it.
+var firstCommandTimeout = 5 * time.Second
+
 func (s *Server) onConn(conn net.Conn) {
 	rAddr := conn.RemoteAddr()
 	lAddr := conn.LocalAddr()
@@ -88,6 +97,7 @@ func (s *Server) onConn(conn net.Conn) {
 		HandshakeTimeout:   time.Duration(s.cfg.Server.HandshakeTimeoutSec) * time.Second,
 		ReadTimeout:        time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second,
 		WriteTimeout:       time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second,
+		MaxMessageSize:     s.maxMessageSize,
 	}
 
 	wireConn, err := wire.NewPKISession(cfg, false)
@@ -105,6 +115,7 @@ func (s *Server) onConn(conn net.Conn) {
 			time.Since(acceptedAt),
 			err,
 		)
+		conn.Close()
 		return
 	}
 
@@ -216,9 +227,29 @@ func (s *Server) onConn(conn net.Conn) {
 		remainingAfterHandshake,
 	)
 
-	// Receive a command.
+	// Bound concurrent connections per authenticated peer identity so one peer
+	// cannot camp all of the MaxConcurrentConns accept slots. Only identified
+	// peers carry an identity hash; anonymous clients are not capped here. The
+	// global semaphore already bounds the total and stays before the handshake,
+	// so a handshake flood is still bounded; this check is necessarily after the
+	// handshake because the peer identity is only known once it completes.
+	if len(auth.peerIdentityKeyHash) == hash.HashSize {
+		var peerSlotID [hash.HashSize]byte
+		copy(peerSlotID[:], auth.peerIdentityKeyHash)
+		if !s.acquirePeerSlot(peerSlotID) {
+			s.log.Warningf("Peer %s: rejecting connection, per-peer connection cap reached", peerID)
+			return
+		}
+		defer s.releasePeerSlot(peerSlotID)
+	}
+
+	// Receive a command. Bound the wait for the first command with a short
+	// deadline so a peer that completes the handshake and then stalls releases
+	// its accept slot quickly, rather than holding it for the full ReadTimeout.
 	recvStart := time.Now()
-	cmd, err := wireConn.RecvCommand(context.Background())
+	firstCmdCtx, cancelFirstCmd := context.WithTimeout(context.Background(), firstCommandTimeout)
+	cmd, err := wireConn.RecvCommand(firstCmdCtx)
+	cancelFirstCmd()
 	if err != nil {
 		phaseNow, remainingNow := s.state.PhaseInfo()
 		s.log.Debugf(
@@ -266,7 +297,7 @@ func (s *Server) onConn(conn net.Conn) {
 	} else if auth.isReplica {
 		resp = s.onReplica(peerID, cmd, auth.peerIdentityKeyHash)
 	} else if auth.isAuthority {
-		resp = s.onAuthority(peerID, cmd)
+		resp = s.onAuthority(peerID, cmd, auth.peerIdentityKeyHash)
 	} else {
 		panic("wtf") // should only happen if there is a bug in wireAuthenticator
 	}
@@ -338,6 +369,52 @@ func (s *Server) onConn(conn net.Conn) {
 			phaseAfterSend,
 			remainingAfterSend,
 		)
+	}
+
+	// Persistent inter-authority connections are opt-in. When enabled, keep
+	// serving further commands on the same connection so a voting round does
+	// not open a fresh post-quantum handshake per command. When disabled (the
+	// default), serve exactly the one command handled above and return, which
+	// closes the connection: the pre-persistent one-command-per-connection
+	// behavior. Either way handleConn tracks the connection via
+	// registerConn/unregisterConn, so shutdown closes it and unblocks the
+	// handler in both modes.
+	if auth.isAuthority && s.cfg.Server.PersistentPeerConns {
+		s.serveAuthorityConn(conn, wireConn, peerID, auth.peerIdentityKeyHash)
+	}
+}
+
+// serveAuthorityConn keeps serving commands from an already-handshaked
+// authority peer on the same connection until it goes idle or errors. A NoOp
+// is treated as a keepalive and consumed without a reply.
+func (s *Server) serveAuthorityConn(conn net.Conn, wireConn *wire.Session, peerID string, peerIdentityKeyHash []byte) {
+	idle := time.Duration(s.cfg.Server.KeepaliveTimeoutSec) * time.Second
+	responseTimeout := time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second
+	// The session was built with ReadTimeout=ResponseTimeoutSec, and
+	// RecvCommand's armIO caps every read deadline at that value. Raise it to
+	// the keepalive/idle timeout so the wait for the next command spans a full
+	// keepalive interval instead of being clobbered back down to the short
+	// per-response timeout, which would close the connection between rounds and
+	// defeat the persistent-connection feature.
+	wireConn.SetReadTimeout(idle)
+	for {
+		cmd, err := wireConn.RecvCommand(context.Background())
+		if err != nil {
+			s.log.Debugf("Peer %s: reused authority connection ended: %v", peerID, err)
+			return
+		}
+		if _, ok := cmd.(*commands.NoOp); ok {
+			continue // keepalive
+		}
+		resp := s.onAuthority(peerID, cmd, peerIdentityKeyHash)
+		if resp == nil {
+			continue
+		}
+		conn.SetDeadline(time.Now().Add(responseTimeout))
+		if err := wireConn.SendCommand(context.Background(), resp); err != nil {
+			s.log.Warningf("Peer %s: failed to send response on reused connection: %v", peerID, err)
+			return
+		}
 	}
 }
 
@@ -453,7 +530,7 @@ func (s *Server) onReplica(peerID string, cmd commands.Command, peerIdentityKeyH
 	return resp
 }
 
-func (s *Server) onAuthority(peerID string, cmd commands.Command) commands.Command {
+func (s *Server) onAuthority(peerID string, cmd commands.Command, peerIdentityKeyHash []byte) commands.Command {
 	s.log.Debugf("onAuthority: Received command from authority peer %s: %T", peerID, cmd)
 	var resp commands.Command
 	switch c := cmd.(type) {
@@ -462,16 +539,16 @@ func (s *Server) onAuthority(peerID string, cmd commands.Command) commands.Comma
 		resp = s.onGetConsensus(peerID, c)
 	case *commands.Vote:
 		s.log.Debugf("onAuthority: Processing Vote upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onVoteUpload(c)
+		resp = s.state.onVoteUpload(c, peerIdentityKeyHash)
 	case *commands.Cert:
 		s.log.Debugf("onAuthority: Processing Certificate upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onCertUpload(c)
+		resp = s.state.onCertUpload(c, peerIdentityKeyHash)
 	case *commands.Reveal:
 		s.log.Debugf("onAuthority: Processing Reveal upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onRevealUpload(c)
+		resp = s.state.onRevealUpload(c, peerIdentityKeyHash)
 	case *commands.Sig:
 		s.log.Debugf("onAuthority: Processing Signature upload from authority %s for epoch %d", peerID, c.Epoch)
-		resp = s.state.onSigUpload(c)
+		resp = s.state.onSigUpload(c, peerIdentityKeyHash)
 	default:
 		s.log.Errorf("onAuthority: INVALID REQUEST from authority peer %s: unsupported command type %T", peerID, c)
 		return nil
@@ -558,6 +635,15 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	}
 
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+	// Length-check before unmarshal: the hybrid scheme's UnmarshalBinaryPublicKey
+	// slices the input with no length guard and panics on a short key. Reject a
+	// wrong-size key here with DescriptorInvalid.
+	if len(desc.IdentityKey) != pkiSignatureScheme.PublicKeySize() {
+		s.log.Errorf("Peer %s: Replica descriptor identity key length %d != %d", peerID, len(desc.IdentityKey), pkiSignatureScheme.PublicKeySize())
+		instrument.DescriptorRejected("replica", "identity_key_length")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
 	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
 	if err != nil {
 		s.log.Error("failed to unmarshal descriptor IdentityKey")
@@ -682,6 +768,15 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	s.log.Debugf("onPostDescriptor: Identity key hash verification passed from peer %s", strconv.QuoteToASCII(peerID))
 
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+	// Length-check before unmarshal: the hybrid scheme's UnmarshalBinaryPublicKey
+	// slices the input with no length guard and panics on a short key. Reject a
+	// wrong-size key here with DescriptorInvalid.
+	if len(desc.IdentityKey) != pkiSignatureScheme.PublicKeySize() {
+		s.log.Errorf("onPostDescriptor: IDENTITY KEY LENGTH INVALID from peer %s: %d != %d", strconv.QuoteToASCII(peerID), len(desc.IdentityKey), pkiSignatureScheme.PublicKeySize())
+		instrument.DescriptorRejected("mix", "identity_key_length")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
 	s.log.Debugf("onPostDescriptor: Unmarshaling identity public key from peer %s", strconv.QuoteToASCII(peerID))
 	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
 	if err != nil {
@@ -832,7 +927,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.isReplica = true
 		return true
 	default:
-		a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
+		a.s.log.Warningf("Rejecting connection: peer identity %x is in no authorized set (mix, gateway, service node, replica, or authority); check the topology configuration. peer=%s", a.peerIdentityKeyHash, a.peerName)
 		return false
 	}
 

@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -50,6 +51,8 @@ type incomingConn struct {
 	e   *list.Element
 	w   wire.SessionInterface
 	geo *geo.Geometry
+
+	connToken *connlimit.Token
 
 	id      uint64
 	retrSeq uint32
@@ -86,7 +89,10 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) Close() {
-	c.closeConnectionCh <- true
+	select {
+	case c.closeConnectionCh <- true:
+	default:
+	}
 }
 
 // getSession safely gets the session with read lock
@@ -437,7 +443,7 @@ func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 		l:                 l,
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
-		closeConnectionCh: make(chan bool),
+		closeConnectionCh: make(chan bool, 1),
 		geo:               geo,
 	}
 	c.log = l.server.logBackend.GetLogger(fmt.Sprintf("replica incoming:%d", c.id))

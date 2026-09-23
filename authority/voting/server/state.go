@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -44,12 +43,10 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/schemes"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	kpcommon "github.com/katzenpost/katzenpost/common"
@@ -61,9 +58,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -128,8 +123,15 @@ type state struct {
 	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
 	authorityNames         map[[publicKeyHashSize]byte]string
 
-	documents          map[uint64]*pki.Document
-	myconsensus        map[uint64]*pki.Document
+	documents   map[uint64]*pki.Document
+	myconsensus map[uint64]*pki.Document
+
+	// serializedDocs caches the marshaled consensus per epoch, guarded by its
+	// own mutex. A consensus is write-once per epoch, so the cache never goes
+	// stale; it is pruned alongside documents.
+	serializedDocsMu sync.Mutex
+	serializedDocs   map[uint64][]byte
+
 	descriptors        map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor
 	replicaDescriptors map[uint64]map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor
 	votes              map[uint64]map[[publicKeyHashSize]byte]*pki.Document
@@ -139,6 +141,13 @@ type state struct {
 	reveals            map[uint64]map[[publicKeyHashSize]byte][]byte
 	commits            map[uint64]map[[publicKeyHashSize]byte][]byte
 	verifiers          map[[publicKeyHashSize]byte]sign.PublicKey
+
+	// persistent outbound sessions to peer authorities, keyed by identifier.
+	peerConnsMu sync.Mutex
+	peerConns   map[string]*peerConn
+	// dialContextFn overrides the dialer for outbound peer connections; nil
+	// uses a default net.Dialer. Set in tests to inject a transport.
+	dialContextFn func(ctx context.Context, network, addr string) (net.Conn, error)
 
 	updateCh chan interface{}
 
@@ -155,6 +164,9 @@ type state struct {
 
 func (s *state) Halt() {
 	s.Worker.Halt()
+
+	// Close any persistent peer connections now that the workers are stopped.
+	s.closeAllPeerConns()
 
 	// Gracefully close the persistence store.
 	s.db.Sync()
@@ -185,14 +197,43 @@ func (s *state) worker() {
 		case <-s.HaltCh():
 			s.log.Debugf("authority: Terminating gracefully.")
 			return
-		case <-s.fsm():
+		case <-s.fsmTick():
 			s.log.Debugf("authority: Wakeup due to voting schedule.")
 		}
+		s.rebuildPeerSet()
 	}
+}
+
+func (s *state) rebuildPeerSet() {
+	epoch, _, _ := epochtime.Now()
+	s.RLock()
+	doc := s.documents[epoch]
+	s.RUnlock()
+	if doc == nil {
+		return
+	}
+	addrs := doc.AllNodeAddresses()
+	addrs = append(addrs, dirauthStaticAuthorityAddresses(s.s.cfg)...)
+	s.s.peerSet.Rebuild(addrs)
+}
+
+// fsmTick runs one FSM step with panic recovery, so a bug on the consensus
+// path drops the round and retries instead of crashing the authority. On a
+// recovered panic it returns a short retry timer rather than a nil channel
+// (which would wedge the worker's select).
+func (s *state) fsmTick() (ch <-chan time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Errorf("FSM: recovered from panic, retrying shortly: %v", r)
+			ch = time.After(time.Second)
+		}
+	}()
+	return s.fsm()
 }
 
 func (s *state) fsm() <-chan time.Time {
 	s.Lock()
+	defer s.Unlock()
 	var sleep time.Duration
 	epoch, elapsed, nextEpoch := epochtime.Now()
 	s.log.Debugf("FSM: Current epoch %d, elapsed: %v, remaining time: %v, current state: %v", epoch, elapsed, nextEpoch, s.state)
@@ -297,6 +338,18 @@ func (s *state) fsm() <-chan time.Time {
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
 			s.log.Noticef("FSM: Successfully computed my view of consensus for epoch %d: %x\n%s", s.votingEpoch, s.identityPubKeyHash(), doc)
+			if raw, merr := doc.MarshalCertificate(); merr == nil {
+				observed := len(raw)
+				est := s.s.maxMessageSizeEstimate
+				pct := 0
+				if est > 0 {
+					pct = observed * 100 / est
+				}
+				s.log.Noticef("FSM: consensus size epoch %d: observed=%d bytes, estimated=%d bytes (%d%% of estimate), ceiling=%d bytes", s.votingEpoch, observed, est, pct, s.s.maxMessageSize)
+				if observed > s.s.maxMessageSize {
+					s.log.Warningf("FSM: consensus size %d exceeds the wire ceiling %d for epoch %d; peers may reject it as oversized", observed, s.s.maxMessageSize, s.votingEpoch)
+				}
+			}
 			// detach signature and send to authorities
 			sig, ok := doc.Signatures[s.identityPubKeyHash()]
 			if !ok {
@@ -376,9 +429,25 @@ func (s *state) fsm() <-chan time.Time {
 	default:
 	}
 	s.pruneDocuments()
+	if sleep < 0 {
+		// A phase deadline was already missed (clock skew or slow
+		// processing). Do not hand a negative duration to time.After; fire
+		// promptly so the round fails and re-bootstraps rather than behaving
+		// on the negative-duration timer.
+		s.log.Warningf("FSM: negative sleep %s in state %v, behind schedule; clamping to 0", sleep, s.state)
+	}
+	sleep = clampSleep(sleep)
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
-	s.Unlock()
 	return time.After(sleep)
+}
+
+// clampSleep floors a computed FSM sleep at zero, so a missed phase deadline
+// never produces a negative time.After duration.
+func clampSleep(d time.Duration) time.Duration {
+	if d < 0 {
+		return 0
+	}
+	return d
 }
 
 func (s *state) persistDocument(epoch uint64, doc []byte) {
@@ -495,9 +564,27 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 	var zeros [32]byte
 	srv := zeros[:]
 	certificate := s.getDocument(mixes, replicas, params, srv)
-	// add the SharedRandomCommit and SharedRandomReveal that we have seen
-	certificate.SharedRandomCommit = s.commits[epoch]
-	certificate.SharedRandomReveal = s.reveals[epoch]
+	// Embed only the commit/reveal pairs we hold BOTH halves for. An
+	// authority whose commit (vote) we saw but whose reveal never arrived is
+	// dropped from our certificate rather than allowed to poison it: a commit
+	// without its reveal fails IsDocumentWellFormed below, which would stop us
+	// emitting any certificate at all, so a single non-revealing authority
+	// would break the whole round. Dropping non-revealers preserves liveness
+	// as long as at least threshold authorities revealed; the missing half is
+	// logged and complained about, not treated as fatal.
+	commits := make(map[[publicKeyHashSize]byte][]byte)
+	reveals := make(map[[publicKeyHashSize]byte][]byte)
+	for pk, commit := range s.commits[epoch] {
+		reveal, ok := s.reveals[epoch][pk]
+		if !ok {
+			s.log.Warningf("getCertificate: commit from %s has no matching reveal; dropping it from our certificate", s.authorityNames[pk])
+			continue
+		}
+		commits[pk] = commit
+		reveals[pk] = reveal
+	}
+	certificate.SharedRandomCommit = commits
+	certificate.SharedRandomReveal = reveals
 	// if there are no prior SRV values, copy the current srv twice
 	if len(s.priorSRV) == 0 {
 		s.priorSRV = [][]byte{srv, srv}
@@ -547,7 +634,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, fmt.Errorf("No way to make consensus with too few SharedRandom commits!, only %d commits", len(commits))
 	}
 	if len(commits) != len(reveals) {
-		panic("ShouldNotBePossible")
+		return nil, fmt.Errorf("shared-random commit/reveal mismatch: %d commits, %d reveals", len(commits), len(reveals))
 	}
 
 	// compute the shared random for the consensus
@@ -567,6 +654,20 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
+
+	// Log the per-role counts that actually landed in the assembled consensus
+	// so an operator can compare them against the authorized counts logged at
+	// startup and see when a configured, expected node is absent from
+	// consensus.
+	mixCount, gatewayCount, serviceCount, replicaCount := documentRoleCounts(consensusOfOne)
+	s.log.Noticef(
+		"Assembled consensus for epoch %d: mixes=%d gateways=%d serviceNodes=%d replicas=%d",
+		epoch,
+		mixCount,
+		gatewayCount,
+		serviceCount,
+		replicaCount,
+	)
 
 	// Do not sign an empty or otherwise malformed consensus.
 	if err := pki.IsDocumentWellFormed(consensusOfOne, s.getVerifiers()); err != nil {
@@ -632,6 +733,16 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		// Persist the document to disk.
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
+		// signedConsensus is exactly what documentForEpoch serves for this
+		// epoch. Cache it now so the first GetConsensus does not re-marshal the
+		// document; a consensus is write-once per epoch, so the bytes never go
+		// stale.
+		s.serializedDocsMu.Lock()
+		if s.serializedDocs == nil {
+			s.serializedDocs = make(map[uint64][]byte)
+		}
+		s.serializedDocs[epoch] = signedConsensus
+		s.serializedDocsMu.Unlock()
 		return ourConsensus, nil
 	} else {
 		s.log.Errorf("VerifyThreshold failed!: %s", err)
@@ -754,6 +865,18 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
 	}
 	return doc
+}
+
+// documentRoleCounts returns the per-role node counts present in an assembled
+// document: mixes summed across the topology layers, plus gateways, service
+// nodes, and storage replicas. An operator compares these against the
+// authorized counts logged at startup to spot a configured node that never made
+// it into consensus.
+func documentRoleCounts(doc *pki.Document) (mixes, gateways, serviceNodes, replicas int) {
+	for _, layer := range doc.Topology {
+		mixes += len(layer)
+	}
+	return mixes, len(doc.GatewayNodes), len(doc.ServiceNodes), len(doc.StorageReplicas)
 }
 
 func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescriptor) bool {
@@ -890,6 +1013,9 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 // for our link layer wire protocol as specified by
 // the PeerAuthenticator interface in core/wire/session.go
 func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
+	if len(creds.AdditionalData) < publicKeyHashSize {
+		return false
+	}
 	var ad [publicKeyHashSize]byte
 	copy(ad[:], creds.AdditionalData[:publicKeyHashSize])
 	_, ok := s.authorizedAuthorities[ad]
@@ -1000,91 +1126,81 @@ func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd comman
 	return nil, lastErr
 }
 
-func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addrs []string) (commands.Command, error) {
-	dialTimeout := time.Duration(s.s.cfg.Server.DialTimeoutSec) * time.Second
-	handshakeTimeout := time.Duration(s.s.cfg.Server.HandshakeTimeoutSec) * time.Second
-	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
-
-	var conn net.Conn
-	var err error
-	for i, a := range addrs {
-		u, err := url.Parse(a)
-		if err != nil {
-			s.log.Debugf("peer %s: invalid URL %s: %v", peer.Identifier, a, err)
-			continue
+func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addrs []string) (resp commands.Command, rerr error) {
+	// doSendCommand runs on its own goroutine and talks to an untrusted peer, so
+	// recover here and fail the send instead of crashing the daemon.
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Errorf("peer %s: recovered from panic in outbound send: %v", peer.Identifier, r)
+			resp = nil
+			rerr = fmt.Errorf("peer %s: recovered from panic: %v", peer.Identifier, r)
 		}
-		defaultDialer := &net.Dialer{Timeout: dialTimeout}
-		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
-		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
-		cancelFn()
-		if err == nil {
-			defer conn.Close()
-			break
-		}
-		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)
-		if i == len(addrs)-1 {
-			return nil, fmt.Errorf("all addresses exhausted: %w", err)
-		}
-	}
+	}()
 
 	s.s.Add(1)
 	defer s.s.Done()
-	identityHash := hash.Sum256From(s.s.identityPublicKey)
 
-	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-	if kemscheme == nil {
-		panic("kem scheme not found in registry")
-	}
-
-	cfg := &wire.SessionConfig{
-		KEMScheme:         kemscheme,
-		Geometry:          s.geo,
-		Authenticator:     s,
-		AdditionalData:    identityHash[:],
-		AuthenticationKey: s.s.linkKey,
-		RandomReader:      rand.Reader,
-		HandshakeTimeout:  handshakeTimeout,
-		ReadTimeout:       responseTimeout,
-		WriteTimeout:      responseTimeout,
-	}
-	session, err := wire.NewPKISession(cfg, true)
-	if err != nil {
-		return nil, err
-	}
-	defer session.Close()
-
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
-	handshakeStart := time.Now()
-	if err = session.Initialize(context.Background(), conn); err != nil {
-		handshakeElapsed := time.Since(handshakeStart)
-		state := "other"
-		if he, ok := wire.GetHandshakeError(err); ok {
-			state = string(he.State)
-		} else if wire.IsNoHandshakeBytesError(err) {
-			state = "premature_close"
+	// Persistent inter-authority connections are opt-in and off by default.
+	// In the default case, use one dial and handshake per command with no
+	// reuse.
+	if !s.s.cfg.Server.PersistentPeerConns {
+		session, conn, err := s.dialAndHandshakePeer(peer, addrs)
+		if err != nil {
+			return nil, err
 		}
-		handshakeinstrument.HandshakeFailure("outgoing", state)
-		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
-		// Add peer name context to the error if it's a HandshakeError
-		if he, ok := wire.GetHandshakeError(err); ok {
-			he.WithPeerName(peer.Identifier)
+		defer session.Close()
+		return s.peerRoundTrip(session, conn, cmd)
+	}
+
+	// Persistent connection: reuse the cached session if it is live, else
+	// dial a fresh one. A reused session that the peer has since closed fails
+	// the round trip, so evict it and redial once.
+	pc := s.peerConnFor(peer.Identifier)
+
+	// The per-peer lock is shared across all four voting phases. If a send in an
+	// earlier phase is still in flight on the cached connection, do not queue
+	// behind it: that could blow this (later) phase's deadline. Fall back to a
+	// one-shot dial+handshake for this command instead, so a slow send never
+	// head-of-line-blocks a different phase.
+	if !pc.mu.TryLock() {
+		session, conn, err := s.dialAndHandshakePeer(peer, addrs)
+		if err != nil {
+			return nil, err
 		}
-		// Log detailed debug info (contains IPs, keys, peer name) at debug level only
-		s.log.Debugf("peer %s: handshake failure details:\n%s", peer.Identifier, wire.GetDebugError(err))
-		return nil, err
+		defer session.Close()
+		return s.peerRoundTrip(session, conn, cmd)
 	}
-	handshakeElapsed := time.Since(handshakeStart)
-	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
-	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, handshakeElapsed)
+	defer pc.mu.Unlock()
 
-	conn.SetDeadline(time.Now().Add(responseTimeout))
-	err = session.SendCommand(context.Background(), cmd)
+	// A panic during a round trip below skips the closeLocked() eviction that
+	// every normal error path performs, which would leave a possibly-corrupted
+	// session cached for the next reuse. Evict it here while still holding pc.mu
+	// and re-panic so the outer recover turns it into an error return.
+	defer func() {
+		if r := recover(); r != nil {
+			pc.closeLocked()
+			panic(r)
+		}
+	}()
+
+	if pc.session != nil {
+		resp, err := s.peerRoundTrip(pc.session, pc.conn, cmd)
+		if err == nil {
+			return resp, nil
+		}
+		s.log.Debugf("peer %s: reused connection failed, redialing: %v", peer.Identifier, err)
+		pc.closeLocked()
+	}
+
+	session, conn, err := s.dialAndHandshakePeer(peer, addrs)
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err := session.RecvCommand(context.Background())
+	pc.session, pc.conn = session, conn
+	pc.setLive(conn)
+	resp, err = s.peerRoundTrip(pc.session, pc.conn, cmd)
 	if err != nil {
+		pc.closeLocked()
 		return nil, err
 	}
 	return resp, nil
@@ -1537,7 +1653,11 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 	// XXX: Tor also hashes in the previous srv or 32 bytes of 0x00
 	//      How do we bootstrap a new authority?
 	zeros := make([]byte, 32)
-	if vot, ok := s.documents[s.votingEpoch-1]; ok {
+	// Use the epoch argument, not s.votingEpoch, so the previous SRV hashed in
+	// here matches the epoch being computed. They are equal on the current
+	// call path, but relying on that coupling is a byte-identical-consensus
+	// hazard.
+	if vot, ok := s.documents[epoch-1]; ok {
 		srv.Write(vot.SharedRandomValue)
 	} else {
 		srv.Write(zeros)
@@ -1716,6 +1836,13 @@ func (s *state) pruneDocuments() {
 			delete(s.documents, e)
 		}
 	}
+	s.serializedDocsMu.Lock()
+	for e := range s.serializedDocs {
+		if e < cmpEpoch {
+			delete(s.serializedDocs, e)
+		}
+	}
+	s.serializedDocsMu.Unlock()
 	for e := range s.descriptors {
 		if e < cmpEpoch {
 			delete(s.descriptors, e)
@@ -1894,39 +2021,59 @@ func (s *state) dupVote(vote commands.Vote) bool {
 }
 
 // a certificate is a vote that has a full set of sharedrandom commit and reveals as seen by the peer
-func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
+func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.CertStatus{}
 	pk := hash.Sum256From(certificate.PublicKey)
 
-	// if not authorized
-	_, ok := s.authorizedAuthorities[pk]
-	if !ok {
-		s.log.Error("Voter not authorized.")
-		resp.ErrorCode = commands.CertNotAuthorized
+	doc, code := s.verifyCertUpload(certificate, peerIdentityKeyHash, pk)
+	if code != commands.CertOk {
+		resp.ErrorCode = code
 		return &resp
+	}
+
+	resp.ErrorCode = s.storeCert(pk, doc)
+	return &resp
+}
+
+// verifyCertUpload runs every acceptance check for an uploaded certificate
+// except the already-received check, which storeCert performs as part of
+// committing it (both must run under the same lock as one atomic
+// check-and-store). The caller must hold the write lock.
+func (s *state) verifyCertUpload(certificate *commands.Cert, peerIdentityKeyHash []byte, pk [publicKeyHashSize]byte) (*pki.Document, uint8) {
+	// Bind the certificate's declared PublicKey to the wire-authenticated peer
+	// identity, the same way the descriptor upload path binds a descriptor's
+	// identity key to the connected peer. Without this, an authorized but
+	// byzantine authority could relay another authority's genuine certificate
+	// on its own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Certificate PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		return nil, commands.CertNotAuthorized
+	}
+
+	// if not authorized
+	if _, ok := s.authorizedAuthorities[pk]; !ok {
+		s.log.Error("Voter not authorized.")
+		return nil, commands.CertNotAuthorized
 	}
 
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if certificate.Epoch < s.votingEpoch {
 		s.log.Errorf("Certificate from %s received too early: %d < %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.CertTooEarly
-		return &resp
+		return nil, commands.CertTooEarly
 	}
 	if certificate.Epoch > s.votingEpoch {
 		s.log.Errorf("Certificate from %s too late: %d > %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.CertTooLate
-		return &resp
+		return nil, commands.CertTooLate
 	}
 
 	// ensure certificate.PublicKey verifies the payload (ie Vote has a signature from this peer)
 	_, err := cert.Verify(certificate.PublicKey, certificate.Payload)
 	if err != nil {
 		s.log.Error("Certificate from %s failed to verify.", s.authorityNames[pk])
-		resp.ErrorCode = commands.CertNotSigned
-		return &resp
+		return nil, commands.CertNotSigned
 	}
 
 	// verify the structure of the certificate
@@ -1934,17 +2081,36 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	if err != nil {
 		s.log.Errorf("Certificate from %s failed to verify: %s", s.authorityNames[pk], err)
 		s.log.Debugf("Certificate from %s failed to verify: %s %s", s.authorityNames[pk], certificate.PublicKey, err)
-		resp.ErrorCode = commands.CertNotSigned
-		return &resp
+		return nil, commands.CertNotSigned
+	}
+
+	// Bind the document epoch to the voting epoch, like onVoteUpload. Otherwise a
+	// byzantine authority could replay a victim's genuine prior-epoch cert (still
+	// within the epoch+5 window) into this epoch's first-write-wins slot.
+	if doc.Epoch != s.votingEpoch {
+		s.log.Errorf("Certificate from %s contains wrong Epoch %d != %d", s.authorityNames[pk], doc.Epoch, s.votingEpoch)
+		return nil, commands.CertNotSigned
+	}
+
+	// A real certificate carries shared-random reveals; a vote does not, so a
+	// reveal-less signed document is a vote replayed into the cert slot.
+	if len(doc.SharedRandomReveal) == 0 {
+		s.log.Errorf("Certificate from %s carries no shared-random reveals", s.authorityNames[pk])
+		return nil, commands.CertNotSigned
 	}
 
 	// haven't received a vote from this peer yet for this epoch
 	if _, ok := s.votes[s.votingEpoch][pk]; !ok {
 		s.log.Errorf("Certficate from %s received before peer's vote?.", s.authorityNames[pk])
-		resp.ErrorCode = commands.CertTooEarly
-		return &resp
+		return nil, commands.CertTooEarly
 	}
 
+	return doc, commands.CertOk
+}
+
+// storeCert records doc as pk's certificate for the current voting epoch,
+// rejecting a duplicate. The caller must hold the write lock.
+func (s *state) storeCert(pk [publicKeyHashSize]byte, doc *pki.Document) uint8 {
 	// the first certificate received this round
 	if _, ok := s.certificates[s.votingEpoch]; !ok {
 		s.certificates[s.votingEpoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
@@ -1953,20 +2119,27 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	// already received a certificate for this round
 	if _, ok := s.certificates[s.votingEpoch][pk]; ok {
 		s.log.Error("Another Cert received from peer %s", s.authorityNames[pk])
-		resp.ErrorCode = commands.CertAlreadyReceived
-		return &resp
+		return commands.CertAlreadyReceived
 	}
 	s.log.Noticef("Cert OK from: %s\n%s", s.authorityNames[pk], doc)
 	s.certificates[s.votingEpoch][pk] = doc
-	resp.ErrorCode = commands.CertOk
-	return &resp
+	return commands.CertOk
 }
 
-func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
+func (s *state) onRevealUpload(reveal *commands.Reveal, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.RevealStatus{}
 	pk := hash.Sum256From(reveal.PublicKey)
+
+	// Bind the reveal's declared PublicKey to the wire-authenticated peer, the
+	// same way onCertUpload binds a certificate, so a byzantine authority cannot
+	// relay another authority's genuine reveal on its own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Reveal PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		resp.ErrorCode = commands.RevealNotAuthorized
+		return &resp
+	}
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]
@@ -1980,6 +2153,15 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	certified, err := cert.Verify(reveal.PublicKey, reveal.Payload)
 	if err != nil {
 		s.log.Error("Reveal from %s failed to verify.", s.authorityNames[pk])
+		resp.ErrorCode = commands.RevealNotSigned
+		return &resp
+	}
+
+	// The certified body must be at least the 8-byte epoch prefix that
+	// epochFromBytes reads below. A shorter body is malformed; reject it
+	// rather than panicking on the slice.
+	if len(certified) < 8 {
+		s.log.Errorf("Reveal from %s has malformed payload: %d bytes", s.authorityNames[pk], len(certified))
 		resp.ErrorCode = commands.RevealNotSigned
 		return &resp
 	}
@@ -2013,6 +2195,24 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 
+	// Verify the reveal actually opens this peer's commit before storing it.
+	// A signed-but-mismatched reveal must be rejected here: otherwise it would
+	// be embedded in our certificate and later fail the cross-check at every
+	// other authority, which frames us (the honest observer) as the bad node.
+	innerCommit, err := cert.Verify(reveal.PublicKey, s.commits[s.votingEpoch][pk])
+	if err != nil {
+		s.log.Errorf("Reveal from %s: stored commit failed to verify: %v", s.authorityNames[pk], err)
+		resp.ErrorCode = commands.RevealNotSigned
+		return &resp
+	}
+	srvCheck := new(pki.SharedRandom)
+	srvCheck.SetCommit(innerCommit)
+	if !srvCheck.Verify(certified) {
+		s.log.Errorf("Reveal from %s does not open its commit", s.authorityNames[pk])
+		resp.ErrorCode = commands.RevealNotSigned
+		return &resp
+	}
+
 	// the first reveal received this round
 	if _, ok := s.reveals[s.votingEpoch]; !ok {
 		s.reveals[s.votingEpoch] = make(map[[publicKeyHashSize]byte][]byte)
@@ -2030,11 +2230,22 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	return &resp
 }
 
-func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
+func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.VoteStatus{}
 	pk := hash.Sum256From(vote.PublicKey)
+
+	// Bind the vote's declared PublicKey to the wire-authenticated peer, the
+	// same way onCertUpload binds a certificate. Without this, an authorized but
+	// byzantine authority could relay another authority's genuine vote on its
+	// own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Vote PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		instrument.VoteReceived("not_authorized")
+		resp.ErrorCode = commands.VoteNotAuthorized
+		return &resp
+	}
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]
@@ -2126,11 +2337,20 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	return &resp
 }
 
-func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
+func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.SigStatus{}
 	pk := hash.Sum256From(sig.PublicKey)
+
+	// Bind the signature's declared PublicKey to the wire-authenticated peer, the
+	// same way onCertUpload binds a certificate, so a byzantine authority cannot
+	// relay another authority's genuine signature on its own connection.
+	if !hmac.Equal(pk[:], peerIdentityKeyHash) {
+		s.log.Errorf("Signature PublicKey does not match the connected peer identity %x", peerIdentityKeyHash)
+		resp.ErrorCode = commands.SigNotAuthorized
+		return &resp
+	}
 
 	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
@@ -2344,8 +2564,22 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 
 	// If we have a serialized document, return it.
 	if d, ok := s.documents[epoch]; ok {
-		// XXX We should cache this
-		return d.MarshalCertificate()
+		// Serve the serialized form from a cache: a consensus is write-once
+		// per epoch, so the cached bytes never go stale, and this avoids
+		// re-serializing the whole document on every GetConsensus.
+		s.serializedDocsMu.Lock()
+		b, cached := s.serializedDocs[epoch]
+		if !cached {
+			var err error
+			b, err = d.MarshalCertificate()
+			if err != nil {
+				s.serializedDocsMu.Unlock()
+				return nil, err
+			}
+			s.serializedDocs[epoch] = b
+		}
+		s.serializedDocsMu.Unlock()
+		return b, nil
 	}
 
 	// Otherwise, return an error based on the time.
@@ -2650,6 +2884,7 @@ func newState(s *Server) (*state, error) {
 	st.reverseHash[hash.Sum256From(st.s.identityPublicKey)] = st.s.identityPublicKey
 
 	st.documents = make(map[uint64]*pki.Document)
+	st.serializedDocs = make(map[uint64][]byte)
 	st.myconsensus = make(map[uint64]*pki.Document)
 	st.descriptors = make(map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor)
 	st.replicaDescriptors = make(map[uint64]map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
@@ -2682,49 +2917,70 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 		panic("write lock not held in backgroundFetchConsensus(epoch)")
 	}
 
-	// If there isn't a consensus for the previous epoch, ask the other
-	// authorities for a consensus.
-	_, ok := s.documents[epoch]
-	if !ok {
-		kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-		if kemscheme == nil {
-			panic("kem scheme not found in registry")
+	// If there isn't a consensus for this epoch, ask the other authorities for
+	// one. Route the fetch through the outbound send path (doSendCommand) so it
+	// reuses a cached persistent peer connection instead of dialing a second,
+	// uncoordinated connection to a peer we already hold one to.
+	if _, ok := s.documents[epoch]; ok {
+		return
+	}
+	pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+	if pkiSignatureScheme == nil {
+		panic("pki signature scheme not found in registry")
+	}
+	s.Go(func() {
+		cmd := &commands.GetConsensus{
+			Epoch:              epoch,
+			Cmds:               commands.NewPKICommands(pkiSignatureScheme),
+			MixnetTransmission: false,
 		}
-		pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
-		if pkiSignatureScheme == nil {
-			panic("pki signature scheme not found in registry")
-		}
-		s.Go(func() {
-			cfg := &client.Config{
-				KEMScheme:          kemscheme,
-				PKISignatureScheme: pkiSignatureScheme,
-				LinkKey:            s.s.linkKey,
-				LogBackend:         s.s.logBackend,
-				Authorities:        s.s.cfg.Authorities,
-				DialContextFn:      nil,
-				Geo:                s.geo,
+		deadline := time.Now().Add(time.Minute * 2)
+		for _, peer := range s.s.cfg.Authorities {
+			peer := peer
+			if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
+				continue
 			}
-			c, err := client.New(cfg)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
-				return
+				s.log.Debugf("backgroundFetchConsensus: %s: %v", peer.Identifier, err)
+				continue
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
-			defer cancel()
-			doc, _, err := c.GetPKIDocumentForEpoch(ctx, epoch)
+			r, ok := resp.(*commands.Consensus)
+			if !ok || r.ErrorCode != commands.ConsensusOk {
+				continue
+			}
+			// Verify the fetched consensus exactly as the standalone client
+			// would: threshold-many dirauth signatures, a parseable and
+			// well-formed document, and the requested epoch.
+			if _, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, r.Payload); err != nil {
+				s.log.Errorf("backgroundFetchConsensus: %s: threshold verify failed: %v", peer.Identifier, err)
+				continue
+			}
+			doc, err := s.doParseDocument(r.Payload)
 			if err != nil {
-				return
+				s.log.Errorf("backgroundFetchConsensus: %s: parse failed: %v", peer.Identifier, err)
+				continue
 			}
-			s.Lock()
-			defer s.Unlock()
+			if err := pki.IsDocumentWellFormed(doc, s.getVerifiers()); err != nil {
+				s.log.Errorf("backgroundFetchConsensus: %s: malformed document: %v", peer.Identifier, err)
+				continue
+			}
+			if doc.Epoch != epoch {
+				s.log.Errorf("backgroundFetchConsensus: %s: epoch mismatch doc=%d want=%d", peer.Identifier, doc.Epoch, epoch)
+				continue
+			}
 
-			// It's possible that the state has changed
-			// if backgroundFetchConsensus was called
-			// multiple times during bootstrapping
+			s.Lock()
+			// It's possible that the state has changed if
+			// backgroundFetchConsensus was called multiple times during
+			// bootstrapping.
 			if _, ok := s.documents[epoch]; !ok {
 				s.documents[epoch] = doc
 			}
-		})
-	}
+			s.Unlock()
+			return
+		}
+	})
 }
 
 func epochToBytes(e uint64) []byte {

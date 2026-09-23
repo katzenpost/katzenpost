@@ -150,6 +150,9 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	keys := make([]*crypto.PacketKeys, s.geometry.NrHops)
 
 	sharedSecret := s.nike.DeriveSecret(clientPrivateKey, path[0].NIKEPublicKey)
+	if utils.CtIsZero(sharedSecret) {
+		return nil, nil, errors.New("sphinx: degenerate shared secret")
+	}
 	defer utils.ExplicitBzero(sharedSecret)
 
 	keys[0] = crypto.KDF(sharedSecret, s.nike)
@@ -162,6 +165,9 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 
 	for i := 1; i < nrHops; i++ {
 		sharedSecret = s.nike.DeriveSecret(clientPrivateKey, path[i].NIKEPublicKey)
+		if utils.CtIsZero(sharedSecret) {
+			return nil, nil, errors.New("sphinx: degenerate shared secret")
+		}
 		for j := 0; j < i; j++ {
 			pubkey := s.nike.NewEmptyPublicKey()
 			err = pubkey.FromBytes(sharedSecret)
@@ -170,6 +176,9 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 			}
 
 			blinded := s.nike.Blind(pubkey, keys[j].BlindingFactor)
+			if blinded == nil {
+				return nil, nil, errors.New("sphinx: degenerate blinded key")
+			}
 			sharedSecret = blinded.Bytes()
 		}
 		keys[i] = crypto.KDF(sharedSecret, s.nike)
@@ -177,6 +186,9 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 		err = clientPublicKey.Blind(keys[i-1].BlindingFactor)
 		if err != nil {
 			panic(err)
+		}
+		if utils.CtIsZero(clientPublicKey.Bytes()) {
+			return nil, nil, errors.New("sphinx: degenerate blinded key")
 		}
 		groupElements[i], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
 		if err != nil {
@@ -331,6 +343,9 @@ func (s *Sphinx) unwrapNike(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte
 		return nil, nil, nil, fmt.Errorf("sphinx: failed to unmarshal group element: %s", err)
 	}
 	sharedSecret = s.nike.DeriveSecret(privKey, groupElement)
+	if utils.CtIsZero(sharedSecret) {
+		return nil, nil, nil, errors.New("sphinx: degenerate shared secret")
+	}
 
 	replayTag := crypto.Hash(groupElement.Bytes())
 
@@ -405,6 +420,9 @@ func (s *Sphinx) unwrapNike(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte
 		err := groupElement.Blind(keys.BlindingFactor)
 		if err != nil {
 			panic(err)
+		}
+		if utils.CtIsZero(groupElement.Bytes()) {
+			return nil, replayTag[:], nil, errors.New("sphinx: degenerate blinded group element")
 		}
 		copy(pkt[geOff:riOff], groupElement.Bytes()[:])
 		copy(pkt[riOff:macOff], newRoutingInfo)

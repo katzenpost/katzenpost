@@ -95,6 +95,20 @@ type Courier struct {
 	// channel, rather than a pool of idle workers.
 	dispatchSem chan struct{}
 
+	// replyWriteSem bounds the number of reply-write goroutines
+	// OnCommand may have outstanding at once. Each client reply is
+	// written on its own goroutine so a stalled socket write cannot
+	// head-of-line block OnCommand's single serialised request-handling
+	// goroutine. Without a cap, a stalled or slow socket would leave one
+	// goroutine parked on the write channel per client request, growing
+	// without bound. This is the same "Semaphore over Worker Pools"
+	// idiom as dispatchSem: a slot is acquired (non-blocking) before the
+	// goroutine is spawned, so at most maxConcurrentReplyWrites of them
+	// can exist; when the bound is hit the reply is dropped and counted
+	// rather than letting goroutines accumulate (the client's ARQ
+	// retransmits and hits the dedup cache).
+	replyWriteSem chan struct{}
+
 	// inFlightLock guards inFlight, the set of EnvelopeHashes that
 	// currently have a dispatch goroutine outstanding. It collapses
 	// duplicate concurrent (re-)dispatches of the same envelope to a
@@ -237,6 +251,15 @@ const DedupCacheTTL = 5 * time.Minute
 // so any goroutines briefly parked on this semaphore are bounded too.
 const maxConcurrentReplicaDispatch = 256
 
+// maxConcurrentReplyWrites caps the number of reply-write goroutines
+// OnCommand may have parked on the socket write channel at once. Under
+// normal operation a write completes promptly and this bound is never
+// approached; it only bites when the socket stalls, at which point
+// excess replies are dropped and counted rather than spawning an
+// unbounded number of goroutines. Generous enough to absorb a transient
+// write-channel backlog without dropping legitimate replies.
+const maxConcurrentReplyWrites = 256
+
 // NewCourier returns a new Courier type.
 func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
 	pigeonholeGeo, err := pigeonholeGeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, scheme)
@@ -255,6 +278,7 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
 		copyDedupCache: make(map[[hash.HashSize]byte]*CopyCommandState),
 		dispatchSem:    make(chan struct{}, maxConcurrentReplicaDispatch),
+		replyWriteSem:  make(chan struct{}, maxConcurrentReplyWrites),
 		inFlight:       make(map[[hash.HashSize]byte]struct{}),
 	}
 	courier.processCopyCommandFn = courier.processCopyCommand
@@ -715,27 +739,49 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 		// Only send reply if it's not nil (nil means ARQ should retry)
 		if reply != nil {
-			go func() {
-				// send reply
-				e.write(&cborplugin.Response{
-					ID:      request.ID,
-					SURB:    request.SURB,
-					Payload: reply.Bytes(),
-				})
-			}()
-		}
-	case courierQuery.CopyCommand != nil:
-		reply := e.handleCopyCommand(courierQuery.CopyCommand)
-		go func() {
-			e.write(&cborplugin.Response{
+			e.spawnReplyWrite(&cborplugin.Response{
 				ID:      request.ID,
 				SURB:    request.SURB,
 				Payload: reply.Bytes(),
 			})
-		}()
+		}
+	case courierQuery.CopyCommand != nil:
+		reply := e.handleCopyCommand(courierQuery.CopyCommand)
+		e.spawnReplyWrite(&cborplugin.Response{
+			ID:      request.ID,
+			SURB:    request.SURB,
+			Payload: reply.Bytes(),
+		})
 	}
 
 	return nil
+}
+
+// spawnReplyWrite writes resp to the client socket on a bounded
+// background goroutine. Writing off the OnCommand goroutine keeps a
+// stalled socket write from head-of-line blocking all further request
+// handling; the replyWriteSem bounds how many such writes may be parked
+// on the write channel at once. The semaphore slot is acquired here,
+// synchronously and non-blocking, BEFORE the goroutine is spawned, so
+// the number of outstanding reply-write goroutines never exceeds
+// maxConcurrentReplyWrites. When no slot is free (the socket is stalled
+// and the bound is already saturated) the reply is dropped and counted
+// rather than accumulating goroutines without bound; the client's ARQ
+// retransmits and the dedup cache serves the cached result. Returns
+// true if a goroutine was spawned, false if the reply was dropped.
+func (e *Courier) spawnReplyWrite(resp *cborplugin.Response) bool {
+	select {
+	case e.replyWriteSem <- struct{}{}:
+	default:
+		e.log.Warningf("spawnReplyWrite: reply-write bound (%d) saturated, dropping reply for request %x", maxConcurrentReplyWrites, resp.ID)
+		instrument.DroppedByReason("reply_write_sem_saturated")
+		return false
+	}
+	go func() {
+		defer func() { <-e.replyWriteSem }()
+		e.write(resp)
+	}()
+	return true
 }
 
 func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
@@ -1082,16 +1128,17 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 //     only (no replica reply ever arrived).
 //
 // The replica state layer treats byte-identical retries as idempotent
-// success (see replica/state.go), so a non-Success reply reflects a
-// genuine conflict — retrying will not change the verdict and the
-// dispatch aborts on the first one. Retries are reserved for
-// transport-level failures: SendMessage errors and "no replies before
-// the deadline." No shard-level failover is available on the write
-// path because the two intermediate replicas are MKEM-baked into the
-// client's envelope.
+// success (see replica/state.go). A permanent non-Success reply (e.g.
+// BoxAlreadyExists) reflects a genuine conflict and aborts the dispatch
+// at once; a transient one (e.g. a ReplicationFailed peer-replica blip)
+// is retried with backoff, as are transport-level failures (SendMessage
+// errors and "no replies before the deadline"). No shard-level failover
+// is available on the write path because the two intermediate replicas
+// are MKEM-baked into the client's envelope.
 func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bool, uint8) {
 	envHash := envelope.EnvelopeHash()
 
+	lastTransientErr := uint8(0)
 	for attempt := 0; attempt < maxCopyWriteAttempts; attempt++ {
 		if attempt > 0 {
 			time.Sleep(copyAttemptBackoff(attempt - 1))
@@ -1140,19 +1187,26 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 			}
 		}
 
-		// Any non-Success reply is terminal. Prefer BoxAlreadyExists
-		// as the reportable code — it's the most diagnostic signal
-		// for the client's Copy failure report.
-		if len(replies) > 0 {
-			bestErr := replies[0].ErrorCode
-			for _, r := range replies {
-				if r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
-					bestErr = r.ErrorCode
-					break
+		// A permanent non-Success reply aborts at once (preferring
+		// BoxAlreadyExists as the most diagnostic code); a transient one
+		// falls through to the retry loop.
+		permanentErr := uint8(0)
+		for _, r := range replies {
+			if classifyReplicaErrorForCopyWrite(r.ErrorCode) == replicaErrorPermanent {
+				if permanentErr == 0 || r.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
+					permanentErr = r.ErrorCode
 				}
+			} else {
+				lastTransientErr = r.ErrorCode
 			}
-			e.log.Warningf("dispatchCopyEnvelope: replica error %d, aborting Copy", bestErr)
-			return false, bestErr
+		}
+		if permanentErr != 0 {
+			e.log.Warningf("dispatchCopyEnvelope: replica error %d, aborting Copy", permanentErr)
+			return false, permanentErr
+		}
+		if len(replies) > 0 {
+			e.log.Warningf("dispatchCopyEnvelope: attempt %d transient replica error %d, retrying", attempt+1, lastTransientErr)
+			continue
 		}
 
 		// No replies before the deadline — transport failure. Retry.
@@ -1161,7 +1215,7 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 
 	e.log.Errorf("dispatchCopyEnvelope: exhausted %d attempts, aborting Copy", maxCopyWriteAttempts)
 	instrument.DroppedByReason("copy_dispatch_exhausted")
-	return false, 0
+	return false, lastTransientErr
 }
 
 // readNextBox reads a single box from the shard replicas, decrypts it,
@@ -1299,7 +1353,10 @@ func (e *Courier) tryReadFromShardReplica(
 	mkemScheme := mkem.NewScheme(e.envelopeScheme)
 	totalStart := time.Now()
 	encapStart := totalStart
-	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
+	mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encapsulate: %w", err)
+	}
 	computeElapsed := time.Since(encapStart)
 
 	query := &commands.ReplicaMessage{
@@ -1361,6 +1418,20 @@ func (e *Courier) tryReadFromShardReplica(
 
 // writeTombstonesToTempChannel writes tombstones to clean up the temporary channel
 func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs [][bacap.BoxIDSize]byte) {
+	// This runs as a detached goroutine spawned by processCopyCommand,
+	// outside runCopyCommand's recover (F2). A panic here (e.g. from
+	// crypto on a crafted WriteCap, or a nil dependency) would otherwise
+	// take down the whole courier process. Recover, log, and abandon the
+	// tombstone cleanup gracefully; the temporary boxes simply remain in
+	// replica storage until they expire, which is the same outcome as an
+	// exhausted-retries failure below.
+	defer func() {
+		if r := recover(); r != nil {
+			e.log.Errorf("writeTombstonesToTempChannel: recovered from panic: %v", r)
+			instrument.DroppedByReason("tombstone_panic")
+		}
+	}()
+
 	e.log.Debugf("writeTombstonesToTempChannel: Writing %d tombstones", len(boxIDs))
 
 	// Create StatefulWriter from WriteCap
@@ -1466,7 +1537,11 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 
 		// Encrypt using MKEM for whichever shard keys we have.
 		mkemScheme := mkem.NewScheme(e.envelopeScheme)
-		mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
+		mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
+		if err != nil {
+			e.log.Errorf("writeTombstone: encapsulate: %v", err)
+			continue
+		}
 		mkemPublicKey := mkemPrivateKey.Public()
 
 		// Build per-replica ReplicaMessages (all share SenderEPubKey +
@@ -1493,6 +1568,22 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 	e.log.Debugf("writeTombstonesToTempChannel: Finished writing %d tombstones", len(boxIDs))
 }
 
+// dispatchTombstoneCacheStore registers ch as the reply channel for
+// envHash. defer-protected so a panic mid-critical-section (e.g. a nil
+// copyCache) cannot leave copyCacheLock held, since this call runs
+// inside a goroutine whose caller recovers panics.
+func (e *Courier) dispatchTombstoneCacheStore(envHash *[hash.HashSize]byte, ch chan *commands.ReplicaMessageReply) {
+	e.copyCacheLock.Lock()
+	defer e.copyCacheLock.Unlock()
+	e.copyCache[*envHash] = ch
+}
+
+func (e *Courier) dispatchTombstoneCacheDelete(envHash *[hash.HashSize]byte) {
+	e.copyCacheLock.Lock()
+	defer e.copyCacheLock.Unlock()
+	delete(e.copyCache, *envHash)
+}
+
 // dispatchTombstone sends one tombstone to its shard replicas and
 // waits for at least one ReplicaSuccess reply within
 // copyWriteReplyTimeout, retrying up to maxCopyWriteAttempts with
@@ -1509,9 +1600,7 @@ func (e *Courier) dispatchTombstone(
 		}
 
 		ch := make(chan *commands.ReplicaMessageReply, len(replicaIDs))
-		e.copyCacheLock.Lock()
-		e.copyCache[*envHash] = ch
-		e.copyCacheLock.Unlock()
+		e.dispatchTombstoneCacheStore(envHash, ch)
 
 		for j, replicaID := range replicaIDs {
 			if err := e.server.SendMessage(replicaID, messages[j]); err != nil {
@@ -1531,9 +1620,7 @@ func (e *Courier) dispatchTombstone(
 			}
 		}
 
-		e.copyCacheLock.Lock()
-		delete(e.copyCache, *envHash)
-		e.copyCacheLock.Unlock()
+		e.dispatchTombstoneCacheDelete(envHash)
 
 		for _, r := range replies {
 			if r.ErrorCode == pigeonhole.ReplicaSuccess {

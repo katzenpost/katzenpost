@@ -93,7 +93,11 @@ func runMKEMSelfCheck(log *logging.Logger) MKEMSelfCheckResult {
 	// Build a representative ciphertext once. Decapsulate is the hot
 	// path; Encapsulate happens at lower frequency on the reply side
 	// so we don't bench it.
-	_, ct := scheme.Encapsulate([]nike.PublicKey{pubKey}, payload)
+	_, ct, err := scheme.Encapsulate([]nike.PublicKey{pubKey}, payload)
+	if err != nil {
+		log.Warningf("self-check: Encapsulate failed (%v); skipping CTIDH self-check", err)
+		return MKEMSelfCheckResult{NumCPU: numCPU}
+	}
 
 	// Solo mode: warm up, then time mkemSelfCheckIterations ops in one
 	// goroutine.

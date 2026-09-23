@@ -7,6 +7,7 @@ import (
 	"crypto/hmac"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/blake2b"
@@ -73,16 +74,24 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 		// shard round-trip, so local reads and writes never wait
 		// behind in-flight proxied traffic (no head-of-line blocking).
 		recvAt := time.Now()
+		select {
+		case c.l.server.decapSema <- struct{}{}:
+		case <-c.l.closeAllCh:
+			return nil, false
+		}
 		c.l.server.handlerWg.Add(1)
 		go func() {
 			defer c.l.server.handlerWg.Done()
+			var releaseOnce sync.Once
+			releaseDecap := func() { releaseOnce.Do(func() { <-c.l.server.decapSema }) }
+			defer releaseDecap()
 			select {
 			case <-c.l.closeAllCh:
 				c.log.Debugf("Terminating gracefully.")
 				return
 			default:
 			}
-			resp := c.handleReplicaMessage(cmd)
+			resp := c.handleReplicaMessage(cmd, releaseDecap)
 			c.log.Debugf("handleReplicaMessage returned: %T", resp)
 			select {
 			case <-c.l.closeAllCh:
@@ -117,7 +126,7 @@ func (c *incomingConn) warnUnknownCommandOnce(cmd commands.Command) {
 }
 
 // replicaMessage's are sent from the courier to the replica storage servers
-func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) *commands.ReplicaMessageReply {
+func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage, releaseDecap func()) *commands.ReplicaMessageReply {
 	c.log.Debug("REPLICA_HANDLER: Starting handleReplicaMessage processing")
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
@@ -235,7 +244,11 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 				c.log.Errorf("REPLICA_HANDLER: failed to pad read reply: %s", err)
 				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
 			}
-			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+			envelopeReply, err := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+			if err != nil {
+				c.log.Errorf("REPLICA_HANDLER: failed to seal read reply: %s", err)
+				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
+			}
 			if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
 				c.log.Debugf("REPLICA_HANDLER: Found data locally for BoxID %x", myCmd.BoxID)
 			} else {
@@ -246,6 +259,8 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 
 		// This replica is NOT in the shard - proxy to the correct replica
 		c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
+		// Release before parking on the proxy path (it has its own pool).
+		releaseDecap()
 		reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
 		c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
 		return reply
@@ -299,13 +314,19 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 				c.log.Errorf("REPLICA_HANDLER: failed to pad write reply: %s", err)
 				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
 			}
-			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+			envelopeReply, err := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+			if err != nil {
+				c.log.Errorf("REPLICA_HANDLER: failed to seal write reply: %s", err)
+				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
+			}
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, writeReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID)
 		}
 
 		// This replica is NOT in the shard - proxy the write to a shard replica
 		// The receiving shard will handle replication to other K-1 shards
 		c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - proxying write to shard", myCmd.BoxID)
+		// Release before parking on the proxy path (it has its own pool).
+		releaseDecap()
 		return c.proxyWriteRequest(myCmd, senderpubkey, envelopeHash)
 	default:
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")
@@ -575,7 +596,10 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unmarshal envelope key for %s: %v", targetShard.Name, err)
 	}
-	mkemPrivateKey, envelope := scheme.Encapsulate([]nike.PublicKey{targetEnvelopeKey}, innerMessageBlob)
+	mkemPrivateKey, envelope, err := scheme.Encapsulate([]nike.PublicKey{targetEnvelopeKey}, innerMessageBlob)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("encapsulate for %s: %v", targetShard.Name, err)
+	}
 	replicaMessage := &commands.ReplicaMessage{
 		Cmds:               commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 		PigeonholeGeometry: nil,
@@ -922,7 +946,11 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		c.log.Errorf("proxyReadRequest: failed to pad read reply: %s", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
 	}
-	envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
+	envelopeReply, err := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
+	if err != nil {
+		c.log.Errorf("proxyReadRequest: failed to seal read reply: %s", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+	}
 	return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, result.readReply.ErrorCode, originalEnvelopeHash, envelopeReply.Envelope, replicaID)
 }
 
@@ -1053,7 +1081,11 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 			c.log.Errorf("proxyWriteRequest: failed to pad write reply: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
 		}
-		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
+		envelopeReply, err := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
+		if err != nil {
+			c.log.Errorf("proxyWriteRequest: failed to seal write reply: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
+		}
 
 		// Return the reply encrypted for the original client
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, replyInnerMessage.WriteReply.ErrorCode, originalEnvelopeHash, envelopeReply.Envelope, replicaID)

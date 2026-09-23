@@ -47,6 +47,10 @@ filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e h1:VsUbObBMxXlc23Eb9VeeJYE4j
 filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e/go.mod h1:32qQ5yj3R24Eu03iWFWchdC3OB653wPvoepWejkefbY=
 filippo.io/mlkem768 v0.0.0-20260214141301-2e7bebc7d88d h1:YyLyABjdrdt2l/E6JAnku4BjhEDXhxQD2bPOnOvy8/M=
 filippo.io/mlkem768 v0.0.0-20260214141301-2e7bebc7d88d/go.mod h1:ym4egWKLpazdho3bHx0xuQlCq02ttP+vhxxKO8LgO9c=
+github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 h1:He8afgbRMd7mFxO99hRNu+6tazq8nFF9lIwo9JFroBk=
+github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6/go.mod h1:8o94RPi1/7XTJvwPpRSzSUedZrtlirdB3r9Z20bi2f8=
+github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20250520111509-a70c2aa677fa h1:x6kFzdPgBoLbyoNkA/jny0ENpoEz4wqY8lPTQL2DPkg=
+github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20250520111509-a70c2aa677fa/go.mod h1:gCLVsLfv1egrcZu+GoJATN5ts75F2s62ih/457eWzOw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
@@ -257,8 +261,8 @@ github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5 h1:n+9aUwSmnz97
 github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5/go.mod h1:9KxLMK17ZLjofnmpVp4Sm315uIF3BAWHVk32EFDRicU=
 github.com/katzenpost/falcon v0.1.0 h1:+WkID41Y6CaWAQE3ijCIfZHu7eHHy8DvAFWCnrW1XDw=
 github.com/katzenpost/falcon v0.1.0/go.mod h1:HtOnkNvwpvTJ3fuXmy4BNw4A8Jg2QetpmkvOPOnOwyU=
-github.com/katzenpost/hpqc v0.0.85-0.20260715190213-e598e7ee2843 h1:MkmW+vTZx0fpNr7wDUoEdFD61IQcsASxbxXVVvmrCxQ=
-github.com/katzenpost/hpqc v0.0.85-0.20260715190213-e598e7ee2843/go.mod h1:C/MaI/ke/uHR5FCKuqB/GNa/JLoFk9PeBnFoP23dh6Q=
+github.com/katzenpost/hpqc v0.0.89 h1:UEYoGnFTQR0seCYvO8mZoJ10QOhgdgTv+xY0IB68hlw=
+github.com/katzenpost/hpqc v0.0.89/go.mod h1:C/MaI/ke/uHR5FCKuqB/GNa/JLoFk9PeBnFoP23dh6Q=
 github.com/katzenpost/nyquist v0.0.13 h1:U4Ogik5WuBoy9l7HFTUGXdc2B/3Xa3QLoK7vTDOPAbw=
 github.com/katzenpost/nyquist v0.0.13/go.mod h1:6DgFOY5YLt9jy2skOpeaM4Rpha2xZ1Vufg5kOzV23Gw=
 github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e h1:cbftK8/GNGA8ye2e2VWkVPLnO/62UadJmG3ddEa6ElU=

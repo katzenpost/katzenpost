@@ -4,6 +4,7 @@
 package server
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"gopkg.in/op/go-logging.v1"
@@ -112,7 +113,7 @@ func (s *Server) initializeLinkKeys() error {
 
 	scheme := schemes.ByName(s.cfg.WireKEMScheme)
 	if scheme == nil {
-		panic("KEM scheme not found")
+		return fmt.Errorf("courier: KEM scheme %q not found", s.cfg.WireKEMScheme)
 	}
 
 	var linkPublicKey kem.PublicKey
@@ -129,9 +130,9 @@ func (s *Server) initializeLinkKeys() error {
 			return err
 		}
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		panic("No link keys found.")
+		return fmt.Errorf("courier: no link keys found in %q", s.cfg.DataDir)
 	} else {
-		panic("Improbable: Only found one link PEM file.")
+		return fmt.Errorf("courier: only one of the two link key PEM files exists in %q", s.cfg.DataDir)
 	}
 	s.linkPrivKey = linkPrivateKey
 	s.linkPubKey = linkPublicKey

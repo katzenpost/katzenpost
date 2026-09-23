@@ -72,6 +72,10 @@ storageNodes=5
 # number of pings sent by run-ping target
 npings?=10
 
+# extra flags handed to the ping binary by the run-ping target, e.g.
+#   make run-ping ping_args=--strict
+ping_args?=
+
 # Parameters. Sampling safety caps for each rate are derived inside the
 # library (common.SafetyCap) from the rate itself, so no MaxDelay knobs
 # are passed to genconfig.
@@ -89,6 +93,14 @@ schedulerMaxBurst=0
 sendSlack=0
 unwrapDelay=0
 numSphinxWorkers=0
+
+# Replica proxy tuning for parallel tests (0 = use defaults auto-derived from
+# numCPU and MKEM ops/sec). Under heavy parallel load, increase these to prevent
+# "replication failed" errors during copy commands: proxyWorkerCount bounds
+# concurrent proxy attempts, and proxyRequestTimeout sets the total budget for
+# each failover sweep. For 17 parallel tests, 16 workers and 120s timeout work.
+proxyWorkerCount=0
+proxyRequestTimeout=0
 
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
@@ -125,17 +137,18 @@ wirekem=xwing
 # (e.g. mixnet-alpine), so `make distro=foo start` targets mixnet-foo just
 # like the test-distros legs. A custom net_name= still overrides it.
 net_name=mixnet-$(distro)
-# docker-compose normalizes the project name (directory name) by stripping
-# dots; compute the actual network name the same way so --network= matches
-# the bridge compose creates.  Only the wait target uses this (fetch
-# --require-ready probes per-node metrics endpoints via container DNS).
-compose_network_name = $(subst .,,$(net_name))_katzenpost-net
 # Deterministic base_port derived from the network name + a per-checkout
 # random seed so parallel checkouts on the same machine get different
 # ports even with the same net_name.  Override with base_port=<n>.
 base_port?=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; printf '%s%s' '$(net_name)' "$$(cat .base_port_seed)" | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
+compose_project_name=$(net_name)_$(shell cat .base_port_seed|sha1sum|head -c 5)
+# docker-compose normalizes the project name (directory name) by stripping
+# dots; compute the actual network name the same way so --network= matches
+# the bridge compose creates.  Only the wait target uses this (fetch
+# --require-ready probes per-node metrics endpoints via container DNS).
+compose_network_name = $(subst .,,$(compose_project_name))_katzenpost-net
 # bash is installed in every base image (alpine, debian, ubuntu), so a
 # single shell covers all distros.
 sh?=bash
@@ -235,6 +248,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
+	--proxyWorkerCount $(proxyWorkerCount) --proxyRequestTimeout $(proxyRequestTimeout) \
 	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
 	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 
@@ -344,9 +358,9 @@ docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpos
 
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
-docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
+docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose) -p $(compose_project_name)
 ifeq ($(docker),podman)
-  docker_compose= DOCKER_USER=$(docker_user) DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose
+  docker_compose= DOCKER_USER=$(docker_user) DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose -p $(compose_project_name)
 else
   docker_compose= DOCKER_USER=$(docker_user) $(docker_compose_v1_or_v2)
 endif
@@ -777,7 +791,7 @@ clean: stop-all
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings)
+        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings) $(ping_args)
 
 # parallel-load knobs. Override on the make command line:
 #   make run-parallel-load clients=8 duration=5m
@@ -912,8 +926,11 @@ test: wait
 # cache). Serial by default; with `make -j N test-distros` each
 # test-distro-<distro> leg runs concurrently on its own mixnet-<distro>
 # network and base_port band derived from the DISTROS order, so legs never
-# share state. Each leg runs run-ping, which exits non-zero unless every
-# ping is answered, so a leg's exit code asserts a healthy network. Legs
+# share state. Each leg runs run-ping, which exits non-zero on any packet
+# lost in the mixnet and on a run that delivered nothing at all, so a leg's
+# exit code asserts a healthy network. A ping the client never dispatched
+# (its own pacing, or a dropped daemon link) does not fail the leg on its
+# own; pass --strict to run-ping to gate on those too. Legs
 # deliberately leave their networks running; tear everything down with
 # `make clean` (or one `make distro=<d> stop` per network).
 DISTRO_PORTS=$(foreach d,$(DISTROS),$(d):$(shell set -- $(DISTROS); i=0; for x; do [ "$$x" = "$(d)" ] && printf '%s' $$((30000 + i * 10000)) && break; i=$$((i+1)); done))

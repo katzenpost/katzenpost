@@ -263,7 +263,13 @@ func (d *Daemon) encryptWrite(request *Request) {
 
 		// For tombstones, we sign an empty payload without encryption
 		var sigraw []byte
-		boxID, sigraw = messageBoxIndex.SignBox(writeCap, constants.PIGEONHOLE_CTX, []byte{})
+		var err error
+		boxID, sigraw, err = messageBoxIndex.SignBox(writeCap, constants.PIGEONHOLE_CTX, []byte{})
+		if err != nil {
+			d.log.Errorf("encryptWrite: failed to sign tombstone box: %v", err)
+			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
+			return
+		}
 		copy(sig[:], sigraw)
 		ciphertext = nil // Empty payload for tombstone
 		d.log.Debugf("encryptWrite: Generated tombstone BoxID: %x, Idx64=%d", boxID, messageBoxIndex.Idx64)
@@ -452,7 +458,10 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 	if err != nil {
 		return nil, fmt.Errorf("failed to pad inner message: %w", err)
 	}
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(replicaPubKeys, paddedMsg)
+	mkemPrivateKey, mkemCiphertext, err := replicaCommon.MKEMNikeScheme.Encapsulate(replicaPubKeys, paddedMsg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encapsulate: %w", err)
+	}
 	senderPubkey := mkemPrivateKey.Public().Bytes()
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
@@ -828,7 +837,12 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 	for i := uint32(0); i < maxCount; i++ {
 		// Tombstone: sign empty payload with blinded private key, then
 		// encrypt the ReplicaWrite via the shared buildCourierEnvelope.
-		boxID, sigraw := cur.SignBox(destWriteCap, constants.PIGEONHOLE_CTX, []byte{})
+		boxID, sigraw, err := cur.SignBox(destWriteCap, constants.PIGEONHOLE_CTX, []byte{})
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: failed to sign tombstone box: %v", err)
+			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+			return
+		}
 		sig := [bacap.SignatureSize]byte{}
 		copy(sig[:], sigraw)
 
@@ -1133,9 +1147,12 @@ func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, d
 		msgBytes = msg.Bytes()
 	}
 
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
+	mkemPrivateKey, mkemCiphertext, err := replicaCommon.MKEMNikeScheme.Encapsulate(
 		replicaPubKeys, msgBytes,
 	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to encapsulate: %w", err)
+	}
 	mkemPublicKey := mkemPrivateKey.Public()
 
 	var dek1, dek2 [60]uint8
@@ -1242,9 +1259,13 @@ func (d *Daemon) logBoxIDForRequest(req *thin.StartResendingEncryptedMessage, is
 			idx64Str = fmt.Sprintf("%d", mbi.Idx64)
 			switch {
 			case isRead && req.ReadCap != nil:
-				boxIDHex = fmt.Sprintf("%x", req.ReadCap.DeriveBoxID(mbi).Bytes())
+				if boxID, err := req.ReadCap.DeriveBoxID(mbi); err == nil {
+					boxIDHex = fmt.Sprintf("%x", boxID.Bytes())
+				}
 			case !isRead && req.WriteCap != nil:
-				boxIDHex = fmt.Sprintf("%x", req.WriteCap.DeriveBoxID(mbi).Bytes())
+				if boxID, err := req.WriteCap.DeriveBoxID(mbi); err == nil {
+					boxIDHex = fmt.Sprintf("%x", boxID.Bytes())
+				}
 			}
 		}
 	}
@@ -2086,9 +2107,12 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 			// Expected; this is information, not an error, so log it at
 			// Debug. The decryption a few lines below is what will fail
 			// loudly when the BoxIDs actually disagree.
-			expectedBoxID := messageBoxIndex.BoxIDForContext(arqMessage.ReadCap, constants.PIGEONHOLE_CTX)
-			d.log.Debugf("decryptPigeonholeReply: BoxID comparison - Expected: %x, Got from replica: %x",
-				expectedBoxID.Bytes(), innerMsg.ReadReply.BoxID)
+			if expectedBoxID, err := messageBoxIndex.BoxIDForContext(arqMessage.ReadCap, constants.PIGEONHOLE_CTX); err == nil {
+				d.log.Debugf("decryptPigeonholeReply: BoxID comparison - Expected: %x, Got from replica: %x",
+					expectedBoxID.Bytes(), innerMsg.ReadReply.BoxID)
+			} else {
+				d.log.Debugf("decryptPigeonholeReply: failed to derive expected BoxID for diagnostic comparison: %v", err)
+			}
 
 			// Decrypt the BACAP payload (also verifies signature)
 			signature := (*[bacap.SignatureSize]byte)(innerMsg.ReadReply.Signature[:])

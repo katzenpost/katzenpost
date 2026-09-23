@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
@@ -86,6 +88,8 @@ type Server struct {
 	pki           glue.PKI
 	shutdownPKI   glue.PKI
 	listeners     []glue.Listener
+	connLimiter   *connlimit.Limiter
+	peerSet       *connlimit.PeerSet
 	connector     glue.Connector
 	gateway       glue.Gateway
 	serviceNode   glue.ServiceNode
@@ -119,6 +123,17 @@ func (s *Server) reshadowCryptoWorkers() {
 	for _, w := range s.cryptoWorkers {
 		w.UpdateMixKeys()
 	}
+}
+
+// firstLine returns the first non-empty line of err's message, summarizing
+// a multi-line error (e.g. one carrying a captured plugin stderr tail) to a
+// single log line. The full error text still reaches stderr via fang at
+// process exit.
+func firstLine(err error) string {
+	if err == nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.SplitN(err.Error(), "\n", 2)[0])
 }
 
 // IdentityKey returns the running server's identity public key.
@@ -376,7 +391,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	var err error
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
-	if s == nil {
+	if pkiSignatureScheme == nil {
 		return nil, errors.New("PKI Signature Scheme not found")
 	}
 	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
@@ -549,8 +564,12 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Initialize the provider backend.
 	if s.cfg.Server.IsServiceNode {
+		// Log a one-line summary to the log backend so operators who log to
+		// a file (rather than stdout/stderr) still see startup failures. The
+		// full error, including any captured plugin stderr tail, is carried
+		// to stderr via fang at process exit.
 		if s.serviceNode, err = service.New(goo); err != nil {
-			s.log.Errorf("Failed to initialize provider backend: %v", err)
+			s.log.Errorf("Failed to initialize provider backend: %s", firstLine(err))
 			return nil, err
 		}
 	}
@@ -593,10 +612,13 @@ func New(cfg *config.Config) (*Server, error) {
 	logStartupStep("listener address selection")
 
 	// Bring the listener(s) online.
+	s.connLimiter = connlimit.New(*s.cfg.Debug.MaxClientConns, *s.cfg.Debug.MaxPeerConns, *s.cfg.Debug.MaxConnsPerIP, *s.cfg.Debug.MaxLoopbackConns)
+	s.peerSet = connlimit.NewPeerSet()
+	s.peerSet.Rebuild(staticAuthorityAddresses(s.cfg))
 	s.listeners = make([]glue.Listener, 0, len(addresses))
 	for i, addr := range addresses {
 		listenerStart := time.Now()
-		l, err := incoming.New(goo, s.inboundPackets, i, addr)
+		l, err := incoming.New(goo, s.inboundPackets, i, addr, s.connLimiter, s.peerSet)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v after %v (%v).", addr, time.Since(listenerStart), err)
 			return nil, err
@@ -681,6 +703,20 @@ func (g *serverGlue) Connector() glue.Connector {
 
 func (g *serverGlue) Listeners() []glue.Listener {
 	return g.s.listeners
+}
+
+func (g *serverGlue) PeerConnSet() *connlimit.PeerSet {
+	return g.s.peerSet
+}
+
+func staticAuthorityAddresses(cfg *config.Config) []string {
+	var addrs []string
+	if cfg.PKI != nil && cfg.PKI.Voting != nil {
+		for _, auth := range cfg.PKI.Voting.Authorities {
+			addrs = append(addrs, auth.Addresses...)
+		}
+	}
+	return addrs
 }
 
 func (g *serverGlue) Decoy() glue.Decoy {

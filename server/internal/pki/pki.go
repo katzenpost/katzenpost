@@ -34,6 +34,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/schemes"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -403,6 +404,14 @@ func (p *pki) worker() {
 					}
 					lastLambdaP, lastLambdaL = lambdaP, lambdaL
 				}
+
+				addrs := ent.Document().AllNodeAddresses()
+				if cfg := p.glue.Config(); cfg.PKI != nil && cfg.PKI.Voting != nil {
+					for _, auth := range cfg.PKI.Voting.Authorities {
+						addrs = append(addrs, auth.Addresses...)
+					}
+				}
+				p.glue.PeerConnSet().Rebuild(addrs)
 
 				p.log.Debugf("Updating decoy document for epoch %v.", now)
 				p.glue.Decoy().OnNewDocument(ent)
@@ -1077,12 +1086,18 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		return nil, errors.New("kem scheme not found in registry")
 	}
 
+	pkiSignatureScheme := signSchemes.ByName(glue.Config().Server.PKISignatureScheme)
+	if pkiSignatureScheme == nil {
+		return nil, errors.New("pki signature scheme not found in registry")
+	}
+
 	pkiCfg := &vClient.Config{
-		KEMScheme:   kemscheme,
-		LinkKey:     glue.LinkKey(),
-		LogBackend:  glue.LogBackend(),
-		Authorities: glue.Config().PKI.Voting.Authorities,
-		Geo:         glue.Config().SphinxGeometry,
+		KEMScheme:          kemscheme,
+		PKISignatureScheme: pkiSignatureScheme,
+		LinkKey:            glue.LinkKey(),
+		LogBackend:         glue.LogBackend(),
+		Authorities:        glue.Config().PKI.Voting.Authorities,
+		Geo:                glue.Config().SphinxGeometry,
 
 		// Convert milliseconds to seconds for PKI client timeouts.
 		DialTimeoutSec:      glue.Config().Debug.ConnectTimeout / 1000,

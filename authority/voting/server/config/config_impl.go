@@ -74,13 +74,23 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		return errors.New("type assertion failed")
 	}
 
-	pkiSignatureSchemeStr, ok := data["PKISignatureScheme"].(string)
-	if !ok {
-		return errors.New("PKISignatureScheme failed type assertion")
+	// An omitted PKISignatureScheme inherits DefaultPKISignatureScheme, the
+	// same value the [Server] block defaults to, so peer blocks and the
+	// server block behave consistently. A present-but-unknown scheme still
+	// errors.
+	pkiSignatureSchemeStr := DefaultPKISignatureScheme
+	if raw, present := data["PKISignatureScheme"]; present {
+		schemeStr, ok := raw.(string)
+		if !ok {
+			return errors.New("PKISignatureScheme failed type assertion")
+		}
+		if schemeStr != "" {
+			pkiSignatureSchemeStr = schemeStr
+		}
 	}
 	pkiSignatureScheme := signSchemes.ByName(pkiSignatureSchemeStr)
 	if pkiSignatureScheme == nil {
-		return fmt.Errorf("pki signature scheme `%s` not found", pkiSignatureScheme)
+		return fmt.Errorf("pki signature scheme `%s` not found", pkiSignatureSchemeStr)
 	}
 	a.PKISignatureScheme = pkiSignatureSchemeStr
 
@@ -131,8 +141,16 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	if !ok {
 		return errors.New("map entry not found")
 	}
-	for _, addr := range pos.([]interface{}) {
-		addresses = append(addresses, addr.(string))
+	posSlice, ok := pos.([]interface{})
+	if !ok {
+		return errors.New("Authority.Addresses must be an array of strings")
+	}
+	for _, addr := range posSlice {
+		s, ok := addr.(string)
+		if !ok {
+			return errors.New("Authority.Addresses entries must be strings")
+		}
+		addresses = append(addresses, s)
 	}
 	a.Addresses = addresses
 	return nil
@@ -150,6 +168,15 @@ func (sCfg *Server) validate() error {
 	if sCfg.ResponseTimeoutSec == 0 {
 		sCfg.ResponseTimeoutSec = 30
 	}
+	if sCfg.KeepaliveTimeoutSec == 0 {
+		sCfg.KeepaliveTimeoutSec = 120
+	}
+	if sCfg.MaxConcurrentConns == 0 {
+		sCfg.MaxConcurrentConns = 64
+	}
+	if sCfg.MaxConnsPerPeer <= 0 {
+		sCfg.MaxConnsPerPeer = 8
+	}
 	if sCfg.CloseDelaySec == 0 {
 		sCfg.CloseDelaySec = 10
 	}
@@ -163,13 +190,15 @@ func (sCfg *Server) validate() error {
 		}
 	}
 
-	if sCfg.PKISignatureScheme == "" {
-		return errors.New("PKISignatureScheme was not set")
-	} else {
-		s := signSchemes.ByName(sCfg.PKISignatureScheme)
-		if s == nil {
-			return errors.New("PKI Signature Scheme not found")
-		}
+	// The server PKI signature scheme is intentionally defaulted, not required:
+	// a blank config must load and run with sane defaults rather than failing to
+	// load. Peer authority blocks that omit it inherit the same default in their
+	// own unmarshaler, and the Windows build falls back to Ed25519 because
+	// Sphincs+ needs cgo -- a consistency this default already surfaced and
+	// handles. An explicitly set scheme is still validated below.
+	sCfg.applyPKISignatureSchemeDefault()
+	if s := signSchemes.ByName(sCfg.PKISignatureScheme); s == nil {
+		return errors.New("PKI Signature Scheme not found")
 	}
 
 	if sCfg.Addresses != nil {

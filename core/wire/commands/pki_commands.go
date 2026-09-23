@@ -80,11 +80,12 @@ func (c *Consensus2) Length() int {
 	return 0
 }
 
-func consensus2FromBytes(b []byte) (Command, error) {
-	if len(b) < consensusBaseLength {
+func consensus2FromBytes(b []byte, cmds *Commands) (Command, error) {
+	if len(b) < consensus2BaseLength {
 		return nil, errInvalidCommand
 	}
 	r := new(Consensus2)
+	r.Cmds = cmds
 	r.ErrorCode = b[0]
 	r.ChunkNum = binary.BigEndian.Uint32(b[1:5])
 	r.ChunkTotal = binary.BigEndian.Uint32(b[5:9])
