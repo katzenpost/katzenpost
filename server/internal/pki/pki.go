@@ -875,7 +875,24 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 	return s, nowDoc, now, till
 }
 
-func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (desc *cpki.MixDescriptor, canSend, isValid bool) {
+// AuthenticateConnection authenticates a link key and determines whether the
+// peer's direction and epoch permit traffic. A valid next-epoch connection may
+// be established before it is allowed to send. The returned descriptor is the
+// newest direction-eligible descriptor, even when an older document authorizes
+// traffic; callers must check isValid before using it.
+func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (*cpki.MixDescriptor, bool, bool) {
+	docs, nowDoc, now, till := p.documentsForAuthentication()
+	return p.authenticateConnection(c, isOutgoing, docs, nowDoc, now, till)
+}
+
+// authenticateConnection evaluates an authentication snapshot. docs must be in
+// descending epoch order and contain only epochs selected by
+// documentsForAuthentication. Explicit time inputs keep transition tests
+// independent of the wall clock.
+func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool, docs []*pkicache.Entry, nowDoc *pkicache.Entry, now uint64, till time.Duration) (desc *cpki.MixDescriptor, canSend, isValid bool) {
+	if c == nil || c.PublicKey == nil {
+		return nil, false, false
+	}
 	var earlySendSlack = epochtime.Period / 8
 
 	dirStr := "Incoming"
@@ -892,9 +909,17 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
-	// Iterate over whatever documents we happen to have for the epochs
-	// [now+1, now, now-1, now-2].
-	docs, nowDoc, now, till := p.documentsForAuthentication()
+	// Serialize once, and fail closed if the key cannot be represented.
+	blob, err := c.PublicKey.MarshalBinary()
+	if err != nil {
+		p.log.Warningf("%v: failed to marshal peer public key", dirStr)
+		return nil, false, false
+	}
+
+	// Key rotation and topology authorization are separate: an older
+	// direction-eligible document may authorize traffic using the key in
+	// the newest direction-eligible descriptor for this same identity.
+	var newestKeyMatches bool
 	for _, d := range docs {
 		var m *cpki.MixDescriptor
 		switch isOutgoing {
@@ -909,22 +934,16 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		}
 
 		if desc == nil {
-			// This is the most recent descriptor we have.
 			desc = m
+			newestKeyMatches = hmac.Equal(desc.LinkKey, blob)
 		}
 
-		// The LinkKey that is being used for authentication should
-		// match what is listed in the descriptor in the document, or
-		// the most recent descriptor we have for the node.
-		blob, err := c.PublicKey.MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
-		if !hmac.Equal(m.LinkKey, blob) {
-			if desc == m || !hmac.Equal(m.LinkKey, blob) {
-				p.log.Warningf("%v: %x Public Key mismatch: %x", dirStr, c.AdditionalData, hash.Sum256(blob))
-				continue
-			}
+		// Preserve authentication with this document's key as well as
+		// allowing rotation to the newest key. Neither bypasses the
+		// direction, epoch or de-listing checks below.
+		if !newestKeyMatches && !hmac.Equal(m.LinkKey, blob) {
+			p.log.Warningf("%v: %x Public Key mismatch: %x", dirStr, c.AdditionalData, hash.Sum256(blob))
+			continue
 		}
 
 		switch d.Epoch() {
