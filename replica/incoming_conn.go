@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -50,6 +51,8 @@ type incomingConn struct {
 	e   *list.Element
 	w   wire.SessionInterface
 	geo *geo.Geometry
+
+	connToken *connlimit.Token
 
 	id      uint64
 	retrSeq uint32

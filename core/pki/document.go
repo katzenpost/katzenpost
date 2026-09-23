@@ -244,6 +244,30 @@ func (d *Document) GetGateway(name string) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: gateway node '%v' not found", name)
 }
 
+func (d *Document) AllNodeAddresses() []string {
+	var addrs []string
+	appendAddrs := func(m map[string][]string) {
+		for _, list := range m {
+			addrs = append(addrs, list...)
+		}
+	}
+	for _, layer := range d.Topology {
+		for _, desc := range layer {
+			appendAddrs(desc.Addresses)
+		}
+	}
+	for _, desc := range d.GatewayNodes {
+		appendAddrs(desc.Addresses)
+	}
+	for _, desc := range d.ServiceNodes {
+		appendAddrs(desc.Addresses)
+	}
+	for _, desc := range d.StorageReplicas {
+		appendAddrs(desc.Addresses)
+	}
+	return addrs
+}
+
 // GetService returns the MixDescriptor for the given service Name.
 func (d *Document) GetServiceNode(name string) (*MixDescriptor, error) {
 	for _, v := range d.ServiceNodes {

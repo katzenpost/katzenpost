@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -162,6 +163,14 @@ type Debug struct {
 	// form a valid Document.
 	MinNodesPerLayer int
 
+	MaxClientConns *int
+
+	MaxPeerConns *int
+
+	MaxConnsPerIP *int
+
+	MaxLoopbackConns *int
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -181,6 +190,22 @@ func (dCfg *Debug) applyDefaults() {
 	}
 	if dCfg.MinNodesPerLayer <= 0 {
 		dCfg.MinNodesPerLayer = defaultMinNodesPerLayer
+	}
+	if dCfg.MaxClientConns == nil {
+		v := connlimit.DefaultMaxClientConns
+		dCfg.MaxClientConns = &v
+	}
+	if dCfg.MaxPeerConns == nil {
+		v := connlimit.DefaultMaxPeerConns
+		dCfg.MaxPeerConns = &v
+	}
+	if dCfg.MaxConnsPerIP == nil {
+		v := connlimit.DefaultMaxConnsPerIP
+		dCfg.MaxConnsPerIP = &v
+	}
+	if dCfg.MaxLoopbackConns == nil {
+		v := connlimit.DefaultMaxLoopbackConns
+		dCfg.MaxLoopbackConns = &v
 	}
 }
 

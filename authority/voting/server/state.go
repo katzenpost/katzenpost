@@ -200,7 +200,21 @@ func (s *state) worker() {
 		case <-s.fsmTick():
 			s.log.Debugf("authority: Wakeup due to voting schedule.")
 		}
+		s.rebuildPeerSet()
 	}
+}
+
+func (s *state) rebuildPeerSet() {
+	epoch, _, _ := epochtime.Now()
+	s.RLock()
+	doc := s.documents[epoch]
+	s.RUnlock()
+	if doc == nil {
+		return
+	}
+	addrs := doc.AllNodeAddresses()
+	addrs = append(addrs, dirauthStaticAuthorityAddresses(s.s.cfg)...)
+	s.s.peerSet.Rebuild(addrs)
 }
 
 // fsmTick runs one FSM step with panic recovery, so a bug on the consensus

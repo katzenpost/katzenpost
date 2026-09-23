@@ -14,6 +14,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
@@ -40,6 +41,10 @@ func (m *mockGlue) Connector() glue.Connector {
 func (m *mockGlue) Decoy() glue.Decoy {
 	var d glue.Decoy
 	return d
+}
+
+func (m *mockGlue) PeerConnSet() *connlimit.PeerSet {
+	return nil
 }
 func (m *mockGlue) IdentityKey() sign.PrivateKey {
 	return nil

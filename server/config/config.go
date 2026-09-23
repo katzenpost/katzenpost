@@ -34,6 +34,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -320,6 +321,14 @@ type Debug struct {
 	// should only be used for testing.
 	DisableRateLimit bool
 
+	MaxClientConns *int
+
+	MaxPeerConns *int
+
+	MaxConnsPerIP *int
+
+	MaxLoopbackConns *int
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -366,6 +375,22 @@ func (dCfg *Debug) applyDefaults() {
 	}
 	if dCfg.ReauthInterval <= 0 {
 		dCfg.ReauthInterval = defaultReauthInterval
+	}
+	if dCfg.MaxClientConns == nil {
+		v := connlimit.DefaultMaxClientConns
+		dCfg.MaxClientConns = &v
+	}
+	if dCfg.MaxPeerConns == nil {
+		v := connlimit.DefaultMaxPeerConns
+		dCfg.MaxPeerConns = &v
+	}
+	if dCfg.MaxConnsPerIP == nil {
+		v := connlimit.DefaultMaxConnsPerIP
+		dCfg.MaxConnsPerIP = &v
+	}
+	if dCfg.MaxLoopbackConns == nil {
+		v := connlimit.DefaultMaxLoopbackConns
+		dCfg.MaxLoopbackConns = &v
 	}
 }
 

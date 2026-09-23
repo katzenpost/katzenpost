@@ -22,18 +22,22 @@ type fakeAddr struct{}
 func (fakeAddr) Network() string { return "fake" }
 func (fakeAddr) String() string  { return "fake" }
 
-// blockingConn is a net.Conn whose RemoteAddr blocks until release is closed,
-// recording how many handlers are parked there at once. onConn's first act is
-// conn.RemoteAddr and the listen worker holds a concurrency slot for the whole
-// life of the handler, so the peak of active is the number of handlers run
-// concurrently.
+// blockingConn is a net.Conn whose LocalAddr blocks until release is closed,
+// recording how many handlers are parked there at once. The listen worker reads
+// RemoteAddr on the accept path for the connection limiter, before it spawns the
+// handler, so the probe must sit in a method only the handler reaches: onConn
+// reads LocalAddr immediately after RemoteAddr, and the worker holds a
+// concurrency slot for the whole life of the handler, so the peak of active is
+// the number of handlers run concurrently.
 type blockingConn struct {
 	active    *atomic.Int32
 	maxActive *atomic.Int32
 	release   chan struct{}
 }
 
-func (c *blockingConn) RemoteAddr() net.Addr {
+func (c *blockingConn) RemoteAddr() net.Addr { return fakeAddr{} }
+
+func (c *blockingConn) LocalAddr() net.Addr {
 	n := c.active.Add(1)
 	for {
 		m := c.maxActive.Load()
@@ -45,8 +49,6 @@ func (c *blockingConn) RemoteAddr() net.Addr {
 	c.active.Add(-1)
 	return fakeAddr{}
 }
-
-func (c *blockingConn) LocalAddr() net.Addr              { return fakeAddr{} }
 func (c *blockingConn) Read([]byte) (int, error)         { return 0, errors.New("closed") }
 func (c *blockingConn) Write([]byte) (int, error)        { return 0, errors.New("closed") }
 func (c *blockingConn) Close() error                     { return nil }
@@ -118,6 +120,7 @@ func TestListenWorkerBoundsConcurrentConns(t *testing.T) {
 	// Release the parked handlers and shut the worker down.
 	close(release)
 	close(s.haltedCh)
+	ln.Close()
 	require.Eventually(t, func() bool { return active.Load() == 0 },
 		2*time.Second, 5*time.Millisecond, "handlers should drain")
 	s.WaitGroup.Wait()
