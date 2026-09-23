@@ -483,6 +483,18 @@ func (co *Connector) ConnectionCount() int {
 	return len(co.conns)
 }
 
+func (co *Connector) SessionCount() int {
+	co.RLock()
+	defer co.RUnlock()
+	n := 0
+	for _, c := range co.conns {
+		if c.sessionUp.Load() {
+			n++
+		}
+	}
+	return n
+}
+
 func (co *Connector) onNewConn(c *outgoingConn) {
 	nodeID := hash.Sum256(c.dst.IdentityKey)
 
