@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 
 	"github.com/BurntSushi/toml"
 
@@ -51,6 +52,11 @@ func (c *Config) FixupAndValidate() error {
 	}
 	if err := c.Listen.Validate(); err != nil {
 		return err
+	}
+	if c.DBusName != "" {
+		if err := ValidateDBusName(c.DBusName); err != nil {
+			return err
+		}
 	}
 	if c.PinnedGateways == nil {
 		return errors.New("config: No PinnedGateways block was present")
@@ -234,4 +240,16 @@ func LoadFile(f string) (*Config, error) {
 		return nil, err
 	}
 	return Load(b)
+}
+
+var dbusWellKnownName = regexp.MustCompile(`^[A-Za-z_-][A-Za-z0-9_-]*(\.[A-Za-z_-][A-Za-z0-9_-]*)+$`)
+
+func ValidateDBusName(name string) error {
+	if len(name) > 255 {
+		return fmt.Errorf("config: DBusName %q is longer than 255 bytes", name)
+	}
+	if !dbusWellKnownName.MatchString(name) {
+		return fmt.Errorf("config: DBusName %q is not a well-known dbus name", name)
+	}
+	return nil
 }

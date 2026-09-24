@@ -103,6 +103,11 @@ func runClientDaemon(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to load config file: %v", err)
 	}
+	if cfg.DBusName != "" {
+		if err := config.ValidateDBusName(cfg.DBusName); err != nil {
+			return err
+		}
+	}
 	if cfg.ValidateOnly {
 		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {
 			return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
