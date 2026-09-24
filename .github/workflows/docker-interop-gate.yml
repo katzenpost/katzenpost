@@ -1,6 +1,7 @@
 name: docker interop gate
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -101,7 +102,7 @@ jobs:
 
   interop:
     needs: changes
-    if: needs.changes.outputs.server == 'true'
+    if: contains(github.event.pull_request.labels.*.name, 'interop')
     permissions:
       contents: read
     env:
@@ -115,7 +116,7 @@ jobs:
         go-version: [1.26.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -129,12 +130,8 @@ jobs:
           key: interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
           restore-keys: |
             interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-
-      - name: Run the -short client suite, then the interop gate against one and two releases
-        run: |
-          cd docker
-          make dockertest_timeout=30m dockertest_parallel=2 testargs=-short test
-          make interop-gate
-          make interop-gate release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)"
+      - name: Cross-version check on request, everything interleaved with the last two releases
+        run: cd docker && make interop-everything-mixed
       - name: Dump kpclientd logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true
@@ -159,7 +156,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require the local and interop jobs to pass when they ran
+      - name: Require the local job, and the interop job when the interop label asked for it, to pass
         run: |
           echo "changes=${{ needs.changes.result }} local=${{ needs.local.result }} interop=${{ needs.interop.result }}"
           if [ "${{ needs.changes.result }}" != "success" ]; then echo "changes job did not succeed" >&2; exit 1; fi
