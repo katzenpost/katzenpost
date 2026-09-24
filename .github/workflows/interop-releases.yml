@@ -6,7 +6,20 @@ on:
 
 jobs:
 
-  mixed-authorities:
+  interop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: authorities-mixed, groups: "auth", all: "", refs: 2 }
+          - { name: authorities-old, groups: "auth", all: "1", refs: 2 }
+          - { name: authorities-old-n1, groups: "auth", all: "1", refs: 1 }
+          - { name: nodes-mixed, groups: "replica mix gateway", all: "", refs: 2 }
+          - { name: nodes-old, groups: "replica mix gateway", all: "1", refs: 2 }
+          - { name: nodes-old-n1, groups: "replica mix gateway", all: "1", refs: 1 }
+          - { name: everything-mixed, groups: "auth replica mix gateway", all: "", refs: 2 }
+          - { name: everything-mixed-n1, groups: "auth replica mix gateway", all: "", refs: 1 }
+    name: ${{ matrix.name }}
     permissions:
       contents: read
     env:
@@ -30,8 +43,11 @@ jobs:
           key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
           restore-keys: |
             interop-gate-${{ runner.os }}-go1.26.x-
-      - name: Form a consensus with directory authorities on HEAD, n-1, and n-2
-        run: cd docker && make interop-gate interop_swap_groups=auth release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)"
+      - name: Bring up HEAD with release binaries on the ${{ matrix.name }} set and require every authority to sign and every node to be listed
+        run: cd docker && make interop-gate interop_swap_groups="${{ matrix.groups }}" interop_swap_all="${{ matrix.all }}" release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -${{ matrix.refs }} | xargs)"
+      - name: Report which services signed or were listed, with their versions
+        if: always()
+        run: cd docker && make -s interop-report interop_swap_groups="${{ matrix.groups }}" interop_swap_all="${{ matrix.all }}" release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -${{ matrix.refs }} | xargs)" || true
       - name: Dump kpclientd logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true
@@ -45,53 +61,9 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always() && !env.ACT
         with:
-          name: interop-releases-${{ github.run_id }}-${{ github.job }}
+          name: interop-releases-${{ github.run_id }}-${{ matrix.name }}
           path: |
             docker/mixnet-alpine/*/*.log
-            docker/mixnet-alpine/servicenode*/courier/courier.log
-            docker/mixnet-alpine/*/selfcheck.toml
-
-  nodes-on-head:
-    permissions:
-      contents: read
-    env:
-      warped: true
-      no_mixdecoy: true
-      no_decoy: true
-      epoch_duration: 2m
-      no_metrics: true
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Configure podman socket
-        run: systemctl --user start podman.socket || true
-      - name: Cache the go build and module caches
-        uses: actions/cache@v4
-        with:
-          path: docker/cache
-          key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
-          restore-keys: |
-            interop-gate-${{ runner.os }}-go1.26.x-
-      - name: Run every node on HEAD under directory authorities on n-1 and n-2 only
-        run: cd docker && make interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)"
-      - name: Dump kpclientd logs on failure
-        if: failure()
-        run: cd docker && make client-logs-snapshot || true
-      - name: Dump authority and replica logs on failure
-        if: failure()
-        run: cd docker && for r in mixnet-alpine/auth*/ mixnet-alpine/replica*/; do echo "=== $r ==="; tail -20 "${r}katzenpost.log" 2>&1; done
-      - name: Stop the testnet
-        if: always()
-        run: cd docker && make stop || true
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always() && !env.ACT
-        with:
-          name: interop-releases-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/wait.log
             docker/mixnet-alpine/servicenode*/courier/courier.log
             docker/mixnet-alpine/*/selfcheck.toml

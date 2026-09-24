@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate client-check
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1 client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -35,6 +35,10 @@ help:
 	@echo " pigeonhole-cp-roundtrip   - round-trip a file through a pigeonhole channel"
 	@echo " run-ping                  - send a ping over the testnet"
 	@echo " test                      - run every component's docker integration tests (requires the testnet to be up)"
+	@echo " interop-gate              - bring HEAD up with release binaries on interop_swap_groups (release_refs), require 6/6 signatures and every node listed, verify revisions, ping"
+	@echo " interop-<job>             - one upgrade combination: authorities-mixed|authorities-old|authorities-old-n1|nodes-mixed|nodes-old|nodes-old-n1|everything-mixed|everything-mixed-n1"
+	@echo " interop-matrix            - every interop-<job> in turn"
+	@echo " interop-report            - per-service table of version and signed/listed from the last interop-gate"
 	@echo " clean-bin                 - stop, and delete compiled binaries"
 	@echo " clean-local               - stop the current network, and wipe its state (keeps the build cache)"
 	@echo " clean-local-dryrun        - show what clean-local would delete"
@@ -991,11 +995,47 @@ interop-gate: interop-ref-binaries
 	      *)        echo "  $$s:"; echo "    command: /$(net_name)/server.$(distro).$$v -f /$(net_name)/$$s/katzenpost.toml";; \
 	    esac; done; } > $(net_name)/docker-compose.override.yml
 	$(MAKE) start
-	$(MAKE) wait
+	@( $(MAKE) wait 2>&1; echo $$? > $(net_name)/wait.rc ) | tee $(net_name)/wait.log; \
+	  $(MAKE) -s interop-report; rc=$$?; [ "$$(cat $(net_name)/wait.rc)" = 0 ] && [ $$rc = 0 ] \
+	  || { echo "interop-gate: the network did not come up with every authority signing and every node listed" >&2; exit 1; }
 	@for pair in $(strip $(interop_swaps)); do s=$${pair%%=*}; v=$${pair#*=}; \
 	  grep -q " rev $$(git -C .. rev-list -n 1 $$v)" $(net_name)/$$s/*.log \
 	  || { echo "swap verify failed: $$s is not running $$v" >&2; exit 1; }; done
 	$(MAKE) run-ping || (sleep 10; $(MAKE) run-ping) || (sleep 10; $(MAKE) run-ping)
+
+interop-report:
+	@ver() { for pair in $(strip $(interop_swaps)); do [ "$${pair%%=*}" = "$$1" ] && { echo $${pair#*=}; return; }; done; echo HEAD; }; \
+	fail=0; printf '%-14s %-12s %s\n' service version consensus; \
+	for i in $$(seq 1 $(auths)); do s=auth$$i; \
+	  if grep -qE "^[[:space:]]*$$s \(" $(net_name)/wait.log; then st=signed; else st=NOT-SIGNED; fail=1; fi; \
+	  printf '%-14s %-12s %s\n' $$s $$(ver $$s) $$st; done; \
+	for grp in mix,$(mixes) gateway,$(gateways) servicenode,$(serviceNodes) replica,$(storageNodes); do \
+	  for i in $$(seq 1 $${grp#*,}); do s=$${grp%,*}$$i; \
+	    if grep -qE "\{$$s " $(net_name)/wait.log; then st=listed; else st=NOT-LISTED; fail=1; fi; \
+	    printf '%-14s %-12s %s\n' $$s $$(ver $$s) $$st; done; done; \
+	exit $$fail
+
+interop_last1=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1 | xargs)
+interop_last2=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)
+interop_nodes=replica mix gateway
+
+interop-authorities-mixed:
+	$(MAKE) interop-gate interop_swap_groups=auth release_refs="$(interop_last2)"
+interop-authorities-old:
+	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last2)"
+interop-authorities-old-n1:
+	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last1)"
+interop-nodes-mixed:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" release_refs="$(interop_last2)"
+interop-nodes-old:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last2)"
+interop-nodes-old-n1:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last1)"
+interop-everything-mixed:
+	$(MAKE) interop-gate release_refs="$(interop_last2)"
+interop-everything-mixed-n1:
+	$(MAKE) interop-gate release_refs="$(interop_last1)"
+interop-matrix: interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1
 
 client-check: | $(cache_dir)
 	@[ -s $(namenlos_config) ] || { echo "client-check: no namenlos config at $(namenlos_config)" >&2; exit 1; }
