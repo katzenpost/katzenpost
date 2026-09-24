@@ -956,7 +956,9 @@ check-go-version:
 release_refs?=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1)
 namenlos_config?=client-configs/namenlos.toml
 namenlos_thin_config?=client-configs/namenlos-thin.toml
-interop_swaps=$(shell j=1; for ref in $(release_refs); do j=$$((j+1)); for grp in auth,$(auths) replica,$(storageNodes) mix,$(mixes) gateway,$(gateways); do for i in $$(seq $$j $(words HEAD $(release_refs)) $${grp#*,}); do printf '%s ' $${grp%,*}$$i=$$ref; done; done; done)
+interop_swap_groups?=auth replica mix gateway
+interop_swap_all?=
+interop_swaps=$(shell n=$(words $(release_refs)); [ $$n -gt 0 ] || exit 0; for grp in auth,$(auths) replica,$(storageNodes) mix,$(mixes) gateway,$(gateways); do echo " $(interop_swap_groups) " | grep -q " $${grp%,*} " || continue; i=1; while [ $$i -le $${grp#*,} ]; do if [ -n "$(interop_swap_all)" ]; then k=$$(( (i-1) % n )); else k=$$(( (i-1) % (n+1) - 1 )); fi; if [ $$k -ge 0 ]; then set -- $(release_refs); shift $$k; printf '%s ' $${grp%,*}$$i=$$1; fi; i=$$((i+1)); done; done)
 
 docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --volume $$src:/go/katzenpost:ro --workdir /go/katzenpost $(docker_args_common) $(mount_net_name) katzenpost-$(distro)_base $(sh) -c
 
