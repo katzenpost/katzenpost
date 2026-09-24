@@ -203,6 +203,8 @@ type Config struct {
 	// zero means use the compile-time default in client/listener.go.
 	SessionGracePeriod time.Duration
 
+	DBusName string
+
 	// PersistMixKeysOnShutdownDir, when non-empty, enables mix key
 	// persistence in generated server configs: every live mix key is
 	// written on clean shutdown to this subdirectory of each node's
@@ -260,6 +262,8 @@ type Katzenpost struct {
 	// per docker invocation; zero means the daemon's compile-time
 	// default applies.
 	SessionGracePeriod time.Duration
+
+	DBusName string
 
 	// PersistMixKeysOnShutdownDir is a per-node subdirectory of the
 	// node's DataDir that mix keys are persisted to on clean shutdown
@@ -427,6 +431,7 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	if s.SessionGracePeriod > 0 {
 		cfg.SessionGracePeriod = s.SessionGracePeriod
 	}
+	cfg.DBusName = s.DBusName
 
 	// Metrics listener: only written into client.toml when the operator
 	// has chosen to enable it via --kpclientdMetricsAddress, which the
@@ -1004,6 +1009,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.ProxyWorkerCount = cfg.ProxyWorkerCount
 	s.ProxyRequestTimeout = cfg.ProxyRequestTimeout
 	s.SessionGracePeriod = cfg.SessionGracePeriod
+	s.DBusName = cfg.DBusName
 	s.PersistMixKeysOnShutdownDir = cfg.PersistMixKeysOnShutdownDir
 
 	return s
