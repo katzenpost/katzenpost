@@ -337,7 +337,8 @@ log_level=DEBUG
 # only used when explicitly requested (make docker=docker ...).
 docker?=$(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 
-ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+ldflags_body=-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}
+ldflags="$(ldflags_body)"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
@@ -356,10 +357,10 @@ else
   replace_name= --name
   i_if_podman=
 endif
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost \
-	-v $(shell readlink -f .)/$(go_mod_cache):/go/ \
+docker_args_common=-v $(shell readlink -f .)/$(go_mod_cache):/go/ \
 	-v $(shell readlink -f .)/$(go_build_cache):/gocache/ \
 	-e GOCACHE=/gocache -e GOPATH=/go --pids-limit 4096
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost $(docker_args_common)
 
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
@@ -956,25 +957,23 @@ namenlos_config?=client-configs/namenlos.toml
 namenlos_thin_config?=client-configs/namenlos-thin.toml
 interop_swaps=$(shell j=1; for ref in $(release_refs); do j=$$((j+1)); for grp in auth,$(auths) replica,$(storageNodes) mix,$(mixes) gateway,$(gateways); do for i in $$(seq $$j $(words HEAD $(release_refs)) $${grp#*,}); do printf '%s ' $${grp%,*}$$i=$$ref; done; done; done)
 
-docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --pids-limit 4096 \
-	-v $(shell readlink -f .)/$(go_mod_cache):/go/ -v $$src:/go/katzenpost:ro \
-	-v $(shell readlink -f .)/$(net_name):/$(net_name) -v $(shell readlink -f .)/$(go_build_cache):/gocache/ \
-	-e GOCACHE=/gocache -e GOPATH=/go --workdir /go/katzenpost katzenpost-$(distro)_base $(sh) -c
+docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --volume $$src:/go/katzenpost:ro --workdir /go/katzenpost $(docker_args_common) $(mount_net_name) katzenpost-$(distro)_base $(sh) -c
 
 interop-ref-binaries: $(distro)_base.stamp | $(net_name) $(cache_dir)
-	@for ref in $(release_refs); do \
+	@set -e; for ref in $(release_refs); do \
 	  refdir=$(cache_dir)/refbins/$$ref; mkdir -p $$refdir; \
-	  if [ -x $$refdir/server.$(distro).$$ref ]; then \
+	  ( flock 9; \
+	  if [ -x $$refdir/server.$(distro).$$ref ] && [ -x $$refdir/dirauth.$(distro).$$ref ] && [ -x $$refdir/replica.$(distro).$$ref ]; then \
 	    rm -f $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref; \
 	    cp $$refdir/dirauth.$(distro).$$ref $$refdir/replica.$(distro).$$ref $$refdir/server.$(distro).$$ref $(net_name)/; \
 	  else \
 	    src=$$(mktemp -d); git -C .. archive $$ref | tar -x -C $$src; \
 	    rev=$$(git -C .. rev-list -n 1 $$ref); \
 	    for cmd in dirauth replica server; do \
-	      $(docker_run_ref_sh) "cd cmd/$$cmd && go build -trimpath -ldflags '-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=$(warped) -X github.com/carlmjohnson/versioninfo.Revision=$$rev' -o /$(net_name)/$$cmd.$(distro).$$ref"; \
+	      $(docker_run_ref_sh) "cd cmd/$$cmd && go build -trimpath -ldflags '$(ldflags_body) -X github.com/carlmjohnson/versioninfo.Revision=$$rev' -o /$(net_name)/$$cmd.$(distro).$$ref"; \
 	    done; rm -rf $$src; \
 	    cp $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref $$refdir/; \
-	  fi; \
+	  fi ) 9>$$refdir.lock; \
 	done
 
 interop-gate: interop-ref-binaries
