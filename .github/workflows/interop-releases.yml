@@ -1,0 +1,97 @@
+name: interop against the last two releases
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *'
+
+jobs:
+
+  mixed-authorities:
+    permissions:
+      contents: read
+    env:
+      warped: true
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+      - name: Cache the go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: docker/cache
+          key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
+          restore-keys: |
+            interop-gate-${{ runner.os }}-go1.26.x-
+      - name: Form a consensus with directory authorities on HEAD, n-1, and n-2
+        run: cd docker && make interop-gate interop_swap_groups=auth release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)"
+      - name: Dump kpclientd logs on failure
+        if: failure()
+        run: cd docker && make client-logs-snapshot || true
+      - name: Dump authority and replica logs on failure
+        if: failure()
+        run: cd docker && for r in mixnet-alpine/auth*/ mixnet-alpine/replica*/; do echo "=== $r ==="; tail -20 "${r}katzenpost.log" 2>&1; done
+      - name: Stop the testnet
+        if: always()
+        run: cd docker && make stop || true
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-releases-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml
+
+  nodes-on-head:
+    permissions:
+      contents: read
+    env:
+      warped: true
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+      - name: Cache the go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: docker/cache
+          key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
+          restore-keys: |
+            interop-gate-${{ runner.os }}-go1.26.x-
+      - name: Run every node on HEAD under directory authorities on n-1 and n-2 only
+        run: cd docker && make interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)"
+      - name: Dump kpclientd logs on failure
+        if: failure()
+        run: cd docker && make client-logs-snapshot || true
+      - name: Dump authority and replica logs on failure
+        if: failure()
+        run: cd docker && for r in mixnet-alpine/auth*/ mixnet-alpine/replica*/; do echo "=== $r ==="; tail -20 "${r}katzenpost.log" 2>&1; done
+      - name: Stop the testnet
+        if: always()
+        run: cd docker && make stop || true
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-releases-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml
