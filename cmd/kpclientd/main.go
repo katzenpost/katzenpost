@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -118,13 +119,13 @@ func runClientDaemon(cfg Config) error {
 		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", cfg.ConfigFile)
 		return nil
 	}
-	closeBus, err := ownConfiguredDBusName(ctx, cfg, clientCfg)
+	bus, err := ownConfiguredDBusName(ctx, cfg, clientCfg)
 	if err != nil {
 		return err
 	}
-	if closeBus != nil {
+	if bus != nil {
 		defer func() {
-			if err := closeBus(); err != nil {
+			if err := bus.Close(); err != nil {
 				fmt.Fprintf(os.Stderr, "releasing dbus name: %v\n", err)
 			}
 		}()
@@ -157,7 +158,7 @@ func runClientDaemon(cfg Config) error {
 	return nil
 }
 
-func ownConfiguredDBusName(ctx context.Context, cfg Config, clientCfg *config.Config) (func() error, error) {
+func ownConfiguredDBusName(ctx context.Context, cfg Config, clientCfg *config.Config) (io.Closer, error) {
 	name := clientCfg.DBusName
 	if cfg.DBusNameSet {
 		name = cfg.DBusName
@@ -167,7 +168,7 @@ func ownConfiguredDBusName(ctx context.Context, cfg Config, clientCfg *config.Co
 	}
 	ownCtx, cancel := context.WithTimeout(ctx, dbusOwnTimeout)
 	defer cancel()
-	closeBus, err := ownBusName(ownCtx, name)
+	bus, err := ownBusName(ownCtx, name)
 	switch {
 	case errors.Is(err, errNoSessionBus):
 		fmt.Fprintf(os.Stderr, "not owning dbus name %q: %v\n", name, err)
@@ -175,5 +176,5 @@ func ownConfiguredDBusName(ctx context.Context, cfg Config, clientCfg *config.Co
 	case err != nil:
 		return nil, fmt.Errorf("failed to own dbus name %q: %w", name, err)
 	}
-	return closeBus, nil
+	return bus, nil
 }

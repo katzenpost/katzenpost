@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/godbus/dbus/v5"
 )
@@ -35,7 +36,7 @@ func sessionBus() (busOwner, error) {
 
 var connectBus = sessionBus
 
-func ownBusName(ctx context.Context, name string) (func() error, error) {
+func ownBusName(ctx context.Context, name string) (io.Closer, error) {
 	type result struct {
 		conn busOwner
 		err  error
@@ -65,7 +66,7 @@ func ownBusName(ctx context.Context, name string) (func() error, error) {
 		if r.err != nil {
 			return nil, r.err
 		}
-		return r.conn.Close, nil
+		return r.conn, nil
 	case <-ctx.Done():
 		go func() {
 			if r := <-ch; r.conn != nil {
