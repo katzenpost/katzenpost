@@ -20,6 +20,13 @@ import (
 	"github.com/katzenpost/katzenpost/client/thin"
 )
 
+func skipInShortMode(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
+	}
+}
+
 // TestNewPigeonholeAPIAliceSendsBob tests the complete end-to-end flow of the new Pigeonhole API:
 // 1. Alice creates a WriteCap and derives a ReadCap for Bob
 // 2. Alice encrypts a message using EncryptWrite
@@ -132,9 +139,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 // to verify that state management (PrepareNext/AdvanceState) works correctly
 // in the real Docker environment.
 func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
-	if testing.Short() {
-		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -244,9 +249,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 // This exercises multiple concurrent ARQ retry operations on the daemon — the pattern
 // that was broken when arqResendCh had a buffer of 2 and silently dropped resends.
 func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
-	if testing.Short() {
-		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -343,9 +346,7 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 // - The courier can decode the copy stream and execute all writes atomically
 // - Bob can read and reconstruct the original large payload
 func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
-	if testing.Short() {
-		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -513,9 +514,7 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 // - Multiple calls to CreateCourierEnvelopesFromPayload work correctly
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannel(t *testing.T) {
-	if testing.Short() {
-		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -676,9 +675,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 // - Multiple destination payloads are packed efficiently into the copy stream
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannelEfficient(t *testing.T) {
-	if testing.Short() {
-		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -840,9 +837,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 // 3. Alice tombstones the box (deletes it with an empty payload)
 // 4. Bob reads again and verifies the tombstone
 func TestTombstoning(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
@@ -919,9 +914,7 @@ func TestTombstoning(t *testing.T) {
 // 3. Alice tombstones all boxes using TombstoneRange
 // 4. Bob reads again and verifies all boxes are tombstoned
 func TestTombstoneRange(t *testing.T) {
-	if testing.Short() {
-		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
@@ -1021,9 +1014,7 @@ func TestTombstoneRange(t *testing.T) {
 // - Reading from a non-existent box returns ErrBoxIDNotFound
 // - The error can be checked using errors.Is()
 func TestBoxIDNotFoundError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Bob thin client (reader)
 	bobThinClient := setupThinClient(t)
@@ -1084,9 +1075,7 @@ func TestBoxIDNotFoundError(t *testing.T) {
 // This test validates that the default retry behavior (NoRetryOnBoxIDNotFound=false)
 // correctly handles the case where data hasn't been replicated yet.
 func TestReadBeforeWrite(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -1206,9 +1195,7 @@ func TestReadBeforeWrite(t *testing.T) {
 // - Writing to the same box again returns ErrBoxAlreadyExists
 // - The error can be checked using errors.Is()
 func TestBoxAlreadyExistsError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup thin client
 	thinClient := setupThinClient(t)
@@ -1281,9 +1268,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 }
 
 func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup thin client
 	thinClient := setupThinClient(t)
@@ -1390,9 +1375,7 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 // 4. Alice writes all temp stream elements and sends the copy command
 // 5. Bob reads from the destination channel and verifies the reconstructed payload
 func TestFromPayloadMultiCall(t *testing.T) {
-	if testing.Short() {
-		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -1520,9 +1503,7 @@ func TestFromPayloadMultiCall(t *testing.T) {
 // 4. Alice writes all temp stream elements and sends the copy command
 // 5. Bob reads from both destination channels and verifies
 func TestFromMultiPayloadMultiCall(t *testing.T) {
-	if testing.Short() {
-		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -1666,9 +1647,7 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 // 4. Alice sends a Copy command to the courier
 // 5. Bob reads from the destination boxes and verifies all return ErrTombstone
 func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
-	if testing.Short() {
-		t.Skip("extremely long docker integration test; run without -short (release, schedule, or interop lane)")
-	}
+	skipInShortMode(t)
 	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
