@@ -28,6 +28,7 @@ type Config struct {
 	ConfigFile   string
 	ValidateOnly bool
 	DBusName     string
+	DBusNameSet  bool
 }
 
 // newRootCommand creates the root cobra command
@@ -67,6 +68,7 @@ applications to share a single network connection.`,
   kpclientd -c /etc/katzenpost/client.toml --dbus-name network.katzenpost.kpclientd`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg.DBusNameSet = cmd.Flags().Changed("dbus-name")
 			return runClientDaemon(cfg)
 		},
 	}
@@ -79,7 +81,7 @@ applications to share a single network connection.`,
 	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
 		"load and validate the configuration file, then exit without side effects")
 	cmd.Flags().StringVar(&cfg.DBusName, "dbus-name", "",
-		"own this session dbus name for the daemon's lifetime, for example "+defaultDBusName)
+		"own this session dbus name for the daemon's lifetime, for example "+defaultDBusName+"; an empty value disables a configured name")
 
 	// Mark required flags
 	cmd.MarkFlagRequired("config")
@@ -116,7 +118,7 @@ func runClientDaemon(cfg Config) error {
 		return nil
 	}
 	dbusName := clientCfg.DBusName
-	if cfg.DBusName != "" {
+	if cfg.DBusNameSet {
 		dbusName = cfg.DBusName
 	}
 	if dbusName != "" {
