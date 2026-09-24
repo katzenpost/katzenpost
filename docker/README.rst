@@ -245,8 +245,10 @@ integration tests::
 The ``client`` package defines integration tests  which require a docker
 testnet to be running. ``make test`` runs the ``dockertest-all`` target from
 ``client/Makefile`` (the legacy tests plus the new pigeonhole, multichannel,
-tombstone, copy-command and FromPayload tests — the same set the
-``docker-mixnet`` CI job currently runs) as well as ``dockertest_pki_raw``
+tombstone, copy-command and FromPayload tests, the same set the scheduled
+``docker-mixnet`` workflow, release tags, and the ``interop`` job of the
+``docker interop gate`` run; a pull request's ``local`` job runs the
+``-short`` subset of it) as well as ``dockertest_pki_raw``
 (``TestGetPKIDocumentRaw*`` and ``TestGetDirectoryAuthorities``). Each target
 was probed against a healthy mixnet-alpine and passed as of this writing
 (commit ``884914b79f002`` in August 2026).
