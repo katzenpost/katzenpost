@@ -1450,7 +1450,13 @@ func TestFromPayloadMultiCall(t *testing.T) {
 	// Bob reads all destination boxes and reconstructs the payload
 	bobIndex := destFirstIndex
 	var reconstructed []byte
+	reconstructDeadline := time.After(reconstructTimeout)
 	for len(reconstructed) < len(fullPayload) {
+		select {
+		case <-reconstructDeadline:
+			t.Fatalf("timed out reconstructing payload: got %d/%d bytes", len(reconstructed), len(fullPayload))
+		default:
+		}
 		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(bobReadCap, bobIndex)
 		require.NoError(t, err)
 		require.NotNil(t, bobNextIndex)
@@ -1578,7 +1584,13 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	expectedChan1 := append(payload1a, payload1b...)
 	bobIndex := chan1FirstIndex
 	var chan1Data []byte
+	chan1Deadline := time.After(reconstructTimeout)
 	for len(chan1Data) < len(expectedChan1) {
+		select {
+		case <-chan1Deadline:
+			t.Fatalf("timed out reconstructing channel 1: got %d/%d bytes", len(chan1Data), len(expectedChan1))
+		default:
+		}
 		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(chan1ReadCap, bobIndex)
 		require.NoError(t, err)
 		require.NotNil(t, bobNextIndex)
@@ -1599,7 +1611,13 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	expectedChan2 := append(payload2a, payload2b...)
 	bobIndex = chan2FirstIndex
 	var chan2Data []byte
+	chan2Deadline := time.After(reconstructTimeout)
 	for len(chan2Data) < len(expectedChan2) {
+		select {
+		case <-chan2Deadline:
+			t.Fatalf("timed out reconstructing channel 2: got %d/%d bytes", len(chan2Data), len(expectedChan2))
+		default:
+		}
 		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(chan2ReadCap, bobIndex)
 		require.NoError(t, err)
 		require.NotNil(t, bobNextIndex)
