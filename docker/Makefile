@@ -141,10 +141,11 @@ net_name=mixnet-$(distro)
 # Deterministic base_port derived from the network name + a per-checkout
 # random seed so parallel checkouts on the same machine get different
 # ports even with the same net_name.  Override with base_port=<n>.
-base_port?=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; printf '%s%s' '$(net_name)' "$$(cat .base_port_seed)" | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
+base_port_seed:=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; cat .base_port_seed)
+base_port?=$(shell printf '%s%s' '$(net_name)' '$(base_port_seed)' | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
-compose_project_name=$(net_name)_$(shell cat .base_port_seed 2>/dev/null|sha1sum|head -c 5)
+compose_project_name=$(net_name)_$(shell printf '%s' '$(base_port_seed)'|sha1sum|head -c 5)
 # docker-compose normalizes the project name (directory name) by stripping
 # dots; compute the actual network name the same way so --network= matches
 # the bridge compose creates.  Only the wait target uses this (fetch
@@ -462,7 +463,7 @@ start_debug: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	touch $(net_name)/running.stamp
 
 stop:
-	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp docker-compose.override.yml $(net_name)/servicenode*/courier/*.socket
+	[ -e $(net_name) ] && (cd $(net_name) && $(docker_compose) down --remove-orphans); rm -fv $(net_name)/running.stamp $(net_name)/docker-compose.override.yml $(net_name)/servicenode*/courier/*.socket
 
 client-restart:
 	@echo "Cleaning and rebuilding kpclientd daemon..."
@@ -481,15 +482,15 @@ client-logs-snapshot:
 	cd $(net_name) && $(docker_compose) logs --tail 200 kpclientd
 
 courier-restart:
-	@echo "Stopping courier plugin via thwack management interface..."
-	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode1/management_sock' || true
+	@echo "Stopping courier plugins via thwack management interface..."
+	@cd $(net_name) && for i in $$(seq 1 $(serviceNodes)); do $(docker_compose) exec -T servicenode$$i sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode'$$i'/management_sock' || true; done
 	@sleep 1
 	@echo "Cleaning and rebuilding courier binary..."
 	rm -fv $(net_name)/courier.$(distro)
 	$(MAKE) $(net_name)/courier.$(distro)
-	@echo "Starting courier plugin via thwack management interface..."
-	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode1/management_sock'
-	@echo "Courier service restarted with updated code"
+	@echo "Starting courier plugins via thwack management interface..."
+	@cd $(net_name) && for i in $$(seq 1 $(serviceNodes)); do $(docker_compose) exec -T servicenode$$i sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode'$$i'/management_sock'; done
+	@echo "Courier services restarted with updated code"
 
 replica-restart:
 	@echo "Cleaning and rebuilding replica binary..."
@@ -503,9 +504,9 @@ servicenode1-restart:
 	@echo "Cleaning and rebuilding courier binary..."
 	rm -fv $(net_name)/courier.$(distro)
 	$(MAKE) $(net_name)/courier.$(distro)
-	@echo "Restarting servicenode1 container..."
-	cd $(net_name) && $(docker_compose) restart servicenode1
-	@echo "Servicenode restarted with updated courier binary"
+	@echo "Restarting service node containers..."
+	@cd $(net_name) && for i in $$(seq 1 $(serviceNodes)); do $(docker_compose) restart servicenode$$i; done
+	@echo "Service nodes restarted with updated courier binary"
 
 watch:
 	tail -F $(net_name)/*/*.log
@@ -533,7 +534,7 @@ watch-servicenode:
 
 watch-gateway:
 	@echo "Monitoring gateway log (Ctrl+C to exit)..."
-	tail -F $(net_name)/gateway1/katzenpost.log
+	tail -F $(net_name)/gateway*/katzenpost.log
 
 watch-all-separate:
 	@echo "Monitoring all logs with component labels (Ctrl+C to exit)..."
@@ -543,7 +544,7 @@ watch-all-separate:
 	(tail -F $(net_name)/mix*/katzenpost.log | sed 's/^/[MIX] /' &) ; \
 	(tail -F $(net_name)/servicenode*/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
 	(tail -F $(net_name)/servicenode*/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
-	(tail -F $(net_name)/gateway1/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
+	(tail -F $(net_name)/gateway*/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
 	wait
 
 # start-with-client-metrics brings the mixnet up with prometheus and grafana
