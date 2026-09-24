@@ -118,26 +118,16 @@ func runClientDaemon(cfg Config) error {
 		fmt.Fprintf(os.Stdout, "configuration file '%v' is valid\n", cfg.ConfigFile)
 		return nil
 	}
-	dbusName := clientCfg.DBusName
-	if cfg.DBusNameSet {
-		dbusName = cfg.DBusName
+	closeBus, err := ownConfiguredDBusName(ctx, cfg, clientCfg)
+	if err != nil {
+		return err
 	}
-	if dbusName != "" {
-		ownCtx, cancel := context.WithTimeout(ctx, dbusOwnTimeout)
-		closeBus, err := ownBusName(ownCtx, dbusName)
-		cancel()
-		switch {
-		case errors.Is(err, errNoSessionBus):
-			fmt.Fprintf(os.Stderr, "not owning dbus name %q: %v\n", dbusName, err)
-		case err != nil:
-			return fmt.Errorf("failed to own dbus name: %w", err)
-		default:
-			defer func() {
-				if err := closeBus(); err != nil {
-					fmt.Fprintf(os.Stderr, "releasing dbus name %q: %v\n", dbusName, err)
-				}
-			}()
-		}
+	if closeBus != nil {
+		defer func() {
+			if err := closeBus(); err != nil {
+				fmt.Fprintf(os.Stderr, "releasing dbus name: %v\n", err)
+			}
+		}()
 	}
 
 	// Start the prometheus listener before the daemon so that any
@@ -165,4 +155,25 @@ func runClientDaemon(cfg Config) error {
 
 	d.Wait()
 	return nil
+}
+
+func ownConfiguredDBusName(ctx context.Context, cfg Config, clientCfg *config.Config) (func() error, error) {
+	name := clientCfg.DBusName
+	if cfg.DBusNameSet {
+		name = cfg.DBusName
+	}
+	if name == "" {
+		return nil, nil
+	}
+	ownCtx, cancel := context.WithTimeout(ctx, dbusOwnTimeout)
+	defer cancel()
+	closeBus, err := ownBusName(ownCtx, name)
+	switch {
+	case errors.Is(err, errNoSessionBus):
+		fmt.Fprintf(os.Stderr, "not owning dbus name %q: %v\n", name, err)
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("failed to own dbus name %q: %w", name, err)
+	}
+	return closeBus, nil
 }
