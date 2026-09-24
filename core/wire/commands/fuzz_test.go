@@ -7,6 +7,8 @@ package commands
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
@@ -38,6 +40,9 @@ func FuzzMixnetCommandsFromBytes(f *testing.F) {
 	cmds := NewMixnetCommands(sphinx.NewSphinx(g).Geometry())
 	fuzzSeeds(f)
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		checkFromBytes(t, cmds, data)
 	})
 }
@@ -46,6 +51,9 @@ func FuzzPKICommandsFromBytes(f *testing.F) {
 	cmds := NewPKICommands(signSchemes.ByName("ed25519"))
 	fuzzSeeds(f)
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		checkFromBytes(t, cmds, data)
 	})
 }
@@ -56,6 +64,9 @@ func FuzzStorageReplicaCommandsFromBytes(f *testing.F) {
 	cmds := NewStorageReplicaCommands(sphinx.NewSphinx(g).Geometry(), nike)
 	fuzzSeeds(f)
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		checkFromBytes(t, cmds, data)
 	})
 }

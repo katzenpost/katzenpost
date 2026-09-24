@@ -7,6 +7,8 @@ package client
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 )
@@ -29,6 +31,9 @@ func FuzzClientDeserialize(f *testing.F) {
 	f.Add([]byte("not-a-document"))
 	f.Add(make([]byte, 256))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		doc, err := c.Deserialize(data)
 		if err == nil && doc == nil {
 			t.Fatal("Deserialize returned nil document and nil error")

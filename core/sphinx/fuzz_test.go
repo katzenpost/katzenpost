@@ -7,6 +7,8 @@ package sphinx
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -27,6 +29,9 @@ func FuzzUnwrapNike(f *testing.F) {
 	f.Add(make([]byte, g.HeaderLength))
 	f.Add(make([]byte, g.PacketLength))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		payload, _, cmds, err := s.Unwrap(privKey, data)
 		if err == nil && payload == nil && cmds == nil {
 			t.Fatal("Unwrap returned nil payload, nil commands and nil error")
@@ -45,6 +50,9 @@ func FuzzNewPacketFromSURB(f *testing.F) {
 	f.Add(make([]byte, 2))
 	f.Add(make([]byte, g.SURBLength))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		pkt, id, err := s.NewPacketFromSURB(data, payload)
 		if err == nil && (pkt == nil || id == nil) {
 			t.Fatal("NewPacketFromSURB returned nil packet or nil id and nil error")

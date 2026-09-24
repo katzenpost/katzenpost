@@ -7,6 +7,8 @@ package hpqcfuzz
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/hybrid"
 	"github.com/katzenpost/hpqc/nike/x25519"
@@ -35,6 +37,9 @@ func FuzzNIKEUntrustedInput(f *testing.F) {
 		f.Add(make([]byte, s.PublicKeySize()))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		for i, s := range schemes {
 			pub, err := s.UnmarshalBinaryPublicKey(data)
 			if err != nil {

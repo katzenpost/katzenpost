@@ -7,6 +7,8 @@ package server
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	"github.com/katzenpost/hpqc/hash"
 
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -22,6 +24,9 @@ func FuzzUploadHandlersPayload(f *testing.F) {
 	f.Add([]byte("not-a-document"))
 	f.Add(make([]byte, 8))
 	f.Fuzz(func(t *testing.T, payload []byte) {
+		if seed.Export(payload) {
+			return
+		}
 		signed, err := cert.Sign(key.idKey, key.idPubKey, payload, votingEpoch+100)
 		if err != nil {
 			return
