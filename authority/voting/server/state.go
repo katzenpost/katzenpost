@@ -22,7 +22,6 @@ import (
 	"crypto/hmac"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"net"
@@ -30,11 +29,11 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	bolt "go.etcd.io/bbolt"
@@ -585,13 +584,6 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 	}
 	certificate.SharedRandomCommit = commits
 	certificate.SharedRandomReveal = reveals
-	// if there are no prior SRV values, copy the current srv twice
-	if len(s.priorSRV) == 0 {
-		s.priorSRV = [][]byte{srv, srv}
-	} else if epoch%epochtime.WeekOfEpochs == 0 {
-		// rotate the weekly epochs if it is time to do so.
-		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
-	}
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, certificate)
 	if err != nil {
 		return nil, err
@@ -643,7 +635,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	// if there are no prior SRV values, copy the current srv twice
-	if epoch == s.genesisEpoch {
+	if len(s.priorSRV) == 0 || epoch == s.genesisEpoch {
 		s.priorSRV = [][]byte{srv, srv}
 	} else if epoch%epochtime.WeekOfEpochs == 0 {
 		// rotate the weekly epochs if it is time to do so.
@@ -1486,21 +1478,11 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	replicaNodes := make([]*pki.ReplicaDescriptor, 0)
 	for id, vote := range s.votes[epoch] {
 		// serialize the vote parameters and tally these as well.
-		params := &config.Parameters{
-			Mu:      vote.Mu,
-			LambdaP: vote.LambdaP,
-			LambdaL: vote.LambdaL,
-			LambdaM: vote.LambdaM,
-			LambdaR: vote.LambdaR,
-		}
-		b := bytes.Buffer{}
-		e := gob.NewEncoder(&b)
-		err := e.Encode(params)
+		bs, err := votedParametersKey(vote)
 		if err != nil {
 			s.log.Errorf("Skipping vote from Authority %s whose MixParameters failed to encode?! %v", s.authorityNames[id], err)
 			continue
 		}
-		bs := b.String()
 		if _, ok := mixParams[bs]; !ok {
 			mixParams[bs] = make([]*pki.Document, 0)
 		}
@@ -1594,10 +1576,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 
 	// include parameters that have a threshold of votes
 	for bs, votes := range mixParams {
-		params := &config.Parameters{}
-		d := gob.NewDecoder(strings.NewReader(bs))
-		if err := d.Decode(params); err != nil {
-			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%v", err, bs)
+		params, err := votedParametersFromKey(bs)
+		if err != nil {
+			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%x", err, bs)
 			continue
 		}
 
@@ -2061,12 +2042,12 @@ func (s *state) verifyCertUpload(certificate *commands.Cert, peerIdentityKeyHash
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if certificate.Epoch < s.votingEpoch {
-		s.log.Errorf("Certificate from %s received too early: %d < %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
-		return nil, commands.CertTooEarly
+		s.log.Errorf("Certificate from %s received too late: %d < %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
+		return nil, commands.CertTooLate
 	}
 	if certificate.Epoch > s.votingEpoch {
-		s.log.Errorf("Certificate from %s too late: %d > %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
-		return nil, commands.CertTooLate
+		s.log.Errorf("Certificate from %s received too early: %d > %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
+		return nil, commands.CertTooEarly
 	}
 
 	// ensure certificate.PublicKey verifies the payload (ie Vote has a signature from this peer)
@@ -2259,15 +2240,15 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if vote.Epoch < s.votingEpoch {
-		s.log.Errorf("Vote from %s received too early: %d < %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
-		instrument.VoteReceived("too_early")
-		resp.ErrorCode = commands.VoteTooEarly
+		s.log.Errorf("Vote from %s received too late: %d < %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		instrument.VoteReceived("too_late")
+		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
 	if vote.Epoch > s.votingEpoch {
-		s.log.Errorf("Vote from %s received too late: %d > %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
-		instrument.VoteReceived("too_late")
-		resp.ErrorCode = commands.VoteTooLate
+		s.log.Errorf("Vote from %s received too early: %d > %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		instrument.VoteReceived("too_early")
+		resp.ErrorCode = commands.VoteTooEarly
 		return &resp
 	}
 
@@ -2359,13 +2340,13 @@ func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) comma
 		return &resp
 	}
 	if sig.Epoch < s.votingEpoch {
-		s.log.Errorf("Signature from %s received too early: %d < %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.SigTooEarly
+		s.log.Errorf("Signature from %s received too late: %d < %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
+		resp.ErrorCode = commands.SigTooLate
 		return &resp
 	}
 	if sig.Epoch > s.votingEpoch {
-		s.log.Errorf("Signature from %s received too late: %d > %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.SigTooLate
+		s.log.Errorf("Signature from %s received too early: %d > %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
+		resp.ErrorCode = commands.SigTooEarly
 		return &resp
 	}
 	verified, err := cert.Verify(sig.PublicKey, sig.Payload)
@@ -2746,6 +2727,56 @@ func (s *state) restorePersistence() error {
 	})
 }
 
+func votingThresholds(votingSetSize int) (threshold, dissenters int) {
+	return votingSetSize/2 + 1, votingSetSize/2 - 1
+}
+
+type votedParameters struct {
+	Mu      float64
+	LambdaP float64
+	LambdaL float64
+	LambdaM float64
+	LambdaR float64
+}
+
+var canonicalCBOR cbor.EncMode
+
+func init() {
+	var err error
+	canonicalCBOR, err = cbor.CanonicalEncOptions().EncMode()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func votedParametersKey(vote *pki.Document) (string, error) {
+	b, err := canonicalCBOR.Marshal(&votedParameters{
+		Mu:      vote.Mu,
+		LambdaP: vote.LambdaP,
+		LambdaL: vote.LambdaL,
+		LambdaM: vote.LambdaM,
+		LambdaR: vote.LambdaR,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func votedParametersFromKey(key string) (*config.Parameters, error) {
+	var v votedParameters
+	if err := cbor.Unmarshal([]byte(key), &v); err != nil {
+		return nil, err
+	}
+	return &config.Parameters{
+		Mu:      v.Mu,
+		LambdaP: v.LambdaP,
+		LambdaL: v.LambdaL,
+		LambdaM: v.LambdaM,
+		LambdaR: v.LambdaR,
+	}, nil
+}
+
 func newState(s *Server) (*state, error) {
 	const dbFile = "persistence.db"
 
@@ -2772,8 +2803,7 @@ func newState(s *Server) (*state, error) {
 		st.verifiers[hash.Sum256From(auth.IdentityPublicKey)] = auth.IdentityPublicKey
 	}
 	st.verifiers[hash.Sum256From(s.IdentityKey())] = sign.PublicKey(s.IdentityKey())
-	st.threshold = len(st.verifiers)/2 + 1
-	st.dissenters = len(s.cfg.Authorities)/2 - 1
+	st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 	st.s.cfg.Server.PKISignatureScheme = s.cfg.Server.PKISignatureScheme
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)

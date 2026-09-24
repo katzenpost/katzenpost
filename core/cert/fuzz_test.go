@@ -7,6 +7,8 @@ package cert
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	fuzz "github.com/AdaLogics/go-fuzz-headers"
 )
 
@@ -16,6 +18,9 @@ func FuzzGetCertified(f *testing.F) {
 	f.Add([]byte{0xa0})
 	f.Add([]byte("not-a-cert"))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		certified, errC := GetCertified(data)
 		if errC == nil && certified == nil {
 			t.Fatal("GetCertified returned nil data and nil error")
@@ -36,6 +41,9 @@ func FuzzSignatureUnmarshal(f *testing.F) {
 	f.Add([]byte{0xa0})
 	f.Add([]byte("garbage"))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		s := new(Signature)
 		_ = s.Unmarshal(data)
 	})
@@ -44,6 +52,9 @@ func FuzzSignatureUnmarshal(f *testing.F) {
 func FuzzCertificateStructured(f *testing.F) {
 	f.Add(make([]byte, 512))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		c := new(Certificate)
 		if err := fuzz.NewConsumer(data).GenerateStruct(c); err != nil {
 			return

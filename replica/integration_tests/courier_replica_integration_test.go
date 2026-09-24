@@ -313,6 +313,7 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 		require.NoError(t, err)
 		replica.ForceConnectorUpdate()
 	}
+	waitForReplicaSessions(t, replicas)
 
 	// Force courier to fetch PKI documents, then update connector
 	err = courier.PKI.ForceFetchPKI()
@@ -1160,4 +1161,28 @@ func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
 	// Also verify the MKEM envelope size matches what the courier actually returned for the read
 	require.Equal(t, readReplyLen, len(readEnvReply.Envelope),
 		"courier read reply size should match computed MKEM envelope size")
+}
+
+func waitForReplicaSessions(t *testing.T, replicas []*replica.Server) {
+	want := len(replicas) - 1
+	budget := epochtime.Period/4 + 2*time.Minute
+	deadline := time.Now().Add(budget)
+	for {
+		missing := 0
+		for _, r := range replicas {
+			if r.SessionCount() < want {
+				missing++
+			}
+		}
+		if missing == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			for i, r := range replicas {
+				t.Logf("replica %d has %d/%d sessions", i, r.SessionCount(), want)
+			}
+			t.Fatalf("replica mesh did not come up within %s", budget)
+		}
+		time.Sleep(time.Second)
+	}
 }

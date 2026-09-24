@@ -7,6 +7,8 @@ package commands
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -23,6 +25,9 @@ func FuzzRoutingCommandsFromBytes(f *testing.F) {
 	f.Add([]byte{byte(nodeDelay), 0, 0, 0, 0})
 	f.Add(make([]byte, 256))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		cmd, rest, err := FromBytes(data, g)
 		if err != nil {
 			return
