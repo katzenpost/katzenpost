@@ -10,15 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { name: authorities-mixed, groups: "auth", all: "", refs: 2 }
-          - { name: authorities-old, groups: "auth", all: "1", refs: 2 }
-          - { name: authorities-old-n1, groups: "auth", all: "1", refs: 1 }
-          - { name: nodes-mixed, groups: "replica mix gateway", all: "", refs: 2 }
-          - { name: nodes-old, groups: "replica mix gateway", all: "1", refs: 2 }
-          - { name: nodes-old-n1, groups: "replica mix gateway", all: "1", refs: 1 }
-          - { name: everything-mixed, groups: "auth replica mix gateway", all: "", refs: 2 }
-          - { name: everything-mixed-n1, groups: "auth replica mix gateway", all: "", refs: 1 }
+        name: [authorities-mixed, authorities-old, authorities-old-n1, nodes-mixed, nodes-old, nodes-old-n1, everything-mixed, everything-mixed-n1]
     name: ${{ matrix.name }}
     permissions:
       contents: read
@@ -43,11 +35,8 @@ jobs:
           key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
           restore-keys: |
             interop-gate-${{ runner.os }}-go1.26.x-
-      - name: Bring up HEAD with release binaries on the ${{ matrix.name }} set and require every authority to sign and every node to be listed
-        run: cd docker && make interop-gate interop_swap_groups="${{ matrix.groups }}" interop_swap_all="${{ matrix.all }}" release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -${{ matrix.refs }} | xargs)"
-      - name: Report which services signed or were listed, with their versions
-        if: always()
-        run: cd docker && make -s interop-report interop_swap_groups="${{ matrix.groups }}" interop_swap_all="${{ matrix.all }}" release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -${{ matrix.refs }} | xargs)" || true
+      - name: make interop-${{ matrix.name }}
+        run: cd docker && make interop-${{ matrix.name }}
       - name: Dump kpclientd logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true
