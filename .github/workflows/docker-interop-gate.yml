@@ -14,7 +14,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      client: ${{ steps.filter.outputs.client }}
+      code: ${{ steps.filter.outputs.code }}
       server: ${{ steps.filter.outputs.server }}
     steps:
       - uses: actions/checkout@v4
@@ -22,11 +22,12 @@ jobs:
         id: filter
         with:
           filters: |
-            client:
-              - 'client/**'
-              - 'cmd/kpclientd/**'
-              - 'cmd/ping/**'
-              - 'docker/client-configs/**'
+            code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'docker/**'
+              - '.github/workflows/docker-interop-gate.yml'
             server:
               - 'authority/**'
               - 'server/**'
@@ -34,6 +35,12 @@ jobs:
               - 'courier/**'
               - 'core/**'
               - 'pki/**'
+              - 'pigeonhole/**'
+              - 'common/**'
+              - 'quic/**'
+              - 'bacap/**'
+              - 'loops/**'
+              - 'tools/**'
               - 'cmd/dirauth/**'
               - 'cmd/server/**'
               - 'cmd/replica/**'
@@ -49,7 +56,7 @@ jobs:
 
   local:
     needs: changes
-    if: needs.changes.outputs.client == 'true'
+    if: needs.changes.outputs.code == 'true'
     permissions:
       contents: read
     env:
@@ -59,19 +66,38 @@ jobs:
       epoch_duration: 2m
       no_metrics: true
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Configure podman socket
         run: systemctl --user start podman.socket || true
+      - name: Cache the go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: docker/cache
+          key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
+          restore-keys: |
+            interop-gate-${{ runner.os }}-go1.26.x-
       - name: Run the local testnet client suite with -short
-        run: cd docker && make dockertest_race= dockertest_timeout=20m dockertest_parallel=2 testargs=-short test
-      - name: Dump logs on failure
+        run: cd docker && make dockertest_timeout=30m dockertest_parallel=2 testargs=-short test
+      - name: Dump kpclientd logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true
+      - name: Dump replica logs on failure
+        if: failure()
+        run: cd docker && for r in mixnet-alpine/replica*/; do echo "=== $r ==="; tail -20 "${r}katzenpost.log" 2>&1; done
       - name: Stop the testnet
         if: always()
         run: cd docker && make stop || true
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-gate-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml
 
   interop:
     needs: changes
@@ -106,24 +132,36 @@ jobs:
       - name: Run the client suite, then the interop gate against one and two releases
         run: |
           cd docker
-          make dockertest_race= dockertest_timeout=2h test
+          make dockertest_timeout=2h test
           make interop-gate
           make interop-gate release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)"
-      - name: Dump logs on failure
+      - name: Dump kpclientd logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true
+      - name: Dump replica logs on failure
+        if: failure()
+        run: cd docker && for r in mixnet-alpine/replica*/; do echo "=== $r ==="; tail -20 "${r}katzenpost.log" 2>&1; done
       - name: Stop the testnet
         if: always()
         run: cd docker && make stop || true
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-gate-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml
 
   gate:
     needs: [changes, interop, local]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require the local testnet and the docker interop lane to pass when they ran
+      - name: Require the local and interop jobs to pass when they ran
         run: |
           echo "changes=${{ needs.changes.result }} local=${{ needs.local.result }} interop=${{ needs.interop.result }}"
           if [ "${{ needs.changes.result }}" != "success" ]; then echo "changes job did not succeed" >&2; exit 1; fi
-          if [ "${{ needs.local.result }}" != "success" ] && [ "${{ needs.local.result }}" != "skipped" ]; then echo "local -short testnet failed" >&2; exit 1; fi
-          if [ "${{ needs.interop.result }}" != "success" ] && [ "${{ needs.interop.result }}" != "skipped" ]; then echo "docker interop lane failed" >&2; exit 1; fi
+          if [ "${{ needs.local.result }}" != "success" ] && [ "${{ needs.local.result }}" != "skipped" ]; then echo "local job failed" >&2; exit 1; fi
+          if [ "${{ needs.interop.result }}" != "success" ] && [ "${{ needs.interop.result }}" != "skipped" ]; then echo "interop job failed" >&2; exit 1; fi
