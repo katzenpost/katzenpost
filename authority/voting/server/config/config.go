@@ -365,9 +365,6 @@ type Server struct {
 	// (the default) each command uses its own dial and handshake.
 	PersistentPeerConns bool
 
-	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
-	CloseDelaySec int
-
 	// Peer retry configuration for authority-to-authority communication
 
 	// PeerRetryMaxAttempts is the maximum number of retry attempts for peer communication

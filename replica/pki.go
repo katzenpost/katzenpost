@@ -189,8 +189,9 @@ func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled 
 
 		// Validate sphinx geometry.
 		if !hmac.Equal(result.Doc.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
-			p.GetLogger().Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.server.cfg.SphinxGeometry.Display())
-			panic("Sphinx Geometry mismatch!")
+			failed++
+			p.GetLogger().Errorf("REPLICA PKI FETCH: rejected epoch=%d: its Sphinx geometry hash does not match the local geometry:\n%s", result.Epoch, p.server.cfg.SphinxGeometry.Display())
+			continue
 		}
 
 		// Take note of the service nodes and storage replicas.
