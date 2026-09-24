@@ -2,6 +2,16 @@ name: docker interop gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      local:
+        description: run the HEAD-only -short client suite
+        type: boolean
+        default: true
+      interop:
+        description: run the cross-version check (everything interleaved with the last two releases)
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,6 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
+        if: github.event_name == 'pull_request'
         id: filter
         with:
           filters: |
@@ -57,7 +68,7 @@ jobs:
 
   local:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: (github.event_name == 'pull_request' && needs.changes.outputs.code == 'true') || (github.event_name == 'workflow_dispatch' && inputs.local)
     permissions:
       contents: read
     env:
@@ -102,7 +113,7 @@ jobs:
 
   interop:
     needs: changes
-    if: contains(github.event.pull_request.labels.*.name, 'interop')
+    if: (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'interop')) || (github.event_name == 'workflow_dispatch' && inputs.interop)
     permissions:
       contents: read
     env:

@@ -1,16 +1,34 @@
 name: interop against the last two releases
 on:
   workflow_dispatch:
+    inputs:
+      job:
+        description: which combination to run
+        type: choice
+        default: all
+        options: [all, authorities-mixed, authorities-old, authorities-old-n1, nodes-mixed, nodes-old, nodes-old-n1, everything-mixed, everything-mixed-n1]
   schedule:
     - cron: '0 4 * * *'
 
 jobs:
 
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      names: ${{ steps.pick.outputs.names }}
+    steps:
+      - id: pick
+        run: |
+          all='["authorities-mixed","authorities-old","authorities-old-n1","nodes-mixed","nodes-old","nodes-old-n1","everything-mixed","everything-mixed-n1"]'
+          job='${{ github.event.inputs.job }}'
+          if [ -z "$job" ] || [ "$job" = all ]; then echo "names=$all" >> "$GITHUB_OUTPUT"; else echo "names=[\"$job\"]" >> "$GITHUB_OUTPUT"; fi
+
   interop:
+    needs: select
     strategy:
       fail-fast: false
       matrix:
-        name: [authorities-mixed, authorities-old, authorities-old-n1, nodes-mixed, nodes-old, nodes-old-n1, everything-mixed, everything-mixed-n1]
+        name: ${{ fromJson(needs.select.outputs.names) }}
     name: ${{ matrix.name }}
     permissions:
       contents: read
