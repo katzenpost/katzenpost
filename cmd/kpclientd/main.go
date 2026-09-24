@@ -62,7 +62,7 @@ applications to share a single network connection.`,
   kpclientd -c /etc/katzenpost/client.toml --validate-only
 
   # Own a session dbus name for the daemon's lifetime
-  kpclientd -c /etc/katzenpost/client.toml --dbus-name=network.katzenpost.kpclientd`,
+  kpclientd -c /etc/katzenpost/client.toml --dbus-name network.katzenpost.kpclientd`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runClientDaemon(cfg)
@@ -77,8 +77,7 @@ applications to share a single network connection.`,
 	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
 		"load and validate the configuration file, then exit without side effects")
 	cmd.Flags().StringVar(&cfg.DBusName, "dbus-name", "",
-		"own this session dbus name (bare flag defaults to "+defaultDBusName+")")
-	cmd.Flags().Lookup("dbus-name").NoOptDefVal = defaultDBusName
+		"own this session dbus name for the daemon's lifetime, for example "+defaultDBusName)
 
 	// Mark required flags
 	cmd.MarkFlagRequired("config")
