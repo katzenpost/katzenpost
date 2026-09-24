@@ -111,11 +111,9 @@ const (
 	// VoteOk signifies that the vote was accepted by the peer.
 	VoteOk = 0
 
-	// VoteTooLate signifies that the vote was too late.
-	VoteTooLate = 1
+	VoteTooEarly = 1
 
-	// VoteTooEarly signifies that the vote was too late.
-	VoteTooEarly = 2
+	VoteTooLate = 2
 
 	// VoteNotAuthorized signifies that the voting entity's key is not authorized.
 	VoteNotAuthorized = 3
@@ -153,8 +151,7 @@ const (
 	// CertOk signifies that the certificate was accepted by the peer.
 	CertOk = 14
 
-	// CertTooEarly signifies that the peer is breaking protocol.
-	CertTooEarly = 15
+	CertTooLate = 15
 
 	// CertNotAuthorized signifies that the certifying entity's key is not
 	CertNotAuthorized = 16
@@ -165,8 +162,7 @@ const (
 	// CertAlreadyReceived signifies that the certificate from that peer was already received.
 	CertAlreadyReceived = 18
 
-	// CertTooLate signifies that the certificate from that peer arrived too late.
-	CertTooLate = 19
+	CertTooEarly = 19
 
 	// SigOK signifies that the signature was accepted by the peer.
 	SigOk = 20
@@ -177,11 +173,9 @@ const (
 	// SigNotSigned signifies that the signature command failed signature verification.
 	SigNotSigned = 22
 
-	// SigTooEarly signifies that the peer is breaking protocol.
-	SigTooEarly = 23
+	SigTooLate = 23
 
-	// SigTooLate signifies that the signature from that peer arrived too late.
-	SigTooLate = 24
+	SigTooEarly = 24
 
 	// SigAlreadyReceived signifies that the signature from that peer was already received.
 	SigAlreadyReceived = 25

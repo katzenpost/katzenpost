@@ -7,6 +7,8 @@ package hpqcfuzz
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/hpqc/sign/hybrid"
@@ -39,6 +41,9 @@ func FuzzSignUntrustedInput(f *testing.F) {
 		f.Add(make([]byte, s.PublicKeySize()))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		for i, s := range schemes {
 			_, _ = s.UnmarshalBinaryPublicKey(data)
 			_, _ = s.UnmarshalBinaryPrivateKey(data)

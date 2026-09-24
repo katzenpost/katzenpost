@@ -56,6 +56,7 @@ type GenericConnector interface {
 	DispatchReplication(cmd *commands.ReplicaWrite)
 	QueueForRetry(cmd commands.Command, idHash [32]byte)
 	ConnectionCount() int
+	SessionCount() int
 }
 
 type Server struct {
@@ -646,6 +647,13 @@ func (s *Server) ConnectionCount() int {
 		return 0
 	}
 	return s.connector.ConnectionCount()
+}
+
+func (s *Server) SessionCount() int {
+	if s.connector == nil {
+		return 0
+	}
+	return s.connector.SessionCount()
 }
 
 // ForceConnectorUpdate triggers the connector to rescan PKI and spawn new connections.
