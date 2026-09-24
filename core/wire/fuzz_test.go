@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 
@@ -74,6 +76,9 @@ func FuzzWireHandshakeResponder(f *testing.F) {
 	f.Add(msg1)
 
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		s, err := NewSession(cfg, false)
 		if err != nil {
 			t.Fatal(err)

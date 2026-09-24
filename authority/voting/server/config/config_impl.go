@@ -177,9 +177,6 @@ func (sCfg *Server) validate() error {
 	if sCfg.MaxConnsPerPeer <= 0 {
 		sCfg.MaxConnsPerPeer = 8
 	}
-	if sCfg.CloseDelaySec == 0 {
-		sCfg.CloseDelaySec = 10
-	}
 
 	if sCfg.WireKEMScheme == "" {
 		return errors.New("WireKEMScheme was not set")

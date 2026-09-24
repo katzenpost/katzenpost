@@ -7,6 +7,8 @@ package pki
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/fuzz/seed"
+
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -26,6 +28,9 @@ func FuzzDocumentCacheIngest(f *testing.F) {
 	f.Add([]byte("not-a-document"))
 	f.Add(make([]byte, 512))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		if seed.Export(data) {
+			return
+		}
 		doc, err := cpki.ParseDocument(data)
 		if err != nil {
 			return

@@ -326,6 +326,10 @@ func (m *mockConnector) ConnectionCount() int {
 	return 0
 }
 
+func (m *mockConnector) SessionCount() int {
+	return 0
+}
+
 // newTestState constructs a minimal state over dataDir WITHOUT opening
 // any database, so a test can seed on-disk state first (e.g. a legacy
 // replica.db to exercise the cleanup path) and then trigger opening via
