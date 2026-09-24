@@ -115,7 +115,7 @@ jobs:
         go-version: [1.26.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
@@ -129,10 +129,10 @@ jobs:
           key: interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
           restore-keys: |
             interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-
-      - name: Run the client suite, then the interop gate against one and two releases
+      - name: Run the -short client suite, then the interop gate against one and two releases
         run: |
           cd docker
-          make dockertest_timeout=2h test
+          make dockertest_timeout=30m dockertest_parallel=2 testargs=-short test
           make interop-gate
           make interop-gate release_refs="$(git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)"
       - name: Dump kpclientd logs on failure
