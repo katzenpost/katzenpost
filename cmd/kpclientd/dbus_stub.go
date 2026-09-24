@@ -7,6 +7,8 @@ import (
 	"errors"
 )
 
+var errNoSessionBus = errors.New("dbus name ownership is unsupported on this platform")
+
 func ownBusName(context.Context, string) (func() error, error) {
-	return nil, errors.New("dbus name ownership is unsupported on this platform")
+	return nil, errNoSessionBus
 }

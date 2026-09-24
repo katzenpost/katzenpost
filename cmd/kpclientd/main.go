@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -125,14 +126,18 @@ func runClientDaemon(cfg Config) error {
 		ownCtx, cancel := context.WithTimeout(ctx, dbusOwnTimeout)
 		closeBus, err := ownBusName(ownCtx, dbusName)
 		cancel()
-		if err != nil {
+		switch {
+		case errors.Is(err, errNoSessionBus):
+			fmt.Fprintf(os.Stderr, "not owning dbus name %q: %v\n", dbusName, err)
+		case err != nil:
 			return fmt.Errorf("failed to own dbus name: %w", err)
+		default:
+			defer func() {
+				if err := closeBus(); err != nil {
+					fmt.Fprintf(os.Stderr, "releasing dbus name %q: %v\n", dbusName, err)
+				}
+			}()
 		}
-		defer func() {
-			if err := closeBus(); err != nil {
-				fmt.Fprintf(os.Stderr, "releasing dbus name %q: %v\n", dbusName, err)
-			}
-		}()
 	}
 
 	// Start the prometheus listener before the daemon so that any

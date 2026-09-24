@@ -4,10 +4,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/godbus/dbus/v5"
 )
+
+var errNoSessionBus = errors.New("no session dbus is reachable")
 
 type busOwner interface {
 	RequestName(string, dbus.RequestNameFlags) (dbus.RequestNameReply, error)
@@ -17,7 +20,7 @@ type busOwner interface {
 func sessionBus() (busOwner, error) {
 	conn, err := dbus.SessionBusPrivateNoAutoStartup()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errNoSessionBus, err)
 	}
 	if err := conn.Auth(nil); err != nil {
 		conn.Close()
