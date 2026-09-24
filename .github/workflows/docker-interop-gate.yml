@@ -27,8 +27,18 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       server: ${{ steps.filter.outputs.server }}
+      interop: ${{ steps.request.outputs.interop }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: request
+        if: github.event_name == 'pull_request'
+        run: |
+          requested=false
+          case "$(git log -1 --format=%B HEAD^2 2>/dev/null)" in *"[interop]"*) requested=true;; esac
+          if [ "${{ contains(github.event.pull_request.labels.*.name, 'interop') }}" = true ]; then requested=true; fi
+          echo "interop=$requested" >> "$GITHUB_OUTPUT"
       - uses: dorny/paths-filter@v3
         if: github.event_name == 'pull_request'
         id: filter
@@ -113,7 +123,7 @@ jobs:
 
   interop:
     needs: changes
-    if: (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'interop')) || (github.event_name == 'workflow_dispatch' && inputs.interop)
+    if: (github.event_name == 'pull_request' && needs.changes.outputs.interop == 'true') || (github.event_name == 'workflow_dispatch' && inputs.interop)
     permissions:
       contents: read
     env:
@@ -167,7 +177,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require the local job, and the interop job when the interop label asked for it, to pass
+      - name: Require the local job, and the interop job when it was requested, to pass
         run: |
           echo "changes=${{ needs.changes.result }} local=${{ needs.local.result }} interop=${{ needs.interop.result }}"
           if [ "${{ needs.changes.result }}" != "success" ]; then echo "changes job did not succeed" >&2; exit 1; fi
