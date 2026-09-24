@@ -15,5 +15,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Configure podman socket
         run: systemctl --user start podman.socket || true
+      - name: Cache the go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: docker/cache
+          key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
+          restore-keys: |
+            interop-gate-${{ runner.os }}-go1.26.x-
       - name: Run the working-tree client against namenlos
         run: cd docker && make client-check

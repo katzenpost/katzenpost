@@ -996,10 +996,12 @@ interop-gate: interop-ref-binaries
 
 client-check: | $(cache_dir)
 	@[ -s $(namenlos_config) ] || { echo "client-check: no namenlos config at $(namenlos_config)" >&2; exit 1; }
+	@grep -q '@katzenpost' $(namenlos_config) && grep -q '$$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock' $(namenlos_config) && grep -q '@katzenpost' $(namenlos_thin_config) || { echo "client-check: the namenlos configs do not carry the expected socket names" >&2; exit 1; }
 	mkdir -p namenlos-client/client
 	sed 's/@katzenpost/@namenlos-client/; s#\$$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock#/namenlos-client/kpclientd.sock#' $(namenlos_config) > namenlos-client/client/client.toml
 	sed 's/@katzenpost/@namenlos-client/' $(namenlos_thin_config) > namenlos-client/client/thinclient.toml
+	@grep -q '@namenlos-client' namenlos-client/client/client.toml && ! grep -q 'XDG_RUNTIME_DIR' namenlos-client/client/client.toml && grep -q '@namenlos-client' namenlos-client/client/thinclient.toml || { echo "client-check: socket rewrite failed" >&2; exit 1; }
 	$(MAKE) warped=false net_name=namenlos-client namenlos-client/kpclientd.$(distro) namenlos-client/fetch.$(distro)
 	$(docker) rm -f namenlos-client 2>/dev/null; $(docker) run -d --name namenlos-client --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/kpclientd.$(distro) -c /namenlos-client/client/client.toml
-	sleep 15
+	@for i in $$(seq 1 60); do [ -S namenlos-client/kpclientd.sock ] && break; sleep 1; done; [ -S namenlos-client/kpclientd.sock ] || { echo "client-check: kpclientd did not open its socket within 60s" >&2; $(docker) logs namenlos-client 2>&1 | tail -50; $(docker) rm -f namenlos-client; exit 1; }
 	timeout 120 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/fetch.$(distro) -f /namenlos-client/client/thinclient.toml; st=$$?; $(docker) rm -f namenlos-client 2>/dev/null; exit $$st
