@@ -10,10 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
-	"os/signal"
 	"runtime"
-	"syscall"
 	"testing"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -21,14 +18,6 @@ import (
 
 func TestLegacyTests(t *testing.T) {
 	t.Parallel()
-	// Setup signal handling for graceful shutdown
-	haltCh := make(chan os.Signal, 1)
-	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-haltCh
-		close(shutdownCh)
-		t.Log("Interrupt caught. Shutdown")
-	}()
 
 	t.Run("TestDockerMultiplexClients", func(t *testing.T) {
 		t.Parallel()
