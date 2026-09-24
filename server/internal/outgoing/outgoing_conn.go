@@ -89,7 +89,8 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
-		panic(err)
+		c.log.Warningf("server/outgoing: IsPeerValid(): failed to marshal peer public key: %s", err)
+		return false
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
 		c.log.Warningf("server/outgoing: IsPeerValid(): Link key mismatch for peer '%s' (identity_hash=%x)", c.dst.Name, creds.AdditionalData)
