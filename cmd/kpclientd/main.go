@@ -5,10 +5,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -91,9 +93,11 @@ func main() {
 }
 
 // runClientDaemon starts the client daemon
+const dbusOwnTimeout = 10 * time.Second
+
 func runClientDaemon(cfg Config) error {
-	haltCh := make(chan os.Signal, 1)
-	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	clientCfg, err := config.LoadFile(cfg.ConfigFile)
 	if err != nil {
@@ -111,7 +115,9 @@ func runClientDaemon(cfg Config) error {
 		dbusName = cfg.DBusName
 	}
 	if dbusName != "" {
-		closeBus, err := ownBusName(dbusName)
+		ownCtx, cancel := context.WithTimeout(ctx, dbusOwnTimeout)
+		closeBus, err := ownBusName(ownCtx, dbusName)
+		cancel()
 		if err != nil {
 			return fmt.Errorf("failed to own dbus name: %w", err)
 		}
@@ -141,7 +147,7 @@ func runClientDaemon(cfg Config) error {
 	defer d.Shutdown()
 
 	go func() {
-		<-haltCh
+		<-ctx.Done()
 		d.Shutdown()
 	}()
 
