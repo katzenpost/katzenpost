@@ -63,7 +63,7 @@ epoch_duration?=2m
 # longer test scenarios. Empty means "use the daemon's compile-time
 # default" (currently 10 minutes).
 session_grace_period?=30s
-mixes=8
+mixes=7
 auths=6
 gateways=5
 serviceNodes=4

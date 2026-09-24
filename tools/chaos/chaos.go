@@ -11,11 +11,11 @@
 // The set of valid hostnames is the same set genconfig writes into
 // docker-compose.yml as container_name:
 //
-//	auth1, auth2, auth3                       (directory authorities)
-//	gateway1                                  (gateway / client entry)
-//	mix1, mix2, mix3                          (mix routing layers)
-//	servicenode1, servicenode2, servicenode3  (service nodes + courier plugins)
-//	replica1, replica2, replica3, replica4, replica5  (pigeonhole replicas)
+//	auth1 .. auth6                            (directory authorities)
+//	gateway1 .. gateway5                      (gateways / client entry)
+//	mix1 .. mix7                              (mix routing layers)
+//	servicenode1 .. servicenode4              (service nodes + courier plugins)
+//	replica1 .. replica4                      (pigeonhole replicas)
 //	kpclientd                                 (client daemon)
 //
 // metrics, grafana, and pyroscope are deliberately excluded so the
@@ -95,11 +95,11 @@ type Config struct {
 // are intentionally absent: they are observability infrastructure for
 // the mixnet under test, not parts of the mixnet itself.
 var AllHosts = []string{
-	"auth1", "auth2", "auth3",
-	"gateway1",
-	"mix1", "mix2", "mix3",
-	"servicenode1", "servicenode2", "servicenode3",
-	"replica1", "replica2", "replica3", "replica4", "replica5",
+	"auth1", "auth2", "auth3", "auth4", "auth5", "auth6",
+	"gateway1", "gateway2", "gateway3", "gateway4", "gateway5",
+	"mix1", "mix2", "mix3", "mix4", "mix5", "mix6", "mix7",
+	"servicenode1", "servicenode2", "servicenode3", "servicenode4",
+	"replica1", "replica2", "replica3", "replica4",
 	"kpclientd",
 }
 
