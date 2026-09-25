@@ -537,23 +537,14 @@ func New(cfg *config.Config) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
-		_, err = kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
-		if err != nil {
-			return nil, err
-		}
-
-		/* NOTE(david): enable this check after we get things working again?
 		linkpubkey, err := kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-		s.log.Warning("attempting to call validate our config's peers against our own link public key")
-		err = cfg.ValidateAuthorities(linkpubkey)
-		if err != nil {
-			s.log.Error("config's peers validation failure. must be your own peer!")
+		if err := cfg.ValidateAuthorities(linkpubkey); err != nil {
+			s.log.Errorf("Our link public key %s is not listed under any Authorities entry: %v", linkPublicKeyFile, err)
 			return nil, err
 		}
-		*/
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
 		if err != nil {
