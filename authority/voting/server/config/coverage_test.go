@@ -72,13 +72,15 @@ func newFixture(t *testing.T) *fixture {
 }
 
 func (f *fixture) tomlText() string {
-	esc := func(s string) string { return strings.ReplaceAll(s, "\n", "\\n") }
+	esc := func(s string) string {
+		return strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), "\n", "\\n")
+	}
 	return `[Server]
 Identifier = "auth1"
 WireKEMScheme = "x25519"
 PKISignatureScheme = "ed25519"
 Addresses = ["tcp://127.0.0.1:30000"]
-DataDir = "` + f.dir + `"
+DataDir = "` + esc(f.dir) + `"
 
 [[Authorities]]
 Identifier = "auth1"
