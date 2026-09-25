@@ -26,7 +26,6 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
-      server: ${{ steps.filter.outputs.server }}
       interop: ${{ steps.request.outputs.interop }}
     steps:
       - uses: actions/checkout@v4
@@ -34,9 +33,13 @@ jobs:
           fetch-depth: 2
       - id: request
         if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           requested=false
           case "$(git log -1 --format=%B HEAD^2 2>/dev/null)" in *"[interop]"*) requested=true;; esac
+          case "$PR_TITLE $PR_BODY" in *"[interop]"*) requested=true;; esac
           if [ "${{ contains(github.event.pull_request.labels.*.name, 'interop') }}" = true ]; then requested=true; fi
           echo "interop=$requested" >> "$GITHUB_OUTPUT"
       - uses: dorny/paths-filter@v3
