@@ -969,7 +969,7 @@ docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --volume $$src:/go/ka
 
 interop-ref-binaries: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	@set -e; for ref in $(release_refs); do \
-	  refdir=$(cache_dir)/refbins/$$ref; mkdir -p $$refdir; \
+	  refdir=$(cache_dir)/refbins/$$ref-warped-$(warped); mkdir -p $$refdir; \
 	  ( flock 9; \
 	  if [ -x $$refdir/server.$(distro).$$ref ] && [ -x $$refdir/dirauth.$(distro).$$ref ] && [ -x $$refdir/replica.$(distro).$$ref ]; then \
 	    rm -f $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref; \
