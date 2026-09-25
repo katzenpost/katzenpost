@@ -219,6 +219,15 @@ func TestAuthorityUnmarshalTOMLRejects(t *testing.T) {
 	}
 }
 
+func TestApplyPKISignatureSchemeDefault(t *testing.T) {
+	s := &Server{}
+	s.applyPKISignatureSchemeDefault()
+	require.Equal(t, DefaultPKISignatureScheme, s.PKISignatureScheme)
+	s.PKISignatureScheme = "ed25519"
+	s.applyPKISignatureSchemeDefault()
+	require.Equal(t, "ed25519", s.PKISignatureScheme)
+}
+
 func TestAuthorityUnmarshalTOMLInheritsTheDefaultScheme(t *testing.T) {
 	f := newFixture(t)
 	pub, _, err := signschemes.ByName(DefaultPKISignatureScheme).GenerateKey()
@@ -255,7 +264,6 @@ func TestFixupAndValidateRejects(t *testing.T) {
 		"no server":          func(f *fixture) { f.cfg.Server = nil },
 		"no kem scheme":      func(f *fixture) { f.cfg.Server.WireKEMScheme = "" },
 		"unknown kem":        func(f *fixture) { f.cfg.Server.WireKEMScheme = "nosuch" },
-		"no sig scheme":      func(f *fixture) { f.cfg.Server.PKISignatureScheme = "" },
 		"unknown sig":        func(f *fixture) { f.cfg.Server.PKISignatureScheme = "nosuch" },
 		"bad address":        func(f *fixture) { f.cfg.Server.Addresses = []string{"::bad"} },
 		"address no port":    func(f *fixture) { f.cfg.Server.Addresses = []string{"tcp://127.0.0.1"} },
