@@ -431,7 +431,9 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	if s.SessionGracePeriod > 0 {
 		cfg.SessionGracePeriod = s.SessionGracePeriod
 	}
-	cfg.DBusName = s.DBusName
+	if s.DBusName != "" {
+		cfg.DBusName = s.DBusName
+	}
 
 	// Metrics listener: only written into client.toml when the operator
 	// has chosen to enable it via --kpclientdMetricsAddress, which the
