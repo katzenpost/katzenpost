@@ -275,8 +275,11 @@ was probed against a healthy mixnet-alpine and passed as of this writing
   six authorities need a simple majority (four of six), so consensus forms only
   if the versions interoperate. It builds only the swapped ``dirauth``,
   ``replica``, and ``server`` binaries per tag and reuses the working tree for
-  the rest. The swap is a ``docker-compose.override.yml`` on the swapped
-  services' ``command`` only; ``make stop`` removes it.
+  the rest; service nodes stay on the working tree because their courier and
+  plugins are launched by path from the same tree. Swap verification reads the
+  ``rev`` each daemon logs at startup, present since v0.0.93. The swap is a
+  ``docker-compose.override.yml`` on the swapped services' ``command`` only;
+  ``make stop`` removes it.
 * ``make client-check`` -- run the working-tree client with ``warped=false``
   against the live namenlos network, using only the public
   ``client-configs/namenlos.toml``.
