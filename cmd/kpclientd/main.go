@@ -83,7 +83,7 @@ applications to share a single network connection.`,
 	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
 		"load and validate the configuration file, then exit without side effects")
 	cmd.Flags().StringVar(&cfg.DBusName, "dbus-name", "",
-		"own this session dbus name for the daemon's lifetime, for example "+exampleDBusName+"; an empty value disables a configured name")
+		"own this session dbus name for the daemon's lifetime, for example "+exampleDBusName+"; the name means a running daemon rather than a ready listener, and an empty value disables a configured name")
 
 	// Mark required flags
 	cmd.MarkFlagRequired("config")
