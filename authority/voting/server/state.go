@@ -29,6 +29,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -2104,7 +2105,24 @@ func (s *state) verifyCertUpload(certificate *commands.Cert, peerIdentityKeyHash
 		return nil, commands.CertTooEarly
 	}
 
+	if err := pki.IsDocumentWellFormed(doc, s.getVerifiers()); err != nil {
+		s.log.Errorf("Certificate from %s (%x) for epoch %d rejected as malformed: %v; it carries %d commits and %d reveals for %s", s.authorityNames[pk], pk, doc.Epoch, err, len(doc.SharedRandomCommit), len(doc.SharedRandomReveal), s.namesOf(doc.SharedRandomCommit))
+		return nil, commands.CertNotSigned
+	}
+
 	return doc, commands.CertOk
+}
+
+func (s *state) namesOf(m map[[publicKeyHashSize]byte][]byte) string {
+	names := make([]string, 0, len(m))
+	for _, k := range sortedHashKeys(m) {
+		if n, ok := s.authorityNames[k]; ok {
+			names = append(names, n)
+		} else {
+			names = append(names, fmt.Sprintf("unknown %x", k[:8]))
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 // storeCert records doc as pk's certificate for the current voting epoch,
