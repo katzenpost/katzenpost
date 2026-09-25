@@ -204,7 +204,6 @@ func TestAuthorityUnmarshalTOMLRejects(t *testing.T) {
 	require.NoError(t, a.Validate())
 	require.Error(t, a.UnmarshalTOML("nope"))
 	cases := []func(m map[string]interface{}){
-		func(m map[string]interface{}) { delete(m, "PKISignatureScheme") },
 		func(m map[string]interface{}) { m["PKISignatureScheme"] = "nosuch" },
 		func(m map[string]interface{}) { m["PKISignatureScheme"] = 1 },
 		func(m map[string]interface{}) { delete(m, "Identifier") },
@@ -218,6 +217,19 @@ func TestAuthorityUnmarshalTOMLRejects(t *testing.T) {
 	for i, c := range cases {
 		require.Error(t, new(Authority).UnmarshalTOML(clone(c)), "case %d", i)
 	}
+}
+
+func TestAuthorityUnmarshalTOMLInheritsTheDefaultScheme(t *testing.T) {
+	f := newFixture(t)
+	pub, _, err := signschemes.ByName(DefaultPKISignatureScheme).GenerateKey()
+	require.NoError(t, err)
+	a := new(Authority)
+	require.NoError(t, a.UnmarshalTOML(map[string]interface{}{
+		"Identifier": "a", "IdentityPublicKey": signpem.ToPublicPEMString(pub),
+		"LinkPublicKey": f.lkPEM, "WireKEMScheme": "x25519",
+		"Addresses": []interface{}{"tcp://127.0.0.1:1"},
+	}))
+	require.Equal(t, DefaultPKISignatureScheme, a.PKISignatureScheme)
 }
 
 func TestAuthorityValidateRejects(t *testing.T) {
