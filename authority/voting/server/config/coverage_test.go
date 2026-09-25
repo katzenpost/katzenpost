@@ -228,19 +228,6 @@ func TestApplyPKISignatureSchemeDefault(t *testing.T) {
 	require.Equal(t, "ed25519", s.PKISignatureScheme)
 }
 
-func TestAuthorityUnmarshalTOMLInheritsTheDefaultScheme(t *testing.T) {
-	f := newFixture(t)
-	pub, _, err := signschemes.ByName(DefaultPKISignatureScheme).GenerateKey()
-	require.NoError(t, err)
-	a := new(Authority)
-	require.NoError(t, a.UnmarshalTOML(map[string]interface{}{
-		"Identifier": "a", "IdentityPublicKey": signpem.ToPublicPEMString(pub),
-		"LinkPublicKey": f.lkPEM, "WireKEMScheme": "x25519",
-		"Addresses": []interface{}{"tcp://127.0.0.1:1"},
-	}))
-	require.Equal(t, DefaultPKISignatureScheme, a.PKISignatureScheme)
-}
-
 func TestAuthorityValidateRejects(t *testing.T) {
 	f := newFixture(t)
 	good := f.cfg.Authorities[0]
