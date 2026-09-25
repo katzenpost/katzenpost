@@ -23,7 +23,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -360,11 +359,7 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	selfInAuthorities := false
 
 	ourPubKeyFile := filepath.Join(cfg.Server.DataDir, "identity.public.pem")
-	f, err := os.Open(ourPubKeyFile)
-	if err != nil {
-		return err
-	}
-	pemData, err := io.ReadAll(f)
+	pemData, err := os.ReadFile(ourPubKeyFile)
 	if err != nil {
 		return err
 	}
