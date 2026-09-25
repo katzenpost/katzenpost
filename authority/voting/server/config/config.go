@@ -462,7 +462,8 @@ type Topology struct {
 func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
 	match := false
 	for i := 0; i < len(cfg.Authorities); i++ {
-		if linkPubKey.Equal(cfg.Authorities[i].LinkPublicKey) {
+		peer := cfg.Authorities[i].LinkPublicKey.PublicKey
+		if peer != nil && linkPubKey != nil && linkPubKey.Equal(peer) {
 			match = true
 		}
 	}
