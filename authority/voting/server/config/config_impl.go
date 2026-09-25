@@ -96,10 +96,6 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 
 	// identifier
 	var err error
-	a.IdentityPublicKey, _, err = pkiSignatureScheme.GenerateKey()
-	if err != nil {
-		return err
-	}
 	a.Identifier, ok = data["Identifier"].(string)
 	if !ok {
 		return errors.New("Authority.Identifier type assertion failed")
