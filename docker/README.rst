@@ -288,12 +288,12 @@ run at once against different versions; give each a distinct ``net_name``::
    make net_name=gate-b release_refs="v0.0.103 v0.0.104" interop-gate &
    wait
 
-CI routes by changed path: a client change runs the local testnet with
-``-short``; a server change runs ``make test`` and then ``interop-gate`` against
-one and then two releases. The required check passes when every lane that ran
-passes. ``client-check`` against namenlos runs on a six-hourly schedule (and on
-demand) rather than per PR, so a PR never waits on or fails because of the
-public network.
+CI runs the local testnet with ``-short`` on any Go change. The cross-version
+check runs when a pull request carries the ``interop`` label or ``[interop]`` in
+its title, body, or head commit message, and daily on the schedule. The required
+check passes when every job that ran passes. ``client-check`` against namenlos
+runs on a six-hourly schedule (and on demand) rather than per PR, so a PR never
+waits on or fails because of the public network.
 
 Notes
 
