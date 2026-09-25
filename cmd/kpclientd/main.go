@@ -23,7 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
 )
 
-const defaultDBusName = "network.katzenpost.kpclientd"
+const exampleDBusName = "network.katzenpost.kpclientd"
 
 // Config holds the command line configuration
 type Config struct {
@@ -83,7 +83,7 @@ applications to share a single network connection.`,
 	cmd.Flags().BoolVar(&cfg.ValidateOnly, "validate-only", false,
 		"load and validate the configuration file, then exit without side effects")
 	cmd.Flags().StringVar(&cfg.DBusName, "dbus-name", "",
-		"own this session dbus name for the daemon's lifetime, for example "+defaultDBusName+"; an empty value disables a configured name")
+		"own this session dbus name for the daemon's lifetime, for example "+exampleDBusName+"; an empty value disables a configured name")
 
 	// Mark required flags
 	cmd.MarkFlagRequired("config")
