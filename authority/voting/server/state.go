@@ -907,12 +907,14 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 	revealed := make(map[[publicKeyHashSize]byte][]byte)
 
 	// verify that each authority only submitted one commit value to all the authorities
-	for pk, certificate := range s.certificates[epoch] {
+	for _, pk := range sortedCertificateKeys(s.certificates[epoch]) {
+		certificate := s.certificates[epoch][pk]
 		// skip badnodes
 		if _, ok := badnodes[pk]; ok {
 			continue
 		}
-		for pk2, signedCommit := range certificate.SharedRandomCommit {
+		for _, pk2 := range sortedHashKeys(certificate.SharedRandomCommit) {
+			signedCommit := certificate.SharedRandomCommit[pk2]
 			// skip badnodes
 			if _, ok := badnodes[pk2]; ok {
 				continue
@@ -955,7 +957,6 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			if srv.GetEpoch() != epoch {
 				s.log.Errorf("SharedRandomCommit in certificate from %s contains bad Epoch from %s", s.authorityNames[pk], s.authorityNames[pk2])
 				badnodes[pk] = true
-				badnodes[pk2] = true
 				// do not bother checking any more of pk's SharedRandomCommits
 				break
 			}
@@ -963,9 +964,8 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			// verify that the commit is validate by the revealed value
 			if !srv.Verify(reveal) {
 				s.log.Errorf("Reveal in certificate from %s has invalid reveal from %s", s.authorityNames[pk], s.authorityNames[pk2])
-				// pk should have validated the Reveal, and pk2 signed an invalid Reveal
+				// pk should have validated the Reveal
 				badnodes[pk] = true
-				badnodes[pk2] = true
 				break
 			}
 			// see if we saw a different commit from pk2
@@ -984,7 +984,7 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			signedReveal2, ok := revealed[pk2]
 			if ok {
 				if !bytes.Equal(signedReveal, signedReveal2) {
-					s.log.Errorf("%s submitted commit %x to %s and previously submitted %x", s.authorityNames[pk2], signedReveal, s.authorityNames[pk], signedReveal2)
+					s.log.Errorf("%s submitted reveal %x to %s and previously submitted %x", s.authorityNames[pk2], signedReveal[:32], s.authorityNames[pk], signedReveal2[:32])
 					badnodes[pk2] = true
 				}
 			} else {
@@ -999,6 +999,24 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 		delete(revealed, pk)
 	}
 	return comitted, revealed
+}
+
+func sortedCertificateKeys(m map[[publicKeyHashSize]byte]*pki.Document) [][publicKeyHashSize]byte {
+	keys := make([][publicKeyHashSize]byte, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return bytes.Compare(keys[i][:], keys[j][:]) < 0 })
+	return keys
+}
+
+func sortedHashKeys(m map[[publicKeyHashSize]byte][]byte) [][publicKeyHashSize]byte {
+	keys := make([][publicKeyHashSize]byte, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return bytes.Compare(keys[i][:], keys[j][:]) < 0 })
+	return keys
 }
 
 // IsPeerValid authenticates the remote peer's credentials
