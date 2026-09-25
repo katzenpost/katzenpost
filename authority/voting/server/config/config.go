@@ -77,7 +77,7 @@ func (lCfg *Logging) validate() error {
 	switch lvl {
 	case "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG":
 	case "":
-		lCfg.Level = defaultLogLevel
+		lvl = defaultLogLevel
 	default:
 		return fmt.Errorf("config: Logging: Level '%v' is invalid", lCfg.Level)
 	}
