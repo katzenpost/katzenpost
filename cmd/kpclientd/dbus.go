@@ -11,6 +11,8 @@ import (
 
 var errNoSessionBus = errors.New("no session dbus is reachable")
 
+var errNameConflict = errors.New("already owned")
+
 type busOwner interface {
 	RequestName(string, dbus.RequestNameFlags) (dbus.RequestNameReply, error)
 	Close() error
@@ -50,7 +52,7 @@ func ownBusName(ctx context.Context, name string) (io.Closer, error) {
 			return
 		}
 		if reply != dbus.RequestNameReplyPrimaryOwner {
-			ch <- result{nil, errors.Join(fmt.Errorf("dbus name %s is already owned", name), conn.Close())}
+			ch <- result{nil, errors.Join(fmt.Errorf("dbus name %s is %w", name, errNameConflict), conn.Close())}
 			return
 		}
 		ch <- result{conn, nil}

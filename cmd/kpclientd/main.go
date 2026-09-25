@@ -170,11 +170,13 @@ func ownConfiguredDBusName(ctx context.Context, cfg Config, clientCfg *config.Co
 	defer cancel()
 	bus, err := ownBusName(ownCtx, name)
 	switch {
-	case errors.Is(err, errNoSessionBus):
-		fmt.Fprintf(os.Stderr, "not owning dbus name %q: %v\n", name, err)
+	case errors.Is(err, errNameConflict):
+		return nil, fmt.Errorf("failed to own dbus name %q: %w", name, err)
+	case errors.Is(err, context.Canceled):
 		return nil, nil
 	case err != nil:
-		return nil, fmt.Errorf("failed to own dbus name %q: %w", name, err)
+		fmt.Fprintf(os.Stderr, "not owning dbus name %q: %v\n", name, err)
+		return nil, nil
 	}
 	return bus, nil
 }
