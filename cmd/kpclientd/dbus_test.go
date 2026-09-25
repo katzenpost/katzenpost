@@ -12,15 +12,21 @@ import (
 type fakeBus struct {
 	reply  dbus.RequestNameReply
 	err    error
+	name   string
 	closed bool
+	done   chan struct{}
 }
 
-func (b *fakeBus) RequestName(string, dbus.RequestNameFlags) (dbus.RequestNameReply, error) {
+func (b *fakeBus) RequestName(name string, _ dbus.RequestNameFlags) (dbus.RequestNameReply, error) {
+	b.name = name
 	return b.reply, b.err
 }
 
 func (b *fakeBus) Close() error {
 	b.closed = true
+	if b.done != nil {
+		close(b.done)
+	}
 	return nil
 }
 
@@ -71,5 +77,28 @@ func TestSessionBusUnreachableDoesNotAutolaunch(t *testing.T) {
 	}
 	if time.Since(start) > 5*time.Second {
 		t.Fatalf("connect attempt took %v", time.Since(start))
+	}
+}
+
+func TestOwnBusNameTimeoutClosesTheLateBus(t *testing.T) {
+	original := connectBus
+	t.Cleanup(func() { connectBus = original })
+	release := make(chan struct{})
+	late := &fakeBus{reply: dbus.RequestNameReplyPrimaryOwner, done: make(chan struct{})}
+	connectBus = func() (busOwner, error) {
+		<-release
+		return late, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	bus, err := ownBusName(ctx, "network.katzenpost.test")
+	if bus != nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("got bus=%t err=%v", bus != nil, err)
+	}
+	close(release)
+	select {
+	case <-late.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the late bus was not closed")
 	}
 }
