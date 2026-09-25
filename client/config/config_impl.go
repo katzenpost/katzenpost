@@ -244,6 +244,9 @@ func LoadFile(f string) (*Config, error) {
 
 var dbusWellKnownName = regexp.MustCompile(`^[A-Za-z_-][A-Za-z0-9_-]*(\.[A-Za-z_-][A-Za-z0-9_-]*)+$`)
 
+// ValidateDBusName returns an error unless name is a well-known dbus name:
+// two or more dot-separated elements, no element starting with a digit, and
+// at most 255 bytes.
 func ValidateDBusName(name string) error {
 	if len(name) > 255 {
 		return fmt.Errorf("config: DBusName %q is longer than 255 bytes", name)
