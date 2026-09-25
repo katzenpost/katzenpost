@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -30,6 +31,9 @@ func TestServerValidateDefaultsTheAddress(t *testing.T) {
 }
 
 func TestFixupAndValidateRejectsAnUnreadableIdentityPEM(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a directory does not read as an unreadable file on windows")
+	}
 	dir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "identity.public.pem"), 0o700))
 	cfg := &Config{Server: &Server{WireKEMScheme: "x25519", PKISignatureScheme: "ed25519", DataDir: dir, Addresses: []string{"tcp://127.0.0.1:1"}}}
