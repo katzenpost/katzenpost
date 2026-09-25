@@ -68,7 +68,7 @@ func TestOwnBusName(t *testing.T) {
 	}
 }
 
-func TestSessionBusUnreachableDoesNotAutolaunch(t *testing.T) {
+func TestSessionBusUnreachableFailsFast(t *testing.T) {
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+t.TempDir()+"/absent.sock")
 	start := time.Now()
 	bus, err := sessionBus()
