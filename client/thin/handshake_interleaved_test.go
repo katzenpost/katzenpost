@@ -5,6 +5,7 @@ package thin
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
@@ -92,4 +93,8 @@ func TestDialFailsWhenNoSessionTokenReplyArrives(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "SessionTokenReply")
 	<-served
+}
+
+func TestTheHandshakeDeadlineOutlastsTheDaemonsWaitForItsFirstDocument(t *testing.T) {
+	require.Greater(t, handshakeTimeout, 30*time.Second)
 }

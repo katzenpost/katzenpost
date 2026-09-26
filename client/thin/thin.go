@@ -718,7 +718,7 @@ func (t *ThinClient) Dial() error {
 
 const (
 	maxHandshakeMessages = 16
-	handshakeTimeout     = 30 * time.Second
+	handshakeTimeout     = 2 * time.Minute
 )
 
 func (t *ThinClient) readHandshakeMessage(want func(*Response) bool, expected string) (*Response, error) {
