@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: docker base image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker/Dockerfile.base.alpine'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/docker-base-image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docker-base-image
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to the container registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Read the go toolchain from go.mod
+        run: echo "GO_VERSION=$(grep '^go ' go.mod | cut -d' ' -f2)" >> "$GITHUB_ENV"
+
+      - name: Build the base image
+        run: |
+          image=ghcr.io/${{ github.repository_owner }}/alpine-base
+          docker build -t "$image:${{ github.sha }}" -t "$image:latest" \
+            --build-arg BASE_IMAGE=docker.io/alpine:3.21 \
+            --build-arg GO_VERSION="$GO_VERSION" \
+            -f docker/Dockerfile.base.alpine docker
+
+      - name: Push the base image
+        run: |
+          image=ghcr.io/${{ github.repository_owner }}/alpine-base
+          docker push "$image:${{ github.sha }}"
+          docker push "$image:latest"
