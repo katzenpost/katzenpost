@@ -197,7 +197,8 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		peerName, found := getPeerName()
 		blob, err := creds.PublicKey.MarshalBinary()
 		if err != nil {
-			panic(err)
+			c.log.Warningf("server/incoming: IsPeerValid(): failed to marshal peer public key: %s", err)
+			return isValid
 		}
 		if found {
 			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s' (link_key_hash=%x)", peerName, hash.Sum256(blob))
