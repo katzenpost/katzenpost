@@ -348,6 +348,13 @@ The client TOML had the most substantial reshape, driven by the
   user service or run by the user), and a peer-credential check is
   deferred until there is a system-wide daemon.
 
+- **Added** top-level `DBusName` (string). Optional. A session dbus
+  well-known name the daemon owns for its lifetime, for single-instance
+  ownership and dbus activation. The name means a running daemon process,
+  not a bound listener, so a thin_client still retries its connect. Empty
+  (the default) owns no name and needs no bus; the `--dbus-name` flag
+  overrides it.
+
 - **Added** `PigeonholeGeometry` (table). Pigeonhole protocol
   parameters; required for new pigeonhole channel operations.
 
