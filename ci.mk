@@ -57,7 +57,8 @@ ci-local: ci-local-image
 	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)) $(if $(CI_JOB),-j $(CI_JOB),);; \
 	  forgejo|forgejo-runner) $(FORGEJO_RUNNER) exec $(CI_FORGEJO_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
 	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)) $(if $(CI_JOB),-j $(CI_JOB),);; \
-	  woodpecker|woodpecker-cli) $(WOODPECKER) exec $(CI_WORKFLOWS_WOODPECKER)/$(or $(CI_WORKFLOW),ci.yaml);; \
+	  woodpecker|woodpecker-cli) set -e; for pipeline in $(if $(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/$(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/*.yaml); do \
+	    $(WOODPECKER) exec "$$pipeline"; done;; \
 	  "") echo "no local ci runner found; install one of: $(CI_RUNNERS)" >&2; exit 1;; \
 	  *) echo "RUNNER must be act, forgejo or woodpecker" >&2; exit 1;; \
 	esac

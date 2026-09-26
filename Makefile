@@ -3,8 +3,32 @@ include ci.mk
 
 .PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
 
+ci_suites=authority client core core/sphinx server courier pigeonhole
+suite?=
+suite_timeout?=30m
+
+ci_config_files=.github/workflows/linux.yml .forgejo/workflows/ci.yml .woodpecker/test.yaml
+
+.PHONY: ci-suites
+ci-suites:
+	@printf '%s\n' $(ci_suites)
+
+.PHONY: ci-config-check
+ci-config-check:
+	@missing=; for suite in $(ci_suites); do \
+	  for config in $(ci_config_files); do \
+	    tr -c "a-zA-Z0-9/_.-" "\n" < "$$config" | grep -qxF "$$suite" || missing="$$missing $$config:$$suite"; \
+	  done; \
+	done; \
+	test -z "$$missing" || { echo "suite missing from a forge config:$$missing" >&2; exit 1; }
+
+.PHONY: test-suite
+test-suite:
+	@test -n "$(suite)" || { echo "set suite to one of: $(ci_suites)" >&2; exit 1; }
+	cd $(suite) && GORACE=history_size=7 go test -race -v -failfast -timeout $(suite_timeout) ./...
+
 .PHONY: check
-check:
+check: ci-config-check
 	go vet ./...
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 

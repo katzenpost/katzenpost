@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 steps:
-  - name: test
+  - name: check
     image: docker.io/golang:1.26
     commands:
-      - make test
       - make check
