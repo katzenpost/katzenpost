@@ -175,6 +175,8 @@ func (l *listener) worker() {
 // "no PKI document available yet" notice.
 const firstPKIDocDialWait = 30 * time.Second
 
+const handshakeGateGrace = 5 * time.Second
+
 // onNewConn finishes setting up a freshly-accepted thin-client
 // connection. The conn is registered with the listener
 // immediately so callers introspecting `listener.conns` see it
@@ -215,9 +217,10 @@ func (l *listener) onNewConn(conn net.Conn) {
 	// Always send PKI doc event, even if empty - thin client expects it
 	c.sendPKIDoc(docBlob)
 
-	// Open the conn to broadcast traffic now that the initial
-	// strict-order pair is queued.
-	c.initialSequenceDone.Store(true)
+	// A thin client that never sends a SessionToken, as the python and
+	// rust clients do not, still has to receive broadcasts; open the gate
+	// for it once no handshake reply can still be in flight.
+	time.AfterFunc(handshakeGateGrace, func() { c.initialSequenceDone.Store(true) })
 }
 
 // waitForPKIDoc polls the daemon's PKI cache for up to timeout,
@@ -367,13 +370,20 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 		return
 	}
 
-	// A single conn in teardown (errConnClosed) must not abort the
-	// broadcast to the other clients; log and continue.
+	l.broadcastPKIDoc(docBlob)
+
+	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
+}
+
+// broadcastPKIDoc queues docBlob on every conn whose handshake is
+// complete. A single conn in teardown (errConnClosed) must not abort the
+// broadcast to the other clients; log and continue. Conns still in their
+// handshake are skipped so a doc event cannot land ahead of the
+// ConnectionStatus, PKI document and SessionTokenReply that Dial()
+// expects in that order.
+func (l *listener) broadcastPKIDoc(docBlob []byte) {
 	l.connsLock.RLock()
 	for _, c := range l.conns {
-		// Skip conns still in their initial onNewConn sequence;
-		// queueing a pkidoc event here could land ahead of the
-		// initial ConnectionStatus the thin client expects first.
 		if !c.initialSequenceDone.Load() {
 			continue
 		}
@@ -382,8 +392,6 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 		}
 	}
 	l.connsLock.RUnlock()
-
-	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
 }
 
 // registerConn adds an incomingConn to the scheduler's rotation. The caller
@@ -527,6 +535,7 @@ type DisconnectedSession struct {
 // If the token was previously registered, the connection resumes the old app ID.
 // Otherwise a new token->appID mapping is created.
 func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
+	defer c.initialSequenceDone.Store(true)
 	l.clientTokensLock.Lock()
 	defer l.clientTokensLock.Unlock()
 

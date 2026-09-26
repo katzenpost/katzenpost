@@ -83,7 +83,7 @@ func TestDialFailsWhenNoSessionTokenReplyArrives(t *testing.T) {
 		if _, err := readRequest(server); err != nil {
 			return
 		}
-		for i := 0; i < 16; i++ {
+		for i := 0; i < maxHandshakeMessages; i++ {
 			sendResponse(t, server, pkiDocResponse(t, uint64(300+i)))
 		}
 	}()

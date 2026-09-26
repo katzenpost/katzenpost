@@ -93,7 +93,7 @@ func TestDialRejectsAShutdownDuringTheHandshake(t *testing.T) {
 		if _, err := readRequest(server); err != nil {
 			return
 		}
-		for i := 0; i < 16; i++ {
+		for i := 0; i < maxHandshakeMessages; i++ {
 			trySend(server, &Response{ShutdownEvent: &ShutdownEvent{}})
 		}
 	})
