@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1 client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -35,6 +35,10 @@ help:
 	@echo " pigeonhole-cp-roundtrip   - round-trip a file through a pigeonhole channel"
 	@echo " run-ping                  - send a ping over the testnet"
 	@echo " test                      - run every component's docker integration tests (requires the testnet to be up)"
+	@echo " interop-gate              - bring HEAD up with release binaries on interop_swap_groups (release_refs), require 6/6 signatures and every node listed, verify revisions, ping"
+	@echo " interop-<job>             - one upgrade combination: authorities-mixed|authorities-old|authorities-old-n1|nodes-mixed|nodes-old|nodes-old-n1|everything-mixed|everything-mixed-n1"
+	@echo " interop-matrix            - every interop-<job> in turn"
+	@echo " interop-report            - per-service table of version and signed/listed from the last interop-gate"
 	@echo " clean-bin                 - stop, and delete compiled binaries"
 	@echo " clean-local               - stop the current network, and wipe its state (keeps the build cache)"
 	@echo " clean-local-dryrun        - show what clean-local would delete"
@@ -63,11 +67,12 @@ epoch_duration?=2m
 # longer test scenarios. Empty means "use the daemon's compile-time
 # default" (currently 10 minutes).
 session_grace_period?=30s
-mixes=3
-auths=3
-gateways=1
-serviceNodes=3
-storageNodes=5
+mixes=7
+auths=6
+gateways=5
+serviceNodes=4
+storageNodes=4
+layers=3
 
 # number of pings sent by run-ping target
 npings?=10
@@ -140,10 +145,11 @@ net_name=mixnet-$(distro)
 # Deterministic base_port derived from the network name + a per-checkout
 # random seed so parallel checkouts on the same machine get different
 # ports even with the same net_name.  Override with base_port=<n>.
-base_port?=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; printf '%s%s' '$(net_name)' "$$(cat .base_port_seed)" | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
+base_port_seed:=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; cat .base_port_seed)
+base_port?=$(shell printf '%s%s' '$(net_name)' '$(base_port_seed)' | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
-compose_project_name=$(net_name)_$(shell cat .base_port_seed|sha1sum|head -c 5)
+compose_project_name=$(net_name)_$(shell printf '%s' '$(base_port_seed)'|sha1sum|head -c 5)
 # docker-compose normalizes the project name (directory name) by stripping
 # dots; compute the actual network name the same way so --network= matches
 # the bridge compose creates.  Only the wait target uses this (fetch
@@ -153,6 +159,9 @@ compose_network_name = $(subst .,,$(compose_project_name))_katzenpost-net
 # single shell covers all distros.
 sh?=bash
 cache_dir=cache
+dockertest_race?=-race
+dockertest_timeout?=1h
+dockertest_parallel?=5
 # The go module cache (source content, read-only) is shared across distros.
 # The go build cache holds compiled archives that are sensitive to the C
 # library (musl vs glibc, and glibc versions), and Go's cache key does not
@@ -239,6 +248,7 @@ ifneq ($(kpclientd_build_tags),)
 endif
 
 genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --nodes $(mixes) \
+	--layers $(layers) \
 	--gateways $(gateways) --serviceNodes $(serviceNodes) --storageNodes $(storageNodes) \
 	--mu $(mu) --lambdaP $(lP) --lambdaL $(lL) --lambdaM $(lM) --lambdaR $(lR) \
 	--nike "$(nike)" --kem "$(kem)" \
@@ -332,7 +342,8 @@ log_level=DEBUG
 # only used when explicitly requested (make docker=docker ...).
 docker?=$(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 
-ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+ldflags_body=-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}
+ldflags="$(ldflags_body)"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
@@ -351,10 +362,10 @@ else
   replace_name= --name
   i_if_podman=
 endif
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost \
-	-v $(shell readlink -f .)/$(go_mod_cache):/go/ \
+docker_args_common=-v $(shell readlink -f .)/$(go_mod_cache):/go/ \
 	-v $(shell readlink -f .)/$(go_build_cache):/gocache/ \
 	-e GOCACHE=/gocache -e GOPATH=/go --pids-limit 4096
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost $(docker_args_common)
 
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
@@ -370,7 +381,7 @@ endif
 export docker docker_user docker_args distro sh warped net_name compose_network_name cache_dir mount_net_name
 export no_decoy no_client_decoy no_courier_replica_decoy no_mixdecoy no_gatewaydecoy
 export no_metrics pyroscope_dirauth pyroscope_kpclientd kpclientd_metrics
-export wirekem nike kem mixes auths gateways serviceNodes storageNodes
+export wirekem nike kem mixes auths gateways serviceNodes storageNodes layers
 export mu lP lL lM lR UserForwardPayloadLength log_level
 export kpclientd_build_tags kpclientd_tags_flag pyroscope_dirauth_tags pyroscope_kpclientd_tags
 
@@ -456,7 +467,7 @@ start_debug: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	touch $(net_name)/running.stamp
 
 stop:
-	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp $(net_name)/servicenode*/courier/*.socket
+	[ -e $(net_name) ] && (cd $(net_name) && $(docker_compose) down --remove-orphans); rm -fv $(net_name)/running.stamp $(net_name)/docker-compose.override.yml $(net_name)/servicenode*/courier/*.socket
 
 client-restart:
 	@echo "Cleaning and rebuilding kpclientd daemon..."
@@ -475,15 +486,15 @@ client-logs-snapshot:
 	cd $(net_name) && $(docker_compose) logs --tail 200 kpclientd
 
 courier-restart:
-	@echo "Stopping courier plugin via thwack management interface..."
-	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode1/management_sock' || true
+	@echo "Stopping courier plugins via thwack management interface..."
+	@cd $(net_name) && for i in $$(seq 1 $(serviceNodes)); do $(docker_compose) exec -T servicenode$$i sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode'$$i'/management_sock' || true; done
 	@sleep 1
 	@echo "Cleaning and rebuilding courier binary..."
 	rm -fv $(net_name)/courier.$(distro)
 	$(MAKE) $(net_name)/courier.$(distro)
-	@echo "Starting courier plugin via thwack management interface..."
-	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode1/management_sock'
-	@echo "Courier service restarted with updated code"
+	@echo "Starting courier plugins via thwack management interface..."
+	@cd $(net_name) && for i in $$(seq 1 $(serviceNodes)); do $(docker_compose) exec -T servicenode$$i sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode'$$i'/management_sock'; done
+	@echo "Courier services restarted with updated code"
 
 replica-restart:
 	@echo "Cleaning and rebuilding replica binary..."
@@ -497,9 +508,9 @@ servicenode1-restart:
 	@echo "Cleaning and rebuilding courier binary..."
 	rm -fv $(net_name)/courier.$(distro)
 	$(MAKE) $(net_name)/courier.$(distro)
-	@echo "Restarting servicenode1 container..."
-	cd $(net_name) && $(docker_compose) restart servicenode1
-	@echo "Servicenode restarted with updated courier binary"
+	@echo "Restarting service node containers..."
+	@cd $(net_name) && for i in $$(seq 1 $(serviceNodes)); do $(docker_compose) restart servicenode$$i; done
+	@echo "Service nodes restarted with updated courier binary"
 
 watch:
 	tail -F $(net_name)/*/*.log
@@ -527,7 +538,7 @@ watch-servicenode:
 
 watch-gateway:
 	@echo "Monitoring gateway log (Ctrl+C to exit)..."
-	tail -F $(net_name)/gateway1/katzenpost.log
+	tail -F $(net_name)/gateway*/katzenpost.log
 
 watch-all-separate:
 	@echo "Monitoring all logs with component labels (Ctrl+C to exit)..."
@@ -537,7 +548,7 @@ watch-all-separate:
 	(tail -F $(net_name)/mix*/katzenpost.log | sed 's/^/[MIX] /' &) ; \
 	(tail -F $(net_name)/servicenode*/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
 	(tail -F $(net_name)/servicenode*/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
-	(tail -F $(net_name)/gateway1/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
+	(tail -F $(net_name)/gateway*/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
 	wait
 
 # start-with-client-metrics brings the mixnet up with prometheus and grafana
@@ -652,8 +663,9 @@ $(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
 	@echo '    Network = "tcp"'                          >> $@
 
 wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready
+	@deadline=$$(( $$(date +%s) + 600 )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready --ready-timeout $${left}s; do \
+	  echo "wait: the client daemon is not accepting connections yet; retrying"; sleep 5; done
 
 $(distro)_base.stamp: $(base_dockerfile)
 	$(docker) build -t katzenpost-$(distro)_base \
@@ -919,8 +931,8 @@ rootshell: $(distro)_base.stamp
 #   dockertest_pki_raw PASS  TestGetPKIDocumentRaw{,CurrentEpoch,UnknownEpoch}
 #                            and TestGetDirectoryAuthorities.
 test: wait
-	$(MAKE) -C ../client testargs=$(testargs) dockertest-all
-	$(MAKE) -C ../client testargs=$(testargs) dockertest_pki_raw
+	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_parallel=$(dockertest_parallel) dockertest-all
+	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_pki_raw
 
 # Bring the testnet up on every supported distro (uses the shared build
 # cache). Serial by default; with `make -j N test-distros` each
@@ -945,3 +957,95 @@ test-distros: $(addprefix test-distro-,$(DISTROS))
 
 check-go-version:
 	$(docker) run --rm katzenpost-$(distro)_base go version
+
+release_refs?=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1)
+namenlos_config?=client-configs/namenlos.toml
+namenlos_thin_config?=client-configs/namenlos-thin.toml
+interop_swap_groups?=auth replica mix gateway
+interop_swap_all?=
+interop_swaps=$(shell n=$(words $(release_refs)); [ $$n -gt 0 ] || exit 0; for grp in auth,$(auths) replica,$(storageNodes) mix,$(mixes) gateway,$(gateways); do echo " $(interop_swap_groups) " | grep -q " $${grp%,*} " || continue; i=1; while [ $$i -le $${grp#*,} ]; do if [ -n "$(interop_swap_all)" ]; then k=$$(( (i-1) % n )); else k=$$(( (i-1) % (n+1) - 1 )); fi; if [ $$k -ge 0 ]; then set -- $(release_refs); shift $$k; printf '%s ' $${grp%,*}$$i=$$1; fi; i=$$((i+1)); done; done)
+
+docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --volume $$src:/go/katzenpost:ro --workdir /go/katzenpost $(docker_args_common) $(mount_net_name) katzenpost-$(distro)_base $(sh) -c
+
+interop-ref-binaries: $(distro)_base.stamp | $(net_name) $(cache_dir)
+	@set -e; for ref in $(release_refs); do \
+	  refdir=$(cache_dir)/refbins/$$ref-warped-$(warped); mkdir -p $$refdir; \
+	  ( flock 9; \
+	  if [ -x $$refdir/server.$(distro).$$ref ] && [ -x $$refdir/dirauth.$(distro).$$ref ] && [ -x $$refdir/replica.$(distro).$$ref ]; then \
+	    rm -f $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref; \
+	    cp $$refdir/dirauth.$(distro).$$ref $$refdir/replica.$(distro).$$ref $$refdir/server.$(distro).$$ref $(net_name)/; \
+	  else \
+	    src=$$(mktemp -d); git -C .. archive $$ref | tar -x -C $$src; \
+	    rev=$$(git -C .. rev-list -n 1 $$ref); \
+	    for cmd in dirauth replica server; do \
+	      $(docker_run_ref_sh) "cd cmd/$$cmd && go build -trimpath -ldflags '$(ldflags_body) -X github.com/carlmjohnson/versioninfo.Revision=$$rev' -o /$(net_name)/$$cmd.$(distro).$$ref"; \
+	    done; rm -rf $$src; \
+	    cp $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref $$refdir/; \
+	  fi ) 9>$$refdir.lock; \
+	done
+
+interop-gate: interop-ref-binaries
+	$(MAKE) stop
+	rm -f $(docker_compose_yml) $(net_name)/*/katzenpost.log
+	@[ -z "$(strip $(interop_swaps))" ] || { echo "services:"; \
+	  for pair in $(interop_swaps); do s=$${pair%%=*}; v=$${pair#*=}; \
+	    case $$s in \
+	      auth*)    echo "  $$s:"; echo "    command: /$(net_name)/dirauth.$(distro).$$v -f /$(net_name)/$$s/authority.toml";; \
+	      replica*) echo "  $$s:"; echo "    command: /$(net_name)/replica.$(distro).$$v -f /$(net_name)/$$s/replica.toml";; \
+	      *)        echo "  $$s:"; echo "    command: /$(net_name)/server.$(distro).$$v -f /$(net_name)/$$s/katzenpost.toml";; \
+	    esac; done; } > $(net_name)/docker-compose.override.yml
+	$(MAKE) start
+	@( $(MAKE) wait 2>&1; echo $$? > $(net_name)/wait.rc ) | tee $(net_name)/wait.log; \
+	  $(MAKE) -s interop-report; rc=$$?; [ "$$(cat $(net_name)/wait.rc)" = 0 ] && [ $$rc = 0 ] \
+	  || { echo "interop-gate: the network did not come up with every authority signing and every node listed" >&2; exit 1; }
+	@for pair in $(strip $(interop_swaps)); do s=$${pair%%=*}; v=$${pair#*=}; \
+	  grep -q " rev $$(git -C .. rev-list -n 1 $$v)" $(net_name)/$$s/*.log \
+	  || { echo "swap verify failed: $$s is not running $$v" >&2; exit 1; }; done
+	$(MAKE) run-ping || (sleep 10; $(MAKE) run-ping) || (sleep 10; $(MAKE) run-ping)
+
+interop-report:
+	@ver() { for pair in $(strip $(interop_swaps)); do [ "$${pair%%=*}" = "$$1" ] && { echo $${pair#*=}; return; }; done; echo HEAD; }; \
+	fail=0; printf '%-14s %-12s %s\n' service version consensus; \
+	for i in $$(seq 1 $(auths)); do s=auth$$i; \
+	  if grep -qE "^[[:space:]]*$$s \(" $(net_name)/wait.log; then st=signed; else st=NOT-SIGNED; fail=1; fi; \
+	  printf '%-14s %-12s %s\n' $$s $$(ver $$s) $$st; done; \
+	for grp in mix,$(mixes) gateway,$(gateways) servicenode,$(serviceNodes) replica,$(storageNodes); do \
+	  for i in $$(seq 1 $${grp#*,}); do s=$${grp%,*}$$i; \
+	    if grep -qE "\{$$s " $(net_name)/wait.log; then st=listed; else st=NOT-LISTED; fail=1; fi; \
+	    printf '%-14s %-12s %s\n' $$s $$(ver $$s) $$st; done; done; \
+	exit $$fail
+
+interop_last1=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1 | xargs)
+interop_last2=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)
+interop_nodes=replica mix gateway
+
+interop-authorities-mixed:
+	$(MAKE) interop-gate interop_swap_groups=auth release_refs="$(interop_last2)"
+interop-authorities-old:
+	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last2)"
+interop-authorities-old-n1:
+	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last1)"
+interop-nodes-mixed:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" release_refs="$(interop_last2)"
+interop-nodes-old:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last2)"
+interop-nodes-old-n1:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last1)"
+interop-everything-mixed:
+	$(MAKE) interop-gate release_refs="$(interop_last2)"
+interop-everything-mixed-n1:
+	$(MAKE) interop-gate release_refs="$(interop_last1)"
+interop-matrix: interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1
+
+client-check: | $(cache_dir)
+	@[ -s $(namenlos_config) ] || { echo "client-check: no namenlos config at $(namenlos_config)" >&2; exit 1; }
+	@grep -q '@katzenpost' $(namenlos_config) && grep -q '$$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock' $(namenlos_config) && grep -q '@katzenpost' $(namenlos_thin_config) || { echo "client-check: the namenlos configs do not carry the expected socket names" >&2; exit 1; }
+	mkdir -p namenlos-client/client
+	sed 's/@katzenpost/@namenlos-client/; s#\$$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock#/namenlos-client/kpclientd.sock#' $(namenlos_config) > namenlos-client/client/client.toml
+	sed 's/@katzenpost/@namenlos-client/' $(namenlos_thin_config) > namenlos-client/client/thinclient.toml
+	@grep -q '@namenlos-client' namenlos-client/client/client.toml && ! grep -q 'XDG_RUNTIME_DIR' namenlos-client/client/client.toml && grep -q '@namenlos-client' namenlos-client/client/thinclient.toml || { echo "client-check: socket rewrite failed" >&2; exit 1; }
+	$(MAKE) warped=false net_name=namenlos-client namenlos-client/kpclientd.$(distro) namenlos-client/fetch.$(distro) namenlos-client/ping.$(distro)
+	$(docker) rm -f namenlos-client 2>/dev/null; $(docker) run -d --name namenlos-client --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/kpclientd.$(distro) -c /namenlos-client/client/client.toml
+	@for i in $$(seq 1 60); do [ -S namenlos-client/kpclientd.sock ] && break; sleep 1; done; [ -S namenlos-client/kpclientd.sock ] || { echo "client-check: kpclientd did not open its socket within 60s" >&2; $(docker) logs namenlos-client 2>&1 | tail -50; $(docker) rm -f namenlos-client; exit 1; }
+	timeout 120 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/fetch.$(distro) -f /namenlos-client/client/thinclient.toml \
+	  && timeout 900 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/ping.$(distro) --thin -c /namenlos-client/client/thinclient.toml -s echo -n $(npings) $(ping_args); st=$$?; $(docker) rm -f namenlos-client 2>/dev/null; exit $$st
