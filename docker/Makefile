@@ -133,6 +133,7 @@ else
 endif
 # Universal escape hatch: make base_image=my/registry:tag start wait
 base_image?=$(distro_base_image)
+prebuilt_base?=
 # Single source of truth for the Go toolchain: the go directive in the
 # repo's go.mod. The base Dockerfiles keep the same value as an ARG
 # default only so `podman build` works standalone.
@@ -668,9 +669,15 @@ wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(ca
 	  echo "wait: the client daemon is not accepting connections yet; retrying"; sleep 5; done
 
 $(distro)_base.stamp: $(base_dockerfile)
-	$(docker) build -t katzenpost-$(distro)_base \
+	@if [ -n "$(strip $(prebuilt_base))" ]; then \
+	  echo "pulling $(prebuilt_base) instead of building katzenpost-$(distro)_base"; \
+	  $(docker) pull $(prebuilt_base); \
+	  $(docker) tag $(prebuilt_base) katzenpost-$(distro)_base; \
+	else \
+	  $(docker) build -t katzenpost-$(distro)_base \
 		--build-arg BASE_IMAGE=$(base_image) --build-arg GO_VERSION=$(GO_VERSION) \
-		-f $(base_dockerfile) .
+		-f $(base_dockerfile) .; \
+	fi
 	touch $@
 
 # Rust build image for pigeonhole-cp, layered on the per-distro base image
