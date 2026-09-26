@@ -50,5 +50,4 @@ hosts:
   replica2:     { latency_ms: 80, jitter_ms: 25 }
   replica3:     { latency_ms: 80, jitter_ms: 25 }
   replica4:     { latency_ms: 80, jitter_ms: 25 }
-  replica5:     { latency_ms: 80, jitter_ms: 25 }
   kpclientd:    { latency_ms: 80, jitter_ms: 25 }
