@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+when:
+  event: [push, pull_request, manual]
+
 steps:
   - name: check
     image: docker.io/golang:1.26

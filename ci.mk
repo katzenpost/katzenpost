@@ -7,6 +7,7 @@ RUNNER?=
 CI_RUNNERS?=act forgejo-runner woodpecker-cli
 WOODPECKER?=woodpecker-cli
 CI_WORKFLOWS_WOODPECKER?=.woodpecker
+CI_WOODPECKER_ARGS?=--local --backend-engine docker
 
 CI_IMAGE_NAME?=katzenpost-ci
 CI_IMAGE_TAG?=latest
@@ -58,7 +59,7 @@ ci-local: ci-local-image
 	  forgejo|forgejo-runner) $(FORGEJO_RUNNER) exec $(CI_FORGEJO_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
 	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)) $(if $(CI_JOB),-j $(CI_JOB),);; \
 	  woodpecker|woodpecker-cli) set -e; for pipeline in $(if $(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/$(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/*.yaml); do \
-	    $(WOODPECKER) exec "$$pipeline"; done;; \
+	    DOCKER_HOST="unix://$(CI_SOCKET)" $(WOODPECKER) exec $(CI_WOODPECKER_ARGS) --repo-path "$(CURDIR)" "$$pipeline"; done;; \
 	  "") echo "no local ci runner found; install one of: $(CI_RUNNERS)" >&2; exit 1;; \
 	  *) echo "RUNNER must be act, forgejo or woodpecker" >&2; exit 1;; \
 	esac

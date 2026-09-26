@@ -10,6 +10,9 @@ matrix:
     - courier
     - pigeonhole
 
+when:
+  event: [push, pull_request, manual]
+
 steps:
   - name: test
     image: docker.io/golang:1.26
