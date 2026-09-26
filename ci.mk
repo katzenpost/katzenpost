@@ -1,50 +1,52 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-ci_container?=podman
-ci_runner_image?=docker.io/catthehacker/ubuntu:act-22.04
-ci_platform?=ubuntu-latest=$(ci_runner_image)
-ci_act?=act
-ci_forgejo_runner?=forgejo-runner
-ci_workflow_github?=.github/workflows/linux.yml
-ci_workflow_forgejo?=.forgejo/workflows/ci.yml
-ci_job?=
-ci_container_socket?=/run/user/$(shell id -u)/podman/podman.sock
-ci_container_options?=-v /etc/ssl/certs:/etc/ssl/certs:ro -v $(ci_container_socket):/var/run/docker.sock
-ci_act_flags?=--bind
-ci_forgejo_flags?=--bind
-ci_unit_cmd?=
-ci_integration_cmd?=
-ci_live_cmd?=
+CONTAINER_ENGINE?=podman
+ACT?=act
+FORGEJO_RUNNER?=forgejo-runner
+RUNNER?=act
 
-.PHONY: ci-unit ci-integration ci-live ci-image ci-act ci-forgejo ci-equivalence ci-clean
+CI_IMAGE_NAME?=katzenpost-ci
+CI_IMAGE_TAG?=latest
+CI_IMAGE_DOCKERFILE?=.ci/Dockerfile
+CI_IMAGE_LOCAL?=localhost/$(CI_IMAGE_NAME):$(CI_IMAGE_TAG)
+CI_IMAGE_DIGEST?=
+CI_IMAGE?=$(if $(CI_IMAGE_DIGEST),$(CI_IMAGE_DIGEST),$(CI_IMAGE_LOCAL))
+CI_REGISTRIES?=
 
-ci-unit:
-	@test -n "$(ci_unit_cmd)" || { echo "set ci_unit_cmd before including ci.mk" >&2; exit 1; }
-	$(ci_unit_cmd)
+CI_PLATFORM?=ubuntu-latest=$(CI_IMAGE)
+CI_WORKFLOWS_ACT?=.github/workflows
+CI_WORKFLOWS_FORGEJO?=.forgejo/workflows
+CI_WORKFLOW?=
+CI_JOB?=
+CI_SOCKET?=/run/user/$(shell id -u)/podman/podman.sock
+CI_RUN_OPTIONS?=-v /etc/ssl/certs:/etc/ssl/certs:ro -v $(CI_SOCKET):/var/run/docker.sock
+CI_ACT_ARGS?=--bind --rm --concurrent-jobs 1
+CI_FORGEJO_ARGS?=--bind
 
-ci-integration:
-	@test -n "$(ci_integration_cmd)" || { echo "set ci_integration_cmd before including ci.mk" >&2; exit 1; }
-	$(ci_integration_cmd)
+.PHONY: ci-local ci-local-image ci-local-image-push ci-local-image-shell
 
-ci-live:
-	@test -n "$(ci_live_cmd)" || { echo "set ci_live_cmd before including ci.mk" >&2; exit 1; }
-	$(ci_live_cmd)
+ci-local-image:
+	@if [ -n "$(CI_IMAGE_DIGEST)" ]; then \
+	  $(CONTAINER_ENGINE) pull $(CI_IMAGE_DIGEST); \
+	else \
+	  $(CONTAINER_ENGINE) build -t $(CI_IMAGE_LOCAL) -f $(CI_IMAGE_DOCKERFILE) .; \
+	fi
 
-ci-image:
-	$(ci_container) pull $(ci_runner_image)
+ci-local-image-push: ci-local-image
+	@test -n "$(CI_REGISTRIES)" || { echo "set CI_REGISTRIES to one or more registry prefixes" >&2; exit 1; }
+	@set -e; for registry in $(CI_REGISTRIES); do \
+	  $(CONTAINER_ENGINE) tag $(CI_IMAGE_LOCAL) $$registry/$(CI_IMAGE_NAME):$(CI_IMAGE_TAG); \
+	  $(CONTAINER_ENGINE) push $$registry/$(CI_IMAGE_NAME):$(CI_IMAGE_TAG); \
+	done
 
-ci-act: ci-image
-	$(ci_act) $(ci_act_flags) -P $(ci_platform) --container-options "$(ci_container_options)" -W $(ci_workflow_github) $(if $(ci_job),-j $(ci_job),)
+ci-local-image-shell: ci-local-image
+	$(CONTAINER_ENGINE) run --rm -it --network host -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" --entrypoint /bin/bash $(CI_IMAGE)
 
-ci-forgejo: ci-image
-	$(ci_forgejo_runner) exec $(ci_forgejo_flags) -P $(ci_platform) --container-options "$(ci_container_options)" -W $(ci_workflow_forgejo) $(if $(ci_job),-j $(ci_job),)
-
-ci-equivalence:
-	@a=0; b=0; \
-	$(MAKE) ci-act > ci-act.log 2>&1 || a=$$?; \
-	$(MAKE) ci-forgejo > ci-forgejo.log 2>&1 || b=$$?; \
-	echo "act=$$a forgejo=$$b"; \
-	test "$$a" = "$$b" || { echo "the runners disagree; see ci-act.log and ci-forgejo.log" >&2; exit 1; }
-
-ci-clean:
-	rm -f ci-act.log ci-forgejo.log
+ci-local: ci-local-image
+	@case "$(RUNNER)" in \
+	  act) $(ACT) $(CI_ACT_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
+	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)) $(if $(CI_JOB),-j $(CI_JOB),);; \
+	  forgejo) $(FORGEJO_RUNNER) exec $(CI_FORGEJO_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
+	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)) $(if $(CI_JOB),-j $(CI_JOB),);; \
+	  *) echo "RUNNER must be act or forgejo" >&2; exit 1;; \
+	esac

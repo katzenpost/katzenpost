@@ -2,8 +2,9 @@ name: docker mixnet integration tests
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */12 * * *'
   push:
+    branches: [main]
     tags:
       - 'v*'
 jobs:

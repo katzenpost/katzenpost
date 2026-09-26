@@ -26,6 +26,7 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      server: ${{ steps.filter.outputs.server }}
       interop: ${{ steps.request.outputs.interop }}
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +54,17 @@ jobs:
               - 'go.sum'
               - 'docker/**'
               - '.github/workflows/docker-interop-gate.yml'
+            server:
+              - 'authority/**'
+              - 'server/**'
+              - 'replica/**'
+              - 'courier/**'
+              - 'core/**'
+              - 'pigeonhole/**'
+              - 'client/**'
+              - 'client2/**'
+              - 'go.mod'
+              - 'go.sum'
 
   local:
     needs: changes
@@ -78,8 +90,13 @@ jobs:
           key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
           restore-keys: |
             interop-gate-${{ runner.os }}-go1.26.x-
-      - name: Run the local testnet client suite with -short
-        run: cd docker && make dockertest_timeout=30m dockertest_parallel=2 testargs=-short test
+      - name: Run the testnet client suite
+        run: |
+          if [ "${{ needs.changes.outputs.server }}" = true ]; then
+            cd docker && make dockertest_timeout=90m dockertest_parallel=2 test
+          else
+            cd docker && make dockertest_timeout=30m dockertest_parallel=2 testargs=-short test
+          fi
       - name: Dump kpclientd logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true
@@ -161,3 +178,4 @@ jobs:
           if [ "${{ needs.changes.result }}" != "success" ]; then echo "changes job did not succeed" >&2; exit 1; fi
           if [ "${{ needs.local.result }}" != "success" ] && [ "${{ needs.local.result }}" != "skipped" ]; then echo "local job failed" >&2; exit 1; fi
           if [ "${{ needs.interop.result }}" != "success" ] && [ "${{ needs.interop.result }}" != "skipped" ]; then echo "interop job failed" >&2; exit 1; fi
+          echo "lanes: client suite ${{ needs.local.result }} (full when server paths changed: ${{ needs.changes.outputs.server }}), cross-version ${{ needs.interop.result }} (requested: ${{ needs.changes.outputs.interop }})"

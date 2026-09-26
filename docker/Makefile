@@ -1019,23 +1019,20 @@ interop_last1=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1 | xargs)
 interop_last2=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)
 interop_nodes=replica mix gateway
 
-interop-authorities-mixed:
-	$(MAKE) interop-gate interop_swap_groups=auth release_refs="$(interop_last2)"
-interop-authorities-old:
-	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last2)"
-interop-authorities-old-n1:
-	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last1)"
-interop-nodes-mixed:
-	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" release_refs="$(interop_last2)"
-interop-nodes-old:
-	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last2)"
-interop-nodes-old-n1:
-	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last1)"
-interop-everything-mixed:
-	$(MAKE) interop-gate release_refs="$(interop_last2)"
-interop-everything-mixed-n1:
-	$(MAKE) interop-gate release_refs="$(interop_last1)"
-interop-matrix: interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1
+interop_groups?=
+interop_releases?=$(interop_last2)
+interop_all?=
+
+interop:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_groups)" interop_swap_all="$(interop_all)" release_refs="$(interop_releases)"
+
+interop-matrix:
+	@set -e; for groups in auth "$(interop_nodes)" ""; do \
+	  for releases in "$(interop_last2)" "$(interop_last1)"; do \
+	    for all in "" 1; do \
+	      [ -z "$$groups" ] && [ -n "$$all" ] && continue; \
+	      $(MAKE) interop interop_groups="$$groups" interop_releases="$$releases" interop_all="$$all"; \
+	    done; done; done
 
 client-check: | $(cache_dir)
 	@[ -s $(namenlos_config) ] || { echo "client-check: no namenlos config at $(namenlos_config)" >&2; exit 1; }
