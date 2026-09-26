@@ -23,7 +23,7 @@ CI_RUN_OPTIONS?=-v /etc/ssl/certs:/etc/ssl/certs:ro -v $(CI_SOCKET):/var/run/doc
 CI_ACT_ARGS?=--bind --rm --concurrent-jobs 1
 CI_FORGEJO_ARGS?=--bind
 
-.PHONY: ci-local ci-local-image ci-local-image-push ci-local-image-shell
+.PHONY: ci-local-image ci-local-image-push ci-local-image-shell
 
 ci-local-image:
 	@if [ -n "$(CI_IMAGE_DIGEST)" ]; then \
@@ -42,6 +42,8 @@ ci-local-image-push: ci-local-image
 ci-local-image-shell: ci-local-image
 	$(CONTAINER_ENGINE) run --rm -it --network host -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" --entrypoint /bin/bash $(CI_IMAGE)
 
+ifndef CI_LOCAL_OWN
+.PHONY: ci-local
 ci-local: ci-local-image
 	@case "$(RUNNER)" in \
 	  act) $(ACT) $(CI_ACT_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
@@ -50,3 +52,4 @@ ci-local: ci-local-image
 	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)) $(if $(CI_JOB),-j $(CI_JOB),);; \
 	  *) echo "RUNNER must be act or forgejo" >&2; exit 1;; \
 	esac
+endif
