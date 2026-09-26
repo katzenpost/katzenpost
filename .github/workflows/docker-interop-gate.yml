@@ -2,6 +2,7 @@ name: docker interop gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
+  merge_group:
   workflow_dispatch:
     inputs:
       local:
@@ -26,7 +27,6 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
-      server: ${{ steps.filter.outputs.server }}
       interop: ${{ steps.request.outputs.interop }}
     steps:
       - uses: actions/checkout@v4
@@ -54,21 +54,10 @@ jobs:
               - 'go.sum'
               - 'docker/**'
               - '.github/workflows/docker-interop-gate.yml'
-            server:
-              - 'authority/**'
-              - 'server/**'
-              - 'replica/**'
-              - 'courier/**'
-              - 'core/**'
-              - 'pigeonhole/**'
-              - 'client/**'
-              - 'client2/**'
-              - 'go.mod'
-              - 'go.sum'
 
   local:
     needs: changes
-    if: (github.event_name == 'pull_request' && needs.changes.outputs.code == 'true') || (github.event_name == 'workflow_dispatch' && inputs.local)
+    if: (github.event_name == 'pull_request' && needs.changes.outputs.code == 'true') || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && inputs.local)
     permissions:
       contents: read
     env:
@@ -92,7 +81,7 @@ jobs:
             interop-gate-${{ runner.os }}-go1.26.x-
       - name: Run the testnet client suite
         run: |
-          if [ "${{ needs.changes.outputs.server }}" = true ]; then
+          if [ "${{ github.event_name }}" = merge_group ]; then
             cd docker && make dockertest_timeout=90m dockertest_parallel=2 test
           else
             cd docker && make dockertest_timeout=30m dockertest_parallel=2 testargs=-short test
@@ -118,7 +107,7 @@ jobs:
 
   interop:
     needs: changes
-    if: (github.event_name == 'pull_request' && needs.changes.outputs.interop == 'true') || (github.event_name == 'workflow_dispatch' && inputs.interop)
+    if: (github.event_name == 'pull_request' && needs.changes.outputs.interop == 'true') || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && inputs.interop)
     permissions:
       contents: read
     env:
@@ -178,4 +167,4 @@ jobs:
           if [ "${{ needs.changes.result }}" != "success" ]; then echo "changes job did not succeed" >&2; exit 1; fi
           if [ "${{ needs.local.result }}" != "success" ] && [ "${{ needs.local.result }}" != "skipped" ]; then echo "local job failed" >&2; exit 1; fi
           if [ "${{ needs.interop.result }}" != "success" ] && [ "${{ needs.interop.result }}" != "skipped" ]; then echo "interop job failed" >&2; exit 1; fi
-          echo "lanes: client suite ${{ needs.local.result }} (full when server paths changed: ${{ needs.changes.outputs.server }}), cross-version ${{ needs.interop.result }} (requested: ${{ needs.changes.outputs.interop }})"
+          echo "lanes: client suite ${{ needs.local.result }}, cross-version ${{ needs.interop.result }} (requested: ${{ needs.changes.outputs.interop }}); the merge queue runs both in full"
