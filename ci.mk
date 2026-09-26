@@ -3,7 +3,10 @@
 CONTAINER_ENGINE?=podman
 ACT?=act
 FORGEJO_RUNNER?=forgejo-runner
-RUNNER?=act
+RUNNER?=
+CI_RUNNERS?=act forgejo-runner woodpecker-cli
+WOODPECKER?=woodpecker-cli
+CI_WORKFLOWS_WOODPECKER?=.woodpecker
 
 CI_IMAGE_NAME?=katzenpost-ci
 CI_IMAGE_TAG?=latest
@@ -23,7 +26,7 @@ CI_RUN_OPTIONS?=-v /etc/ssl/certs:/etc/ssl/certs:ro -v $(CI_SOCKET):/var/run/doc
 CI_ACT_ARGS?=--bind --rm --concurrent-jobs 1
 CI_FORGEJO_ARGS?=--bind
 
-.PHONY: ci-local ci-local-forgejo ci-local-image ci-local-image-push ci-local-image-shell
+.PHONY: ci-local ci-local-image ci-local-image-push ci-local-image-shell
 
 ci-local-image:
 	@if [ -n "$(CI_IMAGE_DIGEST)" ]; then \
@@ -43,13 +46,18 @@ ci-local-image-shell: ci-local-image
 	$(CONTAINER_ENGINE) run --rm -it --network host -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" --entrypoint /bin/bash $(CI_IMAGE)
 
 ci-local: ci-local-image
-	@case "$(RUNNER)" in \
+	@runner="$(RUNNER)"; \
+	if [ -z "$$runner" ]; then \
+	  for candidate in $(CI_RUNNERS); do \
+	    command -v "$$candidate" >/dev/null 2>&1 && { runner="$$candidate"; break; }; \
+	  done; \
+	fi; \
+	case "$$runner" in \
 	  act) $(ACT) $(CI_ACT_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
 	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)) $(if $(CI_JOB),-j $(CI_JOB),);; \
-	  forgejo) $(FORGEJO_RUNNER) exec $(CI_FORGEJO_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
+	  forgejo|forgejo-runner) $(FORGEJO_RUNNER) exec $(CI_FORGEJO_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
 	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)) $(if $(CI_JOB),-j $(CI_JOB),);; \
-	  *) echo "RUNNER must be act or forgejo" >&2; exit 1;; \
+	  woodpecker|woodpecker-cli) $(WOODPECKER) exec $(CI_WORKFLOWS_WOODPECKER)/$(or $(CI_WORKFLOW),ci.yaml);; \
+	  "") echo "no local ci runner found; install one of: $(CI_RUNNERS)" >&2; exit 1;; \
+	  *) echo "RUNNER must be act, forgejo or woodpecker" >&2; exit 1;; \
 	esac
-
-ci-local-forgejo: ci-local-image
-	$(MAKE) ci-local RUNNER=forgejo
