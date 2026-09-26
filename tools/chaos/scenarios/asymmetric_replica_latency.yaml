@@ -47,6 +47,3 @@ hosts:
   replica4:
     latency_ms: 15
     jitter_ms: 5
-  replica5:
-    latency_ms: 15
-    jitter_ms: 5
