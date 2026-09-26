@@ -7,7 +7,8 @@ RUNNER?=
 CI_RUNNERS?=act forgejo-runner woodpecker-cli
 WOODPECKER?=woodpecker-cli
 CI_WORKFLOWS_WOODPECKER?=.woodpecker
-CI_WOODPECKER_ARGS?=--local --backend-engine docker
+CI_WOODPECKER_BACKEND?=docker
+CI_WOODPECKER_ARGS?=--local --backend-engine $(CI_WOODPECKER_BACKEND)
 
 CI_IMAGE_NAME?=katzenpost-ci
 CI_IMAGE_TAG?=latest
