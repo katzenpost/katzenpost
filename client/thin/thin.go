@@ -646,13 +646,16 @@ func (t *ThinClient) Dial() error {
 	}
 
 	// WAIT for connection status message from daemon
+	if err := t.conn.SetDeadline(time.Now().Add(handshakeTimeout)); err == nil {
+		defer t.conn.SetDeadline(time.Time{})
+	}
+
 	t.log.Debugf("Waiting for a connection status message")
-	message1, err := t.readMessage()
+	message1, err := t.readHandshakeMessage(func(m *Response) bool {
+		return m.ConnectionStatusEvent != nil
+	}, "ConnectionStatusEvent")
 	if err != nil {
 		return err
-	}
-	if message1.ConnectionStatusEvent == nil {
-		panic("bug: thin client protocol sequence violation")
 	}
 
 	if message1.ConnectionStatusEvent.SphinxGeometry == nil ||
@@ -677,12 +680,11 @@ func (t *ThinClient) Dial() error {
 	}
 
 	t.log.Debugf("Waiting for a PKI doc message")
-	message2, err := t.readMessage()
+	message2, err := t.readHandshakeMessage(func(m *Response) bool {
+		return m.NewPKIDocumentEvent != nil
+	}, "NewPKIDocumentEvent")
 	if err != nil {
 		return err
-	}
-	if message2.NewPKIDocumentEvent == nil {
-		panic("bug: thin client protocol sequence violation")
 	}
 	// Handle empty payload - daemon may not have a PKI document yet
 	if len(message2.NewPKIDocumentEvent.Payload) > 0 {
@@ -701,18 +703,40 @@ func (t *ThinClient) Dial() error {
 	}
 
 	// Read SessionTokenReply
-	message3, err := t.readMessage()
+	message3, err := t.readHandshakeMessage(func(m *Response) bool {
+		return m.SessionTokenReply != nil
+	}, "SessionTokenReply")
 	if err != nil {
 		return fmt.Errorf("failed to read SessionTokenReply: %w", err)
-	}
-	if message3.SessionTokenReply == nil {
-		panic("bug: thin client protocol sequence violation: expected SessionTokenReply")
 	}
 	t.log.Debugf("Session token reply: resumed=%v", message3.SessionTokenReply.Resumed)
 
 	t.Go(t.eventSinkWorker)
 	t.Go(t.worker)
 	return nil
+}
+
+const (
+	maxHandshakeMessages = 16
+	handshakeTimeout     = 2 * time.Minute
+)
+
+func (t *ThinClient) readHandshakeMessage(want func(*Response) bool, expected string) (*Response, error) {
+	for i := 0; i < maxHandshakeMessages; i++ {
+		message, err := t.readMessage()
+		if err != nil {
+			return nil, err
+		}
+		if want(message) {
+			return message, nil
+		}
+		if message.NewPKIDocumentEvent != nil && len(message.NewPKIDocumentEvent.Payload) > 0 {
+			t.parsePKIDoc(message.NewPKIDocumentEvent.Payload)
+			continue
+		}
+		t.log.Debugf("Discarding a message received while waiting for %s", expected)
+	}
+	return nil, fmt.Errorf("daemon sent no %s in the first %d handshake messages", expected, maxHandshakeMessages)
 }
 
 // writeMessage sends a request message to the client daemon over the connection.
@@ -1261,7 +1285,10 @@ func (t *ThinClient) worker() {
 func (t *ThinClient) EventSink() chan Event {
 	// add a new event sink receiver
 	ch := make(chan Event, 1)
-	t.drainAdd <- ch
+	select {
+	case t.drainAdd <- ch:
+	case <-t.HaltCh():
+	}
 	return ch
 }
 
@@ -1282,7 +1309,10 @@ func (t *ThinClient) EventSink() chan Event {
 //
 //	// Process events...
 func (t *ThinClient) StopEventSink(ch chan Event) {
-	t.drainRemove <- ch
+	select {
+	case t.drainRemove <- ch:
+	case <-t.HaltCh():
+	}
 }
 
 // eventSinkWorker adds and removes channels receiving Events
