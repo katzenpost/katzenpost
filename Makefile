@@ -1,4 +1,10 @@
 
+ci_unit_cmd=go test ./...
+ci_integration_cmd=cd docker && $(MAKE) start wait run-ping
+ci_live_cmd=cd docker && $(MAKE) client-check
+
+include ci.mk
+
 .PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
 
 .PHONY: update-go-deps
