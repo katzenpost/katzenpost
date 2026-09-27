@@ -10,6 +10,7 @@ on:
 jobs:
 
   test_e2e_client:
+    name: docker-mixnet
     permissions:
       contents: read
       packages: write
