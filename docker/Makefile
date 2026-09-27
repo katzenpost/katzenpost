@@ -54,6 +54,7 @@ no_courier_replica_decoy?=false
 no_mixdecoy?=true
 no_gatewaydecoy?=true
 no_metrics?=true
+transport?=tcp
 pyroscope_dirauth?=false
 pyroscope_kpclientd?=false
 kpclientd_metrics?=false
@@ -259,6 +260,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--noMixDecoy=$(no_mixdecoy) --noGatewayDecoy=$(no_gatewaydecoy) \
 	$(noDecoyFlag) $(noClientDecoyFlag) $(noCourierReplicaDecoyFlag) $(noMetricsFlag) \
 	--epochDuration "$(epoch_duration)" --sessionGracePeriod $(or $(session_grace_period),0) \
+	--transport $(transport) \
 	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
