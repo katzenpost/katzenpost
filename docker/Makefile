@@ -134,6 +134,9 @@ endif
 # Universal escape hatch: make base_image=my/registry:tag start wait
 base_image?=$(distro_base_image)
 prebuilt_base?=
+base_image_name?=$(distro)-base
+base_image_tag?=latest
+base_registries?=
 # Single source of truth for the Go toolchain: the go directive in the
 # repo's go.mod. The base Dockerfiles keep the same value as an ARG
 # default only so `podman build` works standalone.
@@ -667,6 +670,16 @@ wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(ca
 	@deadline=$$(( $$(date +%s) + 600 )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready --ready-timeout $${left}s; do \
 	  echo "wait: the client daemon is not accepting connections yet; retrying"; sleep 5; done
+
+.PHONY: base-image base-image-push
+base-image: $(distro)_base.stamp
+
+base-image-push: base-image
+	@test -n "$(strip $(base_registries))" || { echo "set base_registries to one or more registry prefixes" >&2; exit 1; }
+	@set -e; for registry in $(base_registries); do \
+	  $(docker) tag katzenpost-$(distro)_base $$registry/$(base_image_name):$(base_image_tag); \
+	  $(docker) push $$registry/$(base_image_name):$(base_image_tag); \
+	done
 
 $(distro)_base.stamp: $(base_dockerfile)
 	@if [ -n "$(strip $(prebuilt_base))" ]; then \
