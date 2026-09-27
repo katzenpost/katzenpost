@@ -6,6 +6,7 @@ FORGEJO_RUNNER?=forgejo-runner
 RUNNER?=
 CI_RUNNERS?=act forgejo-runner woodpecker-cli
 WOODPECKER?=woodpecker-cli
+ci_make=$(MAKE) -f $(firstword $(MAKEFILE_LIST))
 CI_WORKFLOWS_WOODPECKER?=.woodpecker
 CI_WOODPECKER_BACKEND?=docker
 CI_WOODPECKER_ARGS?=--local --backend-engine $(CI_WOODPECKER_BACKEND)
