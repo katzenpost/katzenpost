@@ -36,6 +36,25 @@ check: ci-config-check
 check-live:
 	$(MAKE) -C docker client-check
 
+.PHONY: test-short
+test-short:
+	$(MAKE) -C docker test testargs=-short
+
+.PHONY: test-integration
+test-integration:
+	$(MAKE) -C docker test
+
+.PHONY: interop
+interop:
+	$(MAKE) -C docker interop
+
+.PHONY: interop-matrix
+interop-matrix:
+	$(MAKE) -C docker interop-matrix
+
+.PHONY: bench
+bench: bench-sphinx bench-handshake bench-replica
+
 .PHONY: update-go-deps
 update-go-deps:
 	@echo ">> updating Go dependencies"

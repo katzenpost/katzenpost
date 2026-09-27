@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+when:
+  event: [manual, cron]
+
+steps:
+  - name: interop
+    image: docker.io/golang:1.26
+    commands:
+      - make interop

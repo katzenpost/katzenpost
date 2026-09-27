@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: bench
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */12 * * *'
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.26'
+      - run: make bench
