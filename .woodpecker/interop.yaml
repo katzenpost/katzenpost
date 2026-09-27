@@ -5,6 +5,6 @@ when:
 
 steps:
   - name: interop
-    image: docker.io/golang:1.26
+    image: localhost/katzenpost-ci:latest
     commands:
       - make interop

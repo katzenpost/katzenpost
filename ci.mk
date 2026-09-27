@@ -14,8 +14,10 @@ CI_WOODPECKER_ARGS?=--local --backend-engine $(CI_WOODPECKER_BACKEND)
 CI_IMAGE_NAME?=katzenpost-ci
 CI_IMAGE_TAG?=latest
 CI_IMAGE_DOCKERFILE?=.ci/Dockerfile
+CI_IMAGE_TMPDIR?=/var/tmp
 CI_IMAGE_LOCAL?=localhost/$(CI_IMAGE_NAME):$(CI_IMAGE_TAG)
 CI_IMAGE_DIGEST?=
+CI_IMAGE_PULL?=
 CI_IMAGE?=$(if $(CI_IMAGE_DIGEST),$(CI_IMAGE_DIGEST),$(CI_IMAGE_LOCAL))
 CI_REGISTRIES?=
 
@@ -25,17 +27,22 @@ CI_WORKFLOWS_FORGEJO?=.forgejo/workflows
 CI_WORKFLOW?=
 CI_JOB?=
 CI_SOCKET?=/run/user/$(shell id -u)/podman/podman.sock
-CI_RUN_OPTIONS?=-v /etc/ssl/certs:/etc/ssl/certs:ro -v $(CI_SOCKET):/var/run/docker.sock
-CI_ACT_ARGS?=--bind --rm --concurrent-jobs 1
-CI_FORGEJO_ARGS?=--bind
+CI_RUN_OPTIONS?=-v /etc/ssl/certs:/etc/ssl/certs:ro
+CI_DAEMON_SOCKET?=unix://$(CI_SOCKET)
+CI_ACT_ARGS?=--bind --rm --concurrent-jobs 1 --pull=false
+CI_FORGEJO_ARGS?=
 
 .PHONY: ci-local ci-local-image ci-local-image-push ci-local-image-shell
 
 ci-local-image:
 	@if [ -n "$(CI_IMAGE_DIGEST)" ]; then \
 	  $(CONTAINER_ENGINE) pull $(CI_IMAGE_DIGEST); \
+	  $(CONTAINER_ENGINE) tag $(CI_IMAGE_DIGEST) $(CI_IMAGE_LOCAL); \
+	elif [ -n "$(CI_IMAGE_PULL)" ]; then \
+	  $(CONTAINER_ENGINE) pull $(CI_IMAGE_PULL); \
+	  $(CONTAINER_ENGINE) tag $(CI_IMAGE_PULL) $(CI_IMAGE_LOCAL); \
 	else \
-	  $(CONTAINER_ENGINE) build -t $(CI_IMAGE_LOCAL) -f $(CI_IMAGE_DOCKERFILE) .; \
+	  TMPDIR=$(CI_IMAGE_TMPDIR) $(CONTAINER_ENGINE) build -t $(CI_IMAGE_LOCAL) -f $(CI_IMAGE_DOCKERFILE) .; \
 	fi
 
 ci-local-image-push: ci-local-image
@@ -56,9 +63,9 @@ ci-local: ci-local-image
 	  done; \
 	fi; \
 	case "$$runner" in \
-	  act) $(ACT) $(CI_ACT_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
+	  act) DOCKER_HOST="unix://$(CI_SOCKET)" $(ACT) $(CI_ACT_ARGS) -P $(CI_PLATFORM) --var CI_IMAGE=$(CI_IMAGE) --container-daemon-socket "$(CI_DAEMON_SOCKET)" --container-options "$(CI_RUN_OPTIONS)" \
 	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)) $(if $(CI_JOB),-j $(CI_JOB),);; \
-	  forgejo|forgejo-runner) $(FORGEJO_RUNNER) exec $(CI_FORGEJO_ARGS) -P $(CI_PLATFORM) --container-options "$(CI_RUN_OPTIONS)" \
+	  forgejo|forgejo-runner) DOCKER_HOST="unix://$(CI_SOCKET)" $(FORGEJO_RUNNER) exec $(CI_FORGEJO_ARGS) -i $(CI_IMAGE) --var CI_IMAGE=$(CI_IMAGE) --container-daemon-socket "$(CI_DAEMON_SOCKET)" --container-opts "$(CI_RUN_OPTIONS)" \
 	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)) $(if $(CI_JOB),-j $(CI_JOB),);; \
 	  woodpecker|woodpecker-cli) set -e; for pipeline in $(if $(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/$(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/*.yaml); do \
 	    DOCKER_HOST="unix://$(CI_SOCKET)" $(WOODPECKER) exec $(CI_WOODPECKER_ARGS) --repo-path "$(CURDIR)" "$$pipeline"; done;; \

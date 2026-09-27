@@ -15,6 +15,6 @@ when:
 
 steps:
   - name: test
-    image: docker.io/golang:1.26
+    image: localhost/katzenpost-ci:latest
     commands:
       - make test-suite suite=$SUITE

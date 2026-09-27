@@ -15,18 +15,16 @@ jobs:
       fail-fast: false
       matrix:
         suite: [authority, client, core, core/sphinx, server, courier, pigeonhole]
+    container:
+      image: ${{ vars.CI_IMAGE }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '>=1.26'
       - run: make test-suite suite=${{ matrix.suite }}
 
   check:
     runs-on: ubuntu-latest
+    container:
+      image: ${{ vars.CI_IMAGE }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '>=1.26'
       - run: make check
