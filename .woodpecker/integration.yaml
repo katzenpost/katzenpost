@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 when:
-  event: [manual, cron]
+  - event: [manual, cron]
+  - event: pull_request
+    branch: main
 
 steps:
   - name: integration
-    image: docker.io/golang:1.26
+    image: localhost/katzenpost-ci:latest
     commands:
       - make test-integration

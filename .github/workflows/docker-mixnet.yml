@@ -1,6 +1,7 @@
 name: docker mixnet integration tests
 on:
   workflow_dispatch:
+  merge_group:
   schedule:
     - cron: '0 */12 * * *'
   push:
