@@ -104,7 +104,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always() && !env.ACT
         with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          name: mixnet-${{ github.run_id }}-${{ github.job }}-${{ matrix.transport }}
           path: |
             docker/mixnet-alpine/*/*.log
             docker/mixnet-alpine/servicenode*/courier/courier.log
