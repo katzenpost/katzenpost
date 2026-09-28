@@ -6,6 +6,7 @@ package client
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -54,6 +55,10 @@ type listener struct {
 
 	updatePKIDocCh chan *cpki.Document
 	updateStatusCh chan error
+
+	// lastPKIDocBlob is the most recently broadcast document, replayed
+	// to a conn that missed it during its handshake.
+	lastPKIDocBlob atomic.Pointer[[]byte]
 
 	// instanceToken is a random token that uniquely identifies this daemon instance.
 	// Thin clients use it to detect same-instance reconnects vs new-instance reconnects.
@@ -220,7 +225,31 @@ func (l *listener) onNewConn(conn net.Conn) {
 	// A thin client that never sends a SessionToken, as the python and
 	// rust clients do not, still has to receive broadcasts; open the gate
 	// for it once no handshake reply can still be in flight.
-	time.AfterFunc(handshakeGateGrace, func() { c.initialSequenceDone.Store(true) })
+	time.AfterFunc(handshakeGateGrace, func() { l.openBroadcastGate(c) })
+}
+
+// openBroadcastGate lets broadcasts reach c and replays the current
+// connection status and PKI document if a broadcast of either was
+// skipped while the gate was shut. connsLock is held for writing so
+// no broadcast can interleave with the replay and leave c on an older
+// value than the one it last received.
+func (l *listener) openBroadcastGate(c *incomingConn) {
+	if c.initialSequenceDone.Load() {
+		return
+	}
+	l.connsLock.Lock()
+	defer l.connsLock.Unlock()
+	if c.initialSequenceDone.Swap(true) {
+		return
+	}
+	if c.missedStatus.Load() {
+		c.updateConnectionStatus(l.getConnectionStatus())
+	}
+	if c.missedPKIDoc.Load() {
+		if docBlob := l.lastPKIDocBlob.Load(); docBlob != nil {
+			c.sendPKIDoc(*docBlob)
+		}
+	}
 }
 
 // waitForPKIDoc polls the daemon's PKI cache for up to timeout,
@@ -356,6 +385,7 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 		// strict-order ConnectionStatus + PKIDoc pair the thin
 		// client expects on Dial().
 		if !c.initialSequenceDone.Load() {
+			c.missedStatus.Store(true)
 			continue
 		}
 		c.updateConnectionStatus(status)
@@ -382,9 +412,11 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 // ConnectionStatus, PKI document and SessionTokenReply that Dial()
 // expects in that order.
 func (l *listener) broadcastPKIDoc(docBlob []byte) {
+	l.lastPKIDocBlob.Store(&docBlob)
 	l.connsLock.RLock()
 	for _, c := range l.conns {
 		if !c.initialSequenceDone.Load() {
+			c.missedPKIDoc.Store(true)
 			continue
 		}
 		if err := c.sendPKIDoc(docBlob); err != nil {
@@ -535,7 +567,7 @@ type DisconnectedSession struct {
 // If the token was previously registered, the connection resumes the old app ID.
 // Otherwise a new token->appID mapping is created.
 func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
-	defer c.initialSequenceDone.Store(true)
+	defer l.openBroadcastGate(c)
 	l.clientTokensLock.Lock()
 	defer l.clientTokensLock.Unlock()
 
@@ -557,36 +589,19 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 		}
 		l.connsLock.Unlock()
 
-		// Cancel any pending cleanup timer and flush queued replies
-		l.disconnectedSessionsLock.Lock()
-		cancelledTimer := false
-		if session, ok := l.disconnectedSessions[*existingAppID]; ok {
-			session.CleanupTimer.Stop()
-			for _, reply := range session.QueuedReplies {
-				if err := c.sendResponse(reply); err != nil {
-					l.log.Warningf("Dropped queued reply during session resume: %v", err)
-				}
-			}
-			delete(l.disconnectedSessions, *existingAppID)
-			cancelledTimer = true
-		}
-		count := len(l.disconnectedSessions)
-		l.disconnectedSessionsLock.Unlock()
-		if cancelledTimer {
-			instrument.DisconnectedSessionsSet(count)
-			l.log.Infof("Grace timer cancelled on session resume for AppID %x", existingAppID[:4])
-		}
-
 		token := st.ClientInstanceToken
 		c.clientToken = &token
 		l.log.Infof("Session resumed for token %x -> AppID %x", st.ClientInstanceToken[:4], existingAppID[:4])
 
+		// The reply goes first: a thin client waiting for it discards
+		// anything that is not an event, queued replies included.
 		c.sendResponse(&Response{
 			SessionTokenReply: &thin.SessionTokenReply{
 				AppID:   existingAppID[:],
 				Resumed: true,
 			},
 		})
+		l.flushDisconnectedSession(c, existingAppID)
 		return
 	}
 
@@ -602,6 +617,28 @@ func (l *listener) handleSessionToken(c *incomingConn, st *thin.SessionToken) {
 			Resumed: false,
 		},
 	})
+}
+
+// flushDisconnectedSession cancels the cleanup timer of a resumed
+// session and sends c the replies queued while it was away.
+func (l *listener) flushDisconnectedSession(c *incomingConn, appID *[AppIDLength]byte) {
+	l.disconnectedSessionsLock.Lock()
+	session, ok := l.disconnectedSessions[*appID]
+	if ok {
+		session.CleanupTimer.Stop()
+		for _, reply := range session.QueuedReplies {
+			if err := c.sendResponse(reply); err != nil {
+				l.log.Warningf("Dropped queued reply during session resume: %v", err)
+			}
+		}
+		delete(l.disconnectedSessions, *appID)
+	}
+	count := len(l.disconnectedSessions)
+	l.disconnectedSessionsLock.Unlock()
+	if ok {
+		instrument.DisconnectedSessionsSet(count)
+		l.log.Infof("Grace timer cancelled on session resume for AppID %x", appID[:4])
+	}
 }
 
 // queueReplyForDisconnected buffers a reply for a disconnected session.

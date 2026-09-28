@@ -104,6 +104,11 @@ type incomingConn struct {
 	// a status-change or doc-update event cannot queue ahead of any
 	// of the three messages the thin client's Dial() expects.
 	initialSequenceDone atomic.Bool
+
+	// missedStatus and missedPKIDoc record a broadcast skipped while
+	// the gate was shut, so openBroadcastGate can replay it.
+	missedStatus atomic.Bool
+	missedPKIDoc atomic.Bool
 }
 
 // closeDone closes doneCh exactly once. Called from the worker's defer
@@ -334,7 +339,7 @@ func (c *incomingConn) worker() {
 				c.listener.handleSessionToken(c, rawReq.SessionToken)
 				continue
 			}
-			c.initialSequenceDone.Store(true)
+			c.listener.openBroadcastGate(c)
 			c.log.Infof("Received Request from peer application.")
 			if isLocalRequest(rawReq) && c.listener.localDispatch != nil {
 				// Local-only operations (key generation, envelope prep,

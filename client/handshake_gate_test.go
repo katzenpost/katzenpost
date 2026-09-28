@@ -54,10 +54,28 @@ func TestBroadcastsWaitForTheSessionTokenReply(t *testing.T) {
 
 	l.handleSessionToken(c, &thin.SessionToken{ClientInstanceToken: [16]byte{1}})
 	require.True(t, c.initialSequenceDone.Load())
-	require.Equal(t, queued+1, queuedResponses(c))
-
-	l.broadcastPKIDoc([]byte("broadcast doc"))
 	require.Equal(t, queued+2, queuedResponses(c))
+	require.NotNil(t, c.sendQueue[queued].SessionTokenReply)
+	require.Equal(t, []byte("broadcast doc"), c.sendQueue[queued+1].NewPKIDocumentEvent.Payload)
+
+	l.broadcastPKIDoc([]byte("next doc"))
+	require.Equal(t, queued+3, queuedResponses(c))
+}
+
+func TestOpeningTheGateReplaysNothingWhenNothingWasMissed(t *testing.T) {
+	l := newGateTestListener(t)
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	c := newIncomingConn(l, server)
+	l.connsLock.Lock()
+	l.registerConn(c)
+	l.connsLock.Unlock()
+
+	l.handleSessionToken(c, &thin.SessionToken{ClientInstanceToken: [16]byte{2}})
+	require.Equal(t, 1, queuedResponses(c))
+	require.NotNil(t, c.sendQueue[0].SessionTokenReply)
 }
 
 func TestARequestWithoutASessionTokenOpensTheGate(t *testing.T) {
