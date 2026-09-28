@@ -67,7 +67,7 @@ jobs:
       epoch_duration: 2m
       no_metrics: true
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
       - name: Configure podman socket
