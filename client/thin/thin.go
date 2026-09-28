@@ -734,6 +734,12 @@ func (t *ThinClient) readHandshakeMessage(want func(*Response) bool, expected st
 			t.parsePKIDoc(message.NewPKIDocumentEvent.Payload)
 			continue
 		}
+		if message.ConnectionStatusEvent != nil {
+			t.connMu.Lock()
+			t.isConnected = message.ConnectionStatusEvent.IsConnected
+			t.connMu.Unlock()
+			continue
+		}
 		t.log.Debugf("Discarding a message received while waiting for %s", expected)
 	}
 	return nil, fmt.Errorf("daemon sent no %s in the first %d handshake messages", expected, maxHandshakeMessages)
@@ -1067,76 +1073,70 @@ func (t *ThinClient) redial() bool {
 		t.conn = conn
 		t.connMu.Unlock()
 
-		// Handshake: read ConnectionStatusEvent
-		message1, err := t.readMessage()
+		reply, err := t.redialHandshake(conn)
 		if err != nil {
-			t.log.Errorf("Reconnect handshake failed (ConnectionStatusEvent): %v", err)
+			t.log.Errorf("Reconnect handshake failed: %v", err)
 			conn.Close()
 			continue
 		}
-		if message1.ConnectionStatusEvent == nil {
-			t.log.Errorf("Reconnect handshake failed: expected ConnectionStatusEvent")
-			conn.Close()
-			continue
-		}
-		t.connMu.Lock()
-		t.isConnected = message1.ConnectionStatusEvent.IsConnected
-		t.daemonInstanceToken = message1.ConnectionStatusEvent.InstanceToken
-		if message1.ConnectionStatusEvent.SphinxGeometry != nil {
-			t.sphinxGeo = message1.ConnectionStatusEvent.SphinxGeometry
-		}
-		if message1.ConnectionStatusEvent.PigeonholeGeometry != nil {
-			t.pigeonGeo = message1.ConnectionStatusEvent.PigeonholeGeometry
-		}
-		t.connMu.Unlock()
-
-		// Handshake: read NewPKIDocumentEvent
-		message2, err := t.readMessage()
-		if err != nil {
-			t.log.Errorf("Reconnect handshake failed (NewPKIDocumentEvent): %v", err)
-			conn.Close()
-			continue
-		}
-		if message2.NewPKIDocumentEvent == nil {
-			t.log.Errorf("Reconnect handshake failed: expected NewPKIDocumentEvent")
-			conn.Close()
-			continue
-		}
-		if len(message2.NewPKIDocumentEvent.Payload) > 0 {
-			t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
-		}
-
-		// Handshake: send SessionToken
-		err = t.writeMessage(&Request{
-			SessionToken: &SessionToken{
-				ClientInstanceToken: t.instanceToken,
-			},
-		})
-		if err != nil {
-			t.log.Errorf("Reconnect handshake failed (SessionToken send): %v", err)
-			conn.Close()
-			continue
-		}
-
-		message3, err := t.readMessage()
-		if err != nil {
-			t.log.Errorf("Reconnect handshake failed (SessionTokenReply): %v", err)
-			conn.Close()
-			continue
-		}
-		if message3.SessionTokenReply == nil {
-			t.log.Errorf("Reconnect handshake failed: expected SessionTokenReply")
-			conn.Close()
-			continue
-		}
-		t.log.Debugf("Reconnect session token reply: resumed=%v", message3.SessionTokenReply.Resumed)
+		t.log.Debugf("Reconnect session token reply: resumed=%v", reply.Resumed)
 
 		t.connMu.RLock()
 		connected := t.isConnected
 		t.connMu.RUnlock()
-		t.log.Infof("Reconnected to daemon (connected=%v, resumed=%v)", connected, message3.SessionTokenReply.Resumed)
+		t.log.Infof("Reconnected to daemon (connected=%v, resumed=%v)", connected, reply.Resumed)
 		return true
 	}
+}
+
+// redialHandshake runs the thin client handshake on a fresh conn to the
+// daemon, tolerating interleaved events as Dial does.
+func (t *ThinClient) redialHandshake(conn net.Conn) (*SessionTokenReply, error) {
+	if err := conn.SetDeadline(time.Now().Add(handshakeTimeout)); err == nil {
+		defer conn.SetDeadline(time.Time{})
+	}
+	message1, err := t.readHandshakeMessage(func(m *Response) bool {
+		return m.ConnectionStatusEvent != nil
+	}, "ConnectionStatusEvent")
+	if err != nil {
+		return nil, err
+	}
+	t.connMu.Lock()
+	t.isConnected = message1.ConnectionStatusEvent.IsConnected
+	t.daemonInstanceToken = message1.ConnectionStatusEvent.InstanceToken
+	if message1.ConnectionStatusEvent.SphinxGeometry != nil {
+		t.sphinxGeo = message1.ConnectionStatusEvent.SphinxGeometry
+	}
+	if message1.ConnectionStatusEvent.PigeonholeGeometry != nil {
+		t.pigeonGeo = message1.ConnectionStatusEvent.PigeonholeGeometry
+	}
+	t.connMu.Unlock()
+
+	message2, err := t.readHandshakeMessage(func(m *Response) bool {
+		return m.NewPKIDocumentEvent != nil
+	}, "NewPKIDocumentEvent")
+	if err != nil {
+		return nil, err
+	}
+	if len(message2.NewPKIDocumentEvent.Payload) > 0 {
+		t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
+	}
+
+	err = t.writeMessage(&Request{
+		SessionToken: &SessionToken{
+			ClientInstanceToken: t.instanceToken,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("SessionToken send: %w", err)
+	}
+	message3, err := t.readHandshakeMessage(func(m *Response) bool {
+		return m.SessionTokenReply != nil
+	}, "SessionTokenReply")
+	if err != nil {
+		return nil, err
+	}
+	return message3.SessionTokenReply, nil
 }
 
 // replayInFlightResends re-sends all tracked in-flight requests to the daemon.

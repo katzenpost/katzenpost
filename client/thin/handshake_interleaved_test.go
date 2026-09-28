@@ -98,3 +98,30 @@ func TestDialFailsWhenNoSessionTokenReplyArrives(t *testing.T) {
 func TestTheHandshakeDeadlineOutlastsTheDaemonsWaitForItsFirstDocument(t *testing.T) {
 	require.Greater(t, handshakeTimeout, 30*time.Second)
 }
+
+func TestDialAppliesAStatusChangeBeforeTheSessionTokenReply(t *testing.T) {
+	client, server := net.Pipe()
+	defer server.Close()
+	tc := newHandshakeTestClient(t, client)
+
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		sendResponse(t, server, &Response{
+			ConnectionStatusEvent: &ConnectionStatusEvent{
+				IsConnected: true, SphinxGeometry: tc.sphinxGeo, PigeonholeGeometry: tc.pigeonGeo,
+			},
+		})
+		sendResponse(t, server, pkiDocResponse(t, 400))
+		if _, err := readRequest(server); err != nil {
+			return
+		}
+		sendResponse(t, server, &Response{ConnectionStatusEvent: &ConnectionStatusEvent{IsConnected: false}})
+		sendResponse(t, server, &Response{SessionTokenReply: &SessionTokenReply{}})
+	}()
+
+	require.NoError(t, tc.Dial())
+	defer tc.Disconnect()
+	<-served
+	require.False(t, tc.IsConnected())
+}

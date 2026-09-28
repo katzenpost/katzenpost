@@ -154,6 +154,24 @@ func TestRedialReconnects(t *testing.T) {
 	tc.Halt()
 }
 
+func TestRedialReadsPastInterleavedEvents(t *testing.T) {
+	served := make(chan struct{})
+	address := lcScriptedDaemon(t, func(conn net.Conn) {
+		trySend(conn, lcStatusResponse())
+		trySend(conn, pkiDocResponse(t, 604))
+		readRequest(conn)
+		trySend(conn, pkiDocResponse(t, 605))
+		trySend(conn, &Response{ConnectionStatusEvent: &ConnectionStatusEvent{IsConnected: false}})
+		trySend(conn, &Response{SessionTokenReply: &SessionTokenReply{Resumed: true}})
+	}, served)
+	tc := lcReconnectClient(t, address)
+	require.True(t, tc.redial())
+	<-served
+	tc.Halt()
+	require.Contains(t, tc.pkiDocCache, uint64(605))
+	require.False(t, tc.IsConnected())
+}
+
 func TestRedialStopsWhenHalted(t *testing.T) {
 	tc := lcReconnectClient(t, "127.0.0.1:1")
 	tc.Halt()
