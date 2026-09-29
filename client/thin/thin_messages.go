@@ -132,11 +132,11 @@ const (
 	// sentinel mapping is driven entirely by this code.
 	ThinClientErrorCopyCommandFailed uint8 = 26
 
-	// ThinClientErrorPayloadTooLarge indicates that a WriteStream plaintext or
-	// a ReadStream result would exceed the daemon's configured maximum stream
-	// payload size. The daemon reports it as a clean per-request reply rather
-	// than tearing down the connection, so the caller can match it with
-	// errors.Is(err, ErrPayloadTooLarge) and retry with a smaller payload.
+	// ThinClientErrorPayloadTooLarge indicates that a request's payload would
+	// exceed the daemon's configured maximum payload size. The daemon reports
+	// it as a clean per-request reply rather than tearing down the connection,
+	// so the caller can match it with errors.Is(err, ErrPayloadTooLarge) and
+	// retry with a smaller payload.
 	ThinClientErrorPayloadTooLarge uint8 = 27
 
 	// ThinClientErrorVoucherHashMismatch indicates that a Contact Voucher
@@ -151,6 +151,20 @@ const (
 	// ThinClientErrorVoucherSealOpenFailed indicates that a sealed Contact
 	// Voucher reply could not be opened with the joiner's voucher secret key.
 	ThinClientErrorVoucherSealOpenFailed uint8 = 30
+
+	// ThinClientErrorCourierInvalidEnvelope indicates that the courier rejected
+	// the CourierEnvelope as malformed (pigeonhole.EnvelopeErrorInvalidEnvelope).
+	// It lives in the thin-client namespace, deliberately above the replica
+	// error range (1-11), so it cannot be confused with a replica error: the
+	// courier and the replica are different components with different stores.
+	ThinClientErrorCourierInvalidEnvelope uint8 = 31
+
+	// ThinClientErrorCourierInvalidEpoch indicates that the courier rejected the
+	// CourierEnvelope because its declared replica epoch fell outside the
+	// courier's tolerance window (pigeonhole.EnvelopeErrorInvalidEpoch). This is
+	// a courier-side staleness signal, NOT a replica database failure, even
+	// though the two share wire value 4 in their respective source namespaces.
+	ThinClientErrorCourierInvalidEpoch uint8 = 32
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -226,6 +240,10 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "Voucher signed please-add did not verify"
 	case ThinClientErrorVoucherSealOpenFailed:
 		return "Voucher sealed reply could not be opened"
+	case ThinClientErrorCourierInvalidEnvelope:
+		return "Courier rejected the envelope as malformed"
+	case ThinClientErrorCourierInvalidEpoch:
+		return "Courier rejected the envelope: replica epoch outside tolerance window"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}
@@ -315,58 +333,6 @@ type StartResendingEncryptedMessage struct {
 	NoIdempotentBoxAlreadyExists bool `cbor:"no_idempotent_box_already_exists,omitempty"`
 }
 
-// WriteStream requests the daemon to write a whole payload, of any size,
-// across as many BACAP boxes as it spans, using a windowed selective-ack
-// (SACK) ARQ. Unlike the per-box StartResendingEncryptedMessage, the daemon
-// keeps up to Window boxes in flight at once and retransmits only the boxes
-// whose acknowledgements time out, so a multi-box payload is no longer
-// serialised one round trip per box. The daemon does all chunking and
-// encryption; the thin client supplies only the cleartext payload and the
-// destination capability.
-type WriteStream struct {
-	// QueryID correlates this request with its WriteStreamReply.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// WriteCap is the write capability for the destination channel.
-	WriteCap *bacap.WriteCap `cbor:"write_cap"`
-
-	// StartIndex is the message box index of the first box written; the
-	// daemon advances sequentially from here, one box per chunk.
-	StartIndex *bacap.MessageBoxIndex `cbor:"start_index"`
-
-	// Payload is the cleartext to write. The daemon splits it into boxes.
-	Payload []byte `cbor:"payload"`
-
-	// Window is the maximum number of boxes in flight at once. Zero asks
-	// the daemon to choose a default derived from the send rate and RTT.
-	Window int `cbor:"window,omitempty"`
-}
-
-// ReadStream requests the daemon to read BoxCount sequential boxes from a
-// channel using the windowed selective-ack (SACK) ARQ, the read counterpart
-// of WriteStream. The daemon keeps up to Window boxes in flight, retransmits
-// only the boxes whose payloads time out, decrypts each box, and reassembles
-// them in order into a single payload. The thin client supplies only the read
-// capability, the start index, and how many boxes to read.
-type ReadStream struct {
-	// QueryID correlates this request with its ReadStreamReply.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// ReadCap is the read capability for the source channel.
-	ReadCap *bacap.ReadCap `cbor:"read_cap"`
-
-	// StartIndex is the message box index of the first box read; the daemon
-	// advances sequentially from here.
-	StartIndex *bacap.MessageBoxIndex `cbor:"start_index"`
-
-	// BoxCount is the number of sequential boxes to read.
-	BoxCount uint32 `cbor:"box_count"`
-
-	// Window is the maximum number of boxes in flight at once. Zero asks the
-	// daemon to choose a default derived from the send rate and RTT.
-	Window int `cbor:"window,omitempty"`
-}
-
 // CancelResendingEncryptedMessage requests the daemon to cancel resending an encrypted message.
 type CancelResendingEncryptedMessage struct {
 	// QueryID is used for correlating this thin client request with the
@@ -453,6 +419,52 @@ type GetPKIDocument struct {
 	// returned. If zero, the daemon returns the document for the current
 	// epoch.
 	Epoch uint64 `cbor:"epoch"`
+}
+
+// DirectoryAuthority is the daemon's view of a single directory authority
+// peer, as drawn from the client daemon's configuration. It mirrors the
+// public fields the daemon holds for a voting authority peer; the dirauth's
+// private listener bindings are not a client-side concern and so are absent.
+//
+// The keys travel as PEM strings so that consumers need not link a Go key
+// type to interpret them. IdentityKeyHash is the BLAKE2b-256 hash of the
+// identity public key, supplied for convenience: it is the very value by
+// which a PKI document's signatures are keyed, so a caller may map a
+// signature straight to its signing authority without re-deriving the hash.
+type DirectoryAuthority struct {
+	// Identifier is the human readable identifier for the authority (eg: FQDN).
+	Identifier string `cbor:"identifier"`
+
+	// PKISignatureScheme names the authority's identity signature scheme.
+	PKISignatureScheme string `cbor:"pki_signature_scheme"`
+
+	// WireKEMScheme names the authority's wire protocol KEM scheme.
+	WireKEMScheme string `cbor:"wire_kem_scheme"`
+
+	// Addresses are the authority's reachable listener addresses.
+	Addresses []string `cbor:"addresses"`
+
+	// IdentityPublicKeyPem is the authority's identity public key in PEM format.
+	IdentityPublicKeyPem string `cbor:"identity_public_key_pem"`
+
+	// LinkPublicKeyPem is the authority's link public key in PEM format.
+	LinkPublicKeyPem string `cbor:"link_public_key_pem"`
+
+	// IdentityKeyHash is the BLAKE2b-256 hash of the identity public key,
+	// matching the key by which PKI document signatures are indexed.
+	IdentityKeyHash [32]byte `cbor:"identity_key_hash"`
+}
+
+// GetDirectoryAuthorities requests the daemon to return the directory
+// authority descriptors it is configured with. A thin client holds only
+// its dial transport configuration and never sees the daemon's voting
+// authority peer list; this request surfaces it, so a thin client may, for
+// instance, map a PKI document's signature fingerprints to authority names.
+// The reply type is GetDirectoryAuthoritiesReply.
+type GetDirectoryAuthorities struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 }
 
 // CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
@@ -642,7 +654,6 @@ type ThinClose struct {
 
 // Response is the client daemon's response message to the thin client.
 type Response struct {
-
 	SessionTokenReply *SessionTokenReply `cbor:"session_token_reply"`
 
 	// ShutdownEvent is sent when the client daemon is shutting down.
@@ -677,12 +688,6 @@ type Response struct {
 	// StartResendingEncryptedMessageReply is sent when the client daemon successfully starts resending an encrypted message.
 	StartResendingEncryptedMessageReply *StartResendingEncryptedMessageReply `cbor:"start_resending_encrypted_message_reply"`
 
-	// WriteStreamReply is sent when a windowed SACK payload write completes.
-	WriteStreamReply *WriteStreamReply `cbor:"write_stream_reply"`
-
-	// ReadStreamReply is sent when a windowed SACK payload read completes.
-	ReadStreamReply *ReadStreamReply `cbor:"read_stream_reply"`
-
 	// CancelResendingEncryptedMessageReply is sent when the client daemon successfully cancels resending an encrypted message.
 	CancelResendingEncryptedMessageReply *CancelResendingEncryptedMessageReply `cbor:"cancel_resending_encrypted_message_reply"`
 
@@ -703,6 +708,11 @@ type Response struct {
 	// request and carries the cert.Certificate-wrapped signed PKI
 	// document, with directory authority signatures intact.
 	GetPKIDocumentReply *GetPKIDocumentReply `cbor:"get_pki_document_reply"`
+
+	// GetDirectoryAuthoritiesReply is sent in response to a
+	// GetDirectoryAuthorities request and carries the directory authority
+	// descriptors the daemon is configured with.
+	GetDirectoryAuthoritiesReply *GetDirectoryAuthoritiesReply `cbor:"get_directory_authorities_reply"`
 
 	// Copy Channel API:
 
@@ -734,7 +744,6 @@ type Response struct {
 // Request is the thin client's request message to the client daemon.
 // It can result in one or more Response messages being sent back to the thin client.
 type Request struct {
-
 	SessionToken *SessionToken `cbor:"session_token"`
 
 	// ThinClose is used to indicate that the thin client is disconnecting
@@ -762,12 +771,6 @@ type Request struct {
 	// StartResendingEncryptedMessage is used to start resending an encrypted message.
 	StartResendingEncryptedMessage *StartResendingEncryptedMessage `cbor:"start_resending_encrypted_message"`
 
-	// WriteStream is used to write a whole multi-box payload via the windowed SACK ARQ.
-	WriteStream *WriteStream `cbor:"write_stream"`
-
-	// ReadStream is used to read many sequential boxes via the windowed SACK ARQ.
-	ReadStream *ReadStream `cbor:"read_stream"`
-
 	// CancelResendingEncryptedMessage is used to cancel resending an encrypted message.
 	CancelResendingEncryptedMessage *CancelResendingEncryptedMessage `cbor:"cancel_resending_encrypted_message"`
 
@@ -787,6 +790,10 @@ type Request struct {
 	// PKI document for an epoch, with every directory authority
 	// signature intact.
 	GetPKIDocument *GetPKIDocument `cbor:"get_pki_document"`
+
+	// GetDirectoryAuthorities asks the daemon for the directory authority
+	// descriptors it is configured with.
+	GetDirectoryAuthorities *GetDirectoryAuthorities `cbor:"get_directory_authorities"`
 
 	// CreateCourierEnvelopesFromPayload is used to create multiple CourierEnvelopes from a payload of any size.
 	CreateCourierEnvelopesFromPayload *CreateCourierEnvelopesFromPayload `cbor:"create_courier_envelopes_from_payload"`

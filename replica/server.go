@@ -9,9 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -23,6 +23,8 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -33,9 +35,6 @@ import (
 	"github.com/katzenpost/katzenpost/replica/config"
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
-
-// GitCommit is the git commit hash, set at build time via -ldflags
-var GitCommit = "unknown"
 
 // ErrGenerateOnly is the error returned when the server initialization
 // terminates due to the `GenerateOnly` debug config option.
@@ -57,10 +56,15 @@ type GenericConnector interface {
 	DispatchReplication(cmd *commands.ReplicaWrite)
 	QueueForRetry(cmd commands.Command, idHash [32]byte)
 	ConnectionCount() int
+	SessionCount() int
 }
 
 type Server struct {
-	sync.WaitGroup
+	// handlerWg tracks the asynchronous ReplicaMessage handler
+	// goroutines spawned by incoming connections. They outlive the
+	// connection worker that spawned them and reach into state, so
+	// halt() drains them before the database is closed.
+	handlerWg sync.WaitGroup
 
 	cfg *config.Config
 
@@ -68,6 +72,9 @@ type Server struct {
 	listeners []GenericListener
 	state     *state
 	connector GenericConnector
+
+	connLimiter *connlimit.Limiter
+	peerSet     *connlimit.PeerSet
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
@@ -85,6 +92,25 @@ type Server struct {
 
 	// proxySema limits the number of concurrent proxy request goroutines
 	proxySema chan struct{}
+
+	// decapSema bounds concurrent local MKEM decapsulations.
+	decapSema chan struct{}
+
+	// firstShardCandidate overrides which of a box's shard holders a
+	// proxy sweep tries first. Nil in production, where the choice is
+	// random; see Server.proxyFirstCandidate. A test pins it to drive
+	// the sweep at a named holder, so it is per-server rather than a
+	// package variable: replica tests run in parallel, and a shared one
+	// would be written by a test while another reads it mid-sweep.
+	firstShardCandidate atomic.Pointer[shardChooser]
+
+	// mkemOpCost is the wall-clock latency of one MKEM operation when
+	// the host is saturated, measured by the startup self-check. Every
+	// proxied attempt pays it once, for its encapsulation, before any
+	// waiting begins, so it is the smallest share of a sweep budget
+	// that an attempt can possibly make use of. Zero when no
+	// measurement is available, which disables the floor.
+	mkemOpCost time.Duration
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -141,8 +167,12 @@ func (s *Server) initLogging() error {
 	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
 	if err == nil {
 		s.log = s.logBackend.GetLogger("replica")
-		s.log.Noticef("Katzenpost replica version: %s", versioninfo.Short())
-		s.log.Noticef("Katzenpost replica git revision: %s", GitCommit)
+		s.log.Noticef("Katzenpost replica version: %s", kpcommon.Version())
+		if s.cfg.DisableDecoyTraffic {
+			s.log.Notice("Decoy traffic is DISABLED")
+		} else {
+			s.log.Notice("Decoy traffic is enabled")
+		}
 		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err
@@ -161,10 +191,24 @@ func (s *Server) Wait() {
 func (s *Server) halt() {
 	s.log.Noticef("Starting graceful shutdown.")
 
-	// First halt all listeners to stop accepting new connections
+	// The PKI worker goes first. It is the last remaining source of new
+	// work, and it writes envelope key files into DataDir and rebalances
+	// through state, both of which are torn down below.
+	if s.PKIWorker != nil {
+		s.PKIWorker.Halt()
+	}
+
+	// Then halt all listeners to stop accepting new connections
 	for _, listener := range s.listeners {
 		listener.Halt()
 	}
+
+	// Listener.Halt closes closeAllCh and waits for the connection
+	// workers, so no further handler goroutines can be spawned. Drain
+	// the ones already in flight before tearing down what they use:
+	// every point they block on selects on closeAllCh, so this cannot
+	// stall.
+	s.handlerWg.Wait()
 
 	// Then halt the connector to stop outgoing connections
 	if s.connector != nil {
@@ -185,9 +229,25 @@ func (s *Server) halt() {
 		s.envelopeKeys.Halt()
 	}
 
-	close(s.fatalErrCh)
 	s.log.Noticef("Shutdown complete.")
 	close(s.haltedCh)
+}
+
+// reportFatal hands err to the fatal error watcher, which shuts the
+// server down. The send is non-blocking and fatalErrCh is buffered,
+// so a caller never blocks: one queued error is enough to bring the
+// server down, and the watcher is gone once shutdown has begun. A
+// blocking send would deadlock the callers that halt() waits for, and
+// closing the channel to release them would panic any send that lost
+// the race.
+func (s *Server) reportFatal(err error) {
+	select {
+	case s.fatalErrCh <- err:
+	default:
+		if s.log != nil {
+			s.log.Warningf("Fatal error while already shutting down: %v", err)
+		}
+	}
 }
 
 // RotateLog rotates the log file
@@ -195,8 +255,18 @@ func (s *Server) halt() {
 func (s *Server) RotateLog() {
 	err := s.logBackend.Rotate()
 	if err != nil {
-		s.fatalErrCh <- fmt.Errorf("failed to rotate log file, shutting down server")
+		s.reportFatal(fmt.Errorf("failed to rotate log file, shutting down server"))
 	}
+}
+
+func replicaStaticAuthorityAddresses(cfg *config.Config) []string {
+	var addrs []string
+	if cfg.PKI != nil && cfg.PKI.Voting != nil {
+		for _, auth := range cfg.PKI.Voting.Authorities {
+			addrs = append(addrs, auth.Addresses...)
+		}
+	}
+	return addrs
 }
 
 // New returns a new Server instance parameterized with the specific
@@ -235,7 +305,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	s.state.startGCWorker()
 	s.state.startStorageWatcher()
 
-	s.fatalErrCh = make(chan error)
+	s.fatalErrCh = make(chan error, 1)
 	s.haltedCh = make(chan interface{})
 
 	s.log.Notice("Starting Katzenpost Pigeonhole Storage Replica")
@@ -258,6 +328,10 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 
 	// Ensure config defaults are set (tests may skip FixupAndValidate).
 	s.cfg.SetDefaultTimeouts()
+
+	s.connLimiter = connlimit.New(*s.cfg.MaxClientConns, *s.cfg.MaxPeerConns, *s.cfg.MaxConnsPerIP, *s.cfg.MaxLoopbackConns)
+	s.peerSet = connlimit.NewPeerSet()
+	s.peerSet.Rebuild(replicaStaticAuthorityAddresses(s.cfg))
 
 	// Derive the Pigeonhole geometry once from the Sphinx geometry and the
 	// configured replica NIKE scheme; the message handlers reuse it rather
@@ -297,9 +371,20 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 		s.cfg.ProxyWorkerCount, s.cfg.IncomingQueueSize, s.cfg.ProxyRequestTimeout,
 		selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
 
+	// Per-op latency under saturation, by Little's Law: with NumCPU
+	// operations in flight and OpsPerSecSaturated completing per
+	// second, each one takes NumCPU/OpsPerSecSaturated to finish. Not
+	// 1/OpsPerSecSaturated, which is the interval between completions
+	// rather than the latency of any one of them.
+	if selfCheck.OpsPerSecSaturated > 0 && selfCheck.NumCPU > 0 {
+		s.mkemOpCost = time.Duration(float64(selfCheck.NumCPU) / selfCheck.OpsPerSecSaturated * float64(time.Second))
+		s.log.Noticef("Replica proxy attempt floor: %v (one saturated MKEM operation)", s.mkemOpCost)
+	}
+
 	// Initialize proxy request manager and concurrency limiter.
 	s.proxyManager = NewProxyRequestManager(s.log, time.Duration(s.cfg.ProxyRequestTimeout)*time.Second)
 	s.proxySema = make(chan struct{}, s.cfg.ProxyWorkerCount)
+	s.decapSema = make(chan struct{}, s.cfg.ProxyWorkerCount)
 
 	if s.cfg.GenerateOnly {
 		return nil, ErrGenerateOnly
@@ -322,7 +407,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	} else {
 		s.log.Notice("Prometheus metrics listener disabled (MetricsAddress not set)")
 	}
-	instrument.StartPrometheusListener(cfg.MetricsAddress)
+	instrument.StartPrometheusListener(cfg.MetricsAddress, s.log)
 
 	isOk = true
 
@@ -340,7 +425,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 // fingerprint records that we have already rebalanced against the
 // storage-replica set advertised by the current PKI document. The
 // guard exists to spare a process that crashed and restarted, or that
-// was administratively bounced, the cost of a full RocksDB scan when
+// was administratively bounced, the cost of a full database scan when
 // the network membership has not in fact changed.
 func (s *Server) maybeStartupRebalance() {
 	doc := s.PKIWorker.LastCachedPKIDocument()
@@ -497,12 +582,12 @@ func (s *Server) initEnvelopeKeys() error {
 func (s *Server) startServices(pkiClient pki.ReplicaNodeClient) error {
 	// Start the fatal error watcher.
 	go func() {
-		err, ok := <-s.fatalErrCh
-		if !ok {
-			return
+		select {
+		case err := <-s.fatalErrCh:
+			s.log.Warningf("Shutting down due to error: %v", err)
+			s.Shutdown()
+		case <-s.haltedCh:
 		}
-		s.log.Warningf("Shutting down due to error: %v", err)
-		s.Shutdown()
 	}()
 
 	var addresses []string
@@ -531,6 +616,13 @@ func (s *Server) startServices(pkiClient pki.ReplicaNodeClient) error {
 	// so the worker's first iteration (which may call into Rebalance,
 	// reading s.PKIWorker) sees the assignment.
 	s.PKIWorker = pkiWorker
+
+	// Start the outgoing connection worker. The connector must be created
+	// before the PKI worker's goroutine is launched because
+	// handleDocumentUpdates reads p.server.connector.
+	s.log.Notice("start connector worker")
+	s.connector = newConnector(s)
+
 	pkiWorker.Start()
 
 	// Bring the listener(s) online.
@@ -545,10 +637,6 @@ func (s *Server) startServices(pkiClient pki.ReplicaNodeClient) error {
 		s.listeners = append(s.listeners, l)
 	}
 
-	// Start the outgoing connection worker
-	s.log.Notice("start connector worker")
-	s.connector = newConnector(s)
-
 	return nil
 }
 
@@ -559,6 +647,13 @@ func (s *Server) ConnectionCount() int {
 		return 0
 	}
 	return s.connector.ConnectionCount()
+}
+
+func (s *Server) SessionCount() int {
+	if s.connector == nil {
+		return 0
+	}
+	return s.connector.SessionCount()
 }
 
 // ForceConnectorUpdate triggers the connector to rescan PKI and spawn new connections.

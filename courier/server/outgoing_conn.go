@@ -40,6 +40,10 @@ var outgoingConnID uint64
 
 const KeepAliveInterval = 3 * time.Minute
 
+// noIdleReadTimeout effectively disables the wire session's idle read
+// deadline; dead peers are detected by TCP keepalive.
+const noIdleReadTimeout = 24 * 365 * time.Hour
+
 type outgoingConn struct {
 	worker.Worker
 
@@ -49,11 +53,28 @@ type outgoingConn struct {
 	co         GenericConnector
 	log        *logging.Logger
 
-	dst    *cpki.ReplicaDescriptor
+	// dst is rewritten by the connection worker on every reconnect
+	// (validateAndUpdateDescriptor). It must only be read on that same
+	// goroutine. Cross-goroutine readers (dispatchMessage runs on the
+	// dispatch workers) use the immutable name below instead.
+	dst *cpki.ReplicaDescriptor
+
+	// name is the replica's stable identity name, captured once at
+	// construction so the concurrent dispatch path never reads dst.
+	name string
+
 	sender *sender
 
 	id         uint64
 	retryDelay time.Duration
+
+	// unknownCmdSeen dedups unhandled-command warnings per type.
+	// Touched only by the event loop goroutine.
+	unknownCmdSeen map[string]bool
+
+	// reauthFailures counts consecutive reauthentication failures.
+	// Touched only by the event loop goroutine.
+	reauthFailures int
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -108,16 +129,24 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return isValid
 }
 
-func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) {
+func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) error {
 	req := &courierSenderRequest{
 		ReplicaMessage: mesg,
 		EnqueuedAt:     time.Now(),
 	}
 	select {
 	case c.sender.in <- req:
-		instrument.EnqueueTotal(c.dst.Name)
-		instrument.QueueLength(c.dst.Name, len(c.sender.in))
+		instrument.EnqueueTotal(c.name)
+		instrument.QueueLength(c.name, len(c.sender.in))
+		return nil
 	case <-c.HaltCh():
+		return fmt.Errorf("dispatch to %s: halted", c.name)
+	default:
+		// A full queue to a disconnected peer must never block the
+		// caller: the synchronous copy path dispatches before it
+		// arms its own reply timeout.
+		instrument.DroppedByReason("dispatch_queue_full")
+		return fmt.Errorf("dispatch to %s: queue full", c.name)
 	}
 }
 
@@ -256,10 +285,19 @@ func (c *outgoingConn) attemptConnections(dialCtx *workerContext, dialer *net.Di
 			return true
 		}
 
-		// Connection died, check if we should impose retry delay
+		// Connection died. Sessions that die young escalate the
+		// backoff even though the handshake succeeded, so a peer
+		// that accepts and immediately kills sessions cannot hold
+		// us in a synchronized reconnect storm; long-lived sessions
+		// earn a fresh start.
 		c.log.Debugf("Connection terminated, will reconnect.")
 		if time.Since(start) < retryIncrement {
-			c.retryDelay = retryIncrement
+			c.retryDelay += retryIncrement
+			if c.retryDelay > maxRetryDelay {
+				c.retryDelay = maxRetryDelay
+			}
+		} else {
+			c.retryDelay = 0
 		}
 		break
 	}
@@ -269,7 +307,7 @@ func (c *outgoingConn) attemptConnections(dialCtx *workerContext, dialer *net.Di
 // handleRetryDelay manages the retry delay logic and returns true if canceled
 func (c *outgoingConn) handleRetryDelay(dialCtx *workerContext, retryIncrement, maxRetryDelay time.Duration) bool {
 	select {
-	case <-time.After(c.retryDelay):
+	case <-time.After(kpcommon.JitterDelay(c.retryDelay)):
 		// Back off incrementally on reconnects.
 		c.retryDelay += retryIncrement
 		if c.retryDelay > maxRetryDelay {
@@ -378,7 +416,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		instrument.PeerConnected(c.dst.Name, false)
 	}()
 
-	receiveCmdCh := c.startPeerReader(w)
+	sessionDoneCh := make(chan struct{})
+	defer close(sessionDoneCh)
+	receiveCmdCh := c.startPeerReader(w, sessionDoneCh)
 	cmdCh, cmdCloseCh := c.startCommandSender(w)
 	defer close(cmdCh)
 
@@ -397,6 +437,8 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 		AdditionalData:    []byte{},
 		AuthenticationKey: c.co.Server().linkPrivKey,
 		RandomReader:      rand.Reader,
+		HandshakeTimeout:  time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond,
+		ReadTimeout:       noIdleReadTimeout,
 	}
 
 	envelopeScheme := nikeSchemes.ByName(c.cfg.EnvelopeScheme)
@@ -409,9 +451,8 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond
-	conn.SetDeadline(time.Now().Add(timeoutMs))
 	handshakeStart := time.Now()
-	if err = w.Initialize(conn); err != nil {
+	if err = w.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -460,29 +501,38 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 	}
 	handshakeinstrument.HandshakeDuration("outgoing", "success", time.Since(handshakeStart))
 	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
-	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 	return w, nil
 }
 
-// startPeerReader starts a goroutine to read commands from the peer
-func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
-	receiveCmdCh := make(chan interface{})
+// startPeerReader starts a goroutine to read commands from the peer.
+// Every send also selects on sessionDoneCh: when the event loop has
+// already returned for another reason (reauth failure, sender death,
+// Disconnect), nobody consumes this channel and outgoingConn.Halt is
+// never called on per-session teardown, so a bare send here leaked one
+// goroutine per reconnect.
+func (c *outgoingConn) startPeerReader(w *wire.Session, sessionDoneCh <-chan struct{}) chan interface{} {
+	receiveCmdCh := make(chan interface{}, 1)
 	c.Go(func() {
 		defer close(receiveCmdCh)
 		for {
-			rawCmd, err := w.RecvCommand()
+			rawCmd, err := w.RecvCommand(context.Background())
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
 				select {
 				case <-c.HaltCh():
+				case <-sessionDoneCh:
 				case receiveCmdCh <- err:
 				}
 				return
 			}
-			c.log.Debugf("Received command from replica: %T", rawCmd)
+			if !isReplicaDecoy(rawCmd) {
+				c.log.Debugf("Received command from replica: %T", rawCmd)
+			}
 			select {
 			case <-c.HaltCh():
+				return
+			case <-sessionDoneCh:
 				return
 			case receiveCmdCh <- rawCmd:
 			}
@@ -504,9 +554,9 @@ func (c *outgoingConn) startCommandSender(w *wire.Session) (chan commands.Comman
 				return
 			}
 
-			if err := w.SendCommand(cmd); err != nil {
+			if err := w.SendCommand(context.Background(), cmd); err != nil {
 				c.log.Debugf("SendCommand failed: %v", err)
-				instrument.DroppedByReason("send_command_failed")
+				c.requeueUnsent(cmd)
 				return
 			}
 		}
@@ -515,27 +565,38 @@ func (c *outgoingConn) startCommandSender(w *wire.Session) (chan commands.Comman
 	return cmdCh, cmdCloseCh
 }
 
+// requeueUnsent returns a real command whose wire send failed to the
+// sender FIFO so the next session delivers it; decoys are pacing, not
+// payload, and are simply dropped.
+func (c *outgoingConn) requeueUnsent(cmd commands.Command) {
+	mesg, ok := cmd.(*commands.ReplicaMessage)
+	if !ok {
+		return
+	}
+	req := &courierSenderRequest{ReplicaMessage: mesg, EnqueuedAt: time.Now()}
+	select {
+	case c.sender.in <- req:
+		c.log.Debugf("Re-queued unsent ReplicaMessage for next session")
+	default:
+		instrument.DroppedByReason("send_command_failed")
+	}
+}
+
 // startReauthTicker starts the reauthentication ticker
 func (c *outgoingConn) startReauthTicker() *time.Ticker {
 	reauthMs := time.Duration(c.co.Server().cfg.ReauthInterval) * time.Millisecond
 	return time.NewTicker(reauthMs)
 }
 
-// runEventLoop handles the main event processing loop
+// runEventLoop handles the main event processing loop.
+//
+// Sends are never gated on replies: the sender's LambdaR-paced ExpDist
+// is the sole pacing authority, keeping the link fixed-throughput and
+// independent of replica processing latency. Replies are demultiplexed
+// by EnvelopeHash (HandleReply), so no ordering between commands and
+// replies is required.
 func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, reauth *time.Ticker, cmdCh chan commands.Command, cmdCloseCh chan error, receiveCmdCh chan interface{}) bool {
-	// waitingForReply gates sending: after sending a command we must
-	// receive the replica's response before sending another, so the
-	// courier never outpaces the replica's send rate.
-	waitingForReply := false
-
 	for {
-		// Only accept the next outgoing command when we're not
-		// waiting for a reply from the replica.
-		var outCh <-chan *courierSenderRequest
-		if !waitingForReply {
-			outCh = c.sender.out
-		}
-
 		select {
 		case <-c.HaltCh():
 			return false
@@ -545,24 +606,33 @@ func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, re
 			if !c.handleReauth(w) {
 				return false
 			}
-			continue
-		case req := <-outCh:
-			if c.handleOutgoingCommand(req.command(), cmdCh, closeCh) {
-				return true
+		case req := <-c.sender.out:
+			done, halted := c.handleOutgoingCommand(req.command(), cmdCh, closeCh, cmdCloseCh)
+			if done {
+				return halted
 			}
-			waitingForReply = true
-			continue
 		case <-cmdCloseCh:
 			return false
 		case replyCmd := <-receiveCmdCh:
-			waitingForReply = false
 			rawCmd := c.processIncomingReply(replyCmd)
+			if rawCmd == nil {
+				// Wire error (already logged); tear the session down.
+				return false
+			}
 			if !c.handleCommand(rawCmd) {
 				return false
 			}
 		}
 	}
 }
+
+// reauthGraceLimit is how many consecutive reauthentication failures a
+// live session survives before being torn down. Descriptor churn during
+// staggered upgrades and dirauth wobble transiently drops a healthy peer
+// from the newest document; severing the link on the first miss orphans
+// in-flight replies for no security gain, since the peer was
+// authenticated at handshake and the key material has not changed.
+const reauthGraceLimit = 3
 
 // handleReauth processes reauthentication events
 func (c *outgoingConn) handleReauth(w *wire.Session) bool {
@@ -571,28 +641,66 @@ func (c *outgoingConn) handleReauth(w *wire.Session) bool {
 		c.log.Debugf("Session fail: %s", err)
 		return false
 	}
-	if !c.IsPeerValid(creds) {
-		c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+	return c.reauthOutcome(c.IsPeerValid(creds))
+}
+
+// reauthOutcome folds one reauthentication result into the consecutive
+// failure counter and reports whether the session should stay up.
+func (c *outgoingConn) reauthOutcome(valid bool) bool {
+	if valid {
+		c.reauthFailures = 0
+		return true
+	}
+	c.reauthFailures++
+	if c.reauthFailures >= reauthGraceLimit {
+		c.log.Warningf("Disconnecting %s, peer reauthentication failed %d consecutive times.", c.dst.Name, c.reauthFailures)
 		return false
 	}
+	c.log.Warningf("Peer %s reauthentication failed (%d/%d), keeping session.", c.dst.Name, c.reauthFailures, reauthGraceLimit)
 	return true
 }
 
-// handleOutgoingCommand processes commands from the outgoing channel
-func (c *outgoingConn) handleOutgoingCommand(cmd commands.Command, cmdCh chan commands.Command, closeCh <-chan struct{}) bool {
+// handleOutgoingCommand hands one paced command to the command-sender
+// goroutine. It must also watch cmdCloseCh: the sender goroutine exits
+// (closing cmdCloseCh) when a wire write fails, and with an unbuffered
+// cmdCh the send would otherwise block forever, since closeCh only
+// fires on connector-wide shutdown, never on per-session death. That
+// wedged the event loop and permanently orphaned the replica: the
+// connector resweep skips peers already present in its conn table.
+//
+// done reports that the event loop must return; halted is the value it
+// must return (true means the worker exits, false means redial).
+func (c *outgoingConn) handleOutgoingCommand(cmd commands.Command, cmdCh chan commands.Command, closeCh <-chan struct{}, cmdCloseCh <-chan error) (done, halted bool) {
 	select {
 	case <-c.HaltCh():
-		return true
+		return true, true
 	case <-closeCh:
-		return true
+		return true, true
 	case cmdCh <- cmd:
-		return false
+		return false, false
+	case <-cmdCloseCh:
+		// The sender died with this command still in hand; requeue it
+		// for the next session (requeueUnsent drops decoys) and tear
+		// the session down so the dial loop reconnects.
+		c.log.Debugf("Command sender died with a command in hand; tearing down session")
+		c.requeueUnsent(cmd)
+		return true, false
 	}
+}
+
+// isReplicaDecoy reports whether cmd is fixed-throughput decoy padding. The
+// courier-replica link is kept at a constant rate with ReplicaDecoy commands,
+// so at DEBUG they drown out the real replies; the per-command traces skip them.
+func isReplicaDecoy(cmd interface{}) bool {
+	_, ok := cmd.(*commands.ReplicaDecoy)
+	return ok
 }
 
 // processIncomingReply processes replies from the peer
 func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Command {
-	c.log.Debugf("Processing reply from receiveCmdCh: %T", replyCmd)
+	if !isReplicaDecoy(replyCmd) {
+		c.log.Debugf("Processing reply from receiveCmdCh: %T", replyCmd)
+	}
 	switch cmdOrErr := replyCmd.(type) {
 	case commands.Command:
 		return cmdOrErr
@@ -606,7 +714,9 @@ func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Comma
 
 // handleCommand processes received commands from the storage replicas
 func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
-	c.log.Debugf("Handling response command: %T", rawCmd)
+	if !isReplicaDecoy(rawCmd) {
+		c.log.Debugf("Handling response command: %T", rawCmd)
+	}
 	switch replycmd := rawCmd.(type) {
 	case *commands.NoOp:
 	case *commands.Disconnect:
@@ -616,11 +726,26 @@ func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
 		c.courier.HandleReply(replycmd)
 	case *commands.ReplicaDecoy:
 	default:
-		c.log.Errorf("BUG, Received unexpected command from replica peer: %s", rawCmd)
-		return false
+		// A staggered fleet means a newer replica may legitimately send
+		// command types this build does not handle yet. Tolerate them:
+		// tearing the session down would orphan every in-flight reply.
+		c.warnUnknownCommandOnce(rawCmd)
 	}
 
 	return true
+}
+
+// warnUnknownCommandOnce logs an unhandled-but-decodable command type once
+// per type for this connection. Only called from the event loop goroutine.
+func (c *outgoingConn) warnUnknownCommandOnce(cmd commands.Command) {
+	name := fmt.Sprintf("%T", cmd)
+	if c.unknownCmdSeen == nil {
+		c.unknownCmdSeen = make(map[string]bool)
+	}
+	if !c.unknownCmdSeen[name] {
+		c.unknownCmdSeen[name] = true
+		c.log.Warningf("Ignoring unhandled command type %s from replica peer %s (newer peer?)", name, c.dst.Name)
+	}
 }
 
 func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *config.Config, courier *Courier) *outgoingConn {
@@ -634,6 +759,7 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *conf
 		courier:    courier,
 		co:         co,
 		dst:        dst,
+		name:       dst.Name,
 		id:         atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("courier outgoing:%d", c.id))

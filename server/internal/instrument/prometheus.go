@@ -5,12 +5,12 @@ package instrument
 
 import (
 	"fmt"
-	"net/http"
 
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/katzenpost/katzenpost/common/metrics"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -202,9 +202,22 @@ var (
 			Help: "Cores reported by runtime.NumCPU at startup. Pair with the solo and saturated ops/sec gauges to reason about queue size and worker counts.",
 		},
 	)
+	nodeReady = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_node_ready",
+			Help: "1 iff this node's descriptor in the current consensus document carries the same per-epoch mix key this instance holds, i.e. the testnet would not drop the first-hop MAC check against this node. 0 otherwise (including while booting or waiting for a current-epoch document).",
+		},
+	)
+	nodeCurrentEpoch = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_node_current_epoch",
+			Help: "The epoch whose consensus the node_ready gauge was last computed against.",
+		},
+	)
 )
 
-// StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
+// StartPrometheusListener starts the Prometheus metrics TCP/HTTP
+// Listener. Panics if a configured MetricsAddress cannot be bound.
 func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(deadlineBlownPacketsDropped)
 	prometheus.MustRegister(incomingConns)
@@ -236,13 +249,14 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(selfCheckSphinxOpsPerSecSolo)
 	prometheus.MustRegister(selfCheckSphinxOpsPerSecSaturated)
 	prometheus.MustRegister(selfCheckSphinxCores)
+	prometheus.MustRegister(nodeReady)
+	prometheus.MustRegister(nodeCurrentEpoch)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
-	if metricsAddress != "" {
-		// Expose registered metrics via HTTP
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(metricsAddress, nil)
+	if metricsAddress == "" {
+		return
 	}
+	metrics.MustServe(metricsAddress, glue.LogBackend().GetLogger("instrument"))
 }
 
 // Incoming increments the counter for incoming requests
@@ -399,3 +413,16 @@ func SelfCheckResults(opsPerSecSolo, opsPerSecSaturated float64, numCPU int) {
 	selfCheckSphinxCores.Set(float64(numCPU))
 }
 
+// SetNodeReady sets the node_ready gauge to 1 iff the descriptor the node
+// published matches the live per-epoch keys it currently holds for the given
+// epoch. Anything else (no current-epoch document cached, mismatched keys) is
+// 0, so a restart is never reported ready until the consensus actually
+// matches the running instance.
+func SetNodeReady(ready bool, epoch uint64) {
+	if ready {
+		nodeReady.Set(1)
+	} else {
+		nodeReady.Set(0)
+	}
+	nodeCurrentEpoch.Set(float64(epoch))
+}

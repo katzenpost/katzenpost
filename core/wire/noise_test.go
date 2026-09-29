@@ -40,9 +40,9 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 
 	protocol := &nyquist.Protocol{
 		Pattern: pattern.PqXX,
-		KEM: schemes.ByName("Kyber768-X25519"),
-		Cipher: cipher.ChaChaPoly,
-		Hash:   hash.BLAKE2s,
+		KEM:     schemes.ByName("Kyber768-X25519"),
+		Cipher:  cipher.ChaChaPoly,
+		Hash:    hash.BLAKE2s,
 	}
 
 	t.Logf("KEM public key size: %d", protocol.KEM.PublicKeySize())

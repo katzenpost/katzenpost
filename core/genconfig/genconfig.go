@@ -47,7 +47,6 @@ import (
 )
 
 const (
-	BasePort               = 30000
 	BindAddr               = "0.0.0.0"
 	NrLayers               = 3
 	NrNodes                = 6
@@ -67,14 +66,55 @@ const (
 	WritingLogFormat       = "writing %s"
 
 	// DockerNetwork is the bridge network the generated docker-compose puts
-	// every katzenpost service on. Each service has a stable container_name
-	// matching its identifier, so peers can address each other by DNS name
-	// (e.g. tcp://mix1:30030). This lets per-container chaos tools such as
-	// pumba install tc qdiscs in each service's own net namespace; the
-	// previous host-networked layout had no such namespaces to scope to.
-	DockerNetwork    = "katzenpost-net"
-	DockerProjectTag = "voting_mixnet"
+	// every katzenpost service on. Each service declares a hostname equal
+	// to its identifier, so peers can address each other by DNS name
+	// (e.g. tcp://mix1:30030) via the compose runtime's embedded DNS. This
+	// lets per-container chaos tools such as pumba install tc qdiscs in
+	// each service's own net namespace; the previous host-networked layout
+	// had no such namespaces to scope to. No service sets container_name,
+	// so the compose project prefix scopes the runtime container names and
+	// several parallel networks can run on one host without clashing.
+	DockerNetwork = "katzenpost-net"
 )
+
+// Published host-port band. Each published service gets a port derived
+// from base_port so that several parallel test networks can run on the
+// same host without colliding on host-side ports.
+const (
+	// kpclientdPublishedPortOffset is the offset from base_port for the
+	// kpclientd thin-client port.  The daemon listens on base_port+2000
+	// inside the bridge, and the docker-compose publish maps that same
+	// port to the host.
+	kpclientdPublishedPortOffset = 2000
+	// metricsPublishedPortOffset publishes prometheus (9090 in-bridge)
+	// to the host as base_port+2001.
+	metricsPublishedPortOffset = 2001
+	// grafanaPublishedPortOffset publishes grafana (3000 in-bridge) to
+	// the host as base_port+2002.
+	grafanaPublishedPortOffset = 2002
+	// pyroscopePublishedPortOffset publishes pyroscope (4040 in-bridge)
+	// to the host as base_port+2003.
+	pyroscopePublishedPortOffset = 2003
+	// kpclientdMetricsPortOffset is the in-bridge port kpclientd serves
+	// its /metrics endpoint on, base_port+2004. It is never published to
+	// the host; prometheus scrapes it as kpclientd:<base_port+2004> over
+	// the bridge.
+	kpclientdMetricsPortOffset = 2004
+)
+
+// thinClientDialAddress returns the host-side address thin clients use to
+// reach kpclientd through the docker port publish. The daemon listens on
+// base_port+2000 inside the bridge, same as the published host port.
+func (s *Katzenpost) thinClientDialAddress() string {
+	return fmt.Sprintf("localhost:%d", s.BasePort+kpclientdPublishedPortOffset)
+}
+
+// kpclientdMetricsPort returns the in-bridge port kpclientd serves its
+// /metrics endpoint on. It is derived from base_port so the client.toml
+// listener address and the prometheus scrape target stay in lockstep.
+func (s *Katzenpost) kpclientdMetricsPort() uint16 {
+	return s.BasePort + kpclientdMetricsPortOffset
+}
 
 // peerAddr returns the tcp:// URL another container should dial to reach the
 // named service on the bridge network. Both endpoints resolve the hostname
@@ -155,11 +195,21 @@ type Config struct {
 	SendSlack                int
 	UnwrapDelay              int
 	NumSphinxWorkers         int
+	ProxyWorkerCount         int
+	ProxyRequestTimeout      int
 	// SessionGracePeriod controls how long kpclientd preserves
 	// per-app state after a thin client's socket drops without a
 	// thin_close. Parsed from a Go duration string ("30s", "10m");
 	// zero means use the compile-time default in client/listener.go.
 	SessionGracePeriod time.Duration
+
+	// PersistMixKeysOnShutdownDir, when non-empty, enables mix key
+	// persistence in generated server configs: every live mix key is
+	// written on clean shutdown to this subdirectory of each node's
+	// DataDir and reloaded on the next boot, so a clean restart keeps
+	// the keypairs already published in the consensus. Empty leaves
+	// persistence off in generated configs.
+	PersistMixKeysOnShutdownDir string
 }
 
 type Katzenpost struct {
@@ -181,34 +231,41 @@ type Katzenpost struct {
 	ReplicaNodeConfigs []*rConfig.Config
 	CourierConfigs     []*courierConfig.Config
 
-	BasePort        uint16
-	LastPort        uint16
-	LastReplicaPort uint16
-	ReplicaNodeIdx  int
-	BindAddr        string
-	NodeIdx         int
-	GatewayIdx      int
-	ServiceNodeIdx  int
-	NoClientDecoy         bool
-	NoCourierReplicaDecoy bool
-	NoMixDecoy            bool
-	NoGatewayDecoy        bool
+	BasePort                uint16 // published host-port base (base_port); not used for in-bridge ports
+	LastPort                uint16
+	ReplicaNodeIdx          int
+	BindAddr                string
+	NodeIdx                 int
+	GatewayIdx              int
+	ServiceNodeIdx          int
+	NoClientDecoy           bool
+	NoCourierReplicaDecoy   bool
+	NoMixDecoy              bool
+	NoGatewayDecoy          bool
 	NoMetrics               bool
 	PyroscopeDirauth        bool
 	PyroscopeKpclientd      bool
 	KpclientdMetricsAddress string
-	EpochDuration     string
-	DebugConfig       *cConfig.Debug
-	SchedulerSlack    int
-	SchedulerMaxBurst int
-	SendSlack         int
-	UnwrapDelay       int
-	NumSphinxWorkers  int
+	EpochDuration           string
+	DebugConfig             *cConfig.Debug
+	SchedulerSlack          int
+	SchedulerMaxBurst       int
+	SendSlack               int
+	UnwrapDelay             int
+	NumSphinxWorkers        int
+	ProxyWorkerCount        int
+	ProxyRequestTimeout     int
 	// SessionGracePeriod is written into the generated kpclientd
 	// client.toml so the daemon's per-app reap interval is tunable
 	// per docker invocation; zero means the daemon's compile-time
 	// default applies.
 	SessionGracePeriod time.Duration
+
+	// PersistMixKeysOnShutdownDir is a per-node subdirectory of the
+	// node's DataDir that mix keys are persisted to on clean shutdown
+	// and reloaded from on boot; when empty, mix key persistence is
+	// left off in generated server configs.
+	PersistMixKeysOnShutdownDir string
 }
 
 type AuthById []*vConfig.Authority
@@ -263,6 +320,10 @@ func thinDialConfigFor(network, addr string) (*thinTransport.DialConfig, error) 
 		return &thinTransport.DialConfig{
 			Tcp: &thinTransport.TcpDialConfig{Address: addr, Network: network},
 		}, nil
+	case "ws":
+		return &thinTransport.DialConfig{
+			Ws: &thinTransport.WsDialConfig{Address: addr},
+		}, nil
 	default:
 		return nil, fmt.Errorf("genconfig: unknown thin-client dial network %q (expected one of: unix, tcp, tcp4, tcp6)", network)
 	}
@@ -280,6 +341,10 @@ func clientListenConfigFor(network, addr string) (*clientTransport.ListenConfig,
 	case "tcp", "tcp4", "tcp6":
 		return &clientTransport.ListenConfig{
 			Tcp: &clientTransport.TcpListenConfig{Address: addr, Network: network},
+		}, nil
+	case "ws":
+		return &clientTransport.ListenConfig{
+			Ws: &clientTransport.WsListenConfig{Address: addr},
 		}, nil
 	default:
 		return nil, fmt.Errorf("genconfig: unknown kpclientd listen network %q (expected one of: unix, tcp, tcp4, tcp6)", network)
@@ -369,16 +434,17 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	// Production builds of kpclientd ignore this field entirely
 	// because the listener is gated behind a build tag.
 	//
-	// Under bridge networking we discard whatever host portion was
-	// passed in and bind to the kpclientd container's own private
-	// bridge IP (reached via its `kpclientd` hostname). The prometheus
-	// container scrapes it as `kpclientd:<port>` over the same bridge.
+	// Under bridge networking we bind to the kpclientd container's own
+	// private bridge IP (reached via its `kpclientd` hostname). The port
+	// is derived from base_port (base_port+2004) so parallel networks do
+	// not collide and so the prometheus scrape target, which GenPrometheus
+	// derives the same way, always matches. The address passed on the
+	// command line only gates enablement; its host and port are ignored.
 	if s.KpclientdMetricsAddress != "" {
-		port, err := splitHostPortPort(s.KpclientdMetricsAddress)
-		if err != nil {
+		if _, err := splitHostPortPort(s.KpclientdMetricsAddress); err != nil {
 			return err
 		}
-		cfg.MetricsAddress = metricsScrapeAddr("kpclientd", uint16(port))
+		cfg.MetricsAddress = metricsScrapeAddr("kpclientd", s.kpclientdMetricsPort())
 	}
 
 	gateways := make([]*cConfig.Gateway, 0)
@@ -472,11 +538,11 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
 
-	cfg.Addresses = []string{peerAddr(cfg.Identifier, s.LastReplicaPort)}
-	s.LastReplicaPort++
+	cfg.Addresses = []string{peerAddr(cfg.Identifier, s.LastPort)}
+	s.LastPort++
 
-	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastReplicaPort)
-	s.LastReplicaPort++
+	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastPort)
+	s.LastPort++
 
 	cfg.DataDir = filepath.Join(s.BaseDir, cfg.Identifier)
 	os.MkdirAll(filepath.Join(s.OutDir, cfg.Identifier), 0700)
@@ -505,6 +571,14 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.Logging.File = ServerLogFile
 	//cfg.Logging.Level = s.LogLevel
 	cfg.Logging.Level = DebugLogLevel
+
+	// Override proxy configuration if explicitly provided (non-zero values)
+	if s.ProxyWorkerCount > 0 {
+		cfg.ProxyWorkerCount = s.ProxyWorkerCount
+	}
+	if s.ProxyRequestTimeout > 0 {
+		cfg.ProxyRequestTimeout = s.ProxyRequestTimeout
+	}
 
 	s.ReplicaNodeConfigs = append(s.ReplicaNodeConfigs, cfg)
 	_ = CfgIdKey(cfg, s.OutDir)
@@ -550,6 +624,17 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// production parity is maintained (operators never use genconfig
 	// to produce production configs).
 	cfg.Server.AllowHostnameAddresses = true
+	// Testnet node dirs are bind-mounted onto the host, so the dirauths'
+	// consensus survives a `make stop`/`make start` cycle; when the
+	// operator enables mix key persistence, write the live keys on clean
+	// shutdown to a subdirectory of the node's DataDir so a restart
+	// doesn't leave the new instance's fresh keys mismatched with the
+	// retained consensus (which surfaces as first-hop MAC failures until
+	// the next epoch).
+	if s.PersistMixKeysOnShutdownDir != "" {
+		cfg.Server.PersistMixKeysOnShutdown = true
+		cfg.Server.PersistMixKeysOnShutdownDir = filepath.Join(cfg.Server.DataDir, s.PersistMixKeysOnShutdownDir)
+	}
 	if isGateway {
 		cfg.Management = new(sConfig.Management)
 		cfg.Management.Enable = true
@@ -704,9 +789,9 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			WireKEMScheme:          s.WireKEMScheme,
 			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
 			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
-			Identifier:         authIdentifier,
-			Addresses:          []string{peerAddr(authIdentifier, s.LastPort)},
-			DataDir:            filepath.Join(s.BaseDir, authIdentifier),
+			Identifier:             authIdentifier,
+			Addresses:              []string{peerAddr(authIdentifier, s.LastPort)},
+			DataDir:                filepath.Join(s.BaseDir, authIdentifier),
 		}
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
 		s.LastPort += 1
@@ -884,17 +969,16 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.OutDir = cfg.OutDir
 	s.BinSuffix = cfg.BinSuffix
 	s.BasePort = uint16(cfg.BasePort)
-	s.LastPort = s.BasePort + 1
-	// Replicas are allotted their own port range so they remain
-	// distinguishable from the mix and authority listeners. The offset is
-	// kept modest (1000 rather than 3000) so that with the default
-	// BasePort of 30000 the replicas land at 31000+ rather than 33000+.
-	// On Linux the default ephemeral source-port range begins at 32768,
-	// so a listener at 33000 may collide with an outbound connection that
-	// happened to be assigned that source port first; the resulting bind
-	// failure aborts replica startup and yields flaky CI runs. Holding
-	// the replica band beneath 32768 avoids that race.
-	s.LastReplicaPort = s.BasePort + 1000
+	// In-bridge ports start at 1000 and increment sequentially for every
+	// node type (dirauth, gateway, service-node, mix, replica).  These
+	// ports are never published to the host, so they don't need to avoid
+	// cross-network collisions; only the published host-port band
+	// (base_port+2000..+2003) uses base_port.
+	s.LastPort = 1000
+	// The published host-port band (kpclientd, prometheus, grafana,
+	// pyroscope, and the kpclientd metrics listener) is derived from
+	// base_port as base_port+2000..+2004; see the constants declared
+	// next to DockerNetwork.
 	s.BindAddr = cfg.BindAddr
 	s.LogLevel = cfg.LogLevel
 	s.DebugConfig = &cConfig.Debug{
@@ -917,7 +1001,10 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.SendSlack = cfg.SendSlack
 	s.UnwrapDelay = cfg.UnwrapDelay
 	s.NumSphinxWorkers = cfg.NumSphinxWorkers
+	s.ProxyWorkerCount = cfg.ProxyWorkerCount
+	s.ProxyRequestTimeout = cfg.ProxyRequestTimeout
 	s.SessionGracePeriod = cfg.SessionGracePeriod
+	s.PersistMixKeysOnShutdownDir = cfg.PersistMixKeysOnShutdownDir
 
 	return s
 }
@@ -1071,16 +1158,16 @@ func SaveConfigurations(s *Katzenpost, cfg *Config) error {
 // The kpclientd daemon and the thin clients that talk to it sit at
 // opposite ends of the docker-compose port publish, so they need
 // different addresses. The daemon binds to its own private bridge IP
-// (reached via its `kpclientd` hostname), and the docker port publish
-// forwards host:64331 to that same bridge address. The thin clients
-// (ping, fetch) run on the host with --network=host and dial
-// localhost:64331 over the published port; the host's /etc/hosts
-// resolves localhost to 127.0.0.1 and the published forward picks it
-// up.
+// (reached via its `kpclientd` hostname) on base_port+2000, and the
+// docker port publish maps that same port to the host. The thin
+// clients (ping, fetch) run on the host with --network=host and dial
+// localhost:base_port+2000 over the published port; the host's
+// /etc/hosts resolves localhost to 127.0.0.1 and the published forward
+// picks it up.
 func GenerateClientConfigurations(s *Katzenpost) error {
 	clientDaemonNetwork := "tcp"
-	clientDaemonListenAddress := "kpclientd:64331"
-	clientDaemonDialAddress := "localhost:64331"
+	clientDaemonListenAddress := fmt.Sprintf("kpclientd:%d", s.BasePort+kpclientdPublishedPortOffset)
+	clientDaemonDialAddress := s.thinClientDialAddress()
 
 	err := s.GenClient2Cfg(clientDaemonNetwork, clientDaemonListenAddress)
 	if err != nil {
@@ -1295,15 +1382,14 @@ scrape_configs:
 `, cfg.Server.Identifier, cfg.Server.MetricsAddress)
 	}
 	if s.KpclientdMetricsAddress != "" {
-		port, err := splitHostPortPort(s.KpclientdMetricsAddress)
-		if err != nil {
+		if _, err := splitHostPortPort(s.KpclientdMetricsAddress); err != nil {
 			return err
 		}
 		Write(f, `- job_name: kpclientd
   scrape_interval: 1s
   static_configs:
   - targets: ['%s']
-`, metricsScrapeAddr("kpclientd", uint16(port)))
+`, metricsScrapeAddr("kpclientd", s.kpclientdMetricsPort()))
 	}
 	// parallel-load is an opt-in ad-hoc container launched by `make
 	// run-parallel-load`; the host name `parallel-load` resolves only
@@ -2528,24 +2614,25 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 	}
 
 	// writeKatzenpostService emits the common scaffolding for a service
-	// built from the katzenpost base image: container_name and hostname
-	// match the identifier so peers can address it as
-	// `tcp://<name>:<port>` via the bridge's embedded DNS, the source
-	// tree is mounted read-write for log persistence, and the service
-	// joins the single katzenpost bridge network. The caller appends
-	// depends_on/ports/environment as needed.
+	// built from the katzenpost base image: a hostname matching the
+	// identifier so peers can address it as `tcp://<name>:<port>` via the
+	// bridge's embedded DNS, the source tree mounted read-write for log
+	// persistence, and the service joining the single katzenpost bridge
+	// network. No container_name is set, so the compose project prefix
+	// namespaces the runtime containers and parallel networks stay
+	// independent. The caller appends depends_on/ports/environment as
+	// needed.
 	writeKatzenpostService := func(name, command string) {
 		Write(f, `
   %s:
     restart: "no"
-    container_name: %s
     hostname: %s
     image: %s
     volumes:
       - ./:%s
     command: %s
     networks:
-      - %s`, name, name, name, dockerImage, s.BaseDir, command, DockerNetwork)
+      - %s`, name, name, dockerImage, s.BaseDir, command, DockerNetwork)
 	}
 
 	writeDependsOnAuths := func() {
@@ -2610,13 +2697,13 @@ services:
 	}
 
 	if !s.NoMetrics {
-		// Prometheus and grafana publish to host loopback so the operator
-		// can browse them. Their scrape paths into the katzenpost
-		// services run entirely on the bridge.
+		// Prometheus and grafana publish to host loopback at
+		// base_port+2001/+2002 so the operator can browse them and so
+		// parallel networks do not collide. Their scrape paths into the
+		// katzenpost services run entirely on the bridge.
 		Write(f, `
   metrics:
     restart: "no"
-    container_name: metrics
     hostname: metrics
     image: docker.io/prom/prometheus
     pull_policy: if_not_present
@@ -2626,13 +2713,12 @@ services:
     networks:
       - %s
     ports:
-      - "127.0.0.1:9090:9090"
-`, s.BaseDir, s.BaseDir, DockerNetwork)
+      - "127.0.0.1:%d:9090"
+`, s.BaseDir, s.BaseDir, DockerNetwork, s.BasePort+metricsPublishedPortOffset)
 
 		Write(f, `
   grafana:
     restart: "no"
-    container_name: grafana
     hostname: grafana
     image: docker.io/grafana/grafana:latest
     pull_policy: if_not_present
@@ -2648,37 +2734,37 @@ services:
     networks:
       - %s
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:%d:3000"
     depends_on:
       - metrics
-`, DockerNetwork)
+`, DockerNetwork, s.BasePort+grafanaPublishedPortOffset)
 	}
 
 	if s.PyroscopeDirauth || s.PyroscopeKpclientd {
 		Write(f, `
   pyroscope:
     restart: "no"
-    container_name: pyroscope
     hostname: pyroscope
     image: docker.io/grafana/pyroscope:latest
     pull_policy: if_not_present
     networks:
       - %s
     ports:
-      - "127.0.0.1:4040:4040"
-`, DockerNetwork)
+      - "127.0.0.1:%d:4040"
+`, DockerNetwork, s.BasePort+pyroscopePublishedPortOffset)
 	}
 
-	// kpclientd publishes its thin-client port (64331) on the host so
-	// external thin clients (ping, fetch) running with --network=host
-	// can dial 127.0.0.1:64331. Inside the bridge it is reachable as
-	// kpclientd:64331 via compose DNS, which is how prometheus scrapes
-	// it when kpclientd_metrics is enabled.
+	// kpclientd publishes its thin-client port on the host at
+	// base_port+2000 so external thin clients (ping, fetch) running with
+	// --network=host can dial it. Inside the bridge it is reachable as
+	// kpclientd:<base_port+2000> via compose DNS, which is how prometheus
+	// scrapes it when kpclientd_metrics is enabled.
 	cmd := fmt.Sprintf("%s/kpclientd%s -c %s/client/client.toml", s.BaseDir, s.BinSuffix, s.BaseDir)
 	writeKatzenpostService("kpclientd", cmd)
+	publishedPort := s.BasePort + kpclientdPublishedPortOffset
 	Write(f, `
     ports:
-      - "127.0.0.1:64331:64331"`)
+      - "127.0.0.1:%d:%d"`, publishedPort, publishedPort)
 	writeEnv("kpclientd")
 	Write(f, `
 `)

@@ -143,6 +143,14 @@ func (b *Backend) Rotate() error {
 	return err
 }
 
+// Close releases the backend's underlying log output, e.g. a file handle.
+func (b *Backend) Close() error {
+	b.Lock()
+	defer b.Unlock()
+
+	return b.w.Close()
+}
+
 func (b *Backend) newBackend() error {
 	lvl, err := logLevelFromString(b.level)
 	if err != nil {

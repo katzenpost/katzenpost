@@ -4,11 +4,11 @@
 package cpbench
 
 import (
-	"net/http"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/katzenpost/katzenpost/common/metrics"
 )
 
 var registerOnce sync.Once
@@ -54,7 +54,7 @@ var (
 
 // StartListener registers and exposes the cp-bench metric surface.
 // Safe to call multiple times; registration and listener startup
-// happen exactly once.
+// happen exactly once. Panics if a configured address cannot be bound.
 func StartListener(address string) {
 	registerOnce.Do(func() {
 		prometheus.MustRegister(runsTotal)
@@ -65,7 +65,6 @@ func StartListener(address string) {
 		if address == "" {
 			return
 		}
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(address, nil)
+		metrics.MustServe(address, nil)
 	})
 }

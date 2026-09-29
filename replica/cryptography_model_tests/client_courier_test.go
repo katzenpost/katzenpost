@@ -173,7 +173,10 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 			ReadReply:   readReply,
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
+		envelopeReply, err := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
+		if err != nil {
+			panic(err)
+		}
 		reply := &commands.ReplicaMessageReply{
 			Cmds:          r.Cmds,
 			ErrorCode:     0, // Zero means success.
@@ -190,7 +193,10 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 			WriteReply:  writeReply,
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
+		envelopeReply, err := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
+		if err != nil {
+			panic(err)
+		}
 		reply := &commands.ReplicaMessageReply{
 			Cmds:          r.Cmds,
 			ErrorCode:     0, // Zero means success.
@@ -315,8 +321,11 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 		replicaPubKeys[i] = c.Replicas[i].PublicKey
 	}
 
-	mkemPrivateKey, mkemCiphertext := c.MKEMNikeScheme.Encapsulate(
+	mkemPrivateKey, mkemCiphertext, err := c.MKEMNikeScheme.Encapsulate(
 		replicaPubKeys, msg.Bytes())
+	if err != nil {
+		panic(err)
+	}
 	mkemPublicKey := mkemPrivateKey.Public()
 
 	senderPubkey := mkemPublicKey.Bytes()
@@ -371,7 +380,10 @@ func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *pigeonhole.Co
 		replicaPubKeys[i] = c.Replicas[i].PublicKey
 	}
 
-	mkemPrivateKey, mkemCiphertext := c.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	mkemPrivateKey, mkemCiphertext, err := c.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	if err != nil {
+		panic(err)
+	}
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkey := mkemPublicKey.Bytes()
 	envelope := &pigeonhole.CourierEnvelope{

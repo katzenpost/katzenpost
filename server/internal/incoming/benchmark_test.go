@@ -79,7 +79,7 @@ func benchMixServer(listener net.Listener, serverLinkPrivKey kem.PrivateKey, ser
 			defer session.Close()
 
 			c.SetDeadline(time.Now().Add(30 * time.Second))
-			session.Initialize(c)
+			session.Initialize(context.Background(), c)
 		}(conn)
 	}
 }
@@ -257,7 +257,7 @@ func runMixConcurrentHandshakes(serverAddr string, clientKeys []kem.PrivateKey, 
 			defer conn.Close()
 
 			conn.SetDeadline(time.Now().Add(30 * time.Second))
-			err = sessions[idx].Initialize(conn)
+			err = sessions[idx].Initialize(context.Background(), conn)
 			durations[idx] = time.Since(start)
 			if err != nil {
 				errors[idx] = err
@@ -434,7 +434,7 @@ func runClientConcurrentHandshakes(serverAddr string, clientKeys []kem.PrivateKe
 			defer conn.Close()
 
 			conn.SetDeadline(time.Now().Add(30 * time.Second))
-			err = sessions[idx].Initialize(conn)
+			err = sessions[idx].Initialize(context.Background(), conn)
 			durations[idx] = time.Since(start)
 			if err != nil {
 				errors[idx] = err

@@ -227,13 +227,13 @@ func setupTestGateway(t *testing.T, gwAddr string, handler func(t *testing.T, wi
 		wireConn, err := wire.NewSession(cfg, false)
 		require.NoError(t, err)
 
-		err = wireConn.Initialize(conn)
+		err = wireConn.Initialize(context.Background(), conn)
 		require.NoError(t, err)
 
 		cmds := commands.NewMixnetCommands(g)
 
 		for {
-			cmd, err := wireConn.RecvCommand()
+			cmd, err := wireConn.RecvCommand(context.Background())
 			if err != nil {
 				return
 			}
@@ -293,7 +293,7 @@ func TestConnectionConsensusGoneSurvives(t *testing.T) {
 				ChunkTotal: 1,
 				Payload:    []byte{},
 			}
-			err := wireConn.SendCommand(resp)
+			err := wireConn.SendCommand(context.Background(), resp)
 			require.NoError(t, err)
 			return
 		}
@@ -324,7 +324,7 @@ func TestConnectionConsensusGoneSurvives(t *testing.T) {
 				ChunkTotal: uint32(len(chunks)),
 				Payload:    chunk,
 			}
-			err = wireConn.SendCommand(resp)
+			err = wireConn.SendCommand(context.Background(), resp)
 			require.NoError(t, err)
 		}
 	})
@@ -494,14 +494,14 @@ func TestConnection(t *testing.T) {
 		wireConn, err := wire.NewSession(cfg, false)
 		require.NoError(t, err)
 
-		err = wireConn.Initialize(conn)
+		err = wireConn.Initialize(context.Background(), conn)
 		require.NoError(t, err)
 
 		cmds := commands.NewMixnetCommands(g)
 
 	loop:
 		for {
-			cmd, err := wireConn.RecvCommand()
+			cmd, err := wireConn.RecvCommand(context.Background())
 			//require.NoError(t, err)
 			if err != nil {
 				return
@@ -546,7 +546,7 @@ func TestConnection(t *testing.T) {
 					ChunkTotal: 1,
 					Payload:    chunks[0],
 				}
-				err = wireConn.SendCommand(resp)
+				err = wireConn.SendCommand(context.Background(), resp)
 				require.NoError(t, err)
 			default:
 				break loop
@@ -902,7 +902,7 @@ func (env *testGatewayEnv) sendValidDocument(t *testing.T, wireConn *wire.Sessio
 			ChunkTotal: uint32(len(chunks)),
 			Payload:    chunk,
 		}
-		err = wireConn.SendCommand(resp)
+		err = wireConn.SendCommand(context.Background(), resp)
 		require.NoError(t, err)
 	}
 }
@@ -976,13 +976,13 @@ func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, hand
 		}
 		wireConn, err := wire.NewSession(cfg, false)
 		require.NoError(t, err)
-		err = wireConn.Initialize(conn)
+		err = wireConn.Initialize(context.Background(), conn)
 		require.NoError(t, err)
 
 		cmds := commands.NewMixnetCommands(env.geo)
 
 		for {
-			cmd, err := wireConn.RecvCommand()
+			cmd, err := wireConn.RecvCommand(context.Background())
 			if err != nil || cmd == nil {
 				return
 			}
@@ -1040,7 +1040,7 @@ func TestOnWireConnDisconnectCommand(t *testing.T) {
 				return true
 			}
 			// After first doc, send Disconnect.
-			wireConn.SendCommand(&commands.Disconnect{Cmds: cmds})
+			wireConn.SendCommand(context.Background(), &commands.Disconnect{Cmds: cmds})
 			return false
 		}
 		return true
@@ -1094,7 +1094,7 @@ func TestOnWireConnMessageCallback(t *testing.T) {
 						SURBID:   surbID,
 						Payload:  make([]byte, env.geo.PayloadTagLength+env.geo.ForwardPayloadLength),
 					}
-					_ = wireConn.SendCommand(resp)
+					_ = wireConn.SendCommand(context.Background(), resp)
 				}()
 			}
 		case *commands.MessageDelivered:

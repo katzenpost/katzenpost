@@ -62,8 +62,12 @@ func (s *SharedRandom) GetCommit() []byte {
 	return s.commit
 }
 
-// SetCommit sets the commit value
+// SetCommit sets the commit value. A commit shorter than SharedRandomLength is
+// ignored rather than panicking on the epoch slice; a later Verify then fails.
 func (s *SharedRandom) SetCommit(rawCommit []byte) {
+	if len(rawCommit) < SharedRandomLength {
+		return
+	}
 	s.epoch = binary.BigEndian.Uint64(rawCommit[0:8])
 	s.commit = rawCommit
 }
@@ -76,6 +80,9 @@ func (s *SharedRandom) GetEpoch() uint64 {
 // Verify checks that the reveal value verifies the commit value
 func (s *SharedRandom) Verify(reveal []byte) bool {
 	if len(reveal) != SharedRandomLength {
+		return false
+	}
+	if len(s.commit) < SharedRandomLength {
 		return false
 	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/linxGnu/grocksdb"
+	"github.com/cockroachdb/pebble"
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -57,26 +57,27 @@ func replicaSetFingerprint(doc *pki.Document) [32]byte {
 // recorded" and proceeds.
 func (s *state) loadLastRebalanceFingerprint() ([32]byte, bool, error) {
 	var zero [32]byte
-	if s.db == nil || s.metaCF == nil {
+	if s.db == nil || s.metaDB == nil {
 		return zero, false, errors.New(errDatabaseClosed)
 	}
-	ro := grocksdb.NewDefaultReadOptions()
-	defer ro.Destroy()
-	value, err := s.db.GetCF(ro, s.metaCF, lastRebalanceReplicasKey)
+	value, closer, err := s.metaDB.Get(lastRebalanceReplicasKey)
 	if err != nil {
+		if errors.Is(err, pebble.ErrNotFound) {
+			return zero, false, nil
+		}
 		return zero, false, err
 	}
-	defer value.Free()
-	if value.Size() == 0 {
-		return zero, false, nil
-	}
-	if value.Size() != 32 {
-		s.log.Warningf("state: discarding malformed rebalance-fingerprint record of size %d", value.Size())
+	defer closer.Close()
+	// A record of any length but 32 is unusable, including an empty one.
+	// Pebble reports an absent key as ErrNotFound above, so reaching here
+	// with a short value means the record is corrupt, not merely missing.
+	if len(value) != 32 {
+		s.log.Warningf("state: discarding malformed rebalance-fingerprint record of size %d", len(value))
 		instrument.DroppedByReason("malformed_rebalance_fingerprint")
 		return zero, false, nil
 	}
 	var fp [32]byte
-	copy(fp[:], value.Data())
+	copy(fp[:], value)
 	return fp, true, nil
 }
 
@@ -84,10 +85,8 @@ func (s *state) loadLastRebalanceFingerprint() ([32]byte, bool, error) {
 // with the supplied value. Called only after a Rebalance iterator
 // completes without error.
 func (s *state) storeLastRebalanceFingerprint(fp [32]byte) error {
-	if s.db == nil || s.metaCF == nil {
+	if s.db == nil || s.metaDB == nil {
 		return errors.New(errDatabaseClosed)
 	}
-	wo := grocksdb.NewDefaultWriteOptions()
-	defer wo.Destroy()
-	return s.db.PutCF(wo, s.metaCF, lastRebalanceReplicasKey, fp[:])
+	return s.metaDB.Set(lastRebalanceReplicasKey, fp[:], nil)
 }

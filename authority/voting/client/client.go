@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
+	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -51,6 +52,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/quic/common"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 var defaultDialer = &net.Dialer{}
@@ -64,6 +66,10 @@ type authorityAuthenticator struct {
 
 // IsPeerValid authenticates the remote peer's credentials.
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
+	if len(creds.AdditionalData) < hash.HashSize {
+		a.log.Warningf("voting/Client: IsPeerValid(): AD too short: %d", len(creds.AdditionalData))
+		return false
+	}
 	identityHash := hash.Sum256From(a.IdentityPublicKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
@@ -111,6 +117,66 @@ type Config struct {
 	RetryBaseDelay   time.Duration
 	RetryMaxDelay    time.Duration
 	RetryJitter      float64
+
+	// MaxConsensusSize is the per-connection send and receive ceiling in bytes.
+	// Zero derives it from the configured PKI schemes and a node-count
+	// allowance (deriveMaxMessageSize), so it scales with the primitives in
+	// use. Raise it for a network larger than the allowance.
+	MaxConsensusSize int
+}
+
+// clientNodeAllowance and clientReplicaAllowance bound the topology the client
+// assumes when deriving its ceiling before it has fetched a consensus. They are
+// a small multiple of the real network shape (namenlos is on the order of 17
+// nodes and 4 storage replicas), giving headroom without over-provisioning. A
+// genuinely larger network sets MaxConsensusSize explicitly; this default is
+// deliberately a sane multiple of the deployed topology, not an arbitrarily
+// large fixed cap.
+const (
+	clientNodeAllowance    = 64
+	clientReplicaAllowance = 16
+)
+
+// deriveMaxMessageSize computes the wire ceiling from the configured PKI
+// schemes, the authority count, and the default node-count allowance.
+func (cfg *Config) deriveMaxMessageSize() int {
+	return cfg.estimateConsensusSize(clientNodeAllowance, clientReplicaAllowance)
+}
+
+// estimateConsensusSize computes the wire ceiling from the configured PKI
+// schemes and authority count for the given node and replica counts, matching
+// the dirauth's own topology-exact estimate for the same schemes.
+func (cfg *Config) estimateConsensusSize(numNodes, numReplicas int) int {
+	if cfg.KEMScheme == nil || cfg.PKISignatureScheme == nil {
+		return wire.DefaultMaxPKIMessageSize
+	}
+	sphinxPub := 0
+	if cfg.Geo != nil {
+		switch {
+		case cfg.Geo.NIKEName != "":
+			if s := nikeschemes.ByName(cfg.Geo.NIKEName); s != nil {
+				sphinxPub = s.PublicKeySize()
+			}
+		case cfg.Geo.KEMName != "":
+			if s := schemes.ByName(cfg.Geo.KEMName); s != nil {
+				sphinxPub = s.PublicKeySize()
+			}
+		}
+	}
+	envPub := 0
+	if replicaCommon.NikeScheme != nil {
+		envPub = replicaCommon.NikeScheme.PublicKeySize()
+	}
+	return pki.EstimateConsensusSize(pki.ConsensusSizeParams{
+		SignPubSize:     cfg.PKISignatureScheme.PublicKeySize(),
+		SignSigSize:     cfg.PKISignatureScheme.SignatureSize(),
+		LinkKEMPubSize:  cfg.KEMScheme.PublicKeySize(),
+		SphinxPubSize:   sphinxPub,
+		EnvelopePubSize: envPub,
+		NumNodes:        numNodes,
+		NumReplicas:     numReplicas,
+		NumAuthorities:  len(cfg.Authorities),
+	})
 }
 
 func (cfg *Config) validate() error {
@@ -118,10 +184,10 @@ func (cfg *Config) validate() error {
 		cfg.DialTimeoutSec = 30
 	}
 	if cfg.HandshakeTimeoutSec == 0 {
-		cfg.HandshakeTimeoutSec = 60
+		cfg.HandshakeTimeoutSec = 3
 	}
 	if cfg.ResponseTimeoutSec == 0 {
-		cfg.ResponseTimeoutSec = 90
+		cfg.ResponseTimeoutSec = 30
 	}
 	if cfg.RetryMaxAttempts <= 0 {
 		cfg.RetryMaxAttempts = retry.DefaultMaxAttempts
@@ -134,6 +200,9 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.RetryJitter <= 0 {
 		cfg.RetryJitter = retry.DefaultJitter
+	}
+	if cfg.MaxConsensusSize <= 0 {
+		cfg.MaxConsensusSize = cfg.deriveMaxMessageSize()
 	}
 	if cfg.LogBackend == nil {
 		return fmt.Errorf("voting/client: LogBackend is mandatory")
@@ -157,6 +226,15 @@ func (cfg *Config) validate() error {
 type connection struct {
 	conn    net.Conn
 	session *wire.Session
+	watch   *connWatcher
+}
+
+// Close stops the context watcher, if any, and closes the connection.
+func (c *connection) Close() {
+	if c.watch != nil {
+		c.watch.stop()
+	}
+	c.conn.Close()
 }
 
 type connector struct {
@@ -171,12 +249,36 @@ func newConnector(cfg *Config) *connector {
 	}
 }
 
+// connWatcher closes a connection when its context is cancelled, interrupting an
+// in-flight handshake or round trip the moment the caller cancels or the upload
+// window deadline elapses. It is stopped, without closing the connection, once
+// the exchange completes normally and ownership passes to the caller.
+type connWatcher struct {
+	stopCh chan struct{}
+	once   sync.Once
+}
+
+func watchConn(ctx context.Context, conn net.Conn) *connWatcher {
+	w := &connWatcher{stopCh: make(chan struct{})}
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-w.stopCh:
+		}
+	}()
+	return w
+}
+
+func (w *connWatcher) stop() {
+	w.once.Do(func() { close(w.stopCh) })
+}
+
 func (p *connector) initSession(
 	ctx context.Context,
 	linkKey kem.PrivateKey,
 	signingKey sign.PublicKey,
 	peer *config.Authority,
-	timeoutOverride time.Duration,
 ) (*connection, error) {
 	var conn net.Conn
 	var err error
@@ -186,14 +288,13 @@ func (p *connector) initSession(
 		return fmt.Sprintf("peer %s (%s)", peer.Identifier, strings.Join(peer.Addresses, ","))
 	}
 
+	// Each phase gets its full configured timeout, applied right before the
+	// phase it bounds: dial via the dialer below, handshake and round trip via
+	// SetDeadline. The caller's context is enforced separately by watchConn, so
+	// no phase is silently shrunk by a window that began before it started.
 	dialTimeout := time.Duration(p.cfg.DialTimeoutSec) * time.Second
 	handshakeTimeout := time.Duration(p.cfg.HandshakeTimeoutSec) * time.Second
 	responseTimeout := time.Duration(p.cfg.ResponseTimeoutSec) * time.Second
-	if timeoutOverride > 0 {
-		dialTimeout = timeoutOverride
-		handshakeTimeout = timeoutOverride
-		responseTimeout = timeoutOverride
-	}
 
 	p.log.Debugf("Client timeouts: dial=%v, handshake=%v, response=%v", dialTimeout, handshakeTimeout, responseTimeout)
 
@@ -232,6 +333,12 @@ func (p *connector) initSession(
 			return nil, fmt.Errorf("%s: all connection attempts failed: %v", peerInfo(), lastErr)
 		}
 	}
+	if conn == nil {
+		if lastErr == nil {
+			lastErr = fmt.Errorf("%s: no usable address", peerInfo())
+		}
+		return nil, lastErr
+	}
 
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peer.IdentityPublicKey,
@@ -247,6 +354,7 @@ func (p *connector) initSession(
 
 	kemScheme := schemes.ByName(peer.WireKEMScheme)
 	if kemScheme == nil {
+		conn.Close()
 		return nil, fmt.Errorf("%s: unsupported KEM scheme: %s", peerInfo(), peer.WireKEMScheme)
 	}
 
@@ -254,6 +362,7 @@ func (p *connector) initSession(
 	if peer.PKISignatureScheme != "" {
 		pkiSignatureScheme = signSchemes.ByName(peer.PKISignatureScheme)
 		if pkiSignatureScheme == nil {
+			conn.Close()
 			return nil, fmt.Errorf("%s: unsupported PKI signature scheme: %s", peerInfo(), peer.PKISignatureScheme)
 		}
 	}
@@ -266,6 +375,12 @@ func (p *connector) initSession(
 		AdditionalData:     ad,
 		AuthenticationKey:  linkKey,
 		RandomReader:       rand.Reader,
+		// The Session enforces these itself now; watchConn below still provides
+		// caller-context cancellation and is harmless alongside it.
+		HandshakeTimeout: handshakeTimeout,
+		ReadTimeout:      responseTimeout,
+		WriteTimeout:     responseTimeout,
+		MaxMessageSize:   p.cfg.MaxConsensusSize,
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
@@ -275,9 +390,22 @@ func (p *connector) initSession(
 		return nil, fmt.Errorf("%s: failed to create PKI session: %v", peerInfo(), err)
 	}
 
+	// Watch the caller's context across the handshake and the subsequent round
+	// trip: cancelling ctx, or its upload-window deadline elapsing, closes the
+	// connection and unblocks the in-flight Read/Write. On any failure the
+	// deferred stop tears the watcher down; on success it is handed to the
+	// returned connection, whose Close stops it.
+	watch := watchConn(ctx, conn)
+	sessionReady := false
+	defer func() {
+		if !sessionReady {
+			watch.stop()
+		}
+	}()
+
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	handshakeStart := time.Now()
-	if err = s.Initialize(conn); err != nil {
+	if err = s.Initialize(ctx, conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -324,7 +452,8 @@ func (p *connector) initSession(
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
 	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), handshakeElapsed)
 	conn.SetDeadline(time.Now().Add(responseTimeout))
-	return &connection{conn: conn, session: s}, nil
+	sessionReady = true
+	return &connection{conn: conn, session: s, watch: watch}, nil
 }
 
 func (p *connector) initSessionWithRetry(
@@ -345,7 +474,7 @@ func (p *connector) initSessionWithRetry(
 			}
 		}
 
-		conn, err := p.initSession(ctx, linkKey, signingKey, peer, 0)
+		conn, err := p.initSession(ctx, linkKey, signingKey, peer)
 		if err == nil {
 			if attempt > 0 {
 				p.log.Noticef("authority %s: connected after %d retries", peer.Identifier, attempt)
@@ -364,13 +493,26 @@ func (p *connector) initSessionWithRetry(
 	return nil, lastErr
 }
 
-func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
+func (p *connector) roundTrip(ctx context.Context, s *wire.Session, cmd commands.Command) (commands.Command, error) {
 	sendStart := time.Now()
-	if err := s.SendCommand(cmd); err != nil {
+	if err := s.SendCommand(ctx, cmd); err != nil {
 		return nil, err
 	}
 	p.log.Debugf("Sent %s in %v", cmd, time.Since(sendStart))
-	return s.RecvCommand()
+	resp, err := s.RecvCommand(ctx)
+	if err != nil && wire.IsOversizedMessageError(err) {
+		// deriveMaxMessageSize assumes a bounded topology (clientNodeAllowance,
+		// clientReplicaAllowance) since a client cannot know the real topology
+		// before it has fetched a consensus. A network that has grown past that
+		// allowance, or an operator-set MaxConsensusSize that is too small,
+		// rejects every legitimate reply as oversized with no other signal.
+		p.log.Warningf(
+			"%s: reply exceeded our MaxConsensusSize ceiling (%d bytes); "+
+				"if the network has grown, set MaxConsensusSize explicitly",
+			cmd, p.cfg.MaxConsensusSize,
+		)
+	}
+	return resp, err
 }
 
 type PeerResponse struct {
@@ -402,9 +544,9 @@ func (p *connector) allPeersRoundTrip(
 				responseCh <- PeerResponse{Peer: peer, Error: err}
 				return
 			}
-			defer conn.conn.Close()
+			defer conn.Close()
 
-			resp, err := p.roundTrip(conn.session, cmd)
+			resp, err := p.roundTrip(ictx, conn.session, cmd)
 			if err != nil {
 				p.log.Errorf("allPeersRoundTrip: %s round trip failed: %v", peer.Identifier, err)
 				responseCh <- PeerResponse{Peer: peer, Error: err}
@@ -468,23 +610,6 @@ type postSummary struct {
 	errs                []error
 }
 
-func postInitialTimeout(round int) time.Duration {
-	// Start at 10% of the legacy one-minute handshake timeout, then approach
-	// the old maximum on later best-effort completion rounds.
-	switch {
-	case round <= 0:
-		return 6 * time.Second
-	case round == 1:
-		return 12 * time.Second
-	case round == 2:
-		return 24 * time.Second
-	case round == 3:
-		return 48 * time.Second
-	default:
-		return 60 * time.Second
-	}
-}
-
 func descriptorPostRetryDelay(cfg *Config, attempts int) time.Duration {
 	// Descriptor POST completion rounds need a real per-authority sleep timer.
 	//
@@ -545,20 +670,16 @@ func (p *connector) postAuthorityOnce(
 	cmd commands.Command,
 	peer *config.Authority,
 	round int,
-	timeout time.Duration,
 ) postAttemptResult {
 	start := time.Now()
-	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
-	conn, err := p.initSession(attemptCtx, linkKey, signingKey, peer, timeout)
+	conn, err := p.initSession(ctx, linkKey, signingKey, peer)
 	if err != nil {
 		elapsed := time.Since(start)
 		p.log.Warningf(
-			"post authority %s: attempt failed after %v timeout=%v: %v",
+			"post authority %s: attempt failed after %v: %v",
 			peer.Identifier,
 			elapsed,
-			timeout,
 			err,
 		)
 		return postAttemptResult{
@@ -569,16 +690,15 @@ func (p *connector) postAuthorityOnce(
 			elapsed: elapsed,
 		}
 	}
-	defer conn.conn.Close()
+	defer conn.Close()
 
-	resp, err := p.roundTrip(conn.session, cmd)
+	resp, err := p.roundTrip(ctx, conn.session, cmd)
 	if err != nil {
 		elapsed := time.Since(start)
 		p.log.Warningf(
-			"post authority %s: round trip failed after %v timeout=%v: %v",
+			"post authority %s: round trip failed after %v: %v",
 			peer.Identifier,
 			elapsed,
-			timeout,
 			err,
 		)
 		return postAttemptResult{
@@ -658,9 +778,8 @@ func (p *connector) runPostRound(
 
 	for _, state := range states {
 		state := state
-		timeout := clampTimeoutToContext(ctx, postInitialTimeout(state.attempts))
 		w.Go(func() {
-			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, state.peer, state.attempts, timeout)
+			resultsCh <- p.postAuthorityOnce(ctx, linkKey, signingKey, cmd, state.peer, state.attempts)
 		})
 	}
 
@@ -789,17 +908,6 @@ func remainingContextBudget(ctx context.Context) time.Duration {
 		return 0
 	}
 	return time.Until(deadline)
-}
-
-func clampTimeoutToContext(ctx context.Context, timeout time.Duration) time.Duration {
-	remaining := remainingContextBudget(ctx)
-	if remaining <= 0 {
-		return timeout
-	}
-	if remaining < timeout {
-		return remaining
-	}
-	return timeout
 }
 
 func logPostAttemptResult(
@@ -1078,7 +1186,7 @@ func (p *connector) fetchConsensus(
 	if err != nil {
 		return nil, fmt.Errorf("peer %s: connection failed: %v", auth.Identifier, err)
 	}
-	defer conn.conn.Close()
+	defer conn.Close()
 
 	cmd := &commands.GetConsensus{
 		Epoch:              epoch,
@@ -1086,7 +1194,7 @@ func (p *connector) fetchConsensus(
 		MixnetTransmission: false,
 	}
 
-	resp, err := p.roundTrip(conn.session, cmd)
+	resp, err := p.roundTrip(ctx, conn.session, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("peer %s: round trip failed: %v", auth.Identifier, err)
 	}
@@ -1503,6 +1611,7 @@ func New(cfg *Config) (pki.PostingClient, error) {
 		log:  cfg.LogBackend.GetLogger("pki/voting/Client"),
 		pool: newConnector(cfg),
 	}
+	c.log.Debugf("PKI wire message ceiling=%d bytes", cfg.MaxConsensusSize)
 
 	c.verifiers = make([]sign.PublicKey, 0, len(cfg.Authorities))
 	for _, auth := range cfg.Authorities {

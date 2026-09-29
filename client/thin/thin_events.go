@@ -120,7 +120,7 @@ type MessageReplyEvent struct {
 	Payload []byte `cbor:"payload"`
 
 	// ReplyIndex is the index of the reply that was actually used when processing
-	// this message. This is particularly relevant for pigeonhole channel reads.
+	// this message. This is particularly relevant for Pigeonhole channel reads.
 	ReplyIndex *uint8 `cbor:"reply_index,omitempty"`
 
 	// ErrorCode indicates the success or failure of the message operation.
@@ -156,6 +156,19 @@ type MessageSentEvent struct {
 
 	// ReplyETA is the expected round trip time to receive a response.
 	ReplyETA time.Duration `cbor:"reply_eta"`
+
+	// ForwardRoute names the hops the packet was sent over, in path order,
+	// from the gateway to the destination.
+	//
+	// Empty means unknown, not that there were no hops: a daemon predating
+	// this field omits it, and so does one that could not name the hops
+	// against its consensus.
+	ForwardRoute []string `cbor:"forward_route,omitempty"`
+
+	// ReturnRoute names the hops the SURB travels back over, in path order.
+	// Empty when the message carried no SURB, and otherwise under the same
+	// unknown-versus-absent caveat as ForwardRoute.
+	ReturnRoute []string `cbor:"return_route,omitempty"`
 
 	// Err is the error message if any error was encountered when sending the message.
 	// Empty string indicates no error occurred.
@@ -213,9 +226,9 @@ func (e *NewPKIDocumentEvent) String() string {
 
 // NewKeypairReply is the reply to a NewKeypair request.
 type NewKeypairReply struct {
-	// QueryID is used for correlating this reply with the NewKeypair request
+	// QueryID is used for correlating this reply with the NewKeypair request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-	// WriteCap is the write capability that should be stored for channel
+	// WriteCap is the write capability that should be stored for the channel.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
 	// ReadCap is the read capability that can be shared with others to allow
 	// them to read messages from this channel.
@@ -238,11 +251,11 @@ func (e *NewKeypairReply) String() string {
 
 // EncryptReadReply is the reply to an EncryptRead request.
 type EncryptReadReply struct {
-	// QueryID is used for correlating this reply with the EncryptRead request
+	// QueryID is used for correlating this reply with the EncryptRead request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// MessageCiphertext is the encrypted message ciphertext that should be sent
-	// to the Courier service.
+	// to the courier service.
 	MessageCiphertext []byte `cbor:"message_ciphertext"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
@@ -276,7 +289,7 @@ type EncryptWriteReply struct {
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// MessageCiphertext is the encrypted message ciphertext that should be sent
-	// to the Courier service.
+	// to the courier service.
 	MessageCiphertext []byte `cbor:"message_ciphertext"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
@@ -307,7 +320,7 @@ func (e *EncryptWriteReply) String() string {
 // StartResendingEncryptedMessageReply is the reply to a StartResendingEncryptedMessage request.
 type StartResendingEncryptedMessageReply struct {
 
-	// QueryID is used for correlating this reply with the StartResendingEncryptedMessage request
+	// QueryID is used for correlating this reply with the StartResendingEncryptedMessage request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// Plaintext is the plaintext message that was read from the channel.
@@ -334,58 +347,6 @@ func (e *StartResendingEncryptedMessageReply) String() string {
 	return fmt.Sprintf("StartResendingEncryptedMessageReply: %d bytes plaintext, courier=%x", len(e.Plaintext), e.CourierIdentityHash)
 }
 
-// WriteStreamReply is the reply to a WriteStream request, sent once every
-// box of the payload has been acknowledged or the transfer has failed.
-type WriteStreamReply struct {
-	// QueryID correlates this reply with its WriteStream request.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// ErrorCode is zero on success, or the failure reason otherwise.
-	ErrorCode uint8 `cbor:"error_code"`
-
-	// NextMessageBoxIndex is the box index immediately after the last box
-	// written, ready to seed a subsequent write on the same channel.
-	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
-
-	// BoxCount is the number of boxes the payload spanned.
-	BoxCount uint32 `cbor:"box_count"`
-}
-
-// String returns a string representation of the WriteStreamReply.
-func (e *WriteStreamReply) String() string {
-	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("WriteStreamReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
-	}
-	return fmt.Sprintf("WriteStreamReply: %d boxes written", e.BoxCount)
-}
-
-// ReadStreamReply is the reply to a ReadStream request, sent once every box
-// has been read and reassembled or the transfer has failed.
-type ReadStreamReply struct {
-	// QueryID correlates this reply with its ReadStream request.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// ErrorCode is zero on success, or the failure reason otherwise.
-	ErrorCode uint8 `cbor:"error_code"`
-
-	// Payload is the concatenation of the decrypted boxes, in order.
-	Payload []byte `cbor:"payload"`
-
-	// NextMessageBoxIndex is the box index immediately after the last box read.
-	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
-
-	// BoxCount is the number of boxes read.
-	BoxCount uint32 `cbor:"box_count"`
-}
-
-// String returns a string representation of the ReadStreamReply.
-func (e *ReadStreamReply) String() string {
-	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("ReadStreamReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
-	}
-	return fmt.Sprintf("ReadStreamReply: %d boxes, %d bytes", e.BoxCount, len(e.Payload))
-}
-
 // CancelResendingEncryptedMessageReply is the reply to a CancelResendingEncryptedMessage request.
 type CancelResendingEncryptedMessageReply struct {
 	// QueryID is used for correlating this reply with the CancelResendingEncryptedMessage request
@@ -406,17 +367,17 @@ func (e *CancelResendingEncryptedMessageReply) String() string {
 
 // StartResendingCopyCommandReply is the reply to a StartResendingCopyCommand request.
 type StartResendingCopyCommandReply struct {
-	// QueryID is used for correlating this reply with the StartResendingCopyCommand request
+	// QueryID is used for correlating this reply with the StartResendingCopyCommand request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ErrorCode indicates the reason for a failure to execute the copy command if any.
 	// Otherwise it is set to zero for success.
 	ErrorCode uint8 `cbor:"error_code"`
 
-	// ReplicaErrorCode is the pigeonhole replica ErrorCode that caused
+	// ReplicaErrorCode is the Pigeonhole replica ErrorCode that caused
 	// the Copy command to abort on the courier. Meaningful only when
 	// ErrorCode indicates a Copy failure and the courier identified a
-	// specific replica-side reason (e.g. ReplicaErrorBoxAlreadyExists).
+	// specific replica-side reason (e.g., ReplicaErrorBoxAlreadyExists).
 	ReplicaErrorCode uint8 `cbor:"replica_error_code,omitempty"`
 
 	// FailedEnvelopeIndex is the 1-based sequential position in the
@@ -428,6 +389,10 @@ type StartResendingCopyCommandReply struct {
 // String returns a string representation of the StartResendingCopyCommandReply.
 func (e *StartResendingCopyCommandReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
+		if e.ReplicaErrorCode != 0 || e.FailedEnvelopeIndex != 0 {
+			return fmt.Sprintf("StartResendingCopyCommandReply (error: %s, replica error code: %d, failed envelope index: %d)",
+				ThinClientErrorToString(e.ErrorCode), e.ReplicaErrorCode, e.FailedEnvelopeIndex)
+		}
 		return fmt.Sprintf("StartResendingCopyCommandReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
 	return "StartResendingCopyCommandReply: success"
@@ -453,7 +418,7 @@ func (e *CancelResendingCopyCommandReply) String() string {
 
 // NextMessageBoxIndexReply is the reply to a NextMessageBoxIndex request.
 type NextMessageBoxIndexReply struct {
-	// QueryID is used for correlating this reply with the NextMessageBoxIndex request
+	// QueryID is used for correlating this reply with the NextMessageBoxIndex request.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// NextMessageBoxIndex is the incremented message box index.
@@ -524,6 +489,31 @@ func (e *GetPKIDocumentReply) String() string {
 		return fmt.Sprintf("GetPKIDocumentReply: epoch=%d (error: %s)", e.Epoch, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("GetPKIDocumentReply: epoch=%d payloadLen=%d", e.Epoch, len(e.Payload))
+}
+
+// GetDirectoryAuthoritiesReply is the reply to a GetDirectoryAuthorities
+// request. The Authorities field carries the directory authority descriptors
+// the daemon is configured with, drawn from its voting authority peer list.
+type GetDirectoryAuthoritiesReply struct {
+	// QueryID is used for correlating this reply with the
+	// GetDirectoryAuthorities request.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Authorities is the list of directory authority descriptors, or nil
+	// on failure.
+	Authorities []*DirectoryAuthority `cbor:"authorities"`
+
+	// ErrorCode indicates the reason for a failure to return the directory
+	// authorities if any. Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the GetDirectoryAuthoritiesReply.
+func (e *GetDirectoryAuthoritiesReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("GetDirectoryAuthoritiesReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("GetDirectoryAuthoritiesReply: %d authorities", len(e.Authorities))
 }
 
 // Copy Channel API:
@@ -705,4 +695,3 @@ func (e *VoucherDeriveStreamReply) String() string {
 	}
 	return "VoucherDeriveStreamReply: success"
 }
-

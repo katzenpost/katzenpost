@@ -54,8 +54,8 @@ type Connector struct {
 
 // retryCommand holds a command that needs to be retried when connections become available
 type retryCommand struct {
-	cmd       commands.Command
-	idHash    [32]byte
+	cmd    commands.Command
+	idHash [32]byte
 	// ident is a per-cmd fingerprint used for dedup. Zero and hasIdent=false
 	// for command types with no natural identity — those are never deduped.
 	ident     [32]byte
@@ -113,6 +113,43 @@ func cmdIdentity(cmd commands.Command) ([32]byte, bool) {
 	}
 }
 
+// failUndeliverableProxyRequest disposes of a command that could not be
+// handed to its peer, returning true if it dealt with it.
+//
+// Proxy requests are failed rather than retry-queued. Each one already
+// has a waiter holding a deadline, so a retry minutes later arrives for
+// a waiter long gone: it spends link capacity on a request nobody wants
+// and produces a reply HandleReply discards. Nor does the queue's dedup
+// help, since cmdIdentity keys a ReplicaMessage by envelope hash and
+// mkem.Encapsulate draws a fresh ephemeral keypair per attempt, so
+// every retry is a distinct entry and up to maxRetryQueuePerPeer of
+// them can pile up. Failing the request instead lets the sweep fail
+// over to the co-holder immediately.
+//
+// Replication writes keep the retry queue; they are what it was built
+// for, and they have no waiter to disappoint.
+func failUndeliverableProxyRequest(co GenericConnector, log *logging.Logger, cmd commands.Command) bool {
+	msg, isProxyRequest := cmd.(*commands.ReplicaMessage)
+	if !isProxyRequest {
+		return false
+	}
+	// Both nil checks are load-bearing: connectors built by tests, and
+	// the window before Server.Start wires the proxy manager, have no
+	// manager to fail the request against. Fall through to the retry
+	// queue's existing behaviour rather than panicking.
+	server := co.Server()
+	if server == nil {
+		return false
+	}
+	proxyManager := server.ProxyManager()
+	if proxyManager == nil {
+		log.Errorf("Proxy manager not wired; failing proxy request %T instead of retry-queuing", msg)
+		return false
+	}
+	proxyManager.FailRequest(*msg.EnvelopeHash(), "undeliverable")
+	return true
+}
+
 func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	co.RLock()
 	c, ok := co.conns[*idHash]
@@ -128,6 +165,8 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 		// Connection exists - dispatch immediately
 		co.log.Debugf("Dispatching command type %T to peer %x", cmd, idHash)
 		c.dispatchCommand(cmd)
+	} else if failUndeliverableProxyRequest(co, co.log, cmd) {
+		co.log.Warningf("No connection for destination %x, failing proxy request %T", idHash[:8], cmd)
 	} else {
 		// No connection - add to retry queue instead of dropping
 		co.log.Warningf("No connection for destination %x, queueing %T for retry", idHash[:8], cmd)
@@ -211,37 +250,49 @@ func (co *Connector) pruneRetryQueueLocked() {
 
 // processRetryQueue attempts to dispatch queued commands when connections become available
 func (co *Connector) processRetryQueue() {
+	// Under retryQueueMu, take the commands whose peer now has a connection
+	// out of the queue, but DISPATCH them only after releasing the lock.
+	// Dispatching while holding retryQueueMu deadlocks: a full per-peer
+	// channel makes dispatchCommand fall through to QueueForRetry, which
+	// locks retryQueueMu again in this same goroutine (sync.Mutex is not
+	// reentrant), wedging the connector's retry path forever.
 	co.retryQueueMu.Lock()
-	defer co.retryQueueMu.Unlock()
-
 	co.pruneRetryQueueLocked()
 
 	if len(co.retryQueue) == 0 {
+		co.retryQueueMu.Unlock()
 		instrument.RetryQueueSize(0)
 		return
 	}
 
 	co.log.Debugf("Processing retry queue with %d commands", len(co.retryQueue))
 
-	// Process retry queue in reverse order to safely remove items
-	for i := len(co.retryQueue) - 1; i >= 0; i-- {
-		retryCmd := co.retryQueue[i]
-
-		// Check if connection is now available
+	type pendingRetry struct {
+		conn *outgoingConn
+		cmd  commands.Command
+	}
+	var ready []pendingRetry
+	kept := co.retryQueue[:0]
+	for _, retryCmd := range co.retryQueue {
 		co.RLock()
 		c, ok := co.conns[retryCmd.idHash]
 		co.RUnlock()
-
 		if ok {
-			// Connection available - dispatch the command
 			co.log.Debugf("Retrying %T for peer %x ident %x after %d attempts", retryCmd.cmd, retryCmd.idHash[:8], retryCmd.ident[:8], retryCmd.attempts)
-			c.dispatchCommand(retryCmd.cmd)
-
-			// Remove from retry queue
-			co.retryQueue = append(co.retryQueue[:i], co.retryQueue[i+1:]...)
+			ready = append(ready, pendingRetry{c, retryCmd.cmd})
+		} else {
+			kept = append(kept, retryCmd)
 		}
 	}
+	co.retryQueue = kept
 	instrument.RetryQueueSize(len(co.retryQueue))
+	co.retryQueueMu.Unlock()
+
+	// A command whose channel is still full is re-queued by
+	// dispatchCommand -> QueueForRetry, which can now take retryQueueMu.
+	for _, p := range ready {
+		p.conn.dispatchCommand(p.cmd)
+	}
 }
 
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
@@ -388,6 +439,12 @@ func (co *Connector) worker() {
 func (co *Connector) spawnNewConns() {
 	newPeerMap := co.server.PKIWorker.ReplicasCopy()
 
+	// Our own descriptor is in the PKI document's replica set too;
+	// never dial ourselves. Local writes are stored directly and
+	// doReplication skips self, so no code path needs a self-link.
+	selfID := hash.Sum256From(co.server.identityPublicKey)
+	delete(newPeerMap, selfID)
+
 	// Traverse the connection table, to figure out which peers are actually
 	// new.  Each outgoingConn object is responsible for determining when
 	// the connection is stale.
@@ -424,6 +481,18 @@ func (co *Connector) ConnectionCount() int {
 	co.RLock()
 	defer co.RUnlock()
 	return len(co.conns)
+}
+
+func (co *Connector) SessionCount() int {
+	co.RLock()
+	defer co.RUnlock()
+	n := 0
+	for _, c := range co.conns {
+		if c.sessionUp.Load() {
+			n++
+		}
+	}
+	return n
 }
 
 func (co *Connector) onNewConn(c *outgoingConn) {
@@ -463,12 +532,12 @@ func (co *Connector) OnClosedConn(c *outgoingConn) {
 // New creates a new Connector.
 func newConnector(server *Server) *Connector {
 	co := &Connector{
-		server:        server,
-		log:           server.LogBackend().GetLogger("replica Connector"),
-		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
+		server:         server,
+		log:            server.LogBackend().GetLogger("replica Connector"),
+		conns:          make(map[[constants.NodeIDLength]byte]*outgoingConn),
 		replicationSem: make(chan struct{}, maxConcurrentReplications),
 		forceUpdateCh:  make(chan interface{}, 1), // See forceUpdate().
-		closeAllCh:    make(chan interface{}),
+		closeAllCh:     make(chan interface{}),
 	}
 
 	co.Go(co.worker)

@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/log"
-	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/queue"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // TestEnqueueResendNeverLoses verifies that a flood of ARQ timer fires

@@ -32,10 +32,16 @@ const (
 	testDialTimeout      = 100 * time.Millisecond
 )
 
-// setupServer creates a test server with the given configuration
+// setupServer creates a test server with the given configuration.
+//
+// The server is shut down when the test (and its subtests) finish. Without
+// this, New() leaves live listeners and connector goroutines running past the
+// test body; leaked across the rest of the package they cause port contention
+// and races, a recurring source of flakiness in this test.
 func setupServer(t *testing.T, cfg *config.Config) *Server {
 	s, err := New(cfg)
 	require.NoError(t, err)
+	t.Cleanup(s.Shutdown)
 	return s
 }
 
@@ -229,11 +235,11 @@ func TestAuthentication(t *testing.T) {
 	replica1PKI.updateReplicas(doc)
 	replica2PKI.updateReplicas(doc)
 
-	// Initialize envelope keys for both replicas
-	replica1Server.envelopeKeys, err = NewEnvelopeKeys(schemes.Replica, replica1Server.log, replica1Server.cfg.DataDir, replicaEpoch)
-	require.NoError(t, err)
-	replica2Server.envelopeKeys, err = NewEnvelopeKeys(schemes.Replica, replica2Server.log, replica2Server.cfg.DataDir, replicaEpoch)
-	require.NoError(t, err)
+	// The servers created their own envelope keys for the current
+	// replica epoch at construction time (newServerWithPKI), before any
+	// worker goroutines started. Reassigning server.envelopeKeys here
+	// would race with the running PKI worker's
+	// publishDescriptorIfNeeded, which reads the field concurrently.
 
 	// Test 1: Courier Authentication
 	t.Run("CourierAuthentication", func(t *testing.T) {

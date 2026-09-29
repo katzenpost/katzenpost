@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/common/config"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -105,17 +106,42 @@ type Config struct {
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
 
-	// ProxyRequestTimeout is the per-proxy-request wall-clock timeout
-	// in seconds for waiting on a peer replica's response. Omit this
-	// field (or set it to 0) so the runtime can pick a sensible value
-	// from the CTIDH self-check's saturated rate; an explicit
-	// non-zero value overrides and is intended for unusual cases
-	// (research workloads, debugging chaos scenarios with very long
-	// per-op times, etc.).
+	MaxClientConns *int
+
+	MaxPeerConns *int
+
+	MaxConnsPerIP *int
+
+	MaxLoopbackConns *int
+
+	// ProxyRequestTimeout is the wall-clock budget in seconds for one
+	// whole proxied request, across every shard holder tried. It is not
+	// a per-holder timeout: the remaining budget is divided among the
+	// candidates still to try, so a client waits this long in total
+	// rather than this long per holder, and a slow first holder still
+	// leaves time to fail over to its co-holder.
+	//
+	// The budget covers everything an attempt does, including the wait
+	// for one of the ProxyWorkerCount slots and the attempt's own MKEM
+	// encapsulation, a CTIDH1024 keygen plus group action. It must
+	// therefore stay comfortably above K times the per-attempt crypto
+	// cost or a sweep exhausts itself on crypto and never reaches the
+	// second holder. The auto-derivation below scales it from the
+	// measured saturated CTIDH rate for exactly this reason.
+	//
+	// Omit this field (or set it to 0) so the runtime can pick a
+	// sensible value from the CTIDH self-check's saturated rate; an
+	// explicit non-zero value overrides and is intended for unusual
+	// cases (research workloads, debugging chaos scenarios with very
+	// long per-op times, etc.).
 	ProxyRequestTimeout int
 
-	// ProxyWorkerCount caps how many proxy-request handlers can be in
-	// flight concurrently. Omit this field (or set it to 0) so the
+	// ProxyWorkerCount caps how many proxied-request attempts can be in
+	// flight concurrently. A slot is held for one attempt against one
+	// shard holder, not for a whole failover sweep, and it covers that
+	// attempt's CTIDH1024 encapsulation as well as its network
+	// round-trip, so the default of runtime.NumCPU caps concurrent
+	// CTIDH at roughly one per core. Omit this field (or set it to 0) so the
 	// runtime picks runtime.NumCPU, regardless of how many katzenpost
 	// processes share the host; an explicit non-zero value is intended
 	// for unusual deployments where the operator wants to reserve CPU
@@ -135,11 +161,11 @@ type Config struct {
 
 	// MaxStorageMiB, when greater than zero, is a hard quota on the
 	// replica database's on-disk size, expressed in mebibytes (1 MiB =
-	// 1024*1024 bytes). The quota is enforced against RocksDB's live
-	// SST footprint. Writes that would grow the store past this are
-	// rejected with ReplicaErrorStorageFull. Zero (the default) leaves
-	// the database size unbounded except by the filesystem reserve
-	// below.
+	// 1024*1024 bytes). The quota is enforced against Pebble's disk
+	// usage (WAL, obsolete tables, and manifest included). Writes that
+	// would grow the store past this are rejected with
+	// ReplicaErrorStorageFull. Zero (the default) leaves the database
+	// size unbounded except by the filesystem reserve below.
 	MaxStorageMiB int64
 
 	// MinFreeStorageMiB is the filesystem free-space reserve on the
@@ -237,6 +263,22 @@ func (c *Config) SetDefaultTimeouts() {
 	}
 	if c.KeepAliveInterval <= 0 {
 		c.KeepAliveInterval = defaultKeepAliveInterval
+	}
+	if c.MaxClientConns == nil {
+		v := connlimit.DefaultMaxClientConns
+		c.MaxClientConns = &v
+	}
+	if c.MaxPeerConns == nil {
+		v := connlimit.DefaultMaxPeerConns
+		c.MaxPeerConns = &v
+	}
+	if c.MaxConnsPerIP == nil {
+		v := connlimit.DefaultMaxConnsPerIP
+		c.MaxConnsPerIP = &v
+	}
+	if c.MaxLoopbackConns == nil {
+		v := connlimit.DefaultMaxLoopbackConns
+		c.MaxLoopbackConns = &v
 	}
 	// IncomingQueueSize, ProxyRequestTimeout and ProxyWorkerCount are
 	// auto-derived later, in server.New, via ApplyRuntimeDefaults.

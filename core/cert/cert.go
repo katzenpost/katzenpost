@@ -335,6 +335,9 @@ func AddSignature(verifier sign.PublicKey, signature Signature, rawCert []byte) 
 		return nil, err
 	}
 
+	if len(signature.Payload) != verifier.Scheme().SignatureSize() {
+		return nil, ErrBadSignature
+	}
 	if verifier.Scheme().Verify(verifier, mesg, signature.Payload, nil) {
 		cert.Signatures[signature.PublicKeySum256] = signature
 	} else {
@@ -367,6 +370,12 @@ func Verify(verifier sign.PublicKey, rawCert []byte) ([]byte, error) {
 			mesg, err := cert.message()
 			if err != nil {
 				return nil, err
+			}
+			// A wrong-sized signature payload is invalid: reject it here
+			// rather than hand it to a scheme whose Verify may panic on a
+			// malformed length (e.g. the hybrid sign scheme).
+			if len(sig.Payload) != verifier.Scheme().SignatureSize() {
+				return nil, ErrBadSignature
 			}
 			if verifier.Scheme().Verify(verifier, mesg, sig.Payload, nil) {
 				return cert.Certified, nil

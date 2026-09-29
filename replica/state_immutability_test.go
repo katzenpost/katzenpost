@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/rand"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -26,7 +26,7 @@ import (
 )
 
 // setupImmutabilityTestState spins up a replica state backed by a real
-// RocksDB instance in a temp directory, suitable for exercising
+// (Pebble) database in a temp directory, suitable for exercising
 // handleReplicaWrite concurrency.
 func setupImmutabilityTestState(t *testing.T) *state {
 	t.Helper()

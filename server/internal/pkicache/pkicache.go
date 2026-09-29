@@ -194,6 +194,9 @@ func (e *Entry) appendMap(layers []uint8, m map[[constants.NodeIDLength]byte]*pk
 		case pki.LayerService:
 			nodes = e.doc.ServiceNodes
 		default:
+			if int(layers[i]) >= len(e.doc.Topology) {
+				continue
+			}
 			nodes = e.doc.Topology[layers[i]]
 		}
 		for _, v := range nodes {

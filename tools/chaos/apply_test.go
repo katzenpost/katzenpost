@@ -26,9 +26,9 @@ func TestPlanProducesOneLanePerPrimitivePerHost(t *testing.T) {
 				LossPct:    0.5,
 				CorruptPct: 0.01,
 			},
-			"mix2":   {PauseForSec: 30},
-			"auth1":  {LossPct: 1.0},
-			"mix3":   {}, // empty; ignored
+			"mix2":  {PauseForSec: 30},
+			"auth1": {LossPct: 1.0},
+			"mix3":  {}, // empty; ignored
 			"replica2": {
 				// pause wins over netem on the same host
 				PauseForSec: 10,

@@ -53,8 +53,9 @@ type incomingConn struct {
 	listener *listener
 	log      *logging.Logger
 
-	conn  net.Conn
-	appID *[AppIDLength]byte
+	conn    net.Conn
+	appID   *[AppIDLength]byte
+	appIDMu sync.RWMutex
 
 	clientToken   *[16]byte
 	explicitClose bool
@@ -82,6 +83,8 @@ type incomingConn struct {
 	sendQueue   []*Response
 	sendQueueMu sync.Mutex
 
+	writeMu sync.Mutex
+
 	// sendWake is a 1-capacity wake channel; sendResponse signals it
 	// after appending so the writer goroutine notices new work.
 	sendWake chan struct{}
@@ -108,6 +111,12 @@ type incomingConn struct {
 // path and from the writer goroutine if its socket Write fails.
 func (c *incomingConn) closeDone() {
 	c.doneOnce.Do(func() { close(c.doneCh) })
+}
+
+func (c *incomingConn) currentAppID() *[AppIDLength]byte {
+	c.appIDMu.RLock()
+	defer c.appIDMu.RUnlock()
+	return c.appID
 }
 
 // isDone reports whether the conn has already begun teardown.
@@ -147,7 +156,7 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 		c.log.Infof("error decoding cbor from client: %s\n", err)
 		return nil, err
 	}
-	return FromThinRequest(req, c.appID), nil
+	return FromThinRequest(req, c.currentAppID()), nil
 }
 
 func (c *incomingConn) sendPKIDoc(doc []byte) error {
@@ -211,6 +220,8 @@ func (c *incomingConn) drainSendQueue() []*Response {
 // can pin the writer; on deadline the socket Write returns an error and
 // the caller tears down the conn.
 func (c *incomingConn) writeResponse(r *Response) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	response := IntoThinResponse(r)
 	blob, err := cbor.Marshal(response)
 	if err != nil {

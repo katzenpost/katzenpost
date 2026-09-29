@@ -25,15 +25,19 @@ package cborplugin
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os/exec"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"gopkg.in/op/go-logging.v1"
 )
 
 // Request is the struct type used in service query requests to plugins.
@@ -157,6 +161,39 @@ type ServicePlugin interface {
 	Halt()
 }
 
+const (
+	maxStderrTailLines = 60
+	maxStderrTailBytes = 8192
+)
+
+// stderrTail keeps a bounded tail of a plugin's stderr output, for
+// inclusion in a startup-failure diagnostic. Safe for concurrent use.
+type stderrTail struct {
+	mu    sync.Mutex
+	lines []string
+	bytes int
+}
+
+func (t *stderrTail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
+		t.lines = append(t.lines, line)
+		t.bytes += len(line)
+	}
+	for len(t.lines) > 1 && (len(t.lines) > maxStderrTailLines || t.bytes > maxStderrTailBytes) {
+		t.bytes -= len(t.lines[0])
+		t.lines = t.lines[1:]
+	}
+	return len(p), nil
+}
+
+func (t *stderrTail) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return strings.Join(t.lines, "\n")
+}
+
 // Client acts as a client interacting with one or more plugins.
 // The Client type is composite with Worker and therefore
 // has a Halt method. Client implements this interface
@@ -174,6 +211,8 @@ type Client struct {
 	socketFile string
 	cmd        *exec.Cmd
 	//conn       net.Conn
+
+	stderrTail stderrTail
 
 	commandBuilder CommandBuilder
 
@@ -214,7 +253,13 @@ func (c *Client) Start(command string, args []string) error {
 		return err
 	}
 	c.Go(c.reaper)
-	c.socket.Start(true, c.socketFile, c.commandBuilder)
+	// c.HaltCh() is closed by logPluginStderr as soon as the plugin's
+	// stderr pipe closes, which happens shortly after the process exits.
+	// Passing it through lets the dial loop below give up immediately on
+	// a plugin that already died, instead of blind-retrying for ~40s.
+	if err := c.socket.Start(true, c.socketFile, c.commandBuilder, c.HaltCh()); err != nil {
+		return fmt.Errorf("plugin %q failed to start: %w; stderr:\n%s", command, err, c.stderrTail.String())
+	}
 	return nil
 }
 
@@ -232,7 +277,7 @@ func (c *Client) reaper() {
 
 func (c *Client) logPluginStderr(stderr io.ReadCloser) {
 	logWriter := c.logBackend.GetLogWriter(c.cmd.Path, "DEBUG")
-	_, err := io.Copy(logWriter, stderr)
+	_, err := io.Copy(io.MultiWriter(logWriter, &c.stderrTail), stderr)
 	if err != nil {
 		c.log.Errorf("Failed to proxy cborplugin stderr to DEBUG log: %s", err)
 	}
@@ -258,7 +303,7 @@ func (c *Client) launch(command string, args []string) error {
 		return err
 	}
 
-	// proxy stderr to our debug log
+	// proxy stderr to our debug log and a bounded tail buffer
 	// also calls Halt() when stderr closes, if the program crashes or is killed
 	c.Go(func() {
 		c.logPluginStderr(stderr)
@@ -266,10 +311,33 @@ func (c *Client) launch(command string, args []string) error {
 
 	// read and decode plugin stdout
 	stdoutScanner := bufio.NewScanner(stdout)
-	stdoutScanner.Scan()
+	if !stdoutScanner.Scan() {
+		return c.earlyExitError(command, stdoutScanner.Err())
+	}
 	c.socketFile = stdoutScanner.Text()
+	if c.socketFile == "" {
+		return c.earlyExitError(command, fmt.Errorf("plugin printed an empty socket path"))
+	}
 	c.log.Debugf("plugin socket path:'%s'\n", c.socketFile)
 	return nil
+}
+
+// earlyExitError is returned by launch when the plugin's stdout closed
+// without ever providing a usable socket path, i.e. it exited (or crashed)
+// during its own initialization. It waits briefly for the concurrent
+// logPluginStderr goroutine to finish draining stderr, so the captured tail
+// is complete, before reaping the process and composing a diagnostic error.
+func (c *Client) earlyExitError(command string, scanErr error) error {
+	select {
+	case <-c.HaltCh():
+	case <-time.After(2 * time.Second):
+	}
+	c.cmd.Wait()
+	tail := c.stderrTail.String()
+	if scanErr != nil {
+		return fmt.Errorf("plugin %q exited before providing a socket path (%v); stderr:\n%s", command, scanErr, tail)
+	}
+	return fmt.Errorf("plugin %q exited before providing a socket path; stderr:\n%s", command, tail)
 }
 
 func (c *Client) ReadChan() chan Command {

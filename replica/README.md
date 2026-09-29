@@ -12,46 +12,9 @@ with the courier services outside of the mixnet, however they do make
 use of our PQ Noise based transport protocol for all of this
 communication. Detailed design docs forthcoming.
 
-## dependencies
-
-Note that this component might be slightly more tricky to build than
-the rest of Katzenpost because of the dependency on a slightly older
-version of RocksDB in order to maintain compatibility with the golang
-bindings.
-
 ## building / running
 
-Install the `RocksDB` dependencies on your host system.
-Run these commands as root:
-
-```bash
-apt install cmake
-
-cd /tmp && \
-    git clone https://github.com/gflags/gflags.git && \
-    cd gflags && \
-    mkdir build && \
-    cd build && \
-    cmake -DBUILD_SHARED_LIBS=1 -DGFLAGS_INSTALL_SHARED_LIBS=1 .. && \
-    make install && \
-    cd /tmp && \
-    rm -R /tmp/gflags/
-
-cd /tmp && \
-    git clone https://github.com/facebook/rocksdb.git && \
-    cd rocksdb && \
-    git checkout v10.2.1 && \
-    make shared_lib && \
-    mkdir -p /usr/local/rocksdb/lib && \
-    mkdir -p /usr/local/rocksdb/include && \
-    cp librocksdb.so* /usr/local/rocksdb/lib && \
-    cp /usr/local/rocksdb/lib/librocksdb.so* /usr/lib/ && \
-    cp -r include /usr/local/rocksdb/ && \
-    cp -r include/* /usr/include/ && \
-    rm -R /tmp/rocksdb/
-```
-
-and then you can run `go build` as usual:
+The replica is pure Go and builds like any other component:
 
 ```bash
 cd cmd/replica
@@ -60,24 +23,61 @@ go build
 
 ## Debugging (as replica operator)
 
-```shell
-apt install rocksdb-tools/testing
-```
+Box records live in a Pebble database at `<DataDir>/replica-boxes.db`
+(with a small `<DataDir>/replica-metadata.db` for bookkeeping such as the
+rebalance fingerprint).
 
 ```shell
-for i in {1..5}; do echo "Replica $i"; ldb --db=voting_mixnet/replica${i}/replica.db --hex --ignore_unknown_options dump | awk -F '==' '/==/ {print "\t"$1}'; done
+# Pebble's CLI can inspect the box keyspace. It opens the database
+# read-write and therefore takes the same lock as a running replica, so
+# stop the replica first:
+for i in {1..5}; do echo "Replica $i"; go run github.com/cockroachdb/pebble/cmd/pebble@v1.1.5 db scan mixnet-alpine/replica${i}/replica-boxes.db; done
 ```
 
-```
-Replica 1
-        0x3B0B39B05170202479198C5D63A7D8A2A30FF3D17A0C20EBCF4FF124A7D56DBC 
-        0xA9F171DCEE449B661CFDDCDAAF82E9808628BF105E2144AA779CFDA30C6B180A 
-Replica 2
-        0xA9F171DCEE449B661CFDDCDAAF82E9808628BF105E2144AA779CFDA30C6B180A 
-Replica 3
-Replica 4
-        0xA9F171DCEE449B661CFDDCDAAF82E9808628BF105E2144AA779CFDA30C6B180A 
-Replica 5
-        0x3B0B39B05170202479198C5D63A7D8A2A30FF3D17A0C20EBCF4FF124A7D56DBC 
-        0xA9F171DCEE449B661CFDDCDAAF82E9808628BF105E2144AA779CFDA30C6B180A
-```
+## Self-tuning (as replica operator)
+
+The replica sizes its own proxy path. There is nothing here to configure.
+
+At startup it measures what this host can actually do, timing MKEM
+(CTIDH1024-X25519) decapsulation both solo and with `runtime.NumCPU` goroutines
+in parallel, and derives `ProxyWorkerCount`, `ProxyRequestTimeout` and
+`IncomingQueueSize` from the result. The measurement is cached in a sidecar file
+beside the database and re-taken automatically when `runtime.NumCPU` or the
+hostname changes, so moving the replica to a different machine re-sizes it
+without anyone being told to go and edit a TOML. Delete the sidecar to force a
+fresh measurement. The derivations, and the reasoning behind each, are at
+`ApplyRuntimeDefaults` in `config/config.go`.
+
+Those three fields do exist in the config schema, and setting any of them
+replaces a measurement of your host with a guess about it. They are there for
+research workloads and deliberate chaos testing. `ProxyWorkerCount` is the
+tempting one and the one to leave alone hardest: an earlier revision let
+operators shrink it on co-tenanted hosts, and measured under parallel load that
+cost 2.5x throughput and 12x p99 latency, because the semaphore serialises
+pipeline parallelism far more aggressively than CPU contention does.
+
+## Is this replica keeping up?
+
+These metrics are for watching health, not for feeding back into config.
+
+| Metric | Reading |
+|---|---|
+| `katzenpost_replica_proxy_active_attempts` | attempts holding a worker slot |
+| `katzenpost_replica_proxy_sem_waiters` | attempts queued for a slot |
+| `katzenpost_replica_proxy_pending_requests` | requests on the wire awaiting a reply |
+| `katzenpost_replica_proxy_request_timeouts_total` | per-peer count of holders that did not answer in time |
+
+Read the first two together:
+
+- **Waiters above zero, active below the cap.** Slots are turning over, so this
+  replica is not the constraint. Something it depends on is slow, and the
+  per-peer timeout counter usually names it.
+- **Waiters above zero, active pinned at the cap.** This replica is CPU-bound on
+  CTIDH, and wants more cores. It has already sized itself to the ones it has.
+- **Both at zero.** The proxy path is idle whatever else is wrong.
+
+If replicas across the fleet saturate at once, no node's configuration is at
+fault. It means offered load has caught up with the provisioned LambdaR, a
+consensus parameter the directory authorities set as a deliberate
+over-provisioning decision for a target population, never derived from measured
+demand. See §6 of the Pigeonhole courier and replica decoy traffic design.

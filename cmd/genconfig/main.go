@@ -84,8 +84,8 @@ performance optimization and security requirements.`,
 		"base directory path for runtime data and configurations")
 	cmd.Flags().StringVarP(&cfg.OutDir, "outDir", "o", "",
 		"output directory path for generated configuration files")
-	cmd.Flags().IntVarP(&cfg.BasePort, "port", "P", genconfig.BasePort,
-		"starting port number for network services")
+	cmd.Flags().IntVarP(&cfg.BasePort, "port", "P", 0,
+		"starting port number for network services (required)")
 	cmd.Flags().StringVarP(&cfg.BindAddr, "addr", "a", genconfig.BindAddr,
 		"IP address to bind network services to")
 
@@ -165,16 +165,28 @@ performance optimization and security requirements.`,
 	cmd.Flags().IntVar(&cfg.NumSphinxWorkers, "numSphinxWorkers", 0,
 		"number of Sphinx crypto workers per mix node (0 for default 2)")
 
+	// Replica proxy tuning flags
+	cmd.Flags().IntVar(&cfg.ProxyWorkerCount, "proxyWorkerCount", 0,
+		"number of concurrent proxy worker slots per replica (0 for auto-derived from numCPU)")
+	cmd.Flags().IntVar(&cfg.ProxyRequestTimeout, "proxyRequestTimeout", 0,
+		"proxy request timeout in seconds per replica (0 for auto-derived from MKEM ops/sec)")
+
 	cmd.Flags().DurationVar(&cfg.SessionGracePeriod, "sessionGracePeriod", 0,
 		"how long kpclientd preserves per-app state after a thin-client disconnect "+
 			"before reaping it (0 means use the daemon's built-in default of 10 minutes; "+
 			"docker mixnet sets a shorter value so the reaper visibly exercises)")
+
+	cmd.Flags().StringVar(&cfg.PersistMixKeysOnShutdownDir, "persistMixKeysOnShutdownDir", "",
+		"enable mix key persistence across clean restarts, writing every live mix key on "+
+			"shutdown to this subdirectory of each node's DataDir (e.g. mixkeys) and reloading "+
+			"them on the next boot; empty leaves persistence off in generated configs")
 
 	// Logging flags
 	cmd.Flags().StringVar(&cfg.LogLevel, "logLevel", genconfig.DebugLogLevel,
 		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
 
 	// Mark required flags
+	cmd.MarkFlagRequired("port")
 	cmd.MarkFlagRequired("wirekem")
 	cmd.MarkFlagRequired("baseDir")
 	cmd.MarkFlagRequired("outDir")

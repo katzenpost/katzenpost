@@ -12,10 +12,14 @@
 // real implementation defined in prometheus.go.
 package instrument
 
-import "time"
+import (
+	"time"
+
+	"gopkg.in/op/go-logging.v1"
+)
 
 // StartPrometheusListener is a no-op when the build tag is unset.
-func StartPrometheusListener(_ string) {}
+func StartPrometheusListener(_ string, _ *logging.Logger) {}
 
 // LambdaPFifoPop is a no-op when the build tag is unset.
 func LambdaPFifoPop() {}

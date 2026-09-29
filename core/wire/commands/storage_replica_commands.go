@@ -260,6 +260,10 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c.Cmds = cmds
 	c.Scheme = cmds.replicaNikeScheme
 
+	if c.Scheme == nil {
+		return nil, errInvalidCommand
+	}
+
 	hkSize := HybridKeySize(c.Scheme)
 	offset := 0
 

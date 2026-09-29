@@ -1,4 +1,4 @@
-// state_persistence_test.go - Tests for persistence version handling.
+// state_persistence_test.go - Tests for persistence epoch pruning.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -19,7 +19,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/carlmjohnson/versioninfo"
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
 )
@@ -85,49 +84,4 @@ func TestPrunePersistedEpochs(t *testing.T) {
 	require.NoError(t, db.Update(func(tx *bolt.Tx) error {
 		return prunePersistedEpochs(tx, cmpEpoch)
 	}))
-}
-
-func TestPersistenceVersionHandling(t *testing.T) {
-	currentVersion := versioninfo.Short()
-
-	tests := []struct {
-		name           string
-		storedVersion  []byte
-		shouldMismatch bool
-	}{
-		{"legacy byte format", []byte{0}, true},
-		{"old version string", []byte("v0.0.0-old"), true},
-		{"current version", []byte(currentVersion), false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dbPath := filepath.Join(t.TempDir(), "persistence.db")
-			db, err := bolt.Open(dbPath, 0600, nil)
-			require.NoError(t, err)
-
-			err = db.Update(func(tx *bolt.Tx) error {
-				bkt, _ := tx.CreateBucketIfNotExists([]byte("metadata"))
-				return bkt.Put([]byte("version"), tt.storedVersion)
-			})
-			require.NoError(t, err)
-			db.Close()
-
-			db, err = bolt.Open(dbPath, 0600, nil)
-			require.NoError(t, err)
-			defer db.Close()
-
-			var stored string
-			db.View(func(tx *bolt.Tx) error {
-				stored = string(tx.Bucket([]byte("metadata")).Get([]byte("version")))
-				return nil
-			})
-
-			if tt.shouldMismatch {
-				require.NotEqual(t, stored, currentVersion)
-			} else {
-				require.Equal(t, stored, currentVersion)
-			}
-		})
-	}
 }

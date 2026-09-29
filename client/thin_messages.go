@@ -22,19 +22,18 @@ func IntoThinResponse(r *Response) *thin.Response {
 		EncryptReadReply:                     r.EncryptReadReply,
 		EncryptWriteReply:                    r.EncryptWriteReply,
 		StartResendingEncryptedMessageReply:  r.StartResendingEncryptedMessageReply,
-		WriteStreamReply:                    r.WriteStreamReply,
-		ReadStreamReply:                     r.ReadStreamReply,
 		CancelResendingEncryptedMessageReply: r.CancelResendingEncryptedMessageReply,
 		StartResendingCopyCommandReply:       r.StartResendingCopyCommandReply,
 		CancelResendingCopyCommandReply:      r.CancelResendingCopyCommandReply,
 		NextMessageBoxIndexReply:             r.NextMessageBoxIndexReply,
 		GetMessageBoxIndexCounterReply:       r.GetMessageBoxIndexCounterReply,
 		GetPKIDocumentReply:                  r.GetPKIDocumentReply,
+		GetDirectoryAuthoritiesReply:         r.GetDirectoryAuthoritiesReply,
 
 		// Copy Channel API:
-		CreateCourierEnvelopesFromPayloadReply:          r.CreateCourierEnvelopesFromPayloadReply,
-		CreateCourierEnvelopesFromPayloadsReply:         r.CreateCourierEnvelopesFromPayloadsReply,
-		CreateCourierEnvelopesFromTombstoneRangeReply:   r.CreateCourierEnvelopesFromTombstoneRangeReply,
+		CreateCourierEnvelopesFromPayloadReply:        r.CreateCourierEnvelopesFromPayloadReply,
+		CreateCourierEnvelopesFromPayloadsReply:       r.CreateCourierEnvelopesFromPayloadsReply,
+		CreateCourierEnvelopesFromTombstoneRangeReply: r.CreateCourierEnvelopesFromTombstoneRangeReply,
 
 		// Contact Voucher API:
 		VoucherMintReply:         r.VoucherMintReply,
@@ -73,10 +72,6 @@ type Response struct {
 
 	StartResendingEncryptedMessageReply *thin.StartResendingEncryptedMessageReply
 
-	WriteStreamReply *thin.WriteStreamReply
-
-	ReadStreamReply *thin.ReadStreamReply
-
 	CancelResendingEncryptedMessageReply *thin.CancelResendingEncryptedMessageReply
 
 	StartResendingCopyCommandReply *thin.StartResendingCopyCommandReply
@@ -88,6 +83,8 @@ type Response struct {
 	GetMessageBoxIndexCounterReply *thin.GetMessageBoxIndexCounterReply
 
 	GetPKIDocumentReply *thin.GetPKIDocumentReply
+
+	GetDirectoryAuthoritiesReply *thin.GetDirectoryAuthoritiesReply
 
 	// Copy Channel API:
 
@@ -123,11 +120,12 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		NextMessageBoxIndex:             r.NextMessageBoxIndex,
 		GetMessageBoxIndexCounter:       r.GetMessageBoxIndexCounter,
 		GetPKIDocument:                  r.GetPKIDocument,
+		GetDirectoryAuthorities:         r.GetDirectoryAuthorities,
 
 		// Copy Channel API:
-		CreateCourierEnvelopesFromPayload:          r.CreateCourierEnvelopesFromPayload,
-		CreateCourierEnvelopesFromPayloads:         r.CreateCourierEnvelopesFromPayloads,
-		CreateCourierEnvelopesFromTombstoneRange:   r.CreateCourierEnvelopesFromTombstoneRange,
+		CreateCourierEnvelopesFromPayload:        r.CreateCourierEnvelopesFromPayload,
+		CreateCourierEnvelopesFromPayloads:       r.CreateCourierEnvelopesFromPayloads,
+		CreateCourierEnvelopesFromTombstoneRange: r.CreateCourierEnvelopesFromTombstoneRange,
 
 		// Contact Voucher API:
 		VoucherMint:         r.VoucherMint,
@@ -138,9 +136,6 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		SessionToken: r.SessionToken,
 		SendMessage:  r.SendMessage,
 		ThinClose:    r.ThinClose,
-
-		WriteStream: r.WriteStream,
-		ReadStream:  r.ReadStream,
 	}
 }
 
@@ -173,6 +168,8 @@ type Request struct {
 	GetMessageBoxIndexCounter *thin.GetMessageBoxIndexCounter
 
 	GetPKIDocument *thin.GetPKIDocument
+
+	GetDirectoryAuthorities *thin.GetDirectoryAuthorities
 
 	// Copy Channel API:
 
@@ -211,16 +208,4 @@ type Request struct {
 	// resends travel through the same fair, Poisson-gated path as fresh
 	// sends. egressWorker routes it to arqDoResend.
 	ResendARQ *[sphinxConstants.SURBIDLength]byte
-
-	// WriteStream requests a windowed SACK write of a whole multi-box payload.
-	WriteStream *thin.WriteStream
-
-	// ReadStream requests a windowed SACK read of many sequential boxes.
-	ReadStream *thin.ReadStream
-
-	// SACKBoxSend carries one box of a SACK write through the Poisson-gated
-	// egress path. Emitted by the SACK controller (never from a thin client),
-	// so each box send is rate-limited like any other send. egressWorker
-	// routes it to sackDoBoxSend.
-	SACKBoxSend *sackBoxSend
 }

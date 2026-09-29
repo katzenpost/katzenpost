@@ -76,7 +76,7 @@ func benchDirauthServer(listener net.Listener, serverLinkPrivKey kem.PrivateKey,
 			defer session.Close()
 
 			c.SetDeadline(time.Now().Add(30 * time.Second))
-			session.Initialize(c)
+			session.Initialize(context.Background(), c)
 		}(conn)
 	}
 }
@@ -277,7 +277,7 @@ func (c *benchConnector) initSession(ctx context.Context, linkKey kem.PrivateKey
 	}
 
 	conn.SetDeadline(time.Now().Add(30 * time.Second))
-	if err = session.Initialize(conn); err != nil {
+	if err = session.Initialize(context.Background(), conn); err != nil {
 		session.Close()
 		conn.Close()
 		return nil, err

@@ -1,0 +1,26 @@
+{
+  "format_version": 1,
+  "generator": "github.com/katzenpost/katzenpost/core/sphinx/testvectors/cmd/generate",
+  "primitive": "hmac_sha256",
+  "description": "HMAC-SHA256 as used by Sphinx's header MAC (crypto.NewMAC), full 32-byte tag.",
+  "vectors": [
+    {
+      "name": "empty",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "msg_hex": "",
+      "mac_hex": "d38b42096d80f45f826b44a9d5607de72496a415d3f4a1a8c88e3bb9da8dc1cb"
+    },
+    {
+      "name": "abc",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "msg_hex": "616263",
+      "mac_hex": "f0133729c4163dede81e21cd47839256da58171238c8a0d874397c73b14e1e47"
+    },
+    {
+      "name": "64B_header_like",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "msg_hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f",
+      "mac_hex": "e70295c1270771ac6e471b5667bc035ad6a8631483fedc640e8281cd46465c93"
+    }
+  ]
+}

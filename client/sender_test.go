@@ -17,8 +17,8 @@ import (
 // on the same out channel.
 func TestSender(t *testing.T) {
 	rates := &Rates{
-		messageOrLoop:         0.001,
-		loop:                  0.001,
+		messageOrLoop: 0.001,
+		loop:          0.001,
 	}
 
 	in := make(chan *Request, 10)
@@ -73,8 +73,8 @@ func TestSenderLambdaLOnly(t *testing.T) {
 
 	s.UpdateConnectionStatus(true)
 	s.UpdateRates(&Rates{
-		messageOrLoop:         0.001,
-		loop:                  0.01,
+		messageOrLoop: 0.001,
+		loop:          0.01,
 	})
 
 	for i := 0; i < 4; i++ {

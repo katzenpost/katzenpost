@@ -18,6 +18,7 @@
 package wire
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
@@ -56,6 +57,14 @@ const (
 	// send arbitrary sized PKI documents and the like. Therefore this maximum constant is only applicable
 	// to wire protocol connections among the dirauths and among the mix nodes.
 	MaxMessageSize = 500000000
+
+	// DefaultMaxPKIMessageSize is the default per-session send and receive
+	// ceiling for PKI (dirauth) sessions when SessionConfig.MaxMessageSize is
+	// left zero. It is sized to the live network's consensus document (about
+	// 0.33 MB on the namenlos network) with headroom for a larger static
+	// topology, and is far below the 500 MB absolute backstop. The topology is
+	// static, so operators of a larger network raise this via config.
+	DefaultMaxPKIMessageSize = 2 * 1024 * 1024
 )
 
 var (
@@ -69,6 +78,39 @@ const (
 	stateEstablished uint32 = 1
 	stateInvalid     uint32 = 2
 )
+
+// Default per-operation timeouts. They are the fallback when a SessionConfig
+// leaves the corresponding field zero, and they exist so that no Session I/O can
+// ever block forever, even when a caller passes a context with no deadline.
+// Callers should set role-appropriate values on SessionConfig.
+var (
+	// DefaultHandshakeTimeout bounds the four-message handshake; the
+	// finalization NoOp that follows is bounded by the read/write timeouts.
+	DefaultHandshakeTimeout = 3 * time.Second
+
+	// DefaultReadTimeout bounds a single RecvCommand: the longest a peer may
+	// take to deliver the next full command before the link is torn down.
+	DefaultReadTimeout = 2 * time.Minute
+
+	// DefaultWriteTimeout bounds a single SendCommand's write.
+	DefaultWriteTimeout = 1 * time.Minute
+)
+
+// timeoutOr returns v if it is positive, else def.
+func timeoutOr(v, def time.Duration) time.Duration {
+	if v <= 0 {
+		return def
+	}
+	return v
+}
+
+// mesgSizeOr returns the configured message-size ceiling if set, else def.
+func mesgSizeOr(configured, def int) int {
+	if configured > 0 {
+		return configured
+	}
+	return def
+}
 
 var (
 	errInvalidState = errors.New("wire/session: invalid state")
@@ -132,9 +174,9 @@ type PeerAuthenticator interface {
 // SessionInterface is the interface used to initialize or teardown a Session
 // and send and receive command.Commands.
 type SessionInterface interface {
-	Initialize(conn net.Conn) error
-	SendCommand(cmd commands.Command) error
-	RecvCommand() (commands.Command, error)
+	Initialize(ctx context.Context, conn net.Conn) error
+	SendCommand(ctx context.Context, cmd commands.Command) error
+	RecvCommand(ctx context.Context) (commands.Command, error)
 	Close()
 	PeerCredentials() (*PeerCredentials, error)
 	ClockSkew() time.Duration
@@ -158,14 +200,53 @@ type Session struct {
 	tx *nyquist.CipherState
 	rx *nyquist.CipherState
 
-	rxKeyMutex *sync.RWMutex
-	txKeyMutex *sync.RWMutex
+	rxKeyMutex *sync.Mutex
+	txKeyMutex *sync.Mutex
+
+	// sendMu and recvMu serialize a whole logical send/receive as one unit.
+	// The per-cipher-op key mutexes above only guard each individual cipher
+	// operation, so two concurrent SendCommand calls could interleave the
+	// header encrypt, body encrypt and rekey of one message with another's and
+	// desync (or reuse) the ChaChaPoly nonce stream. Holding one exclusive lock
+	// across the entire send (through the wire write) and the entire receive
+	// keeps each frame's cipher operations contiguous and in nonce order.
+	sendMu sync.Mutex
+	recvMu sync.Mutex
 
 	clockSkew   time.Duration
 	state       uint32
 	isInitiator bool
 
 	maxMesgSize int
+
+	// Per-operation deadlines. Every read, write, and handshake is bounded by
+	// one of these so no Session I/O can block forever. See armIO.
+	handshakeTimeout time.Duration
+	readTimeout      time.Duration
+	writeTimeout     time.Duration
+}
+
+// armIO bounds a single I/O operation. It sets a socket deadline equal to the
+// earlier of ctx's own deadline (if any) and now+def, so even a context without
+// a deadline (e.g. context.Background()) is bounded by def and no operation can
+// block forever. If ctx is cancelled before the deadline elapses, the watcher
+// registered via context.AfterFunc closes the conn to interrupt the blocked
+// read/write. The caller MUST call the returned stop func when the operation
+// returns.
+//
+// The set call is best-effort: transports that do not support deadlines (e.g.
+// net.Pipe in some tests) return an error that is ignored. This is safe because
+// every production transport (TCP, and the QUIC stream wrapper) enforces
+// deadlines; the invariant "no unbounded I/O" holds wherever deadlines are
+// honoured, which is everywhere in production.
+func (s *Session) armIO(ctx context.Context, def time.Duration, set func(time.Time) error) func() {
+	deadline := time.Now().Add(def)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	_ = set(deadline)
+	stop := context.AfterFunc(ctx, func() { s.conn.Close() })
+	return func() { stop() }
 }
 
 // client
@@ -201,7 +282,7 @@ func (s *Session) MaxMesgSize() int {
 		return s.maxMesgSize
 	}
 	mesgLenths := []int{
-		s.commands.MaxCommandSize() + macLen,
+		s.commands.MaxSerializedCommandSize() + macLen,
 		s.msg1Len(),
 		s.msg2Len(),
 		s.msg3Len(),
@@ -279,7 +360,10 @@ func (s *Session) buildProtocolVersionError(expected, received []byte) *Protocol
 	return pverr
 }
 
-func (s *Session) handshake() error {
+func (s *Session) handshake(ctx context.Context) error {
+	// Bound the whole handshake (all four messages) with a single deadline.
+	defer s.armIO(ctx, s.handshakeTimeout, s.conn.SetDeadline)()
+
 	defer func() {
 		// XXX FIXME: s.authenticationKEMKey.Reset()
 		s.authenticationKEMKey = nil
@@ -467,11 +551,11 @@ func (s *Session) handshake() error {
 	return nil
 }
 
-func (s *Session) finalizeHandshake() error {
+func (s *Session) finalizeHandshake(ctx context.Context) error {
 	if s.isInitiator {
 		// Initiator: The peer will send a NoOp command immediately upon
 		// completing the handshake.
-		cmd, err := s.RecvCommand()
+		cmd, err := s.RecvCommand(ctx)
 		if err != nil {
 			return s.buildHandshakeError(HandshakeStateFinalization, "failed to receive NoOp during finalization", err, 0, 0, 0)
 		}
@@ -487,7 +571,7 @@ func (s *Session) finalizeHandshake() error {
 	noOpCmd := &commands.NoOp{
 		Cmds: s.commands,
 	}
-	if err := s.SendCommand(noOpCmd); err != nil {
+	if err := s.SendCommand(ctx, noOpCmd); err != nil {
 		return s.buildHandshakeError(HandshakeStateFinalization, "failed to send NoOp during finalization", err, 0, 0, 0)
 	}
 	return nil
@@ -495,26 +579,34 @@ func (s *Session) finalizeHandshake() error {
 
 // Initialize takes an establised net.Conn, and binds it to a Session, and
 // conducts the wire protocol handshake.
-func (s *Session) Initialize(conn net.Conn) error {
+func (s *Session) Initialize(ctx context.Context, conn net.Conn) error {
 	if atomic.LoadUint32(&s.state) != stateInit {
 		return errInvalidState
 	}
 	s.conn = conn
-	if err := s.handshake(); err != nil {
+	if err := s.handshake(ctx); err != nil {
 		return err
 	}
-	if err := s.finalizeHandshake(); err != nil {
+	if err := s.finalizeHandshake(ctx); err != nil {
 		atomic.StoreUint32(&s.state, stateInvalid)
 		return err
 	}
 	return nil
 }
 
-// SendCommand sends the wire protocol command cmd.
-func (s *Session) SendCommand(cmd commands.Command) error {
+// SendCommand sends the wire protocol command cmd. ctx bounds the write; a
+// context with no deadline is still capped at the session's write timeout.
+func (s *Session) SendCommand(ctx context.Context, cmd commands.Command) error {
 	if atomic.LoadUint32(&s.state) != stateEstablished {
 		return errInvalidState
 	}
+
+	// Serialize the whole logical send: header encrypt, body encrypt, rekey and
+	// the wire write must happen as one uninterrupted unit so a concurrent
+	// SendCommand cannot interleave its cipher operations and desync the nonce
+	// stream.
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
 
 	// XXX: Figure out if padding is actually needed, and append it as
 	// neccecary.  As it stands right now, it might not be, as the `message`
@@ -531,18 +623,18 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	var ctHdr [4]byte
 	binary.BigEndian.PutUint32(ctHdr[:], uint32(ctLen))
 	toSend := make([]byte, 0, macLen+4+ctLen)
-	s.txKeyMutex.RLock()
+	s.txKeyMutex.Lock()
 	var err error
 	toSend, err = s.tx.EncryptWithAd(toSend, nil, ctHdr[:])
-	s.txKeyMutex.RUnlock()
+	s.txKeyMutex.Unlock()
 	if err != nil {
 		return err
 	}
 
 	// Build the Ciphertext.
-	s.txKeyMutex.RLock()
+	s.txKeyMutex.Lock()
 	toSend, err = s.tx.EncryptWithAd(toSend, nil, pt)
-	s.txKeyMutex.RUnlock()
+	s.txKeyMutex.Unlock()
 	if err != nil {
 		return err
 	}
@@ -551,6 +643,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	s.tx.Rekey()
 	s.txKeyMutex.Unlock()
 
+	defer s.armIO(ctx, s.writeTimeout, s.conn.SetWriteDeadline)()
 	_, err = s.conn.Write(toSend)
 	if err != nil {
 		// All write errors are fatal.
@@ -559,9 +652,20 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	return err
 }
 
-// RecvCommand receives a wire protocol command off the network.
-func (s *Session) RecvCommand() (commands.Command, error) {
-	cmd, err := s.recvCommandImpl()
+// SetReadTimeout adjusts the default read deadline that RecvCommand arms when
+// its context carries no earlier deadline. The persistent authority serve loop
+// uses this to wait out its idle keepalive interval, which is longer than the
+// per-response ReadTimeout the session is built with. It is only safe to call
+// when no RecvCommand is concurrently in flight on this session.
+func (s *Session) SetReadTimeout(d time.Duration) {
+	s.readTimeout = d
+}
+
+// RecvCommand receives a wire protocol command off the network. ctx bounds the
+// receive; a context with no deadline is still capped at the session's read
+// timeout, so a silent peer can never wedge the caller.
+func (s *Session) RecvCommand(ctx context.Context) (commands.Command, error) {
+	cmd, err := s.recvCommandImpl(ctx)
 	if err != nil {
 		// All receive errors are fatal.
 		atomic.StoreUint32(&s.state, stateInvalid)
@@ -569,19 +673,46 @@ func (s *Session) RecvCommand() (commands.Command, error) {
 	return cmd, err
 }
 
-func (s *Session) recvCommandImpl() (commands.Command, error) {
+// recvChunkSize caps how many command-body bytes are allocated before any arrive, bounding the memory a peer can pin by declaring a large length and then not sending the body.
+const recvChunkSize = 64 * 1024
+
+// readCommandBody reads exactly n bytes from r, growing the buffer as data arrives instead of allocating n up front.
+func readCommandBody(r io.Reader, n int) ([]byte, error) {
+	buf := make([]byte, 0, min(n, recvChunkSize))
+	chunk := make([]byte, min(n, recvChunkSize))
+	for len(buf) < n {
+		m, err := io.ReadFull(r, chunk[:min(n-len(buf), len(chunk))])
+		buf = append(buf, chunk[:m]...)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return buf, nil
+}
+
+func (s *Session) recvCommandImpl(ctx context.Context) (commands.Command, error) {
 	if atomic.LoadUint32(&s.state) != stateEstablished {
 		return nil, errInvalidState
 	}
+
+	// Serialize the whole logical receive as one unit, mirroring SendCommand, so
+	// two concurrent receivers cannot interleave the header and body decrypts of
+	// different frames and desync the nonce stream.
+	s.recvMu.Lock()
+	defer s.recvMu.Unlock()
+
+	// One deadline covers BOTH reads below (header and body): a peer that sends
+	// the header then stalls on the body must still time out.
+	defer s.armIO(ctx, s.readTimeout, s.conn.SetReadDeadline)()
 
 	// Read, decrypt and parse the CiphertextHeader.
 	var ctHdrCt [macLen + 4]byte
 	if _, err := io.ReadFull(s.conn, ctHdrCt[:]); err != nil {
 		return nil, err
 	}
-	s.rxKeyMutex.RLock()
+	s.rxKeyMutex.Lock()
 	ctHdr, err := s.rx.DecryptWithAd(nil, nil, ctHdrCt[:])
-	s.rxKeyMutex.RUnlock()
+	s.rxKeyMutex.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -593,14 +724,14 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 		return nil, errMsgSize
 	}
 
-	// Read and decrypt the Ciphertext.
-	ct := make([]byte, ctLen)
-	if _, err := io.ReadFull(s.conn, ct); err != nil {
+	// Grow the buffer as bytes arrive rather than allocating the peer-declared ctLen up front.
+	ct, err := readCommandBody(s.conn, int(ctLen))
+	if err != nil {
 		return nil, err
 	}
-	s.rxKeyMutex.RLock()
+	s.rxKeyMutex.Lock()
 	pt, err := s.rx.DecryptWithAd(nil, nil, ct)
-	s.rxKeyMutex.RUnlock()
+	s.rxKeyMutex.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -692,10 +823,14 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		randReader:     cfg.RandomReader,
 		isInitiator:    isInitiator,
 		state:          stateInit,
-		rxKeyMutex:     new(sync.RWMutex),
-		txKeyMutex:     new(sync.RWMutex),
+		rxKeyMutex:     new(sync.Mutex),
+		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewPKICommands(cfg.PKISignatureScheme),
-		maxMesgSize:    -1,
+		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, DefaultMaxPKIMessageSize),
+
+		handshakeTimeout: timeoutOr(cfg.HandshakeTimeout, DefaultHandshakeTimeout),
+		readTimeout:      timeoutOr(cfg.ReadTimeout, DefaultReadTimeout),
+		writeTimeout:     timeoutOr(cfg.WriteTimeout, DefaultWriteTimeout),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -732,9 +867,14 @@ func NewStorageReplicaSession(cfg *SessionConfig, scheme nike.Scheme, isInitiato
 		randReader:     cfg.RandomReader,
 		isInitiator:    isInitiator,
 		state:          stateInit,
-		rxKeyMutex:     new(sync.RWMutex),
-		txKeyMutex:     new(sync.RWMutex),
+		rxKeyMutex:     new(sync.Mutex),
+		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewStorageReplicaCommands(cfg.Geometry, scheme),
+		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, 0),
+
+		handshakeTimeout: timeoutOr(cfg.HandshakeTimeout, DefaultHandshakeTimeout),
+		readTimeout:      timeoutOr(cfg.ReadTimeout, DefaultReadTimeout),
+		writeTimeout:     timeoutOr(cfg.WriteTimeout, DefaultWriteTimeout),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -771,10 +911,14 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		randReader:     cfg.RandomReader,
 		isInitiator:    isInitiator,
 		state:          stateInit,
-		rxKeyMutex:     new(sync.RWMutex),
-		txKeyMutex:     new(sync.RWMutex),
+		rxKeyMutex:     new(sync.Mutex),
+		txKeyMutex:     new(sync.Mutex),
 		commands:       commands.NewMixnetCommands(cfg.Geometry),
-		maxMesgSize:    -1,
+		maxMesgSize:    mesgSizeOr(cfg.MaxMessageSize, 0),
+
+		handshakeTimeout: timeoutOr(cfg.HandshakeTimeout, DefaultHandshakeTimeout),
+		readTimeout:      timeoutOr(cfg.ReadTimeout, DefaultReadTimeout),
+		writeTimeout:     timeoutOr(cfg.WriteTimeout, DefaultWriteTimeout),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -809,4 +953,20 @@ type SessionConfig struct {
 	// Geometry is the geometry of the Sphinx cryptographic packets
 	// that we will use with our wire protocol.
 	Geometry *geo.Geometry
+
+	// HandshakeTimeout, ReadTimeout, and WriteTimeout bound, respectively, the
+	// handshake, a single RecvCommand, and a single SendCommand. Any that are
+	// zero fall back to the Default*Timeout package values. Set them to values
+	// appropriate for the connection's role so a stalled peer is torn down
+	// rather than wedging a worker forever.
+	HandshakeTimeout time.Duration
+	ReadTimeout      time.Duration
+	WriteTimeout     time.Duration
+
+	// MaxMessageSize is the per-session send and receive ceiling in bytes. A
+	// command larger than this is refused on send and rejected on receive.
+	// Zero selects the per-session-type default: DefaultMaxPKIMessageSize for
+	// PKI sessions, the 500 MB backstop for mixnet sessions, and the computed
+	// fixed command size for storage-replica sessions.
+	MaxMessageSize int
 }

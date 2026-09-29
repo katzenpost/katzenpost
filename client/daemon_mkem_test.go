@@ -25,15 +25,18 @@ func TestTryDecryptMKEMWithReplicas(t *testing.T) {
 
 	// Client encapsulates to both replicas
 	plaintext := []byte("secret pigeonhole message")
-	envelopePrivKey, _ := mkemScheme.Encapsulate([]nike.PublicKey{replica0Pub, replica1Pub}, plaintext)
+	envelopePrivKey, _, err := mkemScheme.Encapsulate([]nike.PublicKey{replica0Pub, replica1Pub}, plaintext)
+	require.NoError(t, err)
 
 	// Replica 0 creates an envelope reply (simulating what the replica does)
 	replyPayload := []byte("replica reply data")
-	reply0 := mkemScheme.EnvelopeReply(replica0Priv, envelopePrivKey.Public(), replyPayload)
+	reply0, err := mkemScheme.EnvelopeReply(replica0Priv, envelopePrivKey.Public(), replyPayload)
+	require.NoError(t, err)
 	envelope0 := reply0.Envelope
 
 	// Replica 1 creates a different envelope reply
-	reply1 := mkemScheme.EnvelopeReply(replica1Priv, envelopePrivKey.Public(), replyPayload)
+	reply1, err := mkemScheme.EnvelopeReply(replica1Priv, envelopePrivKey.Public(), replyPayload)
+	require.NoError(t, err)
 	envelope1 := reply1.Envelope
 
 	// Build the replica public keys map

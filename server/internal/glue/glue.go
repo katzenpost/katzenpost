@@ -21,6 +21,7 @@ package glue
 import (
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -52,6 +53,8 @@ type Glue interface {
 	Listeners() []Listener
 	Decoy() Decoy
 
+	PeerConnSet() *connlimit.PeerSet
+
 	ReshadowCryptoWorkers()
 }
 
@@ -66,10 +69,12 @@ type MixKeys interface {
 type PKI interface {
 	Halt()
 	StartWorker()
+	StopAdvertising() uint64
 	OutgoingDestinations() map[[constants.NodeIDLength]byte]*pki.MixDescriptor
 	AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool)
 	GetRawConsensus(uint64) ([]byte, error)
 	CurrentDocument() (*pki.Document, error)
+	HasUsableDocument() bool
 }
 
 type Gateway interface {

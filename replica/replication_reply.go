@@ -18,9 +18,9 @@ const (
 	replicationReplyOK replicationReplyAction = iota
 
 	// replicationReplyRetry means the peer rejected the write with a
-	// transient error (database failure, internal error). Enqueue the
-	// original ReplicaWrite for later retry via the connector's
-	// existing retry queue.
+	// transient error (database failure, internal error). The write may
+	// succeed later if retried; the caller decides whether to retry or
+	// count the drop.
 	replicationReplyRetry
 
 	// replicationReplyDrop means the peer rejected the write with a

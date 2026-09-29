@@ -21,12 +21,13 @@
 package instrument
 
 import (
-	"net/http"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/common/metrics"
 )
 
 var registerOnce sync.Once
@@ -119,8 +120,9 @@ func phaseToInt(phase string) float64 {
 
 // StartPrometheusListener registers the dirauth metrics and starts the
 // HTTP listener if address is non-empty. Safe to call multiple times;
-// registration happens exactly once.
-func StartPrometheusListener(address string) {
+// registration happens exactly once. Panics if a configured address
+// cannot be bound.
+func StartPrometheusListener(address string, log *logging.Logger) {
 	registerOnce.Do(func() {
 		prometheus.MustRegister(votesReceived)
 		prometheus.MustRegister(descriptorsAccepted)
@@ -135,8 +137,7 @@ func StartPrometheusListener(address string) {
 	if address == "" {
 		return
 	}
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(address, nil)
+	metrics.MustServe(address, log)
 }
 
 // VoteReceived increments the per-result vote counter.

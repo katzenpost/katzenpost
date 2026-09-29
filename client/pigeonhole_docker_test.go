@@ -14,10 +14,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/thin"
 )
+
+func skipInShortMode(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("slow docker integration test; runs in the full (release, schedule, or interop) suite")
+	}
+}
 
 // TestNewPigeonholeAPIAliceSendsBob tests the complete end-to-end flow of the new Pigeonhole API:
 // 1. Alice creates a WriteCap and derives a ReadCap for Bob
@@ -43,12 +51,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents - use Alice's epoch for Bob to avoid race condition at epoch boundary
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates WriteCap and derives ReadCap for Bob using NewKeypair
 	t.Log("=== Step 1: Alice creates WriteCap and derives ReadCap for Bob ===")
@@ -63,8 +66,10 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	t.Log("Alice: Created WriteCap and derived ReadCap for Bob")
 
 	// Verify that Alice's write box ID matches Bob's read box ID
-	aliceBoxID := aliceFirstIndex.BoxIDForContext(aliceWriteCap.ReadCap(), constants.PIGEONHOLE_CTX)
-	bobBoxID := aliceFirstIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+	aliceBoxID, err := aliceFirstIndex.BoxIDForContext(aliceWriteCap.ReadCap(), constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+	bobBoxID, err := aliceFirstIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
 	require.Equal(t, aliceBoxID.Bytes(), bobBoxID.Bytes(), "Box IDs must match: Alice's write box ID != Bob's read box ID")
 	t.Logf("✓ Verified: Alice and Bob box IDs match: %x", aliceBoxID.Bytes())
 
@@ -83,7 +88,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	// Step 3: Alice sends the encrypted message via StartResendingEncryptedMessage
 	t.Log("=== Step 3: Alice sends encrypted message to courier/replicas ===")
 	replyIndex := uint8(0)
-	aliceResult, err := aliceThinClient.StartResendingEncryptedMessage(
+	aliceResult, err := startResending(aliceThinClient,
 		nil,             // readCap (nil for write operations)
 		aliceWriteCap,   // writeCap
 		nil,             // messageBoxIndex (not needed for writes)
@@ -112,7 +117,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 
 	// Step 5: Bob sends the read request and receives Alice's encrypted message
 	t.Log("=== Step 5: Bob sends read request and receives encrypted message ===")
-	bobResult, err := bobThinClient.StartResendingEncryptedMessage(
+	bobResult, err := startResending(bobThinClient,
 		bobReadCap,           // readCap
 		nil,                  // writeCap (nil for read operations)
 		aliceFirstIndexBytes, // messageBoxIndex
@@ -134,6 +139,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 // to verify that state management (PrepareNext/AdvanceState) works correctly
 // in the real Docker environment.
 func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -141,12 +147,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents - use Alice's epoch for Bob to avoid race condition at epoch boundary
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates WriteCap and derives ReadCap for Bob using NewKeypair
 	t.Log("=== Setup: Alice creates WriteCap and derives ReadCap for Bob ===")
@@ -188,7 +189,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 		t.Logf("Alice: Encrypted message %d (%d bytes ciphertext)", i+1, len(aliceCiphertext))
 
 		// Alice sends the encrypted message via StartResendingEncryptedMessage
-		aliceResult, err := aliceThinClient.StartResendingEncryptedMessage(
+		aliceResult, err := startResending(aliceThinClient,
 			nil,             // readCap (nil for write operations)
 			aliceWriteCap,   // writeCap
 			nil,             // messageBoxIndex (not needed for writes)
@@ -217,7 +218,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 		require.NoError(t, err)
 
 		// Bob sends read request and receives Alice's encrypted message
-		bobResult, err := bobThinClient.StartResendingEncryptedMessage(
+		bobResult, err := startResending(bobThinClient,
 			bobReadCap,           // readCap
 			nil,                  // writeCap (nil for read operations)
 			bobCurrentIndexBytes, // messageBoxIndex
@@ -248,6 +249,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 // This exercises multiple concurrent ARQ retry operations on the daemon — the pattern
 // that was broken when arqResendCh had a buffer of 2 and silently dropped resends.
 func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -255,11 +257,7 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Alice creates WriteCap and derives ReadCap for Bob
 	t.Log("=== Setup: Alice creates WriteCap and derives ReadCap for Bob ===")
@@ -292,7 +290,7 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 		require.NotEmpty(t, aliceCiphertext)
 		require.NotNil(t, aliceNextIndex)
 
-		_, err = aliceThinClient.StartResendingEncryptedMessage(
+		_, err = startResending(aliceThinClient,
 			nil, aliceWriteCap, nil, &replyIndex,
 			aliceEnvDesc, aliceCiphertext, aliceEnvHash)
 		require.NoError(t, err)
@@ -318,7 +316,7 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 		bobCurrentIndexBytes, err := bobCurrentIndex.MarshalBinary()
 		require.NoError(t, err)
 
-		bobResult, err := bobThinClient.StartResendingEncryptedMessage(
+		bobResult, err := startResending(bobThinClient,
 			bobReadCap, nil, bobCurrentIndexBytes, &replyIndex,
 			bobEnvDesc, bobCiphertext, bobEnvHash)
 		require.NoError(t, err)
@@ -348,6 +346,7 @@ func TestNewPigeonholeAPIMultipleMessagesBulk(t *testing.T) {
 // - The courier can decode the copy stream and execute all writes atomically
 // - Bob can read and reconstruct the original large payload
 func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -355,12 +354,7 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents - use Alice's epoch for Bob to avoid race condition at epoch boundary
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates destination WriteCap for the final payload
 	t.Log("=== Step 1: Alice creates destination WriteCap ===")
@@ -411,7 +405,8 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	t.Log("=== Destination Box IDs ===")
 	currentDestIndex := destFirstIndex
 	for i := 0; i < numChunks; i++ {
-		boxID := currentDestIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+		boxID, err := currentDestIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+		require.NoError(t, err)
 		t.Logf("Chunk %d/%d: Box ID = %x", i+1, numChunks, boxID.Bytes())
 		currentDestIndex, err = aliceThinClient.NextMessageBoxIndex(currentDestIndex)
 		require.NoError(t, err)
@@ -433,7 +428,7 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 		t.Logf("Alice: Encrypted copy stream chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
 
 		// Send the encrypted chunk to the copy stream
-		_, err = aliceThinClient.StartResendingEncryptedMessage(
+		_, err = startResending(aliceThinClient,
 			nil, tempWriteCap, nil, &replyIndex,
 			envDesc, ciphertext, envHash)
 		require.NoError(t, err)
@@ -474,7 +469,7 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 		require.NoError(t, err)
 
 		// Bob sends read request and receives chunk
-		bobResult, err := bobThinClient.StartResendingEncryptedMessage(
+		bobResult, err := startResending(bobThinClient,
 			bobReadCap, nil, bobIndexBytes, &replyIndex,
 			bobEnvDesc, bobCiphertext, bobEnvHash)
 		require.NoError(t, err)
@@ -519,6 +514,7 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 // - Multiple calls to CreateCourierEnvelopesFromPayload work correctly
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannel(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -526,12 +522,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates two destination channels
 	t.Log("=== Step 1: Alice creates two destination channels ===")
@@ -612,7 +603,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 		t.Logf("Alice: Encrypted chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
 
 		// Send the encrypted chunk to the copy stream
-		_, err = aliceThinClient.StartResendingEncryptedMessage(
+		_, err = startResending(aliceThinClient,
 			nil, tempWriteCap, nil, &replyIndex,
 			envDesc, ciphertext, envHash)
 		require.NoError(t, err)
@@ -642,7 +633,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 	chan1FirstIndexBytes, err := chan1FirstIndex.MarshalBinary()
 	require.NoError(t, err)
 
-	bob1Result, err := bobThinClient.StartResendingEncryptedMessage(
+	bob1Result, err := startResending(bobThinClient,
 		chan1ReadCap, nil, chan1FirstIndexBytes, &replyIndex,
 		bob1EnvDesc, bob1Ciphertext, bob1EnvHash)
 	require.NoError(t, err)
@@ -661,7 +652,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 	chan2FirstIndexBytes, err := chan2FirstIndex.MarshalBinary()
 	require.NoError(t, err)
 
-	bob2Result, err := bobThinClient.StartResendingEncryptedMessage(
+	bob2Result, err := startResending(bobThinClient,
 		chan2ReadCap, nil, chan2FirstIndexBytes, &replyIndex,
 		bob2EnvDesc, bob2Ciphertext, bob2EnvHash)
 	require.NoError(t, err)
@@ -684,6 +675,7 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 // - Multiple destination payloads are packed efficiently into the copy stream
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannelEfficient(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -691,12 +683,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Step 1: Alice creates two destination channels
 	t.Log("=== Step 1: Alice creates two destination channels ===")
@@ -781,7 +768,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 		t.Logf("Alice: Encrypted chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
 
 		// Send the encrypted chunk to the copy stream
-		_, err = aliceThinClient.StartResendingEncryptedMessage(
+		_, err = startResending(aliceThinClient,
 			nil, tempWriteCap, nil, &replyIndex,
 			envDesc, ciphertext, envHash)
 		require.NoError(t, err)
@@ -811,7 +798,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 	chan1FirstIndexBytes, err := chan1FirstIndex.MarshalBinary()
 	require.NoError(t, err)
 
-	bob1Result, err := bobThinClient.StartResendingEncryptedMessage(
+	bob1Result, err := startResending(bobThinClient,
 		chan1ReadCap, nil, chan1FirstIndexBytes, &replyIndex,
 		bob1EnvDesc, bob1Ciphertext, bob1EnvHash)
 	require.NoError(t, err)
@@ -830,7 +817,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 	chan2FirstIndexBytes, err := chan2FirstIndex.MarshalBinary()
 	require.NoError(t, err)
 
-	bob2Result, err := bobThinClient.StartResendingEncryptedMessage(
+	bob2Result, err := startResending(bobThinClient,
 		chan2ReadCap, nil, chan2FirstIndexBytes, &replyIndex,
 		bob2EnvDesc, bob2Ciphertext, bob2EnvHash)
 	require.NoError(t, err)
@@ -850,6 +837,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 // 3. Alice tombstones the box (deletes it with an empty payload)
 // 4. Bob reads again and verifies the tombstone
 func TestTombstoning(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
@@ -871,7 +859,7 @@ func TestTombstoning(t *testing.T) {
 	require.NoError(t, err)
 
 	replyIndex := uint8(0)
-	_, err = alice.StartResendingEncryptedMessage(nil, writeCap, nil, &replyIndex, envDesc, ciphertext, envHash)
+	_, err = startResending(alice, nil, writeCap, nil, &replyIndex, envDesc, ciphertext, envHash)
 	require.NoError(t, err)
 	t.Log("✓ Alice wrote message")
 
@@ -883,7 +871,7 @@ func TestTombstoning(t *testing.T) {
 	require.NoError(t, err)
 	firstIndexBytes, err := firstIndex.MarshalBinary()
 	require.NoError(t, err)
-	readResult, err := bob.StartResendingEncryptedMessage(readCap, nil, firstIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
+	readResult, err := startResending(bob, readCap, nil, firstIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
 	require.NoError(t, err)
 	require.Equal(t, message, readResult.Plaintext)
 	t.Logf("✓ Bob read message: %q", string(readResult.Plaintext))
@@ -893,7 +881,7 @@ func TestTombstoning(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, tombResult.Envelopes, 1)
 	tombEnvelope := tombResult.Envelopes[0]
-	_, err = alice.StartResendingEncryptedMessage(nil, writeCap, nil, nil, tombEnvelope.EnvelopeDescriptor, tombEnvelope.MessageCiphertext, tombEnvelope.EnvelopeHash)
+	_, err = startResending(alice, nil, writeCap, nil, nil, tombEnvelope.EnvelopeDescriptor, tombEnvelope.MessageCiphertext, tombEnvelope.EnvelopeHash)
 	require.NoError(t, err)
 	t.Log("✓ Alice tombstoned the box")
 
@@ -908,7 +896,7 @@ func TestTombstoning(t *testing.T) {
 
 		ciphertext, envDesc, envHash, _, err = bob.EncryptRead(readCap, firstIndex)
 		require.NoError(t, err)
-		_, err = bob.StartResendingEncryptedMessage(readCap, nil, firstIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
+		_, err = startResending(bob, readCap, nil, firstIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
 		if errors.Is(err, thin.ErrTombstone) {
 			tombstoneVerified = true
 			t.Logf("✓ Bob verified tombstone on attempt %d", attempt)
@@ -926,6 +914,7 @@ func TestTombstoning(t *testing.T) {
 // 3. Alice tombstones all boxes using TombstoneRange
 // 4. Bob reads again and verifies all boxes are tombstoned
 func TestTombstoneRange(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
@@ -955,7 +944,7 @@ func TestTombstoneRange(t *testing.T) {
 		ciphertext, envDesc, envHash, nextWriteIdx, err := alice.EncryptWrite(msg, writeCap, writeIdx)
 		require.NoError(t, err)
 		require.NotNil(t, nextWriteIdx)
-		_, err = alice.StartResendingEncryptedMessage(nil, writeCap, nil, &replyIndex, envDesc, ciphertext, envHash)
+		_, err = startResending(alice, nil, writeCap, nil, &replyIndex, envDesc, ciphertext, envHash)
 		require.NoError(t, err)
 		t.Logf("✓ Alice wrote message %d", i+1)
 
@@ -973,7 +962,7 @@ func TestTombstoneRange(t *testing.T) {
 		require.NotNil(t, nextReadIdx)
 		readIdxBytes, err := readIdx.MarshalBinary()
 		require.NoError(t, err)
-		readResult, err := bob.StartResendingEncryptedMessage(readCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
+		readResult, err := startResending(bob, readCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
 		require.NoError(t, err)
 		require.Equal(t, expectedMsg, readResult.Plaintext)
 		t.Logf("✓ Bob read message %d: %q", i+1, string(readResult.Plaintext))
@@ -989,7 +978,7 @@ func TestTombstoneRange(t *testing.T) {
 
 	// Send all tombstone envelopes
 	for i, envelope := range result.Envelopes {
-		_, err = alice.StartResendingEncryptedMessage(
+		_, err = startResending(alice,
 			nil, writeCap, nil, nil,
 			envelope.EnvelopeDescriptor, envelope.MessageCiphertext, envelope.EnvelopeHash,
 		)
@@ -1008,7 +997,7 @@ func TestTombstoneRange(t *testing.T) {
 		require.NotNil(t, nextReadIdx)
 		readIdxBytes, err := readIdx.MarshalBinary()
 		require.NoError(t, err)
-		_, err = bob.StartResendingEncryptedMessage(readCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
+		_, err = startResending(bob, readCap, nil, readIdxBytes, &replyIndex, envDesc, ciphertext, envHash)
 		require.True(t, errors.Is(err, thin.ErrTombstone), "Expected ErrTombstone for box %d, got: %v", i+1, err)
 		t.Logf("✓ Bob verified tombstone %d", i+1)
 
@@ -1025,6 +1014,7 @@ func TestTombstoneRange(t *testing.T) {
 // - Reading from a non-existent box returns ErrBoxIDNotFound
 // - The error can be checked using errors.Is()
 func TestBoxIDNotFoundError(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Bob thin client (reader)
 	bobThinClient := setupThinClient(t)
@@ -1085,6 +1075,7 @@ func TestBoxIDNotFoundError(t *testing.T) {
 // This test validates that the default retry behavior (NoRetryOnBoxIDNotFound=false)
 // correctly handles the case where data hasn't been replicated yet.
 func TestReadBeforeWrite(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
@@ -1092,12 +1083,7 @@ func TestReadBeforeWrite(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -1114,7 +1100,8 @@ func TestReadBeforeWrite(t *testing.T) {
 	require.NotNil(t, bobReadCap, "Bob: ReadCap is nil")
 
 	// Log the box ID both will be using
-	boxID := firstIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+	boxID, err := firstIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
 	t.Logf("Shared Box ID: %x", boxID.Bytes())
 
 	// Channel to receive Bob's read result
@@ -1143,7 +1130,7 @@ func TestReadBeforeWrite(t *testing.T) {
 		// Send read request - this uses DEFAULT behavior (retries enabled)
 		// The read will fail initially with BoxIDNotFound, but kpclientd will retry
 		replyIndex := uint8(0)
-		result, err := bobThinClient.StartResendingEncryptedMessage(
+		result, err := startResending(bobThinClient,
 			bobReadCap,      // readCap
 			nil,             // writeCap (nil for read operations)
 			firstIndexBytes, // messageBoxIndex
@@ -1173,7 +1160,7 @@ func TestReadBeforeWrite(t *testing.T) {
 	require.NotEmpty(t, aliceCiphertext, "Alice: EncryptWrite returned empty ciphertext")
 
 	replyIndex := uint8(0)
-	_, err = aliceThinClient.StartResendingEncryptedMessage(
+	_, err = startResending(aliceThinClient,
 		nil,             // readCap (nil for write operations)
 		aliceWriteCap,   // writeCap
 		nil,             // messageBoxIndex (not needed for writes)
@@ -1208,6 +1195,7 @@ func TestReadBeforeWrite(t *testing.T) {
 // - Writing to the same box again returns ErrBoxAlreadyExists
 // - The error can be checked using errors.Is()
 func TestBoxAlreadyExistsError(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup thin client
 	thinClient := setupThinClient(t)
@@ -1236,7 +1224,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 	t.Log("✓ Encrypted first message")
 
 	// Send the first write
-	_, err = thinClient.StartResendingEncryptedMessage(
+	_, err = startResending(thinClient,
 		nil,         // readCap (nil for write operations)
 		writeCap,    // writeCap
 		nil,         // messageBoxIndex (nil for write operations)
@@ -1280,6 +1268,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 }
 
 func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	// Setup thin client
 	thinClient := setupThinClient(t)
@@ -1308,7 +1297,7 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 	t.Log("✓ Encrypted first message")
 
 	// Send the first write
-	_, err = thinClient.StartResendingEncryptedMessage(
+	_, err = startResending(thinClient,
 		nil,         // readCap (nil for write operations)
 		writeCap,    // writeCap
 		nil,         // messageBoxIndex (nil for write operations)
@@ -1356,7 +1345,7 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 		t.Logf("Alice: Encrypted copy stream chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
 
 		// Send the encrypted chunk to the copy stream
-		_, err = thinClient.StartResendingEncryptedMessage(
+		_, err = startResending(thinClient,
 			nil, tempWriteCap, nil, &replyIndex,
 			envDesc, ciphertext, envHash)
 		require.NoError(t, err)
@@ -1386,16 +1375,14 @@ func TestCopyOntoAlreadyExistingBoxError(t *testing.T) {
 // 4. Alice writes all temp stream elements and sends the copy command
 // 5. Bob reads from the destination channel and verifies the reconstructed payload
 func TestFromPayloadMultiCall(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Create destination channel
 	destSeed := make([]byte, 32)
@@ -1463,7 +1450,7 @@ func TestFromPayloadMultiCall(t *testing.T) {
 		ciphertext, envDesc, envHash, nextTempIndex, err := aliceThinClient.EncryptWrite(elem, tempWriteCap, tempIndex)
 		require.NoError(t, err)
 		require.NotNil(t, nextTempIndex)
-		_, err = aliceThinClient.StartResendingEncryptedMessage(
+		_, err = startResending(aliceThinClient,
 			nil, tempWriteCap, nil, &replyIndex,
 			envDesc, ciphertext, envHash)
 		require.NoError(t, err)
@@ -1482,14 +1469,20 @@ func TestFromPayloadMultiCall(t *testing.T) {
 	// Bob reads all destination boxes and reconstructs the payload
 	bobIndex := destFirstIndex
 	var reconstructed []byte
+	reconstructDeadline := time.After(reconstructTimeout)
 	for len(reconstructed) < len(fullPayload) {
+		select {
+		case <-reconstructDeadline:
+			t.Fatalf("timed out reconstructing payload: got %d/%d bytes", len(reconstructed), len(fullPayload))
+		default:
+		}
 		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(bobReadCap, bobIndex)
 		require.NoError(t, err)
 		require.NotNil(t, bobNextIndex)
 		bobIndexBytes, err := bobIndex.MarshalBinary()
 		require.NoError(t, err)
 
-		result, err := bobThinClient.StartResendingEncryptedMessage(
+		result, err := startResending(bobThinClient,
 			bobReadCap, nil, bobIndexBytes, &replyIndex,
 			bobEnvDesc, bobCiphertext, bobEnvHash)
 		require.NoError(t, err)
@@ -1516,16 +1509,14 @@ func TestFromPayloadMultiCall(t *testing.T) {
 // 4. Alice writes all temp stream elements and sends the copy command
 // 5. Bob reads from both destination channels and verifies
 func TestFromMultiPayloadMultiCall(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	aliceDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
+	requireSharedPKIDocument(t, aliceThinClient, bobThinClient)
 
 	// Create two destination channels
 	chan1Seed := make([]byte, 32)
@@ -1593,7 +1584,7 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 		ciphertext, envDesc, envHash, nextTempIndex, err := aliceThinClient.EncryptWrite(elem, tempWriteCap, tempIndex)
 		require.NoError(t, err)
 		require.NotNil(t, nextTempIndex)
-		_, err = aliceThinClient.StartResendingEncryptedMessage(
+		_, err = startResending(aliceThinClient,
 			nil, tempWriteCap, nil, &replyIndex,
 			envDesc, ciphertext, envHash)
 		require.NoError(t, err)
@@ -1613,13 +1604,19 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	expectedChan1 := append(payload1a, payload1b...)
 	bobIndex := chan1FirstIndex
 	var chan1Data []byte
+	chan1Deadline := time.After(reconstructTimeout)
 	for len(chan1Data) < len(expectedChan1) {
+		select {
+		case <-chan1Deadline:
+			t.Fatalf("timed out reconstructing channel 1: got %d/%d bytes", len(chan1Data), len(expectedChan1))
+		default:
+		}
 		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(chan1ReadCap, bobIndex)
 		require.NoError(t, err)
 		require.NotNil(t, bobNextIndex)
 		bobIndexBytes, err := bobIndex.MarshalBinary()
 		require.NoError(t, err)
-		result, err := bobThinClient.StartResendingEncryptedMessage(
+		result, err := startResending(bobThinClient,
 			chan1ReadCap, nil, bobIndexBytes, &replyIndex,
 			bobEnvDesc, bobCiphertext, bobEnvHash)
 		require.NoError(t, err)
@@ -1634,13 +1631,19 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 	expectedChan2 := append(payload2a, payload2b...)
 	bobIndex = chan2FirstIndex
 	var chan2Data []byte
+	chan2Deadline := time.After(reconstructTimeout)
 	for len(chan2Data) < len(expectedChan2) {
+		select {
+		case <-chan2Deadline:
+			t.Fatalf("timed out reconstructing channel 2: got %d/%d bytes", len(chan2Data), len(expectedChan2))
+		default:
+		}
 		bobCiphertext, bobEnvDesc, bobEnvHash, bobNextIndex, err := bobThinClient.EncryptRead(chan2ReadCap, bobIndex)
 		require.NoError(t, err)
 		require.NotNil(t, bobNextIndex)
 		bobIndexBytes, err := bobIndex.MarshalBinary()
 		require.NoError(t, err)
-		result, err := bobThinClient.StartResendingEncryptedMessage(
+		result, err := startResending(bobThinClient,
 			chan2ReadCap, nil, bobIndexBytes, &replyIndex,
 			bobEnvDesc, bobCiphertext, bobEnvHash)
 		require.NoError(t, err)
@@ -1662,17 +1665,14 @@ func TestFromMultiPayloadMultiCall(t *testing.T) {
 // 4. Alice sends a Copy command to the courier
 // 5. Bob reads from the destination boxes and verifies all return ErrTombstone
 func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
+	skipInShortMode(t)
 	t.Parallel()
 	alice := setupThinClient(t)
 	defer alice.Close()
 	bob := setupThinClient(t)
 	defer bob.Close()
 
-	aliceDoc := validatePKIDocument(t, alice)
-	currentEpoch := aliceDoc.Epoch
-	bobDoc := validatePKIDocumentForEpoch(t, bob, currentEpoch)
-	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
+	requireSharedPKIDocument(t, alice, bob)
 
 	// Create destination channel
 	destSeed := make([]byte, 32)
@@ -1708,7 +1708,7 @@ func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
 		require.NotEmpty(t, ciphertext)
 		require.NotNil(t, nextTempIndex)
 
-		_, err = alice.StartResendingEncryptedMessage(
+		_, err = startResending(alice,
 			nil, tempWriteCap, nil, &replyIndex,
 			envDesc, ciphertext, envHash)
 		require.NoError(t, err)
@@ -1742,7 +1742,7 @@ func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
 			readIdxBytes, err := readIdx.MarshalBinary()
 			require.NoError(t, err)
 
-			_, err = bob.StartResendingEncryptedMessage(
+			_, err = startResending(bob,
 				destReadCap, nil, readIdxBytes, &replyIndex,
 				envDesc, ciphertext, envHash)
 			if errors.Is(err, thin.ErrTombstone) {
@@ -1759,4 +1759,10 @@ func TestCreateCourierEnvelopesFromTombstoneRange(t *testing.T) {
 	}
 
 	t.Logf("SUCCESS: All %d tombstones delivered via copy command and verified", numTombstones)
+}
+
+func startResending(c *thin.ThinClient, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*thin.StartResendingResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), replyWaitTimeout)
+	defer cancel()
+	return c.StartResendingEncryptedMessageWithContext(ctx, readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash)
 }

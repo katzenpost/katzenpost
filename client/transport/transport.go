@@ -22,12 +22,23 @@ type Listener interface {
 	Addr() net.Addr
 }
 
+type Logger interface {
+	Errorf(format string, args ...interface{})
+}
+
 // ListenConfig is the subtable-discriminated listen configuration.
 // Exactly one of its pointer fields must be non-nil; zero or two or
 // more is a configuration error.
 type ListenConfig struct {
 	Unix *UnixListenConfig `toml:"Unix,omitempty"`
 	Tcp  *TcpListenConfig  `toml:"Tcp,omitempty"`
+	Ws   *WsListenConfig   `toml:"Ws,omitempty"`
+}
+
+func (c *ListenConfig) SetLogger(log Logger) {
+	if c.Unix != nil {
+		c.Unix.log = log
+	}
 }
 
 // ErrNoTransport is returned when a ListenConfig has no inner config
@@ -51,10 +62,16 @@ func (c *ListenConfig) Validate() error {
 	if c.Tcp != nil {
 		n++
 	}
+	if c.Ws != nil {
+		n++
+	}
 	switch n {
 	case 0:
 		return ErrNoTransport
 	case 1:
+		if c.Unix != nil {
+			return c.Unix.Validate()
+		}
 		return nil
 	default:
 		return ErrMultipleTransports
@@ -73,6 +90,8 @@ func (c *ListenConfig) Listen() (Listener, error) {
 		return c.Unix.Listen()
 	case c.Tcp != nil:
 		return c.Tcp.Listen()
+	case c.Ws != nil:
+		return c.Ws.Listen()
 	}
 	return nil, ErrNoTransport
 }

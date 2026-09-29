@@ -24,6 +24,16 @@ import (
 const (
 	defaultThinClientConfigFile = "testdata/thinclient.toml"
 	defaultTestLogLevel         = "DEBUG"
+
+	// Above the docker testnet's ~54s worst-case round trip, so a
+	// tail-latency reply is not mistaken for a lost one.
+	replyWaitTimeout = 3 * time.Minute
+
+	// Hard cap on a single payload-reconstruction loop (TestFromPayloadMultiCall,
+	// TestFromMultiPayloadMultiCall). These loops can otherwise stall for the whole
+	// package-wide -timeout 1h if the shared docker testnet is saturated, consuming
+	// the budget for every other parallel test.
+	reconstructTimeout = 10 * time.Minute
 )
 
 var (
@@ -78,15 +88,34 @@ func validatePKIDocument(t *testing.T, client *thin.ThinClient) *cpki.Document {
 	return doc
 }
 
-// validatePKIDocumentForEpoch gets and validates the PKI document for a specific epoch from a thin client
-func validatePKIDocumentForEpoch(t *testing.T, client *thin.ThinClient, epoch uint64) *cpki.Document {
-	t.Logf("thin client getting PKI doc for epoch %d", epoch)
-	doc, err := client.PKIDocumentForEpoch(epoch)
-	require.NoError(t, err)
-	require.NotNil(t, doc)
-	require.Equal(t, epoch, doc.Epoch)
-	require.NotEqual(t, doc.LambdaP, 0.0)
-	return doc
+// requireSharedPKIDocument returns a PKI document that both clients hold for
+// the same epoch. Clients that connect either side of an epoch tick cache
+// different documents, and PKIDocumentForEpoch answers a miss with the
+// client's current document rather than reporting it, so the epoch cannot be
+// pinned from one side alone. Both clients share a daemon, so they converge
+// once the tick settles.
+func requireSharedPKIDocument(t *testing.T, a, b *thin.ThinClient) *cpki.Document {
+	t.Helper()
+
+	const (
+		attempts = 30
+		interval = time.Second
+	)
+
+	for i := 0; i < attempts; i++ {
+		aDoc, bDoc := a.PKIDocument(), b.PKIDocument()
+		if aDoc != nil && bDoc != nil && aDoc.Epoch == bDoc.Epoch {
+			require.NotEqual(t, aDoc.LambdaP, 0.0)
+			require.Equal(t, aDoc.Sum256(), bDoc.Sum256(),
+				"clients on epoch %d must hold the same PKI document", aDoc.Epoch)
+			t.Logf("Using PKI document for epoch %d", aDoc.Epoch)
+			return aDoc
+		}
+		time.Sleep(interval)
+	}
+
+	require.FailNow(t, "clients did not converge on a common PKI epoch")
+	return nil
 }
 
 // findEchoTargets finds service nodes that support the echo service
@@ -120,7 +149,7 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 		return nil, fmt.Errorf("SendMessage: %w", err)
 	}
 
-	timeout := time.After(1 * time.Minute)
+	timeout := time.After(replyWaitTimeout)
 	for {
 		var event thin.Event
 		select {

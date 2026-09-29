@@ -1,5 +1,5 @@
 
-.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica install-replica-deps
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
 
 .PHONY: update-go-deps
 update-go-deps:
@@ -15,85 +15,46 @@ endif
 all: server dirauth genconfig ping courier replica echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd sphinx
 
 server:
-	cd cmd/server; go build
+	cd cmd/server; go build -trimpath -ldflags "-s -w"
 
 dirauth:
-	cd cmd/dirauth; go build
+	cd cmd/dirauth; go build -trimpath -ldflags "-s -w"
 
 genconfig:
-	cd cmd/genconfig; go build
+	cd cmd/genconfig; go build -trimpath -ldflags "-s -w"
 
 ping:
-	cd cmd/ping; go build
+	cd cmd/ping; go build -trimpath -ldflags "-s -w"
 
 courier:
-	cd cmd/courier; go build
+	cd cmd/courier; go build -trimpath -ldflags "-s -w"
 
 echo-plugin:
-	cd cmd/echo-plugin; go build
+	cd cmd/echo-plugin; go build -trimpath -ldflags "-s -w"
 
 fetch:
-	cd cmd/fetch; go build
+	cd cmd/fetch; go build -trimpath -ldflags "-s -w"
 
 genkeypair:
-	cd cmd/genkeypair; go build
+	cd cmd/genkeypair; go build -trimpath -ldflags "-s -w"
 
 geometry:
-	cd cmd/geometry; go build
+	cd cmd/geometry; go build -trimpath -ldflags "-s -w"
 
 http-proxy-client:
-	cd cmd/http-proxy-client; go build
+	cd cmd/http-proxy-client; go build -trimpath -ldflags "-s -w"
 
 http-proxy-server:
-	cd cmd/http-proxy-server; go build
+	cd cmd/http-proxy-server; go build -trimpath -ldflags "-s -w"
 
 kpclientd:
-	cd cmd/kpclientd; go build
+	cd cmd/kpclientd; go build -trimpath -ldflags "-s -w"
 
 sphinx:
-	cd cmd/sphinx; go build
+	cd cmd/sphinx; go build -trimpath -ldflags "-s -w"
 
-ROCKSDB_VERSION = 10.2.1
-
-install-replica-deps:
-	@set -e; \
-	echo "Checking for RocksDB $(ROCKSDB_VERSION)..."; \
-	installed_ver="$$(pkg-config --modversion rocksdb 2>/dev/null || echo none)"; \
-	if [ "$$installed_ver" = "$(ROCKSDB_VERSION)" ]; then \
-		echo "RocksDB $(ROCKSDB_VERSION) already installed"; \
-	else \
-		if [ "$$installed_ver" != "none" ]; then \
-			echo "RocksDB $$installed_ver found, need $(ROCKSDB_VERSION) — removing old version..."; \
-			sudo rm -f /usr/local/lib/librocksdb.*; \
-			sudo rm -rf /usr/local/include/rocksdb; \
-			sudo rm -f /usr/local/lib/pkgconfig/rocksdb.pc; \
-			sudo ldconfig; \
-		else \
-			echo "RocksDB not found"; \
-		fi; \
-		echo "Installing build dependencies..."; \
-		sudo apt-get install -y \
-			cmake build-essential pkg-config gcc-14 g++-14 \
-			libsnappy-dev libzstd-dev liblz4-dev \
-			zlib1g-dev libbz2-dev liburing-dev libgflags-dev; \
-		echo "Building RocksDB $(ROCKSDB_VERSION) from source..."; \
-		tmpdir="$$(mktemp -d)"; \
-		cd "$$tmpdir"; \
-		git clone --depth 1 --branch v$(ROCKSDB_VERSION) https://github.com/facebook/rocksdb.git; \
-		cd rocksdb; \
-		env CC=gcc-14 CXX=g++-14 make shared_lib -j$$(nproc); \
-		echo "Installing RocksDB $(ROCKSDB_VERSION)..."; \
-		sudo env CC=gcc-14 CXX=g++-14 make install-shared; \
-		sudo ldconfig; \
-		rm -rf "$$tmpdir"; \
-		echo "RocksDB $(ROCKSDB_VERSION) installed successfully!"; \
-	fi
-
-# Build replica (requires RocksDB dependencies)
-# this may require gcc-14
-replica: install-replica-deps
-	cd cmd/replica; CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath -ldflags "-X github.com/carlmjohnson/versioninfo.Revision=$$(git rev-parse --short HEAD)"
-
+replica:
+	cd cmd/replica; go build -v -trimpath -ldflags "-s -w"
 
 clean:
 	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping \
@@ -129,16 +90,16 @@ test-unit: test-config
 
 	@echo "All unit tests completed successfully!"
 
-# Run replica unit tests (requires RocksDB dependencies)
+# Run replica unit tests
 test-replica: test-config
 	@echo "Running replica unit tests..."
-	cd replica && GORACE=history_size=7 CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	cd replica && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Replica unit tests completed successfully!"
 
-# Run replica benchmarks (requires RocksDB dependencies)
+# Run replica benchmarks
 bench-replica:
 	@echo "Running replica benchmarks..."
-	cd replica && CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go test -v -run=^$$ -bench=. -benchtime=3x ./...
+	cd replica && go test -v -run=^$$ -bench=. -benchtime=3x ./...
 	@echo "Replica benchmarks completed successfully!"
 
 # Run all sphinx benchmarks
@@ -173,18 +134,29 @@ bench-handshake:
 	@echo "=== Courier Handshake Benchmarks ==="
 	go test -v -run=^$$ -bench=. -benchtime=3x ./courier/server/
 	@echo ""
-	@echo "=== Replica Handshake Benchmarks (requires RocksDB) ==="
-	cd replica && CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go test -v -run=^$$ -bench=. -benchtime=3x ./...
+	@echo "=== Replica Handshake Benchmarks ==="
+	cd replica && go test -v -run=^$$ -bench=. -benchtime=3x ./...
 	@echo ""
 	@echo "All wire handshake benchmarks completed successfully!"
 
 # Legacy test target (kept for backwards compatibility)
-test:
+test: prune-docker-cache
 	go test -v -race -timeout 0 ./...
+
+# The docker build populates docker/cache/go/pkg/mod with a module cache
+# inside the repo tree. A legacy (pre-modules) dependency there has no
+# go.mod of its own, so `go test ./...` walks into it and fails the whole
+# pattern with "outside main module or its selected dependencies". Dropping
+# a sink go.mod makes Go treat docker/cache as a separate nested module and
+# prune it (and everything beneath it) from ./... . docker/cache is
+# gitignored, so this file is never committed; the target recreates it.
+.PHONY: prune-docker-cache
+prune-docker-cache:
+	@mkdir -p docker/cache
+	@printf 'module katzenpost-docker-cache-sink\n\ngo 1.26\n' > docker/cache/go.mod
 
 act-clean:
 	@echo "Cleaning up docker mixnet environment..."
-	-podman rm -f $$(podman ps -aq --filter "name=voting_mixnet") 2>/dev/null || true
 	-cd docker && make clean-local 2>/dev/null || true
 	@echo "Cleanup complete."
 

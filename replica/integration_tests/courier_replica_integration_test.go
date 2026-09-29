@@ -313,6 +313,7 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 		require.NoError(t, err)
 		replica.ForceConnectorUpdate()
 	}
+	waitForReplicaSessions(t, replicas)
 
 	// Force courier to fetch PKI documents, then update connector
 	err = courier.PKI.ForceFetchPKI()
@@ -371,20 +372,20 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 // is synthetic and does not connect to any real directory authorities.
 func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaID int, sphinxGeo *geo.Geometry, portBase int) *config.Config {
 	return &config.Config{
-		DisableDecoyTraffic:    true,
-		DataDir:                dataDir,
-		Identifier:             fmt.Sprintf(testReplicaNameFormat, replicaID),
-		WireKEMScheme:          linkScheme.Name(),
-		PKISignatureScheme:     pkiScheme.Name(),
-		ReplicaNIKEScheme:      replicaCommon.NikeScheme.Name(),
-		SphinxGeometry:         sphinxGeo,
-		Addresses:              []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
-		GenerateOnly:           false,
-		ConnectTimeout:         60000,  // 60 seconds
-		HandshakeTimeout:       30000,  // 30 seconds
-		ReauthInterval:         300000, // 5 minutes
-		ProxyWorkerCount:       8,      // Concurrency limit for proxy request goroutines
-		ProxyRequestTimeout:    300,    // 5 minutes
+		DisableDecoyTraffic: true,
+		DataDir:             dataDir,
+		Identifier:          fmt.Sprintf(testReplicaNameFormat, replicaID),
+		WireKEMScheme:       linkScheme.Name(),
+		PKISignatureScheme:  pkiScheme.Name(),
+		ReplicaNIKEScheme:   replicaCommon.NikeScheme.Name(),
+		SphinxGeometry:      sphinxGeo,
+		Addresses:           []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
+		GenerateOnly:        false,
+		ConnectTimeout:      60000,  // 60 seconds
+		HandshakeTimeout:    30000,  // 30 seconds
+		ReauthInterval:      300000, // 5 minutes
+		ProxyWorkerCount:    8,      // Concurrency limit for proxy request goroutines
+		ProxyRequestTimeout: 300,    // 5 minutes
 		Logging: &config.Logging{
 			Disable: false,
 			Level:   "DEBUG",
@@ -752,9 +753,10 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 
 	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(
+	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(
 		sharding.ReplicaPubKeys, paddedMsg,
 	)
+	require.NoError(t, err)
 	mkemPublicKey := mkemPrivateKey.Public()
 
 	senderPubkeyBytes := mkemPublicKey.Bytes()
@@ -1033,7 +1035,8 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 
 	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedMsg)
+	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedMsg)
+	require.NoError(t, err)
 	mkemPublicKey := mkemPrivateKey.Public()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
@@ -1146,8 +1149,10 @@ func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
 	clientPub, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
-	readEnvReply := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
-	writeEnvReply := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+	readEnvReply, err := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
+	require.NoError(t, err)
+	writeEnvReply, err := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+	require.NoError(t, err)
 
 	require.Equal(t, len(readEnvReply.Envelope), len(writeEnvReply.Envelope),
 		"MKEM-encrypted read and write replies must have identical EnvelopeReply size")
@@ -1156,4 +1161,28 @@ func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
 	// Also verify the MKEM envelope size matches what the courier actually returned for the read
 	require.Equal(t, readReplyLen, len(readEnvReply.Envelope),
 		"courier read reply size should match computed MKEM envelope size")
+}
+
+func waitForReplicaSessions(t *testing.T, replicas []*replica.Server) {
+	want := len(replicas) - 1
+	budget := epochtime.Period/4 + 2*time.Minute
+	deadline := time.Now().Add(budget)
+	for {
+		missing := 0
+		for _, r := range replicas {
+			if r.SessionCount() < want {
+				missing++
+			}
+		}
+		if missing == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			for i, r := range replicas {
+				t.Logf("replica %d has %d/%d sessions", i, r.SessionCount(), want)
+			}
+			t.Fatalf("replica mesh did not come up within %s", budget)
+		}
+		time.Sleep(time.Second)
+	}
 }

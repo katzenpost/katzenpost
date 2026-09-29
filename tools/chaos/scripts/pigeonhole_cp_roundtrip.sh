@@ -14,24 +14,49 @@
 # end-to-end signal that the existing Go integration tests cannot.
 #
 # Usage:
-#   pigeonhole_cp_roundtrip.sh [size-bytes] [thinclient.toml] [pigeonhole-cp]
+#   pigeonhole_cp_roundtrip.sh [-s size-bytes] <thinclient.toml> <pigeonhole-cp>
 #
-# Default size is 65536 bytes. Default thinclient.toml is the
-# docker-mixnet's generated path; default binary is the release build at
-# ~/thin_client/target/release/pigeonhole-cp.
+# The config and binary are explicit caller-supplied paths; the script has
+# no knowledge of any particular network layout. That keeps it usable
+# against the docker testnet (the `make pigeonhole-cp-roundtrip` target in
+# docker/ supplies the generated config and make-built binary) or any other
+# mixnet deployment, real-world included. The default size is 65536 bytes.
 set -euo pipefail
 
-size="${1:-65536}"
-config="${2:-/home/human/katzenpost/docker/voting_mixnet/client/thinclient.toml}"
-binary="${3:-/home/human/thin_client/target/release/pigeonhole-cp}"
+usage() {
+    cat >&2 <<EOF
+Usage: $0 [-s size-bytes] <thinclient.toml> <pigeonhole-cp>
+
+  -s size-bytes      size of the random file to round-trip (default: 65536)
+  thinclient.toml    path to the thin-client config for the target mixnet
+  pigeonhole-cp      path to the pigeonhole-cp binary (must be executable)
+EOF
+}
+
+size=65536
+while getopts "s:h" opt; do
+    case "$opt" in
+        s) size="$OPTARG" ;;
+        h) usage; exit 0 ;;
+        *) usage; exit 2 ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+if [ "$#" -lt 2 ]; then
+    echo "pigeonhole_cp_roundtrip: config and binary are required" >&2
+    usage
+    exit 2
+fi
+config="$1"
+binary="$2"
 
 if [ ! -x "$binary" ]; then
-    echo "pigeonhole_cp_roundtrip: $binary is not executable; build it first via:" >&2
-    echo "  cd ~/thin_client && cargo build --release --bin pigeonhole-cp --features cli" >&2
+    echo "pigeonhole_cp_roundtrip: $binary is not executable" >&2
     exit 2
 fi
 if [ ! -f "$config" ]; then
-    echo "pigeonhole_cp_roundtrip: $config not found; bring up the docker mixnet first" >&2
+    echo "pigeonhole_cp_roundtrip: $config not found" >&2
     exit 2
 fi
 

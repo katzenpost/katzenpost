@@ -103,8 +103,10 @@ func TestBACAPBoxIDDerivation(t *testing.T) {
 	messageBoxIndex := statefulWriter.GetCurrentMessageIndex()
 
 	// Derive BoxID using BoxIDForContext (correct method)
-	boxID1 := messageBoxIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
-	boxID2 := messageBoxIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+	boxID1, err := messageBoxIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+	boxID2, err := messageBoxIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
 
 	// BoxID should be deterministic
 	require.Equal(t, boxID1.Bytes(), boxID2.Bytes(), "BoxID derivation should be deterministic")
@@ -177,7 +179,8 @@ func TestBACAPStateAdvancement(t *testing.T) {
 
 	// Get the first message index
 	firstIndex := statefulWriter.GetCurrentMessageIndex()
-	firstBoxID := firstIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+	firstBoxID, err := firstIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
 
 	// Encrypt first message
 	testMessage1 := []byte("First message")
@@ -192,7 +195,8 @@ func TestBACAPStateAdvancement(t *testing.T) {
 
 	// Get the second message index (state should have advanced)
 	secondIndex := statefulWriter.GetCurrentMessageIndex()
-	secondBoxID := secondIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+	secondBoxID, err := secondIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
 
 	// BoxIDs should be different after state advancement
 	require.NotEqual(t, firstBoxID.Bytes(), secondBoxID.Bytes(), "BoxID should change after state advancement")

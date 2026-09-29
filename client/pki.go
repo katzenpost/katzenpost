@@ -142,13 +142,17 @@ func (c *Client) WaitForCurrentDocument() {
 	if _, doc := c.pki.currentDocument(); doc != nil {
 		return
 	}
+	var lastErr error
 	for attempt := 1; attempt <= waitForCurrentDocumentAttempts; attempt++ {
 		epoch, _, _ := epochtime.Now()
 		if err := c.pki.updateDocument(epoch); err == nil {
 			return
-		} else if c.log != nil {
-			c.log.Debugf("WaitForCurrentDocument: attempt %d/%d failed: %s",
-				attempt, waitForCurrentDocumentAttempts, err.Error())
+		} else {
+			lastErr = err
+			if c.log != nil {
+				c.log.Debugf("WaitForCurrentDocument: attempt %d/%d failed: %s",
+					attempt, waitForCurrentDocumentAttempts, err.Error())
+			}
 		}
 		if attempt == waitForCurrentDocumentAttempts {
 			break
@@ -160,8 +164,18 @@ func (c *Client) WaitForCurrentDocument() {
 		}
 	}
 	if c.log != nil {
-		c.log.Errorf("WaitForCurrentDocument: gave up after %d attempts",
-			waitForCurrentDocumentAttempts)
+		// Not being connected to a gateway yet is the normal startup case:
+		// the connect loop is still bringing the link up and will refetch
+		// once it succeeds. Only a genuine failure (a connected gateway
+		// that still will not serve the current consensus) warrants raising
+		// the alarm.
+		if errors.Is(lastErr, ErrNotConnected) {
+			c.log.Debugf("WaitForCurrentDocument: gateway link not up yet after %d attempts; will retry once connected",
+				waitForCurrentDocumentAttempts)
+		} else {
+			c.log.Warningf("WaitForCurrentDocument: gave up after %d attempts: %v",
+				waitForCurrentDocumentAttempts, lastErr)
+		}
 	}
 }
 
@@ -230,6 +244,19 @@ func (p *pki) currentRawSignedDocument() ([]byte, uint64) {
 		cached := d.(*CachedDoc)
 		return cached.RawSignedBlob, cached.Doc.Epoch
 	}
+
+	// Mirror the currentDocument fallback: around an epoch boundary, or
+	// across a skipped (dead) consensus epoch, the current epoch's
+	// document is not yet or never cached. Serve the previous epoch's
+	// raw payload so raw document requests (the fetch tool's
+	// GetPKIDocumentRaw(0)) keep getting an answer. The reply's epoch
+	// is that of the document actually returned.
+	if d, _ := p.docs.Load(now - 1); d != nil {
+		cached := d.(*CachedDoc)
+		p.log.Debugf("currentRawSignedDocument: epoch %d not yet cached, using previous epoch %d", now, now-1)
+		return cached.RawSignedBlob, cached.Doc.Epoch
+	}
+
 	return nil, now
 }
 
@@ -310,6 +337,30 @@ func (p *pki) worker() {
 			}
 			didUpdate = true
 		}
+
+		// A restart that misses the dirauth vote window skips a whole
+		// consensus epoch: the current epoch will never receive a
+		// document, so the loop above can only mark it as failed. Cache
+		// the previous epoch's document in that case so the daemon keeps
+		// serving a current-or-previous document to thin clients
+		// (currentDocument and currentRawSignedDocument both fall back
+		// one epoch) instead of starving them for the entire gap. The
+		// previous epoch is still served by the authorities inside their
+		// retention window; once a real current consensus exists the
+		// loop fetches it as usual and the fallback stops being reached.
+		if _, ok := p.docs.Load(now); !ok {
+			if _, ok := p.docs.Load(now - 1); !ok {
+				p.log.Debugf("current epoch %d has no document (likely unserved), fetching previous epoch %d", now, now-1)
+				if err := p.updateDocument(now - 1); err != nil {
+					if err == cpki.ErrDocumentGone {
+						p.failedFetches[now-1] = err
+					}
+					p.log.Debugf("failed to fetch previous epoch %d: %v", now-1, err)
+				} else {
+					didUpdate = true
+				}
+			}
+		}
 		p.pruneFailures(now)
 		if didUpdate {
 			// Prune documents.
@@ -336,9 +387,9 @@ func (p *pki) worker() {
 // rather than polling at recheckInterval, so it wakes only when there is
 // a fetch that could plausibly succeed.
 //
-//   till      time remaining in the current epoch.
-//   haveNow   the current epoch's document is cached.
-//   haveNext  the next epoch's document is cached.
+//	till      time remaining in the current epoch.
+//	haveNow   the current epoch's document is cached.
+//	haveNext  the next epoch's document is cached.
 //
 // With both cached, sleep across the boundary plus the publish-and-cache
 // window so the new now+1 is ready when we wake. With only the current
@@ -376,8 +427,8 @@ func (p *pki) updateDocument(epoch uint64) error {
 		return err
 	}
 	if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
-		p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.c.cfg.SphinxGeometry.Display())
-		panic("Sphinx Geometry mismatch!")
+		p.log.Errorf("Rejecting PKI document for epoch %v: its Sphinx geometry hash does not match the local geometry:\n%s", epoch, p.c.cfg.SphinxGeometry.Display())
+		return fmt.Errorf("pki: document for epoch %v has a Sphinx geometry that does not match the local configuration", epoch)
 	}
 	p.docs.Store(epoch, &CachedDoc{
 		Doc:           d,
@@ -405,7 +456,16 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, []byte, *c
 		p.log.Debugf("getDocument [%v]: ErrNoDocument", epoch)
 		return nil, nil, nil, err
 	default:
-		p.log.Errorf("getDocument [%v]: %s", epoch, err.Error())
+		// ErrNotConnected (the gateway link is not up yet, normal at
+		// startup and during reconnects) and errGetConsensusCanceled
+		// (shutdown) are routine: the caller retries on the next tick.
+		// Logging them at error level reads as a failure when the daemon
+		// is merely still connecting, so keep them at debug.
+		if errors.Is(err, ErrNotConnected) || errors.Is(err, errGetConsensusCanceled) {
+			p.log.Debugf("getDocument [%v]: %s (will retry once connected)", epoch, err.Error())
+		} else {
+			p.log.Errorf("getDocument [%v]: %s", epoch, err.Error())
+		}
 		return nil, nil, nil, err
 	}
 

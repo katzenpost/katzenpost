@@ -145,6 +145,9 @@ func (c *Message) Length() int {
 }
 
 func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
+	if c.geo == nil {
+		return nil, errInvalidCommand
+	}
 	if len(b) != messageBaseLength+constants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
 		return nil, errInvalidCommand
 	}

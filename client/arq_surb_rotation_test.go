@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 
-	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/queue"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // TestRotateARQSurbIDLockedKeepsEnvelopeHashMapping is the regression test

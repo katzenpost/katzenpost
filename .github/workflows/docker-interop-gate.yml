@@ -1,0 +1,163 @@
+name: docker interop gate
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      local:
+        description: run the HEAD-only -short client suite
+        type: boolean
+        default: true
+      interop:
+        description: run the cross-version check (everything interleaved with the last two releases)
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      interop: ${{ steps.request.outputs.interop }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: request
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          requested=false
+          case "$(git log -1 --format=%B HEAD^2 2>/dev/null)" in *"[interop]"*) requested=true;; esac
+          case "$PR_TITLE $PR_BODY" in *"[interop]"*) requested=true;; esac
+          if [ "${{ contains(github.event.pull_request.labels.*.name, 'interop') }}" = true ]; then requested=true; fi
+          echo "interop=$requested" >> "$GITHUB_OUTPUT"
+      - uses: dorny/paths-filter@v3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'docker/**'
+              - '.github/workflows/docker-interop-gate.yml'
+
+  local:
+    needs: changes
+    if: (github.event_name == 'pull_request' && needs.changes.outputs.code == 'true') || (github.event_name == 'workflow_dispatch' && inputs.local)
+    permissions:
+      contents: read
+    env:
+      warped: true
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+      - name: Cache the go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: docker/cache
+          key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
+          restore-keys: |
+            interop-gate-${{ runner.os }}-go1.26.x-
+      - name: Run the local testnet client suite with -short
+        run: cd docker && make dockertest_timeout=30m dockertest_parallel=2 testargs=-short test
+      - name: Dump kpclientd logs on failure
+        if: failure()
+        run: cd docker && make client-logs-snapshot || true
+      - name: Dump replica logs on failure
+        if: failure()
+        run: cd docker && for r in mixnet-alpine/replica*/; do echo "=== $r ==="; tail -20 "${r}katzenpost.log" 2>&1; done
+      - name: Stop the testnet
+        if: always()
+        run: cd docker && make stop || true
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-gate-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml
+
+  interop:
+    needs: changes
+    if: (github.event_name == 'pull_request' && needs.changes.outputs.interop == 'true') || (github.event_name == 'workflow_dispatch' && inputs.interop)
+    permissions:
+      contents: read
+    env:
+      warped: true
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
+    strategy:
+      matrix:
+        go-version: [1.26.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+      - name: Cache the go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: docker/cache
+          key: interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
+          restore-keys: |
+            interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-
+      - name: Cross-version check on request, everything interleaved with the last two releases
+        run: cd docker && make interop-everything-mixed
+      - name: Dump kpclientd logs on failure
+        if: failure()
+        run: cd docker && make client-logs-snapshot || true
+      - name: Dump replica logs on failure
+        if: failure()
+        run: cd docker && for r in mixnet-alpine/replica*/; do echo "=== $r ==="; tail -20 "${r}katzenpost.log" 2>&1; done
+      - name: Stop the testnet
+        if: always()
+        run: cd docker && make stop || true
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-gate-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml
+
+  gate:
+    needs: [changes, interop, local]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the local job, and the interop job when it was requested, to pass
+        run: |
+          echo "changes=${{ needs.changes.result }} local=${{ needs.local.result }} interop=${{ needs.interop.result }}"
+          if [ "${{ needs.changes.result }}" != "success" ]; then echo "changes job did not succeed" >&2; exit 1; fi
+          if [ "${{ needs.local.result }}" != "success" ] && [ "${{ needs.local.result }}" != "skipped" ]; then echo "local job failed" >&2; exit 1; fi
+          if [ "${{ needs.interop.result }}" != "success" ] && [ "${{ needs.interop.result }}" != "skipped" ]; then echo "interop job failed" >&2; exit 1; fi

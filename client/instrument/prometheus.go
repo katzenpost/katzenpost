@@ -19,12 +19,13 @@
 package instrument
 
 import (
-	"net/http"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/common/metrics"
 )
 
 var registerOnce sync.Once
@@ -159,8 +160,11 @@ var (
 // if address is non-empty. Safe to call multiple times; registration
 // happens exactly once and subsequent listener starts after the first
 // are ignored. Binds to whatever address the caller supplies; convention
-// in this project is to use 127.0.0.1 only.
-func StartPrometheusListener(address string) {
+// in this project is to use 127.0.0.1 only. Panics if a configured
+// address cannot be bound. log may be nil, which suppresses reporting of
+// a listener failure after a successful bind; kpclientd has no log
+// backend yet at the point it calls this.
+func StartPrometheusListener(address string, log *logging.Logger) {
 	registerOnce.Do(func() {
 		prometheus.MustRegister(lambdaPFifoPop)
 		prometheus.MustRegister(lambdaPDecoy)
@@ -186,8 +190,7 @@ func StartPrometheusListener(address string) {
 	if address == "" {
 		return
 	}
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(address, nil)
+	metrics.MustServe(address, log)
 }
 
 // LambdaPFifoPop records one real-message emission on a LambdaP tick.

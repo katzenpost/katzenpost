@@ -17,10 +17,10 @@ import (
 // a stale PKI document claiming epoch 0).
 func TestIsEnvelopeEpochAcceptable(t *testing.T) {
 	tests := []struct {
-		name      string
-		envelope  uint64
-		current   uint64
-		expectOK  bool
+		name     string
+		envelope uint64
+		current  uint64
+		expectOK bool
 	}{
 		{"exact match", 100, 100, true},
 		{"one below current", 99, 100, true},

@@ -17,13 +17,20 @@
 package mixkey
 
 import (
+	"bytes"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yawning/bloom"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/x25519"
@@ -85,6 +92,100 @@ func TestCreateMixKey(t *testing.T) {
 		isReplay := k.IsReplay(tag[:])
 		assert.False(isReplay, "IsReplay() new: %v", hex.EncodeToString(tag[:]))
 	}
+}
+
+func TestMixKeyPersistRoundtrip(t *testing.T) {
+	require := require.New(t)
+
+	dir, err := os.MkdirTemp("", "mixkey_persist")
+	require.NoError(err, "MkdirTemp()")
+	defer os.RemoveAll(dir)
+
+	mynike := x25519.Scheme(rand.Reader)
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	k, err := New(testEpoch, geo)
+	require.NoError(err, "New()")
+	defer k.Deref()
+
+	wantPub := k.PublicBytes()
+	require.NoError(k.Persist(dir), "Persist()")
+
+	// No key file yet for an epoch that was never persisted.
+	_, found, err := Load(testEpoch+1, geo, dir)
+	require.NoError(err, "Load(missing) err")
+	require.False(found, "Load(missing) found")
+
+	// Load returns the same public key for the persisted epoch.
+	loaded, found, err := Load(testEpoch, geo, dir)
+	require.NoError(err, "Load() err")
+	require.True(found, "Load() found")
+	defer loaded.Deref()
+	require.Equal(wantPub, loaded.PublicBytes(), "public key preserved across Persist/Load")
+
+	// Consume-on-read: the persisted key file is deleted as soon as it
+	// loads successfully, so key material never lingers between a clean
+	// shutdown and the immediately following boot.
+	_, statErr := os.Stat(keyPath(testEpoch, dir))
+	require.ErrorIs(statErr, os.ErrNotExist, "persisted key file consumed by Load")
+	_, found, err = Load(testEpoch, geo, dir)
+	require.NoError(err, "Load(consumed) err")
+	require.False(found, "Load(consumed) found")
+
+	// A corrupt file fails loudly instead of being silently loaded.
+	require.NoError(os.WriteFile(filepath.Join(dir, "mixkey-0.bin"), []byte("garbage"), 0600))
+	_, found, err = Load(0, geo, dir)
+	require.Error(err, "Load(corrupt) err")
+	require.False(found, "Load(corrupt) found")
+
+	// A file that fails to load is left in place for diagnosis; it will
+	// be overwritten by the next clean shutdown's Persist.
+	_, statErr = os.Stat(filepath.Join(dir, "mixkey-0.bin"))
+	require.NoError(statErr, "corrupt key file left in place")
+
+	// Remove deletes the persisted file.
+	Remove(testEpoch, dir)
+	_, found, err = Load(testEpoch, geo, dir)
+	require.NoError(err, "Load(after Remove) err")
+	require.False(found, "Load(after Remove) found")
+}
+
+func TestLoadFailsWhenConsumeFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix directory permissions are not available on windows")
+	}
+	require := require.New(t)
+
+	dir, err := os.MkdirTemp("", "mixkey_consume")
+	require.NoError(err, "MkdirTemp()")
+	defer os.RemoveAll(dir)
+
+	mynike := x25519.Scheme(rand.Reader)
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	k, err := New(testEpoch, geo)
+	require.NoError(err, "New()")
+	defer k.Deref()
+	require.NoError(k.Persist(dir), "Persist()")
+
+	// Revoke write access to the key store so the consume-on-read unlink
+	// fails. Load must refuse to hand out a key whose file could not be
+	// removed, since that would leave private key material on the filesystem.
+	require.NoError(os.Chmod(dir, 0500), "Chmod()")
+	defer os.Chmod(dir, 0700)
+
+	_, found, err := Load(testEpoch, geo, dir)
+	if err == nil {
+		// The environment bypassed the directory permission (e.g. the
+		// test runs as root in a container), so the failure cannot be
+		// simulated here.
+		t.Skip("removal was not blocked by directory permissions (running as root?)")
+		return
+	}
+	require.False(found, "Load() found")
+	require.ErrorContains(err, "failed to consume persisted key file", "Load() error cause")
+	_, statErr := os.Stat(keyPath(testEpoch, dir))
+	require.NoError(statErr, "unconsumed key file left in place")
 }
 
 func BenchmarkMixKey(b *testing.B) {
@@ -159,6 +260,41 @@ func doBenchIsReplayHit(b *testing.B) {
 	if count != b.N {
 		b.Fatalf("replays (%v) != iterations (%v)", count, b.N)
 	}
+}
+
+func TestIsReplaySaturationNoPanic(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	mynike := x25519.Scheme(rand.Reader)
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	k, err := New(testEpoch, g)
+	require.NoError(err, "New()")
+	defer k.Deref()
+
+	var buf bytes.Buffer
+	logging.SetBackend(logging.NewLogBackend(&buf, "", 0))
+	k.SetLogger(logging.MustGetLogger("mixkey-test"))
+
+	small, err := bloom.New(rand.Reader, 13, 0.001)
+	require.NoError(err, "bloom.New()")
+	k.f = small
+
+	max := k.f.MaxEntries()
+	for i := 0; k.f.Entries() < max && i < max*100; i++ {
+		var tag [TagLength]byte
+		binary.BigEndian.PutUint64(tag[:], uint64(i))
+		k.IsReplay(tag[:])
+	}
+	require.GreaterOrEqual(k.f.Entries(), max, "filter did not reach saturation")
+
+	for i := 0; i < 5; i++ {
+		var fresh [TagLength]byte
+		binary.BigEndian.PutUint64(fresh[:], uint64(0xdeadbeef+i))
+		assert.True(k.IsReplay(fresh[:]), "saturated filter must treat the packet as a replay")
+	}
+	assert.Equal(1, strings.Count(buf.String(), "saturated"), "saturation must be logged exactly once")
 }
 
 func init() {

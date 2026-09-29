@@ -124,8 +124,16 @@ const (
 var (
 	// Error variables for reuse
 	errContextCannotBeNil = errors.New("context cannot be nil")
-	errConnectionLost     = errors.New("connection lost")
 	errHalting            = errors.New("halting")
+
+	// ErrConnectionLost reports the daemon's mixnet link went down before a reply.
+	ErrConnectionLost = errors.New("connection lost")
+
+	// ErrReplyOverdue reports a reply did not arrive by ReplyETA plus the slop.
+	ErrReplyOverdue = errors.New("reply overdue")
+
+	// ErrSendFailed reports the daemon could not dispatch the packet onto the mixnet.
+	ErrSendFailed = errors.New("send failed")
 
 	// Pigeonhole ARQ error sentinels
 	// These errors can be returned by StartResendingEncryptedMessage and can be
@@ -163,14 +171,23 @@ var (
 	// Pigeonhole writes are immutable - once a box has been written, it cannot be overwritten.
 	ErrBoxAlreadyExists = errors.New("box already exists")
 
-	// ErrInvalidEnvelope indicates that the courier envelope format is invalid.
-	ErrInvalidEnvelope = errors.New("invalid envelope")
+	// ErrInvalidEnvelope indicates that the courier rejected the envelope as
+	// malformed. This is a courier-side condition, distinct from any replica error.
+	ErrInvalidEnvelope = errors.New("courier rejected envelope as malformed")
 
-	// ErrCacheCorruption indicates that cache data corruption was detected.
-	ErrCacheCorruption = errors.New("cache corruption")
+	// ErrCacheCorruption indicates that the courier detected cache corruption.
+	ErrCacheCorruption = errors.New("courier cache corruption")
 
-	// ErrPropagationError indicates an error propagating the request to replicas.
-	ErrPropagationError = errors.New("propagation error")
+	// ErrPropagationError indicates the courier could not propagate the request
+	// to the replicas. This is a courier-side condition, not a replica error.
+	ErrPropagationError = errors.New("courier propagation error")
+
+	// ErrCourierInvalidEpoch indicates that the courier rejected the envelope
+	// because its declared replica epoch was outside the courier's tolerance
+	// window. This is a courier staleness signal, NOT a replica database failure
+	// (the two collide on wire value 4 in their source namespaces, which is why
+	// the daemon remaps courier errors into the thin-client namespace).
+	ErrCourierInvalidEpoch = errors.New("courier rejected envelope: replica epoch outside tolerance window")
 
 	// ErrInternalError indicates an internal client error.
 	ErrInternalError = errors.New("internal error")
@@ -201,8 +218,8 @@ var (
 	// diagnostic detail when present.
 	ErrCopyCommandFailed = errors.New("copy command failed")
 
-	// ErrPayloadTooLarge indicates that a WriteStream plaintext or a ReadStream
-	// result would exceed the daemon's configured maximum stream payload size.
+	// ErrPayloadTooLarge indicates that a request's payload would exceed the
+	// daemon's configured maximum payload size.
 	ErrPayloadTooLarge = errors.New("payload too large")
 )
 
@@ -335,43 +352,6 @@ type Config struct {
 	// Exactly one of its inner subtables (Unix, Tcp, and in future Ssh /
 	// Pipe / Pigeonhole) must be populated.
 	Dial *transport.DialConfig
-}
-
-// FromConfig creates a thin client Config from a client daemon config.Config.
-//
-// This function extracts the daemon's listen address and creates a thin
-// client configuration that can connect to that daemon. Geometry is no
-// longer copied here: the daemon delivers it over the handshake.
-//
-// Parameters:
-//   - cfg: The client daemon configuration
-//
-// Returns:
-//   - *Config: A thin client configuration compatible with the daemon
-//
-// Panics:
-//   - If cfg.Listen is nil
-func FromConfig(cfg *config.Config) *Config {
-	if cfg.Listen == nil {
-		panic("Listen cannot be nil")
-	}
-
-	dial := &transport.DialConfig{}
-	switch {
-	case cfg.Listen.Unix != nil:
-		dial.Unix = &transport.UnixDialConfig{Address: cfg.Listen.Unix.Address}
-	case cfg.Listen.Tcp != nil:
-		dial.Tcp = &transport.TcpDialConfig{
-			Address: cfg.Listen.Tcp.Address,
-			Network: cfg.Listen.Tcp.Network,
-		}
-	default:
-		panic("Listen has no transport configured")
-	}
-
-	return &Config{
-		Dial: dial,
-	}
 }
 
 // LoadFile loads a thin client configuration from a TOML file.
@@ -552,7 +532,7 @@ func (t *ThinClient) IsConnected() bool {
 
 // setConnected stores the daemon-to-mixnet connection flag under
 // connMu. Use this from any goroutine that needs to update
-// isConnected — in particular the pigeonhole API event loops that
+// isConnected — in particular the Pigeonhole API event loops that
 // observe ConnectionStatusEvents alongside the main dispatcher.
 func (t *ThinClient) setConnected(v bool) {
 	t.connMu.Lock()
@@ -581,10 +561,10 @@ func (t *ThinClient) Disconnect() error {
 
 // Close gracefully shuts down the thin client and closes the daemon connection.
 //
-// This method performs a clean shutdown by:
-//  1. Sending a close notification to the daemon
-//  2. Closing the network connection
-//  3. Stopping all background workers
+// This method performs a clean shutdown with the following actions.
+//  1. It sends  a close notification to the daemon.
+//  2. It closes the network connection.
+//  3. It stops all background workers.
 //
 // After calling Close(), the ThinClient instance should not be used further.
 // Any ongoing operations will be interrupted and may return errors.
@@ -619,11 +599,11 @@ func (t *ThinClient) Close() error {
 
 // Dial establishes a connection to the client daemon and initializes the client.
 //
-// This method performs the complete connection handshake with the client daemon:
-//  1. Establishes network connection (TCP or Unix socket)
-//  2. Receives initial connection status from daemon
-//  3. Receives initial PKI document
-//  4. Starts background workers for event handling
+// This method performs the complete connection handshake with the client daemon with the following actions.
+//  1. It establishes a network connection (TCP or Unix socket).
+//  2. It receives an initial connection status from daemon.
+//  3. It receives an initial PKI document.
+//  4. It starts background workers for event handling.
 //
 // The client supports both online and offline modes. In offline mode (when the
 // daemon is not connected to the mixnet), channel preparation operations will
@@ -631,8 +611,8 @@ func (t *ThinClient) Close() error {
 //
 // After successful connection, the client will automatically handle:
 //   - PKI document updates
-//   - Connection status changes
-//   - Event distribution to application code
+//   - connection status changes
+//   - event distribution to application code
 //
 // Returns:
 //   - error: Any error encountered during connection or handshake
@@ -927,18 +907,6 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
-	case message.WriteStreamReply != nil:
-		select {
-		case t.eventSink <- message.WriteStreamReply:
-		case <-t.HaltCh():
-			return false
-		}
-	case message.ReadStreamReply != nil:
-		select {
-		case t.eventSink <- message.ReadStreamReply:
-		case <-t.HaltCh():
-			return false
-		}
 	case message.CancelResendingEncryptedMessageReply != nil:
 		select {
 		case t.eventSink <- message.CancelResendingEncryptedMessageReply:
@@ -972,6 +940,12 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 	case message.GetPKIDocumentReply != nil:
 		select {
 		case t.eventSink <- message.GetPKIDocumentReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.GetDirectoryAuthoritiesReply != nil:
+		select {
+		case t.eventSink <- message.GetDirectoryAuthoritiesReply:
 		case <-t.HaltCh():
 			return false
 		}
@@ -1178,7 +1152,7 @@ func (t *ThinClient) readUntilDisconnect() (disconnectErr error, graceful bool) 
 			continue
 		}
 		if message == nil {
-			return errConnectionLost, graceful
+			return ErrConnectionLost, graceful
 		}
 
 		if message.ShutdownEvent != nil {
@@ -1238,21 +1212,19 @@ func (t *ThinClient) worker() {
 
 // EventSink returns a buffered channel that receives all events from the thin client.
 //
-// This method creates a new event channel that will receive copies of all events
-// generated by the thin client, including:
-//   - Connection status changes
+// This method creates a new event channel that will receive copies of all
+// events generated by the thin client, including the following.
 //   - PKI document updates
-//   - Message sent confirmations
-//   - Message replies
-//   - Channel operation results
-//   - Error notifications
+//   - message sent confirmations
+//   - message replies
+//   - channel operation results
 //
 // The returned channel is buffered with capacity 1. Events are never
-// silently dropped: the fan-out worker blocks until the subscriber
-// accepts each event, matching the "no loss" contract the Rust and
+// silently dropped; the fan-out worker blocks until the subscriber
+// accepts each event, matching the "no loss" contract that the Rust and
 // Python thin clients uphold. Consequently an application that
 // stops consuming from its sink will stall the entire fan-out
-// (including events destined for other subscribers); applications
+// (including events destined for other subscribers). Applications
 // must drain promptly or call StopEventSink() to release their
 // subscription.
 //
@@ -1449,11 +1421,11 @@ func (t *ThinClient) PKIDocumentForEpoch(epoch uint64) (*cpki.Document, error) {
 
 // GetPKIDocumentRaw returns the cert.Certificate-wrapped signed PKI
 // document for the requested epoch, with every directory authority
-// signature intact. Pass epoch == 0 to request the document the daemon
+// signature intact. Pass epoch == 0 to request the document that the daemon
 // believes is current.
 //
 // The thin client receives the stripped PKI document by default (as
-// pushed in NewPKIDocumentEvent); use this method when the caller
+// pushed in NewPKIDocumentEvent). Use this method when the caller
 // needs to verify the directory authority signatures itself. The
 // payload can be deserialized and verified with core/pki.FromPayload.
 //
@@ -1500,6 +1472,66 @@ func (t *ThinClient) GetPKIDocumentRaw(epoch uint64) ([]byte, uint64, error) {
 				return nil, v.Epoch, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
 			return v.Payload, v.Epoch, nil
+		case *ConnectionStatusEvent:
+			t.setConnected(v.IsConnected)
+		case *NewDocumentEvent:
+			// Ignore PKI document updates while we wait for our reply.
+		default:
+			// Ignore other events.
+		}
+	}
+}
+
+// GetDirectoryAuthorities returns the directory authority descriptors the
+// client daemon is configured with.
+//
+// A thin client holds only its dial transport configuration and never sees
+// the daemon's voting authority peer list. This method surfaces it, so a
+// caller may, for instance, map a PKI document's signature fingerprints (the
+// keys of its Signatures map) to human-readable authority identifiers via
+// each descriptor's IdentityKeyHash.
+//
+// Returns:
+//   - []*DirectoryAuthority: the configured directory authority descriptors.
+//   - error: any error encountered (notably if the daemon has no voting
+//     authority peers configured).
+func (t *ThinClient) GetDirectoryAuthorities() ([]*DirectoryAuthority, error) {
+	queryID := t.NewQueryID()
+	req := &Request{
+		GetDirectoryAuthorities: &GetDirectoryAuthorities{
+			QueryID: queryID,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	if err := t.writeMessage(req); err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *GetDirectoryAuthoritiesReply:
+			if v.QueryID == nil {
+				t.log.Debugf("GetDirectoryAuthorities: reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("GetDirectoryAuthorities: reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.Authorities, nil
 		case *ConnectionStatusEvent:
 			t.setConnected(v.IsConnected)
 		case *NewDocumentEvent:
@@ -1589,7 +1621,7 @@ func (t *ThinClient) NewMessageID() *[MessageIDLength]byte {
 	return id
 }
 
-// NewSURBID generates a new Single Use Reply Block identifier.
+// NewSURBID generates a new SURB.
 //
 // SURB IDs are used in the legacy API to correlate reply messages with
 // their original requests. Each SURB should have a unique ID.
@@ -1670,7 +1702,7 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 // SendMessage sends a message with reply capability using the legacy API.
 //
 // This method sends a message with a Single Use Reply Block (SURB) that allows
-// the destination to send a reply. The method is asynchronous - it only blocks
+// the destination to send a reply. The method is asynchronous: it only blocks
 // until the daemon receives the send request, not until the message is actually
 // transmitted or a reply is received.
 //
@@ -1742,7 +1774,7 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 // blocks until either a reply is received or the context times out.
 //
 // This is convenient for simple request-response interactions but lacks the
-// advanced features of the Pigeonhole Channel API such as message ordering,
+// advanced features of the Pigeonhole channel API such as message ordering,
 // channel persistence, and offline operation support.
 //
 // Requirements:
@@ -1780,6 +1812,61 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 //
 //	fmt.Printf("Echo reply: %s\n", reply)
 func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+	res, err := t.BlockingSendMessageWithResult(ctx, payload, destNode, destQueue, 0)
+	if res == nil {
+		return nil, err
+	}
+	return res.Payload, err
+}
+
+// SendResult reports what the daemon did with one message: the route the packet
+// took and the timing the daemon reported, alongside the reply if one arrived.
+//
+// A result is returned even when the send ultimately fails, because the route is
+// known when the packet goes out and a loss is only discovered later. A caller
+// diagnosing loss needs the route of exactly the packets that did not come back,
+// so success must be judged from the error and not from the result being nil.
+//
+// Empty route slices mean unknown rather than no hops; see MessageSentEvent.
+type SendResult struct {
+	// Payload is the reply, or nil if none arrived.
+	Payload []byte
+
+	// SURBID identifies this message. It is the key the daemon's send and
+	// reply events share, and is generated here rather than by the caller.
+	SURBID *[sConstants.SURBIDLength]byte
+
+	// SentAt is when the daemon reported putting the packet on the wire,
+	// and ReplyETA the round trip it expected. Both are zero if no send
+	// event was observed before the call returned.
+	SentAt   time.Time
+	ReplyETA time.Duration
+
+	// ForwardRoute and ReturnRoute name the hops in path order, from the
+	// daemon's MessageSentEvent.
+	ForwardRoute []string
+	ReturnRoute  []string
+}
+
+// BlockingSendMessageWithResult is BlockingSendMessage, additionally reporting
+// the route and timing the daemon recorded for the message.
+//
+// Unlike most Go APIs it returns a non-nil result together with a non-nil error
+// whenever the message was actually sent, so that a timed-out packet can still
+// be attributed to the hops it would have traversed. Only a failure before the
+// send returns a nil result.
+//
+// slop, when positive, gives up on a reply once the daemon's own estimate of
+// when it is due has passed by that margin. A caller otherwise has to bound the
+// wait before sending, when all it can do is assume the worst case over every
+// possible path; the daemon knows the delay actually encoded into this packet
+// and reports it as ReplyETA the moment the packet goes out. Waiting
+// ReplyETA + slop instead of the worst case turns a lost packet from a
+// multi-minute stall into a prompt failure. ctx remains the outer bound and is
+// still honoured, so slop can only shorten the wait, never extend it.
+//
+// Pass 0 to keep ctx as the sole bound.
+func (t *ThinClient) BlockingSendMessageWithResult(ctx context.Context, payload []byte, destNode *[32]byte, destQueue []byte, slop time.Duration) (*SendResult, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -1797,14 +1884,28 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 		return nil, err
 	}
 
+	res := &SendResult{SURBID: surbID}
+
+	// Armed once the daemon tells us when this packet's reply is due. Until
+	// then there is nothing better to wait on than ctx.
+	var due <-chan time.Time
+	dueTimer := (*time.Timer)(nil)
+	defer func() {
+		if dueTimer != nil {
+			dueTimer.Stop()
+		}
+	}()
+
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return res, ctx.Err()
+		case <-due:
+			return res, ErrReplyOverdue
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, errHalting
+			return res, errHalting
 		}
 
 		switch v := event.(type) {
@@ -1812,20 +1913,39 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 			// Ignore garbage collection events
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return nil, errConnectionLost
+				return res, ErrConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		case *MessageSentEvent:
-			// Ignore message sent events
+			// Record our own send, matched by SURB ID because the sink
+			// carries every event on this connection, not only ours.
+			if v.SURBID != nil && hmac.Equal(surbID[:], v.SURBID[:]) {
+				if v.Err != "" {
+					return res, fmt.Errorf("%w: %s", ErrSendFailed, v.Err)
+				}
+				res.SentAt = v.SentAt
+				res.ReplyETA = v.ReplyETA
+				res.ForwardRoute = v.ForwardRoute
+				res.ReturnRoute = v.ReturnRoute
+				if slop > 0 && res.ReplyETA > 0 && dueTimer == nil {
+					wait := time.Until(res.SentAt.Add(res.ReplyETA + slop))
+					if wait < 0 {
+						wait = 0
+					}
+					dueTimer = time.NewTimer(wait)
+					due = dueTimer.C
+				}
+			}
 		case *MessageReplyEvent:
 			if hmac.Equal(surbID[:], v.SURBID[:]) {
-				return v.Payload, nil
+				res.Payload = v.Payload
+				return res, nil
 			} else {
 				continue
 			}
 		default:
-			t.log.Debugf("BlockingSendMessage: ignoring unexpected event %T", v)
+			t.log.Debugf("BlockingSendMessageWithResult: ignoring unexpected event %T", v)
 		}
 	}
 	// unreachable

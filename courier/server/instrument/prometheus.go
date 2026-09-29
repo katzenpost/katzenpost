@@ -4,12 +4,13 @@
 package instrument
 
 import (
-	"net/http"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/common/metrics"
 )
 
 var registerOnce sync.Once
@@ -96,11 +97,24 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 	)
+	courierReady = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_courier_ready",
+			Help: "1 when the courier holds a PKI document for the current mixnet epoch, 0 otherwise.",
+		},
+	)
+	courierCurrentEpoch = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_courier_current_epoch",
+			Help: "The mixnet epoch the readiness gauges refer to.",
+		},
+	)
 )
 
 // StartPrometheusListener registers metrics and starts the HTTP listener
-// if address is non-empty.
-func StartPrometheusListener(address string) {
+// if address is non-empty. Panics if a configured address cannot be
+// bound.
+func StartPrometheusListener(address string, log *logging.Logger) {
 	registerOnce.Do(func() {
 		prometheus.MustRegister(decoysSent)
 		prometheus.MustRegister(messagesSent)
@@ -114,12 +128,14 @@ func StartPrometheusListener(address string) {
 		prometheus.MustRegister(dispatchSemWaiters)
 		prometheus.MustRegister(copyShardReadCompute)
 		prometheus.MustRegister(copyShardReadTotal)
+		prometheus.MustRegister(courierReady)
+		prometheus.MustRegister(courierCurrentEpoch)
 	})
 
-	if address != "" {
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(address, nil)
+	if address == "" {
+		return
 	}
+	metrics.MustServe(address, log)
 }
 
 // DecoysSent increments the counter for decoy messages sent
@@ -203,4 +219,16 @@ func CopyShardReadCompute(d time.Duration) {
 // component.
 func CopyShardReadTotal(d time.Duration) {
 	copyShardReadTotal.Observe(d.Seconds())
+}
+
+// SetCourierReady sets the courier_ready gauge based on whether the
+// courier holds a PKI document for the current mixnet epoch, along with
+// the epoch the value refers to.
+func SetCourierReady(ready bool, epoch uint64) {
+	if ready {
+		courierReady.Set(1)
+	} else {
+		courierReady.Set(0)
+	}
+	courierCurrentEpoch.Set(float64(epoch))
 }

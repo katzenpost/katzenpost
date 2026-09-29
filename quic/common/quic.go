@@ -109,19 +109,33 @@ type QuicListener struct {
 	Listener *quic.Listener
 }
 
-// Accept implements net.Listener. It starts a single QUIC Stream and returns a
-// QuicConn that implements net.Conn for this single Stream.
+// AcceptStreamTimeout bounds how long a freshly-accepted QUIC connection has to
+// open its stream. A legitimate peer opens it immediately after the handshake;
+// a peer that completes the handshake and then never opens a stream would
+// otherwise block AcceptStream (and thus the whole accept loop) forever.
+var AcceptStreamTimeout = 30 * time.Second
+
+// Accept implements net.Listener. It accepts a QUIC connection and its single
+// stream, returning a QuicConn that implements net.Conn for that stream.
+//
+// AcceptStream is bounded by AcceptStreamTimeout: a connection that completes
+// the QUIC handshake but does not open a stream in time is dropped and the loop
+// moves on to the next connection, so one silent peer cannot wedge the listener.
 func (l *QuicListener) Accept() (net.Conn, error) {
-	ctx := context.Background()
-	conn, err := l.Listener.Accept(ctx)
-	if err != nil {
-		return nil, err
+	for {
+		conn, err := l.Listener.Accept(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		streamCtx, cancel := context.WithTimeout(context.Background(), AcceptStreamTimeout)
+		stream, err := conn.AcceptStream(streamCtx)
+		cancel()
+		if err != nil {
+			conn.CloseWithError(0, "no stream opened")
+			continue
+		}
+		return NewQuicConn(conn, stream), nil
 	}
-	stream, err := conn.AcceptStream(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return NewQuicConn(conn, stream), nil
 }
 
 func (l *QuicListener) Addr() net.Addr {

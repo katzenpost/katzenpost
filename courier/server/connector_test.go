@@ -147,7 +147,8 @@ func TestConnector(t *testing.T) {
 		Payload:   payload,
 	}
 
-	_, envelope1 := mkemScheme.Encapsulate([]nike.PublicKey{replica1Pub, replica2Pub}, replicaWrite.ToBytes())
+	_, envelope1, err := mkemScheme.Encapsulate([]nike.PublicKey{replica1Pub, replica2Pub}, replicaWrite.ToBytes())
+	require.NoError(t, err)
 	dek := &[mkem.DEKSize]byte{}
 	copy(dek[:], envelope1.DEKCiphertexts[0][:])
 	mesg := &commands.ReplicaMessage{

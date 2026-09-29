@@ -1,0 +1,23 @@
+{
+  "format_version": 1,
+  "generator": "github.com/katzenpost/katzenpost/core/sphinx/testvectors/cmd/generate",
+  "primitive": "chacha20_deterministic_rand",
+  "description": "github.com/katzenpost/chacha20 (original/Bernstein construction, 8-byte nonce) as used by hpqc/rand.NewDeterministicRandReader: key as given, nonce = 8 zero bytes, first 32 bytes (half a block) of keystream, matching nike/x25519.scheme.GeneratePrivateKey's single Read call.",
+  "vectors": [
+    {
+      "name": "all_zero",
+      "key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "keystream_hex": "76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7"
+    },
+    {
+      "name": "ascending",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "keystream_hex": "39fd2b7dd9c5196a8dbd0377b8dc4a498a35d86fbcde6accb2cc7d4cd8ea2492"
+    },
+    {
+      "name": "descending",
+      "key_hex": "ff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+      "keystream_hex": "29bd51d500b8ca64fa286f27a1f1c6a311bf3eda3331df959e3860244291c380"
+    }
+  ]
+}

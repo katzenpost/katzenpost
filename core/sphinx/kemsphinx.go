@@ -139,7 +139,7 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 	for i := 0; i < nrHops; i++ {
 		kemElements[i], sharedSecret, err = s.kem.Encapsulate(path[i].KEMPublicKey)
 		if err != nil {
-			panic(err)
+			return nil, nil, fmt.Errorf("KEMSphinx: encapsulate: %s", err)
 		}
 		defer utils.ExplicitBzero(sharedSecret)
 

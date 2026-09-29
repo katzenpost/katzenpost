@@ -52,26 +52,7 @@ func TestReplicaReplication(t *testing.T) {
 		replica.ForceConnectorUpdate()
 	}
 
-	// Wait for inter-replica connections to be established
-	t.Logf("REPLICATION_TEST: Waiting for inter-replica connections...")
-	expectedConns := len(env.replicas) - 1 // Each replica connects to all others
-	maxWait := 30 * time.Second
-	startTime := time.Now()
-	for time.Since(startTime) < maxWait {
-		allConnected := true
-		for i, replica := range env.replicas {
-			connCount := replica.ConnectionCount()
-			if connCount < expectedConns {
-				allConnected = false
-				t.Logf("REPLICATION_TEST: Replica %d has %d/%d connections", i, connCount, expectedConns)
-			}
-		}
-		if allConnected {
-			t.Logf("REPLICATION_TEST: All replicas connected to each other")
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
+	waitForReplicaSessions(t, env.replicas)
 
 	// --- Setup BACAP: Alice creates a write capability and gives Bob a read capability ---
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
@@ -150,7 +131,8 @@ func TestReplicaReplication(t *testing.T) {
 	// Pad to write size, matching PadInnerMessageForEncryption in the live encoder.
 	paddedWriteMsg, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(intermediaryPubKeys, paddedWriteMsg)
+	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(intermediaryPubKeys, paddedWriteMsg)
+	require.NoError(t, err)
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
@@ -278,7 +260,8 @@ func readFromSpecificReplica(t *testing.T, env *testEnvironment, boxID *[bacap.B
 	// Pad to write size, matching PadInnerMessageForEncryption in the live encoder.
 	paddedReadMsg, err := pigeonhole.PadInnerMessageForEncryption(readMsg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedReadMsg)
+	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedReadMsg)
+	require.NoError(t, err)
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 

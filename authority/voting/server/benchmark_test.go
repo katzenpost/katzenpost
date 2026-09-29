@@ -79,7 +79,7 @@ func benchDirauthServer(listener net.Listener, serverLinkPrivKey kem.PrivateKey,
 			defer session.Close()
 
 			c.SetDeadline(time.Now().Add(30 * time.Second))
-			session.Initialize(c)
+			session.Initialize(context.Background(), c)
 		}(conn)
 	}
 }
@@ -239,7 +239,7 @@ func runDirauthConcurrentHandshakes(serverAddr string, clientKeys []kem.PrivateK
 			defer session.Close()
 
 			conn.SetDeadline(time.Now().Add(30 * time.Second))
-			err = session.Initialize(conn)
+			err = session.Initialize(context.Background(), conn)
 			durations[idx] = time.Since(start)
 			if err != nil {
 				errors[idx] = err

@@ -7,11 +7,14 @@ import (
 	"context"
 	"crypto/hmac"
 	"errors"
+	"fmt"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/sign"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
@@ -20,6 +23,7 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/courier/server/instrument"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -72,12 +76,36 @@ func newPKIWorkerWithDefaultClient(server *Server, log *logging.Logger) (*PKIWor
 	if kemscheme == nil {
 		return nil, errors.New("kem scheme not found in registry")
 	}
+	// The courier has no PKI signature scheme of its own; it only fetches and
+	// verifies the consensus signed by the authorities. The consensus carries
+	// a single PKISignatureScheme, so every authority is expected to share it
+	// (a deployment picks one scheme and never migrates): take it from the
+	// configured peer set to derive the wire ceiling. Leaving it unset keeps
+	// the flat default ceiling. Verify the peers actually agree instead of
+	// assuming it from an arbitrary entry: a heterogeneous config would
+	// otherwise silently under-estimate the ceiling for whichever authority
+	// was not consulted, and reject its legitimate traffic as oversized.
+	var pkiSignatureScheme sign.Scheme
+	if peers := server.cfg.PKI.Voting.Authorities; len(peers) > 0 && peers[0].PKISignatureScheme != "" {
+		schemeName := peers[0].PKISignatureScheme
+		for _, peer := range peers[1:] {
+			if peer.PKISignatureScheme != schemeName {
+				return nil, fmt.Errorf("configured authorities do not agree on a PKI signature scheme: %q (%s) != %q (%s)",
+					schemeName, peers[0].Identifier, peer.PKISignatureScheme, peer.Identifier)
+			}
+		}
+		pkiSignatureScheme = signSchemes.ByName(schemeName)
+		if pkiSignatureScheme == nil {
+			return nil, fmt.Errorf("pki signature scheme %q not found in registry", schemeName)
+		}
+	}
 	pkiCfg := &vClient.Config{
-		KEMScheme:   kemscheme,
-		LinkKey:     server.linkPrivKey,
-		LogBackend:  server.LogBackend(),
-		Authorities: server.cfg.PKI.Voting.Authorities,
-		Geo:         server.cfg.SphinxGeometry,
+		KEMScheme:          kemscheme,
+		PKISignatureScheme: pkiSignatureScheme,
+		LinkKey:            server.linkPrivKey,
+		LogBackend:         server.LogBackend(),
+		Authorities:        server.cfg.PKI.Voting.Authorities,
+		Geo:                server.cfg.SphinxGeometry,
 		// Convert milliseconds to seconds for PKI client timeouts
 		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
 		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,
@@ -102,6 +130,15 @@ func (p *PKIWorker) HasCurrentPKIDocument() bool {
 	return p.EntryForEpoch(epoch) != nil
 }
 
+// updateReadiness refreshes the courier readiness gauges. A courier is
+// ready when it holds a PKI document for the current mixnet epoch; a
+// restarted courier starts at 0 and only reports ready once its worker
+// has fetched and cached the current consensus.
+func (p *PKIWorker) updateReadiness() {
+	epoch, _, _ := epochtime.Now()
+	instrument.SetCourierReady(p.HasCurrentPKIDocument(), epoch)
+}
+
 // ForceFetchPKI forces the PKI worker to fetch a new PKI document for the current epoch.
 // This is useful for integration tests where you want to ensure the courier has the latest
 // PKI document without waiting for the normal fetch cycle.
@@ -117,8 +154,11 @@ func (p *PKIWorker) ForceFetchPKI() error {
 
 	p.GetLogger().Debugf("Force fetching PKI document for epoch %v", epoch)
 
-	// Fetch the PKI document directly from the client (like replica does)
-	ctx := context.Background()
+	// Fetch the PKI document directly from the client (like replica does).
+	// Bound it: an unreachable/retrying dirauth must not block this call
+	// indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), pki.FetchTimeout)
+	defer cancel()
 	d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(ctx, epoch)
 	if err != nil {
 		p.GetLogger().Warningf("Force fetch failed for epoch %v: %v", epoch, err)
@@ -128,6 +168,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 	// Store the document and update replicas
 	p.StoreDocument(epoch, d, rawDoc)
 	p.replicas.UpdateFromPKIDoc(d)
+	p.updateReadiness()
 
 	p.GetLogger().Debugf("Successfully force fetched PKI document for epoch %v", epoch)
 	return nil
@@ -148,26 +189,30 @@ func (p *PKIWorker) worker() {
 			return
 		}
 
+		currentEpoch, _, _ := epochtime.Now()
+		p.WarnIfEpochMismatch(currentEpoch)
+
 		didUpdate := p.fetchDocuments(pkiCtx, isCanceled)
 		p.processDocuments(didUpdate)
 		p.updateCurrentEpoch(&lastUpdateEpoch)
+		p.updateReadiness()
 		p.UpdateTimer(timer)
 	}
 }
 
 // fetchDocuments fetches PKI documents for required epochs
 func (p *PKIWorker) fetchDocuments(pkiCtx context.Context, isCanceled func() bool) bool {
-	// If we don't have a current PKI document, be more aggressive about retrying
+	// If we don't have a current PKI document, re-fetch the CURRENT epoch
+	// aggressively: its consensus may simply have been published late, so
+	// clearing a stale "gone" mark lets the next cycle try again. Do NOT clear
+	// the marks for now-1/now-2: those are past epochs the authorities have
+	// permanently garbage-collected, and re-requesting them every cycle is
+	// wasted work that only widens the window for a slow fetch to stall the
+	// worker. Mark-gone-once for past epochs, like the mix-server PKI worker.
 	currentEpoch, _, _ := epochtime.Now()
 	if p.EntryForEpoch(currentEpoch) == nil {
-		p.GetLogger().Debugf("No current PKI document for epoch %v, clearing failed fetches to force retry", currentEpoch)
+		p.GetLogger().Debugf("No current PKI document for epoch %v, clearing its failed-fetch mark to force a retry", currentEpoch)
 		p.ClearFailedFetch(currentEpoch)
-		// Also clear failed fetches for recent epochs to allow retries
-		for i := uint64(0); i < 3; i++ {
-			if currentEpoch >= i {
-				p.ClearFailedFetch(currentEpoch - i)
-			}
-		}
 	}
 
 	results := p.FetchDocuments(pkiCtx, isCanceled)
@@ -217,19 +262,45 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 	}
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
-	replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID)
-	if !isReplica {
-		return nil, false
-	}
 	blob, err := c.PublicKey.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
-	if !hmac.Equal(replicaDesc.LinkKey, blob) {
-		// TODO could be link key from prev/next epoch too?
-		return nil, false
+	if replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID); isReplica {
+		if hmac.Equal(replicaDesc.LinkKey, blob) {
+			return replicaDesc, true
+		}
 	}
-	return replicaDesc, true
+	// Grace window: the dirauths may be late publishing, or the peer's
+	// descriptor may churn during staggered upgrades. Any cached
+	// document for the previous, current, or next epoch that binds
+	// this identity to this link key still authenticates the peer.
+	for _, desc := range p.replicaDescriptorsForAuth(&nodeID) {
+		if hmac.Equal(desc.LinkKey, blob) {
+			p.GetLogger().Noticef("Authenticated replica %s via cached-document grace window", desc.Name)
+			return desc, true
+		}
+	}
+	return nil, false
+}
+
+// replicaDescriptorsForAuth returns every descriptor for nodeID across
+// the cached documents for the previous, current, and next epochs.
+func (p *PKIWorker) replicaDescriptorsForAuth(nodeID *[32]byte) []*pki.ReplicaDescriptor {
+	epoch, _, _ := epochtime.Now()
+	var out []*pki.ReplicaDescriptor
+	for _, e := range []uint64{epoch, epoch - 1, epoch + 1} {
+		doc := p.EntryForEpoch(e)
+		if doc == nil {
+			continue
+		}
+		desc, err := doc.GetReplicaNodeByKeyHash(nodeID)
+		if err != nil {
+			continue
+		}
+		out = append(out, desc)
+	}
+	return out
 }
 
 // SetDocumentForEpoch sets a PKI document for a specific epoch; for testing only.

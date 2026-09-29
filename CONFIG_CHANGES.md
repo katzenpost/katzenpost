@@ -138,6 +138,20 @@ None.
 
 Source: `server/config/config.go`.
 
+### `[Server]`
+
+- **Added** `WaitForConsensusExitOnShutdown` (bool, default `false`). When
+  enabled, SIGINT or SIGTERM stops new descriptor uploads while the node
+  continues serving traffic and fetching PKI documents. The daemon exits
+  after the last epoch in which it may still appear has ended. The wait is
+  conservative: an upload attempt counts even if it returned an error,
+  because enough directory authorities may already have accepted it. If the
+  next epoch's descriptor was uploaded before the signal, shutdown can take
+  almost two complete epochs. With the default 20-minute epoch, configure a
+  systemd `TimeoutStopSec` comfortably above 40 minutes, for example `45min`.
+  This option and `PersistMixKeysOnShutdown` are mutually exclusive; enabling
+  both is a configuration error.
+
 ### `[Server.Gateway]`
 
 - **Removed** `[Gateway.UserDB]` table (and its `[Gateway.UserDB.Bolt]`
@@ -228,8 +242,9 @@ Source: `replica/config/config.go`.
   `net.SplitHostPort` so a bridge-network service may bind on its
   docker-compose hostname).
 - **Added** `MaxStorageMiB` (int64). Optional hard quota on the
-  replica database's on-disk size in mebibytes (RocksDB live SST
-  footprint). Writes that would exceed it are rejected with
+  replica database's on-disk size in mebibytes (Pebble disk-space
+  usage, including WAL and obsolete tables). Writes that would exceed
+  it are rejected with
   `ReplicaErrorStorageFull`. Defaults to `0`, meaning no database-size
   quota; only the filesystem reserve below applies. Must not be
   negative. (Renamed from `MaxStorageBytes` during the v0.0.71→main
@@ -311,7 +326,7 @@ The client TOML had the most substantial reshape, driven by the
   ```toml
   [Listen]
     [Listen.Tcp]
-      Address = "localhost:64331"
+      Address = "kpclientd:64331"
       Network = "tcp"
   ```
 
@@ -322,6 +337,16 @@ The client TOML had the most substantial reshape, driven by the
     [Listen.Unix]
       Address = "/var/run/katzenpost/kpclientd.sock"
   ```
+
+- **Added** `[Listen.Unix].Addresses` (string array). Optional. The unix
+  listener already bound a single `Address`; with `Addresses` it can bind
+  any number of unix sockets, each a filesystem path or, on Linux, an
+  abstract-namespace name with a leading `@`, in any combination. A
+  thin_client may connect on any of them. An abstract socket has no
+  filesystem permissions, so any process in the network namespace can
+  connect; access control relies on kpclientd running per user (a systemd
+  user service or run by the user), and a peer-credential check is
+  deferred until there is a system-wide daemon.
 
 - **Added** `PigeonholeGeometry` (table). Pigeonhole protocol
   parameters; required for new pigeonhole channel operations.
@@ -374,7 +399,7 @@ Source: `client/thin/thin.go`, `Config` type.
   ```toml
   [Dial]
     [Dial.Tcp]
-      Address = "localhost:64331"
+      Address = "localhost:32000"
       Network = "tcp"
   ```
 

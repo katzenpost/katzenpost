@@ -59,6 +59,19 @@ var (
 	// five RetrieveMessage cycles, leaves room for an occasional slow
 	// reply, and gets us back into a redial within half a minute.
 	readIdleTimeout = 15 * time.Second
+
+	// heartbeatInterval bounds how long the connection can go without
+	// sending the gateway anything. The gateway's incoming session has
+	// no explicit ReadTimeout (core/wire's DefaultReadTimeout, 2
+	// minutes, applies), re-armed only when it receives a command from
+	// us. An otherwise-idle client's only traffic is one GetConsensus2
+	// per epoch, so a default epoch duration equal to that timeout races
+	// it: any jitter past the deadline gets the gateway tearing the link
+	// down for "silence" mid-epoch. Ten seconds mirrors the NoOp
+	// heartbeat the gateway already sends us (senderWorker in
+	// server/internal/incoming) to keep readIdleTimeout warm, and keeps
+	// the gateway's deadline out of reach of epoch cadence entirely.
+	heartbeatInterval = 10 * time.Second
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
@@ -128,6 +141,8 @@ type connection struct {
 	queueID     []byte
 
 	isShutdown atomic.Bool
+
+	descAbsentCount atomic.Int64
 }
 
 // getGateway safely returns the current gateway hash
@@ -135,6 +150,21 @@ func (c *connection) getGateway() *[32]byte {
 	c.gatewayLock.RLock()
 	defer c.gatewayLock.RUnlock()
 	return c.gateway
+}
+
+// gatewayLabel returns a human-readable identifier for the gateway this
+// connection is bound to: its configured name where known, otherwise the
+// identity-key fingerprint, so connection-status logs name the peer. It is
+// read from the connect worker's descriptor, which is set before any
+// connection-status change is reported.
+func (c *connection) gatewayLabel() string {
+	if c.descriptor != nil && c.descriptor.Name != "" {
+		return fmt.Sprintf("%q", c.descriptor.Name)
+	}
+	if gw := c.getGateway(); gw != nil {
+		return fmt.Sprintf("%x", gw[:])
+	}
+	return "(unknown)"
 }
 
 type getConsensusCtx struct {
@@ -256,6 +286,11 @@ func (c *connection) getDescriptor() error {
 
 func (c *connection) connectWorker() {
 	defer c.log.Debugf("Terminating connect worker.")
+	defer func() {
+		if n := c.descAbsentCount.Load(); n > 1 {
+			c.log.Debugf("Aborting connect loop repeated %d times (first occurrence logged above).", n)
+		}
+	}()
 
 	dialCtx, cancelFn := context.WithCancel(context.Background())
 	c.Go(func() {
@@ -280,7 +315,7 @@ func (c *connection) connectWorker() {
 func (c *connection) doConnect(dialCtx context.Context) {
 	const (
 		retryIncrement = 15 * time.Second
-		maxRetryDelay  = 2 * time.Minute
+		maxRetryDelay  = 30 * time.Second
 	)
 
 	dialFn := c.client.DialContextFn
@@ -306,7 +341,9 @@ func (c *connection) doConnect(dialCtx context.Context) {
 	for {
 		connErr = c.getDescriptor()
 		if connErr != nil {
-			c.log.Debugf("Aborting connect loop, descriptor no longer present.")
+			if c.descAbsentCount.Add(1) == 1 {
+				c.log.Debugf("Aborting connect loop, descriptor no longer present.")
+			}
 			return
 		}
 		c.log.Debugf("doConnect, got descriptor %v", c.descriptor)
@@ -425,6 +462,13 @@ func (c *connection) onNetConn(conn net.Conn) {
 		AdditionalData:    c.queueID,
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
+		// The Session now enforces these itself, so the manual SetDeadline
+		// dance below is gone. ReadTimeout reproduces the old sliding
+		// readIdleTimeout (re-armed on every RecvCommand); the write path,
+		// previously left unbounded, is now bounded by the default so a gateway
+		// that stops reading cannot wedge the client's send loop forever.
+		HandshakeTimeout: handshakeTimeout,
+		ReadTimeout:      readIdleTimeout,
 	}
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
@@ -436,10 +480,10 @@ func (c *connection) onNetConn(conn net.Conn) {
 	}
 	defer w.Close()
 
-	// Bind the session to the conn, handshake, authenticate.
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	// Bind the session to the conn, handshake, authenticate. The Session
+	// enforces the handshake deadline (HandshakeTimeout) itself.
 	handshakeStart := time.Now()
-	if err = w.Initialize(conn); err != nil {
+	if err = w.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
 		state := "other"
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -458,11 +502,6 @@ func (c *connection) onNetConn(conn net.Conn) {
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
 	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
-	// Writes remain unbounded ("client can take however long it wants");
-	// reads are rearmed for readIdleTimeout after every command the peer
-	// reader successfully receives (see onWireConn).
-	conn.SetWriteDeadline(time.Time{})
-	conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
 	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
 	c.onWireConn(conn, w)
@@ -505,7 +544,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 	c.Go(func() {
 		defer close(cmdCh)
 		for {
-			rawCmd, err := w.RecvCommand()
+			rawCmd, err := w.RecvCommand(context.Background())
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
 				//14:49:09.849 DEBU client/conn: Failed to receive command:
@@ -516,11 +555,8 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				}
 				return
 			}
-			// Re-arm the read deadline now that we have evidence
-			// the peer is alive. A subsequent RecvCommand that
-			// blocks beyond readIdleTimeout will fail and tear the
-			// connection down for reconnect rather than wedging.
-			_ = conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
+			// The Session re-arms its read idle deadline (ReadTimeout) on every
+			// RecvCommand, so a peer that goes silent tears the link down.
 			atomic.StoreInt64(&c.retryDelay, int64(2*time.Second))
 			select {
 			case <-c.HaltCh():
@@ -542,9 +578,21 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 		}
 	}()
 
+	heartbeat := time.NewTimer(heartbeatInterval)
+	defer heartbeat.Stop()
+
 	for {
 		var rawCmd commands.Command
 		select {
+		case <-heartbeat.C:
+			cmd := &commands.NoOp{Cmds: w.GetCommands()}
+			wireErr = w.SendCommand(context.Background(), cmd)
+			if wireErr != nil {
+				c.log.Debugf("Failed to send heartbeat NoOp: %v", wireErr)
+				return
+			}
+			heartbeat.Reset(heartbeatInterval)
+			continue
 		case ctx := <-c.getConsensusCh:
 			if consensusCtx != nil {
 				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
@@ -554,7 +602,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 					Cmds:  w.GetCommands(),
 					Epoch: ctx.epoch,
 				}
-				wireErr = w.SendCommand(cmd)
+				wireErr = w.SendCommand(context.Background(), cmd)
 				ctx.doneFn(wireErr)
 				if wireErr != nil {
 					c.log.Debugf("Failed to send GetConsensus: %v", wireErr)
@@ -567,7 +615,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				SphinxPacket: ctx.pkt,
 				Cmds:         w.GetCommands(),
 			}
-			wireErr = w.SendCommand(cmd)
+			wireErr = w.SendCommand(context.Background(), cmd)
 			ctx.doneFn(wireErr)
 			if wireErr != nil {
 				c.log.Debugf("Failed to send SendPacket: %v", wireErr)
@@ -618,7 +666,6 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			wireErr = newProtocolError("peer send Disconnect")
 			return
 		case *commands.Message:
-			c.log.Debugf("Received pushed Message: %v", cmd.Sequence)
 			seqCopy := cmd.Sequence
 			payload := cmd.Payload
 			id := cmd.SURBID
@@ -641,7 +688,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 					Sequence: seqCopy,
 					Cmds:     w.GetCommands(),
 				}
-				if err := w.SendCommand(ack); err != nil {
+				if err := w.SendCommand(context.Background(), ack); err != nil {
 					c.log.Debugf("Failed to send MessageDelivered for Message seq %d: %v", seqCopy, err)
 					forceCloseConn(err)
 				}
@@ -751,8 +798,9 @@ func (c *connection) onConnStatusChange(err error) {
 	if err == nil {
 		c.isConnected.Store(true)
 		instrument.GatewayConnected(true)
+		c.log.Noticef("Connected to gateway %s.", c.gatewayLabel())
 	} else {
-		c.log.Info("onConnStatusChange %s", err.Error())
+		c.log.Infof("Lost connection to gateway %s: %s", c.gatewayLabel(), err.Error())
 		c.isConnected.Store(false)
 		instrument.GatewayConnected(false)
 		// Force drain the channels used to poke the loop.
@@ -783,7 +831,7 @@ func (c *connection) sendPacket(pkt []byte) error {
 		return ErrShutdown
 	}
 
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 	select {
 	case c.sendCh <- &connSendCtx{
 		pkt: pkt,
@@ -808,7 +856,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 		return nil, ErrNotConnected
 	}
 
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 	replyCh := make(chan interface{})
 
 	select {

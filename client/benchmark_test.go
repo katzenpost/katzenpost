@@ -4,6 +4,7 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -76,7 +77,7 @@ func benchGatewayServer(listener net.Listener, serverLinkPrivKey kem.PrivateKey,
 			defer session.Close()
 
 			c.SetDeadline(time.Now().Add(30 * time.Second))
-			session.Initialize(c)
+			session.Initialize(context.Background(), c)
 		}(conn)
 	}
 }
@@ -227,7 +228,7 @@ func runClientConcurrentHandshakes(addr string, clientKeys []kem.PrivateKey, que
 			defer conn.Close()
 
 			conn.SetDeadline(time.Now().Add(30 * time.Second))
-			if err = sessions[idx].Initialize(conn); err != nil {
+			if err = sessions[idx].Initialize(context.Background(), conn); err != nil {
 				errors[idx] = err
 				durations[idx] = time.Since(start)
 				return

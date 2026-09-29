@@ -23,17 +23,35 @@ MAC_LENGTH = 32  # crypto.go:45
 SPRP_KEY_LENGTH = 48  # crypto.go:54
 SPRP_IV_LENGTH = 16  # crypto.go:57
 SPRP_KEY_MATERIAL_LENGTH = SPRP_KEY_LENGTH + SPRP_IV_LENGTH
-COMMAND_TAG_LENGTH = 1  # constants
-NODE_ID_LENGTH = 32  # constants
+COMMAND_TAG_LENGTH = 1  # constants.go:32
+NODE_ID_LENGTH = 32  # constants.go:23
+SURB_ID_LENGTH = 16  # constants.go:29
+
+# geo_impl.go:211: nextNodeHopLength = CommandTagLength + NodeIDLength + MACLength.
+NEXT_NODE_HOP_LENGTH = COMMAND_TAG_LENGTH + NODE_ID_LENGTH + MAC_LENGTH
+# geo.go:8: surbReplyLength = CommandTagLength + SURBIDLength.
+SURB_REPLY_LENGTH = COMMAND_TAG_LENGTH + SURB_ID_LENGTH
 
 # Default Sphinx UFPL across genconfig + the docker Makefile.
 DEFAULT_USER_FORWARD_PAYLOAD_LENGTH = 2000
 
 
-def per_hop_routing_info_length(key_material_bytes: int = SPRP_KEY_MATERIAL_LENGTH) -> int:
-    """Per-hop routing info: one command tag + node ID + MAC + SPRP key
-    material (the key+IV the unwrapping uses for the next hop)."""
-    return COMMAND_TAG_LENGTH + NODE_ID_LENGTH + MAC_LENGTH + key_material_bytes
+def per_hop_routing_info_length(kem_ciphertext_bytes: int = None) -> int:
+    """Per-hop routing info, from geo_impl.go:158-166's
+    ``geometryFactory.perHopRoutingInfoLength``.
+
+    NIKE Sphinx (``kem_ciphertext_bytes=None``): ``nextNodeHopLength +
+    surbReplyLength`` -- the next hop's command tag + node ID + MAC, plus the
+    SURB-reply command tag + SURB ID. SPRP key material never appears here;
+    it appears exactly once, in the SURB itself (see :func:`surb_length`).
+
+    KEM Sphinx (``kem_ciphertext_bytes`` given): the same, plus that hop's
+    KEM ciphertext -- the KEM variant carries a fresh ciphertext per hop
+    instead of Sphinx's classic re-blinded group element.
+    """
+    if kem_ciphertext_bytes is None:
+        return NEXT_NODE_HOP_LENGTH + SURB_REPLY_LENGTH
+    return NEXT_NODE_HOP_LENGTH + SURB_REPLY_LENGTH + kem_ciphertext_bytes
 
 
 def routing_info_length(nr_hops: int, per_hop_bytes: int) -> int:

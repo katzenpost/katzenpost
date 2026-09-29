@@ -30,12 +30,19 @@ func TestCopyAttemptBackoffMonotonic(t *testing.T) {
 // TestCopyRetryConstants guards the tunables the audit M1 fix relies
 // on. Changing these affects worst-case Copy completion time.
 func TestCopyRetryConstants(t *testing.T) {
-	require.Equal(t, 8, maxCopyReadTransientAttempts)
-	require.Equal(t, 8, maxCopyWriteAttempts)
+	require.Equal(t, 10, maxCopyReadTransientAttempts)
+	require.Equal(t, 10, maxCopyWriteAttempts)
 	require.Equal(t, 500*time.Millisecond, copyBackoffBase)
 	require.Equal(t, 10*time.Second, copyBackoffCap)
-	require.Equal(t, 20*time.Second, copyReadReplyTimeout)
-	require.Equal(t, 30*time.Second, copyWriteReplyTimeout)
+	require.Equal(t, 60*time.Second, copyReadReplyTimeout)
+	require.Equal(t, 60*time.Second, copyWriteReplyTimeout)
+
+	// The per-shard read budget must stay generous enough for a real
+	// network (paced link + jittered reply + crypto), well above the
+	// original arbitrary 8 x 20s that failed under load on namenlos.
+	require.GreaterOrEqual(t,
+		time.Duration(maxCopyReadTransientAttempts)*copyReadReplyTimeout,
+		10*time.Minute)
 }
 
 // TestCopySucceededReplyShape and TestCopyFailedReplyShape assert the

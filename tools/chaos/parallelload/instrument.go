@@ -4,12 +4,12 @@
 package parallelload
 
 import (
-	"net/http"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/katzenpost/katzenpost/common/metrics"
 )
 
 var registerOnce sync.Once
@@ -52,7 +52,9 @@ var (
 )
 
 // StartListener registers the metrics and starts the HTTP listener on
-// the given address (empty disables the listener).
+// the given address (empty disables the listener). Safe to call multiple
+// times; registration and listener startup happen exactly once. Panics
+// if a configured address cannot be bound.
 func StartListener(address string) {
 	registerOnce.Do(func() {
 		prometheus.MustRegister(iterationsTotal)
@@ -60,11 +62,11 @@ func StartListener(address string) {
 		prometheus.MustRegister(activeClients)
 		prometheus.MustRegister(sweepStep)
 		prometheus.MustRegister(errorsByKind)
+		if address == "" {
+			return
+		}
+		metrics.MustServe(address, nil)
 	})
-	if address != "" {
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(address, nil)
-	}
 }
 
 // IterationCompleted records a successful iteration and its full cycle

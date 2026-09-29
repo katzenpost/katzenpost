@@ -21,6 +21,7 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
@@ -75,6 +76,14 @@ func (l *Listener) worker() {
 			continue
 		}
 
+		isPeer := l.server.peerSet.Contains(connlimit.AddrIP(conn.RemoteAddr()))
+		token, ok := l.server.connLimiter.TryAcquire(conn.RemoteAddr(), isPeer)
+		if !ok {
+			l.log.Debugf("Refusing connection from %v: connection cap reached (peer=%v)", conn.RemoteAddr(), isPeer)
+			conn.Close()
+			continue
+		}
+
 		tcpConn, ok := conn.(*net.TCPConn)
 		if ok {
 			tcpConn.SetKeepAlive(true)
@@ -88,13 +97,13 @@ func (l *Listener) worker() {
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
-		l.onNewConn(conn)
+		l.onNewConn(conn, token)
 	}
 
 	// NOTREACHED
 }
 
-func (l *Listener) onNewConn(conn net.Conn) {
+func (l *Listener) onNewConn(conn net.Conn, token *connlimit.Token) {
 	l.log.Debug("------------- New Connection")
 	wireScheme := schemes.ByName(l.server.cfg.WireKEMScheme)
 	if wireScheme == nil {
@@ -105,6 +114,7 @@ func (l *Listener) onNewConn(conn net.Conn) {
 		panic("PKI signature scheme not found in registry")
 	}
 	c := newIncomingConn(l, conn, l.server.cfg.SphinxGeometry, wireScheme, pkiScheme)
+	c.connToken = token
 
 	l.closeAllWg.Add(1)
 	l.Lock()
@@ -130,6 +140,7 @@ func (l *Listener) onClosedConn(c *incomingConn) {
 	if !c.closed.CompareAndSwap(false, true) {
 		return
 	}
+	c.connToken.Release()
 	l.Lock()
 	defer func() {
 		l.Unlock()

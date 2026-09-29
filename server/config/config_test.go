@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -214,6 +215,59 @@ PublicKeyPem = "auth_id_pub_key.pem"
 
 }
 
+func TestPersistMixKeysOnShutdownDirValidation(t *testing.T) {
+	base := func(t *testing.T) *Server {
+		return &Server{
+			Identifier:         "mix1",
+			WireKEM:            "xwing",
+			PKISignatureScheme: "Ed25519",
+			Addresses:          []string{"tcp://127.0.0.1:29483"},
+			DataDir:            t.TempDir(),
+		}
+	}
+
+	t.Run("relative dir rejected", func(t *testing.T) {
+		require := require.New(t)
+		// A relative key store dir is rejected: the daemon may chdir at
+		// runtime, and a relative path would silently resolve to the
+		// wrong place.
+		cfg := base(t)
+		cfg.PersistMixKeysOnShutdown = true
+		cfg.PersistMixKeysOnShutdownDir = "mixkeys"
+		require.EqualError(cfg.validate(),
+			"config: Server: PersistMixKeysOnShutdownDir 'mixkeys' is not an absolute path")
+	})
+
+	t.Run("dir without bool rejected", func(t *testing.T) {
+		require := require.New(t)
+		// Specifying a key store dir without explicitly enabling
+		// PersistMixKeysOnShutdown is rejected, so operators cannot
+		// expect the dir to silently enable the feature (genconfig is the
+		// only place that sets both together).
+		cfg := base(t)
+		cfg.PersistMixKeysOnShutdownDir = filepath.Join(t.TempDir(), "mixkeys")
+		require.EqualError(cfg.validate(),
+			"config: Server: PersistMixKeysOnShutdownDir is set but PersistMixKeysOnShutdown is not enabled")
+	})
+
+	t.Run("absolute dir with bool accepted", func(t *testing.T) {
+		require := require.New(t)
+		cfg := base(t)
+		cfg.PersistMixKeysOnShutdown = true
+		cfg.PersistMixKeysOnShutdownDir = filepath.Join(t.TempDir(), "mixkeys")
+		require.NoError(cfg.validate())
+	})
+
+	t.Run("consensus withdrawal and key persistence are mutually exclusive", func(t *testing.T) {
+		require := require.New(t)
+		cfg := base(t)
+		cfg.WaitForConsensusExitOnShutdown = true
+		cfg.PersistMixKeysOnShutdown = true
+		require.EqualError(cfg.validate(),
+			"config: Server: WaitForConsensusExitOnShutdown and PersistMixKeysOnShutdown are mutually exclusive")
+	})
+}
+
 func TestApplyRuntimeDefaults_SchedulerMaxBurst(t *testing.T) {
 	// Auto-derivation: SchedulerMaxBurst = clamp(
 	//   round(targetYieldMs / perOpMs), NumSphinxWorkers, 256
@@ -223,7 +277,7 @@ func TestApplyRuntimeDefaults_SchedulerMaxBurst(t *testing.T) {
 	// anti-monopolisation property on very fast Sphinx hosts.
 	tests := []struct {
 		name               string
-		preset             int     // operator's TOML value; 0 = auto-derive
+		preset             int // operator's TOML value; 0 = auto-derive
 		numCPU             int
 		saturatedOpsPerSec float64
 		wantMaxBurst       int

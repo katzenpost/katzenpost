@@ -114,6 +114,7 @@ func (p *PKIWorker) worker() {
 			elapsed,
 			till,
 		)
+		p.WarnIfEpochMismatch(currentEpoch)
 
 		// Check to see if we need to publish the descriptor first.
 		//
@@ -151,6 +152,11 @@ func (p *PKIWorker) worker() {
 		// Handle document updates and cleanup.
 		p.handleDocumentUpdates(didUpdate)
 
+		// Refresh the readiness gauges so a restarted replica reports
+		// ready as soon as its descriptor and persisted keys agree with
+		// the current consensus.
+		p.updateReadiness()
+
 		// Update epoch tracking.
 		lastUpdateEpoch = p.updateEpochTracking(lastUpdateEpoch)
 
@@ -183,8 +189,9 @@ func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled 
 
 		// Validate sphinx geometry.
 		if !hmac.Equal(result.Doc.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
-			p.GetLogger().Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.server.cfg.SphinxGeometry.Display())
-			panic("Sphinx Geometry mismatch!")
+			failed++
+			p.GetLogger().Errorf("REPLICA PKI FETCH: rejected epoch=%d: its Sphinx geometry hash does not match the local geometry:\n%s", result.Epoch, p.server.cfg.SphinxGeometry.Display())
+			continue
 		}
 
 		// Take note of the service nodes and storage replicas.
@@ -208,9 +215,21 @@ func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled 
 			"REPLICA PKI FETCH: stored %d PKI document(s); connector/authentication state will be refreshed",
 			stored,
 		)
+		p.rebuildPeerSet()
 	}
 
 	return didUpdate
+}
+
+func (p *PKIWorker) rebuildPeerSet() {
+	now, _, _ := epochtime.Now()
+	doc := p.documentForEpoch(now)
+	if doc == nil {
+		return
+	}
+	addrs := doc.AllNodeAddresses()
+	addrs = append(addrs, replicaStaticAuthorityAddresses(p.server.cfg)...)
+	p.server.peerSet.Rebuild(addrs)
 }
 
 // handleDocumentUpdates handles cleanup and updates when documents change.
@@ -402,6 +421,14 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 	envelopeKeys[replicaEpoch] = key1.PublicKey.Bytes()
 	envelopeKeys[replicaEpoch+1] = key2.PublicKey.Bytes()
+
+	// Advertise the previous epoch's key while it is retained, so clients
+	// can decrypt replies to envelopes sent before the epoch transition.
+	if replicaEpoch > 0 {
+		if prev, err := p.server.envelopeKeys.GetKeypair(replicaEpoch - 1); err == nil {
+			envelopeKeys[replicaEpoch-1] = prev.PublicKey.Bytes()
+		}
+	}
 
 	desc := &cpki.ReplicaDescriptor{
 		Name:         p.server.cfg.Identifier,

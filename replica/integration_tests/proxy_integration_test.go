@@ -94,7 +94,8 @@ func TestProxyIntegration(t *testing.T) {
 	// Length-prefix and pad to write size, matching PadInnerMessageForEncryption.
 	paddedWriteMsg, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedWriteMsg)
+	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedWriteMsg)
+	require.NoError(t, err)
 	mkemPublicKey := mkemPrivateKey.Public()
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
@@ -171,7 +172,8 @@ func TestProxyIntegration(t *testing.T) {
 	// Pad the inner message to the write size (read is padded up for indistinguishability).
 	paddedReadMsg, err := pigeonhole.PadInnerMessageForEncryption(readMsg, env.geometry)
 	require.NoError(t, err)
-	bobMkemPrivateKey, bobMkemCiphertext := mkemNikeScheme.Encapsulate(bobReplicaPubKeys, paddedReadMsg)
+	bobMkemPrivateKey, bobMkemCiphertext, err := mkemNikeScheme.Encapsulate(bobReplicaPubKeys, paddedReadMsg)
+	require.NoError(t, err)
 	bobMkemPublicKey := bobMkemPrivateKey.Public()
 	bobSenderPubkeyBytes := bobMkemPublicKey.Bytes()
 

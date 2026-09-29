@@ -27,31 +27,25 @@ type CourierEnvelope struct {
 func (c *CourierEnvelope) Parse(data []byte) ([]byte, error) {
 	cur := data
 	{
-		for idx := 0; idx < 2; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			c.IntermediateReplicas[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 2 {
+			return nil, errors.New("data too short")
 		}
+		copy(c.IntermediateReplicas[:], cur[:2])
+		cur = cur[2:]
 	}
 	{
-		for idx := 0; idx < 60; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			c.Dek1[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 60 {
+			return nil, errors.New("data too short")
 		}
+		copy(c.Dek1[:], cur[:60])
+		cur = cur[60:]
 	}
 	{
-		for idx := 0; idx < 60; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			c.Dek2[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 60 {
+			return nil, errors.New("data too short")
 		}
+		copy(c.Dek2[:], cur[:60])
+		cur = cur[60:]
 	}
 	{
 		if len(cur) < 1 {
@@ -79,13 +73,8 @@ func (c *CourierEnvelope) Parse(data []byte) ([]byte, error) {
 			return nil, errors.New("data too short")
 		}
 		c.SenderPubkey = make([]uint8, int(c.SenderPubkeyLen))
-		for idx := 0; idx < int(c.SenderPubkeyLen); idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			c.SenderPubkey[idx] = cur[0]
-			cur = cur[1:]
-		}
+		copy(c.SenderPubkey, cur[:int(c.SenderPubkeyLen)])
+		cur = cur[int(c.SenderPubkeyLen):]
 	}
 	{
 		if len(cur) < 4 {
@@ -99,13 +88,8 @@ func (c *CourierEnvelope) Parse(data []byte) ([]byte, error) {
 			return nil, errors.New("data too short")
 		}
 		c.Ciphertext = make([]uint8, int(c.CiphertextLen))
-		for idx := 0; idx < int(c.CiphertextLen); idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			c.Ciphertext[idx] = cur[0]
-			cur = cur[1:]
-		}
+		copy(c.Ciphertext, cur[:int(c.CiphertextLen)])
+		cur = cur[int(c.CiphertextLen):]
 	}
 	return cur, nil
 }
@@ -124,15 +108,9 @@ func ParseCourierEnvelope(data []byte) (*CourierEnvelope, error) {
 
 func (c *CourierEnvelope) encodeBinary() []byte {
 	var buf []byte
-	for idx := 0; idx < 2; idx++ {
-		buf = append(buf, byte(c.IntermediateReplicas[idx]))
-	}
-	for idx := 0; idx < 60; idx++ {
-		buf = append(buf, byte(c.Dek1[idx]))
-	}
-	for idx := 0; idx < 60; idx++ {
-		buf = append(buf, byte(c.Dek2[idx]))
-	}
+	buf = append(buf, c.IntermediateReplicas[:]...)
+	buf = append(buf, c.Dek1[:]...)
+	buf = append(buf, c.Dek2[:]...)
 	buf = append(buf, byte(c.ReplyIndex))
 	{
 		tmp := make([]byte, 8)
@@ -144,17 +122,13 @@ func (c *CourierEnvelope) encodeBinary() []byte {
 		binary.BigEndian.PutUint16(tmp, c.SenderPubkeyLen)
 		buf = append(buf, tmp...)
 	}
-	for idx := 0; idx < int(c.SenderPubkeyLen); idx++ {
-		buf = append(buf, byte(c.SenderPubkey[idx]))
-	}
+	buf = append(buf, c.SenderPubkey...)
 	{
 		tmp := make([]byte, 4)
 		binary.BigEndian.PutUint32(tmp, c.CiphertextLen)
 		buf = append(buf, tmp...)
 	}
-	for idx := 0; idx < int(c.CiphertextLen); idx++ {
-		buf = append(buf, byte(c.Ciphertext[idx]))
-	}
+	buf = append(buf, c.Ciphertext...)
 	return buf
 }
 
@@ -169,27 +143,17 @@ func (c *CourierEnvelope) validate() error {
 	if len(c.IntermediateReplicas) != 2 {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(c.IntermediateReplicas); idx++ {
-	}
 	if len(c.Dek1) != 60 {
 		return errors.New("array length constraint violated")
-	}
-	for idx := 0; idx < len(c.Dek1); idx++ {
 	}
 	if len(c.Dek2) != 60 {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(c.Dek2); idx++ {
-	}
 	if len(c.SenderPubkey) != int(c.SenderPubkeyLen) {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(c.SenderPubkey); idx++ {
-	}
 	if len(c.Ciphertext) != int(c.CiphertextLen) {
 		return errors.New("array length constraint violated")
-	}
-	for idx := 0; idx < len(c.Ciphertext); idx++ {
 	}
 	return nil
 }
@@ -206,13 +170,11 @@ type CourierEnvelopeReply struct {
 func (c *CourierEnvelopeReply) Parse(data []byte) ([]byte, error) {
 	cur := data
 	{
-		for idx := 0; idx < 32; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			c.EnvelopeHash[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 32 {
+			return nil, errors.New("data too short")
 		}
+		copy(c.EnvelopeHash[:], cur[:32])
+		cur = cur[32:]
 	}
 	{
 		if len(cur) < 1 {
@@ -243,13 +205,8 @@ func (c *CourierEnvelopeReply) Parse(data []byte) ([]byte, error) {
 			return nil, errors.New("data too short")
 		}
 		c.Payload = make([]uint8, int(c.PayloadLen))
-		for idx := 0; idx < int(c.PayloadLen); idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			c.Payload[idx] = cur[0]
-			cur = cur[1:]
-		}
+		copy(c.Payload, cur[:int(c.PayloadLen)])
+		cur = cur[int(c.PayloadLen):]
 	}
 	{
 		if len(cur) < 1 {
@@ -275,9 +232,7 @@ func ParseCourierEnvelopeReply(data []byte) (*CourierEnvelopeReply, error) {
 
 func (c *CourierEnvelopeReply) encodeBinary() []byte {
 	var buf []byte
-	for idx := 0; idx < 32; idx++ {
-		buf = append(buf, byte(c.EnvelopeHash[idx]))
-	}
+	buf = append(buf, c.EnvelopeHash[:]...)
 	buf = append(buf, byte(c.ReplyIndex))
 	buf = append(buf, byte(c.ReplyType))
 	{
@@ -285,9 +240,7 @@ func (c *CourierEnvelopeReply) encodeBinary() []byte {
 		binary.BigEndian.PutUint32(tmp, c.PayloadLen)
 		buf = append(buf, tmp...)
 	}
-	for idx := 0; idx < int(c.PayloadLen); idx++ {
-		buf = append(buf, byte(c.Payload[idx]))
-	}
+	buf = append(buf, c.Payload...)
 	buf = append(buf, byte(c.ErrorCode))
 	return buf
 }
@@ -303,15 +256,11 @@ func (c *CourierEnvelopeReply) validate() error {
 	if len(c.EnvelopeHash) != 32 {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(c.EnvelopeHash); idx++ {
-	}
 	if !(c.ReplyType == 0 || c.ReplyType == 1) {
 		return errors.New("integer constraint violated")
 	}
 	if len(c.Payload) != int(c.PayloadLen) {
 		return errors.New("array length constraint violated")
-	}
-	for idx := 0; idx < len(c.Payload); idx++ {
 	}
 	return nil
 }
@@ -521,13 +470,11 @@ type ReplicaRead struct {
 func (r *ReplicaRead) Parse(data []byte) ([]byte, error) {
 	cur := data
 	{
-		for idx := 0; idx < 32; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			r.BoxID[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 32 {
+			return nil, errors.New("data too short")
 		}
+		copy(r.BoxID[:], cur[:32])
+		cur = cur[32:]
 	}
 	return cur, nil
 }
@@ -546,9 +493,7 @@ func ParseReplicaRead(data []byte) (*ReplicaRead, error) {
 
 func (r *ReplicaRead) encodeBinary() []byte {
 	var buf []byte
-	for idx := 0; idx < 32; idx++ {
-		buf = append(buf, byte(r.BoxID[idx]))
-	}
+	buf = append(buf, r.BoxID[:]...)
 	return buf
 }
 
@@ -562,8 +507,6 @@ func (r *ReplicaRead) MarshalBinary() ([]byte, error) {
 func (r *ReplicaRead) validate() error {
 	if len(r.BoxID) != 32 {
 		return errors.New("array length constraint violated")
-	}
-	for idx := 0; idx < len(r.BoxID); idx++ {
 	}
 	return nil
 }
@@ -586,22 +529,18 @@ func (r *ReplicaReadReply) Parse(data []byte) ([]byte, error) {
 		cur = cur[1:]
 	}
 	{
-		for idx := 0; idx < 32; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			r.BoxID[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 32 {
+			return nil, errors.New("data too short")
 		}
+		copy(r.BoxID[:], cur[:32])
+		cur = cur[32:]
 	}
 	{
-		for idx := 0; idx < 64; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			r.Signature[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 64 {
+			return nil, errors.New("data too short")
 		}
+		copy(r.Signature[:], cur[:64])
+		cur = cur[64:]
 	}
 	{
 		if len(cur) < 4 {
@@ -615,13 +554,8 @@ func (r *ReplicaReadReply) Parse(data []byte) ([]byte, error) {
 			return nil, errors.New("data too short")
 		}
 		r.Payload = make([]uint8, int(r.PayloadLen))
-		for idx := 0; idx < int(r.PayloadLen); idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			r.Payload[idx] = cur[0]
-			cur = cur[1:]
-		}
+		copy(r.Payload, cur[:int(r.PayloadLen)])
+		cur = cur[int(r.PayloadLen):]
 	}
 	return cur, nil
 }
@@ -641,20 +575,14 @@ func ParseReplicaReadReply(data []byte) (*ReplicaReadReply, error) {
 func (r *ReplicaReadReply) encodeBinary() []byte {
 	var buf []byte
 	buf = append(buf, byte(r.ErrorCode))
-	for idx := 0; idx < 32; idx++ {
-		buf = append(buf, byte(r.BoxID[idx]))
-	}
-	for idx := 0; idx < 64; idx++ {
-		buf = append(buf, byte(r.Signature[idx]))
-	}
+	buf = append(buf, r.BoxID[:]...)
+	buf = append(buf, r.Signature[:]...)
 	{
 		tmp := make([]byte, 4)
 		binary.BigEndian.PutUint32(tmp, r.PayloadLen)
 		buf = append(buf, tmp...)
 	}
-	for idx := 0; idx < int(r.PayloadLen); idx++ {
-		buf = append(buf, byte(r.Payload[idx]))
-	}
+	buf = append(buf, r.Payload...)
 	return buf
 }
 
@@ -669,17 +597,11 @@ func (r *ReplicaReadReply) validate() error {
 	if len(r.BoxID) != 32 {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(r.BoxID); idx++ {
-	}
 	if len(r.Signature) != 64 {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(r.Signature); idx++ {
-	}
 	if len(r.Payload) != int(r.PayloadLen) {
 		return errors.New("array length constraint violated")
-	}
-	for idx := 0; idx < len(r.Payload); idx++ {
 	}
 	return nil
 }
@@ -793,22 +715,18 @@ type ReplicaWrite struct {
 func (r *ReplicaWrite) Parse(data []byte) ([]byte, error) {
 	cur := data
 	{
-		for idx := 0; idx < 32; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			r.BoxID[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 32 {
+			return nil, errors.New("data too short")
 		}
+		copy(r.BoxID[:], cur[:32])
+		cur = cur[32:]
 	}
 	{
-		for idx := 0; idx < 64; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			r.Signature[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 64 {
+			return nil, errors.New("data too short")
 		}
+		copy(r.Signature[:], cur[:64])
+		cur = cur[64:]
 	}
 	{
 		if len(cur) < 4 {
@@ -822,13 +740,8 @@ func (r *ReplicaWrite) Parse(data []byte) ([]byte, error) {
 			return nil, errors.New("data too short")
 		}
 		r.Payload = make([]uint8, int(r.PayloadLen))
-		for idx := 0; idx < int(r.PayloadLen); idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			r.Payload[idx] = cur[0]
-			cur = cur[1:]
-		}
+		copy(r.Payload, cur[:int(r.PayloadLen)])
+		cur = cur[int(r.PayloadLen):]
 	}
 	return cur, nil
 }
@@ -847,20 +760,14 @@ func ParseReplicaWrite(data []byte) (*ReplicaWrite, error) {
 
 func (r *ReplicaWrite) encodeBinary() []byte {
 	var buf []byte
-	for idx := 0; idx < 32; idx++ {
-		buf = append(buf, byte(r.BoxID[idx]))
-	}
-	for idx := 0; idx < 64; idx++ {
-		buf = append(buf, byte(r.Signature[idx]))
-	}
+	buf = append(buf, r.BoxID[:]...)
+	buf = append(buf, r.Signature[:]...)
 	{
 		tmp := make([]byte, 4)
 		binary.BigEndian.PutUint32(tmp, r.PayloadLen)
 		buf = append(buf, tmp...)
 	}
-	for idx := 0; idx < int(r.PayloadLen); idx++ {
-		buf = append(buf, byte(r.Payload[idx]))
-	}
+	buf = append(buf, r.Payload...)
 	return buf
 }
 
@@ -875,17 +782,11 @@ func (r *ReplicaWrite) validate() error {
 	if len(r.BoxID) != 32 {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(r.BoxID); idx++ {
-	}
 	if len(r.Signature) != 64 {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(r.Signature); idx++ {
-	}
 	if len(r.Payload) != int(r.PayloadLen) {
 		return errors.New("array length constraint violated")
-	}
-	for idx := 0; idx < len(r.Payload); idx++ {
 	}
 	return nil
 }
@@ -1044,13 +945,11 @@ type Box struct {
 func (b *Box) Parse(data []byte) ([]byte, error) {
 	cur := data
 	{
-		for idx := 0; idx < 32; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			b.BoxID[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 32 {
+			return nil, errors.New("data too short")
 		}
+		copy(b.BoxID[:], cur[:32])
+		cur = cur[32:]
 	}
 	{
 		if len(cur) < 4 {
@@ -1064,22 +963,15 @@ func (b *Box) Parse(data []byte) ([]byte, error) {
 			return nil, errors.New("data too short")
 		}
 		b.Payload = make([]uint8, int(b.PayloadLen))
-		for idx := 0; idx < int(b.PayloadLen); idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			b.Payload[idx] = cur[0]
-			cur = cur[1:]
-		}
+		copy(b.Payload, cur[:int(b.PayloadLen)])
+		cur = cur[int(b.PayloadLen):]
 	}
 	{
-		for idx := 0; idx < 64; idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			b.Signature[idx] = cur[0]
-			cur = cur[1:]
+		if len(cur) < 64 {
+			return nil, errors.New("data too short")
 		}
+		copy(b.Signature[:], cur[:64])
+		cur = cur[64:]
 	}
 	return cur, nil
 }
@@ -1098,20 +990,14 @@ func ParseBox(data []byte) (*Box, error) {
 
 func (b *Box) encodeBinary() []byte {
 	var buf []byte
-	for idx := 0; idx < 32; idx++ {
-		buf = append(buf, byte(b.BoxID[idx]))
-	}
+	buf = append(buf, b.BoxID[:]...)
 	{
 		tmp := make([]byte, 4)
 		binary.BigEndian.PutUint32(tmp, b.PayloadLen)
 		buf = append(buf, tmp...)
 	}
-	for idx := 0; idx < int(b.PayloadLen); idx++ {
-		buf = append(buf, byte(b.Payload[idx]))
-	}
-	for idx := 0; idx < 64; idx++ {
-		buf = append(buf, byte(b.Signature[idx]))
-	}
+	buf = append(buf, b.Payload...)
+	buf = append(buf, b.Signature[:]...)
 	return buf
 }
 
@@ -1126,17 +1012,11 @@ func (b *Box) validate() error {
 	if len(b.BoxID) != 32 {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(b.BoxID); idx++ {
-	}
 	if len(b.Payload) != int(b.PayloadLen) {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(b.Payload); idx++ {
-	}
 	if len(b.Signature) != 64 {
 		return errors.New("array length constraint violated")
-	}
-	for idx := 0; idx < len(b.Signature); idx++ {
 	}
 	return nil
 }
@@ -1160,13 +1040,8 @@ func (c *CopyCommand) Parse(data []byte) ([]byte, error) {
 			return nil, errors.New("data too short")
 		}
 		c.WriteCap = make([]uint8, int(c.WriteCapLen))
-		for idx := 0; idx < int(c.WriteCapLen); idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			c.WriteCap[idx] = cur[0]
-			cur = cur[1:]
-		}
+		copy(c.WriteCap, cur[:int(c.WriteCapLen)])
+		cur = cur[int(c.WriteCapLen):]
 	}
 	return cur, nil
 }
@@ -1190,9 +1065,7 @@ func (c *CopyCommand) encodeBinary() []byte {
 		binary.BigEndian.PutUint32(tmp, c.WriteCapLen)
 		buf = append(buf, tmp...)
 	}
-	for idx := 0; idx < int(c.WriteCapLen); idx++ {
-		buf = append(buf, byte(c.WriteCap[idx]))
-	}
+	buf = append(buf, c.WriteCap...)
 	return buf
 }
 
@@ -1206,8 +1079,6 @@ func (c *CopyCommand) MarshalBinary() ([]byte, error) {
 func (c *CopyCommand) validate() error {
 	if len(c.WriteCap) != int(c.WriteCapLen) {
 		return errors.New("array length constraint violated")
-	}
-	for idx := 0; idx < len(c.WriteCap); idx++ {
 	}
 	return nil
 }
@@ -1306,13 +1177,8 @@ func (c *CopyStreamElement) Parse(data []byte) ([]byte, error) {
 			return nil, errors.New("data too short")
 		}
 		c.EnvelopeData = make([]uint8, int(c.EnvelopeLen))
-		for idx := 0; idx < int(c.EnvelopeLen); idx++ {
-			if len(cur) < 1 {
-				return nil, errors.New("data too short")
-			}
-			c.EnvelopeData[idx] = cur[0]
-			cur = cur[1:]
-		}
+		copy(c.EnvelopeData, cur[:int(c.EnvelopeLen)])
+		cur = cur[int(c.EnvelopeLen):]
 	}
 	return cur, nil
 }
@@ -1337,9 +1203,7 @@ func (c *CopyStreamElement) encodeBinary() []byte {
 		binary.BigEndian.PutUint32(tmp, c.EnvelopeLen)
 		buf = append(buf, tmp...)
 	}
-	for idx := 0; idx < int(c.EnvelopeLen); idx++ {
-		buf = append(buf, byte(c.EnvelopeData[idx]))
-	}
+	buf = append(buf, c.EnvelopeData...)
 	return buf
 }
 
@@ -1353,8 +1217,6 @@ func (c *CopyStreamElement) MarshalBinary() ([]byte, error) {
 func (c *CopyStreamElement) validate() error {
 	if len(c.EnvelopeData) != int(c.EnvelopeLen) {
 		return errors.New("array length constraint violated")
-	}
-	for idx := 0; idx < len(c.EnvelopeData); idx++ {
 	}
 	return nil
 }

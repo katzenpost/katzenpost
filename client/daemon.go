@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -27,6 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/profiling"
 	"github.com/katzenpost/katzenpost/client/thin"
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/queue"
@@ -56,7 +56,7 @@ type replicaError struct {
 }
 
 func (e *replicaError) Error() string {
-	return fmt.Sprintf("replica error code: %d", e.code)
+	return fmt.Sprintf("%s (replica error code %d)", pigeonhole.ReplicaErrorToString(e.code), e.code)
 }
 
 type gcReply struct {
@@ -103,13 +103,6 @@ type Daemon struct {
 
 	// Cryptographically secure random number generator
 	secureRand *mrand.Rand
-
-	// sackWindowMu guards the per-epoch cache of the computed SACK window
-	// (the bandwidth-delay-product default used when a WriteStream or
-	// ReadStream request leaves Window unset).
-	sackWindowMu     sync.Mutex
-	sackWindowEpoch  uint64
-	sackWindowCached int
 
 	haltOnce sync.Once
 }
@@ -165,7 +158,7 @@ func (d *Daemon) initLogging() error {
 	d.logbackend, err = log.New(f, d.cfg.Logging.Level, d.cfg.Logging.Disable)
 	if err == nil {
 		d.log = d.logbackend.GetLogger("katzenpost/client")
-		d.log.Noticef("Katzenpost client daemon version: %s", versioninfo.Short())
+		d.log.Noticef("Katzenpost client daemon version: %s", kpcommon.Version())
 		d.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err
@@ -193,6 +186,7 @@ func (d *Daemon) halt() {
 	// Step 2: Stop workers
 	workersStart := time.Now()
 	d.log.Debug("Stopping workers first to prevent channel deadlocks")
+	d.client.haltConnection()
 	d.Halt() // shutdown ingressWorker and egressWorker first
 	d.log.Infof("Workers stopped in %v", time.Since(workersStart))
 
@@ -359,11 +353,10 @@ func isLocalRequest(r *Request) bool {
 		r.NextMessageBoxIndex != nil ||
 		r.GetMessageBoxIndexCounter != nil ||
 		r.GetPKIDocument != nil ||
+		r.GetDirectoryAuthorities != nil ||
 		r.CreateCourierEnvelopesFromPayload != nil ||
 		r.CreateCourierEnvelopesFromPayloads != nil ||
 		r.CreateCourierEnvelopesFromTombstoneRange != nil ||
-		r.WriteStream != nil ||
-		r.ReadStream != nil ||
 		r.VoucherMint != nil ||
 		r.VoucherInduct != nil ||
 		r.VoucherOpen != nil ||
@@ -414,16 +407,14 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.getMessageBoxIndexCounter(request)
 	case request.GetPKIDocument != nil:
 		d.getPKIDocument(request)
+	case request.GetDirectoryAuthorities != nil:
+		d.getDirectoryAuthorities(request)
 	case request.CreateCourierEnvelopesFromPayload != nil:
 		d.createCourierEnvelopesFromPayload(request)
 	case request.CreateCourierEnvelopesFromPayloads != nil:
 		d.createCourierEnvelopesFromPayloads(request)
 	case request.CreateCourierEnvelopesFromTombstoneRange != nil:
 		d.createCourierEnvelopesFromTombstoneRange(request)
-	case request.WriteStream != nil:
-		d.writeStream(request)
-	case request.ReadStream != nil:
-		d.readStream(request)
 	case request.VoucherMint != nil:
 		d.voucherMint(request)
 	case request.VoucherInduct != nil:
@@ -454,8 +445,6 @@ func (d *Daemon) dispatchMixnet(request *Request) {
 		d.startResendingEncryptedMessage(request)
 	case request.StartResendingCopyCommand != nil:
 		d.startResendingCopyCommand(request)
-	case request.SACKBoxSend != nil:
-		d.sackDoBoxSend(request.SACKBoxSend)
 	default:
 		d.log.Errorf("dispatchMixnet: dropping request with no recognised mixnet variant (appID %x)",
 			requestAppID(request))
@@ -604,7 +593,6 @@ func tryDecryptMKEMWithReplicas(
 	return nil, 0, errMKEMDecryptionFailed
 }
 
-
 func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
@@ -663,10 +651,11 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 func (d *Daemon) send(request *Request) {
 	var surbKey []byte
 	var rtt time.Duration
+	var route *Route
 	var err error
 	var now time.Time
 
-	surbKey, rtt, err = d.client.SendCiphertext(request)
+	surbKey, rtt, route, err = d.client.SendCiphertextWithRoute(request)
 	if err != nil {
 		d.log.Debugf("SendCiphertext error: %s", err.Error())
 	}
@@ -731,11 +720,13 @@ func (d *Daemon) send(request *Request) {
 				response := &Response{
 					AppID: request.AppID,
 					MessageSentEvent: &thin.MessageSentEvent{
-						MessageID: messageID,
-						SURBID:    surbID,
-						SentAt:    now,
-						ReplyETA:  rtt,
-						Err:       errStr,
+						MessageID:    messageID,
+						SURBID:       surbID,
+						SentAt:       now,
+						ReplyETA:     rtt,
+						ForwardRoute: route.forward(),
+						ReturnRoute:  route.back(),
+						Err:          errStr,
 					},
 				}
 				err = incomingConn.sendResponse(response)
@@ -804,8 +795,6 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 
 	d.send(request)
 }
-
-
 
 // resendQueueFullBackoff is how long enqueueResend waits before re-arming
 // the ARQ timer when a client's resendCh is full. Must be short enough to
@@ -888,7 +877,17 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 	conn := d.listener.getConnection(message.AppID)
 	if conn == nil {
-		d.log.Debugf("enqueueResend: no live connection for AppID %x, dropping SURB ID %x", message.AppID[:], surbID[:])
+		// No live thin-client connection for this AppID right now. Re-arm
+		// rather than drop: this may be a transient reconnect gap, and
+		// dropping here would orphan an in-flight ARQ entry that never
+		// completes. If the app is truly gone, the per-AppID disconnect
+		// cleanup deletes this entry and cancels its timer, so the next
+		// fire finds it absent and stops re-arming.
+		retryAt := time.Now().Add(resendQueueFullBackoff)
+		d.log.Debugf("enqueueResend: no live connection for AppID %x, re-arming SURB ID %x at %v", message.AppID[:], surbID[:], retryAt)
+		if d.arqTimerQueue != nil {
+			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
+		}
 		return
 	}
 	select {
@@ -900,6 +899,27 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
 		}
 	}
+}
+
+// scheduleARQFollowUp routes the next round of an in-flight ARQ exchange (the
+// second-round read after a courier ACK, or a retry after BoxIDNotFound) onto
+// the owning client's resend queue, so the Poisson scheduler releases it on a
+// tick rather than the reply handler dispatching it inline. Sending the
+// follow-up inline would couple its departure to the inbound reply that
+// prompted it, letting the gateway or a passive network observer tell a
+// multi-round read apart from single-round decoy traffic by that reaction. The
+// caller must already have set arqMessage.State to the state the follow-up's
+// reply should be answered in; enqueueResend hands the current SURB ID to the
+// scheduler, and arqDoResend rotates it to a fresh one when the tick arrives.
+func (d *Daemon) scheduleARQFollowUp(arqMessage *ARQMessage) {
+	d.lockReply()
+	surbID := arqMessage.SURBID
+	d.replyLock.Unlock()
+	if surbID == nil {
+		d.log.Debugf("scheduleARQFollowUp: nil SURB ID, nothing to schedule")
+		return
+	}
+	d.enqueueResend(surbID)
 }
 
 // dropARQMessage deletes both map entries for arqMessage under replyLock.
@@ -1166,4 +1186,3 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 	d.log.Infof("cleanupForAppID: cleaned %d ARQ, %d replies, %d decoys for App ID %x",
 		cleanedARQ, cleanedReplies, cleanedDecoys, appID[:])
 }
-

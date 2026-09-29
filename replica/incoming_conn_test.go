@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -36,15 +37,15 @@ type MockSession struct {
 	pk kem.PublicKey
 }
 
-func (m *MockSession) Initialize(conn net.Conn) error {
+func (m *MockSession) Initialize(ctx context.Context, conn net.Conn) error {
 	return nil
 }
 
-func (m *MockSession) SendCommand(cmd commands.Command) error {
+func (m *MockSession) SendCommand(ctx context.Context, cmd commands.Command) error {
 	return nil
 }
 
-func (m *MockSession) RecvCommand() (commands.Command, error) {
+func (m *MockSession) RecvCommand(ctx context.Context) (commands.Command, error) {
 	return new(commands.ReplicaMessageReply), nil
 }
 
@@ -144,7 +145,7 @@ func TestIncomingConn(t *testing.T) {
 	listener, err := newListener(server, id, addr)
 	require.NoError(t, err)
 
-	listener.onNewConn(connRx)
+	listener.onNewConn(connRx, nil)
 
 	// Give the worker goroutine a moment to start and fail
 	// since we're using a broken pipe connection
@@ -192,7 +193,7 @@ func TestIncomingConn(t *testing.T) {
 	require.Equal(t, len(ids), 0)
 
 	dummyOut := make(chan *senderRequest, 10)
-	dummyEmitter := newDelayedReplyEmitter(dummyOut, server.logBackend, "test")
+	dummyEmitter := newDelayedReplyEmitter(dummyOut, server.logBackend, "test", func() time.Duration { return fallbackReplyJitter })
 	defer dummyEmitter.Halt()
 	replyCommand, ok := inConn.onReplicaCommand(new(commands.NoOp), dummyEmitter)
 	require.True(t, ok)
@@ -249,12 +250,11 @@ func TestIncomingConn(t *testing.T) {
 		DEK:           dek,
 		Ciphertext:    ciphertext,
 	}
-	reply3 := inConn.handleReplicaMessage(replicaMessage)
+	reply3 := inConn.handleReplicaMessage(replicaMessage, func() {})
 	require.NotNil(t, reply3)
 	// Expect an error reply since we're using invalid cryptographic material
 	require.NotEqual(t, uint8(0), reply3.ErrorCode)
 
-	// 30 seconds is too slow
-	//inConn.Close()
+	inConn.Close()
 	listener.Halt()
 }

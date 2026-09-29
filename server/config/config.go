@@ -34,6 +34,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -53,7 +54,7 @@ const (
 	defaultSendSlack         = 50        // 50 ms.
 	defaultDecoySlack        = 15 * 1000 // 15 sec.
 	defaultConnectTimeout    = 60 * 1000 // 60 sec.
-	defaultHandshakeTimeout  = 60 * 1000 // 60 sec.
+	defaultHandshakeTimeout  = 3 * 1000  // 3 sec.
 	defaultReauthInterval    = 30 * 1000 // 30 sec.
 	defaultGatewayDelay      = 500       // 500 ms.
 	defaultServiceDelay      = 500       // 500 ms.
@@ -115,6 +116,47 @@ type Server struct {
 	// resolver. Onion addresses are always permitted because Tor
 	// resolves them inside its local proxy, not via DNS.
 	AllowHostnameAddresses bool
+
+	// WaitForConsensusExitOnShutdown, when true, makes SIGINT and SIGTERM
+	// stop descriptor publication and wait until every epoch for which this
+	// node may have advertised has ended before shutting down. The node keeps
+	// serving traffic and fetching PKI documents while it waits, allowing it
+	// to leave the consensus without disrupting traffic assigned to it.
+	//
+	// With the default 20-minute epoch, the conservative wait can approach
+	// 40 minutes when the next epoch's descriptor was already uploaded.
+	// Service managers must allow enough stop time (for example, systemd's
+	// TimeoutStopSec) or they may kill the process before withdrawal completes.
+	// This option is mutually exclusive with PersistMixKeysOnShutdown.
+	WaitForConsensusExitOnShutdown bool
+
+	// PersistMixKeysOnShutdown, when true, writes every live mix key to
+	// the mix key store on clean shutdown and reloads it on the next
+	// boot. A clean restart (e.g. a software upgrade) then keeps the
+	// keypairs that were already published in the consensus, so clients
+	// keep unwrapping across the restart instead of failing the first-hop
+	// MAC check until the next epoch. A crash never reaches the shutdown
+	// path, so mix keys still rotate on a hard failure. Key files are
+	// deleted as soon as they are loaded on the next boot, so key
+	// material exists on the filesystem only between a clean shutdown and the
+	// immediately following boot. The default is false to preserve
+	// fresh-per-boot forward secrecy unless an operator opts in.
+	PersistMixKeysOnShutdown bool
+
+	// PersistMixKeysOnShutdownDir is the directory mix keys are
+	// persisted to on clean shutdown and loaded from on the next boot.
+	// It is only consulted when PersistMixKeysOnShutdown is true; when
+	// empty, the daemon uses a per-node subdirectory of /dev/shm (tmpfs)
+	// derived from a hash of the node's long-term identity key, so key
+	// material never touches durable storage. Windows has no tmpfs, so
+	// this must be set explicitly there when the feature is enabled.
+	// Deployments that need the
+	// keys to survive a host reboot or container recreation (e.g. a
+	// docker testnet whose node dirs are bind-mounted volumes) should
+	// point this at the node's DataDir. Specifying a directory without
+	// enabling PersistMixKeysOnShutdown is a configuration error, since
+	// the directory would silently have no effect.
+	PersistMixKeysOnShutdownDir string
 }
 
 func (sCfg *Server) validate() error {
@@ -168,6 +210,15 @@ func (sCfg *Server) validate() error {
 
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
+	}
+	if sCfg.PersistMixKeysOnShutdownDir != "" && !sCfg.PersistMixKeysOnShutdown {
+		return errors.New("config: Server: PersistMixKeysOnShutdownDir is set but PersistMixKeysOnShutdown is not enabled")
+	}
+	if sCfg.PersistMixKeysOnShutdownDir != "" && !filepath.IsAbs(sCfg.PersistMixKeysOnShutdownDir) {
+		return fmt.Errorf("config: Server: PersistMixKeysOnShutdownDir '%v' is not an absolute path", sCfg.PersistMixKeysOnShutdownDir)
+	}
+	if sCfg.WaitForConsensusExitOnShutdown && sCfg.PersistMixKeysOnShutdown {
+		return errors.New("config: Server: WaitForConsensusExitOnShutdown and PersistMixKeysOnShutdown are mutually exclusive")
 	}
 	if sCfg.MetricsAddress != "" {
 		if _, _, err := net.SplitHostPort(sCfg.MetricsAddress); err != nil {
@@ -270,6 +321,14 @@ type Debug struct {
 	// should only be used for testing.
 	DisableRateLimit bool
 
+	MaxClientConns *int
+
+	MaxPeerConns *int
+
+	MaxConnsPerIP *int
+
+	MaxLoopbackConns *int
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -316,6 +375,22 @@ func (dCfg *Debug) applyDefaults() {
 	}
 	if dCfg.ReauthInterval <= 0 {
 		dCfg.ReauthInterval = defaultReauthInterval
+	}
+	if dCfg.MaxClientConns == nil {
+		v := connlimit.DefaultMaxClientConns
+		dCfg.MaxClientConns = &v
+	}
+	if dCfg.MaxPeerConns == nil {
+		v := connlimit.DefaultMaxPeerConns
+		dCfg.MaxPeerConns = &v
+	}
+	if dCfg.MaxConnsPerIP == nil {
+		v := connlimit.DefaultMaxConnsPerIP
+		dCfg.MaxConnsPerIP = &v
+	}
+	if dCfg.MaxLoopbackConns == nil {
+		v := connlimit.DefaultMaxLoopbackConns
+		dCfg.MaxLoopbackConns = &v
 	}
 }
 

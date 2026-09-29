@@ -13,6 +13,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -102,6 +103,10 @@ func (g *mockGlue) ReshadowCryptoWorkers() {}
 
 func (g *mockGlue) Decoy() glue.Decoy {
 	return g.decoy
+}
+
+func (g *mockGlue) PeerConnSet() *connlimit.PeerSet {
+	return nil
 }
 
 func (m *mockGlue) Management() *thwack.Server {

@@ -92,24 +92,28 @@ func HostChaosGen(b Bounds) gopter.Gen {
 			return gopter.NewGenResult(chaos.HostChaos{PauseForSec: secs}, gopter.NoShrinker)
 		}
 		var hc chaos.HostChaos
-		// One or more netem primitives. Each draws an independent
-		// Bernoulli.
-		if p.Rng.Float64() < 0.7 {
+		// Exactly one netem primitive per host. pumba realises delay,
+		// loss and corrupt as separate root qdiscs and tc rejects a
+		// second one on the same interface, so they are mutually
+		// exclusive (Config.Validate enforces this). One categorical
+		// draw, weighted delay-heavy and corrupt-rare; jitter rides on
+		// delay and so is not a separate primitive.
+		switch r := p.Rng.Float64(); {
+		case r < 0.70:
 			lat := b.LatencyMin + p.Rng.Intn(b.LatencyMax-b.LatencyMin+1)
 			hc.LatencyMs = lat
 			if p.Rng.Float64() < 0.6 {
 				hc.JitterMs = int(float64(lat) * p.Rng.Float64() * b.JitterFractionMax)
 			}
-		}
-		if p.Rng.Float64() < 0.3 {
+		case r < 0.95:
 			hc.LossPct = p.Rng.Float64() * b.LossMaxPct
-		}
-		if p.Rng.Float64() < 0.05 {
+		default:
 			hc.CorruptPct = p.Rng.Float64() * b.CorruptMaxPct
 		}
 		if hc.IsEmpty() {
-			// Force at least one primitive when the host was
-			// selected for chaos.
+			// A zero-width bound (e.g. LossMaxPct == 0) can yield an
+			// empty draw; force a delay so a selected host always
+			// carries exactly one primitive.
 			lat := b.LatencyMin + p.Rng.Intn(b.LatencyMax-b.LatencyMin+1)
 			hc = chaos.HostChaos{LatencyMs: lat}
 		}

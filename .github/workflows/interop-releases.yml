@@ -1,0 +1,76 @@
+name: interop against the last two releases
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: which combination to run
+        type: choice
+        default: all
+        options: [all, authorities-mixed, authorities-old, authorities-old-n1, nodes-mixed, nodes-old, nodes-old-n1, everything-mixed, everything-mixed-n1]
+  schedule:
+    - cron: '0 4 * * *'
+
+jobs:
+
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      names: ${{ steps.pick.outputs.names }}
+    steps:
+      - id: pick
+        run: |
+          all='["authorities-mixed","authorities-old","authorities-old-n1","nodes-mixed","nodes-old","nodes-old-n1","everything-mixed","everything-mixed-n1"]'
+          job='${{ github.event.inputs.job }}'
+          if [ -z "$job" ] || [ "$job" = all ]; then echo "names=$all" >> "$GITHUB_OUTPUT"; else echo "names=[\"$job\"]" >> "$GITHUB_OUTPUT"; fi
+
+  interop:
+    needs: select
+    strategy:
+      fail-fast: false
+      matrix:
+        name: ${{ fromJson(needs.select.outputs.names) }}
+    name: ${{ matrix.name }}
+    permissions:
+      contents: read
+    env:
+      warped: true
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure podman socket
+        run: systemctl --user start podman.socket || true
+      - name: Cache the go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: docker/cache
+          key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
+          restore-keys: |
+            interop-gate-${{ runner.os }}-go1.26.x-
+      - name: make interop-${{ matrix.name }}
+        run: cd docker && make interop-${{ matrix.name }}
+      - name: Dump kpclientd logs on failure
+        if: failure()
+        run: cd docker && make client-logs-snapshot || true
+      - name: Dump authority and replica logs on failure
+        if: failure()
+        run: cd docker && for r in mixnet-alpine/auth*/ mixnet-alpine/replica*/; do echo "=== $r ==="; tail -20 "${r}katzenpost.log" 2>&1; done
+      - name: Stop the testnet
+        if: always()
+        run: cd docker && make stop || true
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: interop-releases-${{ github.run_id }}-${{ matrix.name }}
+          path: |
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/wait.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml

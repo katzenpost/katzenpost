@@ -1,40 +1,50 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode-restart replica-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1 client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
-	@echo " config-only        - generate configuration files only (no docker containers)"
-	@echo " start              - start the testnet"
-	@echo " stop               - stop the testnet"
-	@echo " client-restart     - restart just the kpclientd daemon"
-	@echo " client-logs        - view kpclientd daemon logs"
-	@echo " courier-restart    - restart courier plugin via thwack interface"
-	@echo " servicenode-restart - restart servicenode container (heavier)"
-	@echo " replica-restart    - rebuild replica binary and restart all replica containers"
-	@echo " wait               - wait for testnet to have consensus and at least 2 storage replicas"
-	@echo " watch              - tail -F all logs"
-	@echo " watch-replicas     - monitor all replica logs"
-	@echo " watch-auth         - monitor all directory authority logs"
-	@echo " watch-mixes        - monitor all mix node logs"
-	@echo " watch-courier      - monitor courier service log"
-	@echo " watch-servicenode  - monitor service node log"
-	@echo " watch-gateway      - monitor gateway log"
-	@echo " watch-all-separate - monitor all logs with component labels"
+	@echo " config-only               - generate configuration files only (no docker containers)"
+	@echo " start                     - start the testnet"
+	@echo " stop                      - stop the testnet"
+	@echo " client-restart            - restart just the kpclientd daemon"
+	@echo " client-logs               - view kpclientd daemon logs"
+	@echo " courier-restart           - restart courier plugin via thwack interface"
+	@echo " servicenode1-restart      - restart servicenode container"
+	@echo " replica-restart           - rebuild replica binary and restart all replica containers"
+	@echo " wait                      - wait until every node reports ready against the current consensus"
+	@echo " watch                     - tail -F all logs"
+	@echo " watch-replicas            - monitor all replica logs"
+	@echo " watch-auth                - monitor all directory authority logs"
+	@echo " watch-mixes               - monitor all mix node logs"
+	@echo " watch-courier             - monitor courier service log"
+	@echo " watch-servicenode         - monitor service node log"
+	@echo " watch-gateway             - monitor gateway log"
+	@echo " watch-all-separate        - monitor all logs with component labels"
 	@echo " start-with-client-metrics - start with prometheus + grafana and kpclientd metrics"
-	@echo " print-url-grafana  - print the Grafana URL"
-	@echo " print-url-prometheus - print the Prometheus URL"
-	@echo " pumba-latency      - induce network delay/jitter on mixnet containers (see pumba_* vars)"
-	@echo " pumba-loss         - induce packet loss on mixnet containers (see pumba_* vars)"
-	@echo " pumba-corrupt      - induce single-bit packet corruption (see pumba_corrupt_pct)"
-	@echo " pumba-pause        - freeze a single container for pumba_pause_duration"
-	@echo " pumba-status       - show all running pumba chaos containers"
-	@echo " pumba-stop         - stop every katzenpost_pumba_* chaos container"
-	@echo " status             - show testnet consensus status"
-	@echo " show-latest-vote   - does what it says"
-	@echo " run-ping           - send a ping over the testnet"
-	@echo " clean-bin          - stop, and delete compiled binaries"
-	@echo " clean-local        - stop, and delete data and binaries"
-	@echo " clean-local-dryrun - show what clean-local would delete"
-	@echo " clean              - the above, plus cleans includes go_deps images"
+	@echo " print-url-grafana         - print the Grafana URL"
+	@echo " print-url-prometheus      - print the Prometheus URL"
+	@echo " pumba-latency             - induce network delay/jitter on mixnet containers (see pumba_* vars)"
+	@echo " pumba-loss                - induce packet loss on mixnet containers (see pumba_* vars)"
+	@echo " pumba-corrupt             - induce single-bit packet corruption (see pumba_corrupt_pct)"
+	@echo " pumba-pause               - freeze a single container for pumba_pause_duration"
+	@echo " pumba-status              - show all running pumba chaos containers"
+	@echo " pumba-stop                - stop every katzenpost_pumba_* chaos container"
+	@echo " status                    - show testnet consensus status"
+	@echo " show-latest-vote          - does what it says"
+	@echo " thin-client-sync          - clone/update docker/thin_client at thin_client_ref"
+	@echo " pigeonhole-cp-genkey      - print a fresh pigeonhole channel keypair"
+	@echo " pigeonhole-cp-roundtrip   - round-trip a file through a pigeonhole channel"
+	@echo " run-ping                  - send a ping over the testnet"
+	@echo " test                      - run every component's docker integration tests (requires the testnet to be up)"
+	@echo " interop-gate              - bring HEAD up with release binaries on interop_swap_groups (release_refs), require 6/6 signatures and every node listed, verify revisions, ping"
+	@echo " interop-<job>             - one upgrade combination: authorities-mixed|authorities-old|authorities-old-n1|nodes-mixed|nodes-old|nodes-old-n1|everything-mixed|everything-mixed-n1"
+	@echo " interop-matrix            - every interop-<job> in turn"
+	@echo " interop-report            - per-service table of version and signed/listed from the last interop-gate"
+	@echo " clean-bin                 - stop, and delete compiled binaries"
+	@echo " clean-local               - stop the current network, and wipe its state (keeps the build cache)"
+	@echo " clean-local-dryrun        - show what clean-local would delete"
+	@echo " stop-all                  - stop every network, one per distro inferred from build stamps"
+	@echo " clean                     - stop all networks, wipe all state, plus base images and the build cache"
+	@echo " test-distros              - bring up and ping the testnet on every DISTRO, leaving them running (serial, or parallel with make -j)"
 	@echo
 
 warped?=true
@@ -57,11 +67,19 @@ epoch_duration?=2m
 # longer test scenarios. Empty means "use the daemon's compile-time
 # default" (currently 10 minutes).
 session_grace_period?=30s
-mixes=3
-auths=3
-gateways=1
-serviceNodes=3
-storageNodes=5
+mixes=7
+auths=6
+gateways=5
+serviceNodes=4
+storageNodes=4
+layers=3
+
+# number of pings sent by run-ping target
+npings?=10
+
+# extra flags handed to the ping binary by the run-ping target, e.g.
+#   make run-ping ping_args=--strict
+ping_args?=
 
 # Parameters. Sampling safety caps for each rate are derived inside the
 # library (common.SafetyCap) from the rate itself, so no MaxDelay knobs
@@ -81,58 +99,128 @@ sendSlack=0
 unwrapDelay=0
 numSphinxWorkers=0
 
+# Replica proxy tuning for parallel tests (0 = use defaults auto-derived from
+# numCPU and MKEM ops/sec). Under heavy parallel load, increase these to prevent
+# "replication failed" errors during copy commands: proxyWorkerCount bounds
+# concurrent proxy attempts, and proxyRequestTimeout sets the total budget for
+# each failover sweep. For 17 parallel tests, 16 workers and 120s timeout work.
+proxyWorkerCount=0
+proxyRequestTimeout=0
+
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
 
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
 
-DISTROS=alpine debian
+DISTROS=alpine debian-trixie ubuntu-26.04
 distro=alpine
+
+# Distro strings are "<family>" (alpine) or "<family>-<version>" (e.g.
+# debian-trixie, ubuntu-25.10). The base image is derived uniformly:
+# alpine -> alpine_base_image?=, any debian-<tag> -> docker.io/debian:<tag>,
+# any ubuntu-<tag> -> docker.io/ubuntu:<tag>. Adding a new version is
+# purely a new FROM tag: `make distro=ubuntu-26.04 start wait` just works.
+distro_family=$(firstword $(subst -, ,$(distro)))
+distro_version=$(patsubst $(distro_family)-%,%,$(distro))
+ifeq ($(distro_family),alpine)
+  base_dockerfile=Dockerfile.base.alpine
+  alpine_base_image?=docker.io/alpine:3.21
+  distro_base_image=$(alpine_base_image)
+else
+  base_dockerfile=Dockerfile.base.apt
+  distro_base_image=docker.io/$(distro_family):$(distro_version)
+endif
+# Universal escape hatch: make base_image=my/registry:tag start wait
+base_image?=$(distro_base_image)
+# Single source of truth for the Go toolchain: the go directive in the
+# repo's go.mod. The base Dockerfiles keep the same value as an ARG
+# default only so `podman build` works standalone.
+GO_VERSION?=$(shell grep '^go ' ../go.mod | cut -d' ' -f2)
 wirekem=xwing
-net_name=voting_mixnet
-base_port=30000
+# Network directory under docker/. Defaults to the current distro's network
+# (e.g. mixnet-alpine), so `make distro=foo start` targets mixnet-foo just
+# like the test-distros legs. A custom net_name= still overrides it.
+net_name=mixnet-$(distro)
+# Deterministic base_port derived from the network name + a per-checkout
+# random seed so parallel checkouts on the same machine get different
+# ports even with the same net_name.  Override with base_port=<n>.
+base_port_seed:=$(shell [ -f .base_port_seed ] || dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | head -c 32 > .base_port_seed; cat .base_port_seed)
+base_port?=$(shell printf '%s%s' '$(net_name)' '$(base_port_seed)' | cksum | awk '{printf "%d", 30000 + ($$1 % 20000)}')
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
-sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
+compose_project_name=$(net_name)_$(shell printf '%s' '$(base_port_seed)'|sha1sum|head -c 5)
+# docker-compose normalizes the project name (directory name) by stripping
+# dots; compute the actual network name the same way so --network= matches
+# the bridge compose creates.  Only the wait target uses this (fetch
+# --require-ready probes per-node metrics endpoints via container DNS).
+compose_network_name = $(subst .,,$(compose_project_name))_katzenpost-net
+# bash is installed in every base image (alpine, debian, ubuntu), so a
+# single shell covers all distros.
+sh?=bash
 cache_dir=cache
+dockertest_race?=-race
+dockertest_timeout?=1h
+dockertest_parallel?=5
+# The go module cache (source content, read-only) is shared across distros.
+# The go build cache holds compiled archives that are sensitive to the C
+# library (musl vs glibc, and glibc versions), and Go's cache key does not
+# capture that, so the build cache is scoped per distro.
+go_mod_cache=$(cache_dir)/go
+go_build_cache=$(cache_dir)/go-build-$(distro)
 
+# thin_client / pigeonhole-cp (rust). thin-client-sync clones the
+# pinned ref into docker/thin_client; thin_client_dir?= overrides that with
+# an existing checkout (devs, and thin_client's own CI, which must build
+# the exact code under test rather than a re-clone). The rust build image
+# is built FROM the per-distro base image so binary and runtime share a C
+# library; the cargo home and target dirs are cached per distro the same
+# way the go build cache is.
+thin_client_ref?=0.0.23
+thin_client_dir?=thin_client
+thin_client_mount=-v $(shell readlink -f $(thin_client_dir)):/go/thin_client:ro
+cargo_home=$(cache_dir)/cargo-home-$(distro)
+cargo_target=$(cache_dir)/cargo-target-$(distro)
+roundtrip_size?=65536
+
+# genconfig_args is shared by the docker-compose generation inside the
+# base image and the host-side config-only target. Bools and tunables
+# are always passed with explicit values so the operator's intent is
+# never swallowed by a cobra default; 0/empty means "library default"
+# (e.g. --schedulerSlack 0, --sessionGracePeriod 0). The `=` assignment
+# (not `:=`) keeps command-line overrides (make mixes=10 gateways=2 ...)
+# flowing through to this expansion.
+#
 # no_decoy is a master toggle covering clients, couriers, and replicas.
 # no_client_decoy and no_courier_replica_decoy allow selective disabling
-# when no_decoy=false. no_mixdecoy controls mix node decoys independently.
-# Always pass explicit values for --noMixDecoy and --noGatewayDecoy so
-# the operator's choice reaches genconfig irrespective of the cobra
-# default. Both flags default to true in cobra; without the explicit
-# value, setting `no_mixdecoy=false` or `no_gatewaydecoy=false` in the
-# Makefile would emit no flag, the cobra default would take over, and
-# the operator's intent to enable decoys would be silently ignored.
-noMixDecoy=--noMixDecoy=$(no_mixdecoy)
-noGatewayDecoy=--noGatewayDecoy=$(no_gatewaydecoy)
-
+# when no_decoy=false. no_mixdecoy controls mix node decoys
+# independently. The presence flags below are emitted only when true
+# (their cobra defaults are false); --noMixDecoy/--noGatewayDecoy
+# default true in cobra, so they are always passed explicitly.
 ifeq ($(no_decoy),true)
-  noDecoy=--noDecoy
+  noDecoyFlag=--noDecoy
 endif
 
 ifeq ($(no_client_decoy),true)
-  noClientDecoy=--noClientDecoy
+  noClientDecoyFlag=--noClientDecoy
 endif
 
 ifeq ($(no_courier_replica_decoy),true)
-  noCourierReplicaDecoy=--noCourierReplicaDecoy
+  noCourierReplicaDecoyFlag=--noCourierReplicaDecoy
 endif
 
 ifeq ($(no_metrics),true)
   noMetricsFlag=--noMetrics
 endif
 
-ifneq ($(epoch_duration),)
-  epochDurationFlag=--epochDuration $(epoch_duration)
-endif
-
-ifneq ($(session_grace_period),)
-  sessionGracePeriodFlag=--sessionGracePeriod $(session_grace_period)
-endif
-
+# Mix key persistence across clean restarts. The testnet's dirauth
+# consensus survives `make stop`/`make start` because node dirs are
+# bind-mounted onto the host; persist the mix keys to each node's DataDir
+# on clean shutdown and reload them on the next boot so a restart doesn't
+# leave the fresh keys mismatched with the retained consensus (surfaces
+# as first-hop MAC failures until the next epoch). Always passed with an
+# explicit value; empty disables persistence in generated configs.
+persistMixKeysOnShutdownDir ?= mixkeys
 ifeq ($(pyroscope_dirauth),true)
   pyroscope_dirauth_tags=-tags pyroscope
   pyroscopeDirauthFlag=--pyroscopeDirauth
@@ -145,7 +233,11 @@ endif
 
 ifeq ($(kpclientd_metrics),true)
   kpclientd_metrics_tags=kpclientd_metrics
-  kpclientdMetricsFlag=--kpclientdMetricsAddress 127.0.0.1:30099
+  # The --kpclientdMetricsAddress flag gates enablement only; genconfig
+  # derives the listener port from base_port (base_port+2004) so it stays
+  # in lockstep with the prometheus scrape target. The port passed here is
+  # documented for clarity but ignored.
+  kpclientdMetricsFlag=--kpclientdMetricsAddress 127.0.0.1:$(shell expr $(base_port) + 2004)
 endif
 
 # Combine kpclientd build tags. Two `-tags ...` invocations on a single go
@@ -155,25 +247,20 @@ ifneq ($(kpclientd_build_tags),)
   kpclientd_tags_flag=-tags "$(kpclientd_build_tags)"
 endif
 
-ifneq ($(schedulerSlack),0)
-  schedulerSlackFlag=--schedulerSlack $(schedulerSlack)
-endif
-
-ifneq ($(schedulerMaxBurst),0)
-  schedulerMaxBurstFlag=--schedulerMaxBurst $(schedulerMaxBurst)
-endif
-
-ifneq ($(sendSlack),0)
-  sendSlackFlag=--sendSlack $(sendSlack)
-endif
-
-ifneq ($(unwrapDelay),0)
-  unwrapDelayFlag=--unwrapDelay $(unwrapDelay)
-endif
-
-ifneq ($(numSphinxWorkers),0)
-  numSphinxWorkersFlag=--numSphinxWorkers $(numSphinxWorkers)
-endif
+genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --nodes $(mixes) \
+	--layers $(layers) \
+	--gateways $(gateways) --serviceNodes $(serviceNodes) --storageNodes $(storageNodes) \
+	--mu $(mu) --lambdaP $(lP) --lambdaL $(lL) --lambdaM $(lM) --lambdaR $(lR) \
+	--nike "$(nike)" --kem "$(kem)" \
+	--noMixDecoy=$(no_mixdecoy) --noGatewayDecoy=$(no_gatewaydecoy) \
+	$(noDecoyFlag) $(noClientDecoyFlag) $(noCourierReplicaDecoyFlag) $(noMetricsFlag) \
+	--epochDuration "$(epoch_duration)" --sessionGracePeriod $(or $(session_grace_period),0) \
+	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
+	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
+	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
+	--proxyWorkerCount $(proxyWorkerCount) --proxyRequestTimeout $(proxyRequestTimeout) \
+	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
+	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 
 # Pumba network chaos. Off by default; invoke `make pumba-latency` or
 # `make pumba-loss` to start a sidecar that applies `tc netem` qdiscs in
@@ -207,8 +294,12 @@ endif
 #   pumba_duration        how long to apply netem chaos (default 1h)
 #   pumba_targets         pumba target spec; default re2 regex matches
 #                         every mix/gateway/servicenode/replica/kpclientd
-#                         container by predictable name. Override with a
-#                         narrower regex or a space-separated list.
+#                         container of the current network. genconfig no
+#                         longer sets container_name, so compose names the
+#                         containers <net_name>-<service>-<n>; the regex
+#                         anchors on the project prefix to avoid touching
+#                         parallel networks. Override with a narrower
+#                         regex or a space-separated list.
 #   pumba_container       name of the chaos container. Override per lane
 #                         (e.g. katzenpost_pumba_slowreplica) when
 #                         stacking asymmetric chaos; `pumba-stop` removes
@@ -222,15 +313,19 @@ pumba_loss_pct?=5
 pumba_loss_corr_pct?=
 pumba_corrupt_pct?=0.01
 pumba_pause_duration?=30s
-pumba_pause_target?=replica1
+pumba_pause_target?=$(net_name)-replica1-1
 pumba_duration?=1h
-pumba_targets?=re2:^(mix[0-9]+|gateway[0-9]+|servicenode[0-9]+|replica[0-9]+|kpclientd)$$
+pumba_targets?=re2:^$(net_name)-(mix[0-9]+|gateway[0-9]+|servicenode[0-9]+|replica[0-9]+|kpclientd)-[0-9]+$$
 pumba_image?=docker.io/gaiaadm/pumba:latest
 pumba_tc_image?=docker.io/gaiadocker/iproute2
 pumba_container?=katzenpost_pumba_chaos
 pumba_prefix=katzenpost_pumba_
 
-pumba_sock_mount=$(shell if echo ${docker}|grep -q podman; then echo "-v $$XDG_RUNTIME_DIR/podman/podman.sock:/var/run/docker.sock"; else echo "-v /var/run/docker.sock:/var/run/docker.sock"; fi)
+ifeq ($(docker),podman)
+  pumba_sock_mount=-v $$XDG_RUNTIME_DIR/podman/podman.sock:/var/run/docker.sock
+else
+  pumba_sock_mount=-v /var/run/docker.sock:/var/run/docker.sock
+endif
 
 ifneq ($(pumba_correlation_pct),)
   pumba_correlation_flag=--correlation $(pumba_correlation_pct)
@@ -243,69 +338,92 @@ endif
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=DEBUG
 
-docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
+# Runtime backend. Defaults to podman when it is on PATH, so `docker` is
+# only used when explicitly requested (make docker=docker ...).
+docker?=$(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 
-gitcommit=$(shell git rev-parse --short HEAD)
-ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/replica.GitCommit=${gitcommit}"
+ldflags_body=-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}
+ldflags="$(ldflags_body)"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
-docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache -e GOPATH=/go
+ifeq ($(docker),podman)
+  # Rootless podman maps container uid 0 to the invoking user, so build
+  # and compose artifacts stay user-owned and host `rm -rf`/`git clean`
+  # can delete them directly (see the `clean`/`clean-local` targets).
+  docker_user=0:0
+  replace_name= --replace --name
+  i_if_podman= -i
+else
+  # Rootful docker: run build containers as the invoking user so cache
+  # files are not left root-owned.
+  docker_user=$(uid):$(gid)
+  replace_name= --name
+  i_if_podman=
+endif
+docker_args_common=-v $(shell readlink -f .)/$(go_mod_cache):/go/ \
+	-v $(shell readlink -f .)/$(go_build_cache):/gocache/ \
+	-e GOCACHE=/gocache -e GOPATH=/go --pids-limit 4096
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost $(docker_args_common)
 
-replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
-i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
-docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
-docker_compose?= DOCKER_USER=$(docker_user) $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose; else echo $(docker_compose_v1_or_v2); fi)
+docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose) -p $(compose_project_name)
+ifeq ($(docker),podman)
+  docker_compose= DOCKER_USER=$(docker_user) DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose -p $(compose_project_name)
+else
+  docker_compose= DOCKER_USER=$(docker_user) $(docker_compose_v1_or_v2)
+endif
 
-make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user) kpclientd_metrics=$(kpclientd_metrics) pyroscope_kpclientd=$(pyroscope_kpclientd) pyroscope_dirauth=$(pyroscope_dirauth) no_metrics=$(no_metrics) no_decoy=$(no_decoy) no_mixdecoy=$(no_mixdecoy) no_gatewaydecoy=$(no_gatewaydecoy)
+# Recursive `$(MAKE)` invocations inherit these instead of re-deriving
+# them from a hardcoded argument list.
+export docker docker_user docker_args distro sh warped net_name compose_network_name cache_dir mount_net_name
+export no_decoy no_client_decoy no_courier_replica_decoy no_mixdecoy no_gatewaydecoy
+export no_metrics pyroscope_dirauth pyroscope_kpclientd kpclientd_metrics
+export wirekem nike kem mixes auths gateways serviceNodes storageNodes layers
+export mu lP lL lM lR UserForwardPayloadLength log_level
+export kpclientd_build_tags kpclientd_tags_flag pyroscope_dirauth_tags pyroscope_kpclientd_tags
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 
-testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/replica.$(distro) $(net_name)/courier.$(distro) $(net_name)/kpclientd.$(distro) | $(net_name) $(cache_dir)
+testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/replica.$(distro) $(net_name)/courier.$(distro) $(net_name)/kpclientd.$(distro) $(net_name)/fetch.$(distro) | $(net_name) $(cache_dir)
 
 $(net_name):
 	mkdir -vp $(net_name)
 
-$(cache_dir): $(cache_dir)/go
+$(cache_dir): $(cache_dir)/go $(go_build_cache) $(cargo_home) $(cargo_target)
 
 $(cache_dir)/go:
 	mkdir -vp $(cache_dir)/go
 
+$(go_build_cache):
+	mkdir -vp $(go_build_cache)
+
+$(cargo_home):
+	mkdir -vp $(cargo_home)
+
+$(cargo_target):
+	mkdir -vp $(cargo_target)
+
 $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
 		$(sh) -c 'cd cmd/genconfig && go build && cd ../../docker \
-		&& ../cmd/genconfig/genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
-		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
+		&& ../cmd/genconfig/genconfig $(genconfig_args) \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
-		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
-		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
-		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
-		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
+		--dockerImage katzenpost-$(distro)_base'
 
 # Generate configuration files only (without docker containers)
 # This is useful for tests that depend on config files existing (e.g., client/testdata symlinks)
 config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
-	cd ../cmd/genconfig && go build && ./genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
-		--serviceNodes ${serviceNodes} --storageNodes ${storageNodes} \
-		--mu ${mu} --lambdaP ${lP} --lambdaL ${lL} --lambdaM ${lM} --lambdaR ${lR} \
-		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
-		--nike "$(nike)" --kem "$(kem)" \
-		${noMixDecoy} ${noGatewayDecoy} ${noDecoy} ${noClientDecoy} ${noCourierReplicaDecoy} ${noMetricsFlag} ${epochDurationFlag} ${sessionGracePeriodFlag} ${pyroscopeDirauthFlag} ${pyroscopeKpclientdFlag} ${kpclientdMetricsFlag} \
-		${schedulerSlackFlag} ${schedulerMaxBurstFlag} ${sendSlackFlag} \
-		${unwrapDelayFlag} ${numSphinxWorkersFlag} \
-		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
+	cd ../cmd/genconfig && go build && ./genconfig $(genconfig_args) \
+		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port)
 	@echo "Configuration files generated in ./$(net_name)/"
 	@echo "Tests can now use the symlinked configs (e.g., client/testdata/client.toml -> ../../docker/$(net_name)/client/client.toml)"
 
 $(net_name)/running.stamp:
-	make $(make_args) start
+	$(MAKE) start
 
 # Restore committed self-check sidecars into each daemon's DataDir
 # before docker compose up. The replica's CTIDH self-check costs
@@ -331,7 +449,16 @@ selfcheck-cache-restore: $(docker_compose_yml)
 	  done; \
 	fi
 
-start: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
+check-ports:
+	@for port in $$(seq $$(($(base_port) + 2000)) $$(($(base_port) + 2003))); do \
+		if ss -tlnp "sport = :$$port" 2>/dev/null | grep -q LISTEN; then \
+			echo "ERROR: port $$port is already in use (base_port=$(base_port))."; \
+			echo "  Use 'make base_port=<N> start' or 'make stop' to free the ports."; \
+			exit 1; \
+		fi; \
+	done
+
+start: check-ports $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
@@ -340,12 +467,12 @@ start_debug: $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	touch $(net_name)/running.stamp
 
 stop:
-	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp voting_mixnet/servicenode*/courier/*.socket
+	[ -e $(net_name) ] && (cd $(net_name) && $(docker_compose) down --remove-orphans); rm -fv $(net_name)/running.stamp $(net_name)/docker-compose.override.yml $(net_name)/servicenode*/courier/*.socket
 
 client-restart:
 	@echo "Cleaning and rebuilding kpclientd daemon..."
 	rm -fv $(net_name)/kpclientd.$(distro)
-	make $(make_args) $(net_name)/kpclientd.$(distro)
+	$(MAKE) $(net_name)/kpclientd.$(distro)
 	@echo "Restarting kpclientd daemon..."
 	cd $(net_name) && $(docker_compose) stop kpclientd
 	cd $(net_name) && $(docker_compose) up -d kpclientd
@@ -359,31 +486,31 @@ client-logs-snapshot:
 	cd $(net_name) && $(docker_compose) logs --tail 200 kpclientd
 
 courier-restart:
-	@echo "Stopping courier plugin via thwack management interface..."
-	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock' || true
+	@echo "Stopping courier plugins via thwack management interface..."
+	@cd $(net_name) && for i in $$(seq 1 $(serviceNodes)); do $(docker_compose) exec -T servicenode$$i sh -c 'echo "STOP_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode'$$i'/management_sock' || true; done
 	@sleep 1
 	@echo "Cleaning and rebuilding courier binary..."
 	rm -fv $(net_name)/courier.$(distro)
-	make $(make_args) $(net_name)/courier.$(distro)
-	@echo "Starting courier plugin via thwack management interface..."
-	@cd $(net_name) && $(docker_compose) exec -T servicenode1 sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /voting_mixnet/servicenode1/management_sock'
-	@echo "Courier service restarted with updated code"
+	$(MAKE) $(net_name)/courier.$(distro)
+	@echo "Starting courier plugins via thwack management interface..."
+	@cd $(net_name) && for i in $$(seq 1 $(serviceNodes)); do $(docker_compose) exec -T servicenode$$i sh -c 'echo "START_KAETZCHEN courier" | /usr/bin/nc -U /$(net_name)/servicenode'$$i'/management_sock'; done
+	@echo "Courier services restarted with updated code"
 
 replica-restart:
 	@echo "Cleaning and rebuilding replica binary..."
 	rm -fv $(net_name)/replica.$(distro)
-	make $(make_args) $(net_name)/replica.$(distro)
+	$(MAKE) $(net_name)/replica.$(distro)
 	@echo "Restarting replica containers..."
 	@cd $(net_name) && for i in $$(seq 1 $(storageNodes)); do $(docker_compose) restart replica$$i; done
 	@echo "Replica containers restarted with updated binary"
 
-servicenode-restart:
+servicenode1-restart:
 	@echo "Cleaning and rebuilding courier binary..."
 	rm -fv $(net_name)/courier.$(distro)
-	make $(make_args) $(net_name)/courier.$(distro)
-	@echo "Restarting servicenode1 container..."
-	cd $(net_name) && $(docker_compose) restart servicenode1
-	@echo "Servicenode restarted with updated courier binary"
+	$(MAKE) $(net_name)/courier.$(distro)
+	@echo "Restarting service node containers..."
+	@cd $(net_name) && for i in $$(seq 1 $(serviceNodes)); do $(docker_compose) restart servicenode$$i; done
+	@echo "Service nodes restarted with updated courier binary"
 
 watch:
 	tail -F $(net_name)/*/*.log
@@ -411,7 +538,7 @@ watch-servicenode:
 
 watch-gateway:
 	@echo "Monitoring gateway log (Ctrl+C to exit)..."
-	tail -F $(net_name)/gateway1/katzenpost.log
+	tail -F $(net_name)/gateway*/katzenpost.log
 
 watch-all-separate:
 	@echo "Monitoring all logs with component labels (Ctrl+C to exit)..."
@@ -421,7 +548,7 @@ watch-all-separate:
 	(tail -F $(net_name)/mix*/katzenpost.log | sed 's/^/[MIX] /' &) ; \
 	(tail -F $(net_name)/servicenode*/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
 	(tail -F $(net_name)/servicenode*/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
-	(tail -F $(net_name)/gateway1/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
+	(tail -F $(net_name)/gateway*/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
 	wait
 
 # start-with-client-metrics brings the mixnet up with prometheus and grafana
@@ -433,10 +560,10 @@ start-with-client-metrics:
 	$(MAKE) start no_metrics=false kpclientd_metrics=true
 
 print-url-grafana:
-	@echo "Grafana is provisioned at http://127.0.0.1:3000 (default admin/admin on first run)."
+	@echo "Grafana is provisioned at http://127.0.0.1:$(shell expr $(base_port) + 2002) (default admin/admin on first run)."
 
 print-url-prometheus:
-	@echo "Prometheus is provisioned at http://127.0.0.1:9090."
+	@echo "Prometheus is provisioned at http://127.0.0.1:$(shell expr $(base_port) + 2001)."
 
 # Pumba chaos. Each start target launches a single chaos container with
 # a distinct name; multiple lanes can run side-by-side by passing
@@ -521,25 +648,38 @@ status:
 		done|grep . || (echo "(no consensus yet; exiting with error)" && false)
 
 show-latest-vote:
-	@grep -A30 'Ready to send' voting_mixnet/auth1/katzenpost.log |tail -30|sed /Sending/q
+	@grep -A30 'Ready to send' $(net_name)/auth1/katzenpost.log |tail -30|sed /Sending/q
 
-wait: $(net_name)/running.stamp | $(cache_dir)
-	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient.toml -r 2
+# Generate the bridge-network thinclient config.  The host-network
+# thinclient.toml (used by run-ping, run-parallel-load, run-cp-bench)
+# dials localhost:base_port+2000 via the compose port forward; this
+# variant uses the compose service name kpclientd:<base_port+2000>
+# directly. wait needs it because fetch --require-ready probes per-node
+# metrics endpoints via container DNS, which is only available on the bridge.
+$(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
+	@echo '[Dial]'                                       >  $@
+	@echo '  [Dial.Tcp]'                                 >> $@
+	@echo '    Address = "kpclientd:$(shell expr $(base_port) + 2000)"' >> $@
+	@echo '    Network = "tcp"'                          >> $@
 
-debian_base.stamp:
-	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c "echo -e 'deb https://deb.debian.org/debian bullseye main\ndeb https://deb.debian.org/debian bullseye-updates main\ndeb https://deb.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list && cat /etc/apt/sources.list && apt update && apt upgrade -y && apt install -y pv && adduser katzenpost --gecos '' --disabled-password && apt update && apt upgrade -y"
-	$(docker) commit katzenpost_debian_base katzenpost-debian_base
-	$(docker) rm katzenpost_debian_base
+wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
+	@deadline=$$(( $$(date +%s) + 600 )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready --ready-timeout $${left}s; do \
+	  echo "wait: the client daemon is not accepting connections yet; retrying"; sleep 5; done
+
+$(distro)_base.stamp: $(base_dockerfile)
+	$(docker) build -t katzenpost-$(distro)_base \
+		--build-arg BASE_IMAGE=$(base_image) --build-arg GO_VERSION=$(GO_VERSION) \
+		-f $(base_dockerfile) .
 	touch $@
 
-alpine_base_image?=ghcr.io/katzenpost/alpine-base:rocksdb-10.2.1
-
-alpine_base.stamp:
-	$(docker) pull $(alpine_base_image) \
-	|| $(docker) build -t $(alpine_base_image) -f Dockerfile.alpine-base . \
-	&& ($(docker) push $(alpine_base_image) || true)
-	$(docker) tag $(alpine_base_image) katzenpost-alpine_base
+# Rust build image for pigeonhole-cp, layered on the per-distro base image
+# (same C library as the runtime, per-distro cargo caches). Only the
+# pigeonhole-cp targets build this; `start`/`wait` stay rust-free.
+$(distro)_rust.stamp: Dockerfile.rust $(distro)_base.stamp
+	$(docker) build -t katzenpost-$(distro)_rust \
+		--build-arg BASE_IMAGE=katzenpost-$(distro)_base \
+		-f Dockerfile.rust .
 	touch $@
 
 go-mod-tidy: $(distro)_base.stamp | $(net_name) $(cache_dir)
@@ -551,48 +691,57 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 			$(sh) -c 'go get -d -u ./... && go mod tidy'
 
 $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/server ; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
+		$(docker_run_sh) 'cd cmd/server ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/server.$(distro)'
 
 $(net_name)/courier.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/courier ; go build -trimpath -ldflags ${ldflags} && mv courier /$(net_name)/courier.$(distro)'
+		$(docker_run_sh) 'cd cmd/courier ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/courier.$(distro)'
 
 $(net_name)/replica.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/replica ; go build -trimpath -ldflags ${ldflags} && mv replica /$(net_name)/replica.$(distro)'
+		$(docker_run_sh) 'cd cmd/replica ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/replica.$(distro)'
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/http-proxy-client; go build -trimpath -ldflags ${ldflags} && mv http-proxy-client /$(net_name)/proxy_client.$(distro)'
+		$(docker_run_sh) 'cd cmd/http-proxy-client; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/proxy_client.$(distro)'
 
 $(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/http-proxy-server; go build -trimpath -ldflags ${ldflags} && mv http-proxy-server /$(net_name)/proxy_server.$(distro)'
+		$(docker_run_sh) 'cd cmd/http-proxy-server; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/proxy_server.$(distro)'
 
 $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} && mv echo-plugin /$(net_name)/echo_server.$(distro)'
+		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/echo_server.$(distro)'
 
 $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath -ldflags ${ldflags} && mv dirauth /$(net_name)/dirauth.$(distro) && \
-			cd ../fetch && go build -trimpath -ldflags ${ldflags} && mv fetch /$(net_name)/fetch.$(distro)'
+		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath -ldflags ${ldflags} -o /$(net_name)/dirauth.$(distro)'
+
+$(net_name)/fetch.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd cmd/fetch && go build -trimpath -ldflags ${ldflags} -o /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/ping && go mod verify && go build -ldflags ${ldflags} && \
-			mv ping /$(net_name)/ping.$(distro)'
+		$(docker_run_sh) 'cd cmd/ping && go mod verify && go build -ldflags ${ldflags} -o /$(net_name)/ping.$(distro)'
 
 $(net_name)/parallel-load.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd tools/chaos/cmd/parallel-load && go build -ldflags ${ldflags} && \
-			mv parallel-load /$(net_name)/parallel-load.$(distro)'
+		$(docker_run_sh) 'cd tools/chaos/cmd/parallel-load && go build -ldflags ${ldflags} -o /$(net_name)/parallel-load.$(distro)'
 
 $(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd tools/chaos/cmd/cp-bench && go build -ldflags ${ldflags} && \
-			mv cp-bench /$(net_name)/cp-bench.$(distro)'
+		$(docker_run_sh) 'cd tools/chaos/cmd/cp-bench && go build -ldflags ${ldflags} -o /$(net_name)/cp-bench.$(distro)'
 
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} && \
-			mv kpclientd /$(net_name)/kpclientd.$(distro)'
+		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} -o /$(net_name)/kpclientd.$(distro)'
+
+# clean-images must remove images and stamps for every distro a user could
+# have named, not just the ones in DISTROS. Discover them from the on-disk
+# stamps and per-distro cache dirs, union with DISTROS, and remove both the
+# _base and _rust image/stamp. An interrupted `make -j test-distros` may
+# also leave orphan containers behind, so sweep those too.
+STAMP_DISTROS=$(sort $(patsubst %_base.stamp,%,$(wildcard *_base.stamp)) $(patsubst %_go_mod.stamp,%,$(wildcard *_go_mod.stamp)) $(patsubst %_rust.stamp,%,$(wildcard *_rust.stamp)))
+CACHE_DISTROS=$(sort $(patsubst cache/go-build-%,%,$(wildcard cache/go-build-*)) $(patsubst cache/cargo-home-%,%,$(wildcard cache/cargo-home-*)) $(patsubst cache/cargo-target-%,%,$(wildcard cache/cargo-target-*)))
+KNOWN_DISTROS=$(sort $(DISTROS) $(STAMP_DISTROS) $(CACHE_DISTROS))
 
 clean-images: stop
-	@-for distro in $(DISTROS); do \
-		make $(make_args) distro=$$distro clean-container-$${distro}_base; \
-		make $(make_args) distro=$$distro clean-image-$${distro}_base; \
-	done \
+	@-for distro in $(KNOWN_DISTROS); do \
+		$(MAKE) distro=$$distro clean-container-$${distro}_base; \
+		$(MAKE) distro=$$distro clean-image-$${distro}_base; \
+		$(MAKE) distro=$$distro clean-image-$${distro}_rust; \
+	done
+	-$(docker) ps -a --format '{{.Names}}' | grep -E '^(katzenpost_|mixnet-)' | xargs -r $(docker) rm -f
 
 clean-container-%:
 	-@$(docker) stop $(i_if_podman) $(patsubst clean-container-%,katzenpost_%,$@)
@@ -602,28 +751,59 @@ clean-image-%:
 	-$(docker) rmi $(patsubst clean-image-%,katzenpost-%,$@)
 	-rm -fv $(patsubst clean-image-%,%,$@).stamp
 
+# Stop every network, one per distro inferred from the on-disk build
+# stamps, so `make clean` tears down everything even when the last-used
+# distro differs. `make distro=foo stop` still stops only foo's network;
+# `stop`'s `[ -e $(net_name) ]` guard makes this a no-op for any distro
+# that was never started.
+stop-all:
+	@for d in $(STAMP_DISTROS); do $(MAKE) distro=$$d stop; done
+
+# Wipe the network directory of every distro ever built (stamp-inferred).
+# Called by `clean` only; clean-local deliberately touches just the current
+# net_name. `git clean` exits 0 even for a pathspec that matches nothing.
+clean-testnets:
+	@for d in $(STAMP_DISTROS); do git clean -fdx mixnet-$$d; done
+
 clean-bin: stop
 	rm -vf ./$(net_name)/*.$(distro)
 
-clean-local: clean-bin
-	# Clean up replica data files (preserve .toml configs)
-	rm -rfv $(net_name)/replica*/replica.db $(net_name)/replica*/*.log $(net_name)/replica*/link.*.pem
-	# Clean up courier data files (preserve .toml configs)
-	rm -rfv $(net_name)/servicenode*/courier/*.log $(net_name)/servicenode*/courier/*.db $(net_name)/servicenode*/courier/link.*.pem
+# Light clean for the iteration loop: tear down the current testnet and
+# wipe its state, but keep the go module/build cache. The cgo components
+# (highctidh) are slow to rebuild, so use this between most iterations and
+# reserve `clean` for full from-scratch verification. Only affects the
+# current net_name/distro; the compiled binaries are wiped by the git
+# clean, so this depends on `stop` (not `clean-bin`) to avoid a redundant
+# rm.
+clean-local: stop
+	rm -f .base_port_seed
 	git clean -f -x $(net_name)
 	git status .
 
 clean-local-dryrun:
 	git clean -n -x $(net_name)
 
-clean: clean-images clean-local
-	rm -rfv $(cache_dir)
+clean: stop-all
+	$(MAKE) clean-local
+	$(MAKE) clean-testnets
+	# Legacy: keep removing the pre-mixnet-* default network directory
+	# until leftover checkouts and stale config symlinks no longer matter.
+	# It is no longer gitignored, so -d is required to remove it as a
+	# plain untracked directory.
+	git clean -fdx voting_mixnet
+	$(MAKE) clean-images
+	# The go module cache is intentionally written read-only (dirs 0555,
+	# files 0444), so only a root-capable process can wipe it: even the
+	# owning host user cannot delete files inside read-only directories.
+	# Run the wipe in a throwaway alpine container (rootless podman maps
+	# its uid 0 to the invoking user with full capabilities in-namespace).
+	$(docker) run --rm -v $(shell readlink -f .)/$(cache_dir):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
 	-$(docker) ps -a|grep katzenpost|cat
 	-$(docker) images|grep katzenpost|cat
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) --thin -c /go/katzenpost/client/testdata/thinclient.toml -s echo --print-diff -n 10
+        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings) $(ping_args)
 
 # parallel-load knobs. Override on the make command line:
 #   make run-parallel-load clients=8 duration=5m
@@ -634,22 +814,12 @@ sweep?=
 step?=90s
 payload?=256
 parallel_load_metrics_port?=9101
-run-parallel-load: $(net_name)/parallel-load.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=voting_mixnet_katzenpost-net --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+run-parallel-load: $(net_name)/parallel-load.$(distro) $(net_name)/running.stamp | $(cache_dir)
+	$(docker) run --network=host --name katzenpost_parallel_load --hostname parallel-load ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/parallel-load.$(distro) \
-            -config /$(net_name)/client/thinclient-bridge.toml \
+            -config /$(net_name)/client/thinclient.toml \
             -clients $(clients) -duration $(duration) -sweep "$(sweep)" -step $(step) \
             -payload-bytes $(payload) -metrics 0.0.0.0:$(parallel_load_metrics_port)
-
-# Generate the bridge-network thinclient config the first time it is needed.
-# The host-network thinclient.toml points at localhost:64331 (kpclientd is
-# exposed on the host via rootlessport); the bridge-network variant uses
-# the compose service name kpclientd:64331 directly.
-$(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
-	@echo '[Dial]'                                       >  $@
-	@echo '  [Dial.Tcp]'                                 >> $@
-	@echo '    Address = "kpclientd:64331"'              >> $@
-	@echo '    Network = "tcp"'                          >> $@
 
 # cp-bench knobs. Override on the make command line:
 #   make run-cp-bench cp_payload=65536
@@ -658,12 +828,83 @@ cp_payload?=4096
 cp_sweep?=
 cp_propagation?=30s
 cp_metrics_port?=9102
-run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	$(docker) run --network=voting_mixnet_katzenpost-net --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+run-cp-bench: $(net_name)/cp-bench.$(distro) $(net_name)/running.stamp | $(cache_dir)
+	$(docker) run --network=host --name katzenpost_cp_bench --hostname cp-bench ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/cp-bench.$(distro) \
-            -config /$(net_name)/client/thinclient-bridge.toml \
+            -config /$(net_name)/client/thinclient.toml \
             -payload $(cp_payload) -sweep "$(cp_sweep)" -propagation $(cp_propagation) \
             -metrics 0.0.0.0:$(cp_metrics_port)
+
+# Run the replica unit tests in a container, using the same invocation as
+# .github/workflows/replica-tests.yml. The tests link highctidh's CTIDH
+# implementation, which needs a large stack; the production binaries get it
+# from -Wl,-z,stack-size in the ldflags variable above, and the test binary
+# needs the same. (On glibc the default cgo thread stack happens to be big
+# enough, which is why this only bites in the musl container image.)
+# Override REPLICA_TEST_GORACE, REPLICA_TEST_LDFLAGS or REPLICA_TEST_FLAGS on
+# the make command line to tweak the run
+# (e.g. REPLICA_TEST_FLAGS="-race -v -run TestMigrate").
+REPLICA_TEST_GORACE?=history_size=7
+REPLICA_TEST_LDFLAGS?=-extldflags=-Wl,-z,stack-size=0x1F40000
+REPLICA_TEST_FLAGS?=-coverprofile=coverage.out -race -v -failfast -timeout 30m
+replica-test: $(distro)_base.stamp | $(net_name) $(cache_dir)
+	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base \
+		$(sh) -c 'cd /go/katzenpost/replica && GORACE=$(REPLICA_TEST_GORACE) go test -ldflags "$(REPLICA_TEST_LDFLAGS)" $(REPLICA_TEST_FLAGS) ./...'
+
+# ---------------------------------------------------------------------
+# thin_client / pigeonhole-cp (rust). These targets are the only ones
+# that touch the thin_client checkout; `start`/`wait` and everything
+# else stay rust-free, so katzenqt and thin_client CI calling
+# `make start wait` never pay for the rust toolchain.
+#
+# thin-client-sync clones github.com/katzenpost/thin_client at
+# thin_client_ref into docker/thin_client (gitignored). It refuses to
+# touch an overridden thin_client_dir (dev checkouts, and thin_client's
+# own CI pointing at the checkout under test). The fetch is best-effort
+# so an already-synced offline checkout still builds.
+thin-client-sync:
+	@if [ "$(thin_client_dir)" != "thin_client" ]; then \
+		echo "thin_client_dir=$(thin_client_dir) is overridden; thin-client-sync skipped (will not touch your checkout)."; \
+	elif [ -d thin_client/.git ]; then \
+		git -C thin_client fetch --tags --depth 1 origin || true; \
+		git -C thin_client checkout $(thin_client_ref); \
+	else \
+		git clone --depth 1 --branch $(thin_client_ref) https://github.com/katzenpost/thin_client.git thin_client; \
+	fi
+
+# Build the pigeonhole-cp binary with cargo inside the rust image and
+# copy it into $(net_name)/pigeonhole-cp.$(distro), mirroring the naming
+# of the go binaries. thin-client-sync is a phony prerequisite on
+# purpose: cargo is incremental, so an unchanged source tree is a fast
+# no-op, and the copy always picks up whatever cargo produced.
+$(net_name)/pigeonhole-cp.$(distro): $(distro)_rust.stamp thin-client-sync | $(net_name) $(cache_dir)
+	@if [ ! -f $(thin_client_dir)/Cargo.toml ]; then \
+		echo "error: no Cargo.toml at $(thin_client_dir). Set thin_client_dir to a thin_client checkout or run 'make thin-client-sync'."; exit 1; \
+	fi
+	$(docker) run --rm ${docker_args} ${thin_client_mount} \
+		-v $(shell readlink -f .)/$(cargo_home):/cargo-home \
+		-v $(shell readlink -f .)/$(cargo_target):/cargo-target \
+		-e CARGO_HOME=/cargo-home \
+		katzenpost-$(distro)_rust \
+		bash -c "cd /go/thin_client && cargo build --release --bin pigeonhole-cp --features cli --target-dir /cargo-target"
+	cp $(cargo_target)/release/pigeonhole-cp $@
+	@echo "pigeonhole-cp built at $@"
+
+# Generate a fresh Pigeonhole channel keypair. Prints the read/write
+# capabilities and first index; wire them into the send/receive
+# targets' variables.
+pigeonhole-cp-genkey: $(net_name)/pigeonhole-cp.$(distro)
+	$(docker) run --network=host --rm $(mount_net_name) katzenpost-$(distro)_base \
+		/$(net_name)/pigeonhole-cp.$(distro) genkey -c /$(net_name)/client/thinclient.toml
+
+# End-to-end round-trip of a random $(roundtrip_size)-byte file through a
+# pigeonhole channel, using the pigeonhole_cp_roundtrip.sh wrapper, the
+# make-built binary, and the generated config (whose dial address carries
+# the configured base_port band). Runs on --network=host inside the base image
+# so the binary's C library always matches, whatever the distro.
+pigeonhole-cp-roundtrip: $(net_name)/pigeonhole-cp.$(distro)
+	$(docker) run --network=host --rm ${docker_args} $(mount_net_name) katzenpost-$(distro)_base \
+		$(sh) -c '/go/katzenpost/tools/chaos/scripts/pigeonhole_cp_roundtrip.sh -s $(roundtrip_size) /$(net_name)/client/thinclient.toml /$(net_name)/pigeonhole-cp.$(distro)'
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)
@@ -674,8 +915,137 @@ shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 rootshell: $(distro)_base.stamp
 	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost-$(distro)_base $(sh)
 
+# test runs every component's docker-based integration tests against the
+# running network. Only ./client defines docker tests today (memspool,
+# catshadow, stream and bench, the other historical owners of such
+# targets, are gone). Every client target below was probed against a
+# healthy mixnet-alpine and passes; if a target starts failing it is NOT
+# fixed here - it is dropped and the failure documented above the
+# exclusion so `make test` stays green by construction.
+#
+# Probe status (August 2026):
+#   dockertest-all     PASS  TestLegacyTests plus the new pigeonhole,
+#                            multichannel, tombstone, copy-command and
+#                            FromPayload tests - the same set CI runs via
+#                            docker-mixnet.yml.
+#   dockertest_pki_raw PASS  TestGetPKIDocumentRaw{,CurrentEpoch,UnknownEpoch}
+#                            and TestGetDirectoryAuthorities.
 test: wait
-	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
+	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_parallel=$(dockertest_parallel) dockertest-all
+	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_pki_raw
+
+# Bring the testnet up on every supported distro (uses the shared build
+# cache). Serial by default; with `make -j N test-distros` each
+# test-distro-<distro> leg runs concurrently on its own mixnet-<distro>
+# network and base_port band derived from the DISTROS order, so legs never
+# share state. Each leg runs run-ping, which exits non-zero on any packet
+# lost in the mixnet and on a run that delivered nothing at all, so a leg's
+# exit code asserts a healthy network. A ping the client never dispatched
+# (its own pacing, or a dropped daemon link) does not fail the leg on its
+# own; pass --strict to run-ping to gate on those too. Legs
+# deliberately leave their networks running; tear everything down with
+# `make clean` (or one `make distro=<d> stop` per network).
+DISTRO_PORTS=$(foreach d,$(DISTROS),$(d):$(shell set -- $(DISTROS); i=0; for x; do [ "$$x" = "$(d)" ] && printf '%s' $$((30000 + i * 10000)) && break; i=$$((i+1)); done))
+
+# Each leg's sub-make runs with -j1 so its start/wait/run-ping goals
+# stay ordered even when this file is built with -j from a parent make.
+.PHONY: test-distro-%
+test-distro-%:
+	$(MAKE) -j1 distro=$* base_port=$(patsubst $*:%,%,$(filter $*:%,$(DISTRO_PORTS))) start wait run-ping
+
+test-distros: $(addprefix test-distro-,$(DISTROS))
 
 check-go-version:
-	podman run --rm katzenpost-alpine_base go version
+	$(docker) run --rm katzenpost-$(distro)_base go version
+
+release_refs?=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1)
+namenlos_config?=client-configs/namenlos.toml
+namenlos_thin_config?=client-configs/namenlos-thin.toml
+interop_swap_groups?=auth replica mix gateway
+interop_swap_all?=
+interop_swaps=$(shell n=$(words $(release_refs)); [ $$n -gt 0 ] || exit 0; for grp in auth,$(auths) replica,$(storageNodes) mix,$(mixes) gateway,$(gateways); do echo " $(interop_swap_groups) " | grep -q " $${grp%,*} " || continue; i=1; while [ $$i -le $${grp#*,} ]; do if [ -n "$(interop_swap_all)" ]; then k=$$(( (i-1) % n )); else k=$$(( (i-1) % (n+1) - 1 )); fi; if [ $$k -ge 0 ]; then set -- $(release_refs); shift $$k; printf '%s ' $${grp%,*}$$i=$$1; fi; i=$$((i+1)); done; done)
+
+docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --volume $$src:/go/katzenpost:ro --workdir /go/katzenpost $(docker_args_common) $(mount_net_name) katzenpost-$(distro)_base $(sh) -c
+
+interop-ref-binaries: $(distro)_base.stamp | $(net_name) $(cache_dir)
+	@set -e; for ref in $(release_refs); do \
+	  refdir=$(cache_dir)/refbins/$$ref-warped-$(warped); mkdir -p $$refdir; \
+	  ( flock 9; \
+	  if [ -x $$refdir/server.$(distro).$$ref ] && [ -x $$refdir/dirauth.$(distro).$$ref ] && [ -x $$refdir/replica.$(distro).$$ref ]; then \
+	    rm -f $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref; \
+	    cp $$refdir/dirauth.$(distro).$$ref $$refdir/replica.$(distro).$$ref $$refdir/server.$(distro).$$ref $(net_name)/; \
+	  else \
+	    src=$$(mktemp -d); git -C .. archive $$ref | tar -x -C $$src; \
+	    rev=$$(git -C .. rev-list -n 1 $$ref); \
+	    for cmd in dirauth replica server; do \
+	      $(docker_run_ref_sh) "cd cmd/$$cmd && go build -trimpath -ldflags '$(ldflags_body) -X github.com/carlmjohnson/versioninfo.Revision=$$rev' -o /$(net_name)/$$cmd.$(distro).$$ref"; \
+	    done; rm -rf $$src; \
+	    cp $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref $$refdir/; \
+	  fi ) 9>$$refdir.lock; \
+	done
+
+interop-gate: interop-ref-binaries
+	$(MAKE) stop
+	rm -f $(docker_compose_yml) $(net_name)/*/katzenpost.log
+	@[ -z "$(strip $(interop_swaps))" ] || { echo "services:"; \
+	  for pair in $(interop_swaps); do s=$${pair%%=*}; v=$${pair#*=}; \
+	    case $$s in \
+	      auth*)    echo "  $$s:"; echo "    command: /$(net_name)/dirauth.$(distro).$$v -f /$(net_name)/$$s/authority.toml";; \
+	      replica*) echo "  $$s:"; echo "    command: /$(net_name)/replica.$(distro).$$v -f /$(net_name)/$$s/replica.toml";; \
+	      *)        echo "  $$s:"; echo "    command: /$(net_name)/server.$(distro).$$v -f /$(net_name)/$$s/katzenpost.toml";; \
+	    esac; done; } > $(net_name)/docker-compose.override.yml
+	$(MAKE) start
+	@( $(MAKE) wait 2>&1; echo $$? > $(net_name)/wait.rc ) | tee $(net_name)/wait.log; \
+	  $(MAKE) -s interop-report; rc=$$?; [ "$$(cat $(net_name)/wait.rc)" = 0 ] && [ $$rc = 0 ] \
+	  || { echo "interop-gate: the network did not come up with every authority signing and every node listed" >&2; exit 1; }
+	@for pair in $(strip $(interop_swaps)); do s=$${pair%%=*}; v=$${pair#*=}; \
+	  grep -q " rev $$(git -C .. rev-list -n 1 $$v)" $(net_name)/$$s/*.log \
+	  || { echo "swap verify failed: $$s is not running $$v" >&2; exit 1; }; done
+	$(MAKE) run-ping || (sleep 10; $(MAKE) run-ping) || (sleep 10; $(MAKE) run-ping)
+
+interop-report:
+	@ver() { for pair in $(strip $(interop_swaps)); do [ "$${pair%%=*}" = "$$1" ] && { echo $${pair#*=}; return; }; done; echo HEAD; }; \
+	fail=0; printf '%-14s %-12s %s\n' service version consensus; \
+	for i in $$(seq 1 $(auths)); do s=auth$$i; \
+	  if grep -qE "^[[:space:]]*$$s \(" $(net_name)/wait.log; then st=signed; else st=NOT-SIGNED; fail=1; fi; \
+	  printf '%-14s %-12s %s\n' $$s $$(ver $$s) $$st; done; \
+	for grp in mix,$(mixes) gateway,$(gateways) servicenode,$(serviceNodes) replica,$(storageNodes); do \
+	  for i in $$(seq 1 $${grp#*,}); do s=$${grp%,*}$$i; \
+	    if grep -qE "\{$$s " $(net_name)/wait.log; then st=listed; else st=NOT-LISTED; fail=1; fi; \
+	    printf '%-14s %-12s %s\n' $$s $$(ver $$s) $$st; done; done; \
+	exit $$fail
+
+interop_last1=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1 | xargs)
+interop_last2=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)
+interop_nodes=replica mix gateway
+
+interop-authorities-mixed:
+	$(MAKE) interop-gate interop_swap_groups=auth release_refs="$(interop_last2)"
+interop-authorities-old:
+	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last2)"
+interop-authorities-old-n1:
+	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last1)"
+interop-nodes-mixed:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" release_refs="$(interop_last2)"
+interop-nodes-old:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last2)"
+interop-nodes-old-n1:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last1)"
+interop-everything-mixed:
+	$(MAKE) interop-gate release_refs="$(interop_last2)"
+interop-everything-mixed-n1:
+	$(MAKE) interop-gate release_refs="$(interop_last1)"
+interop-matrix: interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1
+
+client-check: | $(cache_dir)
+	@[ -s $(namenlos_config) ] || { echo "client-check: no namenlos config at $(namenlos_config)" >&2; exit 1; }
+	@grep -q '@katzenpost' $(namenlos_config) && grep -q '$$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock' $(namenlos_config) && grep -q '@katzenpost' $(namenlos_thin_config) || { echo "client-check: the namenlos configs do not carry the expected socket names" >&2; exit 1; }
+	mkdir -p namenlos-client/client
+	sed 's/@katzenpost/@namenlos-client/; s#\$$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock#/namenlos-client/kpclientd.sock#' $(namenlos_config) > namenlos-client/client/client.toml
+	sed 's/@katzenpost/@namenlos-client/' $(namenlos_thin_config) > namenlos-client/client/thinclient.toml
+	@grep -q '@namenlos-client' namenlos-client/client/client.toml && ! grep -q 'XDG_RUNTIME_DIR' namenlos-client/client/client.toml && grep -q '@namenlos-client' namenlos-client/client/thinclient.toml || { echo "client-check: socket rewrite failed" >&2; exit 1; }
+	$(MAKE) warped=false net_name=namenlos-client namenlos-client/kpclientd.$(distro) namenlos-client/fetch.$(distro) namenlos-client/ping.$(distro)
+	$(docker) rm -f namenlos-client 2>/dev/null; $(docker) run -d --name namenlos-client --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/kpclientd.$(distro) -c /namenlos-client/client/client.toml
+	@for i in $$(seq 1 60); do [ -S namenlos-client/kpclientd.sock ] && break; sleep 1; done; [ -S namenlos-client/kpclientd.sock ] || { echo "client-check: kpclientd did not open its socket within 60s" >&2; $(docker) logs namenlos-client 2>&1 | tail -50; $(docker) rm -f namenlos-client; exit 1; }
+	timeout 120 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/fetch.$(distro) -f /namenlos-client/client/thinclient.toml \
+	  && timeout 900 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/ping.$(distro) --thin -c /namenlos-client/client/thinclient.toml -s echo -n $(npings) $(ping_args); st=$$?; $(docker) rm -f namenlos-client 2>/dev/null; exit $$st

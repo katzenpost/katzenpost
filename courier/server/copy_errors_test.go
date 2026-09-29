@@ -56,3 +56,34 @@ func TestClassifyReplicaErrorForCopyReadUnknown(t *testing.T) {
 			"unknown code %d must classify as permanent", code)
 	}
 }
+
+// TestClassifyReplicaErrorForCopyWrite pins the write-path reaction,
+// which matches the read path except that BoxIDNotFound is permanent on
+// a write (it is a read-only outcome) and unknown codes fail closed.
+func TestClassifyReplicaErrorForCopyWrite(t *testing.T) {
+	temporary := []uint8{
+		pigeonhole.ReplicaErrorStorageFull,
+		pigeonhole.ReplicaErrorDatabaseFailure,
+		pigeonhole.ReplicaErrorInternalError,
+		pigeonhole.ReplicaErrorReplicationFailed,
+	}
+	for _, code := range temporary {
+		require.Equal(t, replicaErrorTemporary,
+			classifyReplicaErrorForCopyWrite(code), "code=%d", code)
+	}
+
+	permanent := []uint8{
+		pigeonhole.ReplicaErrorBoxIDNotFound,
+		pigeonhole.ReplicaErrorInvalidBoxID,
+		pigeonhole.ReplicaErrorInvalidSignature,
+		pigeonhole.ReplicaErrorInvalidPayload,
+		pigeonhole.ReplicaErrorInvalidEpoch,
+		pigeonhole.ReplicaErrorBoxAlreadyExists,
+		pigeonhole.ReplicaErrorTombstone,
+		42, 255,
+	}
+	for _, code := range permanent {
+		require.Equal(t, replicaErrorPermanent,
+			classifyReplicaErrorForCopyWrite(code), "code=%d", code)
+	}
+}

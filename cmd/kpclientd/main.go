@@ -103,7 +103,7 @@ func runClientDaemon(cfg Config) error {
 	// `kpclientd_metrics` is not set the call is a no-op and incurs
 	// no listener; production builds therefore expose no /metrics
 	// surface regardless of whether the config field is populated.
-	instrument.StartPrometheusListener(clientCfg.MetricsAddress)
+	instrument.StartPrometheusListener(clientCfg.MetricsAddress, nil)
 
 	d, err := client.NewDaemon(clientCfg)
 	if err != nil {
