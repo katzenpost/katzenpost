@@ -53,8 +53,8 @@ jobs:
           key: interop-gate-${{ runner.os }}-go1.26.x-${{ hashFiles('go.sum') }}-${{ hashFiles('docker/Dockerfile.base.alpine') }}
           restore-keys: |
             interop-gate-${{ runner.os }}-go1.26.x-
-      - name: make interop-${{ matrix.name }}
-        run: cd docker && make interop-${{ matrix.name }}
+      - name: make interop-combo combo=${{ matrix.name }}
+        run: cd docker && make interop-combo combo=${{ matrix.name }}
       - name: Dump kpclientd logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true

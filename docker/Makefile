@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1 client-check
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-combo client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -1045,6 +1045,19 @@ interop_all?=
 
 interop:
 	$(MAKE) interop-gate interop_swap_groups="$(interop_groups)" interop_swap_all="$(interop_all)" release_refs="$(interop_releases)"
+
+interop-combo:
+	@case "$(combo)" in \
+	  authorities-mixed) $(MAKE) interop interop_groups=auth;; \
+	  authorities-old) $(MAKE) interop interop_groups=auth interop_all=1;; \
+	  authorities-old-n1) $(MAKE) interop interop_groups=auth interop_all=1 interop_releases="$(interop_last1)";; \
+	  nodes-mixed) $(MAKE) interop interop_groups="$(interop_nodes)";; \
+	  nodes-old) $(MAKE) interop interop_groups="$(interop_nodes)" interop_all=1;; \
+	  nodes-old-n1) $(MAKE) interop interop_groups="$(interop_nodes)" interop_all=1 interop_releases="$(interop_last1)";; \
+	  everything-mixed) $(MAKE) interop interop_releases="$(interop_last2)";; \
+	  everything-mixed-n1) $(MAKE) interop;; \
+	  *) echo "set combo to one of: authorities-mixed authorities-old authorities-old-n1 nodes-mixed nodes-old nodes-old-n1 everything-mixed everything-mixed-n1" >&2; exit 1;; \
+	esac
 
 interop-matrix:
 	@set -e; for groups in auth "$(interop_nodes)" "$(interop_groups)"; do \

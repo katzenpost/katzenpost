@@ -136,7 +136,7 @@ jobs:
           restore-keys: |
             interop-gate-${{ runner.os }}-go${{ matrix.go-version }}-
       - name: Cross-version check on request, everything interleaved with the last two releases
-        run: cd docker && make interop-everything-mixed
+        run: cd docker && make interop
       - name: Dump kpclientd logs on failure
         if: failure()
         run: cd docker && make client-logs-snapshot || true
