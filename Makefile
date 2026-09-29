@@ -27,6 +27,14 @@ test-suite:
 	@test -n "$(suite)" || { echo "set suite to one of: $(ci_suites)" >&2; exit 1; }
 	cd $(suite) && GORACE=history_size=7 go test -race -v -failfast -timeout $(suite_timeout) ./...
 
+.PHONY: ci-native
+ci-native: check
+	@set -e; for suite in $(ci_suites); do $(MAKE) test-suite suite=$$suite; done
+	$(MAKE) test-integration
+	$(MAKE) interop
+	$(MAKE) bench
+	$(MAKE) check-live
+
 .PHONY: check
 check: ci-config-check
 	go vet ./...
