@@ -23,7 +23,7 @@ ci-config-check:
 	test -z "$$missing" || { echo "suite missing from a forge config:$$missing" >&2; exit 1; }
 
 .PHONY: test-suite
-test-suite:
+test-suite: test-config
 	@test -n "$(suite)" || { echo "set suite to one of: $(ci_suites)" >&2; exit 1; }
 	cd $(suite) && GORACE=history_size=7 go test -race -v -failfast -timeout $(suite_timeout) ./...
 
