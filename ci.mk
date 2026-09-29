@@ -32,7 +32,7 @@ CI_DAEMON_SOCKET?=unix://$(CI_SOCKET)
 CI_ACT_ARGS?=--bind --rm --concurrent-jobs 1 --pull=false
 CI_FORGEJO_ARGS?=
 
-.PHONY: ci-local ci-local-image ci-local-image-push ci-local-image-shell
+.PHONY: ci-local ci-local-run ci-local-image ci-local-image-push ci-local-image-shell
 
 ci-local-image:
 	@if [ -n "$(CI_IMAGE_DIGEST)" ]; then \
@@ -57,7 +57,7 @@ ci-local-image-shell: ci-local-image
 	  -v "$(CI_SOCKET):$(CI_SOCKET)" -e DOCKER_HOST="$(CI_DAEMON_SOCKET)" \
 	  --entrypoint /bin/bash $(CI_IMAGE)
 
-ci-local: ci-local-image
+ci-local-run:
 	@runner="$(RUNNER)"; \
 	if [ -z "$$runner" ]; then \
 	  for candidate in $(CI_RUNNERS); do \
@@ -71,6 +71,19 @@ ci-local: ci-local-image
 	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)) $(if $(CI_JOB),-j $(CI_JOB),);; \
 	  woodpecker|woodpecker-cli) set -e; for pipeline in $(if $(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/$(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/*.yaml); do \
 	    DOCKER_HOST="unix://$(CI_SOCKET)" $(WOODPECKER) exec $(CI_WOODPECKER_ARGS) --repo-path "$(CURDIR)" "$$pipeline"; done;; \
-	  "") echo "no local ci runner found; install one of: $(CI_RUNNERS)" >&2; exit 1;; \
+	  "") echo "no ci runner found; install one of: $(CI_RUNNERS)" >&2; exit 1;; \
 	  *) echo "RUNNER must be act, forgejo or woodpecker" >&2; exit 1;; \
 	esac
+
+ci-local: ci-local-image
+	@for candidate in $(if $(RUNNER),$(RUNNER),$(CI_RUNNERS)); do \
+	  command -v "$$candidate" >/dev/null 2>&1 && { \
+	    exec $(ci_make) ci-local-run RUNNER="$$candidate"; }; \
+	done; \
+	echo "no ci runner on this host; using the one in $(CI_IMAGE)"; \
+	exec $(CONTAINER_ENGINE) run --rm --network host \
+	  -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
+	  -v "$(CI_SOCKET):$(CI_SOCKET)" -e DOCKER_HOST="$(CI_DAEMON_SOCKET)" \
+	  --entrypoint /bin/bash $(CI_IMAGE) -lc \
+	  'make ci-local-run RUNNER=$(RUNNER) CI_WORKFLOW=$(CI_WORKFLOW) \
+	     CI_JOB=$(CI_JOB) CI_SOCKET=$(CI_SOCKET)'
