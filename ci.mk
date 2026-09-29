@@ -53,7 +53,9 @@ ci-local-image-push: ci-local-image
 	done
 
 ci-local-image-shell: ci-local-image
-	$(CONTAINER_ENGINE) run --rm -it --network host -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" --entrypoint /bin/bash $(CI_IMAGE)
+	$(CONTAINER_ENGINE) run --rm -it --network host -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
+	  -v "$(CI_SOCKET):$(CI_SOCKET)" -e DOCKER_HOST="$(CI_DAEMON_SOCKET)" \
+	  --entrypoint /bin/bash $(CI_IMAGE)
 
 ci-local: ci-local-image
 	@runner="$(RUNNER)"; \
