@@ -18,7 +18,6 @@
 package server
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -584,7 +583,8 @@ func New(cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.log.Noticef("Authority link public key hash is: %x", sha256.Sum256(linkBlob))
+	linkPubKeyHash := hash.Sum256(linkBlob)
+	s.log.Noticef("Authority link public key hash is: %x", linkPubKeyHash[:])
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
