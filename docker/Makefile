@@ -1039,18 +1039,17 @@ interop_last1=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1 | xargs)
 interop_last2=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)
 interop_nodes=replica mix gateway
 
-interop_groups?=
-interop_releases?=$(interop_last2)
+interop_groups?=auth replica mix gateway
+interop_releases?=$(interop_last1)
 interop_all?=
 
 interop:
 	$(MAKE) interop-gate interop_swap_groups="$(interop_groups)" interop_swap_all="$(interop_all)" release_refs="$(interop_releases)"
 
 interop-matrix:
-	@set -e; for groups in auth "$(interop_nodes)" ""; do \
+	@set -e; for groups in auth "$(interop_nodes)" "$(interop_groups)"; do \
 	  for releases in "$(interop_last2)" "$(interop_last1)"; do \
 	    for all in "" 1; do \
-	      [ -z "$$groups" ] && [ -n "$$all" ] && continue; \
 	      $(MAKE) interop interop_groups="$$groups" interop_releases="$$releases" interop_all="$$all"; \
 	    done; done; done
 
