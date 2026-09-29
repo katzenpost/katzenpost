@@ -25,6 +25,9 @@ CI_PLATFORM?=ubuntu-latest=$(CI_IMAGE)
 CI_WORKFLOWS_ACT?=.github/workflows
 CI_WORKFLOWS_FORGEJO?=.forgejo/workflows
 CI_WORKFLOW?=
+CI_WORKFLOW_ACT?=linux.yml
+CI_WORKFLOW_FORGEJO?=ci.yml
+CI_WORKFLOWS_WOODPECKER_DEFAULT?=test.yaml check.yaml
 CI_JOB?=
 CI_SOCKET?=/run/user/$(shell id -u)/podman/podman.sock
 CI_RUN_OPTIONS?=-v /etc/ssl/certs:/etc/ssl/certs:ro
@@ -66,10 +69,10 @@ ci-local-run:
 	fi; \
 	case "$$runner" in \
 	  act) DOCKER_HOST="unix://$(CI_SOCKET)" $(ACT) $(CI_ACT_ARGS) -P $(CI_PLATFORM) --var CI_IMAGE=$(CI_IMAGE) --container-daemon-socket "$(CI_DAEMON_SOCKET)" --container-options "$(CI_RUN_OPTIONS)" \
-	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_ACT)) $(if $(CI_JOB),-j $(CI_JOB),);; \
+	    -W $(CI_WORKFLOWS_ACT)/$(if $(CI_WORKFLOW),$(CI_WORKFLOW),$(CI_WORKFLOW_ACT)) $(if $(CI_JOB),-j $(CI_JOB),);; \
 	  forgejo|forgejo-runner) DOCKER_HOST="unix://$(CI_SOCKET)" $(FORGEJO_RUNNER) exec $(CI_FORGEJO_ARGS) -i $(CI_IMAGE) --var CI_IMAGE=$(CI_IMAGE) --container-daemon-socket "$(CI_DAEMON_SOCKET)" --container-opts "$(CI_RUN_OPTIONS)" \
-	    $(if $(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)/$(CI_WORKFLOW),-W $(CI_WORKFLOWS_FORGEJO)) $(if $(CI_JOB),-j $(CI_JOB),);; \
-	  woodpecker|woodpecker-cli) set -e; for pipeline in $(if $(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/$(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/*.yaml); do \
+	    -W $(CI_WORKFLOWS_FORGEJO)/$(if $(CI_WORKFLOW),$(CI_WORKFLOW),$(CI_WORKFLOW_FORGEJO)) $(if $(CI_JOB),-j $(CI_JOB),);; \
+	  woodpecker|woodpecker-cli) set -e; for pipeline in $(if $(CI_WORKFLOW),$(CI_WORKFLOWS_WOODPECKER)/$(CI_WORKFLOW),$(addprefix $(CI_WORKFLOWS_WOODPECKER)/,$(CI_WORKFLOWS_WOODPECKER_DEFAULT))); do \
 	    DOCKER_HOST="unix://$(CI_SOCKET)" $(WOODPECKER) exec $(CI_WOODPECKER_ARGS) --repo-path "$(CURDIR)" "$$pipeline"; done;; \
 	  "") echo "no ci runner found; install one of: $(CI_RUNNERS)" >&2; exit 1;; \
 	  *) echo "RUNNER must be act, forgejo or woodpecker" >&2; exit 1;; \
