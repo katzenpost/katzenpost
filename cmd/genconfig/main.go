@@ -126,6 +126,8 @@ performance optimization and security requirements.`,
 		"disable decoy traffic generation for gateway nodes (independent of --noMixDecoy)")
 	cmd.Flags().BoolVar(&cfg.NoMetrics, "noMetrics", false,
 		"disable prometheus and grafana containers in docker-compose")
+	cmd.Flags().BoolVar(&cfg.Cover, "cover", false,
+		"set GOCOVERDIR per service for binaries built with -cover")
 	cmd.Flags().BoolVar(&cfg.PyroscopeDirauth, "pyroscopeDirauth", false,
 		"enable pyroscope profiling of the directory authorities")
 	cmd.Flags().BoolVar(&cfg.PyroscopeKpclientd, "pyroscopeKpclientd", false,
