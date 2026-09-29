@@ -1040,7 +1040,7 @@ interop_last2=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)
 interop_nodes=replica mix gateway
 
 interop_groups?=auth replica mix gateway
-interop_releases?=$(interop_last1)
+interop_releases?=$(interop_last2)
 interop_all?=
 
 interop:
@@ -1055,7 +1055,7 @@ interop-combo:
 	  nodes-old) $(MAKE) interop interop_groups="$(interop_nodes)" interop_all=1;; \
 	  nodes-old-n1) $(MAKE) interop interop_groups="$(interop_nodes)" interop_all=1 interop_releases="$(interop_last1)";; \
 	  everything-mixed) $(MAKE) interop interop_releases="$(interop_last2)";; \
-	  everything-mixed-n1) $(MAKE) interop;; \
+	  everything-mixed-n1) $(MAKE) interop interop_releases="$(interop_last1)";; \
 	  *) echo "set combo to one of: authorities-mixed authorities-old authorities-old-n1 nodes-mixed nodes-old nodes-old-n1 everything-mixed everything-mixed-n1" >&2; exit 1;; \
 	esac
 
