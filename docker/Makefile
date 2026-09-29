@@ -58,6 +58,7 @@ transport?=tcp
 pyroscope_dirauth?=false
 pyroscope_kpclientd?=false
 kpclientd_metrics?=false
+cover?=false
 epoch_duration?=2m
 # session_grace_period sets how long kpclientd preserves per-app
 # state after a thin-client connection drops without thin_close.
@@ -202,6 +203,10 @@ roundtrip_size?=65536
 # independently. The presence flags below are emitted only when true
 # (their cobra defaults are false); --noMixDecoy/--noGatewayDecoy
 # default true in cobra, so they are always passed explicitly.
+ifeq ($(cover),true)
+  coverFlag=--cover
+  cover_flags=-cover -coverpkg=github.com/katzenpost/katzenpost/...
+endif
 ifeq ($(no_decoy),true)
   noDecoyFlag=--noDecoy
 endif
@@ -266,7 +271,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
 	--proxyWorkerCount $(proxyWorkerCount) --proxyRequestTimeout $(proxyRequestTimeout) \
 	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
-	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
+	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level) $(coverFlag)
 
 # Pumba network chaos. Off by default; invoke `make pumba-latency` or
 # `make pumba-loss` to start a sidecar that applies `tc netem` qdiscs in
@@ -714,13 +719,13 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 			$(sh) -c 'go get -d -u ./... && go mod tidy'
 
 $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/server ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/server.$(distro)'
+		$(docker_run_sh) 'cd cmd/server ; go build -trimpath $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/server.$(distro)'
 
 $(net_name)/courier.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/courier ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/courier.$(distro)'
+		$(docker_run_sh) 'cd cmd/courier ; go build -trimpath $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/courier.$(distro)'
 
 $(net_name)/replica.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/replica ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/replica.$(distro)'
+		$(docker_run_sh) 'cd cmd/replica ; go build -trimpath $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/replica.$(distro)'
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/http-proxy-client; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/proxy_client.$(distro)'
@@ -732,7 +737,7 @@ $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_di
 		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/echo_server.$(distro)'
 
 $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath -ldflags ${ldflags} -o /$(net_name)/dirauth.$(distro)'
+		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/dirauth.$(distro)'
 
 $(net_name)/fetch.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/fetch && go build -trimpath -ldflags ${ldflags} -o /$(net_name)/fetch.$(distro)'
@@ -747,7 +752,7 @@ $(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd tools/chaos/cmd/cp-bench && go build -ldflags ${ldflags} -o /$(net_name)/cp-bench.$(distro)'
 
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} -o /$(net_name)/kpclientd.$(distro)'
+		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/kpclientd.$(distro)'
 
 # clean-images must remove images and stamps for every distro a user could
 # have named, not just the ones in DISTROS. Discover them from the on-disk
@@ -812,6 +817,11 @@ clean-local: stop
 clean-caches:
 	$(if $(strip $(cache_dir)),,$(error cache_dir is empty))
 	[ ! -d $(cache_dir) ] || $(docker) run --rm -v $(abspath $(cache_dir)):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
+
+.PHONY: cover-report
+cover-report:
+	go tool covdata percent -i=$$(ls -d $(net_name)/coverage/*/ | paste -sd, -)
+	go tool covdata textfmt -i=$$(ls -d $(net_name)/coverage/*/ | paste -sd, -) -o $(net_name)/coverage.out
 
 clean-local-dryrun:
 	git clean -n -x $(net_name)
