@@ -128,8 +128,8 @@ func TestPadToSize(t *testing.T) {
 }
 
 func TestReplicaInnerMessageWriteSize(t *testing.T) {
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
-	g := geo.NewGeometry(1000, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	g := geo.NewGeometry(1000, kemScheme)
 
 	// Construct a real max-size write ReplicaInnerMessage
 	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
@@ -171,8 +171,8 @@ func TestReplicaInnerMessageWriteSize(t *testing.T) {
 }
 
 func TestReplicaReplyInnerMessageReadSize(t *testing.T) {
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
-	g := geo.NewGeometry(1000, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	g := geo.NewGeometry(1000, kemScheme)
 
 	// Construct a real max-size read reply
 	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
@@ -218,8 +218,8 @@ func TestReplicaReplyInnerMessageReadSize(t *testing.T) {
 // TestPadInnerMessageForEncryption verifies that the padding function produces
 // equal-length output for tombstone writes and normal writes.
 func TestPadInnerMessageForEncryption(t *testing.T) {
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
-	g := geo.NewGeometry(1000, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	g := geo.NewGeometry(1000, kemScheme)
 	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
 
 	normalWrite := &ReplicaInnerMessage{
@@ -255,8 +255,8 @@ func TestPadInnerMessageForEncryption(t *testing.T) {
 // TestPadReplyInnerMessageForEncryption verifies that the padding function produces
 // equal-length output for tombstone read replies and normal read replies.
 func TestPadReplyInnerMessageForEncryption(t *testing.T) {
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
-	g := geo.NewGeometry(1000, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	g := geo.NewGeometry(1000, kemScheme)
 	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
 
 	normalReadReply := &ReplicaMessageReplyInnerMessage{
