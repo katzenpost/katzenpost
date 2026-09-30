@@ -11,8 +11,6 @@ import (
 
 	"github.com/katzenpost/hpqc/kem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
-	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -26,7 +24,7 @@ const (
 	// Test scheme constants
 	testPKIScheme     = "Ed25519 Sphincs+"
 	testLinkScheme    = "Xwing"
-	testReplicaScheme = "CTIDH1024-X25519"
+	testReplicaScheme = "x25519"
 )
 
 // generateRandomBoxID creates a random box ID for testing
@@ -38,7 +36,7 @@ func generateRandomBoxID(t *testing.T) *[32]byte {
 }
 
 // Helper function to create a test replica descriptor
-func createTestReplicaDescriptor(t *testing.T, name string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme) *pki.ReplicaDescriptor {
+func createTestReplicaDescriptor(t *testing.T, name string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme kem.Scheme) *pki.ReplicaDescriptor {
 	// Generate identity key
 	identityPubKey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
@@ -80,7 +78,7 @@ func createTestPKIDocument(t *testing.T, numReplicas int) *pki.Document {
 	require.NotNil(t, pkiScheme)
 	linkScheme := kemSchemes.ByName(testLinkScheme)
 	require.NotNil(t, linkScheme)
-	replicaScheme := nikeSchemes.ByName(testReplicaScheme)
+	replicaScheme := kemSchemes.ByName(testReplicaScheme)
 	require.NotNil(t, replicaScheme)
 
 	replicas := make([]*pki.ReplicaDescriptor, numReplicas)
@@ -113,7 +111,7 @@ func createTestPKIDocument(t *testing.T, numReplicas int) *pki.Document {
 }
 
 // Helper function to validate successful GetRandomIntermediateReplicas results
-func validateSuccessfulResult(t *testing.T, doc *pki.Document, replicaIndices [2]uint8, replicaPubKeys []nike.PublicKey) {
+func validateSuccessfulResult(t *testing.T, doc *pki.Document, replicaIndices [2]uint8, replicaPubKeys []kem.PublicKey) {
 	// Verify it returns 2 different replica indices
 	require.Equal(t, 2, len(replicaIndices))
 	require.NotEqual(t, replicaIndices[0], replicaIndices[1], "Replica indices should be different")
@@ -128,7 +126,11 @@ func validateSuccessfulResult(t *testing.T, doc *pki.Document, replicaIndices [2
 	require.NotNil(t, replicaPubKeys[1], "Second public key should not be nil")
 
 	// Verify public keys are different (by comparing their bytes)
-	require.NotEqual(t, replicaPubKeys[0].Bytes(), replicaPubKeys[1].Bytes(), "Public keys should be different")
+	pubKey0Bytes, err := replicaPubKeys[0].MarshalBinary()
+	require.NoError(t, err)
+	pubKey1Bytes, err := replicaPubKeys[1].MarshalBinary()
+	require.NoError(t, err)
+	require.NotEqual(t, pubKey0Bytes, pubKey1Bytes, "Public keys should be different")
 
 	// Verify public keys match the selected replicas
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
@@ -141,7 +143,7 @@ func validateSuccessfulResult(t *testing.T, doc *pki.Document, replicaIndices [2
 }
 
 // Helper function to validate error results
-func validateErrorResult(t *testing.T, replicaIndices [2]uint8, replicaPubKeys []nike.PublicKey, err error, expectedErrorSubstring string) {
+func validateErrorResult(t *testing.T, replicaIndices [2]uint8, replicaPubKeys []kem.PublicKey, err error, expectedErrorSubstring string) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), expectedErrorSubstring)
 	require.Equal(t, [2]uint8{}, replicaIndices)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
@@ -23,7 +24,8 @@ func testReplicaCommands(t *testing.T) *Commands {
 	t.Helper()
 	nike := nikeSchemes.ByName("x25519")
 	g := geo.GeometryFromUserForwardPayloadLength(nike, 5000, true, 5)
-	return NewStorageReplicaCommands(sphinx.NewSphinx(g).Geometry(), nike)
+	kemScheme := kemSchemes.ByName("x25519")
+	return NewStorageReplicaCommands(sphinx.NewSphinx(g).Geometry(), kemScheme)
 }
 
 // assertRejected asserts that FromBytes rejects an id-body frame with

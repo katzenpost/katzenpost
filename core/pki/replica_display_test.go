@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
-	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 )
 
@@ -25,7 +24,7 @@ func TestReplicaDescriptorDisplayWithSchemesShortKeyNoPanic(t *testing.T) {
 	}
 	linkScheme := kemschemes.ByName("Xwing")
 	require.NotNil(t, linkScheme)
-	envScheme := nikeschemes.ByName("x25519")
+	envScheme := kemschemes.ByName("x25519")
 	require.NotNil(t, envScheme)
 
 	d := &ReplicaDescriptor{

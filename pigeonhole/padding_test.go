@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
@@ -294,17 +294,17 @@ func TestPadReplyInnerMessageForEncryption(t *testing.T) {
 // TestTombstoneWriteMKEMCiphertextIndistinguishable does full MKEM encryption
 // and verifies that the ciphertext sizes are identical for tombstone vs normal write.
 func TestTombstoneWriteMKEMCiphertextIndistinguishable(t *testing.T) {
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
-	mkemScheme := mkem.NewScheme(nikeScheme)
-	g := geo.NewGeometry(1000, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	mkemScheme := mrhybrid.NewScheme(kemScheme)
+	g := geo.NewGeometry(1000, kemScheme)
 	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
 
 	// Generate replica keys
-	replica0Pub, _, err := nikeScheme.GenerateKeyPair()
+	replica0Pub, _, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	replica1Pub, _, err := nikeScheme.GenerateKeyPair()
+	replica1Pub, _, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	replicaPubKeys := []nike.PublicKey{replica0Pub, replica1Pub}
+	replicaPubKeys := []kem.PublicKey{replica0Pub, replica1Pub}
 
 	normalWrite := &ReplicaInnerMessage{
 		MessageType: 1,
@@ -343,16 +343,14 @@ func TestTombstoneWriteMKEMCiphertextIndistinguishable(t *testing.T) {
 // TestTombstoneReadReplyMKEMCiphertextIndistinguishable does full MKEM reply encryption
 // and verifies that the ciphertext sizes are identical for tombstone vs normal read reply.
 func TestTombstoneReadReplyMKEMCiphertextIndistinguishable(t *testing.T) {
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
-	mkemScheme := mkem.NewScheme(nikeScheme)
-	g := geo.NewGeometry(1000, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	g := geo.NewGeometry(1000, kemScheme)
 	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
 
-	// Generate keys for envelope reply
-	_, replicaPriv, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
-	clientPub, _, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
+	// A derived key of the right size is all EnvelopeReply needs; its
+	// output size only depends on the plaintext length, not the key.
+	derivedKey := make([]byte, mrhybrid.KeySize)
+	mkemScheme := mrhybrid.NewScheme(kemScheme)
 
 	normalReadReply := &ReplicaMessageReplyInnerMessage{
 		MessageType: 0,
@@ -381,28 +379,28 @@ func TestTombstoneReadReplyMKEMCiphertextIndistinguishable(t *testing.T) {
 	tombstonePadded, err := PadReplyInnerMessageForEncryption(tombstoneReadReply, g)
 	require.NoError(t, err)
 
-	normalReply, err := mkemScheme.EnvelopeReply(replicaPriv, clientPub, normalPadded)
+	normalReply, err := mkemScheme.EnvelopeReply(derivedKey, normalPadded)
 	require.NoError(t, err)
-	tombstoneReply, err := mkemScheme.EnvelopeReply(replicaPriv, clientPub, tombstonePadded)
+	tombstoneReply, err := mkemScheme.EnvelopeReply(derivedKey, tombstonePadded)
 	require.NoError(t, err)
 
-	require.Equal(t, len(normalReply.Envelope), len(tombstoneReply.Envelope),
+	require.Equal(t, len(normalReply), len(tombstoneReply),
 		"MKEM reply ciphertext must be identical size for tombstone and normal read reply")
 }
 
 // TestReadWriteQueryMKEMCiphertextIndistinguishable verifies that read and write
 // queries produce identical MKEM ciphertext sizes after padding.
 func TestReadWriteQueryMKEMCiphertextIndistinguishable(t *testing.T) {
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
-	mkemScheme := mkem.NewScheme(nikeScheme)
-	g := geo.NewGeometry(1000, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	mkemScheme := mrhybrid.NewScheme(kemScheme)
+	g := geo.NewGeometry(1000, kemScheme)
 	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
 
-	replica0Pub, _, err := nikeScheme.GenerateKeyPair()
+	replica0Pub, _, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	replica1Pub, _, err := nikeScheme.GenerateKeyPair()
+	replica1Pub, _, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	replicaPubKeys := []nike.PublicKey{replica0Pub, replica1Pub}
+	replicaPubKeys := []kem.PublicKey{replica0Pub, replica1Pub}
 
 	readQuery := &ReplicaInnerMessage{
 		MessageType: 0,
@@ -438,15 +436,14 @@ func TestReadWriteQueryMKEMCiphertextIndistinguishable(t *testing.T) {
 // TestReadWriteReplyMKEMCiphertextIndistinguishable verifies that read and write
 // reply messages produce identical MKEM envelope reply sizes after padding.
 func TestReadWriteReplyMKEMCiphertextIndistinguishable(t *testing.T) {
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
-	mkemScheme := mkem.NewScheme(nikeScheme)
-	g := geo.NewGeometry(1000, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	mkemScheme := mrhybrid.NewScheme(kemScheme)
+	g := geo.NewGeometry(1000, kemScheme)
 	bacapCiphertextLen := g.CalculateBoxCiphertextLength()
 
-	_, replicaPriv, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
-	clientPub, _, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
+	// A derived key of the right size is all EnvelopeReply needs; its
+	// output size only depends on the plaintext length, not the key.
+	derivedKey := make([]byte, mrhybrid.KeySize)
 
 	readReply := &ReplicaMessageReplyInnerMessage{
 		MessageType: 0,
@@ -469,12 +466,12 @@ func TestReadWriteReplyMKEMCiphertextIndistinguishable(t *testing.T) {
 	writePadded, err := PadReplyInnerMessageForEncryption(writeReply, g)
 	require.NoError(t, err)
 
-	readEnvReply, err := mkemScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
+	readEnvReply, err := mkemScheme.EnvelopeReply(derivedKey, readPadded)
 	require.NoError(t, err)
-	writeEnvReply, err := mkemScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
+	writeEnvReply, err := mkemScheme.EnvelopeReply(derivedKey, writePadded)
 	require.NoError(t, err)
 
-	require.Equal(t, len(readEnvReply.Envelope), len(writeEnvReply.Envelope),
+	require.Equal(t, len(readEnvReply), len(writeEnvReply),
 		"MKEM reply ciphertext must be identical size for read and write replies")
 }
 

@@ -18,7 +18,7 @@ func TestEnvelopeDescriptorRoundTrip(t *testing.T) {
 	desc := &EnvelopeDescriptor{
 		Epoch:       42,
 		ReplicaNums: [2]uint8{3, 7},
-		EnvelopeKey: []byte("test-key-data-here"),
+		DerivedKeys: [2][]byte{[]byte("test-key-data-here-0"), []byte("test-key-data-here-1")},
 	}
 
 	blob, err := desc.Bytes()
@@ -29,7 +29,7 @@ func TestEnvelopeDescriptorRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, desc.Epoch, desc2.Epoch)
 	require.Equal(t, desc.ReplicaNums, desc2.ReplicaNums)
-	require.Equal(t, desc.EnvelopeKey, desc2.EnvelopeKey)
+	require.Equal(t, desc.DerivedKeys, desc2.DerivedKeys)
 }
 
 func TestEnvelopeDescriptorFromBytesInvalid(t *testing.T) {
@@ -53,18 +53,20 @@ func TestEnvelopeDescriptorZeroValues(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), desc2.Epoch)
 	require.Equal(t, [2]uint8{0, 0}, desc2.ReplicaNums)
-	require.Nil(t, desc2.EnvelopeKey)
+	require.Equal(t, [2][]byte{nil, nil}, desc2.DerivedKeys)
 }
 
 func TestEnvelopeDescriptorLargeKey(t *testing.T) {
-	largeKey := make([]byte, 4096)
-	for i := range largeKey {
-		largeKey[i] = byte(i % 256)
+	largeKey0 := make([]byte, 4096)
+	largeKey1 := make([]byte, 4096)
+	for i := range largeKey0 {
+		largeKey0[i] = byte(i % 256)
+		largeKey1[i] = byte((i + 128) % 256)
 	}
 	desc := &EnvelopeDescriptor{
 		Epoch:       ^uint64(0), // max uint64
 		ReplicaNums: [2]uint8{255, 254},
-		EnvelopeKey: largeKey,
+		DerivedKeys: [2][]byte{largeKey0, largeKey1},
 	}
 
 	blob, err := desc.Bytes()
@@ -74,7 +76,7 @@ func TestEnvelopeDescriptorLargeKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, desc.Epoch, desc2.Epoch)
 	require.Equal(t, desc.ReplicaNums, desc2.ReplicaNums)
-	require.Equal(t, desc.EnvelopeKey, desc2.EnvelopeKey)
+	require.Equal(t, desc.DerivedKeys, desc2.DerivedKeys)
 }
 
 func TestGetRandomCourier(t *testing.T) {
