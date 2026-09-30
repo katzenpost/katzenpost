@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 	pemkem "github.com/katzenpost/hpqc/kem/pem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -39,11 +39,12 @@ func TestConnector(t *testing.T) {
 	datadir, err := os.MkdirTemp("", "courier_connector_test_datadir")
 	require.NoError(t, err)
 
-	mkemNikeScheme := schemes.ByName("x25519")
-	mkemScheme := mkem.NewScheme(mkemNikeScheme)
+	mkemKEMScheme := kemSchemes.ByName("x25519")
+	mkemScheme := mrhybrid.NewScheme(mkemKEMScheme)
 
 	nikeSchemeName := "x25519"
 	nikeScheme := schemes.ByName(nikeSchemeName)
+	kemScheme := kemSchemes.ByName(nikeSchemeName)
 	g := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 2000, false, 5)
 
 	WireKEMSchemeName := "x25519"
@@ -96,7 +97,7 @@ func TestConnector(t *testing.T) {
 		ReauthInterval:   config.DefaultReauthInterval,
 	}
 
-	m := newMockPKI(t, pkiScheme, linkScheme, mkemNikeScheme, nikeScheme, g)
+	m := newMockPKI(t, pkiScheme, linkScheme, mkemKEMScheme, nikeScheme, g)
 
 	go m.spawnReplica(0)
 	go m.spawnReplica(1)
@@ -119,9 +120,6 @@ func TestConnector(t *testing.T) {
 	time.Sleep(time.Second * 3)
 	dest := uint8(0)
 
-	mkemPubkey, _, err := mkemScheme.GenerateKeyPair()
-	require.NoError(t, err)
-
 	replica1Pub, _ := m.replicaKeys(0)
 	replica2Pub, _ := m.replicaKeys(1)
 
@@ -135,11 +133,11 @@ func TestConnector(t *testing.T) {
 	payload := []byte("hello")
 
 	// Create pigeonhole geometry for proper ReplicaWrite
-	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(g, nikeScheme)
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(g, kemScheme)
 	require.NoError(t, err)
 
 	replicaWrite := commands.ReplicaWrite{
-		Cmds:               commands.NewStorageReplicaCommands(g, nikeScheme),
+		Cmds:               commands.NewStorageReplicaCommands(g, kemScheme),
 		PigeonholeGeometry: pigeonholeGeo,
 
 		BoxID:     boxid,
@@ -147,16 +145,16 @@ func TestConnector(t *testing.T) {
 		Payload:   payload,
 	}
 
-	_, envelope1, err := mkemScheme.Encapsulate([]nike.PublicKey{replica1Pub, replica2Pub}, replicaWrite.ToBytes())
+	_, envelope1, err := mkemScheme.Encapsulate([]kem.PublicKey{replica1Pub, replica2Pub}, replicaWrite.ToBytes())
 	require.NoError(t, err)
-	dek := &[mkem.DEKSize]byte{}
+	dek := &[mrhybrid.DEKSize]byte{}
 	copy(dek[:], envelope1.DEKCiphertexts[0][:])
 	mesg := &commands.ReplicaMessage{
-		Cmds:               commands.NewStorageReplicaCommands(g, nikeScheme),
+		Cmds:               commands.NewStorageReplicaCommands(g, kemScheme),
 		PigeonholeGeometry: pigeonholeGeo,
-		Scheme:             nikeScheme,
+		Scheme:             kemScheme,
 
-		SenderEPubKey: mkemPubkey.Bytes(),
+		KEMCiphertext: envelope1.KEMCiphertexts[0],
 		DEK:           dek,
 		Ciphertext:    envelope1.Envelope,
 	}

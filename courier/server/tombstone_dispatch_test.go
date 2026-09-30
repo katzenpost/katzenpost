@@ -17,17 +17,18 @@ import (
 )
 
 // buildTestTombstoneMessages returns a ReplicaMessage pair that share
-// SenderEPubKey + Ciphertext (the only fields EnvelopeHash() reads), so
-// both messages produce the same envHash — exactly matching the shape
-// the real tombstone path produces via a single MKEM multi-recipient
-// encapsulation.
+// Ciphertext (the only field EnvelopeHash() reads), so both messages
+// produce the same envHash — exactly matching the shape the real
+// tombstone path produces via a single mrhybrid multi-recipient
+// encapsulation, where each recipient gets its own KEMCiphertext but
+// all share the same Ciphertext envelope.
 func buildTestTombstoneMessages(replicaIDs []uint8, tag byte) ([]*commands.ReplicaMessage, *[hash.HashSize]byte) {
-	senderKey := bytes.Repeat([]byte{tag}, 16)
+	kemCt := bytes.Repeat([]byte{tag}, 16)
 	ciphertext := bytes.Repeat([]byte{tag ^ 0xff}, 32)
 	msgs := make([]*commands.ReplicaMessage, len(replicaIDs))
 	for i := range replicaIDs {
 		msgs[i] = &commands.ReplicaMessage{
-			SenderEPubKey: senderKey,
+			KEMCiphertext: kemCt,
 			DEK:           &[60]byte{},
 			Ciphertext:    ciphertext,
 		}

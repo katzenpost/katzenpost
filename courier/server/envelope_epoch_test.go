@@ -66,9 +66,10 @@ func TestCacheHandleCourierEnvelopeRejectsStaleEpoch(t *testing.T) {
 	// Pick an epoch far below whatever ReplicaNow() returns — safely
 	// outside the ±1 window without depending on wall-clock timing.
 	envelope := &pigeonhole.CourierEnvelope{
-		Epoch:        1,
-		SenderPubkey: []byte("stale-sender-pubkey"),
-		Ciphertext:   []byte("stale-ciphertext"),
+		Epoch:          1,
+		KemCiphertext1: []byte("stale-kem-ciphertext-1"),
+		KemCiphertext2: []byte("stale-kem-ciphertext-2"),
+		Ciphertext:     []byte("stale-ciphertext"),
 	}
 	envHash := envelope.EnvelopeHash()
 
@@ -94,9 +95,10 @@ func TestCacheHandleCourierEnvelopeRejectsFarFutureEpoch(t *testing.T) {
 
 	envelope := &pigeonhole.CourierEnvelope{
 		// A value so far in the future ReplicaNow() cannot be within 1.
-		Epoch:        1 << 40,
-		SenderPubkey: []byte("future-sender-pubkey"),
-		Ciphertext:   []byte("future-ciphertext"),
+		Epoch:          1 << 40,
+		KemCiphertext1: []byte("future-kem-ciphertext-1"),
+		KemCiphertext2: []byte("future-kem-ciphertext-2"),
+		Ciphertext:     []byte("future-ciphertext"),
 	}
 
 	reply := courier.cacheHandleCourierEnvelope(0, envelope)
