@@ -53,7 +53,7 @@ func TestNew(t *testing.T) {
 	linkpubkey, _, err := linkScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
-	replicaScheme := nikeschemes.ByName("x25519")
+	replicaScheme := kemschemes.ByName("x25519")
 
 	nrHops := 5
 	payloadSize := 5000
@@ -85,7 +85,7 @@ func TestNew(t *testing.T) {
 		Identifier:         "replica1",
 		WireKEMScheme:      linkScheme.Name(),
 		PKISignatureScheme: pkiScheme.Name(),
-		ReplicaNIKEScheme:  replicaScheme.Name(),
+		ReplicaKEMScheme:   replicaScheme.Name(),
 		SphinxGeometry:     geometry,
 		Addresses:          []string{"tcp://127.0.0.1:2413"},
 	}
@@ -118,7 +118,7 @@ func TestGetRemoteShards(t *testing.T) {
 		DataDir:            tempDir,
 		SphinxGeometry:     geometry,
 		PKISignatureScheme: schemes.PKI.Name(),
-		ReplicaNIKEScheme:  schemes.Replica.Name(),
+		ReplicaKEMScheme:   schemes.Replica.Name(),
 		WireKEMScheme:      schemes.Link.Name(),
 		Addresses:          []string{"tcp://127.0.0.1:34394"},
 	}

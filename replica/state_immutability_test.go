@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
-	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -40,13 +40,13 @@ func setupImmutabilityTestState(t *testing.T) *state {
 	require.NotNil(t, geo)
 
 	pkiScheme := signschemes.ByName("ed25519")
-	replicaScheme := nikeschemes.ByName("x25519")
+	replicaScheme := kemschemes.ByName("x25519")
 
 	pk, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 
 	cfg := &config.Config{
-		ReplicaNIKEScheme: "X25519",
+		ReplicaKEMScheme:  "X25519",
 		DataDir:           dname,
 		SphinxGeometry:    geo,
 		Logging: &config.Logging{

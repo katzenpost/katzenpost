@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
-	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -21,7 +21,7 @@ import (
 // envelopeKeysWithEpochs builds an EnvelopeKeys populated with freshly
 // generated keypairs for the requested replica-epochs. The caller is
 // responsible for the temporary data dir cleanup.
-func envelopeKeysWithEpochs(t *testing.T, epochs []uint64) (*EnvelopeKeys, nike.Scheme) {
+func envelopeKeysWithEpochs(t *testing.T, epochs []uint64) (*EnvelopeKeys, kem.Scheme) {
 	t.Helper()
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
@@ -30,7 +30,9 @@ func envelopeKeysWithEpochs(t *testing.T, epochs []uint64) (*EnvelopeKeys, nike.
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dname) })
 
-	scheme := nikeschemes.ByName("CTIDH512-X25519")
+	// x25519 rather than the production mceliece348864-X25519: keygen
+	// runs once per epoch here and McEliece keygen is comparatively slow.
+	scheme := kemschemes.ByName("x25519")
 	keys := &EnvelopeKeys{
 		log:      logBackend.GetLogger("envelope keys"),
 		datadir:  dname,
@@ -58,22 +60,17 @@ func TestValidEnvelopeEpochWindowMatchesCourier(t *testing.T) {
 // a ciphertext encrypted to the current-epoch public key decapsulates.
 func TestTryDecapsulateAcrossEpochWindowSucceedsForCurrent(t *testing.T) {
 	const current uint64 = 100
-	keys, nikeScheme := envelopeKeysWithEpochs(t, []uint64{current - 1, current, current + 1})
-	mscheme := mkem.NewScheme(nikeScheme)
+	keys, kemScheme := envelopeKeysWithEpochs(t, []uint64{current - 1, current, current + 1})
+	mscheme := mrhybrid.NewScheme(kemScheme)
 
 	kp, err := keys.GetKeypair(current)
 	require.NoError(t, err)
 
 	payload := []byte("hello-current-epoch")
-	_, ct, err := mscheme.Encapsulate([]nike.PublicKey{kp.PublicKey}, payload)
+	_, ct, err := mscheme.Encapsulate([]kem.PublicKey{kp.PublicKey}, payload)
 	require.NoError(t, err)
-	decapCt := &mkem.Ciphertext{
-		EphemeralPublicKey: ct.EphemeralPublicKey,
-		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
-		Envelope:           ct.Envelope,
-	}
 
-	pt, decapKp, epoch, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, decapCt, current)
+	_, pt, decapKp, epoch, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, ct, current)
 	require.NoError(t, err)
 	require.Equal(t, payload, pt)
 	require.Equal(t, current, epoch, "should report which epoch's key succeeded")
@@ -88,22 +85,17 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForCurrent(t *testing.T) {
 // memory (H5's startup-load fix) so decapsulation must still succeed.
 func TestTryDecapsulateAcrossEpochWindowSucceedsForPrevious(t *testing.T) {
 	const current uint64 = 100
-	keys, nikeScheme := envelopeKeysWithEpochs(t, []uint64{current - 1, current, current + 1})
-	mscheme := mkem.NewScheme(nikeScheme)
+	keys, kemScheme := envelopeKeysWithEpochs(t, []uint64{current - 1, current, current + 1})
+	mscheme := mrhybrid.NewScheme(kemScheme)
 
 	prevKp, err := keys.GetKeypair(current - 1)
 	require.NoError(t, err)
 
 	payload := []byte("encrypted-before-rollover")
-	_, ct, err := mscheme.Encapsulate([]nike.PublicKey{prevKp.PublicKey}, payload)
+	_, ct, err := mscheme.Encapsulate([]kem.PublicKey{prevKp.PublicKey}, payload)
 	require.NoError(t, err)
-	decapCt := &mkem.Ciphertext{
-		EphemeralPublicKey: ct.EphemeralPublicKey,
-		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
-		Envelope:           ct.Envelope,
-	}
 
-	pt, decapKp, epoch, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, decapCt, current)
+	_, pt, decapKp, epoch, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, ct, current)
 	require.NoError(t, err)
 	require.Equal(t, payload, pt)
 	require.Equal(t, current-1, epoch)
@@ -116,22 +108,17 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForPrevious(t *testing.T) {
 // that keypair, so we must accept it.
 func TestTryDecapsulateAcrossEpochWindowSucceedsForNext(t *testing.T) {
 	const current uint64 = 100
-	keys, nikeScheme := envelopeKeysWithEpochs(t, []uint64{current - 1, current, current + 1})
-	mscheme := mkem.NewScheme(nikeScheme)
+	keys, kemScheme := envelopeKeysWithEpochs(t, []uint64{current - 1, current, current + 1})
+	mscheme := mrhybrid.NewScheme(kemScheme)
 
 	nextKp, err := keys.GetKeypair(current + 1)
 	require.NoError(t, err)
 
 	payload := []byte("encrypted-ahead-of-rollover")
-	_, ct, err := mscheme.Encapsulate([]nike.PublicKey{nextKp.PublicKey}, payload)
+	_, ct, err := mscheme.Encapsulate([]kem.PublicKey{nextKp.PublicKey}, payload)
 	require.NoError(t, err)
-	decapCt := &mkem.Ciphertext{
-		EphemeralPublicKey: ct.EphemeralPublicKey,
-		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
-		Envelope:           ct.Envelope,
-	}
 
-	pt, decapKp, epoch, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, decapCt, current)
+	_, pt, decapKp, epoch, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, ct, current)
 	require.NoError(t, err)
 	require.Equal(t, payload, pt)
 	require.Equal(t, current+1, epoch)
@@ -147,22 +134,17 @@ func TestTryDecapsulateAcrossEpochWindowRejectsOutOfWindow(t *testing.T) {
 	const current uint64 = 100
 	// Note: we include current-2 in the in-memory set to prove the
 	// window — not key availability — is what bounds us.
-	keys, nikeScheme := envelopeKeysWithEpochs(t, []uint64{current - 2, current - 1, current, current + 1})
-	mscheme := mkem.NewScheme(nikeScheme)
+	keys, kemScheme := envelopeKeysWithEpochs(t, []uint64{current - 2, current - 1, current, current + 1})
+	mscheme := mrhybrid.NewScheme(kemScheme)
 
 	oldKp, err := keys.GetKeypair(current - 2)
 	require.NoError(t, err)
 
 	payload := []byte("encrypted-too-long-ago")
-	_, ct, err := mscheme.Encapsulate([]nike.PublicKey{oldKp.PublicKey}, payload)
+	_, ct, err := mscheme.Encapsulate([]kem.PublicKey{oldKp.PublicKey}, payload)
 	require.NoError(t, err)
-	decapCt := &mkem.Ciphertext{
-		EphemeralPublicKey: ct.EphemeralPublicKey,
-		DEKCiphertexts:     [][]byte{ct.DEKCiphertexts[0]},
-		Envelope:           ct.Envelope,
-	}
 
-	_, _, _, err = tryDecapsulateAcrossEpochWindow(keys, mscheme, decapCt, current)
+	_, _, _, _, err = tryDecapsulateAcrossEpochWindow(keys, mscheme, ct, current)
 	require.Error(t, err, "ciphertext outside the tolerance window must not decapsulate")
 }
 
@@ -170,23 +152,23 @@ func TestTryDecapsulateAcrossEpochWindowRejectsOutOfWindow(t *testing.T) {
 // cold-start / fresh-install edge case: the keyring is empty. We
 // expect a clean error rather than a panic.
 func TestTryDecapsulateAcrossEpochWindowNoKeysAvailable(t *testing.T) {
-	keys, nikeScheme := envelopeKeysWithEpochs(t, nil)
-	mscheme := mkem.NewScheme(nikeScheme)
+	keys, kemScheme := envelopeKeysWithEpochs(t, nil)
+	mscheme := mrhybrid.NewScheme(kemScheme)
 
 	// An empty ciphertext is fine — we never reach the decap itself.
-	decapCt := &mkem.Ciphertext{
-		EphemeralPublicKey: nil,
-		DEKCiphertexts:     nil,
-		Envelope:           nil,
+	decapCt := &mrhybrid.Ciphertext{
+		KEMCiphertexts: nil,
+		DEKCiphertexts: nil,
+		Envelope:       nil,
 	}
-	_, _, _, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, decapCt, 100)
+	_, _, _, _, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, decapCt, 100)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no envelope keys available")
 }
 
 // TestEpochWindowDeltasOrder pins the nearest-first ordering that makes
 // the common case cheap. The current epoch must be tried first: a
-// failed MKEM decapsulation costs a full CTIDH1024 group action before
+// failed decapsulation costs a full KEM decapsulation before
 // the AEAD tag rejects it, so leading with a neighbouring epoch would
 // burn one on every inbound ReplicaMessage. Replica epochs are a week
 // long, so "current" is very nearly always the right key.
@@ -224,19 +206,23 @@ func TestEpochWindowDeltasCoverWindow(t *testing.T) {
 // decapsulate on the first attempt.
 func TestTryDecapsulateSkipsAbsentNeighbours(t *testing.T) {
 	currentEpoch, _, _ := replicaCommon.ReplicaNow()
-	keys, nikeScheme := envelopeKeysWithEpochs(t, []uint64{currentEpoch})
-	scheme := mkem.NewScheme(nikeScheme)
+	keys, kemScheme := envelopeKeysWithEpochs(t, []uint64{currentEpoch})
+	scheme := mrhybrid.NewScheme(kemScheme)
 
 	keypair, err := keys.GetKeypair(currentEpoch)
 	require.NoError(t, err)
 
 	payload := []byte("nearest-first")
-	_, ct, err := scheme.Encapsulate([]nike.PublicKey{keypair.PublicKey}, payload)
+	_, ct, err := scheme.Encapsulate([]kem.PublicKey{keypair.PublicKey}, payload)
 	require.NoError(t, err)
 
-	plaintext, gotKeypair, gotEpoch, err := tryDecapsulateAcrossEpochWindow(keys, scheme, ct, currentEpoch)
+	_, plaintext, gotKeypair, gotEpoch, err := tryDecapsulateAcrossEpochWindow(keys, scheme, ct, currentEpoch)
 	require.NoError(t, err)
 	require.Equal(t, payload, plaintext)
 	require.Equal(t, currentEpoch, gotEpoch)
-	require.Equal(t, keypair.PublicKey.Bytes(), gotKeypair.PublicKey.Bytes())
+	gotKeypairBytes, err := keypair.PublicKey.MarshalBinary()
+	require.NoError(t, err)
+	wantKeypairBytes, err := gotKeypair.PublicKey.MarshalBinary()
+	require.NoError(t, err)
+	require.Equal(t, gotKeypairBytes, wantKeypairBytes)
 }

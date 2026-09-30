@@ -9,22 +9,26 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 // sweepDeadlineBudget is the whole-sweep budget these tests hand a
 // request that will spend all of it queueing for a proxy worker slot.
-// Nothing on that path performs a CTIDH1024 operation, so the budget
-// only has to be long enough to tell a deliberate wait apart from an
+// Nothing on that path performs a KEM operation, so the budget only
+// has to be long enough to tell a deliberate wait apart from an
 // immediate return.
 const sweepDeadlineBudget = 2 * time.Second
 
 // sweepDeadlineSlack is how far past its budget a bounded attempt may
 // return before these tests call it unbounded. A loaded runner may
 // schedule a timer late and the honest work either side of the wait is
-// CTIDH1024, so the margin is generous: the regression being caught is
-// a wait that never ends at all, not one that ends untidily.
+// a KEM operation, so the margin is generous: the regression being
+// caught is a wait that never ends at all, not one that ends untidily.
 const sweepDeadlineSlack = 30 * time.Second
 
 // TestProxySlotAcquireIsBoundedBySweepDeadline pins the rule that the
@@ -34,7 +38,7 @@ const sweepDeadlineSlack = 30 * time.Second
 // An unbounded acquire put the queueing delay outside the budget
 // entirely: a saturated pool could hold a request for as long as it
 // liked and then still grant it the attempt timeout computed before
-// the wait began, so the client waited semaphore queue plus MKEM plus
+// the wait began, so the client waited semaphore queue plus encapsulation plus
 // ProxyRequestTimeout for a budget that promises ProxyRequestTimeout.
 // With the pool saturated by a slot nothing will release, the attempt
 // must give up when the deadline passes and hand back no slot.
@@ -54,11 +58,12 @@ func TestProxySlotAcquireIsBoundedBySweepDeadline(t *testing.T) {
 		err     error
 		elapsed time.Duration
 	}
+	kemScheme := kemschemes.ByName(env.cfg.ReplicaKEMScheme)
 	done := make(chan attempt, 1)
 	go func() {
 		start := time.Now()
-		_, _, _, err := env.inConn.proxyToShardWithSlot(env.holders[0], replicaEpoch,
-			sweepDeadlineReadBlob(t, env), replicaCommon.MKEMNikeScheme, replicaCommon.NikeScheme,
+		_, _, err := env.inConn.proxyToShardWithSlot(env.holders[0], replicaEpoch,
+			sweepDeadlineReadBlob(t, env), mrhybrid.NewScheme(kemScheme), kemScheme,
 			deadline, 1)
 		done <- attempt{err: err, elapsed: time.Since(start)}
 	}()

@@ -15,9 +15,9 @@ import (
 	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -31,12 +31,12 @@ import (
 
 // semaScopeReplyBudget bounds how long these tests wait for a reply
 // that the fix guarantees is never queued behind the proxy worker pool.
-// The replica envelope NIKE is CTIDH1024-X25519, whose group action
-// costs the better part of a second per call, so a served-immediately
-// reply still takes seconds of honest work; the old five-second budget
-// left room for only a handful of those calls and failed on a loaded
-// runner rather than on a regression. A blocked reply never arrives at
-// all, so the budget only has to outlast honest work, not measure it.
+// The replica envelope KEM's encapsulate/decapsulate cost means a
+// served-immediately reply still takes real time to produce; the old
+// five-second budget left room for only a handful of those calls and
+// failed on a loaded runner rather than on a regression. A blocked
+// reply never arrives at all, so the budget only has to outlast honest
+// work, not measure it.
 const semaScopeReplyBudget = 30 * time.Second
 
 // semaScopeProxyHold is the ProxyRequestTimeout of the hand-built
@@ -82,7 +82,10 @@ func setupSemaScopeTestServer(t *testing.T) *semaScopeTestEnv {
 	pkiScheme := signschemes.ByName(testPKIScheme)
 	linkScheme := kemschemes.ByName("Xwing")
 	sphinxScheme := nikeschemes.ByName("x25519")
-	replicaScheme := replicaCommon.NikeScheme
+	// x25519 rather than the production mceliece348864-X25519: this test
+	// generates several envelope keypairs per run and McEliece keygen is
+	// comparatively slow.
+	replicaScheme := kemschemes.ByName("x25519")
 
 	schemes := &TestSchemes{PKI: pkiScheme, Link: linkScheme, Replica: replicaScheme, Sphinx: sphinxScheme}
 	geometry := geo.GeometryFromUserForwardPayloadLength(sphinxScheme, testDefaultPayload, true, testDefaultNrHops)
@@ -120,6 +123,8 @@ func setupSemaScopeTestServer(t *testing.T) *semaScopeTestEnv {
 	require.NoError(t, err)
 	myIDKey, err := server.identityPublicKey.MarshalBinary()
 	require.NoError(t, err)
+	keypairPubBytes, err := keypair.PublicKey.MarshalBinary()
+	require.NoError(t, err)
 
 	serverDesc := &pki.ReplicaDescriptor{
 		Name:        "replica0",
@@ -128,7 +133,7 @@ func setupSemaScopeTestServer(t *testing.T) *semaScopeTestEnv {
 		LinkKey:     keys.LinkKeyBlob,
 		Addresses:   map[string][]string{"tcp": {"tcp://127.0.0.1:34394"}},
 		EnvelopeKeys: map[uint64][]byte{
-			replicaEpoch: keypair.PublicKey.Bytes(),
+			replicaEpoch: keypairPubBytes,
 		},
 	}
 	holder1, holder1Keys := semaScopeHolderDescriptor(t, schemes, 1)
@@ -228,7 +233,7 @@ func findBoxByShardMembership(t *testing.T, server *Server, doc *pki.Document, w
 }
 
 // semaScopeValidReplicaMessage builds a genuine ReplicaMessage: a read for the
-// given box, MKEM-encapsulated to this server's current-epoch envelope
+// given box, mrhybrid-encapsulated to this server's current-epoch envelope
 // key, so handleReplicaMessage can decrypt and reach the shard logic.
 func semaScopeValidReplicaMessage(t *testing.T, server *Server, boxID [32]byte) *commands.ReplicaMessage {
 	t.Helper()
@@ -241,14 +246,15 @@ func semaScopeValidReplicaMessage(t *testing.T, server *Server, boxID [32]byte) 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	keypair, err := server.envelopeKeys.GetKeypair(replicaEpoch)
 	require.NoError(t, err)
-	_, ct, err := replicaCommon.MKEMNikeScheme.Encapsulate([]nike.PublicKey{keypair.PublicKey}, padded)
+	kemScheme := kemschemes.ByName(server.cfg.ReplicaKEMScheme)
+	_, ct, err := mrhybrid.NewScheme(kemScheme).Encapsulate([]kem.PublicKey{keypair.PublicKey}, padded)
 	require.NoError(t, err)
 	return &commands.ReplicaMessage{
-		Cmds:               commands.NewStorageReplicaCommands(server.cfg.SphinxGeometry, replicaCommon.NikeScheme),
+		Cmds:               commands.NewStorageReplicaCommands(server.cfg.SphinxGeometry, kemScheme),
 		PigeonholeGeometry: server.pigeonholeGeo,
-		Scheme:             replicaCommon.NikeScheme,
-		SenderEPubKey:      ct.EphemeralPublicKey.Bytes(),
-		DEK:                (*[mkem.DEKSize]byte)(ct.DEKCiphertexts[0]),
+		Scheme:             kemScheme,
+		KEMCiphertext:      ct.KEMCiphertexts[0],
+		DEK:                (*[mrhybrid.DEKSize]byte)(ct.DEKCiphertexts[0]),
 		Ciphertext:         ct.Envelope,
 	}
 }
@@ -290,24 +296,25 @@ func TestReplicaMessageNotBlockedBySaturatedProxyPool(t *testing.T) {
 	env.server.proxySema <- struct{}{}
 	defer func() { <-env.server.proxySema }()
 
-	senderEPubKey := make([]byte, commands.HybridKeySize(replicaCommon.NikeScheme))
+	kemScheme := kemschemes.ByName(env.cfg.ReplicaKEMScheme)
+	senderEPubKey := make([]byte, commands.RecipientCiphertextSize(kemScheme))
 	_, err := rand.Reader.Read(senderEPubKey)
 	require.NoError(t, err)
-	dek := &[mkem.DEKSize]byte{}
+	dek := &[mrhybrid.DEKSize]byte{}
 	_, err = rand.Reader.Read(dek[:])
 	require.NoError(t, err)
 	ciphertext := make([]byte, 1000)
 	_, err = rand.Reader.Read(ciphertext)
 	require.NoError(t, err)
 
-	// Garbage crypto: handleReplicaMessage fails at MKEM decapsulation
-	// and returns an error reply before consulting the PKI document, the
+	// Garbage crypto: handleReplicaMessage fails at decapsulation and
+	// returns an error reply before consulting the PKI document, the
 	// state or the proxy machinery.
 	replicaMessage := &commands.ReplicaMessage{
-		Cmds:               commands.NewStorageReplicaCommands(env.cfg.SphinxGeometry, replicaCommon.NikeScheme),
+		Cmds:               commands.NewStorageReplicaCommands(env.cfg.SphinxGeometry, kemScheme),
 		PigeonholeGeometry: env.server.pigeonholeGeo,
-		Scheme:             replicaCommon.NikeScheme,
-		SenderEPubKey:      senderEPubKey,
+		Scheme:             kemScheme,
+		KEMCiphertext:      senderEPubKey,
 		DEK:                dek,
 		Ciphertext:         ciphertext,
 	}

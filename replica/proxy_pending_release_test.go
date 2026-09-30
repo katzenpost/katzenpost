@@ -11,20 +11,18 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 // pendingReleaseAttemptTimeout is the share of the sweep budget the
 // single-attempt test hands one candidate. Nothing on that path performs
-// a CTIDH1024 operation, so it only has to be long enough to be a
-// deliberate wait rather than an immediate return.
+// a KEM operation, so it only has to be long enough to be a deliberate
+// wait rather than an immediate return.
 const pendingReleaseAttemptTimeout = 200 * time.Millisecond
 
 // pendingReleaseSweepBudget is the whole-sweep budget the sweep-level
 // test hands a read with two holders to try. Each attempt encapsulates
-// to its holder before it starts waiting, and that is a CTIDH1024
-// keygen plus group action, so the budget has to cover two of those and
-// still leave both attempts a wait worth timing out.
+// to its holder before it starts waiting, so the budget has to cover
+// two of those and still leave both attempts a wait worth timing out.
 const pendingReleaseSweepBudget = 8 * time.Second
 
 // pendingProxyRequests reports how many proxy requests the manager still
@@ -43,9 +41,9 @@ func pendingProxyRequests(m *ProxyRequestManager) int {
 // entry left behind by a timed-out attempt outlives the sweep that
 // abandoned it by most of a ProxyRequestTimeout, all the while counted
 // in the pending gauge an operator reads to see proxy backlog, and
-// pinning the attempt's ReplicaMessage and its MKEM private key. That is
-// worst exactly when it matters most: a sick holder is what makes
-// attempts time out in the first place.
+// pinning the attempt's ReplicaMessage. That is worst exactly when it
+// matters most: a sick holder is what makes attempts time out in the
+// first place.
 func TestTimedOutProxyAttemptReleasesItsPendingEntry(t *testing.T) {
 	env := setupSemaScopeTestServer(t)
 
@@ -59,15 +57,14 @@ func TestTimedOutProxyAttemptReleasesItsPendingEntry(t *testing.T) {
 	// The connector never delivers a reply, so the attempt can only end
 	// at its own deadline.
 	msg := &commands.ReplicaMessage{
-		SenderEPubKey: []byte{1, 2, 3, 4},
+		KEMCiphertext: []byte{1, 2, 3, 4},
 		DEK:           &[60]byte{},
 		Ciphertext:    []byte("proxied read"),
 	}
 	idHash := [32]byte{0xAA}
 
 	start := time.Now()
-	reply, err := env.inConn.sendProxyRequestSync(msg, &idHash, env.holders[0],
-		nil, nil, replicaCommon.MKEMNikeScheme, pendingReleaseAttemptTimeout)
+	reply, err := env.inConn.sendProxyRequestSync(msg, &idHash, env.holders[0], pendingReleaseAttemptTimeout)
 	require.Error(t, err, "an attempt no holder answers must not report success")
 	require.Nil(t, reply)
 	require.GreaterOrEqual(t, time.Since(start), pendingReleaseAttemptTimeout-time.Millisecond,

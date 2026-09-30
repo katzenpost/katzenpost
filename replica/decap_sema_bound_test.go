@@ -11,8 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/hpqc/sign/ed25519"
@@ -37,7 +38,7 @@ func (c *gatingConnector) DispatchReplication(cmd *commands.ReplicaWrite) {
 }
 
 // localWriteReplicaMessage builds a genuine ReplicaMessage carrying a
-// BACAP write for a box this server shards, MKEM-encapsulated to the
+// BACAP write for a box this server shards, mrhybrid-encapsulated to the
 // server's current-epoch envelope key. handleReplicaMessage decapsulates
 // it, writes it locally and then calls connector.DispatchReplication.
 func localWriteReplicaMessage(t *testing.T, env *semaScopeTestEnv) *commands.ReplicaMessage {
@@ -93,14 +94,15 @@ func localWriteReplicaMessage(t *testing.T, env *semaScopeTestEnv) *commands.Rep
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	keypair, err := env.server.envelopeKeys.GetKeypair(replicaEpoch)
 	require.NoError(t, err)
-	_, ct, err := replicaCommon.MKEMNikeScheme.Encapsulate([]nike.PublicKey{keypair.PublicKey}, padded)
+	kemScheme := kemschemes.ByName(env.server.cfg.ReplicaKEMScheme)
+	_, ct, err := mrhybrid.NewScheme(kemScheme).Encapsulate([]kem.PublicKey{keypair.PublicKey}, padded)
 	require.NoError(t, err)
 	return &commands.ReplicaMessage{
-		Cmds:               commands.NewStorageReplicaCommands(env.server.cfg.SphinxGeometry, replicaCommon.NikeScheme),
+		Cmds:               commands.NewStorageReplicaCommands(env.server.cfg.SphinxGeometry, kemScheme),
 		PigeonholeGeometry: env.server.pigeonholeGeo,
-		Scheme:             replicaCommon.NikeScheme,
-		SenderEPubKey:      ct.EphemeralPublicKey.Bytes(),
-		DEK:                (*[mkem.DEKSize]byte)(ct.DEKCiphertexts[0]),
+		Scheme:             kemScheme,
+		KEMCiphertext:      ct.KEMCiphertexts[0],
+		DEK:                (*[mrhybrid.DEKSize]byte)(ct.DEKCiphertexts[0]),
 		Ciphertext:         ct.Envelope,
 	}
 }
@@ -108,7 +110,7 @@ func localWriteReplicaMessage(t *testing.T, env *semaScopeTestEnv) *commands.Rep
 // TestReplicaMessageDecapConcurrencyBounded proves that a burst of
 // pipelined ReplicaMessages cannot spawn more concurrent local
 // decapsulations than the worker pool permits. Each message decapsulates
-// (a CTIDH group action) and then parks in DispatchReplication while
+// (a KEM decapsulation) and then parks in DispatchReplication while
 // still holding its decap slot, so the number that reach the connector is
 // exactly the pool size; the command loop back-pressures on the rest.
 // Pre-fix, every ReplicaMessage got its own goroutine and all of them ran

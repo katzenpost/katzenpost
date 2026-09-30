@@ -125,7 +125,7 @@ func TestQueueForRetryAcceptsReplicaMessage(t *testing.T) {
 	peer := peerID(0xCC)
 
 	msg := &commands.ReplicaMessage{
-		SenderEPubKey: []byte{1, 2, 3, 4},
+		KEMCiphertext: []byte{1, 2, 3, 4},
 		DEK:           &[60]byte{},
 		Ciphertext:    []byte("some ciphertext"),
 	}
@@ -142,7 +142,7 @@ func TestQueueForRetryAcceptsReplicaMessage(t *testing.T) {
 
 	// A message with different ciphertext is a distinct entry.
 	msg2 := &commands.ReplicaMessage{
-		SenderEPubKey: []byte{1, 2, 3, 4},
+		KEMCiphertext: []byte{1, 2, 3, 4},
 		DEK:           &[60]byte{},
 		Ciphertext:    []byte("different ciphertext"),
 	}

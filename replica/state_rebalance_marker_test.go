@@ -13,7 +13,6 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
-	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -187,7 +186,7 @@ func newMarkerTestState(t *testing.T) (*state, func()) {
 	require.NoError(t, err)
 
 	cfg := &config.Config{
-		ReplicaNIKEScheme: "X25519",
+		ReplicaKEMScheme:  "X25519",
 		DataDir:           dataDir,
 		SphinxGeometry:    geom,
 		Logging: &config.Logging{
@@ -236,7 +235,7 @@ func newRebalanceServer(t *testing.T) (srv *Server, boxCount int, cc *countingCo
 	geom := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 1234, true, 5)
 	pkiScheme := signschemes.ByName("ed25519")
 	linkScheme := kemschemes.ByName("x25519")
-	replicaScheme := nikeschemes.ByName("x25519")
+	replicaScheme := kemschemes.ByName("x25519")
 
 	ourPub, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
@@ -279,7 +278,7 @@ func newRebalanceServer(t *testing.T) (srv *Server, boxCount int, cc *countingCo
 	}
 
 	cfg := &config.Config{
-		ReplicaNIKEScheme: "X25519",
+		ReplicaKEMScheme:  "X25519",
 		DataDir:           dataDir,
 		SphinxGeometry:    geom,
 		Logging: &config.Logging{

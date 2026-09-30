@@ -53,8 +53,8 @@ func TestHandleCommandRoutesRepliesOutOfOrder(t *testing.T) {
 	peer := [32]byte{9}
 	firstHash := [32]byte{0x01}
 	secondHash := [32]byte{0x02}
-	firstWaiter := proxyManager.RegisterProxyRequest(firstHash, nil, nil, nil, peer, "storagereplica9")
-	secondWaiter := proxyManager.RegisterProxyRequest(secondHash, nil, nil, nil, peer, "storagereplica9")
+	firstWaiter := proxyManager.RegisterProxyRequest(firstHash, nil, peer, "storagereplica9")
+	secondWaiter := proxyManager.RegisterProxyRequest(secondHash, nil, peer, "storagereplica9")
 
 	// The second request's reply arrives first.
 	require.True(t, c.handleCommand(&commands.ReplicaMessageReply{EnvelopeHash: &secondHash}))
