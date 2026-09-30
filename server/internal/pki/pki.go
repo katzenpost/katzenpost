@@ -889,6 +889,17 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 // returning the newest direction-eligible descriptor and whether the peer may
 // send traffic.
 func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (*cpki.MixDescriptor, bool, bool) {
+	if c == nil || c.PublicKey == nil {
+		return nil, false, false
+	}
+	if len(c.AdditionalData) != sConstants.NodeIDLength {
+		dirStr := "Incoming"
+		if isOutgoing {
+			dirStr = "Outgoing"
+		}
+		p.log.Debugf("%v: %x AD not an IdentityKey?.", dirStr, c.AdditionalData)
+		return nil, false, false
+	}
 	docs, nowDoc, now, till := p.documentsForAuthentication()
 	return p.authenticateConnection(c, isOutgoing, docs, nowDoc, now, till)
 }
