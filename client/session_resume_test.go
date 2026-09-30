@@ -147,7 +147,8 @@ func TestHandleSessionTokenResume(t *testing.T) {
 }
 
 // TestHandleSessionTokenResumeFlushesQueuedReplies verifies that queued replies
-// from a disconnected session are flushed to the reconnecting client.
+// from a disconnected session are flushed to the reconnecting client after
+// the SessionTokenReply it is waiting for.
 func TestHandleSessionTokenResumeFlushesQueuedReplies(t *testing.T) {
 	l := newTestListener(t, nil)
 	defer l.Shutdown()
@@ -202,21 +203,21 @@ func TestHandleSessionTokenResumeFlushesQueuedReplies(t *testing.T) {
 	l.disconnectedSessionsLock.Unlock()
 	require.False(t, exists, "disconnected session should be cleaned up after resume")
 
-	// Verify queued replies + session token reply were sent
-	// Order: queued reply 1, queued reply 2, session token reply
+	// Verify session token reply + queued replies were sent
+	// Order: session token reply, queued reply 1, queued reply 2
 	require.Len(t, c.sendQueue, 3)
 
 	r1 := c.sendQueue[0]
-	require.NotNil(t, r1.MessageReplyEvent)
-	require.Equal(t, []byte("reply-1"), r1.MessageReplyEvent.Payload)
+	require.NotNil(t, r1.SessionTokenReply)
+	require.True(t, r1.SessionTokenReply.Resumed)
 
 	r2 := c.sendQueue[1]
 	require.NotNil(t, r2.MessageReplyEvent)
-	require.Equal(t, []byte("reply-2"), r2.MessageReplyEvent.Payload)
+	require.Equal(t, []byte("reply-1"), r2.MessageReplyEvent.Payload)
 
 	r3 := c.sendQueue[2]
-	require.NotNil(t, r3.SessionTokenReply)
-	require.True(t, r3.SessionTokenReply.Resumed)
+	require.NotNil(t, r3.MessageReplyEvent)
+	require.Equal(t, []byte("reply-2"), r3.MessageReplyEvent.Payload)
 }
 
 // TestOnClosedConnExplicitClose verifies that ThinClose causes immediate cleanup
