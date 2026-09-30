@@ -11,27 +11,27 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
-	nikepem "github.com/katzenpost/hpqc/nike/pem"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
-var NikeScheme nike.Scheme = schemes.ByName("CTIDH1024-X25519")
-var MKEMNikeScheme = mkem.NewScheme(NikeScheme)
+var KEMScheme kem.Scheme = kemschemes.ByName("mceliece348864-X25519")
+var MRHybridScheme = mrhybrid.NewScheme(KEMScheme)
 
-// EnvelopeKey encapsulates the public and private NIKE keys.
+// EnvelopeKey encapsulates the public and private KEM keys.
 type EnvelopeKey struct {
-	PrivateKey nike.PrivateKey
-	PublicKey  nike.PublicKey
+	PrivateKey kem.PrivateKey
+	PublicKey  kem.PublicKey
 }
 
 // NewEnvelopeKey creates a new EnvelopeKey type.
-func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
+func NewEnvelopeKey(scheme kem.Scheme) *EnvelopeKey {
 	if scheme == nil {
-		panic("replica NIKE scheme is nil")
+		panic("replica KEM scheme is nil")
 	}
 	pk, sk, err := scheme.GenerateKeyPair()
 	if err != nil {
@@ -45,16 +45,16 @@ func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
 }
 
 // EnvelopeKeyFromFiles loads the PEM key files from disk.
-func EnvelopeKeyFromFiles(dataDir string, scheme nike.Scheme, epoch uint64) (*EnvelopeKey, error) {
+func EnvelopeKeyFromFiles(dataDir string, scheme kem.Scheme, epoch uint64) (*EnvelopeKey, error) {
 	e := &EnvelopeKey{}
 	privKeyFile, pubKeyFile := e.KeyFileNames(dataDir, scheme, epoch)
 
 	if utils.BothExists(privKeyFile, pubKeyFile) {
-		privateKey, err := nikepem.FromPrivatePEMFile(privKeyFile, scheme)
+		privateKey, err := kempem.FromPrivatePEMFile(privKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-		publicKey, err := nikepem.FromPublicPEMFile(pubKeyFile, scheme)
+		publicKey, err := kempem.FromPublicPEMFile(pubKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
@@ -69,13 +69,13 @@ func EnvelopeKeyFromFiles(dataDir string, scheme nike.Scheme, epoch uint64) (*En
 	// not reached
 }
 
-func (e *EnvelopeKey) KeyFileNames(dataDir string, scheme nike.Scheme, epoch uint64) (string, string) {
+func (e *EnvelopeKey) KeyFileNames(dataDir string, scheme kem.Scheme, epoch uint64) (string, string) {
 	replicaPrivateKeyFile := filepath.Join(dataDir, fmt.Sprintf("replica.%d.private.pem", epoch))
 	replicaPublicKeyFile := filepath.Join(dataDir, fmt.Sprintf("replica.%d.public.pem", epoch))
 	return replicaPrivateKeyFile, replicaPublicKeyFile
 }
 
-func (e *EnvelopeKey) PurgeKeyFiles(dataDir string, scheme nike.Scheme, epoch uint64) {
+func (e *EnvelopeKey) PurgeKeyFiles(dataDir string, scheme kem.Scheme, epoch uint64) {
 	privKeyFile, pubKeyFile := e.KeyFileNames(dataDir, scheme, epoch)
 	os.Remove(privKeyFile)
 	os.Remove(pubKeyFile)
@@ -84,15 +84,15 @@ func (e *EnvelopeKey) PurgeKeyFiles(dataDir string, scheme nike.Scheme, epoch ui
 // WriteKeyFiles generates and writes new key files, or loads existing ones if
 // they already exist. This ensures that a replica can safely restart or
 // re-publish for the same epoch without errors.
-func (e *EnvelopeKey) WriteKeyFiles(dataDir string, scheme nike.Scheme, epoch uint64) error {
+func (e *EnvelopeKey) WriteKeyFiles(dataDir string, scheme kem.Scheme, epoch uint64) error {
 	privKeyFile, pubKeyFile := e.KeyFileNames(dataDir, scheme, epoch)
 
 	if utils.BothExists(privKeyFile, pubKeyFile) {
-		privateKey, err := nikepem.FromPrivatePEMFile(privKeyFile, scheme)
+		privateKey, err := kempem.FromPrivatePEMFile(privKeyFile, scheme)
 		if err != nil {
 			return fmt.Errorf("failed to load existing private key: %w", err)
 		}
-		publicKey, err := nikepem.FromPublicPEMFile(pubKeyFile, scheme)
+		publicKey, err := kempem.FromPublicPEMFile(pubKeyFile, scheme)
 		if err != nil {
 			return fmt.Errorf("failed to load existing public key: %w", err)
 		}
@@ -105,11 +105,11 @@ func (e *EnvelopeKey) WriteKeyFiles(dataDir string, scheme nike.Scheme, epoch ui
 		if err != nil {
 			return err
 		}
-		err = nikepem.PrivateKeyToFile(privKeyFile, e.PrivateKey, scheme)
+		err = kempem.PrivateKeyToFile(privKeyFile, e.PrivateKey)
 		if err != nil {
 			return err
 		}
-		err = nikepem.PublicKeyToFile(pubKeyFile, e.PublicKey, scheme)
+		err = kempem.PublicKeyToFile(pubKeyFile, e.PublicKey)
 		if err != nil {
 			return err
 		}

@@ -35,7 +35,6 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -838,7 +837,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 }
 
 // NewStorageReplicaSession creates a new session to be used with the storage replicas.
-func NewStorageReplicaSession(cfg *SessionConfig, scheme nike.Scheme, isInitiator bool) (*Session, error) {
+func NewStorageReplicaSession(cfg *SessionConfig, scheme kem.Scheme, isInitiator bool) (*Session, error) {
 	if cfg.Geometry == nil {
 		return nil, errors.New("wire/session: missing sphinx packet geometry")
 	}

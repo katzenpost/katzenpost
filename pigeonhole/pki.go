@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/rand"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -48,7 +48,7 @@ func CryptoRandIndex(n int) (int, error) {
 }
 
 // GetRandomIntermediateReplicas returns two random replica numbers and their public keys.
-func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint8, []nike.PublicKey, error) {
+func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint8, []kem.PublicKey, error) {
 	if doc == nil {
 		return [2]uint8{}, nil, errors.New("PKI document is nil")
 	}
@@ -84,8 +84,8 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		allReplicaIDs[i] = replica.ReplicaID
 	}
 
-	getReplicaPubKeys := func(replica1, replica2 uint8) ([]nike.PublicKey, error) {
-		replicaPubKeys := make([]nike.PublicKey, 2)
+	getReplicaPubKeys := func(replica1, replica2 uint8) ([]kem.PublicKey, error) {
+		replicaPubKeys := make([]kem.PublicKey, 2)
 		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 		for i, replicaNum := range [2]uint8{replica1, replica2} {
 			desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
@@ -99,7 +99,7 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 			if len(keyBytes) == 0 {
 				return nil, fmt.Errorf("empty envelope key for replica %d at epoch %d", replicaNum, replicaEpoch)
 			}
-			replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
+			replicaPubKeys[i], err = replicaCommon.KEMScheme.UnmarshalBinaryPublicKey(keyBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to unmarshal key for replica %d (keySize=%d): %w", replicaNum, len(keyBytes), err)
 			}

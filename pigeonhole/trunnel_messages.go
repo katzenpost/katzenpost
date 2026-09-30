@@ -18,8 +18,10 @@ type CourierEnvelope struct {
 	Dek2                 [60]uint8
 	ReplyIndex           uint8
 	Epoch                uint64
-	SenderPubkeyLen      uint16
-	SenderPubkey         []uint8
+	KemCiphertext1Len    uint32
+	KemCiphertext1       []uint8
+	KemCiphertext2Len    uint32
+	KemCiphertext2       []uint8
 	CiphertextLen        uint32
 	Ciphertext           []uint8
 }
@@ -62,19 +64,34 @@ func (c *CourierEnvelope) Parse(data []byte) ([]byte, error) {
 		cur = cur[8:]
 	}
 	{
-		if len(cur) < 2 {
+		if len(cur) < 4 {
 			return nil, errors.New("data too short")
 		}
-		c.SenderPubkeyLen = binary.BigEndian.Uint16(cur)
-		cur = cur[2:]
+		c.KemCiphertext1Len = binary.BigEndian.Uint32(cur)
+		cur = cur[4:]
 	}
 	{
-		if uint64(c.SenderPubkeyLen) > uint64(len(cur)) {
+		if uint64(c.KemCiphertext1Len) > uint64(len(cur)) {
 			return nil, errors.New("data too short")
 		}
-		c.SenderPubkey = make([]uint8, int(c.SenderPubkeyLen))
-		copy(c.SenderPubkey, cur[:int(c.SenderPubkeyLen)])
-		cur = cur[int(c.SenderPubkeyLen):]
+		c.KemCiphertext1 = make([]uint8, int(c.KemCiphertext1Len))
+		copy(c.KemCiphertext1, cur[:int(c.KemCiphertext1Len)])
+		cur = cur[int(c.KemCiphertext1Len):]
+	}
+	{
+		if len(cur) < 4 {
+			return nil, errors.New("data too short")
+		}
+		c.KemCiphertext2Len = binary.BigEndian.Uint32(cur)
+		cur = cur[4:]
+	}
+	{
+		if uint64(c.KemCiphertext2Len) > uint64(len(cur)) {
+			return nil, errors.New("data too short")
+		}
+		c.KemCiphertext2 = make([]uint8, int(c.KemCiphertext2Len))
+		copy(c.KemCiphertext2, cur[:int(c.KemCiphertext2Len)])
+		cur = cur[int(c.KemCiphertext2Len):]
 	}
 	{
 		if len(cur) < 4 {
@@ -118,11 +135,17 @@ func (c *CourierEnvelope) encodeBinary() []byte {
 		buf = append(buf, tmp...)
 	}
 	{
-		tmp := make([]byte, 2)
-		binary.BigEndian.PutUint16(tmp, c.SenderPubkeyLen)
+		tmp := make([]byte, 4)
+		binary.BigEndian.PutUint32(tmp, c.KemCiphertext1Len)
 		buf = append(buf, tmp...)
 	}
-	buf = append(buf, c.SenderPubkey...)
+	buf = append(buf, c.KemCiphertext1...)
+	{
+		tmp := make([]byte, 4)
+		binary.BigEndian.PutUint32(tmp, c.KemCiphertext2Len)
+		buf = append(buf, tmp...)
+	}
+	buf = append(buf, c.KemCiphertext2...)
 	{
 		tmp := make([]byte, 4)
 		binary.BigEndian.PutUint32(tmp, c.CiphertextLen)
@@ -149,7 +172,10 @@ func (c *CourierEnvelope) validate() error {
 	if len(c.Dek2) != 60 {
 		return errors.New("array length constraint violated")
 	}
-	if len(c.SenderPubkey) != int(c.SenderPubkeyLen) {
+	if len(c.KemCiphertext1) != int(c.KemCiphertext1Len) {
+		return errors.New("array length constraint violated")
+	}
+	if len(c.KemCiphertext2) != int(c.KemCiphertext2Len) {
 		return errors.New("array length constraint violated")
 	}
 	if len(c.Ciphertext) != int(c.CiphertextLen) {

@@ -13,9 +13,9 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/chacha20poly1305"
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -25,17 +25,20 @@ func replicaWriteFixedOverhead() int {
 	return bacap.BoxIDSize + bacap.SignatureSize + payloadLenFieldSize // BoxID + Signature + PayloadLen
 }
 
-// calculateCourierEnvelopeOverhead dynamically calculates the overhead for CourierEnvelope
-func calculateCourierEnvelopeOverhead(_ int, senderPubkeySize int) int {
+// calculateCourierEnvelopeOverhead dynamically calculates the overhead for
+// CourierEnvelope. kemCiphertextSize is the wire size of ONE intermediate
+// replica's KEM ciphertext; mrhybrid has no shared ephemeral key, so both
+// of the 2 intermediate replicas carry their own ciphertext and length prefix.
+func calculateCourierEnvelopeOverhead(_ int, kemCiphertextSize int) int {
 	// CourierEnvelope fixed fields from trunnel definition
-	courierEnvelopeFixedOverhead := intermediateReplicasSize + mkem.DEKSize + mkem.DEKSize +
-		replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenFieldSize
+	courierEnvelopeFixedOverhead := intermediateReplicasSize + mrhybrid.DEKSize + mrhybrid.DEKSize +
+		replyIndexSize + epochSize + 2*kemCiphertextLenSize + ciphertextLenFieldSize
 
-	return courierEnvelopeFixedOverhead + senderPubkeySize
+	return courierEnvelopeFixedOverhead + 2*kemCiphertextSize
 }
 
 // calculateCourierQueryWrapperOverhead dynamically calculates the overhead for CourierQuery wrapper
-func calculateCourierQueryWrapperOverhead(_ int, _ nike.Scheme) int {
+func calculateCourierQueryWrapperOverhead(_ int, _ kem.Scheme) int {
 	// CourierQuery union fields from trunnel serialization:
 	// QueryType: uint8 = 1 byte (union discriminator)
 	// Envelope: *CourierEnvelope (embedded struct, no length prefix)
@@ -47,10 +50,10 @@ func calculateCourierQueryWrapperOverhead(_ int, _ nike.Scheme) int {
 //
 // This is the most common use case: given a desired payload size, calculate
 // all the envelope sizes with mathematical precision using trunnel's fixed format.
-func NewGeometry(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
+func NewGeometry(boxPayloadLength int, kemScheme kem.Scheme) *Geometry {
 	g := &Geometry{
 		MaxPlaintextPayloadLength: boxPayloadLength,
-		NIKEName:                  nikeScheme.Name(),
+		KEMName:                   kemScheme.Name(),
 		SignatureSchemeName:       signatureSchemeName,
 	}
 
@@ -68,7 +71,7 @@ func NewGeometry(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
 // Given a Sphinx geometry with limited UserForwardPayloadLength, find the optimal
 // MaxPlaintextPayloadLength that maximizes usage of the available space by directly calculating
 // the overhead layers and subtracting them from the target size.
-func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Geometry, error) {
+func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, kemScheme kem.Scheme) (*Geometry, error) {
 	targetSize := sphinxGeo.UserForwardPayloadLength
 
 	// Calculate all overhead layers for CourierQueryWrite (the largest envelope type)
@@ -77,12 +80,12 @@ func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Ge
 	// 1. CourierQuery wrapper overhead
 	courierQueryOverhead := queryTypeSize // QueryType discriminator
 
-	// 2. CourierEnvelope overhead (fixed fields + sender pubkey)
-	senderPubkeySize := nikeScheme.PublicKeySize()
-	courierEnvelopeOverhead := calculateCourierEnvelopeOverhead(0, senderPubkeySize) // Pass 0 for ciphertext size since we're calculating overhead
+	// 2. CourierEnvelope overhead (fixed fields + per-recipient KEM ciphertexts)
+	kemCiphertextSize := kemScheme.CiphertextSize()
+	courierEnvelopeOverhead := calculateCourierEnvelopeOverhead(0, kemCiphertextSize) // Pass 0 for ciphertext size since we're calculating overhead
 
-	// 3. MKEM encryption overhead
-	mkemOverhead := mkemEncryptionOverhead
+	// 3. Envelope AEAD overhead
+	envelopeOverhead := envelopeAEADOverhead
 
 	// 4. ReplicaInnerMessage overhead
 	replicaInnerMessageOverhead := messageTypeSize
@@ -98,12 +101,12 @@ func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Ge
 
 	// 8. Length prefix overhead for the length-prefix-padded
 	// ReplicaInnerMessage that sits between the trunnel encoding and the
-	// MKEM plaintext. This is distinct from the BACAP-layer prefix in (7)
+	// envelope plaintext. This is distinct from the BACAP-layer prefix in (7)
 	// and must be accounted for separately; see ReplicaInnerMessagePaddedSize.
 	trunnelLengthPrefixOverhead := lengthPrefixSize
 
 	// Calculate total overhead
-	totalOverhead := courierQueryOverhead + courierEnvelopeOverhead + mkemOverhead +
+	totalOverhead := courierQueryOverhead + courierEnvelopeOverhead + envelopeOverhead +
 		replicaInnerMessageOverhead + replicaWriteOverhead + bacapOverhead +
 		lengthPrefixOverhead + trunnelLengthPrefixOverhead
 
@@ -115,7 +118,7 @@ func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Ge
 			targetSize, totalOverhead)
 	}
 
-	return NewGeometry(boxPayloadLength, nikeScheme), nil
+	return NewGeometry(boxPayloadLength, kemScheme), nil
 }
 
 // ToSphinxGeometry creates an accommodating Sphinx Geometry (Use Case 2)
@@ -123,7 +126,7 @@ func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Ge
 // Given a precomputed Geometry, derive a Sphinx geometry that can
 // accommodate the largest envelope size.
 func (g *Geometry) ToSphinxGeometry(nrHops int, withSURB bool) *geo.Geometry {
-	nikeScheme := g.NIKEScheme()
+	kemScheme := g.KEMScheme()
 
 	// Find the maximum envelope size we need to accommodate
 	maxEnvelopeSize := maxInt(
@@ -134,7 +137,7 @@ func (g *Geometry) ToSphinxGeometry(nrHops int, withSURB bool) *geo.Geometry {
 	)
 
 	// Create Sphinx geometry that can handle our largest envelope
-	return geo.GeometryFromUserForwardPayloadLength(nikeScheme, maxEnvelopeSize, withSURB, nrHops)
+	return geo.KEMGeometryFromUserForwardPayloadLength(kemScheme, maxEnvelopeSize, withSURB, nrHops)
 }
 
 // Helper function for max of multiple values
@@ -151,11 +154,11 @@ func maxInt(values ...int) int {
 	return maxVal
 }
 
-// NIKEScheme returns the NIKE scheme used by this geometry
-func (g *Geometry) NIKEScheme() nike.Scheme {
-	scheme := schemes.ByName(g.NIKEName)
+// KEMScheme returns the KEM scheme used by this geometry
+func (g *Geometry) KEMScheme() kem.Scheme {
+	scheme := schemes.ByName(g.KEMName)
 	if scheme == nil {
-		panic(fmt.Sprintf("unknown NIKE scheme: %s", g.NIKEName))
+		panic(fmt.Sprintf("unknown KEM scheme: %s", g.KEMName))
 	}
 	return scheme
 }
@@ -168,11 +171,11 @@ func (g *Geometry) Validate() error {
 	if g.MaxPlaintextPayloadLength <= 0 {
 		return errors.New("MaxPlaintextPayloadLength must be positive")
 	}
-	if g.NIKEName == "" {
-		return errors.New("NIKEName must be set")
+	if g.KEMName == "" {
+		return errors.New("KEMName must be set")
 	}
-	if g.NIKEScheme() == nil {
-		return fmt.Errorf("invalid NIKE scheme: %s", g.NIKEName)
+	if g.KEMScheme() == nil {
+		return fmt.Errorf("invalid KEM scheme: %s", g.KEMName)
 	}
 	if g.SignatureSchemeName != signatureSchemeName {
 		return fmt.Errorf("SignatureSchemeName must be %s", signatureSchemeName)
@@ -222,20 +225,21 @@ func (g *Geometry) String() string {
   CourierQueryWriteLength: %d bytes
   CourierQueryReplyReadLength: %d bytes
   CourierQueryReplyWriteLength: %d bytes
-  NIKEName: %s
+  KEMName: %s
   SignatureSchemeName: %s`,
 		g.MaxPlaintextPayloadLength,
 		g.CourierQueryReadLength,
 		g.CourierQueryWriteLength,
 		g.CourierQueryReplyReadLength,
 		g.CourierQueryReplyWriteLength,
-		g.NIKEName,
+		g.KEMName,
 		g.SignatureSchemeName)
 }
 
 // calculateCourierQueryReadLength computes the exact size for read operations.
-// Reads are padded to the write size before MKEM, so the wire-level CourierQuery
-// size is the same as for writes; both go through calculateCourierQueryLength.
+// Reads are padded to the write size before encryption, so the wire-level
+// CourierQuery size is the same as for writes; both go through
+// calculateCourierQueryLength.
 func (g *Geometry) calculateCourierQueryReadLength() int {
 	return g.calculateCourierQueryLength()
 }
@@ -249,22 +253,23 @@ func (g *Geometry) calculateCourierQueryWriteLength() int {
 
 // calculateCourierQueryLength computes the wire-level CourierQuery size for
 // any read or write query, accounting for the length-prefix-and-pad applied
-// to the ReplicaInnerMessage before MKEM encryption.
+// to the ReplicaInnerMessage before envelope encryption.
 func (g *Geometry) calculateCourierQueryLength() int {
-	nikeScheme := g.NIKEScheme()
+	kemScheme := g.KEMScheme()
 
-	// MKEM plaintext is a length-prefix-padded ReplicaInnerMessage of write
-	// size. Reads are padded to the same size so the read/write distinction
-	// does not leak through the ciphertext length.
-	mkemCiphertextSize := g.ReplicaInnerMessagePaddedSize() + mkemEncryptionOverhead
+	// The envelope plaintext is a length-prefix-padded ReplicaInnerMessage of
+	// write size. Reads are padded to the same size so the read/write
+	// distinction does not leak through the ciphertext length.
+	envelopeCiphertextSize := g.ReplicaInnerMessagePaddedSize() + envelopeAEADOverhead
 
-	// CourierEnvelope containing the MKEM ciphertext.
-	senderPubkeySize := nikeScheme.PublicKeySize()
-	courierEnvelopeOverhead := calculateCourierEnvelopeOverhead(mkemCiphertextSize, senderPubkeySize)
-	courierEnvelopeSize := courierEnvelopeOverhead + mkemCiphertextSize
+	// CourierEnvelope containing the envelope ciphertext and both
+	// intermediate replicas' KEM ciphertexts.
+	kemCiphertextSize := kemScheme.CiphertextSize()
+	courierEnvelopeOverhead := calculateCourierEnvelopeOverhead(envelopeCiphertextSize, kemCiphertextSize)
+	courierEnvelopeSize := courierEnvelopeOverhead + envelopeCiphertextSize
 
 	// CourierQuery wrapper.
-	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(courierEnvelopeSize, nikeScheme)
+	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(courierEnvelopeSize, kemScheme)
 	return courierEnvelopeSize + courierQueryWrapperOverhead
 }
 
@@ -284,16 +289,16 @@ func (g *Geometry) calculateCourierQueryReplyWriteLength() int {
 
 // calculateCourierQueryReplyLength computes the wire-level CourierQueryReply
 // size for any read or write reply, accounting for the length-prefix-and-pad
-// applied to the ReplicaMessageReplyInnerMessage before MKEM-AEAD encryption.
+// applied to the ReplicaMessageReplyInnerMessage before AEAD encryption.
 func (g *Geometry) calculateCourierQueryReplyLength() int {
 	// AEAD plaintext is a length-prefix-padded ReplicaMessageReplyInnerMessage
 	// of read-reply size. Write replies are padded to the same size so the
 	// reply variant does not leak through the ciphertext length.
-	mkemCiphertextSize := g.ReplicaReplyInnerMessagePaddedSize() + mkemEncryptionOverhead
+	envelopeCiphertextSize := g.ReplicaReplyInnerMessagePaddedSize() + envelopeAEADOverhead
 
 	// CourierEnvelopeReply containing the AEAD ciphertext.
 	courierEnvelopeReplyFixedSize := successFieldSize + timestampFieldSize + ciphertextLenFieldSize
-	courierEnvelopeReplySize := courierEnvelopeReplyFixedSize + mkemCiphertextSize
+	courierEnvelopeReplySize := courierEnvelopeReplyFixedSize + envelopeCiphertextSize
 
 	// CourierQueryReply wrapper (no ErrorMsg for success).
 	return errorLenFieldSize + courierEnvelopeReplySize
@@ -301,7 +306,7 @@ func (g *Geometry) calculateCourierQueryReplyLength() int {
 
 // ReplicaInnerMessageWriteSize returns the serialized size of a ReplicaInnerMessage
 // containing a full write (the largest inbound inner message type).
-// This is the bare trunnel encoding size; the padded MKEM plaintext is
+// This is the bare trunnel encoding size; the padded envelope plaintext is
 // reported by ReplicaInnerMessagePaddedSize.
 func (g *Geometry) ReplicaInnerMessageWriteSize() int {
 	bacapCiphertextSize := g.CalculateBoxCiphertextLength()
@@ -309,7 +314,7 @@ func (g *Geometry) ReplicaInnerMessageWriteSize() int {
 	return messageTypeSize + replicaWriteSize
 }
 
-// ReplicaInnerMessagePaddedSize returns the size of the MKEM plaintext for
+// ReplicaInnerMessagePaddedSize returns the size of the envelope plaintext for
 // any inbound ReplicaInnerMessage. Reads and writes are length-prefixed and
 // padded to the write size so that the read/write distinction does not leak
 // through the ciphertext length.
@@ -340,19 +345,20 @@ func (g *Geometry) CalculateBoxCiphertextLength() int {
 	return g.MaxPlaintextPayloadLength + lengthPrefixSize + bacapEncryptionOverhead
 }
 
-// CalculateCourierEnvelopeCiphertextSizeRead calculates the MKEM ciphertext
-// size for a CourierEnvelope containing a read query. Because reads are
-// padded to the write size before MKEM, this is identical to
+// CalculateCourierEnvelopeCiphertextSizeRead calculates the envelope
+// ciphertext size for a CourierEnvelope containing a read query. Because
+// reads are padded to the write size before encryption, this is identical to
 // CalculateCourierEnvelopeCiphertextSizeWrite.
 func (g *Geometry) CalculateCourierEnvelopeCiphertextSizeRead() int {
-	return g.ReplicaInnerMessagePaddedSize() + mkemEncryptionOverhead
+	return g.ReplicaInnerMessagePaddedSize() + envelopeAEADOverhead
 }
 
-// CalculateCourierEnvelopeCiphertextSizeWrite calculates the MKEM ciphertext
-// size for a CourierEnvelope containing a write query. The MKEM plaintext is
-// a length-prefix-padded ReplicaInnerMessage of write-size length.
+// CalculateCourierEnvelopeCiphertextSizeWrite calculates the envelope
+// ciphertext size for a CourierEnvelope containing a write query. The
+// envelope plaintext is a length-prefix-padded ReplicaInnerMessage of
+// write-size length.
 func (g *Geometry) CalculateCourierEnvelopeCiphertextSizeWrite() int {
-	return g.ReplicaInnerMessagePaddedSize() + mkemEncryptionOverhead
+	return g.ReplicaInnerMessagePaddedSize() + envelopeAEADOverhead
 }
 
 // CalculateEnvelopeReplySizeRead calculates the size of the EnvelopeReply

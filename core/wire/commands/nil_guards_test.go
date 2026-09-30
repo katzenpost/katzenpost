@@ -9,14 +9,14 @@ import (
 )
 
 // TestReplicaMessageFromBytesNilScheme exercises C3: replicaMessageFromBytes
-// dereferences the NIKE scheme (HybridKeySize -> scheme.PublicKeySize) before
-// any length check. On a non-replica command set the scheme is nil, so a
+// dereferences the KEM scheme (RecipientCiphertextSize -> scheme.CiphertextSize)
+// before any length check. On a non-replica command set the scheme is nil, so a
 // replicaMessage must be rejected rather than panicking on the nil interface.
 func TestReplicaMessageFromBytesNilScheme(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmds := &Commands{} // replicaNikeScheme is nil, as on mixnet/PKI sessions.
+	cmds := &Commands{} // replicaKEMScheme is nil, as on mixnet/PKI sessions.
 	body := make([]byte, 128)
 
 	var (

@@ -36,7 +36,7 @@ func PadToSize(data []byte, targetSize int) ([]byte, error) {
 // PadInnerMessageForEncryption serializes a ReplicaInnerMessage and pads it
 // with a 4-byte length prefix and trailing zeros to the padded write size,
 // so that reads, writes, and tombstones are all indistinguishable to any
-// observer of the resulting MKEM ciphertext length. The receiver recovers
+// observer of the resulting envelope ciphertext length. The receiver recovers
 // the exact message bytes via ExtractMessageFromPaddedPayload.
 func PadInnerMessageForEncryption(msg *ReplicaInnerMessage, geo *pgeo.Geometry) ([]byte, error) {
 	if geo == nil {
@@ -49,7 +49,7 @@ func PadInnerMessageForEncryption(msg *ReplicaInnerMessage, geo *pgeo.Geometry) 
 // and pads it with a 4-byte length prefix and trailing zeros to the padded
 // read-reply size, so that read replies, write replies, and tombstone
 // replies are all indistinguishable to any observer of the resulting
-// MKEM-AEAD ciphertext length. The receiver recovers the exact message
+// AEAD ciphertext length. The receiver recovers the exact message
 // bytes via ExtractMessageFromPaddedPayload.
 func PadReplyInnerMessageForEncryption(msg *ReplicaMessageReplyInnerMessage, geo *pgeo.Geometry) ([]byte, error) {
 	if geo == nil {
@@ -66,7 +66,11 @@ func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
 	if err != nil {
 		panic(err)
 	}
-	_, err = h.Write(c.SenderPubkey)
+	_, err = h.Write(c.KemCiphertext1)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(c.KemCiphertext2)
 	if err != nil {
 		panic(err)
 	}
