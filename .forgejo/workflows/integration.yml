@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: integration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 */12 * * *'
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: ${{ vars.CI_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test-integration

@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: ci image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.ci/Dockerfile'
+      - '.github/workflows/ci-image.yml'
+  workflow_dispatch:
+    inputs:
+      registries:
+        description: space separated registry prefixes to push to
+        type: string
+        default: ''
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: make ci-local-image CONTAINER_ENGINE=docker
+      - name: Push to the configured registries
+        env:
+          registries: ${{ inputs.registries || vars.CI_REGISTRIES }}
+        if: ${{ inputs.registries != '' || vars.CI_REGISTRIES != '' }}
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          make ci-local-image-push CONTAINER_ENGINE=docker CI_REGISTRIES="$registries"

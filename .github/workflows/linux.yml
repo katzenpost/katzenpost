@@ -1,5 +1,9 @@
 name: linux unit tests
-on: [pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
 jobs:
   test:
     strategy:
@@ -44,3 +48,28 @@ jobs:
 
       - name: Run ${{ matrix.test-suite.name }} unit tests
         run: cd ${{ matrix.test-suite.path }} && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout ${{ matrix.test-suite.timeout }} ./...
+
+  check:
+    runs-on: ubuntu-latest
+    name: check
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-check-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-check-
+
+      - name: Run go vet, govulncheck and the config drift check
+        run: make check
