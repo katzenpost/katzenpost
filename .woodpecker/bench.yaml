@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+when:
+  event: [manual, cron]
+
+steps:
+  - name: bench
+    image: localhost/katzenpost-ci:latest
+    commands:
+      - make bench
