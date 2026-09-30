@@ -184,6 +184,12 @@ type failingAuthKey struct{ kem.PublicKey }
 
 func (failingAuthKey) MarshalBinary() ([]byte, error) { return nil, errors.New("test marshal failure") }
 
+type typedNilKey struct{}
+
+func (*typedNilKey) MarshalBinary() ([]byte, error) { return nil, errors.New("typed nil key") }
+func (*typedNilKey) Scheme() kem.Scheme             { return nil }
+func (*typedNilKey) Equal(kem.PublicKey) bool       { return false }
+
 func TestAuthenticateConnectionInvalidCredentials(t *testing.T) {
 	f := newAuthFixture(t)
 	now, _, _ := epochtime.Now()
@@ -204,6 +210,7 @@ func TestAuthenticateConnectionInvalidCredentials(t *testing.T) {
 	}{
 		{"nil credentials", nil, true},
 		{"nil key", &wire.PeerCredentials{AdditionalData: id[:]}, true},
+		{"typed nil key", &wire.PeerCredentials{AdditionalData: id[:], PublicKey: (*typedNilKey)(nil)}, true},
 		{"empty identity", &wire.PeerCredentials{PublicKey: f.keys[0]}, true},
 		{"short identity", &wire.PeerCredentials{AdditionalData: id[:len(id)-1], PublicKey: f.keys[0]}, true},
 		{"long identity", &wire.PeerCredentials{AdditionalData: make([]byte, len(id)+1), PublicKey: f.keys[0]}, true},

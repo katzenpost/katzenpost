@@ -26,6 +26,7 @@ import (
 	"math"
 	"net"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
@@ -885,11 +887,19 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 	return s, nowDoc, now, till
 }
 
+func isNilKey(k kem.PublicKey) bool {
+	if k == nil {
+		return true
+	}
+	v := reflect.ValueOf(k)
+	return v.Kind() == reflect.Ptr && v.IsNil()
+}
+
 // AuthenticateConnection authenticates a link key against the PKI documents,
 // returning the newest direction-eligible descriptor and whether the peer may
 // send traffic.
 func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (*cpki.MixDescriptor, bool, bool) {
-	if c == nil || c.PublicKey == nil {
+	if c == nil || isNilKey(c.PublicKey) {
 		return nil, false, false
 	}
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
@@ -911,7 +921,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 // present only within the early-connect window, and past entries cover up to
 // NumMixKeys previous epochs.
 func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool, docs []*pkicache.Entry, nowDoc *pkicache.Entry, now uint64, till time.Duration) (desc *cpki.MixDescriptor, canSend, isValid bool) {
-	if c == nil || c.PublicKey == nil {
+	if c == nil || isNilKey(c.PublicKey) {
 		return nil, false, false
 	}
 	var earlySendSlack = epochtime.Period / 8
