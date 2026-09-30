@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+matrix:
+  SUITE:
+    - authority
+    - client
+    - core
+    - core/sphinx
+    - server
+    - courier
+    - pigeonhole
+
+when:
+  event: [push, pull_request, manual]
+
+steps:
+  - name: test
+    image: localhost/katzenpost-ci:latest
+    commands:
+      - make test-suite suite=$SUITE

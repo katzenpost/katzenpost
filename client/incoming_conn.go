@@ -95,16 +95,20 @@ type incomingConn struct {
 	doneCh   chan struct{}
 	doneOnce sync.Once
 
-	// initialSequenceDone is set true by onNewConn once it has
-	// queued the strict-order ConnectionStatusEvent +
-	// NewPKIDocumentEvent pair that the thin client's Dial()
-	// expects as the first two messages. Broadcast workers
+	// initialSequenceDone is set true once the handshake this conn
+	// owes a new thin client is complete: the strict-order
+	// ConnectionStatusEvent + NewPKIDocumentEvent pair queued by
+	// onNewConn, and then the SessionTokenReply. Broadcast workers
 	// (doUpdateConnectionStatus / doUpdateFromPKIDoc) check this
-	// flag and skip conns whose initial sequence is still in
-	// progress, so a status-change or doc-update event during
-	// onNewConn's wait-for-pki-doc window cannot queue an
-	// out-of-order message ahead of the initial pair.
+	// flag and skip conns whose handshake is still in progress, so
+	// a status-change or doc-update event cannot queue ahead of any
+	// of the three messages the thin client's Dial() expects.
 	initialSequenceDone atomic.Bool
+
+	// missedStatus and missedPKIDoc record a broadcast skipped while
+	// the gate was shut, so openBroadcastGate can replay it.
+	missedStatus atomic.Bool
+	missedPKIDoc atomic.Bool
 }
 
 // closeDone closes doneCh exactly once. Called from the worker's defer
@@ -335,6 +339,7 @@ func (c *incomingConn) worker() {
 				c.listener.handleSessionToken(c, rawReq.SessionToken)
 				continue
 			}
+			c.listener.openBroadcastGate(c)
 			c.log.Infof("Received Request from peer application.")
 			if isLocalRequest(rawReq) && c.listener.localDispatch != nil {
 				// Local-only operations (key generation, envelope prep,

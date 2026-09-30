@@ -4,6 +4,8 @@ package incoming
 
 import (
 	"container/list"
+	"errors"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -99,6 +101,9 @@ func feedConn(gl *gateListener, ip string) net.Conn {
 func expectClosed(t *testing.T, c net.Conn, msg string) {
 	t.Helper()
 	if err := c.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		if errors.Is(err, io.ErrClosedPipe) {
+			return
+		}
 		t.Fatal(err)
 	}
 	_, err := c.Read(make([]byte, 1))

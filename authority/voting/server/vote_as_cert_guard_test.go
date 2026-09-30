@@ -3,6 +3,8 @@
 package server
 
 import (
+	"bytes"
+	"github.com/katzenpost/hpqc/sign"
 	"path/filepath"
 	"testing"
 
@@ -95,13 +97,46 @@ func TestOnCertUploadAcceptsCertWithReveals(t *testing.T) {
 
 	// A genuine certificate for the current epoch carries at least one signed
 	// shared-random reveal.
-	signedReveal, err := cert.Sign(idPriv, idPub, []byte("reveal"), votingEpoch+5)
+	otherPub, otherPriv, err := ss.GenerateKey()
 	require.NoError(t, err)
+	otherPk := hash.Sum256From(otherPub)
+	st.reverseHash = map[[publicKeyHashSize]byte]sign.PublicKey{pk: idPub, otherPk: otherPub}
+	st.verifiers = map[[publicKeyHashSize]byte]sign.PublicKey{pk: idPub, otherPk: otherPub}
+	pair := func(priv sign.PrivateKey, pub sign.PublicKey) ([]byte, []byte) {
+		sr := new(pki.SharedRandom)
+		commit, err := sr.Commit(votingEpoch)
+		require.NoError(t, err)
+		sc, err := cert.Sign(priv, pub, commit, votingEpoch+5)
+		require.NoError(t, err)
+		srv, err := cert.Sign(priv, pub, sr.Reveal(), votingEpoch+5)
+		require.NoError(t, err)
+		return sc, srv
+	}
+	signedCommit, signedReveal := pair(idPriv, idPub)
+	otherCommit, otherReveal := pair(otherPriv, otherPub)
+	node := func(id byte, gw, svc bool) *pki.MixDescriptor {
+		d := &pki.MixDescriptor{
+			Name: string([]byte{'n', '0' + id}), Epoch: votingEpoch,
+			IdentityKey: bytes.Repeat([]byte{id}, 32), LinkKey: bytes.Repeat([]byte{id}, 32),
+			MixKeys:       map[uint64][]byte{votingEpoch: bytes.Repeat([]byte{id}, 32)},
+			Addresses:     map[string][]string{"tcp": {"tcp://127.0.0.1:12345"}},
+			IsGatewayNode: gw, IsServiceNode: svc,
+		}
+		if svc {
+			d.Kaetzchen = map[string]map[string]interface{}{}
+		}
+		return d
+	}
 	doc := &pki.Document{
+		Version:            pki.DocumentVersion,
 		Epoch:              votingEpoch,
 		GenesisEpoch:       votingEpoch,
 		PKISignatureScheme: ss.Name(),
-		SharedRandomReveal: map[[publicKeyHashSize]byte][]byte{pk: signedReveal},
+		Topology:           [][]*pki.MixDescriptor{{node(1, false, false)}},
+		GatewayNodes:       []*pki.MixDescriptor{node(2, true, false)},
+		ServiceNodes:       []*pki.MixDescriptor{node(3, false, true)},
+		SharedRandomCommit: map[[publicKeyHashSize]byte][]byte{pk: signedCommit, otherPk: otherCommit},
+		SharedRandomReveal: map[[publicKeyHashSize]byte][]byte{pk: signedReveal, otherPk: otherReveal},
 	}
 	signed, err := pki.SignDocument(idPriv, idPub, doc)
 	require.NoError(t, err)

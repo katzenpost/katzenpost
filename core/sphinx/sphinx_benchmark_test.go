@@ -312,8 +312,4 @@ func prepareSphinxBenchmark(isNIKE bool, nikeName string, kemName string, nrHops
 			privateKey: nodes[0].privateKey,
 		}
 	}
-
-	panic("invalid state")
-
-	return nil
 }
