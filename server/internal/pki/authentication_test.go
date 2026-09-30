@@ -166,7 +166,7 @@ func TestAuthenticateConnectionEpochsAndKeys(t *testing.T) {
 					}
 					id := hash.Sum256(f.peerBlob)
 					creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[tc.key]}
-					desc, send, valid := f.p.authenticateConnection(creds, outgoing, docs, current, now, tc.till)
+					desc, send, valid := f.p.authenticateConnectionWithDocs(creds, outgoing, docs, current, now, tc.till)
 					wantSend := tc.incomingSend
 					if outgoing {
 						wantSend = tc.outgoingSend
