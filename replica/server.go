@@ -92,7 +92,7 @@ type Server struct {
 	// proxySema limits the number of concurrent proxy request goroutines
 	proxySema chan struct{}
 
-	// decapSema bounds concurrent local MKEM decapsulations.
+	// decapSema bounds concurrent local envelope KEM decapsulations.
 	decapSema chan struct{}
 
 	// firstShardCandidate overrides which of a box's shard holders a
@@ -103,7 +103,7 @@ type Server struct {
 	// would be written by a test while another reads it mid-sweep.
 	firstShardCandidate atomic.Pointer[shardChooser]
 
-	// mkemOpCost is the wall-clock latency of one MKEM operation when
+	// mkemOpCost is the wall-clock latency of one envelope KEM operation when
 	// the host is saturated, measured by the startup self-check. Every
 	// proxied attempt pays it once, for its encapsulation, before any
 	// waiting begins, so it is the smallest share of a sweep budget

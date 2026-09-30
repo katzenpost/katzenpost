@@ -149,10 +149,11 @@ const (
 	// longer than a LAN round trip: the query waits its turn in the
 	// LambdaR-paced sender queue, the replica deliberately delays the
 	// reply with uniform jitter to hide read/write timing, the reply
-	// rides the paced return link, and the envelope crypto (e.g. CTIDH)
-	// is not cheap. A short deadline abandons replies that are merely
-	// slow, and because each retry re-enqueues behind the same backlog
-	// it times out again, so a slow-but-live replica is never caught and
+	// rides the paced return link, and the envelope crypto (the
+	// McEliece348864-X25519 KEM) is not cheap. A short deadline abandons
+	// replies that are merely slow, and because each retry re-enqueues
+	// behind the same backlog it times out again, so a slow-but-live
+	// replica is never caught and
 	// the Copy fails with "no replica reply" even though the box is
 	// there. The budget (attempts x this timeout, per shard, x2 shards)
 	// is deliberately generous: a Copy is a background all-or-nothing
@@ -164,7 +165,7 @@ const (
 	// dispatch a single copy-stream envelope to its intermediate
 	// replicas before aborting the Copy command. Write-side failover
 	// between shard peers is not available — the intermediate replicas
-	// are baked into the client's MKEM envelope.
+	// are baked into the client's envelope.
 	maxCopyWriteAttempts = 10
 
 	// copyWriteReplyTimeout bounds how long the courier waits for
@@ -1134,7 +1135,7 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 // is retried with backoff, as are transport-level failures (SendMessage
 // errors and "no replies before the deadline"). No shard-level failover
 // is available on the write path because the two intermediate replicas
-// are MKEM-baked into the client's envelope.
+// are baked into the client's envelope.
 func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bool, uint8) {
 	envHash := envelope.EnvelopeHash()
 
@@ -1253,8 +1254,8 @@ func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDS
 // last observed replica ErrorCode (for a Failed CopyCommandReply) and
 // a non-nil error if every shard exhausted.
 //
-// Every attempt uses a fresh ephemeral MKEM keypair so its EnvelopeHash
-// is unique in the copyCache reply-demux table.
+// Every attempt Encapsulates under a fresh random envelope key so its
+// EnvelopeHash is unique in the copyCache reply-demux table.
 func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole.ReplicaReadReply, uint8, error) {
 	e.log.Debugf("readBoxFromShardReplicas: Reading box %x", boxID[:8])
 

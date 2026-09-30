@@ -5,8 +5,8 @@
 // self-check to a sidecar TOML file in the daemon's DataDir so a
 // restart on the same hardware does not have to re-measure.
 //
-// Each daemon (replica, server) measures one operation type (CTIDH
-// MKEM Decapsulate, Sphinx Unwrap, etc.) and the cost is dominated
+// Each daemon (replica, server) measures one operation type (envelope
+// KEM Decapsulate, Sphinx Unwrap, etc.) and the cost is dominated
 // by the CPU rather than by which scheme is timed, so the cached
 // fields are scheme-agnostic: NumCPU, solo and saturated ops/sec,
 // and the per-op iteration time. A hostname is recorded so that a

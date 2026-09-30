@@ -218,21 +218,33 @@ Source: `replica/config/config.go`.
 - **Added** `ReplicaID` (uint8). **[breaking]** Must match the
   corresponding `ReplicaID` in every dirauth's `[[StorageReplicas]]`
   entry for this replica.
+- **Renamed** `ReplicaNIKEScheme` (string) to `ReplicaKEMScheme`
+  (string), value changed from `"CTIDH1024-X25519"` to
+  `"mceliece348864-X25519"`. **[breaking]** The Pigeonhole envelope
+  construction moved from `hpqc/kem/mkem` (multi-recipient encryption
+  over a NIKE) to `hpqc/kem/mrhybrid` (the same shape over a KEM), so
+  the field now names a KEM scheme rather than a NIKE scheme. Every
+  replica, courier (`EnvelopeScheme` in `courier.toml`, unchanged
+  name), and client in the network must agree on the same scheme. The
+  replica decodes with the lenient loader, so a stale
+  `ReplicaNIKEScheme` line is silently ignored rather than rejected;
+  the daemon then fails validation on the now-required
+  `ReplicaKEMScheme` being empty. Set the new field explicitly.
 - **Added** `IncomingQueueSize` (int). Buffer size for the
   incoming-connection sender queue. Zero in the TOML triggers
   auto-derivation at startup, sized to absorb roughly 10 seconds of
-  the measured saturated CTIDH ops-per-second, floored at
+  the measured saturated envelope KEM ops-per-second, floored at
   `ProxyWorkerCount * 32`. The earlier fixed default of `1000` is
   gone; operators should omit the field on a single-tenant host.
 - **Added** `ProxyRequestTimeout` (int). Timeout in seconds for proxy
   requests to other replicas. Zero in the TOML triggers
   auto-derivation at startup, sized to be order-of-magnitude generous
-  against the measured CTIDH rate. The earlier fixed default of
-  `300` seconds is gone.
+  against the measured envelope KEM encapsulation rate. The earlier
+  fixed default of `300` seconds is gone.
 - **Added** `ProxyWorkerCount` (int). Cap on concurrently-in-flight
   proxy-request handlers. Zero in the TOML triggers auto-derivation
   at startup to `max(1, runtime.NumCPU())`. The earlier fixed default
-  of `8` is gone. The startup CTIDH self-check publishes
+  of `8` is gone. The startup envelope KEM self-check publishes
   `katzenpost_replica_selfcheck_*` gauges so the chosen values are
   visible to Prometheus.
 - **Added** `MetricsAddress` (string). Address/port for the Prometheus
@@ -269,8 +281,8 @@ Source: `replica/config/config.go`.
   with a default of `4`, and is now gone again. The bounded work
   (the `DispatchReplication` goroutine in `replica/connector.go`) is
   sub-millisecond per goroutine (PKI snapshot lookup, blake2b hashes,
-  GetShards, per-peer channel send; no MKEM, no DB write, no wait
-  for peer acknowledgement), so the cap is a hard ceiling against
+  GetShards, per-peer channel send; no envelope crypto, no DB write,
+  no wait for peer acknowledgement), so the cap is a hard ceiling against
   unbounded goroutine spawn rather than a tuning knob. Hard-coded to
   256 at `replica/connector.go:maxConcurrentReplications`, mirroring
   the courier's analogous `maxConcurrentReplicaDispatch`. A stale

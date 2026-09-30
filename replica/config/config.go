@@ -24,7 +24,7 @@ const (
 	// IncomingQueueSize, ProxyRequestTimeout and ProxyWorkerCount
 	// intentionally have no fixed defaults here. Zero in the config
 	// signals "auto-derive at server.New from runtime.NumCPU and the
-	// startup CTIDH self-check"; see ApplyRuntimeDefaults below.
+	// startup envelope KEM self-check"; see ApplyRuntimeDefaults below.
 
 	// DefaultMinFreeStorageMiB is the default filesystem free-space
 	// reserve, in mebibytes. By default the replica will use the
@@ -98,7 +98,7 @@ type Config struct {
 	// IncomingQueueSize is the buffer size for the incoming-connection
 	// sender queue. Omit this field (or set it to 0) on a
 	// single-replica-per-host deployment so the runtime can pick a
-	// sensible value from runtime.NumCPU and the CTIDH self-check; an
+	// sensible value from runtime.NumCPU and the envelope KEM self-check; an
 	// explicit non-zero value overrides the auto-derivation and is
 	// intended for unusual deployments (multi-tenancy on a shared
 	// host, intentional small-buffer testing, etc.).
@@ -123,15 +123,15 @@ type Config struct {
 	// leaves time to fail over to its co-holder.
 	//
 	// The budget covers everything an attempt does, including the wait
-	// for one of the ProxyWorkerCount slots and the attempt's own MKEM
-	// encapsulation, a CTIDH1024 keygen plus group action. It must
-	// therefore stay comfortably above K times the per-attempt crypto
-	// cost or a sweep exhausts itself on crypto and never reaches the
-	// second holder. The auto-derivation below scales it from the
-	// measured saturated CTIDH rate for exactly this reason.
+	// for one of the ProxyWorkerCount slots and the attempt's own
+	// envelope KEM encapsulation. It must therefore stay comfortably
+	// above K times the per-attempt crypto cost or a sweep exhausts
+	// itself on crypto and never reaches the second holder. The
+	// auto-derivation below scales it from the measured saturated KEM
+	// encapsulation rate for exactly this reason.
 	//
 	// Omit this field (or set it to 0) so the runtime can pick a
-	// sensible value from the CTIDH self-check's saturated rate; an
+	// sensible value from the envelope KEM self-check's saturated rate; an
 	// explicit non-zero value overrides and is intended for unusual
 	// cases (research workloads, debugging chaos scenarios with very
 	// long per-op times, etc.).
@@ -140,9 +140,9 @@ type Config struct {
 	// ProxyWorkerCount caps how many proxied-request attempts can be in
 	// flight concurrently. A slot is held for one attempt against one
 	// shard holder, not for a whole failover sweep, and it covers that
-	// attempt's CTIDH1024 encapsulation as well as its network
+	// attempt's envelope KEM encapsulation as well as its network
 	// round-trip, so the default of runtime.NumCPU caps concurrent
-	// CTIDH at roughly one per core. Omit this field (or set it to 0) so the
+	// encapsulations at roughly one per core. Omit this field (or set it to 0) so the
 	// runtime picks runtime.NumCPU, regardless of how many katzenpost
 	// processes share the host; an explicit non-zero value is intended
 	// for unusual deployments where the operator wants to reserve CPU
@@ -288,13 +288,13 @@ func (c *Config) SetDefaultTimeouts() {
 }
 
 // ApplyRuntimeDefaults fills in any zero-valued runtime-tunable
-// fields based on the host's CPU count and the saturated CTIDH op
-// rate measured at startup. Operators should leave the three
+// fields based on the host's CPU count and the saturated envelope
+// KEM op rate measured at startup. Operators should leave the three
 // affected fields unset in their TOML so the runtime can pick
 // sensible values; an explicit non-zero value in the TOML wins.
 //
 // `numCPU` should be `runtime.NumCPU()`. `saturatedOpsPerSec` should
-// be the saturated rate from the replica's CTIDH startup
+// be the saturated rate from the replica's envelope KEM startup
 // self-check; pass 0 if no measurement is available, in which case
 // the queue and timeout fall back to NumCPU-only defaults.
 //
@@ -311,7 +311,7 @@ func (c *Config) SetDefaultTimeouts() {
 // `saturatedOpsPerSec` measurement already captures the realised
 // contention, so the queue and timeout derivations remain accurate.
 // ApplyRuntimeDefaults fills in any zero-valued runtime-tunable
-// fields from the host's NumCPU and the CTIDH self-check rate.
+// fields from the host's NumCPU and the envelope KEM self-check rate.
 // Callers may pass saturatedOpsPerSec=0 to skip the
 // self-check-driven derivation; in that case the documented
 // minimum floors (minBuffer=64 for IncomingQueueSize,
