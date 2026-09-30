@@ -16,6 +16,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/nike"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
@@ -1331,13 +1332,12 @@ func TestARQSuccessWritePayload(t *testing.T) {
 	sphinxInstance, err := sphinx.FromGeometry(cfg.SphinxGeometry)
 	require.NoError(err)
 
-	// Use pre-generated replica NIKE keys
+	// Use pre-generated replica keys
 	loadCTIDHFixtures()
-	replica0PrivKey := ctidhFixtures[3].Priv
+	replica0PubKey := ctidhFixtures[3].Pub
 	replica0PubKeyBytes := ctidhFixtures[3].PubBytes
 
 	replica1PubKey := ctidhFixtures[4].Pub
-	_ = replica1PubKey
 	replica1PubKeyBytes := ctidhFixtures[4].PubBytes
 
 	// Get current replica epoch
@@ -1400,15 +1400,17 @@ func TestARQSuccessWritePayload(t *testing.T) {
 		replyLock:          new(sync.Mutex),
 	}
 
-	// Use pre-generated CTIDH keypair for the client envelope key
-	clientPubKey := ctidhFixtures[5].Pub
-	clientPrivKey := ctidhFixtures[5].Priv
-	clientPrivKeyBytes, err := clientPrivKey.MarshalBinary()
+	// Client encapsulates to both replicas, obtaining one derived key per
+	// recipient (mrhybrid has no client keypair to persist — the derived
+	// keys themselves are what EnvelopeDescriptor stores).
+	derivedKeys, _, err := replicaCommon.MRHybridScheme.Encapsulate(
+		[]kem.PublicKey{replica0PubKey, replica1PubKey}, []byte("original write request"),
+	)
 	require.NoError(err)
 
-	// Create an EnvelopeDescriptor that stores the client's private key
+	// Create an EnvelopeDescriptor that stores the derived keys
 	envelopeDesc := &EnvelopeDescriptor{
-		EnvelopeKey: clientPrivKeyBytes,
+		DerivedKeys: [2][]byte{derivedKeys[0], derivedKeys[1]},
 		ReplicaNums: [2]uint8{0, 1},
 		Epoch:       replicaEpoch,
 	}
@@ -1456,10 +1458,11 @@ func TestARQSuccessWritePayload(t *testing.T) {
 		writeReplyInnerMsgBytes, len(writeReplyInnerMsgBytes)+4)
 	require.NoError(err)
 
-	// Encrypt the reply using MKEM EnvelopeReply (replica encrypts for client)
-	// This uses DH between replica's private key and client's public key
-	encryptedPayload, err := replicaCommon.MKEMNikeScheme.EnvelopeReply(
-		replica0PrivKey, clientPubKey, paddedReplyBytes,
+	// Encrypt the reply using mrhybrid EnvelopeReply (replica encrypts for
+	// client using the derived key it obtained via Decapsulate — here
+	// simulated directly since this test doesn't exercise the request side).
+	encryptedPayload, err := replicaCommon.MRHybridScheme.EnvelopeReply(
+		derivedKeys[0], paddedReplyBytes,
 	)
 	require.NoError(err)
 
@@ -1468,8 +1471,8 @@ func TestARQSuccessWritePayload(t *testing.T) {
 		EnvelopeHash: *testEnvelopeHash,
 		ReplyIndex:   0,
 		ReplyType:    pigeonhole.ReplyTypePayload, // Payload reply (not ACK)
-		PayloadLen:   uint32(len(encryptedPayload.Envelope)),
-		Payload:      encryptedPayload.Envelope,
+		PayloadLen:   uint32(len(encryptedPayload)),
+		Payload:      encryptedPayload,
 		ErrorCode:    0,
 	}
 

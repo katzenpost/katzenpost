@@ -227,10 +227,11 @@ func TestCreateEnvelopeFromMessage(t *testing.T) {
 		},
 	}
 
-	env, privKey, err := createEnvelopeFromMessage(msg, doc, true, 0)
+	env, derivedKeys, err := createEnvelopeFromMessage(msg, doc, true, 0)
 	require.NoError(t, err)
 	require.NotNil(t, env)
-	require.NotNil(t, privKey)
+	require.NotEmpty(t, derivedKeys[0])
+	require.NotEmpty(t, derivedKeys[1])
 	require.NotEmpty(t, env.Ciphertext)
 }
 
