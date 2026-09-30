@@ -26,7 +26,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: make ci-local-image CONTAINER_ENGINE=docker
       - name: Push to the configured registries
-        if: inputs.registries != ''
+        env:
+          registries: ${{ inputs.registries || vars.CI_REGISTRIES }}
+        if: ${{ inputs.registries != '' || vars.CI_REGISTRIES != '' }}
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          make ci-local-image-push CONTAINER_ENGINE=docker CI_REGISTRIES="${{ inputs.registries }}"
+          make ci-local-image-push CONTAINER_ENGINE=docker CI_REGISTRIES="$registries"
