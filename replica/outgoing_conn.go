@@ -115,7 +115,8 @@ func (c *outgoingConn) validateIdentityHash(creds *wire.PeerCredentials) bool {
 func (c *outgoingConn) validateLinkKey(creds *wire.PeerCredentials) bool {
 	keyblob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
-		panic(err)
+		c.log.Errorf("OutgoingConn: failed to marshal peer public key: %s", err)
+		return false
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
 		c.log.Debug("OutgoingConn: Link key mismatch")
@@ -195,8 +196,11 @@ func (c *outgoingConn) worker() {
 		c.co.OnClosedConn(c)
 	}()
 
-	dialCtx, cancelFn, dialer, dialCheckCreds := c.initializeConnection()
+	dialCtx, cancelFn, dialer, dialCheckCreds, ok := c.initializeConnection()
 	defer cancelFn()
+	if !ok {
+		return
+	}
 
 	// Establish the outgoing connection.
 	for {
@@ -340,7 +344,7 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 }
 
 // initializeConnection sets up the dial context, dialer, and credentials
-func (c *outgoingConn) initializeConnection() (context.Context, context.CancelFunc, net.Dialer, wire.PeerCredentials) {
+func (c *outgoingConn) initializeConnection() (context.Context, context.CancelFunc, net.Dialer, wire.PeerCredentials, bool) {
 	// Sigh, I assume the correct thing to do is to use context for everything,
 	// but the whole package feels like a shitty hack to make up for the fact
 	// that Go lacks a real object model.
@@ -367,14 +371,15 @@ func (c *outgoingConn) initializeConnection() (context.Context, context.CancelFu
 	identityHash := hash.Sum256(c.dst.IdentityKey)
 	linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 	if err != nil {
-		panic(err)
+		c.log.Errorf("OutgoingConn: failed to unmarshal link key for peer '%s': %s", c.dst.Name, err)
+		return dialCtx, cancelFn, dialer, wire.PeerCredentials{}, false
 	}
 	dialCheckCreds := wire.PeerCredentials{
 		AdditionalData: identityHash[:],
 		PublicKey:      linkPubKey,
 	}
 
-	return dialCtx, cancelFn, dialer, dialCheckCreds
+	return dialCtx, cancelFn, dialer, dialCheckCreds, true
 }
 
 // validatePKIAndUpdateCredentials checks PKI validity and updates credentials if needed
@@ -395,13 +400,15 @@ func (c *outgoingConn) validatePKIAndUpdateCredentials(dialCheckCreds *wire.Peer
 		// Verify link key matches
 		keyblob, err := dialCheckCreds.PublicKey.MarshalBinary()
 		if err != nil {
-			panic(err)
+			c.log.Errorf("OutgoingConn: failed to marshal peer public key: %s", err)
+			return false
 		}
 		isValid := hmac.Equal(replicaDesc.LinkKey, keyblob)
 		if isValid {
 			linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(replicaDesc.LinkKey)
 			if err != nil {
-				panic(err)
+				c.log.Errorf("OutgoingConn: failed to unmarshal link key for peer '%s': %s", replicaDesc.Name, err)
+				return false
 			}
 			dialCheckCreds.PublicKey = linkPubKey
 			return true
