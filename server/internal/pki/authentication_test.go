@@ -65,7 +65,10 @@ func newAuthFixture(t *testing.T) *authFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.p = &pki{log: backend.GetLogger("auth-test")}
+	f.p = &pki{
+		log:  backend.GetLogger("auth-test"),
+		docs: make(map[uint64]*pkicache.Entry),
+	}
 	return f
 }
 
@@ -183,31 +186,91 @@ func (failingAuthKey) MarshalBinary() ([]byte, error) { return nil, errors.New("
 
 func TestAuthenticateConnectionInvalidCredentials(t *testing.T) {
 	f := newAuthFixture(t)
+	now, _, _ := epochtime.Now()
+	entry, _ := f.entry(t, now, 0, 0)
+	f.p.docs[now] = entry
+
 	id := hash.Sum256(f.peerBlob)
+	attackerKey, _, err := schemes.ByName("xwing").GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	randomID := hash.Sum256([]byte("unlisted-attacker-identity"))
+
 	for _, tc := range []struct {
-		name  string
-		creds *wire.PeerCredentials
+		name        string
+		creds       *wire.PeerCredentials
+		wantNilDesc bool
 	}{
-		{"nil credentials", nil},
-		{"nil key", &wire.PeerCredentials{AdditionalData: id[:]}},
-		{"empty identity", &wire.PeerCredentials{PublicKey: f.keys[0]}},
-		{"short identity", &wire.PeerCredentials{AdditionalData: id[:len(id)-1], PublicKey: f.keys[0]}},
-		{"long identity", &wire.PeerCredentials{AdditionalData: make([]byte, len(id)+1), PublicKey: f.keys[0]}},
-		{"marshal failure", &wire.PeerCredentials{AdditionalData: id[:], PublicKey: failingAuthKey{f.keys[0]}}},
+		{"nil credentials", nil, true},
+		{"nil key", &wire.PeerCredentials{AdditionalData: id[:]}, true},
+		{"empty identity", &wire.PeerCredentials{PublicKey: f.keys[0]}, true},
+		{"short identity", &wire.PeerCredentials{AdditionalData: id[:len(id)-1], PublicKey: f.keys[0]}, true},
+		{"long identity", &wire.PeerCredentials{AdditionalData: make([]byte, len(id)+1), PublicKey: f.keys[0]}, true},
+		{"marshal failure", &wire.PeerCredentials{AdditionalData: id[:], PublicKey: failingAuthKey{f.keys[0]}}, true},
+		{"attacker key not in consensus", &wire.PeerCredentials{AdditionalData: id[:], PublicKey: attackerKey}, false},
+		{"attacker identity not in consensus", &wire.PeerCredentials{AdditionalData: randomID[:], PublicKey: f.keys[0]}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			desc, send, valid := f.p.AuthenticateConnection(tc.creds, false)
-			if desc != nil || send || valid {
-				t.Fatal("invalid credentials accepted")
+			if send || valid {
+				t.Fatalf("invalid credentials authorized: send=%v valid=%v", send, valid)
+			}
+			if tc.wantNilDesc && desc != nil {
+				t.Fatalf("expected nil descriptor, got %v", desc)
 			}
 		})
 	}
-	// Positive path via the snapshot evaluator, so the test never depends on
-	// the wall clock or the document-selection cache.
-	const now = uint64(42)
-	entry, _ := f.entry(t, now, 0, 0)
-	desc, send, valid := f.p.authenticateConnection(&wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}, false, []*pkicache.Entry{entry}, entry, now, 0)
-	if desc == nil || !send || !valid {
-		t.Fatal("current peer rejected via snapshot")
-	}
+}
+
+func TestAuthenticateConnectionExportedMethod(t *testing.T) {
+	f := newAuthFixture(t)
+	now, _, _ := epochtime.Now()
+	id := hash.Sum256(f.peerBlob)
+
+	t.Run("current document positive path", func(t *testing.T) {
+		entry, _ := f.entry(t, now, 0, 0)
+		f.p.docs = map[uint64]*pkicache.Entry{
+			now: entry,
+		}
+		creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}
+		desc, send, valid := f.p.AuthenticateConnection(creds, false)
+		if desc == nil || !send || !valid {
+			t.Fatalf("expected valid connection, got desc=%v send=%v valid=%v", desc, send, valid)
+		}
+	})
+
+	t.Run("past document delisting enforcement", func(t *testing.T) {
+		// Peer is listed in past document (now-1) but absent/delisted in current document (now).
+		pastEntry, _ := f.entry(t, now-1, 0, 0)
+		currentEntry, _ := f.entry(t, now, -1, 0) // layer -1: peer omitted from current topology
+		f.p.docs = map[uint64]*pkicache.Entry{
+			now:   currentEntry,
+			now-1: pastEntry,
+		}
+		creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}
+		desc, send, valid := f.p.AuthenticateConnection(creds, false)
+		if send || valid {
+			t.Fatalf("delisted peer must not be authorized to send, got send=%v valid=%v", send, valid)
+		}
+		if desc == nil {
+			t.Fatal("expected past descriptor to be returned even if delisted")
+		}
+	})
+
+	t.Run("past document retained with active listing", func(t *testing.T) {
+		// Peer is in past document (now-1) with old key 0, and still listed in current document (now) with rotated key 1.
+		pastEntry, _ := f.entry(t, now-1, 0, 0)
+		currentEntry, _ := f.entry(t, now, 0, 1)
+		f.p.docs = map[uint64]*pkicache.Entry{
+			now:   currentEntry,
+			now-1: pastEntry,
+		}
+		// Peer connects using the old key 0 from past document
+		creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}
+		desc, send, valid := f.p.AuthenticateConnection(creds, false)
+		if desc == nil || !send || !valid {
+			t.Fatalf("retained peer with active listing should be authorized, got desc=%v send=%v valid=%v", desc, send, valid)
+		}
+	})
 }

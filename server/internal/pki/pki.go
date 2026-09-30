@@ -895,6 +895,10 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 
 // authenticateConnection evaluates an authentication snapshot independent of
 // the wall clock so transition behavior can be tested deterministically.
+// The caller must provide a valid snapshot where docs are ordered newest-first,
+// nowDoc is the entry for epoch now (or nil if missing), the now+1 entry is
+// present only within the early-connect window, and past entries cover up to
+// NumMixKeys previous epochs.
 func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool, docs []*pkicache.Entry, nowDoc *pkicache.Entry, now uint64, till time.Duration) (desc *cpki.MixDescriptor, canSend, isValid bool) {
 	if c == nil || c.PublicKey == nil {
 		return nil, false, false
