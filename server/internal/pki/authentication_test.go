@@ -7,11 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -278,6 +281,118 @@ func TestAuthenticateConnectionExportedMethod(t *testing.T) {
 		desc, send, valid := f.p.AuthenticateConnection(creds, false)
 		if desc == nil || !send || !valid {
 			t.Fatalf("retained peer with active listing should be authorized, got desc=%v send=%v valid=%v", desc, send, valid)
+		}
+	})
+}
+
+func TestConsensusDocumentInvalidSignature(t *testing.T) {
+	ed25519 := signSchemes.ByName("Ed25519")
+	authPub, authPriv, err := ed25519.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	attackerPub, attackerPriv, err := ed25519.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	xwing := schemes.ByName("xwing")
+	attackerLinkKey, _, err := xwing.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	attackerLinkBlob, err := attackerLinkKey.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	attackerIDBlob, err := attackerPub.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now, _, _ := epochtime.Now()
+	// Build a well-formed consensus document containing the attacker's descriptor.
+	doc := &cpki.Document{
+		Epoch:              now,
+		Topology:           make([][]*cpki.MixDescriptor, 3),
+		Version:            cpki.DocumentVersion,
+		PKISignatureScheme: ed25519.Name(),
+	}
+	attackerDesc := &cpki.MixDescriptor{
+		Name:        "attacker-node",
+		IdentityKey: attackerIDBlob,
+		LinkKey:     attackerLinkBlob,
+		Epoch:       now,
+		Version:     cpki.DescriptorVersion,
+	}
+	doc.Topology[0] = []*cpki.MixDescriptor{attackerDesc}
+
+	t.Run("well-formed document with no signatures is rejected", func(t *testing.T) {
+		rawCertified, err := doc.MarshalCertificate()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cpki.ParseDocument(rawCertified); !errors.Is(err, cpki.ErrDocumentNotSigned) {
+			t.Fatalf("expected ErrDocumentNotSigned from ParseDocument, got: %v", err)
+		}
+		if _, err := cpki.FromPayload(authPub, rawCertified); err == nil {
+			t.Fatal("expected FromPayload to fail on unsigned document, got nil")
+		}
+	})
+
+	t.Run("well-formed document signed by untrusted key is rejected", func(t *testing.T) {
+		signedByAttacker, err := cpki.SignDocument(attackerPriv, attackerPub, doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cpki.FromPayload(authPub, signedByAttacker); !errors.Is(err, cert.ErrIdentitySignatureNotFound) {
+			t.Fatalf("expected ErrIdentitySignatureNotFound, got: %v", err)
+		}
+		_, _, _, err = cert.VerifyThreshold([]sign.PublicKey{authPub}, 1, signedByAttacker)
+		if !errors.Is(err, cert.ErrThresholdNotMet) {
+			t.Fatalf("expected ErrThresholdNotMet, got: %v", err)
+		}
+	})
+
+	t.Run("well-formed document with corrupted signature is rejected", func(t *testing.T) {
+		legitSigned, err := cpki.SignDocument(authPriv, authPub, doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := new(cert.Certificate)
+		if err := cbor.Unmarshal(legitSigned, c); err != nil {
+			t.Fatal(err)
+		}
+		for k, sig := range c.Signatures {
+			sig.Payload[0] ^= 0xff
+			c.Signatures[k] = sig
+		}
+		tampered, err := c.Marshal()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := cpki.FromPayload(authPub, tampered); !errors.Is(err, cert.ErrBadSignature) {
+			t.Fatalf("expected ErrBadSignature, got: %v", err)
+		}
+		_, _, _, err = cert.VerifyThreshold([]sign.PublicKey{authPub}, 1, tampered)
+		if !errors.Is(err, cert.ErrThresholdNotMet) {
+			t.Fatalf("expected ErrThresholdNotMet, got: %v", err)
+		}
+	})
+
+	t.Run("improperly signed document cannot be admitted to authenticate peers", func(t *testing.T) {
+		f := newAuthFixture(t)
+		attackerID := hash.Sum256(attackerIDBlob)
+		creds := &wire.PeerCredentials{
+			AdditionalData: attackerID[:],
+			PublicKey:      attackerLinkKey,
+		}
+		// Since invalid consensus documents are rejected by FromPayload/VerifyThreshold,
+		// they never get parsed into p.docs.
+		desc, canSend, isValid := f.p.AuthenticateConnection(creds, false)
+		if canSend || isValid || desc != nil {
+			t.Fatalf("attacker authenticated without valid signed consensus: desc=%v canSend=%v isValid=%v", desc, canSend, isValid)
 		}
 	})
 }
