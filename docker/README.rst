@@ -280,6 +280,12 @@ was probed against a healthy mixnet-alpine and passed as of this writing
   ``rev`` each daemon logs at startup, present since v0.0.93. The swap is a
   ``docker-compose.override.yml`` on the swapped services' ``command`` only;
   ``make stop`` removes it.
+* ``make interop-combo combo=<name>`` -- run one of the eight named upgrade
+  combinations through ``interop-gate``, and reject any other name; the eight are
+  ``authorities-mixed``, ``authorities-old``, ``authorities-old-n1``,
+  ``nodes-mixed``, ``nodes-old``, ``nodes-old-n1``, ``everything-mixed`` and
+  ``everything-mixed-n1``. ``make interop-matrix`` runs twelve combinations in
+  turn.
 * ``make client-check`` -- run the working-tree client with ``warped=false``
   against the live namenlos network, using only the public
   ``client-configs/namenlos.toml``.
