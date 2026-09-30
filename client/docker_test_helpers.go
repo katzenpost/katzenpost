@@ -28,6 +28,12 @@ const (
 	// Above the docker testnet's ~54s worst-case round trip, so a
 	// tail-latency reply is not mistaken for a lost one.
 	replyWaitTimeout = 3 * time.Minute
+
+	// Hard cap on a single payload-reconstruction loop (TestFromPayloadMultiCall,
+	// TestFromMultiPayloadMultiCall). These loops can otherwise stall for the whole
+	// package-wide -timeout 1h if the shared docker testnet is saturated, consuming
+	// the budget for every other parallel test.
+	reconstructTimeout = 10 * time.Minute
 )
 
 var (
