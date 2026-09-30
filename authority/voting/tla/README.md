@@ -146,6 +146,7 @@ invariant violated.
 | `Byzantine4`          | 4     | 1   | 1     | 1      | all safety invariants hold            | 6,100,574       |
 | `Byzantine`           | 3     | 1   | 1     | 1      | `Agreement` violated                  |                 |
 | `Byzantine5`          | 5     | 1   | 0     | 1      | `Agreement` violated                  |                 |
+| `Byzantine6`          | 6     | 2   | 0     | 1      | `Agreement` violated                  |                 |
 | `EpochsByzantine`     | 3     | 1   | 0     | 2      | `ChainConsistency` violated           |                 |
 | `Equivocation`        | 4     | 1   | 1     | 1      | `ConvergenceUnderFullDelivery` violated |               |
 | `WitnessConsensus`    | 3     | 0   | 1     | 1      | `ConsensusUnreachable` violated       |                 |
@@ -203,11 +204,24 @@ Two quorums of size `Threshold` overlap in at least `2*Threshold - N`
 authorities. Agreement survives `f` Byzantine authorities when that overlap
 exceeds `f`.
 
-| N | Threshold | Overlap | Survives f = 1 | Checked by   |
-|---|-----------|---------|----------------|--------------|
-| 3 | 2         | 1       | no             | `Byzantine`  |
-| 4 | 3         | 2       | yes            | `Byzantine4` |
-| 5 | 3         | 1       | no             | `Byzantine5` |
+| N | Threshold | Overlap | Survives f = 1 | Survives f = 2 | Checked by                |
+|---|-----------|---------|----------------|----------------|---------------------------|
+| 3 | 2         | 1       | no             | no             | `Byzantine`               |
+| 4 | 3         | 2       | yes            | no             | `Byzantine4`              |
+| 5 | 3         | 1       | no             | no             | `Byzantine5`              |
+| 6 | 4         | 2       | yes            | no             | `Byzantine6` (at `f` = 2) |
+
+The overlap is `2*Threshold - N`, which for a majority threshold is 2 at every even
+`N` and 1 at every odd `N`. So a majority threshold tolerates one Byzantine authority
+at even `N`, none at odd `N`, and two at no `N` at all. Adding authorities does not
+raise the tolerance; only a threshold above the majority does.
+
+`Byzantine6` is the two-fault case at six authorities: four honest authorities split
+into two pairs, each pair reaching `Threshold` with the two Byzantine authorities, which
+sign both documents. There is no six-authority configuration asserting that `Agreement`
+holds against one fault, because six authorities cannot be searched exhaustively and
+`MinimalVoteChoices` must not be used to argue that an invariant holds. The overlap
+arithmetic gives that result and `Byzantine4` exhibits the mechanism at even `N`.
 
 Adding a fifth authority makes this worse, not better. With an odd number of
 authorities the majority threshold leaves an overlap of exactly one, and one

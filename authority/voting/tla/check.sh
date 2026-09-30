@@ -47,6 +47,7 @@ check ByzantineValidity   pass
 check Byzantine4          pass
 check Byzantine           Agreement
 check Byzantine5          Agreement
+check Byzantine6          Agreement
 check EpochsByzantine     ChainConsistency
 check Equivocation        ConvergenceUnderFullDelivery
 check WitnessConsensus    ConsensusUnreachable
