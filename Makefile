@@ -8,6 +8,7 @@ suite?=
 suite_timeout?=30m
 
 ci_config_files=.github/workflows/linux.yml .forgejo/workflows/ci.yml .woodpecker/test.yaml
+GOVULNCHECK_VERSION?=v1.8.0
 
 .PHONY: ci-suites
 ci-suites:
@@ -38,7 +39,7 @@ ci-native: check
 .PHONY: check
 check: ci-config-check
 	go vet ./...
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 .PHONY: check-live
 check-live:
