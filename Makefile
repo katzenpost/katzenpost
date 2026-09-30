@@ -37,7 +37,7 @@ ci-native: check
 	$(MAKE) check-live
 
 .PHONY: check
-check: ci-config-check
+check: ci-config-check prune-docker-cache
 	go vet ./...
 	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
