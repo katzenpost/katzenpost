@@ -177,7 +177,8 @@ func (c *outgoingConn) worker() {
 	identityHash := hash.Sum256(c.dst.IdentityKey)
 	linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 	if err != nil {
-		panic(err)
+		c.log.Errorf("server/outgoing: failed to unmarshal link key for peer '%s': %s", c.dst.Name, err)
+		return
 	}
 	dialCheckCreds := wire.PeerCredentials{
 		AdditionalData: identityHash[:],
@@ -199,7 +200,8 @@ func (c *outgoingConn) worker() {
 				c.dst = desc
 				linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 				if err != nil {
-					panic(err)
+					c.log.Errorf("server/outgoing: failed to unmarshal link key for peer '%s': %s", c.dst.Name, err)
+					return
 				}
 				dialCheckCreds.PublicKey = linkPubKey
 			}
