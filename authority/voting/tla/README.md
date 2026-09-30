@@ -2,7 +2,8 @@
 
 A formal model of the Katzenpost voting directory-authority consensus
 protocol implemented in
-[`authority/voting/server/state.go`](../server/state.go).
+[`authority/voting/server/state.go`](../server/state.go), as it is on `main`
+at commit `91debb674`.
 
 ## What is modelled
 
@@ -14,120 +15,241 @@ AcceptDescriptor -> AcceptVote -> AcceptReveal -> AcceptCert -> AcceptSignature
 ```
 
 `VotingAuthority.tla` abstracts the timed FSM into three message-exchange
-rounds that capture the consensus-relevant behaviour:
+rounds, followed by an epoch boundary:
 
-| Round    | Models                                                                 |
-|----------|------------------------------------------------------------------------|
-| `vote`   | Each authority broadcasts its vote (descriptor view + SR commitment).  |
-| `cert`   | Authorities exchange certificates, detect equivocation, tally a doc.   |
-| `sig`    | Authorities exchange signatures; a doc is finalised at `Threshold`.    |
+| Step           | Models                                                                 |
+|----------------|------------------------------------------------------------------------|
+| `vote`         | Each authority broadcasts its vote (descriptor view + SR commitment).  |
+| `cert`         | Authorities exchange certificates and each computes a document.        |
+| `sig`          | Authorities exchange signatures; a doc is finalised at `Threshold`.    |
+| epoch boundary | Each authority picks the shared-random value the next epoch chains on. |
 
-Key faithful elements:
+Elements that follow `state.go`:
 
-- **Threshold** = `floor(N/2) + 1` (matches `st.threshold` in `state.go`).
-- **Equivocation detection**: an authority seen reporting different
-  vote/commit content to different peers is excluded from the tally and the
-  shared-random set (mirrors `verifyCommits()`).
-- **Threshold signatures**: an honest authority signs only its own computed
-  document; a document is finalised only with `Threshold` signatures over it
-  (mirrors `cert.VerifyThreshold`).
-- **Lossy/asynchronous delivery**: in every round each authority receives
-  messages from an arbitrary subset of authorities.
-- **Epoch boundary / SRV chaining**: the model runs `MaxEpoch` consecutive
-  epochs. Each epoch's consensus produces a shared-random value (SRV) that is
-  mixed into the next epoch's documents (`srv = BLAKE2b(... || prior_srv)` in
-  `state.go`). At the boundary a unique threshold document propagates its SRV
-  to every honest authority (lagging authorities catch up via the bootstrap
-  fetch); a failed epoch stalls the chain; a Byzantine fork splits it.
+- **Threshold** is `floor(N/2) + 1`, as `votingThresholds()` computes it.
+- **Certificates are accepted only from a peer whose vote was received**, as
+  `onCertUpload()` requires, and only an authority holding `Threshold` votes
+  issues one, as `tallyVotes()` requires.
+- **Descriptors are tallied over directly received votes**, with no
+  equivocation check, as in `tallyVotes()`.
+- **Shared-random participants are gathered from certificates**, and an
+  authority seen with two different commitments is excluded, as in
+  `verifyCommits()`.
+- **No document without a quorum.** An authority computes a document only if
+  it holds `Threshold` votes, `Threshold` certificates and `Threshold`
+  consistent commitments, as `getMyConsensus()` requires. Otherwise it signs
+  nothing.
+- **Threshold signatures.** An honest authority signs only its own document,
+  and finalises it only with `Threshold` signatures over that exact document,
+  as in `getThresholdConsensus()`.
+- **Lossy delivery.** In every round each authority receives messages from an
+  arbitrary subset of authorities.
+- **Shared-random chaining.** `computeSharedRandom()` hashes in the previous
+  epoch's value, or 32 zero bytes if `s.documents[epoch-1]` is absent. A
+  shared-random value is modelled as the chain of `(epoch, participants)` links
+  it was derived from, so values with different histories are different.
+- **Epoch boundary.** An authority that finalised chains onto its own document.
+  One that did not goes through `stateBootstrap`: its
+  `backgroundFetchConsensus()` may deliver any threshold-signed document a peer
+  can serve, or may not land in time, in which case it restarts from the zero
+  value.
 
-Deliberate abstractions (see the header comment in the `.tla` for the full
-list): symbolic cryptography, the BLAKE2b SRV reduced to the participant set,
-and the reveal round folded into the vote round.
+## What is not modelled
 
-## Properties checked
+A property that holds in the model is established only up to these gaps.
 
-- `Agreement` (safety) — no two honest authorities finalise different
-  documents.
-- `Validity` (safety) — a finalised document was computed by some honest
-  authority.
-- `Integrity` (safety) — a finalised document carries `Threshold` signatures.
-- `ChainConsistency` (safety, epoch boundary) — all honest authorities agree
-  on the prior-epoch SRV they chain the current epoch onto.
-- `ChainGrounded` (safety, epoch boundary) — a finalised document chains onto
-  an SRV from a strictly earlier epoch (or genesis).
-- `TypeOK` — type invariant.
+- **Rounds are synchronous.** Every authority is always in the same phase of
+  the same epoch. The real authorities run independent timed FSMs and can be
+  in different phases, or different epochs, at once.
+- **One value stands for a vote's descriptors and its commitment.** A
+  Byzantine authority that sends two different values equivocates on both at
+  once. In `state.go` it could vary its descriptors under a single commitment
+  and stay a shared-random participant everywhere. That behaviour is not
+  explored. No checked invariant depends on who is excluded from the shared
+  random, and the descriptor tally never excludes anyone.
+- **The reveal round is folded into the vote round.** The model assumes an
+  authority's reveal arrives wherever its vote arrives. In `state.go` the two
+  are separate messages, and a reveal can be lost on its own.
+  `getCertificate()` then leaves that authority out of the commitments it
+  relays, and still counts its vote in the descriptor tally. So the set of
+  contributors to the shared random can be smaller than the set of voters.
+  The model does not explore that. Adding it would multiply the delivery
+  choices, and the four-authority run would no longer finish.
+- **Byzantine certificates are uniform.** A Byzantine certificate relays an
+  arbitrary set of votes, but the same set to every recipient. Commitments are
+  signed, so it cannot forge one for an honest peer. Sending different
+  certificates to different recipients is possible in reality and is not
+  explored.
+- **Mix parameters and document well-formedness.** The parameter tally in
+  `tallyVotes()` and the refusal to sign a document with an empty topology are
+  not modelled.
+- **Weekly rotation of `PriorSharedRandom`** is not modelled.
+- **Liveness.** Only invariants are checked. There is no fairness condition
+  and no temporal property, so the model says nothing about whether consensus
+  is eventually reached.
+- **Cryptography is symbolic.** Signatures are unforgeable, and equal
+  shared-random chains give equal values.
+
+The model also assumes `Cardinality(Byzantine) < Threshold`. Byzantine
+authorities sign only documents that honest authorities computed, which loses
+nothing under that assumption: a document they invent can gather at most
+`Cardinality(Byzantine)` signatures.
+
+## Properties
+
+Expected to hold wherever the configuration table says so:
+
+| Invariant                      | Statement                                                                 |
+|--------------------------------|---------------------------------------------------------------------------|
+| `TypeOK`                       | Type invariant.                                                           |
+| `Agreement`                    | No two honest authorities finalise different documents.                   |
+| `UniqueConsensus`              | At most one document per epoch holds `Threshold` signatures.              |
+| `DescriptorValidity`           | Every descriptor in an honest document was in some honest view.           |
+| `ChainConsistency`             | Honest authorities that chain onto a prior document chain onto the same.  |
+| `ChainGrounded`                | A chain consists of consecutive epochs ending at the previous one.        |
+| `ConvergenceUnderFullDelivery` | With full delivery and a common prior, honest documents are equal.        |
+
+`UniqueConsensus` is stronger than `Agreement`. It also covers a
+threshold-signed document that no honest authority finalised, but that a
+Byzantine authority could still serve to a client or a bootstrapping peer.
+
+Expected to fail, and checked only to obtain a witness trace:
+
+| Invariant              | The counterexample is                                              |
+|------------------------|--------------------------------------------------------------------|
+| `ConsensusUnreachable` | a run in which every honest authority finalises the same document. |
+| `ChainUnanimity`       | a run in which honest authorities enter an epoch on different priors. |
+
+Three properties are deliberately not checked because they are tautologies
+under this encoding: `Validity`, `Integrity`, and the claim that every
+shared-random value has an honest contributor. The comment at the end of the
+`.tla` explains each.
+
+Each invariant that is expected to hold was mutation-tested: a deliberate
+error was introduced into a copy of the specification, and TLC reported the
+invariant violated.
+
+| Mutation                                              | Invariant that caught it          |
+|-------------------------------------------------------|-----------------------------------|
+| `Threshold` lowered to `floor(N/2)`                   | `Agreement`, `UniqueConsensus`    |
+| Descriptor tally threshold lowered to 1               | `DescriptorValidity`              |
+| Failed epoch carries the old prior forward            | `ChainGrounded` (needs 3 epochs)  |
+| Common-prior condition dropped from its premise       | `ConvergenceUnderFullDelivery`    |
 
 ## Configurations
 
-| Config                                | Auths | Byz | Nodes | Epochs | Expected result                         |
-|---------------------------------------|-------|-----|-------|--------|-----------------------------------------|
-| `VotingAuthority_Honest.cfg`          | 3     | 0   | 1     | 1      | all invariants hold                     |
-| `VotingAuthority_Byzantine.cfg`       | 3     | 1   | 1     | 1      | `Agreement` counterexample              |
-| `VotingAuthority_Epochs.cfg`          | 3     | 0   | 0     | 2      | all invariants hold (incl. chain props) |
-| `VotingAuthority_EpochsByzantine.cfg` | 3     | 1   | 0     | 2      | `ChainConsistency` counterexample       |
+| Config                | Auths | Byz | Nodes | Epochs | Expected result                       | Distinct states |
+|-----------------------|-------|-----|-------|--------|---------------------------------------|-----------------|
+| `Honest`              | 3     | 0   | 2     | 1      | all invariants hold                   | 152,062         |
+| `Epochs`              | 3     | 0   | 1     | 3      | all invariants hold                   | 385,268         |
+| `ByzantineValidity`   | 3     | 1   | 1     | 2      | validity and chain shape hold         | 688,980         |
+| `Byzantine4`          | 4     | 1   | 1     | 1      | all safety invariants hold            | 6,100,574       |
+| `Byzantine`           | 3     | 1   | 1     | 1      | `Agreement` violated                  |                 |
+| `Byzantine5`          | 5     | 1   | 0     | 1      | `Agreement` violated                  |                 |
+| `EpochsByzantine`     | 3     | 1   | 0     | 2      | `ChainConsistency` violated           |                 |
+| `Equivocation`        | 4     | 1   | 1     | 1      | `ConvergenceUnderFullDelivery` violated |               |
+| `WitnessConsensus`    | 3     | 0   | 1     | 1      | `ConsensusUnreachable` violated       |                 |
+| `WitnessChainRestart` | 3     | 0   | 0     | 2      | `ChainUnanimity` violated             |                 |
+
+Each file is named `VotingAuthority_<Config>.cfg`. State counts are from TLC
+2.19. TLC stops at the first counterexample, so a failing configuration has no
+meaningful count. Configurations marked `SYMMETRY` treat honest authorities,
+Byzantine authorities and nodes as interchangeable.
+
+`Byzantine5` is too large to search exhaustively. It substitutes
+`MinimalVoteChoices` for `VoteChoices`, which restricts vote delivery to the
+smallest sets that still allow a document. Every run of the restricted
+specification is a run of the full one, so its counterexample is genuine. The
+same substitution must not be used to argue that an invariant holds.
 
 ## Running
 
-Requires `tla2tools.jar` (TLC). Download from
-<https://github.com/tlaplus/tlaplus/releases>, or use the TLA+ Toolbox / the
-VS Code "TLA+" extension.
-
-From this directory:
+Requires Java and `tla2tools.jar` (TLC). Download it from
+<https://github.com/tlaplus/tlaplus/releases> into this directory, or point
+`TLA2TOOLS` at it. The jar is not committed.
 
 ```sh
-# Honest / crash-fault case: all invariants hold.
-java -jar tla2tools.jar -config VotingAuthority_Honest.cfg VotingAuthority.tla
+./check.sh
+```
 
-# One Byzantine authority among three: TLC finds an Agreement counterexample.
+runs every configuration and compares each result with the expected one. It
+exits non-zero if any differs. The whole suite takes one to two minutes on a
+12-core machine, most of it in `Byzantine4`.
+
+To run one configuration and read its trace:
+
+```sh
 java -jar tla2tools.jar -config VotingAuthority_Byzantine.cfg VotingAuthority.tla
-
-# Two epochs, honest: ChainConsistency and all other invariants hold.
-java -jar tla2tools.jar -config VotingAuthority_Epochs.cfg VotingAuthority.tla
-
-# Two epochs, one Byzantine: TLC finds a ChainConsistency (SRV fork) counterexample.
-java -jar tla2tools.jar -config VotingAuthority_EpochsByzantine.cfg VotingAuthority.tla
 ```
 
-### Interpreting the Byzantine result
+Do not run several TLC processes in this directory at once without giving
+each its own `-metadir`. They share a scratch directory by default and one of
+them fails with a spurious parse error.
 
-With `N = 3` the threshold is `2`. TLC reports an `Agreement` violation with a
-short trace: lossy delivery leaves the two honest authorities with different
-views, so they compute different documents; the single Byzantine authority
-then signs *both* documents, supplying the deciding second signature for each.
-Both honest authorities finalise, but on different documents.
+## Interpreting the results
 
-Note the honest configuration passes *all* invariants even under arbitrary
-message loss: omission/crash faults alone never break agreement. The
-violation requires a Byzantine authority that signs more than one document.
-This is the expected, well-known result: a simple majority quorum (`2f+1`)
-tolerates crash/omission faults but not Byzantine faults; Byzantine agreement
-requires `3f+1`. The model makes that boundary explicit and reproducible.
+### Agreement needs more than a majority under Byzantine faults
 
-### Interpreting the epoch-boundary result
+With `N = 3` the threshold is `2`. In `Byzantine`, lossy delivery leaves the
+two honest authorities with different views, so they compute different
+documents. The Byzantine authority signs both, supplying the deciding second
+signature for each. Both honest authorities finalise, on different documents.
 
-The multi-epoch Byzantine run shows the consequence of a single-epoch
-Agreement violation at the *next* epoch boundary: two honest authorities adopt
-different SRVs (e.g. one keeps the genesis value while the other adopts
-`[epoch 1, {a2}]`), so the shared-random chain forks and stays forked. This
-demonstrates that consensus safety in any one epoch is what keeps the SRV
-chain — and therefore the deterministic mix topology derived from it —
-consistent across epochs.
+The honest configurations pass under arbitrary message loss: omission and
+crash faults alone never break agreement. Breaking it takes an authority that
+signs two documents.
 
+Two quorums of size `Threshold` overlap in at least `2*Threshold - N`
+authorities. Agreement survives `f` Byzantine authorities when that overlap
+exceeds `f`.
 
-### Producing a successful-consensus trace
+| N | Threshold | Overlap | Survives f = 1 | Checked by   |
+|---|-----------|---------|----------------|--------------|
+| 3 | 2         | 1       | no             | `Byzantine`  |
+| 4 | 3         | 2       | yes            | `Byzantine4` |
+| 5 | 3         | 1       | no             | `Byzantine5` |
 
-To see a run where every honest authority finalises the *same* document, ask
-TLC to check the (intentionally false) invariant `ConsensusUnreachable`; the
-reported "counterexample" is a successful consensus run:
+Adding a fifth authority makes this worse, not better. With an odd number of
+authorities the majority threshold leaves an overlap of exactly one, and one
+Byzantine authority can be that one. In the `Byzantine5` trace the honest
+authorities split into two pairs, each pair hears the Byzantine authority, and
+it signs both pairs' documents.
 
-```sh
-java -jar tla2tools.jar -config VotingAuthority_Honest.cfg \
-     -invariant ConsensusUnreachable VotingAuthority.tla
-```
+### One Byzantine authority can split the honest documents
+
+`Equivocation` runs at `N = 4`, where `Agreement` holds. Every vote and
+certificate is delivered. The Byzantine authority sends a vote containing
+descriptor `n1` to one honest authority and a vote without it to the others.
+Two honest authorities have `n1` in their own view. The favoured authority
+counts three votes for `n1` and includes it. The others count two and do not.
+
+The honest authorities therefore compute different documents with nothing
+lost in transit. This follows `tallyVotes()`, which counts every stored vote
+and never consults the equivocation findings of `verifyCommits()`. Safety is
+unaffected, since `Byzantine4` passes. The cost is liveness: the split
+authority cannot finalise, and if the Byzantine authority also withholds its
+signature the remaining two honest authorities cannot reach three.
+
+### The shared-random chain
+
+`EpochsByzantine` shows the consequence of an `Agreement` violation at the
+next boundary. Two different documents each hold `Threshold` signatures, the
+two honest authorities chain onto different ones, and the chain forks.
+
+`WitnessChainRestart` shows a weaker effect that needs no Byzantine authority.
+An honest authority that fails to finalise, and whose fetch does not land,
+enters the next epoch on the zero value while its peers chain onto the
+previous document. Its document then differs from theirs, so it cannot
+contribute a signature that epoch. `ChainConsistency` still holds, because
+that authority has restarted the chain and not joined a competing one.
 
 ## Tuning the state space
 
-The default instance (3 authorities, 1 node) is small and fast. Increasing
-`Auths` or `Nodes` in the `.cfg` files grows the state space quickly because
-delivery is modelled as an arbitrary subset per authority per round. Start
-small.
+Delivery is an arbitrary subset per authority per round, so the state space
+grows quickly with `Auths`. Four authorities with one node is about six
+million states. Adding a second node to `Byzantine4` has not been attempted.
+
+Five authorities cannot be searched exhaustively as the model stands. The
+vote round alone has over a million outcomes, which exceeds TLC's default
+limit on the size of an enumerated set. `-maxSetSize 3000000` lifts the limit,
+and the run then takes minutes per step.

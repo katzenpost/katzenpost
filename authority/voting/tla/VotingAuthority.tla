@@ -2,66 +2,51 @@
 \* A TLA+ model of the Katzenpost voting directory-authority consensus
 \* protocol (authority/voting/server/state.go).
 \*
-\* The real protocol drives each authority through a timed FSM within an epoch:
+\* The timed FSM of state.go (AcceptDescriptor -> AcceptVote -> AcceptReveal ->
+\* AcceptCert -> AcceptSignature) is abstracted into three rounds and an epoch
+\* boundary:
 \*
-\*   AcceptDescriptor -> AcceptVote -> AcceptReveal
-\*                    -> AcceptCert  -> AcceptSignature
+\*   "vote"   - every authority broadcasts a vote: its descriptor view and its
+\*              shared-random commitment.
+\*   "cert"   - every authority holding Threshold votes broadcasts a
+\*              certificate relaying the commitments it received. Each
+\*              authority then computes its document.
+\*   "sig"    - every authority signs the document it computed, and finalises
+\*              it iff it collects Threshold signatures over that exact
+\*              document.
+\*   boundary - every authority picks the shared-random value (SRV) that the
+\*              next epoch chains onto.
 \*
-\* with deadlines at 1/8, 2/8, 3/8, 4/8, 5/8 of the epoch. This model abstracts
-\* that timed FSM into three message-exchange rounds that capture the
-\* consensus-relevant behaviour:
+\* Delivery in every round is lossy: each authority receives messages from an
+\* arbitrary subset of authorities. This covers packet loss and a Byzantine
+\* sender withholding messages. It does NOT cover asynchrony: the rounds are
+\* atomic, so every authority is always in the same phase of the same epoch.
 \*
-\*   "vote"  - every authority broadcasts a vote. A vote carries the authority's
-\*           view of the submitted node descriptors AND its shared-random
-\*           commitment (folded together here: an authority's vote content
-\*           doubles as its commitment, so equivocation on either is modelled
-\*           uniformly).
-\*
-\*   "cert"  - every authority broadcasts a certificate summarising the votes it
-\*           received. An authority merges everything it learns directly and via
-\*           certificates. If a single authority is seen reporting different
-\*           vote/commit content to different peers, it is detected as
-\*           equivocating and excluded from the tally and the shared-random set
-\*           (mirrors verifyCommits() in state.go). Each authority then computes
-\*           its consensus document by threshold-tallying the votes it knows.
-\*
-\*   "sig"   - every authority broadcasts a signature over the document it
-\*           computed. An honest authority signs ONLY its own document. A
-\*           consensus document is finalised at an authority iff it collects at
-\*           least Threshold valid signatures over that exact document
-\*           (cert.VerifyThreshold).
-\*
-\* Message delivery in every round is nondeterministic: each authority receives
-\* messages from an arbitrary subset of authorities (always including itself).
-\* This models packet loss, asynchrony and a Byzantine sender selectively
-\* withholding messages.
-\*
-\* Threshold = floor(N/2) + 1 (strict majority), exactly as
-\* st.threshold = len(st.verifiers)/2 + 1 in state.go.
-\*
-\* ABSTRACTIONS / OUT OF SCOPE (deliberate, to keep the model checkable):
-\*   - Cryptography is treated symbolically: signatures are unforgeable and an
-\*     honest authority's signature is bound to the exact document it computed.
-\*   - The BLAKE2b shared-random value is abstracted to the set of participating
-\*     (non-equivocating, known) authorities; honest authorities with the same
-\*     participant set derive the same SRV.
-\*   - The explicit reveal round is folded into the vote round: an authority
-\*     participates in the SRV iff its vote/commit is known and consistent.
-\*
-\* EPOCH BOUNDARY EXTENSION:
-\*   The model runs MaxEpoch consecutive epochs. Each epoch's consensus
-\*   produces a shared-random value (SRV) that is mixed into the NEXT epoch's
-\*   documents (state.go: srv = BLAKE2b(... || prior_srv); genesis epoch uses
-\*   the all-zero prior). At the epoch boundary:
-\*     - if a unique document reached Threshold signatures, every honest
-\*       authority adopts its SRV as the next prior (lagging authorities catch
-\*       up via the bootstrap fetch, modelled abstractly);
-\*     - if no document reached Threshold, the chain stalls and the prior SRV
-\*       is carried over unchanged (mirrors the failed-epoch bootstrap/retry);
-\*     - if two documents both reached Threshold (only possible under a
-\*       Byzantine Agreement violation), the SRV chain forks permanently.
+\* ABSTRACTIONS / OUT OF SCOPE:
+\*   - Cryptography is symbolic: signatures are unforgeable and an honest
+\*     authority's signature is bound to the exact document it computed.
+\*   - One value stands for both a vote's descriptor set and its commitment, so
+\*     a Byzantine authority that sends two different values equivocates on
+\*     both at once. In state.go it could vary its descriptors under a single
+\*     commitment and stay a shared-random participant everywhere. That
+\*     behaviour is not explored.
+\*   - The reveal round is folded into the vote round: an authority's reveal
+\*     is assumed to arrive wherever its vote arrives. In state.go a reveal
+\*     can be lost on its own, and that authority is then left out of the
+\*     certificate. That case is not explored.
+\*   - The BLAKE2b shared-random value is abstracted to the chain of
+\*     participant sets it derives from; equal chains give equal values.
+\*   - The mix-parameter tally and pki.IsDocumentWellFormed (which refuses a
+\*     document with an empty topology) are not modelled.
+\*   - A Byzantine certificate relays an arbitrary set of votes, but the same
+\*     set to every recipient. Commitments are signed, so it cannot forge one
+\*     for an honest peer.
+\*   - Byzantine authorities sign only documents computed by honest
+\*     authorities. A document they invent can gather at most
+\*     Cardinality(Byzantine) signatures, so this loses nothing given the
+\*     assumption ByzantineMinority below.
 
-EXTENDS Naturals, FiniteSets
+EXTENDS Naturals, FiniteSets, Sequences, TLC
 
 CONSTANTS
     Auths,      \* set of authority identities
@@ -69,214 +54,223 @@ CONSTANTS
     Nodes,      \* set of candidate mix-node descriptors that may be voted on
     MaxEpoch    \* number of consecutive epochs to model (>= 1)
 
-ASSUME ByzantineSubset == Byzantine \subseteq Auths
-ASSUME NodesFinite     == IsFiniteSet(Nodes)
-ASSUME AuthsFinite     == IsFiniteSet(Auths)
-ASSUME MaxEpochPos     == MaxEpoch \in (Nat \ {0})
+Honest == Auths \ Byzantine
 
-Honest    == Auths \ Byzantine
-N         == Cardinality(Auths)
-Threshold == (N \div 2) + 1
+\* Strict majority, as votingThresholds() in state.go.
+Threshold == (Cardinality(Auths) \div 2) + 1
 
-\* A shared-random value carried across epochs.  Abstracted to the epoch it was
-\* produced in and the set of authorities that contributed to it.  Epoch 0 is
-\* the genesis (all-zero) value used by the first epoch.
-SRVValue   == [epoch : 0..MaxEpoch, participants : SUBSET Auths]
-GenesisSRV == [epoch |-> 0, participants |-> {}]
+ASSUME AuthsFinite       == IsFiniteSet(Auths)
+ASSUME NodesFinite       == IsFiniteSet(Nodes)
+ASSUME MaxEpochPos       == MaxEpoch \in (Nat \ {0})
+ASSUME ByzantineSubset   == Byzantine \subseteq Auths
+ASSUME ByzantineMinority == Cardinality(Byzantine) < Threshold
 
-\* The universe of possible (valid) documents.  A document fixes the epoch, the
-\* agreed node descriptors, the set of authorities contributing shared
-\* randomness this epoch (srv), and the prior-epoch SRV it chains onto.  The
-\* "valid" field lets the distinguished "no document" value below be a record
-\* too, so all comparisons stay record-to-record (TLC refuses to compare a
-\* string with a record).
-Doc == [valid : {TRUE}, epoch : 1..MaxEpoch, desc : SUBSET Nodes,
-        srv : SUBSET Auths, prior : SRVValue]
+\* Symmetry set for TLC. Only safe for invariant checking.
+Symmetry ==
+    Permutations(Honest) \cup Permutations(Byzantine) \cup Permutations(Nodes)
 
-\* Distinguished "no document" value.
-NoDoc == [valid |-> FALSE, epoch |-> 0, desc |-> {},
-          srv |-> {}, prior |-> GenesisSRV]
+\* A shared-random value is the chain of links it derives from, oldest first.
+\* computeSharedRandom() hashes in the previous epoch's value, or 32 zero bytes
+\* when there is no previous document; the empty chain is that zero value.
+SRVLink    == [epoch : 1..MaxEpoch, participants : SUBSET Auths]
+SRVValue   == UNION {[1..k -> SRVLink] : k \in 0..MaxEpoch}
+GenesisSRV == << >>
 
-\* The SRV value a finalised document contributes to the next epoch's chain.
-SRVof(D) == [epoch |-> D.epoch, participants |-> D.srv]
+\* A document fixes the epoch, the agreed descriptors, the authorities that
+\* contributed shared randomness (srv), and the SRV it chains onto. NoDoc is
+\* the "no document" value; its epoch 0 sets it apart from every document.
+Doc   == [epoch : 1..MaxEpoch, desc : SUBSET Nodes,
+          srv : SUBSET Auths, prior : SRVValue]
+NoDoc == [epoch |-> 0, desc |-> {}, srv |-> {}, prior |-> GenesisSRV]
 
+\* The shared-random value a document carries.
+SRVof(D) == Append(D.prior, [epoch |-> D.epoch, participants |-> D.srv])
+
+\* Byzantine authorities compute, finalise and chain onto nothing, so the
+\* variables that record those things range over Honest only.
 VARIABLES
     epoch,      \* current epoch number in 1..MaxEpoch
-    priorSRV,   \* [Auths -> SRVValue]   prior-epoch SRV each authority chains onto
     phase,      \* "vote" -> "cert" -> "sig" -> "done"
-    descView,   \* [Auths -> SUBSET Nodes]   each authority's local view of descriptors
-    voteMsg,    \* [Auths -> [Auths -> SUBSET Nodes]]  voteMsg[a][b] = content a sent to b
-    recvVote,   \* [Auths -> SUBSET Auths]   whose votes each authority received
-    recvCert,   \* [Auths -> SUBSET Auths]   whose certs each authority received
-    recvSig,    \* [Auths -> SUBSET Auths]   whose signatures each authority received
-    myDoc,      \* [Auths -> Doc \cup {NoDoc}]   document each authority computed
-    sigSet,     \* [Auths -> SUBSET Doc]    documents each authority has signed
-    finalDoc    \* [Auths -> Doc \cup {NoDoc}]   document each authority finalised
+    priorSRV,   \* [Honest -> SRVValue]     SRV each authority chains onto
+    voteMsg,    \* [Auths -> [Auths -> SUBSET Nodes]]   voteMsg[a][b] = vote a sent to b
+    recvVote,   \* [Auths -> SUBSET Auths]  whose votes each authority received
+    recvCert,   \* [Honest -> SUBSET Auths] whose certificates each accepted
+    myDoc,      \* [Honest -> Doc \cup {NoDoc}]  document each computed
+    sigSet,     \* [Auths -> SUBSET Doc]    documents each authority signed
+    finalDoc    \* [Honest -> Doc \cup {NoDoc}]  document each finalised
 
-vars == <<epoch, priorSRV, phase, descView, voteMsg, recvVote, recvCert,
-          recvSig, myDoc, sigSet, finalDoc>>
+vars == <<epoch, phase, priorSRV, voteMsg, recvVote, recvCert, myDoc, sigSet,
+          finalDoc>>
 
-\* Knowledge derivation.
-\*
-\* ReportedContents(b, a, rv, rc) is the set of distinct vote/commit contents
-\* that authority b has heard attributed to authority a, either directly
-\* (a in rv[b]) or relayed in a certificate from some c in rc[b] that had heard
-\* a directly.
-\*
-\*   |ReportedContents| = 0  -> b never learned a's vote (a not counted)
-\*   |ReportedContents| = 1  -> b knows a's vote (a is a "known voter")
-\*   |ReportedContents| > 1  -> a equivocated; b excludes a entirely
-ReportedContents(b, a, rv, rc) ==
-    (IF a \in rv[b] THEN {voteMsg[a][b]} ELSE {})
-        \cup
-    {voteMsg[a][c] : c \in {cc \in rc[b] : a \in rv[cc]}}
-
-KnownVoters(b, rv, rc) ==
-    {a \in Auths : Cardinality(ReportedContents(b, a, rv, rc)) = 1}
-
-VoteOf(b, a, rv, rc) ==
-    CHOOSE v \in ReportedContents(b, a, rv, rc) : TRUE
-
-\* Descriptors with at least Threshold supporting votes among known voters.
-DescTally(b, rv, rc) ==
-    {n \in Nodes :
-        Cardinality({a \in KnownVoters(b, rv, rc) : n \in VoteOf(b, a, rv, rc)})
-            >= Threshold}
-
-\* The document authority b computes from what it knows, chained onto b's
-\* current prior-epoch SRV.
-DocOf(b, rv, rc) ==
-    [valid |-> TRUE,
-     epoch |-> epoch,
-     desc  |-> DescTally(b, rv, rc),
-     srv   |-> KnownVoters(b, rv, rc),
-     prior |-> priorSRV[b]]
-
-\* Type invariant.
 TypeOK ==
     /\ epoch \in 1..MaxEpoch
-    /\ priorSRV \in [Auths -> SRVValue]
     /\ phase \in {"vote", "cert", "sig", "done"}
-    /\ descView \in [Auths -> SUBSET Nodes]
+    /\ priorSRV \in [Honest -> SRVValue]
     /\ voteMsg  \in [Auths -> [Auths -> SUBSET Nodes]]
     /\ recvVote \in [Auths -> SUBSET Auths]
-    /\ recvCert \in [Auths -> SUBSET Auths]
-    /\ recvSig  \in [Auths -> SUBSET Auths]
-    /\ myDoc    \in [Auths -> Doc \cup {NoDoc}]
+    /\ recvCert \in [Honest -> SUBSET Auths]
+    /\ myDoc    \in [Honest -> Doc \cup {NoDoc}]
     /\ sigSet   \in [Auths -> SUBSET Doc]
-    /\ finalDoc \in [Auths -> Doc \cup {NoDoc}]
+    /\ finalDoc \in [Honest -> Doc \cup {NoDoc}]
 
-\* Initial state.
-\*
-\* The first epoch starts from the genesis SRV.  Each authority has an arbitrary
-\* local view of descriptors.  An honest authority sends the same vote (= its
-\* view) to everyone; a Byzantine authority may send arbitrary, per-recipient
-\* content (equivocation).
+\* Prod(D, f) is the set of functions g with domain D and g[a] \in f[a]. It
+\* lets TLC enumerate per-authority choices directly, instead of generating
+\* every function and filtering.
+RECURSIVE Prod(_, _)
+Prod(D, f) ==
+    IF D = {} THEN {<< >>}
+    ELSE LET a == CHOOSE x \in D : TRUE
+         IN  {(a :> v) @@ g : v \in f[a], g \in Prod(D \ {a}, f)}
+
+\* The votes of one epoch. An honest authority sends its descriptor view to
+\* everyone; a Byzantine authority may send each recipient something different.
+VoteAssignments ==
+    {[a \in Auths |-> IF a \in Honest THEN [b \in Auths |-> hv[a]] ELSE bm[a]] :
+        hv \in [Honest -> SUBSET Nodes],
+        bm \in [Byzantine -> [Auths -> SUBSET Nodes]]}
+
 Init ==
     /\ epoch = 1
-    /\ priorSRV = [a \in Auths |-> GenesisSRV]
     /\ phase = "vote"
-    /\ descView \in [Auths -> SUBSET Nodes]
-    /\ voteMsg \in [Auths -> [Auths -> SUBSET Nodes]]
-    /\ \A h \in Honest : \A b \in Auths : voteMsg[h][b] = descView[h]
-    /\ recvVote = [a \in Auths |-> {}]
-    /\ recvCert = [a \in Auths |-> {}]
-    /\ recvSig  = [a \in Auths |-> {}]
-    /\ myDoc    = [a \in Auths |-> NoDoc]
-    /\ sigSet   = [a \in Auths |-> {}]
-    /\ finalDoc = [a \in Auths |-> NoDoc]
+    /\ priorSRV = [a \in Honest |-> GenesisSRV]
+    /\ voteMsg \in VoteAssignments
+    /\ recvVote = [a \in Auths  |-> {}]
+    /\ recvCert = [a \in Honest |-> {}]
+    /\ myDoc    = [a \in Honest |-> NoDoc]
+    /\ sigSet   = [a \in Auths  |-> {}]
+    /\ finalDoc = [a \in Honest |-> NoDoc]
 
-\* Round 1: deliver votes. Each authority receives votes from an arbitrary
-\* subset of authorities (always including itself).
+\* Round 1: deliver votes. Each authority receives the votes of an arbitrary
+\* set of authorities that includes itself. For a Byzantine authority the set
+\* is whatever its certificate will claim.
+VoteChoices(a) == {S \in SUBSET Auths : a \in S}
+
+\* A restriction of VoteChoices for instances too large to search
+\* exhaustively, substituted for it in a configuration file. Every honest
+\* authority receives exactly Threshold votes, the Byzantine ones among them.
+\* Every run of the restricted specification is a run of the full one, so a
+\* counterexample found this way is genuine. An invariant that passes this way
+\* is NOT thereby established. It must not mention VoteChoices, which it
+\* replaces.
+MinimalVoteChoices(a) ==
+    IF a \in Byzantine THEN {{a}}
+    ELSE {S \in SUBSET Auths :
+             /\ {a} \cup Byzantine \subseteq S
+             /\ Cardinality(S) = Threshold}
+
 DeliverVote ==
     /\ phase = "vote"
-    /\ \E rv \in [Auths -> SUBSET Auths] :
-            /\ \A a \in Auths : a \in rv[a]
-            /\ recvVote' = rv
+    /\ recvVote' \in Prod(Auths, [a \in Auths |-> VoteChoices(a)])
     /\ phase' = "cert"
-    /\ UNCHANGED <<epoch, priorSRV, descView, voteMsg, recvCert, recvSig,
-                   myDoc, sigSet, finalDoc>>
+    /\ UNCHANGED <<epoch, priorSRV, voteMsg, recvCert, myDoc, sigSet, finalDoc>>
 
-\* Round 2: deliver certificates and compute documents. Each authority merges
-\* the votes it knows (directly + via received certs), detects equivocators, and
-\* tallies a consensus document.
+\* Round 2: deliver certificates and compute documents.
+\*
+\* An honest authority issues a certificate only if it holds Threshold votes
+\* (tallyVotes); a Byzantine one always can. A certificate is accepted only
+\* from a peer whose vote arrived (onCertUpload). An authority that issued one
+\* holds its own. One that did not computes no document, so what it accepts is
+\* irrelevant and pinned to {}.
+Certifiers ==
+    Byzantine \cup {h \in Honest : Cardinality(recvVote[h]) >= Threshold}
+
+CertChoices(a) ==
+    IF a \in Certifiers
+    THEN {S \in SUBSET (recvVote[a] \cap Certifiers) : a \in S}
+    ELSE {{}}
+
+\* The commitments b has seen attributed to a in the certificates it holds
+\* (verifyCommits). None: b never learned of a. One: a participates in the
+\* shared random. Several: a equivocated and is excluded.
+Reported(b, a) ==
+    {voteMsg[a][c] : c \in {cc \in recvCert[b] : a \in recvVote[cc]}}
+
+Participants(b) == {a \in Auths : Cardinality(Reported(b, a)) = 1}
+
+\* Descriptors with Threshold votes among those b received directly
+\* (tallyVotes). Equivocators are not excluded, as in the implementation.
+DescTally(b) ==
+    {n \in Nodes :
+        Cardinality({a \in recvVote[b] : n \in voteMsg[a][b]}) >= Threshold}
+
+\* The document b computes, or NoDoc if it lacks Threshold certificates or
+\* Threshold consistent commitments (getMyConsensus). The Threshold-votes gate
+\* of tallyVotes is implied: every certificate b holds is from a peer whose
+\* vote it holds.
+DocOf(b) ==
+    IF /\ Cardinality(recvCert[b]) >= Threshold
+       /\ Cardinality(Participants(b)) >= Threshold
+    THEN [epoch |-> epoch, desc |-> DescTally(b),
+          srv |-> Participants(b), prior |-> priorSRV[b]]
+    ELSE NoDoc
+
 DeliverCert ==
     /\ phase = "cert"
-    /\ \E rc \in [Auths -> SUBSET Auths] :
-            /\ \A a \in Auths : a \in rc[a]
-            /\ recvCert' = rc
-            /\ myDoc' = [a \in Auths |-> DocOf(a, recvVote, rc)]
+    /\ UNCHANGED <<epoch, priorSRV, voteMsg, recvVote, sigSet, finalDoc>>
+    /\ recvCert' \in Prod(Honest, [a \in Honest |-> CertChoices(a)])
+    /\ myDoc' = [a \in Honest |-> DocOf(a)']
     /\ phase' = "sig"
-    /\ UNCHANGED <<epoch, priorSRV, descView, voteMsg, recvVote, recvSig,
-                   sigSet, finalDoc>>
 
 \* Round 3: deliver signatures and finalise.
 \*
-\* Honest authorities sign exactly the document they computed. Byzantine
-\* authorities may sign any subset of the documents honest authorities are
-\* trying to finalise (signing anything else cannot help reach a quorum over an
-\* honest authority's document). An authority finalises its own document iff it
-\* gathers at least Threshold signatures over it.
-HonestDocs == {myDoc[h] : h \in Honest}
+\* An honest authority signs the document it computed, if any. A Byzantine
+\* authority signs any set of documents honest authorities computed.
+\*
+\* An authority finalises iff the signatures delivered to it include Threshold
+\* over its own document. Delivery is an arbitrary subset, so an authority
+\* whose document holds Threshold signatures may or may not finalise, and one
+\* whose document holds fewer cannot. The delivery sets are not recorded;
+\* nothing else depends on them. An authority always holds its own signature,
+\* so with Threshold = 1 it cannot fail to finalise.
+HonestDocs == {myDoc[h] : h \in Honest} \ {NoDoc}
+
+\* Every document that holds Threshold signatures, delivered or not.
+EpochConsensus ==
+    {D \in HonestDocs :
+        Cardinality({a \in Auths : D \in sigSet[a]}) >= Threshold}
 
 DeliverSig ==
     /\ phase = "sig"
-    /\ \E rs \in [Auths -> SUBSET Auths],
-          bc \in [Byzantine -> SUBSET HonestDocs] :
-            /\ \A a \in Auths : a \in rs[a]
-            /\ LET ss == [a \in Auths |->
-                            IF a \in Byzantine THEN bc[a] ELSE {myDoc[a]}]
-               IN /\ recvSig' = rs
-                  /\ sigSet'  = ss
-                  /\ finalDoc' =
-                       [a \in Auths |->
-                          IF Cardinality({q \in rs[a] : myDoc[a] \in ss[q]})
-                                 >= Threshold
-                          THEN myDoc[a]
-                          ELSE NoDoc]
+    /\ UNCHANGED <<epoch, priorSRV, voteMsg, recvVote, recvCert, myDoc>>
+    /\ \E bs \in [Byzantine -> SUBSET HonestDocs] :
+         sigSet' = [a \in Auths |->
+                       IF a \in Honest THEN {myDoc[a]} \ {NoDoc} ELSE bs[a]]
+    /\ LET able == {a \in Honest : myDoc[a] \in EpochConsensus'}
+       IN  \E fin \in SUBSET able :
+              /\ (Threshold = 1) => (fin = able)
+              /\ finalDoc' = [a \in Honest |->
+                                 IF a \in fin THEN myDoc[a] ELSE NoDoc]
     /\ phase' = "done"
-    /\ UNCHANGED <<epoch, priorSRV, descView, voteMsg, recvVote, recvCert, myDoc>>
 
 \* Epoch boundary.
 \*
-\* The canonical consensus for this epoch is a document that gathered at least
-\* Threshold signatures across all authorities.  Agreement guarantees there is
-\* at most one such document when no Byzantine fault occurs.
-EpochConsensus ==
-    {D \in HonestDocs :
-        Cardinality({q \in Auths : D \in sigSet[q]}) >= Threshold}
+\* An authority that finalised chains onto its own document
+\* (getThresholdConsensus stores it). One that did not goes through
+\* stateBootstrap and backgroundFetchConsensus(). The fetch may land, giving it
+\* a document a peer can serve, or may not land before it votes, in which case
+\* it restarts the chain from the zero value. Honest peers serve the document
+\* they finalised; a Byzantine peer can serve any document that holds
+\* Threshold signatures.
+Fetchable ==
+    ({finalDoc[h] : h \in Honest} \ {NoDoc})
+        \cup (IF Byzantine = {} THEN {} ELSE EpochConsensus)
 
-\* Advance to the next epoch, carrying the SRV chain forward:
-\*   - unique consensus  -> every honest authority adopts its SRV (lagging
-\*                          authorities catch up via bootstrap);
-\*   - no consensus      -> the chain stalls (prior SRV carried unchanged);
-\*   - forked consensus  -> each authority keeps the SRV of the document it
-\*                          finalised, so the chain forks permanently.
+PriorChoices(a) ==
+    IF finalDoc[a] # NoDoc THEN {SRVof(finalDoc[a])}
+    ELSE {SRVof(D) : D \in Fetchable} \cup {GenesisSRV}
+
 EpochAdvance ==
     /\ phase = "done"
     /\ epoch < MaxEpoch
     /\ epoch' = epoch + 1
-    /\ priorSRV' =
-         CASE Cardinality(EpochConsensus) = 1 ->
-                  [a \in Auths |-> SRVof(CHOOSE D \in EpochConsensus : TRUE)]
-           [] Cardinality(EpochConsensus) = 0 ->
-                  priorSRV
-           [] OTHER ->
-                  [a \in Auths |->
-                      IF finalDoc[a] # NoDoc THEN SRVof(finalDoc[a])
-                      ELSE priorSRV[a]]
     /\ phase' = "vote"
-    /\ recvVote' = [a \in Auths |-> {}]
-    /\ recvCert' = [a \in Auths |-> {}]
-    /\ recvSig'  = [a \in Auths |-> {}]
-    /\ myDoc'    = [a \in Auths |-> NoDoc]
-    /\ sigSet'   = [a \in Auths |-> {}]
-    /\ finalDoc' = [a \in Auths |-> NoDoc]
-    /\ \E dv \in [Auths -> SUBSET Nodes],
-          vm \in [Auths -> [Auths -> SUBSET Nodes]] :
-            /\ \A h \in Honest : \A b \in Auths : vm[h][b] = dv[h]
-            /\ descView' = dv
-            /\ voteMsg'  = vm
+    /\ priorSRV' \in Prod(Honest, [a \in Honest |-> PriorChoices(a)])
+    /\ voteMsg' \in VoteAssignments
+    /\ recvVote' = [a \in Auths  |-> {}]
+    /\ recvCert' = [a \in Honest |-> {}]
+    /\ myDoc'    = [a \in Honest |-> NoDoc]
+    /\ sigSet'   = [a \in Auths  |-> {}]
+    /\ finalDoc' = [a \in Honest |-> NoDoc]
 
 \* Terminal: the last epoch has finished.
 Done ==
@@ -290,48 +284,68 @@ Spec == Init /\ [][Next]_vars
 
 \* Properties.
 
-\* SAFETY (Agreement): no two honest authorities finalise different
-\* consensus documents.  This is the headline correctness property.
+\* No two honest authorities finalise different documents.
 Agreement ==
-    \A a \in Honest : \A b \in Honest :
+    \A a, b \in Honest :
         (finalDoc[a] # NoDoc /\ finalDoc[b] # NoDoc)
             => (finalDoc[a] = finalDoc[b])
 
-\* SAFETY (Validity): any document an honest authority finalises is a
-\* document some honest authority actually computed (i.e. consensus is not
-\* fabricated solely by Byzantine authorities).
-Validity ==
-    \A a \in Honest :
-        finalDoc[a] # NoDoc => (\E h \in Honest : finalDoc[a] = myDoc[h])
+\* At most one document per epoch holds Threshold signatures. Stronger than
+\* Agreement: it also covers a document that no honest authority finalised
+\* but that a Byzantine authority could still serve.
+UniqueConsensus == Cardinality(EpochConsensus) <= 1
 
-\* SAFETY (Integrity): a finalised document carries at least Threshold
-\* signatures over it from authorities the finaliser heard from.
-Integrity ==
+\* Every descriptor in a document an honest authority computes was in some
+\* honest authority's vote. Byzantine authorities cannot inject one.
+DescriptorValidity ==
     \A a \in Honest :
-        finalDoc[a] # NoDoc =>
-            Cardinality({q \in recvSig[a] : finalDoc[a] \in sigSet[q]}) >= Threshold
+        \A n \in myDoc[a].desc : \E h \in Honest : n \in voteMsg[h][h]
 
-\* SAFETY (ChainConsistency): the epoch-boundary safety property.  All honest
-\* authorities agree on the prior-epoch SRV they chain the current epoch onto.
-\* This holds whenever no epoch has suffered an Agreement violation, and is
-\* violated the moment a Byzantine fork splits the SRV chain.
+\* The SRV chain does not fork: honest authorities that chain onto a prior
+\* document chain onto the same value. An authority on the zero value has
+\* restarted the chain, not forked it.
 ChainConsistency ==
-    \A a, b \in Honest : priorSRV[a] = priorSRV[b]
+    \A a, b \in Honest :
+        (priorSRV[a] # GenesisSRV /\ priorSRV[b] # GenesisSRV)
+            => (priorSRV[a] = priorSRV[b])
 
-\* SAFETY (ChainGrounded): a finalised document always chains onto an SRV from
-\* a strictly earlier epoch (or genesis), so the chain never references itself
-\* or the future.
+\* The chain an honest authority builds on consists of consecutive epochs
+\* ending at the previous one.
 ChainGrounded ==
     \A a \in Honest :
-        finalDoc[a] # NoDoc => finalDoc[a].prior.epoch < finalDoc[a].epoch
+        LET c == priorSRV[a]
+        IN  \A i \in 1..Len(c) : c[i].epoch + (Len(c) - i) + 1 = epoch
 
-\* Sanity / reachability helper.  TLC reports a "violation" trace that is in
-\* fact a *successful* run in which every honest authority finalised the same
-\* document.  Run with -invariant ConsensusUnreachable to obtain such a trace.
-AllHonestFinalisedSame ==
-    /\ \A h \in Honest : finalDoc[h] # NoDoc
-    /\ \A a, b \in Honest : finalDoc[a] = finalDoc[b]
+\* All honest authorities chain onto the same value. EXPECTED TO FAIL even
+\* with no Byzantine authority: one honest authority fails to finalise and
+\* its fetch does not land. Checked to obtain that trace.
+ChainUnanimity == \A a, b \in Honest : priorSRV[a] = priorSRV[b]
 
-ConsensusUnreachable == ~AllHonestFinalisedSame
+\* With every vote and certificate delivered and a common prior, all honest
+\* authorities compute the same document. Holds only while no Byzantine
+\* authority equivocates; its failure in a Byzantine configuration is the
+\* descriptor-equivocation attack described in the README.
+ConvergenceUnderFullDelivery ==
+    (/\ phase \in {"sig", "done"}
+     /\ \A a \in Honest : recvVote[a] = Auths /\ recvCert[a] = Auths
+     /\ ChainUnanimity)
+        => \A a, b \in Honest : myDoc[a] # NoDoc /\ myDoc[a] = myDoc[b]
+
+\* EXPECTED TO FAIL. The counterexample is a run in which every honest
+\* authority finalises the same document, i.e. a successful consensus.
+ConsensusUnreachable ==
+    ~ \A a, b \in Honest : finalDoc[a] # NoDoc /\ finalDoc[a] = finalDoc[b]
+
+\* NOT CHECKED, because they are tautologies under this encoding:
+\*   - "Validity" (a finalised document was computed by some honest
+\*     authority): DeliverSig assigns finalDoc'[a] to myDoc[a] or NoDoc.
+\*   - "Integrity" (a finalised document carries Threshold signatures): that
+\*     is the guard that produces finalDoc'.
+\*   - "Honest randomness" (every shared-random value has an honest
+\*     contributor): the authority computing a document is always one of its
+\*     own participants.
+\* Making Integrity meaningful would require signatures to accumulate over
+\* several steps, as getThresholdConsensus() does when it re-attempts
+\* cert.VerifyThreshold on each arriving signature.
 
 =============================================================================

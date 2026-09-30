@@ -1,257 +1,314 @@
 --------------------------- MODULE ClientARQ ---------------------------
-\* TLA+ model of the Katzenpost client's ARQ reliability protocol.
+\* A TLA+ model of the Katzenpost client daemon's ARQ: the stop-and-wait
+\* protocol that sends a Pigeonhole query into the mixnet and retransmits it
+\* until a reply arrives on a SURB (single-use reply block).
 \*
-\* The client (the `client` package) sends messages into the mixnet reliably
-\* using a stop-and-wait ARQ built on SURBs (single-use reply blocks) as
-\* acknowledgments. This model abstracts the protocol implemented across
-\* arq.go, daemon.go (arqDoResend / rotateARQSurbIDLocked / handleReply /
-\* enqueueResend / cancelResendingEncryptedMessage) and pigeonhole.go
-\* (handlePigeonholeARQReply / computeARQStateTransition).
+\* It follows arq.go (computeARQStateTransition), daemon.go (handleReply,
+\* enqueueResend, scheduleARQFollowUp, arqDoResend, rotateARQSurbIDLocked,
+\* dropARQMessage, cleanupForAppID) and pigeonhole.go (arqSend,
+\* handlePigeonholeARQReply, handlePayloadReply,
+\* cancelResendingEncryptedMessage).
 \*
-\* Modelled mechanisms:
-\*   - the stop-and-wait FSM: WAIT_ACK -> ACK_RCVD -> (payload) terminal,
-\*     with idempotent writes completing on the ACK alone
-\*   - SURB rotation: every retransmission and every "send new SURB" uses a
-\*     fresh SURB id, so a reply carrying an old SURB id no longer matches
-\*   - retransmission: retry (forever in production; bounded here) whenever a
-\*     reply is lost or late
-\*   - reply matching: a SURB reply is applied only if its SURB id is the
-\*     message's CURRENT id, else it is a no-match and dropped
-\*   - cancellation and the cancel/ack race: a cancel removes the tracking
-\*     entry so a later reply finds no match; a cancelled op never completes
-\*   - connection loss: while disconnected the client cannot send or receive,
-\*     but outstanding ARQ messages are NOT dropped -- they resume on reconnect
+\* WHO RUNS WHAT. The daemon touches an ARQ message from three goroutines,
+\* which share the two ARQ maps under replyLock:
 \*
-\* SURB ids are modelled as <<message, generation>>: each retransmission or
-\* rotation bumps a message's generation, which is exactly what makes the
-\* previous SURB id stale. Because the protocol is stop-and-wait, at most one
-\* query per message is outstanding, so a single pendingReply slot per message
-\* faithfully represents the in-flight SURB reply.
+\*   ingress worker      Lookup, Handle   a SURB reply arrives and is applied
+\*   egress worker       Start, DoResend  queries are sent and re-sent
+\*   thin-client reader  Cancel           the application cancels
+\*
+\* A timer goroutine runs TimerFire. The lock is held for each map access,
+\* not for a whole operation. In particular the ingress worker looks a reply
+\* up under the lock (Lookup), releases it, and only later acts on the
+\* message it found (Handle). Anything may happen in between.
+\*
+\* The constant Atomic closes that gap: when TRUE, nothing runs between
+\* Lookup and Handle. Comparing the two settings separates what the protocol
+\* guarantees from what the locking guarantees.
+\*
+\* A SURB id is modelled as <<message, generation>>. Every rotation bumps the
+\* generation of the message, which makes the previous id stale and replaces
+\* the keys that decrypt its reply. Only the egress worker rotates. The
+\* ingress worker asks for a follow-up by queueing a resend, so that the
+\* follow-up leaves on the scheduler's tick and not in reaction to the reply.
+\*
+\* ABSTRACTIONS / OUT OF SCOPE:
+\*   - The courier and the network are adversarial. Any query sent so far may
+\*     be answered, once, with any kind of reply, at any time or never. Loss
+\*     of a query or a reply is a reply that never arrives.
+\*   - The daemon's own connection to its gateway is not modelled. A failed
+\*     SendPacket is a lost query. "Connected" here always means the thin
+\*     client's connection to the daemon.
+\*   - Rotation is bounded by MaxRetx. The implementation retries forever.
+\*     At the bound a resend re-arms the timer without rotating.
+\*   - Copy commands, a full resend queue and a failed packet composition
+\*     are not modelled.
+\*   - Timing is not modelled: a timer may fire at any moment it is armed.
 
-EXTENDS Naturals
+EXTENDS Naturals, FiniteSets, TLC
 
-CONSTANTS Msgs,      \* finite set of ARQ message identities
-          MaxRetx    \* bound on retransmissions / rotations per message
+CONSTANTS
+    Msgs,          \* ARQ operations
+    MaxRetx,       \* bound on SURB rotations per operation
+    Atomic,        \* TRUE: nothing runs between Lookup and Handle
+    Disconnects    \* TRUE: the thin client may disconnect
 
-ASSUME MaxRetx \in Nat /\ MaxRetx >= 1
+ASSUME MaxRetx \in Nat \ {0}
+ASSUME Atomic \in BOOLEAN /\ Disconnects \in BOOLEAN
 
-ReplyKinds == {"ACK", "PAYLOAD", "ERROR"}
+Symmetry == Permutations(Msgs)
 
-\* Message flavour, chosen per message in Init:
-\*   read           - always needs a payload reply after the ACK
-\*   write_idem      - default write: the ACK alone completes it (idempotent)
-\*   write_nonidem   - write that still needs a payload reply after the ACK
+Gens == 0 .. MaxRetx
+
+\* read          - needs a payload reply after the ACK
+\* write_idem    - default write: the ACK alone completes it
+\* write_nonidem - write that needs a payload reply after the ACK
 MKinds == {"read", "write_idem", "write_nonidem"}
 
-\* Lifecycle status of a message.
-Statuses == {"NEW", "INFLIGHT", "DONE_OK", "DONE_ERR", "CANCELLED"}
-Terminal == {"DONE_OK", "DONE_ERR", "CANCELLED"}
+\* NOTFOUND is a payload reply that decrypts to BoxIDNotFound.
+ReplyKinds == {"ACK", "PAYLOAD", "ERROR", "NOTFOUND"}
 
-\* Stop-and-wait protocol state (meaningful while INFLIGHT).
-FSMStates == {"WAIT_ACK", "ACK_RCVD"}
+\* The state of one operation.
+Op == [kind      : MKinds,     \* fixed
+       started   : BOOLEAN,    \* the application started it
+       tracked   : BOOLEAN,    \* it is in the ARQ maps
+       cancelled : BOOLEAN,    \* the application cancelled it
+       fsm       : {"WAIT_ACK", "ACK_RCVD"},    \* ARQMessage.State
+       gen       : Gens,       \* generation of the current SURB id and keys
+       timer     : BOOLEAN,    \* a retry timer is armed for the current id
+       resendQ   : SUBSET Gens,    \* SURB ids waiting in resendCh
+       answered  : SUBSET Gens,    \* queries whose reply has arrived
+       responses : 0 .. 2,     \* replies sent to the application, capped at 2
+       doneBy    : ReplyKinds \cup {"NONE", "CANCEL"}]    \* cause of the latest
 
-\* Record-based "no reply" sentinel (a plain string sentinel cannot be
-\* compared against a reply record by TLC).
-NoReply == [some |-> FALSE, gen |-> 0, kind |-> "ACK"]
+NewOp(k) == [kind |-> k, started |-> FALSE, tracked |-> FALSE,
+             cancelled |-> FALSE, fsm |-> "WAIT_ACK", gen |-> 0,
+             timer |-> FALSE, resendQ |-> {}, answered |-> {},
+             responses |-> 0, doneBy |-> "NONE"]
 
-ReplyOrNone ==
-  {NoReply} \cup [some : {TRUE}, gen : 0 .. MaxRetx, kind : ReplyKinds]
+VARIABLES
+    conn,       \* the thin client's session: "up", "away" (disconnected, state
+                \* kept for the grace period) or "closed" (state destroyed)
+    op,         \* [Msgs -> Op]
+    handling    \* the ingress worker's job: {} or one reply it has looked up
 
-VARIABLES connected,     \* is the client connected to its gateway?
-          status,        \* message -> lifecycle status
-          fsm,           \* message -> stop-and-wait protocol state
-          retx,          \* message -> current generation (# rotations)
-          pendingReply,  \* message -> outstanding SURB reply (or NoReply)
-          completions,   \* message -> ghost count of terminal completions
-          mkind          \* message -> flavour (immutable)
+vars == <<conn, op, handling>>
 
-vars == <<connected, status, fsm, retx, pendingReply, completions, mkind>>
+Jobs == [m : Msgs, g : Gens, k : ReplyKinds]
 
 TypeOK ==
-  /\ connected \in BOOLEAN
-  /\ status \in [Msgs -> Statuses]
-  /\ fsm \in [Msgs -> FSMStates]
-  /\ retx \in [Msgs -> 0 .. MaxRetx]
-  /\ pendingReply \in [Msgs -> ReplyOrNone]
-  /\ completions \in [Msgs -> 0 .. 2]
-  /\ mkind \in [Msgs -> MKinds]
+    /\ conn \in {"up", "away", "closed"}
+    /\ op \in [Msgs -> Op]
+    /\ handling \subseteq Jobs /\ Cardinality(handling) <= 1
 
 Init ==
-  /\ connected = TRUE
-  /\ status = [m \in Msgs |-> "NEW"]
-  /\ fsm = [m \in Msgs |-> "WAIT_ACK"]
-  /\ retx = [m \in Msgs |-> 0]
-  /\ pendingReply = [m \in Msgs |-> NoReply]
-  /\ completions = [m \in Msgs |-> 0]
-  /\ mkind \in [Msgs -> MKinds]
+    /\ conn = "up"
+    /\ op \in {[m \in Msgs |-> NewOp(k[m])] : k \in [Msgs -> MKinds]}
+    /\ handling = {}
 
-\* Pure ARQ FSM, mirroring computeARQStateTransition in arq.go.
-\* Result .act is one of:
-\*   "ERROR"   -> terminal failure (DONE_ERR)
-\*   "DONE"    -> terminal success (DONE_OK)
-\*   "NEWSURB" -> rotate to a fresh SURB and keep polling; .ns is the new state
-\*   "IGNORE"  -> already terminal, do nothing
-Outcome(st, rk, mk) ==
-  IF rk = "ERROR"
-    THEN [act |-> "ERROR"]
-  ELSE IF st = "WAIT_ACK"
-    THEN IF rk = "ACK"
-           THEN IF mk = "write_idem"
-                  THEN [act |-> "DONE"]
-                  ELSE [act |-> "NEWSURB", ns |-> "ACK_RCVD"]
-           ELSE [act |-> "DONE"]                    \* PAYLOAD while waiting
-  ELSE IF st = "ACK_RCVD"
-    THEN IF rk = "PAYLOAD"
-           THEN [act |-> "DONE"]
-           ELSE [act |-> "NEWSURB", ns |-> "ACK_RCVD"] \* duplicate ACK: keep polling
-  ELSE [act |-> "IGNORE"]
+connected == conn = "up"
+
+\* Every action but Handle is guarded by Free: with Atomic it may not run
+\* while the ingress worker is between Lookup and Handle.
+Free == Atomic => handling = {}
+
+\* r after one more reply is sent to the application, caused by why.
+Responded(r, why) ==
+    [r EXCEPT !.responses = IF @ < 2 THEN @ + 1 ELSE @, !.doneBy = why]
+
+\* r with a fresh SURB id and its timer armed (rotateARQSurbIDLocked and the
+\* timer Push that follows it). Rotating enters r in both maps under the new
+\* id. At the bound the generation cannot grow, so the queued copy of the old
+\* id is removed instead; it would have been stale.
+Rotated(r) ==
+    [r EXCEPT !.tracked = TRUE,
+              !.gen = IF @ < MaxRetx THEN @ + 1 ELSE @,
+              !.timer = TRUE,
+              !.resendQ = @ \ {MaxRetx}]
+
+Untracked(r) == [r EXCEPT !.tracked = FALSE, !.timer = FALSE]
+
+\* r after enqueueResend is called for its current SURB id. If r is no longer
+\* tracked, nothing happens. With a live connection the id goes on the resend
+\* queue. Without one the timer is armed again, to try later.
+Enqueued(r) ==
+    IF ~r.tracked THEN r
+    ELSE IF connected THEN [r EXCEPT !.resendQ = @ \cup {r.gen}]
+    ELSE [r EXCEPT !.timer = TRUE]
+
+\* The pure FSM, computeARQStateTransition plus the payload outcomes of
+\* handlePayloadReply. The result is "RESPOND" (a terminal reply goes to the
+\* application) or the state in which to rotate and keep polling.
+Outcome(st, k, mk) ==
+    CASE k = "ERROR"    -> "RESPOND"
+      [] k = "NOTFOUND" -> IF mk = "read" THEN "WAIT_ACK" ELSE "RESPOND"
+      [] k = "PAYLOAD"  -> "RESPOND"
+      [] k = "ACK"      -> IF st = "WAIT_ACK" /\ mk = "write_idem"
+                           THEN "RESPOND" ELSE "ACK_RCVD"
 
 -----------------------------------------------------------------------------
-\* Actions.
+\* The application.
 
-Connect ==
-  /\ connected' = ~connected
-  /\ UNCHANGED <<status, fsm, retx, pendingReply, completions, mkind>>
+\* startResendingEncryptedMessage, arqSend.
+Start(m) ==
+    /\ Free /\ connected /\ ~op[m].started
+    /\ op' = [op EXCEPT ![m].started = TRUE, ![m].tracked = TRUE,
+                        ![m].timer = TRUE]
+    /\ UNCHANGED <<conn, handling>>
 
-\* arqSend: the thin client asks to reliably send a message; it enters the
-\* ARQ tracking maps and its first query goes out (generation 0).
-StartSend(m) ==
-  /\ connected
-  /\ status[m] = "NEW"
-  /\ status' = [status EXCEPT ![m] = "INFLIGHT"]
-  /\ fsm' = [fsm EXCEPT ![m] = "WAIT_ACK"]
-  /\ retx' = [retx EXCEPT ![m] = 0]
-  /\ pendingReply' = [pendingReply EXCEPT ![m] = NoReply]
-  /\ UNCHANGED <<connected, completions, mkind>>
-
-\* The courier answers the current query with some reply. A faulty or
-\* adversarial courier may send any reply kind; the client FSM must stay
-\* safe regardless. The reply is tagged with the message's current
-\* generation (the SURB id it was sent under).
-CourierRespond(m) ==
-  /\ connected
-  /\ status[m] = "INFLIGHT"
-  /\ pendingReply[m].some = FALSE
-  /\ \E k \in ReplyKinds :
-        pendingReply' = [pendingReply EXCEPT
-                           ![m] = [some |-> TRUE, gen |-> retx[m], kind |-> k]]
-  /\ UNCHANGED <<connected, status, fsm, retx, completions, mkind>>
-
-\* A SURB reply is lost in the network. The message stays INFLIGHT and must
-\* be retransmitted (enqueueResend never silently drops a live message).
-LoseReply(m) ==
-  /\ pendingReply[m].some = TRUE
-  /\ pendingReply' = [pendingReply EXCEPT ![m] = NoReply]
-  /\ UNCHANGED <<connected, status, fsm, retx, completions, mkind>>
-
-\* arqDoResend: the retransmission timer fires. The message rotates to a
-\* fresh SURB id (generation + 1) and re-sends; any earlier reply is now
-\* stale. Bounded by MaxRetx here (unbounded in production).
-Retransmit(m) ==
-  /\ connected
-  /\ status[m] = "INFLIGHT"
-  /\ retx[m] < MaxRetx
-  /\ retx' = [retx EXCEPT ![m] = retx[m] + 1]
-  /\ pendingReply' = [pendingReply EXCEPT ![m] = NoReply]
-  /\ UNCHANGED <<connected, status, fsm, completions, mkind>>
-
-\* handleReply + handlePigeonholeARQReply: a pending SURB reply is delivered.
-\* It is applied to the message only if the message is still INFLIGHT and the
-\* reply's generation matches the current SURB id; otherwise it is a no-match
-\* (SurbIDReplyNoMatch) and is dropped with no effect. This is where the
-\* cancel/ack race is resolved: a cancel changes status away from INFLIGHT,
-\* so a straggling reply can never resurrect a cancelled operation.
-DeliverReply(m) ==
-  /\ pendingReply[m].some = TRUE
-  /\ LET r == pendingReply[m] IN
-       IF status[m] = "INFLIGHT" /\ r.gen = retx[m]
-         THEN LET o == Outcome(fsm[m], r.kind, mkind[m]) IN
-                CASE o.act = "ERROR" ->
-                       /\ status' = [status EXCEPT ![m] = "DONE_ERR"]
-                       /\ completions' = [completions EXCEPT ![m] = @ + 1]
-                       /\ pendingReply' = [pendingReply EXCEPT ![m] = NoReply]
-                       /\ UNCHANGED <<fsm, retx>>
-                  [] o.act = "DONE" ->
-                       /\ status' = [status EXCEPT ![m] = "DONE_OK"]
-                       /\ completions' = [completions EXCEPT ![m] = @ + 1]
-                       /\ pendingReply' = [pendingReply EXCEPT ![m] = NoReply]
-                       /\ UNCHANGED <<fsm, retx>>
-                  [] o.act = "NEWSURB" ->
-                       \* rotate to a fresh SURB id and keep polling
-                       /\ fsm' = [fsm EXCEPT ![m] = o.ns]
-                       /\ retx' = [retx EXCEPT
-                                     ![m] = IF retx[m] < MaxRetx
-                                              THEN retx[m] + 1 ELSE retx[m]]
-                       /\ pendingReply' = [pendingReply EXCEPT ![m] = NoReply]
-                       /\ UNCHANGED <<status, completions>>
-                  [] OTHER ->
-                       /\ pendingReply' = [pendingReply EXCEPT ![m] = NoReply]
-                       /\ UNCHANGED <<status, fsm, retx, completions>>
-         ELSE \* stale generation or not INFLIGHT: no match, drop
-           /\ pendingReply' = [pendingReply EXCEPT ![m] = NoReply]
-           /\ UNCHANGED <<status, fsm, retx, completions>>
-  /\ UNCHANGED <<connected, mkind>>
-
-\* cancelResendingEncryptedMessage: the app cancels an outstanding operation.
-\* The tracking entry is removed (status leaves INFLIGHT) and the retry timer
-\* is cancelled. Works whether the message has been sent yet or not, and while
-\* disconnected. A cancel of an already-terminal message is a no-op success
-\* (not modelled as a state change).
+\* cancelResendingEncryptedMessage. If the operation is still tracked it is
+\* removed and the original call is answered with a Cancelled error. If not,
+\* only the cancel call itself is answered.
 Cancel(m) ==
-  /\ status[m] \in {"NEW", "INFLIGHT"}
-  /\ status' = [status EXCEPT ![m] = "CANCELLED"]
-  /\ pendingReply' = [pendingReply EXCEPT ![m] = NoReply]
-  /\ UNCHANGED <<connected, fsm, retx, completions, mkind>>
+    LET r == [Untracked(op[m]) EXCEPT !.cancelled = TRUE]
+    IN  /\ Free /\ connected /\ op[m].started /\ ~op[m].cancelled
+        /\ op' = [op EXCEPT ![m] = IF op[m].tracked
+                                   THEN Responded(r, "CANCEL") ELSE r]
+        /\ UNCHANGED <<conn, handling>>
 
-\* Stutter once every message is terminal, so TLC does not flag a deadlock at
-\* the end of a bounded run.
-Terminating ==
-  /\ \A m \in Msgs : status[m] \in Terminal
-  /\ UNCHANGED vars
+-----------------------------------------------------------------------------
+\* Retransmission.
+
+\* The retry timer fires (enqueueResend).
+TimerFire(m) ==
+    /\ Free /\ op[m].timer
+    /\ op' = [op EXCEPT ![m] = Enqueued([op[m] EXCEPT !.timer = FALSE])]
+    /\ UNCHANGED <<conn, handling>>
+
+\* The egress worker takes a SURB id from the resend queue (arqDoResend). An
+\* id that is not in the map is stale, or belongs to an operation that was
+\* cancelled, and the resend is abandoned. That lookup is what stops a
+\* rotation from undoing a cancel. With no live connection the operation is
+\* deleted. Otherwise it is rotated and re-sent.
+DoResend(m, g) ==
+    LET r == [op[m] EXCEPT !.resendQ = @ \ {g}]
+    IN  /\ Free /\ g \in op[m].resendQ
+        /\ op' = [op EXCEPT ![m] =
+                    IF ~(r.tracked /\ g = r.gen) THEN r
+                    ELSE IF ~connected THEN [r EXCEPT !.tracked = FALSE]
+                    ELSE Rotated(r)]
+        /\ UNCHANGED <<conn, handling>>
+
+-----------------------------------------------------------------------------
+\* Replies.
+
+\* A reply to the query sent under generation g reaches the ingress worker
+\* (handleReply). A SURB is single use, so each query is answered at most
+\* once. The reply matches only if g is the message's current SURB id. A match
+\* cancels the retry timer and leaves the maps untouched; the worker now
+\* holds the message. No match: the reply is discarded (SurbIDReplyNoMatch).
+Lookup(m, g, k) ==
+    LET match == op[m].tracked /\ g = op[m].gen
+    IN  /\ handling = {}
+        /\ op[m].started /\ g <= op[m].gen /\ g \notin op[m].answered
+        /\ op' = [op EXCEPT ![m].answered = @ \cup {g},
+                            ![m].timer = IF match THEN FALSE ELSE @]
+        /\ handling' = IF match THEN {[m |-> m, g |-> g, k |-> k]} ELSE {}
+        /\ UNCHANGED conn
+
+\* The ingress worker acts on the message it holds (handlePigeonholeARQReply).
+\*   - No live connection: it returns at once.
+\*   - The message was rotated since Lookup: its keys are no longer those of
+\*     this reply, decryption fails, and dropARQMessage deletes the operation.
+\*   - A terminal outcome deletes the operation and answers the application.
+\*     The implementation does not check that it is still tracked.
+\*   - Otherwise the state is set and a follow-up is asked for
+\*     (scheduleARQFollowUp).
+Handle ==
+    \E j \in handling :
+        LET r == op[j.m]
+            o == Outcome(r.fsm, j.k, r.kind)
+            gone == [r EXCEPT !.tracked = FALSE]
+        IN  /\ handling' = {}
+            /\ op' = [op EXCEPT ![j.m] =
+                        IF ~connected THEN r
+                        ELSE IF j.g # r.gen THEN gone
+                        ELSE IF o = "RESPOND" THEN Responded(gone, j.k)
+                        ELSE Enqueued([r EXCEPT !.fsm = o])]
+            /\ UNCHANGED conn
+
+-----------------------------------------------------------------------------
+\* The thin client's connection.
+
+\* The connection drops. A session-aware client keeps its state for a grace
+\* period (onClosedConn).
+Disconnect ==
+    /\ Disconnects /\ Free /\ conn = "up"
+    /\ conn' = "away"
+    /\ UNCHANGED <<op, handling>>
+
+\* The client reconnects within the grace period (handleSessionToken).
+Resume ==
+    /\ Free /\ conn = "away"
+    /\ conn' = "up"
+    /\ UNCHANGED <<op, handling>>
+
+\* The grace period expires, or the client closed explicitly
+\* (cleanupForAppID). Every operation is deleted and its timer cancelled.
+Cleanup ==
+    /\ Free /\ conn = "away"
+    /\ conn' = "closed"
+    /\ op' = [m \in Msgs |-> Untracked(op[m])]
+    /\ UNCHANGED handling
+
+-----------------------------------------------------------------------------
 
 Next ==
-  \/ Connect
-  \/ \E m \in Msgs : StartSend(m) \/ CourierRespond(m) \/ LoseReply(m)
-                     \/ Retransmit(m) \/ DeliverReply(m) \/ Cancel(m)
-  \/ Terminating
+    \/ Handle \/ Disconnect \/ Resume \/ Cleanup
+    \/ \E m \in Msgs :
+          \/ Start(m) \/ Cancel(m) \/ TimerFire(m)
+          \/ \E g \in Gens :
+                \/ DoResend(m, g)
+                \/ \E k \in ReplyKinds : Lookup(m, g, k)
 
 Spec == Init /\ [][Next]_vars
 
 -----------------------------------------------------------------------------
-\* Safety properties.
+\* Properties.
 
-\* The client never reports an ARQ operation's terminal outcome more than
-\* once: no double delivery / double ACK from the client's accounting. This
-\* is the exactly-once guarantee under retransmission and SURB rotation.
-AtMostOnce ==
-  \A m \in Msgs : completions[m] <= 1
+\* The application receives at most one reply per operation, counting the
+\* Cancelled reply.
+AtMostOneResponse == \A m \in Msgs : op[m].responses <= 1
 
-\* A completed operation (success or error) was reported exactly once. Taken
-\* with AtMostOnce this is exactly-once completion for terminated operations.
-CompletedReportedOnce ==
-  \A m \in Msgs :
-    status[m] \in {"DONE_OK", "DONE_ERR"} => completions[m] = 1
+\* An operation is never forgotten without a reply, while the session lives.
+NoSilentDrop ==
+    \A m \in Msgs :
+        (op[m].started /\ ~op[m].tracked /\ conn # "closed")
+            => op[m].responses >= 1
 
-\* Cancel wins the cancel/ack race: a cancelled operation is never reported
-\* as completed. Once cancelled it carries no completion.
-CancelIsFinal ==
-  \A m \in Msgs : status[m] = "CANCELLED" => completions[m] = 0
+\* A tracked operation of a connected client can still make progress: its
+\* timer is armed, its resend is queued, or the ingress worker holds it.
+NoOrphan ==
+    \A m \in Msgs :
+        (op[m].tracked /\ connected) =>
+            \/ op[m].timer
+            \/ op[m].gen \in op[m].resendQ
+            \/ \E j \in handling : j.m = m
 
-\* Retransmission / rotation is bounded (retries forever in production; here
-\* the model bound is respected).
-RetxBounded ==
-  \A m \in Msgs : retx[m] <= MaxRetx
+\* Only an idempotent write completes on an ACK, and a read never completes
+\* on BoxIDNotFound: it retries.
+CompletionMatchesKind ==
+    \A m \in Msgs :
+        /\ op[m].doneBy = "ACK" => op[m].kind = "write_idem"
+        /\ op[m].doneBy = "NOTFOUND" => op[m].kind # "read"
 
-\* Only an INFLIGHT message ever carries a pending in-flight reply: terminal
-\* messages hold no outstanding SURB, so no straggler can act on them.
-NoPendingWhenTerminal ==
-  \A m \in Msgs :
-    status[m] \in Terminal => pendingReply[m].some = FALSE
+\* A cancelled operation is never tracked again.
+CancelIsFinal == \A m \in Msgs : op[m].cancelled => ~op[m].tracked
 
-\* An idempotent write is only ever completed after an ACK or payload, never
-\* left half-open: if it is DONE_OK it was tracked and reported once.
-DoneImpliesReported ==
-  \A m \in Msgs :
-    (status[m] = "DONE_OK" \/ status[m] = "DONE_ERR") => completions[m] >= 1
+\* An operation that is not tracked has no armed timer.
+NoStrayTimer == \A m \in Msgs : op[m].timer => op[m].tracked
+
+\* EXPECTED TO FAIL. Each is checked to obtain a witness trace, which shows
+\* that the behaviour it names is reachable and the properties above are not
+\* vacuous.
+
+\* Violated by an operation that completes on an ACK with exactly one reply.
+NeverCompletes ==
+    \A m \in Msgs :
+        ~(op[m].doneBy = "ACK" /\ op[m].responses = 1 /\ ~op[m].cancelled)
+
+\* Violated by a reply that arrives under a stale SURB id.
+NeverStale ==
+    \A m \in Msgs :
+        \A g \in op[m].answered : g = op[m].gen \/ ~op[m].tracked
 
 =============================================================================

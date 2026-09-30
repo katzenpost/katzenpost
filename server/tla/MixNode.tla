@@ -1,256 +1,247 @@
 ---------------------------- MODULE MixNode ----------------------------
-\* TLA+ model of a Katzenpost mix node packet-processing pipeline.
+\* A TLA+ model of the path a packet takes through a Katzenpost mix node.
 \*
-\* This abstracts the behavior implemented in the `server` package:
-\*   incoming conn  -> inboundPackets channel -> crypto worker (Sphinx unwrap,
-\*   mix-key selection, replay check) -> scheduler (per-packet delay queue) ->
-\*   outgoing conn dispatch.
+\*   incoming connection -> crypto worker -> scheduler -> outgoing connection
 \*
-\* The model captures the safety-critical mechanisms rather than wire formats:
-\*   - mix-key sliding window + pruning (forward secrecy)
-\*   - per-key replay detection (the bloom filter / TestAndSet)
-\*   - mixing-delay enforcement and deadline / max-delay drops
-\*   - the set of drop reasons that retire a packet
-\*   - locally generated decoy traffic entering the same scheduler
+\* It follows server/internal/incoming (onSendPacket),
+\* server/internal/cryptoworker (worker, routePacket),
+\* server/internal/scheduler (worker) and server/internal/outgoing
+\* (DispatchPacket, IsValidForwardDest).
 \*
-\* Time is modelled as a discrete tick counter `now`; the current epoch is
-\* `now \div EpochLen`. The crypto worker can only unwrap a packet whose key
-\* epoch lies in the live window {E-1, E, E+1} (mirroring doUnwrap trying the
-\* current, previous and next epoch keys); keys outside that window are pruned,
-\* which is exactly the forward-secrecy guarantee.
+\* The model covers what happens to a packet after it unwraps: how long it
+\* waits, where it may go given the role of the node and where it came from,
+\* and why it may be dropped. Keys and replays are in MixKeys.tla.
+\*
+\* Time is a counter of ticks. One tick stands for one millisecond, which is
+\* the smallest delay the crypto worker hands to the scheduler.
+\*
+\* ABSTRACTIONS / OUT OF SCOPE:
+\*   - Unwrapping is one choice per packet: it succeeds or it fails.
+\*   - There is one next hop, whose connection may come and go.
+\*   - The gateway and service backends, the decoy handler and the wire are
+\*     where a packet leaves the model.
+\*   - Decoy packets the node creates do not pass through here. The
+\*     implementation hands them straight to the outgoing connection.
+\*   - Not modelled: a forward packet that unwraps with a payload, the rate
+\*     limit on clients, the size limit of the scheduler queue, the burst
+\*     limit, and a delay limit taken from the PKI document.
 
-EXTENDS Integers, FiniteSets
+EXTENDS Integers, FiniteSets, TLC
 
-CONSTANTS Packets,        \* finite set of packet instance identities
-          Tags,           \* finite set of Sphinx replay tags
-          MaxTick,        \* bound on the logical clock
-          EpochLen,       \* number of ticks per epoch
-          NumMixKeys,     \* keys kept around (constants.NumMixKeys = 3)
-          UnwrapDelay,    \* max dwell time in the inbound queue before drop
-          SchedulerSlack  \* max lateness tolerated at dispatch
+CONSTANTS
+    Packets,         \* packets
+    MaxTick,         \* last tick to explore
+    UnwrapDelay,     \* longest wait for a crypto worker (Debug.UnwrapDelay)
+    SchedulerSlack,  \* lateness tolerated at dispatch (Debug.SchedulerSlack)
+    MaxDelay         \* longest delay accepted (NumMixKeys * epochtime.Period)
 
-ASSUME EpochLen >= 1 /\ NumMixKeys >= 1 /\ MaxTick >= 0
+ASSUME MaxTick \in Nat /\ UnwrapDelay \in Nat /\ SchedulerSlack \in Nat
+ASSUME MaxDelay \in Nat \ {0}
 
-\* The kinds of packet a crypto worker can produce from a successful unwrap,
-\* plus locally generated decoy traffic.
-Kinds == {"forward", "toUser", "surb", "nonroutable", "decoy"}
+Symmetry == Permutations(Packets)
 
-\* Largest mixing delay the scheduler will accept (absoluteMaxDelay).
-maxDelay == NumMixKeys * EpochLen
+Roles == {"mix", "gateway", "service"}
 
-\* Epoch that contains tick t.
-Epoch(t) == t \div EpochLen
+\* What a packet turns out to be once unwrapped.
+\*   forward    - for another node
+\*   to_user    - for a user or service of this node
+\*   surb_decoy - a SURB reply to a decoy loop of this node
+\*   surb_other - any other SURB reply
+Cmds == {"forward", "to_user", "surb_decoy", "surb_other"}
 
-\* Domain of packet key-epochs explored (includes one future epoch).
-EpochDomain == 0 .. (MaxTick \div EpochLen + 1)
+\* Where a packet is. The last four are where it leaves the model.
+Places == {"new", "inbound", "handoff", "queued",
+           "sent", "backend", "decoy", "dropped"}
 
-\* Immutable per-packet content.
-ContentRec == [epoch  : EpochDomain,
-               tag    : Tags,
-               delay  : 0 .. (maxDelay + 1),
-               kind   : Kinds,
-               destOK : BOOLEAN]
+Reasons == {"none",
+            "unwrap_dwell_exceeded", "unwrap_failed",
+            "provider_forward_from_mix", "delay_impossible",
+            "zero_delay_excessive_dwell", "mix_received_non_forward",
+            "client_to_local_user", "scheduler_next_hop_invalid",
+            "scheduler_deadline_blown", "dispatch_no_connection"}
 
-Terminal == {"FORWARDED", "DELIVERED", "DROPPED"}
+Packet == [place      : Places,
+           reason     : Reasons,
+           fromClient : BOOLEAN,    \* it arrived from a client
+           cmd        : Cmds,
+           delay      : 0 .. (MaxDelay + 1),    \* delay the sender asked for
+           recvAt     : 0 .. MaxTick,    \* when it arrived
+           wait       : 0 .. (MaxDelay + 1),    \* delay given to the scheduler
+           dispatchAt : 0 .. (MaxTick + MaxDelay + 1),    \* when it is due
+           sentAt     : 0 .. MaxTick]    \* when it left
 
-VARIABLES now,          \* logical clock tick
-          pstate,       \* packet -> lifecycle state
-          arr,          \* packet -> arrival tick (set on admission)
-          qdisp,        \* packet -> scheduled dispatch tick (set when QUEUED)
-          dtime,        \* packet -> actual dispatch tick (set when FORWARDED)
-          reason,       \* packet -> drop reason ("none" if not dropped)
-          accepted,     \* packet -> TRUE once cryptographically unwrapped
-          uepoch,       \* packet -> epoch at which it was unwrapped (ghost)
-          replayCache,  \* set of <<epoch, tag>> pairs already accepted
-          content       \* packet -> ContentRec (immutable)
+VARIABLES
+    now,     \* the clock
+    role,    \* the role of the node, fixed
+    connUp,  \* there is a connection to the next hop
+    pkt      \* [Packets -> Packet]
 
-vars == <<now, pstate, arr, qdisp, dtime, reason, accepted, uepoch,
-          replayCache, content>>
-
-Reasons == {"none", "unwrap_no_key", "unwrap_failed", "replay",
-            "excessive_dwell", "delay_exceeds_max", "no_connection",
-            "deadline_blown"}
-
-States == {"NEW", "INBOUND", "QUEUED"} \cup Terminal
+vars == <<now, role, connUp, pkt>>
 
 TypeOK ==
-  /\ now \in 0 .. MaxTick
-  /\ pstate \in [Packets -> States]
-  /\ arr \in [Packets -> 0 .. MaxTick]
-  /\ qdisp \in [Packets -> 0 .. (MaxTick + maxDelay + 1)]
-  /\ dtime \in [Packets -> 0 .. MaxTick]
-  /\ reason \in [Packets -> Reasons]
-  /\ accepted \in [Packets -> BOOLEAN]
-  /\ uepoch \in [Packets -> EpochDomain]
-  /\ replayCache \subseteq (EpochDomain \X Tags)
-  /\ content \in [Packets -> ContentRec]
+    /\ now \in 0 .. MaxTick
+    /\ role \in Roles
+    /\ connUp \in BOOLEAN
+    /\ pkt \in [Packets -> Packet]
+
+Blank == [place |-> "new", reason |-> "none", fromClient |-> FALSE,
+          cmd |-> "forward", delay |-> 0, recvAt |-> 0, wait |-> 0,
+          dispatchAt |-> 0, sentAt |-> 0]
 
 Init ==
-  /\ now = 0
-  /\ content \in [Packets -> ContentRec]
-  /\ pstate = [p \in Packets |-> "NEW"]
-  /\ arr = [p \in Packets |-> 0]
-  /\ qdisp = [p \in Packets |-> 0]
-  /\ dtime = [p \in Packets |-> 0]
-  /\ reason = [p \in Packets |-> "none"]
-  /\ accepted = [p \in Packets |-> FALSE]
-  /\ uepoch = [p \in Packets |-> 0]
-  /\ replayCache = {}
+    /\ now = 0
+    /\ role \in Roles
+    /\ connUp \in BOOLEAN
+    /\ pkt = [p \in Packets |-> Blank]
 
-\* An external packet arrives off the wire and is queued for the crypto worker.
-AdmitExternal(p) ==
-  /\ pstate[p] = "NEW"
-  /\ content[p].kind # "decoy"
-  /\ pstate' = [pstate EXCEPT ![p] = "INBOUND"]
-  /\ arr' = [arr EXCEPT ![p] = now]
-  /\ UNCHANGED <<now, qdisp, dtime, reason, accepted, uepoch, replayCache,
-                 content>>
+At(r, place)    == [r EXCEPT !.place = place]
+Dropped(r, why) == [r EXCEPT !.place = "dropped", !.reason = why]
 
-\* A locally generated decoy (SURB loop) enters the scheduler directly: it is
-\* not unwrapped and not subject to replay detection.
-AdmitDecoy(p) ==
-  /\ pstate[p] = "NEW"
-  /\ content[p].kind = "decoy"
-  /\ LET c == content[p]
-         res == IF c.delay > maxDelay
-                  THEN [st |-> "DROPPED", rs |-> "delay_exceeds_max"]
-                ELSE IF ~c.destOK
-                  THEN [st |-> "DROPPED", rs |-> "no_connection"]
-                ELSE [st |-> "QUEUED", rs |-> "none"]
-     IN /\ pstate' = [pstate EXCEPT ![p] = res.st]
-        /\ reason' = [reason EXCEPT ![p] = res.rs]
-        /\ qdisp' = IF res.st = "QUEUED"
-                      THEN [qdisp EXCEPT ![p] = now + c.delay]
-                      ELSE qdisp
-        /\ arr' = [arr EXCEPT ![p] = now]
-  /\ UNCHANGED <<now, dtime, accepted, uepoch, replayCache, content>>
+\* onSendPacket: a provider must know whether a packet came from a client or
+\* from a mix.
+MustForward(r)   == r.fromClient
+MustTerminate(r) == role = "service" /\ ~r.fromClient
 
-\* The crypto worker dequeues an inbound packet and tries to unwrap it.
-\* Precedence of outcomes mirrors the implementation:
-\*   1. excessive dwell time -> drop
-\*   2. no live key for the packet's epoch -> drop (forward secrecy)
-\*   3. replayed tag under that key -> drop
-\*   4. successful unwrap -> record tag, then route (deliver / forward / drop)
+-----------------------------------------------------------------------------
+
+\* A packet arrives and is queued for the crypto workers (onSendPacket). Only
+\* a gateway has clients.
+Arrive(p) ==
+    /\ pkt[p].place = "new"
+    /\ \E c \in BOOLEAN, k \in Cmds, d \in 0 .. (MaxDelay + 1) :
+          /\ c => role = "gateway"
+          /\ pkt' = [pkt EXCEPT ![p] =
+                        [Blank EXCEPT !.place = "inbound", !.fromClient = c,
+                                      !.cmd = k, !.delay = d, !.recvAt = now]]
+    /\ UNCHANGED <<now, role, connUp>>
+
+\* The delay handed to the scheduler for a forward packet that waited dwell
+\* for a crypto worker (routePacket). The wait is taken off the delay. A
+\* packet is never handed over with less than one tick, so that some mixing
+\* always happens.
+Adjusted(delay, dwell) == IF delay > dwell THEN delay - dwell ELSE 1
+
+\* A packet that asked for no delay at all and still had to wait is dropped.
+ZeroDelayLate(delay, dwell) == delay = 0 /\ dwell >= 1
+
+\* What routePacket does with an unwrapped packet r that waited dwell.
+Routed(r, dwell) ==
+    IF r.cmd = "forward" THEN
+        IF MustTerminate(r) THEN Dropped(r, "provider_forward_from_mix")
+        ELSE IF r.delay > MaxDelay THEN Dropped(r, "delay_impossible")
+        ELSE IF ZeroDelayLate(r.delay, dwell)
+             THEN Dropped(r, "zero_delay_excessive_dwell")
+        ELSE [At(r, "handoff") EXCEPT !.wait = Adjusted(r.delay, dwell)]
+    ELSE IF role = "mix" THEN
+        IF r.cmd = "surb_decoy" THEN At(r, "decoy")
+        ELSE Dropped(r, "mix_received_non_forward")
+    ELSE IF MustForward(r) THEN Dropped(r, "client_to_local_user")
+    ELSE IF r.cmd = "surb_decoy" THEN At(r, "decoy")
+    ELSE At(r, "backend")
+
+\* A crypto worker takes a packet (worker). A packet that waited too long is
+\* dropped unseen. Otherwise it unwraps, or it does not.
 Unwrap(p) ==
-  /\ pstate[p] = "INBOUND"
-  /\ LET c        == content[p]
-         e        == Epoch(now)
-         dwell    == now - arr[p]
-         isStale  == c.epoch \notin {e - 1, e, e + 1}
-         isReplay == <<c.epoch, c.tag>> \in replayCache
-         res ==
-           IF dwell > UnwrapDelay
-             THEN [st |-> "DROPPED", rs |-> "excessive_dwell", acc |-> FALSE]
-           ELSE IF isStale
-             THEN [st |-> "DROPPED", rs |-> "unwrap_no_key", acc |-> FALSE]
-           ELSE IF isReplay
-             THEN [st |-> "DROPPED", rs |-> "replay", acc |-> FALSE]
-           ELSE IF c.kind = "nonroutable"
-             THEN [st |-> "DROPPED", rs |-> "unwrap_failed", acc |-> TRUE]
-           ELSE IF c.kind \in {"toUser", "surb"}
-             THEN [st |-> "DELIVERED", rs |-> "none", acc |-> TRUE]
-           ELSE IF c.delay > maxDelay
-             THEN [st |-> "DROPPED", rs |-> "delay_exceeds_max", acc |-> TRUE]
-           ELSE IF ~c.destOK
-             THEN [st |-> "DROPPED", rs |-> "no_connection", acc |-> TRUE]
-           ELSE [st |-> "QUEUED", rs |-> "none", acc |-> TRUE]
-     IN /\ pstate' = [pstate EXCEPT ![p] = res.st]
-        /\ reason' = [reason EXCEPT ![p] = res.rs]
-        /\ accepted' = [accepted EXCEPT ![p] = res.acc]
-        /\ uepoch' = IF res.acc THEN [uepoch EXCEPT ![p] = e] ELSE uepoch
-        /\ replayCache' = IF res.acc
-                            THEN replayCache \cup {<<c.epoch, c.tag>>}
-                            ELSE replayCache
-        /\ qdisp' = IF res.st = "QUEUED"
-                      THEN [qdisp EXCEPT ![p] = now + c.delay]
-                      ELSE qdisp
-  /\ UNCHANGED <<now, arr, dtime, content>>
+    LET r     == pkt[p]
+        dwell == now - r.recvAt
+    IN  /\ r.place = "inbound"
+        /\ \E unwraps \in BOOLEAN :
+              pkt' = [pkt EXCEPT ![p] =
+                         IF dwell > UnwrapDelay
+                             THEN Dropped(r, "unwrap_dwell_exceeded")
+                         ELSE IF ~unwraps THEN Dropped(r, "unwrap_failed")
+                         ELSE Routed(r, dwell)]
+        /\ UNCHANGED <<now, role, connUp>>
 
-\* The scheduler dispatches a queued packet once its delay has elapsed.
-\* A packet whose deadline was blown by more than SchedulerSlack is dropped.
+\* The scheduler takes a packet from the crypto workers and queues it. It
+\* also checks the delay against MaxDelay, which cannot fail here: the crypto
+\* worker has applied the same bound.
+Enqueue(p) ==
+    LET r == pkt[p]
+    IN  /\ r.place = "handoff"
+        /\ pkt' = [pkt EXCEPT ![p] =
+                      IF ~connUp THEN Dropped(r, "scheduler_next_hop_invalid")
+                      ELSE [At(r, "queued") EXCEPT !.dispatchAt = now + r.wait]]
+        /\ UNCHANGED <<now, role, connUp>>
+
+\* The scheduler takes a packet that is due from its queue. It drops a packet
+\* that is later than the slack allows. The outgoing side drops one that has
+\* no connection (DispatchPacket).
 Dispatch(p) ==
-  /\ pstate[p] = "QUEUED"
-  /\ now >= qdisp[p]
-  /\ IF now - qdisp[p] > SchedulerSlack
-       THEN /\ pstate' = [pstate EXCEPT ![p] = "DROPPED"]
-            /\ reason' = [reason EXCEPT ![p] = "deadline_blown"]
-            /\ UNCHANGED dtime
-       ELSE /\ pstate' = [pstate EXCEPT ![p] = "FORWARDED"]
-            /\ reason' = [reason EXCEPT ![p] = "none"]
-            /\ dtime' = [dtime EXCEPT ![p] = now]
-  /\ UNCHANGED <<now, arr, qdisp, accepted, uepoch, replayCache, content>>
+    LET r == pkt[p]
+    IN  /\ r.place = "queued" /\ now >= r.dispatchAt
+        /\ pkt' = [pkt EXCEPT ![p] =
+                      IF now - r.dispatchAt > SchedulerSlack
+                          THEN Dropped(r, "scheduler_deadline_blown")
+                      ELSE IF ~connUp
+                          THEN Dropped(r, "dispatch_no_connection")
+                      ELSE [At(r, "sent") EXCEPT !.sentAt = now]]
+        /\ UNCHANGED <<now, role, connUp>>
 
-\* Time advances; the epoch (and thus the live key window) may roll over.
+\* The connection to the next hop comes or goes.
+Flap ==
+    /\ connUp' = ~connUp
+    /\ UNCHANGED <<now, role, pkt>>
+
 Tick ==
-  /\ now < MaxTick
-  /\ now' = now + 1
-  /\ UNCHANGED <<pstate, arr, qdisp, dtime, reason, accepted, uepoch,
-                 replayCache, content>>
-
-\* Stutter once the clock is exhausted so TLC does not report a deadlock on
-\* packets that cannot make further progress within the bounded horizon.
-Terminating ==
-  /\ now = MaxTick
-  /\ UNCHANGED vars
+    /\ now < MaxTick
+    /\ now' = now + 1
+    /\ UNCHANGED <<role, connUp, pkt>>
 
 Next ==
-  \/ \E p \in Packets : AdmitExternal(p) \/ AdmitDecoy(p)
-                        \/ Unwrap(p) \/ Dispatch(p)
-  \/ Tick
-  \/ Terminating
+    \/ Tick \/ Flap
+    \/ \E p \in Packets : Arrive(p) \/ Unwrap(p) \/ Enqueue(p) \/ Dispatch(p)
 
 Spec == Init /\ [][Next]_vars
 
 -----------------------------------------------------------------------------
-\* Safety properties.
+\* Properties.
 
-\* No replay tag is accepted more than once under the same key epoch. This is
-\* the formal statement of the per-key replay cache guarantee.
-ReplayFreedom ==
-  \A p, q \in Packets :
-    (p # q /\ accepted[p] /\ accepted[q]
-       /\ content[p].epoch = content[q].epoch
-       /\ content[p].tag = content[q].tag)
-    => FALSE
+Is(p, place) == pkt[p].place = place
 
-\* A packet is only ever unwrapped with a key inside the live window, so a key
-\* for an epoch older than (current - 1) has been pruned and can no longer
-\* decrypt anything: forward secrecy.
-ForwardSecrecy ==
-  \A p \in Packets :
-    accepted[p] =>
-      content[p].epoch \in {uepoch[p] - 1, uepoch[p], uepoch[p] + 1}
+\* A packet that is sent has spent at least the delay its sender asked for in
+\* the node, and at least one tick.
+MinimumMixing ==
+    \A p \in Packets :
+        Is(p, "sent") =>
+            /\ pkt[p].sentAt - pkt[p].recvAt >= pkt[p].delay
+            /\ pkt[p].sentAt > pkt[p].recvAt
 
-\* A forwarded packet was never dispatched before its scheduled mixing delay.
-NoEarlyDispatch ==
-  \A p \in Packets :
-    pstate[p] = "FORWARDED" => dtime[p] >= qdisp[p]
+\* A packet from a client goes into the mixnet or nowhere. It cannot reach a
+\* local user or service without being mixed.
+ClientPacketsAreMixed ==
+    \A p \in Packets :
+        pkt[p].fromClient => ~Is(p, "backend") /\ ~Is(p, "decoy")
 
-\* A forwarded packet was dispatched within the scheduler's slack of its
-\* deadline (otherwise it would have been dropped as deadline_blown).
-MixingDelayBounded ==
-  \A p \in Packets :
-    pstate[p] = "FORWARDED" => dtime[p] <= qdisp[p] + SchedulerSlack
+\* A service node sends on nothing that a mix gave it. Traffic cannot loop
+\* back into the mixnet from its last layer.
+ServiceNodeTerminates ==
+    \A p \in Packets : (role = "service" /\ Is(p, "sent")) => pkt[p].fromClient
 
-\* Only routable packets with a valid destination and an acceptable delay are
-\* ever forwarded.
-ForwardedValid ==
-  \A p \in Packets :
-    pstate[p] = "FORWARDED" =>
-      /\ content[p].kind \in {"forward", "decoy"}
-      /\ content[p].destOK
-      /\ content[p].delay <= maxDelay
+\* A mix has no users. Nothing reaches a backend on a mix.
+MixHasNoBackend ==
+    \A p \in Packets : role = "mix" => ~Is(p, "backend")
 
-\* Locally delivered packets are exactly the user / SURB-reply kinds.
-DeliveredLocal ==
-  \A p \in Packets :
-    pstate[p] = "DELIVERED" => content[p].kind \in {"toUser", "surb"}
+\* Only a forward packet is sent on, and only a SURB reply to a decoy of this
+\* node reaches the decoy handler.
+PlaceMatchesCommand ==
+    \A p \in Packets :
+        /\ Is(p, "sent") => pkt[p].cmd = "forward"
+        /\ Is(p, "decoy") => pkt[p].cmd = "surb_decoy"
+        /\ Is(p, "backend") => pkt[p].cmd # "forward"
 
-\* Every dropped packet carries a concrete, non-"none" reason; non-dropped
-\* packets carry no drop reason. No packet is silently lost.
-DropAccounted ==
-  \A p \in Packets :
-    /\ (pstate[p] = "DROPPED") <=> (reason[p] # "none")
-    /\ pstate[p] \in States
+\* EXPECTED TO FAIL. Each is checked to obtain a witness trace.
+
+\* Violated by a packet that is sent on.
+NeverSent == \A p \in Packets : ~Is(p, "sent")
+
+\* Violated by a packet that reaches a backend.
+NeverDelivered == \A p \in Packets : ~Is(p, "backend")
+
+\* Violated by a packet that is sent after the scheduler held it for less
+\* than the delay its sender asked for. The wait for a crypto worker counts
+\* towards the delay.
+NeverShortened ==
+    \A p \in Packets : Is(p, "sent") => pkt[p].wait >= pkt[p].delay
 
 =============================================================================
