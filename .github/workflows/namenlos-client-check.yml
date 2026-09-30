@@ -23,4 +23,4 @@ jobs:
           restore-keys: |
             interop-gate-${{ runner.os }}-go1.26.x-
       - name: Fetch a consensus and ping the echo service over namenlos with the working-tree client
-        run: cd docker && make client-check
+        run: cd docker && make client-check prebuilt_base="${{ vars.BASE_IMAGE }}"

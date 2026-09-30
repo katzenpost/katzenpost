@@ -1,5 +1,68 @@
 
+include $(dir $(lastword $(MAKEFILE_LIST)))ci.mk
+
 .PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
+
+ci_suites=authority client core core/sphinx server courier pigeonhole
+suite?=
+suite_timeout?=30m
+
+ci_config_files=.github/workflows/linux.yml .forgejo/workflows/ci.yml .woodpecker/test.yaml
+GOVULNCHECK_VERSION?=v1.8.0
+
+.PHONY: ci-suites
+ci-suites:
+	@printf '%s\n' $(ci_suites)
+
+.PHONY: ci-config-check
+ci-config-check:
+	@missing=; for suite in $(ci_suites); do \
+	  for config in $(ci_config_files); do \
+	    tr -c "a-zA-Z0-9/_.-" "\n" < "$$config" | grep -qxF "$$suite" || missing="$$missing $$config:$$suite"; \
+	  done; \
+	done; \
+	test -z "$$missing" || { echo "suite missing from a forge config:$$missing" >&2; exit 1; }
+
+.PHONY: test-suite
+test-suite: test-config
+	@test -n "$(suite)" || { echo "set suite to one of: $(ci_suites)" >&2; exit 1; }
+	cd $(suite) && GORACE=history_size=7 go test -race -v -failfast -timeout $(suite_timeout) ./...
+
+.PHONY: ci-native
+ci-native: check
+	@set -e; for suite in $(ci_suites); do $(MAKE) test-suite suite=$$suite; done
+	$(MAKE) test-integration
+	$(MAKE) interop
+	$(MAKE) bench
+	$(MAKE) check-live
+
+.PHONY: check
+check: ci-config-check prune-docker-cache
+	go vet ./...
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+.PHONY: check-live
+check-live:
+	$(MAKE) -C docker client-check
+
+.PHONY: test-short
+test-short:
+	$(MAKE) -C docker test testargs=-short
+
+.PHONY: test-integration
+test-integration:
+	$(MAKE) -C docker test
+
+.PHONY: interop
+interop:
+	$(MAKE) -C docker interop
+
+.PHONY: interop-matrix
+interop-matrix:
+	$(MAKE) -C docker interop-matrix
+
+.PHONY: bench
+bench: bench-sphinx bench-handshake bench-replica
 
 .PHONY: update-go-deps
 update-go-deps:
