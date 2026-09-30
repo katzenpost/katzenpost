@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: docker base image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker/Dockerfile.base.alpine'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/docker-base-image.yml'
+  workflow_dispatch:
+    inputs:
+      registries:
+        description: space separated registry prefixes to push to
+        type: string
+        default: ''
+
+concurrency:
+  group: docker-base-image
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: make -C docker base-image docker=docker
+
+      - name: Push to the configured registries
+        env:
+          registries: ${{ inputs.registries || vars.BASE_REGISTRIES }}
+        if: ${{ inputs.registries != '' || vars.BASE_REGISTRIES != '' }}
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          make -C docker base-image-push docker=docker base_registries="$registries"
+          make -C docker base-image-push docker=docker base_registries="$registries" base_image_tag="${{ github.sha }}"

@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: live
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */12 * * *'
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: ${{ vars.CI_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make check-live

@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [authority, client, core, core/sphinx, server, courier, pigeonhole]
+    container:
+      image: ${{ vars.CI_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test-suite suite=${{ matrix.suite }}
+
+  check:
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ vars.CI_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make check

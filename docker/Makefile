@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1 client-check
+.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-combo client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -36,8 +36,8 @@ help:
 	@echo " run-ping                  - send a ping over the testnet"
 	@echo " test                      - run every component's docker integration tests (requires the testnet to be up)"
 	@echo " interop-gate              - bring HEAD up with release binaries on interop_swap_groups (release_refs), require 6/6 signatures and every node listed, verify revisions, ping"
-	@echo " interop-<job>             - one upgrade combination: authorities-mixed|authorities-old|authorities-old-n1|nodes-mixed|nodes-old|nodes-old-n1|everything-mixed|everything-mixed-n1"
-	@echo " interop-matrix            - every interop-<job> in turn"
+	@echo " interop-combo combo=<name> - one upgrade combination: authorities-mixed|authorities-old|authorities-old-n1|nodes-mixed|nodes-old|nodes-old-n1|everything-mixed|everything-mixed-n1"
+	@echo " interop-matrix            - twelve combinations in turn: auth, the node groups, and every group, each against the last two tags and the last tag, with and without interop_all"
 	@echo " interop-report            - per-service table of version and signed/listed from the last interop-gate"
 	@echo " clean-bin                 - stop, and delete compiled binaries"
 	@echo " clean-local               - stop the current network, and wipe its state (keeps the build cache)"
@@ -133,6 +133,10 @@ else
 endif
 # Universal escape hatch: make base_image=my/registry:tag start wait
 base_image?=$(distro_base_image)
+prebuilt_base?=
+base_image_name?=$(distro)-base
+base_image_tag?=latest
+base_registries?=
 # Single source of truth for the Go toolchain: the go directive in the
 # repo's go.mod. The base Dockerfiles keep the same value as an ARG
 # default only so `podman build` works standalone.
@@ -667,10 +671,26 @@ wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(ca
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready --ready-timeout $${left}s; do \
 	  echo "wait: the client daemon is not accepting connections yet; retrying"; sleep 5; done
 
+.PHONY: base-image base-image-push
+base-image: $(distro)_base.stamp
+
+base-image-push: base-image
+	@test -n "$(strip $(base_registries))" || { echo "set base_registries to one or more registry prefixes" >&2; exit 1; }
+	@set -e; for registry in $(base_registries); do \
+	  $(docker) tag katzenpost-$(distro)_base $$registry/$(base_image_name):$(base_image_tag); \
+	  $(docker) push $$registry/$(base_image_name):$(base_image_tag); \
+	done
+
 $(distro)_base.stamp: $(base_dockerfile)
-	$(docker) build -t katzenpost-$(distro)_base \
+	@if [ -n "$(strip $(prebuilt_base))" ]; then \
+	  echo "pulling $(prebuilt_base) instead of building katzenpost-$(distro)_base"; \
+	  $(docker) pull $(prebuilt_base); \
+	  $(docker) tag $(prebuilt_base) katzenpost-$(distro)_base; \
+	else \
+	  $(docker) build -t katzenpost-$(distro)_base \
 		--build-arg BASE_IMAGE=$(base_image) --build-arg GO_VERSION=$(GO_VERSION) \
-		-f $(base_dockerfile) .
+		-f $(base_dockerfile) .; \
+	fi
 	touch $@
 
 # Rust build image for pigeonhole-cp, layered on the per-distro base image
@@ -1019,23 +1039,32 @@ interop_last1=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -1 | xargs)
 interop_last2=$(shell git -C .. tag --list 'v*.*.*' | sort -V | tail -2 | xargs)
 interop_nodes=replica mix gateway
 
-interop-authorities-mixed:
-	$(MAKE) interop-gate interop_swap_groups=auth release_refs="$(interop_last2)"
-interop-authorities-old:
-	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last2)"
-interop-authorities-old-n1:
-	$(MAKE) interop-gate interop_swap_groups=auth interop_swap_all=1 release_refs="$(interop_last1)"
-interop-nodes-mixed:
-	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" release_refs="$(interop_last2)"
-interop-nodes-old:
-	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last2)"
-interop-nodes-old-n1:
-	$(MAKE) interop-gate interop_swap_groups="$(interop_nodes)" interop_swap_all=1 release_refs="$(interop_last1)"
-interop-everything-mixed:
-	$(MAKE) interop-gate release_refs="$(interop_last2)"
-interop-everything-mixed-n1:
-	$(MAKE) interop-gate release_refs="$(interop_last1)"
-interop-matrix: interop-authorities-mixed interop-authorities-old interop-authorities-old-n1 interop-nodes-mixed interop-nodes-old interop-nodes-old-n1 interop-everything-mixed interop-everything-mixed-n1
+interop_groups?=auth replica mix gateway
+interop_releases?=$(interop_last2)
+interop_all?=
+
+interop:
+	$(MAKE) interop-gate interop_swap_groups="$(interop_groups)" interop_swap_all="$(interop_all)" release_refs="$(interop_releases)"
+
+interop-combo:
+	@case "$(combo)" in \
+	  authorities-mixed) $(MAKE) interop interop_groups=auth;; \
+	  authorities-old) $(MAKE) interop interop_groups=auth interop_all=1;; \
+	  authorities-old-n1) $(MAKE) interop interop_groups=auth interop_all=1 interop_releases="$(interop_last1)";; \
+	  nodes-mixed) $(MAKE) interop interop_groups="$(interop_nodes)";; \
+	  nodes-old) $(MAKE) interop interop_groups="$(interop_nodes)" interop_all=1;; \
+	  nodes-old-n1) $(MAKE) interop interop_groups="$(interop_nodes)" interop_all=1 interop_releases="$(interop_last1)";; \
+	  everything-mixed) $(MAKE) interop interop_releases="$(interop_last2)";; \
+	  everything-mixed-n1) $(MAKE) interop interop_releases="$(interop_last1)";; \
+	  *) echo "set combo to one of: authorities-mixed authorities-old authorities-old-n1 nodes-mixed nodes-old nodes-old-n1 everything-mixed everything-mixed-n1" >&2; exit 1;; \
+	esac
+
+interop-matrix:
+	@set -e; for groups in auth "$(interop_nodes)" "$(interop_groups)"; do \
+	  for releases in "$(interop_last2)" "$(interop_last1)"; do \
+	    for all in "" 1; do \
+	      $(MAKE) interop interop_groups="$$groups" interop_releases="$$releases" interop_all="$$all"; \
+	    done; done; done
 
 client-check: | $(cache_dir)
 	@[ -s $(namenlos_config) ] || { echo "client-check: no namenlos config at $(namenlos_config)" >&2; exit 1; }
