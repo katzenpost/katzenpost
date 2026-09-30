@@ -16,6 +16,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 )
 
@@ -88,45 +89,114 @@ func (f *authFixture) entry(t *testing.T, epoch uint64, layer, key int) (*pkicac
 	return entry, peer
 }
 
+// document is a single document in an authentication snapshot. Its epoch is
+// expressed as an offset from the current epoch; layer is 0 for the eligible
+// direction, 1 for the wrong direction, and -1 for an identity that is absent.
+// The layer is remapped per direction when the snapshot is built.
+type document struct {
+	offset     int
+	layer, key int
+}
+
+// authCase is one snapshot scenario. switchBoundary marks a snapshot that the
+// live document cache never constructs (for example a now+1 document at or past
+// the slack boundary). Those cases pin the epoch/boundary logic of
+// authenticateConnection and must not be read as end-to-end scenarios. Every
+// other case is built exactly the way documentsForAuthentication builds the live
+// snapshot, so its input is production-reachable.
+type authCase struct {
+	name           string
+	docs           []document
+	key            int
+	till           time.Duration
+	switchBoundary bool
+	valid          bool
+	incomingSend   bool
+	outgoingSend   bool
+}
+
+// snapshot builds an authentication snapshot. When reachable is true it mirrors
+// documentsForAuthentication: newest-first, the now+1 document only inside the
+// early-connect slack window, nowDoc bound to epoch now, and past entries limited
+// to the NumMixKeys window. When reachable is false the listed documents are used
+// verbatim. It also returns the newest direction-eligible descriptor, which
+// authenticateConnection is expected to return on success.
+func (f *authFixture) snapshot(t *testing.T, now uint64, till time.Duration, outgoing, reachable bool, specs []document) ([]*pkicache.Entry, *pkicache.Entry, *cpki.MixDescriptor) {
+	t.Helper()
+	byOffset := make(map[int]document, len(specs))
+	for _, s := range specs {
+		byOffset[s.offset] = s
+	}
+
+	var offsets []int
+	if reachable {
+		start := 0
+		if till < epochtime.Period/8 {
+			start = 1
+		}
+		for off := start; off >= -(constants.NumMixKeys - 1); off-- {
+			if _, ok := byOffset[off]; ok {
+				offsets = append(offsets, off)
+			}
+		}
+	} else {
+		for _, s := range specs {
+			offsets = append(offsets, s.offset)
+		}
+	}
+
+	var docs []*pkicache.Entry
+	var nowDoc *pkicache.Entry
+	var newest *cpki.MixDescriptor
+	for _, off := range offsets {
+		spec := byOffset[off]
+		layer := spec.layer
+		if layer == 0 && outgoing {
+			layer = 2
+		} else if layer == 1 {
+			if outgoing {
+				layer = 0
+			} else {
+				layer = 2
+			}
+		}
+		entry, desc := f.entry(t, uint64(int(now)+off), layer, spec.key)
+		docs = append(docs, entry)
+		if off == 0 {
+			nowDoc = entry
+		}
+		if newest == nil && spec.layer == 0 {
+			newest = desc
+		}
+	}
+	return docs, nowDoc, newest
+}
+
 func TestAuthenticateConnectionEpochsAndKeys(t *testing.T) {
 	f := newAuthFixture(t)
 	const now = uint64(100)
 	slack := epochtime.Period / 8
-	// Snapshots at and outside slack deliberately test the policy boundary
-	// independently of the document-selection cache. The inside-window cases
-	// also exercise rotation with the normal next-epoch admission policy.
-	// layer: 0 means the eligible direction, 1 the wrong direction, -1 absent.
-	type document struct {
-		offset     int
-		layer, key int
-	}
-	cases := []struct {
-		name                              string
-		docs                              []document
-		key                               int
-		till                              time.Duration
-		valid, incomingSend, outgoingSend bool
-	}{
+	cases := []authCase{
 		{name: "no documents"},
 		{name: "unknown identity", docs: []document{{0, -1, 0}}},
 		{name: "wrong direction", docs: []document{{0, 1, 0}}},
 		{name: "current key", docs: []document{{0, 0, 0}}, valid: true, incomingSend: true, outgoingSend: true},
 		{name: "unrelated key rejected", docs: []document{{0, 0, 0}}, key: 2},
-		{name: "next at slack boundary", docs: []document{{1, 0, 0}}, till: slack, valid: true},
-		{name: "next before slack", docs: []document{{1, 0, 0}}, till: slack + 1, valid: true},
+		{name: "next at slack boundary", docs: []document{{1, 0, 0}}, till: slack, switchBoundary: true, valid: true},
+		{name: "next before slack", docs: []document{{1, 0, 0}}, till: slack + 1, switchBoundary: true, valid: true},
 		{name: "next inside slack", docs: []document{{1, 0, 0}}, till: slack - 1, valid: true, incomingSend: true},
-		{name: "newest key authorizes current topology", docs: []document{{1, 0, 1}, {0, 0, 0}}, key: 1, till: slack, valid: true, incomingSend: true, outgoingSend: true},
+		{name: "newest key authorizes current topology", docs: []document{{1, 0, 1}, {0, 0, 0}}, key: 1, till: slack, switchBoundary: true, valid: true, incomingSend: true, outgoingSend: true},
 		{name: "newest key inside connect window authorizes current topology", docs: []document{{1, 0, 1}, {0, 0, 0}}, key: 1, till: slack - 1, valid: true, incomingSend: true, outgoingSend: true},
 		{name: "newest key inside connect window authorizes past topology", docs: []document{{1, 0, 1}, {0, 1, 1}, {-1, 0, 0}}, key: 1, till: slack - 1, valid: true, incomingSend: true, outgoingSend: true},
-		{name: "current key remains accepted after rotation", docs: []document{{1, 0, 1}, {0, 0, 0}}, key: 0, till: slack, valid: true, incomingSend: true, outgoingSend: true},
-		{name: "neither key matches", docs: []document{{1, 0, 1}, {0, 0, 0}}, key: 2, till: slack},
+		{name: "current key remains accepted after rotation", docs: []document{{1, 0, 1}, {0, 0, 0}}, key: 0, till: slack, switchBoundary: true, valid: true, incomingSend: true, outgoingSend: true},
+		{name: "neither key matches", docs: []document{{1, 0, 1}, {0, 0, 0}}, key: 2, till: slack, switchBoundary: true},
 		{name: "past without current document", docs: []document{{-1, 0, 0}}},
 		{name: "past with delisted identity", docs: []document{{0, -1, 0}, {-1, 0, 0}}},
 		{name: "past with identity still listed in other layer", docs: []document{{0, 1, 1}, {-1, 0, 0}}, valid: true, incomingSend: true, outgoingSend: true},
-		{name: "newest eligible key authorizes past topology", docs: []document{{1, 0, 1}, {0, 1, 1}, {-1, 0, 0}}, key: 1, till: slack, valid: true, incomingSend: true, outgoingSend: true},
-		{name: "newest key cannot bypass delisting", docs: []document{{1, 0, 1}, {0, -1, 0}, {-1, 0, 0}}, key: 1, till: slack, valid: true},
-		{name: "newest key cannot bypass missing current document", docs: []document{{1, 0, 1}, {-1, 0, 0}}, key: 1, till: slack, valid: true},
-		{name: "wrong direction key is not newest eligible key", docs: []document{{1, 1, 1}, {0, 0, 0}}, key: 1, till: slack},
+		{name: "newest eligible key authorizes past topology", docs: []document{{1, 0, 1}, {0, 1, 1}, {-1, 0, 0}}, key: 1, till: slack, switchBoundary: true, valid: true, incomingSend: true, outgoingSend: true},
+		{name: "newest key cannot bypass delisting", docs: []document{{1, 0, 1}, {0, -1, 0}, {-1, 0, 0}}, key: 1, till: slack, switchBoundary: true, valid: true},
+		{name: "newest key cannot bypass missing current document", docs: []document{{1, 0, 1}, {-1, 0, 0}}, key: 1, till: slack, switchBoundary: true, valid: true},
+		{name: "wrong direction key is not newest eligible key", docs: []document{{1, 1, 1}, {0, 0, 0}}, key: 1, till: slack, switchBoundary: true},
 		{name: "second past epoch is usable", docs: []document{{0, 1, 1}, {-2, 0, 0}}, valid: true, incomingSend: true, outgoingSend: true},
 	}
 	for _, outgoing := range []bool{false, true} {
@@ -137,30 +207,7 @@ func TestAuthenticateConnectionEpochsAndKeys(t *testing.T) {
 		t.Run(direction, func(t *testing.T) {
 			for _, tc := range cases {
 				t.Run(tc.name, func(t *testing.T) {
-					var docs []*pkicache.Entry
-					var current *pkicache.Entry
-					var newest *cpki.MixDescriptor
-					for _, spec := range tc.docs {
-						layer := spec.layer
-						if layer == 0 && outgoing {
-							layer = 2
-						} else if layer == 1 {
-							if outgoing {
-								layer = 0
-							} else {
-								layer = 2
-							}
-						}
-						epoch := uint64(int(now) + spec.offset)
-						entry, desc := f.entry(t, epoch, layer, spec.key)
-						docs = append(docs, entry)
-						if epoch == now {
-							current = entry
-						}
-						if newest == nil && spec.layer == 0 {
-							newest = desc
-						}
-					}
+					docs, current, newest := f.snapshot(t, now, tc.till, outgoing, !tc.switchBoundary, tc.docs)
 					id := hash.Sum256(f.peerBlob)
 					creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[tc.key]}
 					desc, send, valid := f.p.authenticateConnection(creds, outgoing, docs, current, now, tc.till)
@@ -245,8 +292,8 @@ func TestAuthenticateConnectionExportedMethod(t *testing.T) {
 		pastEntry, _ := f.entry(t, now-1, 0, 0)
 		currentEntry, _ := f.entry(t, now, -1, 0) // layer -1: peer omitted from current topology
 		f.p.docs = map[uint64]*pkicache.Entry{
-			now:   currentEntry,
-			now-1: pastEntry,
+			now:     currentEntry,
+			now - 1: pastEntry,
 		}
 		creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}
 		desc, send, valid := f.p.AuthenticateConnection(creds, false)
@@ -263,8 +310,8 @@ func TestAuthenticateConnectionExportedMethod(t *testing.T) {
 		pastEntry, _ := f.entry(t, now-1, 0, 0)
 		currentEntry, _ := f.entry(t, now, 0, 1)
 		f.p.docs = map[uint64]*pkicache.Entry{
-			now:   currentEntry,
-			now-1: pastEntry,
+			now:     currentEntry,
+			now - 1: pastEntry,
 		}
 		// Peer connects using the old key 0 from past document
 		creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}
