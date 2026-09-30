@@ -18,7 +18,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
-	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/common"
@@ -451,7 +451,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		// common.SafetyCap already exists for it.
 		ReadTimeout: noIdleReadTimeout,
 	}
-	envelopeScheme := nikeschemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
+	envelopeScheme := kemschemes.ByName(c.co.(*Connector).server.cfg.ReplicaKEMScheme)
 	isInitiator := true
 	w, err := wire.NewStorageReplicaSession(cfg, envelopeScheme, isInitiator)
 	if err != nil {
@@ -531,8 +531,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	// On each tick of the uniform random timer, send a real command
 	// if the queue has one, otherwise send a decoy.
 	outCh := make(chan commands.Command, c.co.Server().cfg.OutgoingQueueSize)
-	nikeScheme := nikeschemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
-	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
+	kemScheme := kemschemes.ByName(c.co.(*Connector).server.cfg.ReplicaKEMScheme)
+	cmds := commands.NewStorageReplicaCommands(c.geo, kemScheme)
 	sender := newOutgoingSender(c.ch, outCh, c.co.Server().cfg.DisableDecoyTraffic, c.co.Server().LogBackend(), cmds, c.dst.Name)
 
 	// We must call UpdateRate with a real LambdaR before activating the

@@ -6,15 +6,15 @@ package replica
 import (
 	"fmt"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 // ValidEnvelopeEpochWindow is the symmetric tolerance the replica
-// applies when decapsulating an inbound MKEM ciphertext. It MUST match
-// the courier's ValidCourierEnvelopeEpochWindow, so any envelope the
-// courier decided to forward has a matching private key to try here.
+// applies when decapsulating an inbound mrhybrid ciphertext. It MUST
+// match the courier's ValidCourierEnvelopeEpochWindow, so any envelope
+// the courier decided to forward has a matching private key to try here.
 //
 // A window of 1 means three candidate epochs at any moment:
 // {current-1, current, current+1}. See the Pigeonhole specification
@@ -24,16 +24,15 @@ const ValidEnvelopeEpochWindow uint64 = 1
 // epochWindowDeltas returns the epoch offsets to try, nearest first:
 // 0, -1, +1, -2, +2, and so on out to the window bound.
 //
-// The order is load-bearing. A failed MKEM decapsulation is not cheap:
-// scheme.Decapsulate computes a full CTIDH1024 NIKE group action to
-// derive the shared secret and only then discovers that the AEAD tag
-// does not verify. Trying a neighbouring epoch before the current one
-// therefore burns an entire group action on every inbound
-// ReplicaMessage. Replica epochs are a week long
-// (replicaCommon.ReplicaEpochPeriod), so the current epoch decapsulates
-// essentially all traffic and the neighbours are the rare boundary
-// case; leading with the current epoch halves the CTIDH cost of the
-// busiest path in the replica.
+// The order is load-bearing. A failed decapsulation is not cheap:
+// scheme.Decapsulate runs a full KEM decapsulation to derive the shared
+// secret and only then discovers that the AEAD tag does not verify.
+// Trying a neighbouring epoch before the current one therefore burns an
+// entire KEM decapsulation on every inbound ReplicaMessage. Replica
+// epochs are a week long (replicaCommon.ReplicaEpochPeriod), so the
+// current epoch decapsulates essentially all traffic and the neighbours
+// are the rare boundary case; leading with the current epoch halves the
+// decapsulation cost of the busiest path in the replica.
 func epochWindowDeltas(window int64) []int64 {
 	deltas := make([]int64, 0, 2*window+1)
 	deltas = append(deltas, 0)
@@ -43,11 +42,11 @@ func epochWindowDeltas(window int64) []int64 {
 	return deltas
 }
 
-// tryDecapsulateAcrossEpochWindow attempts MKEM decapsulation using
-// each envelope keypair in the replica's epoch-tolerance window.
-// Returns the decrypted plaintext plus the replica-epoch whose keypair
-// succeeded, or a non-nil error if no available key can decapsulate
-// the ciphertext.
+// tryDecapsulateAcrossEpochWindow attempts decapsulation using each
+// envelope keypair in the replica's epoch-tolerance window. Returns the
+// derived key and decrypted plaintext plus the replica-epoch whose
+// keypair succeeded, or a non-nil error if no available key can
+// decapsulate the ciphertext.
 //
 // Candidates are tried nearest-first, {current, current-1,
 // current+1}; see epochWindowDeltas for why the order matters.
@@ -58,10 +57,10 @@ func epochWindowDeltas(window int64) []int64 {
 // every candidate has been tried.
 func tryDecapsulateAcrossEpochWindow(
 	keys *EnvelopeKeys,
-	scheme *mkem.Scheme,
-	ct *mkem.Ciphertext,
+	scheme *mrhybrid.Scheme,
+	ct *mrhybrid.Ciphertext,
 	currentEpoch uint64,
-) ([]byte, *replicaCommon.EnvelopeKey, uint64, error) {
+) ([]byte, []byte, *replicaCommon.EnvelopeKey, uint64, error) {
 	var lastErr error
 	for _, delta := range epochWindowDeltas(int64(ValidEnvelopeEpochWindow)) {
 		if delta < 0 && uint64(-delta) > currentEpoch {
@@ -74,18 +73,18 @@ func tryDecapsulateAcrossEpochWindow(
 		if err != nil {
 			continue
 		}
-		plaintext, err := scheme.Decapsulate(keypair.PrivateKey, ct)
+		derivedKey, plaintext, err := scheme.Decapsulate(keypair.PrivateKey, ct)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		return plaintext, keypair, epoch, nil
+		return derivedKey, plaintext, keypair, epoch, nil
 	}
 	if lastErr == nil {
-		return nil, nil, 0, fmt.Errorf(
+		return nil, nil, nil, 0, fmt.Errorf(
 			"no envelope keys available in tolerance window around replica epoch %d",
 			currentEpoch,
 		)
 	}
-	return nil, nil, 0, lastErr
+	return nil, nil, nil, 0, lastErr
 }

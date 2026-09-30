@@ -10,16 +10,17 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/rand"
 
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
-// The replica startup self-check times MKEM (CTIDH1024-X25519)
-// Decapsulate operations against a freshly generated keypair and
-// publishes the result to prometheus. Two modes are measured:
+// The replica startup self-check times mrhybrid (currently
+// mceliece348864-X25519) Decapsulate operations against a freshly
+// generated keypair and publishes the result to prometheus. Two modes
+// are measured:
 //
 //  1. "solo": a single goroutine running Decapsulate back-to-back. This
 //     is the best-case per-core throughput and represents what a
@@ -29,7 +30,7 @@ import (
 //  2. "saturated": runtime.NumCPU goroutines all running Decapsulate
 //     concurrently. The replica process is fully loaded on every core,
 //     which mimics what happens when its own request handlers all hit
-//     CTIDH at once, OR when sibling replicas on the same host are
+//     the KEM at once, OR when sibling replicas on the same host are
 //     also computing. The aggregate ops/sec from this mode is the
 //     realistic ceiling for a CPU-saturated replica process on a
 //     contended host.
@@ -74,39 +75,39 @@ type MKEMSelfCheckResult struct {
 // a structured result for callers that need to consume the numbers
 // directly, e.g. for ProxyWorkerCount recommendations.
 func runMKEMSelfCheck(log *logging.Logger) MKEMSelfCheckResult {
-	scheme := replicaCommon.MKEMNikeScheme
-	nikeScheme := replicaCommon.NikeScheme
+	scheme := replicaCommon.MRHybridScheme
+	kemScheme := replicaCommon.KEMScheme
 	numCPU := runtime.NumCPU()
 
-	pubKey, privKey, err := nikeScheme.GenerateKeyPair()
+	pubKey, privKey, err := kemScheme.GenerateKeyPair()
 	if err != nil {
-		log.Warningf("self-check: GenerateKeyPair failed (%v); skipping CTIDH self-check", err)
+		log.Warningf("self-check: GenerateKeyPair failed (%v); skipping self-check", err)
 		return MKEMSelfCheckResult{NumCPU: numCPU}
 	}
 
 	payload := make([]byte, mkemSelfCheckPayload)
 	if _, err := rand.Reader.Read(payload); err != nil {
-		log.Warningf("self-check: rand.Read failed (%v); skipping CTIDH self-check", err)
+		log.Warningf("self-check: rand.Read failed (%v); skipping self-check", err)
 		return MKEMSelfCheckResult{NumCPU: numCPU}
 	}
 
 	// Build a representative ciphertext once. Decapsulate is the hot
 	// path; Encapsulate happens at lower frequency on the reply side
 	// so we don't bench it.
-	_, ct, err := scheme.Encapsulate([]nike.PublicKey{pubKey}, payload)
+	_, ct, err := scheme.Encapsulate([]kem.PublicKey{pubKey}, payload)
 	if err != nil {
-		log.Warningf("self-check: Encapsulate failed (%v); skipping CTIDH self-check", err)
+		log.Warningf("self-check: Encapsulate failed (%v); skipping self-check", err)
 		return MKEMSelfCheckResult{NumCPU: numCPU}
 	}
 
 	// Solo mode: warm up, then time mkemSelfCheckIterations ops in one
 	// goroutine.
 	for i := 0; i < mkemSelfCheckWarmup; i++ {
-		_, _ = scheme.Decapsulate(privKey, ct)
+		_, _, _ = scheme.Decapsulate(privKey, ct)
 	}
 	start := time.Now()
 	for i := 0; i < mkemSelfCheckIterations; i++ {
-		if _, err := scheme.Decapsulate(privKey, ct); err != nil {
+		if _, _, err := scheme.Decapsulate(privKey, ct); err != nil {
 			log.Warningf("self-check: solo Decapsulate failed at iter %d (%v); skipping", i, err)
 			return MKEMSelfCheckResult{NumCPU: numCPU}
 		}
@@ -127,7 +128,7 @@ func runMKEMSelfCheck(log *logging.Logger) MKEMSelfCheckResult {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < mkemSelfCheckSaturatedIterations; i++ {
-				if _, err := scheme.Decapsulate(privKey, ct); err != nil {
+				if _, _, err := scheme.Decapsulate(privKey, ct); err != nil {
 					return
 				}
 			}
@@ -139,10 +140,10 @@ func runMKEMSelfCheck(log *logging.Logger) MKEMSelfCheckResult {
 
 	// Scaling factor: a perfectly parallel CPU would achieve numCPU *
 	// opsPerSecSolo at saturation. The ratio between the measured
-	// saturated rate and this ideal tells ops teams how
-	// well their cores actually scale for CTIDH, which depends on the
-	// host's thermal headroom, SMT/hyperthreading, and any cgroup or
-	// container CPU limits in effect.
+	// saturated rate and this ideal tells ops teams how well their
+	// cores actually scale for this KEM's decapsulation, which depends
+	// on the host's thermal headroom, SMT/hyperthreading, and any
+	// cgroup or container CPU limits in effect.
 	idealAggregate := opsPerSecSolo * float64(numCPU)
 	var scaling float64
 	if idealAggregate > 0 {
@@ -150,7 +151,7 @@ func runMKEMSelfCheck(log *logging.Logger) MKEMSelfCheckResult {
 	}
 
 	log.Noticef(
-		"CTIDH self-check: solo=%.2f ops/s/core (one op ≈ %s); "+
+		"Envelope KEM self-check: solo=%.2f ops/s/core (one op ≈ %s); "+
 			"saturated (NumCPU=%d goroutines in parallel)=%.2f aggregate ops/s; "+
 			"scaling efficiency=%.0f%% of solo×NumCPU. "+
 			"Use the saturated number as the realistic per-replica ceiling on this host; "+

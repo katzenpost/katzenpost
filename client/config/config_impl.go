@@ -32,7 +32,7 @@ import (
 // table in the file is rejected at load time. FixupAndValidate proves the
 // derivation succeeds, so the panic here is unreachable for a loaded config.
 func (c *Config) PigeonholeGeometry() *pigeonholeGeo.Geometry {
-	derived, err := pigeonholeGeo.NewGeometryFromSphinx(c.SphinxGeometry, replicaCommon.NikeScheme)
+	derived, err := pigeonholeGeo.NewGeometryFromSphinx(c.SphinxGeometry, replicaCommon.KEMScheme)
 	if err != nil {
 		panic(fmt.Sprintf("config: cannot derive a Pigeonhole geometry from the SphinxGeometry: %v", err))
 	}
@@ -65,7 +65,7 @@ func (c *Config) FixupAndValidate() error {
 	// Fail fast if the Sphinx geometry cannot yield a Pigeonhole geometry;
 	// the daemon derives the Pigeonhole geometry from it at runtime via the
 	// PigeonholeGeometry accessor.
-	if _, err = pigeonholeGeo.NewGeometryFromSphinx(c.SphinxGeometry, replicaCommon.NikeScheme); err != nil {
+	if _, err = pigeonholeGeo.NewGeometryFromSphinx(c.SphinxGeometry, replicaCommon.KEMScheme); err != nil {
 		return fmt.Errorf("config: cannot derive a Pigeonhole geometry from the SphinxGeometry: %w", err)
 	}
 	// Handle missing sections if possible.

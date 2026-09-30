@@ -9,9 +9,8 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
-	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
@@ -146,7 +145,7 @@ func (d *Daemon) encryptRead(request *Request) {
 	}
 
 	// Create the envelope with padding so reads are indistinguishable from writes
-	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, true, 0, d.cfg.PigeonholeGeometry())
+	courierEnvelope, derivedKeys, err := createEnvelopeFromMessageWithPadding(msg, doc, true, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to create envelope: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
@@ -159,7 +158,7 @@ func (d *Daemon) encryptRead(request *Request) {
 	envelopeDesc := &EnvelopeDescriptor{
 		Epoch:       replicaEpoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
-		EnvelopeKey: envelopePrivateKey.Bytes(),
+		DerivedKeys: derivedKeys,
 	}
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
@@ -329,7 +328,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 	}
 
 	// Create the envelope with padding so tombstones are indistinguishable from normal writes
-	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, false, 0, d.cfg.PigeonholeGeometry())
+	courierEnvelope, derivedKeys, err := createEnvelopeFromMessageWithPadding(msg, doc, false, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to create envelope: %v", err)
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
@@ -342,7 +341,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 	envelopeDesc := &EnvelopeDescriptor{
 		Epoch:       replicaEpoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
-		EnvelopeKey: envelopePrivateKey.Bytes(),
+		DerivedKeys: derivedKeys,
 	}
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
@@ -443,7 +442,7 @@ func writeInnerMessage(boxID [bacap.BoxIDSize]byte, ciphertext []byte, sig [baca
 	}
 }
 
-// buildCourierEnvelope MKEM-encrypts a ReplicaInnerMessage to the two
+// buildCourierEnvelope mrhybrid-encrypts a ReplicaInnerMessage to the two
 // intermediate replicas responsible for boxID and wraps the result in a
 // CourierEnvelope carrying the supplied replicaEpoch. Shared by every
 // caller that produces envelopes from a constructed inner message:
@@ -458,19 +457,20 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 	if err != nil {
 		return nil, fmt.Errorf("failed to pad inner message: %w", err)
 	}
-	mkemPrivateKey, mkemCiphertext, err := replicaCommon.MKEMNikeScheme.Encapsulate(replicaPubKeys, paddedMsg)
+	_, mkemCiphertext, err := replicaCommon.MRHybridScheme.Encapsulate(replicaPubKeys, paddedMsg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encapsulate: %w", err)
 	}
-	senderPubkey := mkemPrivateKey.Public().Bytes()
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkey)),
-		SenderPubkey:         senderPubkey,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
 	}, nil
@@ -1119,11 +1119,11 @@ func (d *Daemon) sendGetDirectoryAuthoritiesError(request *Request, errorCode ui
 }
 
 // createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
-func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, [2][]byte, error) {
 	return createEnvelopeFromMessageWithPadding(msg, doc, isRead, replyIndex, nil)
 }
 
-func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8, geo *pigeonholeGeo.Geometry) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8, geo *pigeonholeGeo.Geometry) (*pigeonhole.CourierEnvelope, [2][]byte, error) {
 	var boxid *[bacap.BoxIDSize]byte
 	if isRead {
 		boxid = &msg.ReadMsg.BoxID
@@ -1132,7 +1132,7 @@ func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, d
 	}
 	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxid)
 	if err != nil {
-		return nil, nil, err
+		return nil, [2][]byte{}, err
 	}
 
 	// Pad the inner message to the write size so tombstones are
@@ -1141,25 +1141,22 @@ func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, d
 	if geo != nil {
 		msgBytes, err = pigeonhole.PadInnerMessageForEncryption(msg, geo)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to pad inner message: %w", err)
+			return nil, [2][]byte{}, fmt.Errorf("failed to pad inner message: %w", err)
 		}
 	} else {
 		msgBytes = msg.Bytes()
 	}
 
-	mkemPrivateKey, mkemCiphertext, err := replicaCommon.MKEMNikeScheme.Encapsulate(
+	derivedKeys, mkemCiphertext, err := replicaCommon.MRHybridScheme.Encapsulate(
 		replicaPubKeys, msgBytes,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to encapsulate: %w", err)
+		return nil, [2][]byte{}, fmt.Errorf("failed to encapsulate: %w", err)
 	}
-	mkemPublicKey := mkemPrivateKey.Public()
 
 	var dek1, dek2 [60]uint8
 	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
 	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
-
-	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	// Convert PKI epoch to replica epoch for the CourierEnvelope
 	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
@@ -1170,12 +1167,14 @@ func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, d
 		Dek2:                 dek2,
 		ReplyIndex:           replyIndex,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
-	return envelope, mkemPrivateKey, nil
+	return envelope, [2][]byte{derivedKeys[0], derivedKeys[1]}, nil
 }
 
 // startResendingEncryptedMessage starts resending an encrypted Pigeonhole message
@@ -2052,16 +2051,8 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 	}
 	d.log.Debugf("decryptPigeonholeReply: EnvelopeDescriptor deserialized, ReplicaNums: %v", envelopeDesc.ReplicaNums)
 
-	// Reconstruct the NIKE private key
-	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
-	if err != nil {
-		d.log.Errorf("decryptPigeonholeReply: Failed to unmarshal private key: %v", err)
-		return nil, err
-	}
-	d.log.Debugf("decryptPigeonholeReply: Private key reconstructed")
-
 	// Reuse the existing decryptMKEMEnvelope function
-	innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
+	innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc)
 	if err != nil {
 		d.log.Errorf("decryptPigeonholeReply: Failed to decrypt MKEM envelope: %v", err)
 		return nil, err

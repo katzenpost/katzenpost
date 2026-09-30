@@ -60,17 +60,16 @@ func PadReplyInnerMessageForEncryption(msg *ReplicaMessageReplyInnerMessage, geo
 
 // Helper functions for backward compatibility with the old methods.go file
 
-// EnvelopeHash returns the hash of the CourierEnvelope.
+// EnvelopeHash returns the hash of the CourierEnvelope. It hashes only
+// the shared Ciphertext (the envelope, identical for both intermediate
+// replicas), not the per-recipient KemCiphertext1/KemCiphertext2:
+// commands.ReplicaMessage.EnvelopeHash() must produce this same value
+// for either of the two ReplicaMessages the courier splits this
+// envelope into (each carrying only its own recipient's KEM
+// ciphertext), since a replica's reply is correlated back to this
+// envelope's dedup-cache entry by that shared hash.
 func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
 	h, err := blake2b.New256(nil)
-	if err != nil {
-		panic(err)
-	}
-	_, err = h.Write(c.KemCiphertext1)
-	if err != nil {
-		panic(err)
-	}
-	_, err = h.Write(c.KemCiphertext2)
 	if err != nil {
 		panic(err)
 	}

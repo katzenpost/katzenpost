@@ -20,7 +20,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
-	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
@@ -441,7 +440,7 @@ func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 		ReadTimeout:       noIdleReadTimeout,
 	}
 
-	envelopeScheme := nikeSchemes.ByName(c.cfg.EnvelopeScheme)
+	envelopeScheme := kemSchemes.ByName(c.cfg.EnvelopeScheme)
 	isInitiator := true
 	w, err := wire.NewStorageReplicaSession(cfg, envelopeScheme, isInitiator)
 	if err != nil {
@@ -751,7 +750,7 @@ func (c *outgoingConn) warnUnknownCommandOnce(cmd commands.Command) {
 func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *config.Config, courier *Courier) *outgoingConn {
 	linkScheme := kemSchemes.ByName(cfg.WireKEMScheme)
 	idScheme := signSchemes.ByName(cfg.PKIScheme)
-	envelopeScheme := nikeSchemes.ByName(cfg.EnvelopeScheme)
+	envelopeScheme := kemSchemes.ByName(cfg.EnvelopeScheme)
 
 	c := &outgoingConn{
 		linkScheme: linkScheme,

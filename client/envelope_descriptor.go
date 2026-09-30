@@ -37,8 +37,10 @@ type EnvelopeDescriptor struct {
 	// ReplicaNums are the replica numbers used for this envelope.
 	ReplicaNums [2]uint8
 
-	// EnvelopeKey is the Private NIKE Key used with our MKEM scheme.
-	EnvelopeKey []byte
+	// DerivedKeys are the mrhybrid derived symmetric keys returned by
+	// Encapsulate, index-aligned with ReplicaNums: DerivedKeys[i] opens
+	// the reply from ReplicaNums[i].
+	DerivedKeys [2][]byte
 }
 
 // Bytes uses CBOR to serialize the EnvelopeDescriptor.

@@ -16,9 +16,9 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/client/constants"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -70,7 +70,7 @@ type Courier struct {
 
 	cmds           *commands.Commands
 	geo            *geo.Geometry
-	envelopeScheme nike.Scheme
+	envelopeScheme kem.Scheme
 	pigeonholeGeo  *pigeonholeGeo.Geometry
 
 	dedupCacheLock sync.RWMutex
@@ -261,7 +261,7 @@ const maxConcurrentReplicaDispatch = 256
 const maxConcurrentReplyWrites = 256
 
 // NewCourier returns a new Courier type.
-func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
+func NewCourier(s *Server, cmds *commands.Commands, scheme kem.Scheme) *Courier {
 	pigeonholeGeo, err := pigeonholeGeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, scheme)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create pigeonhole geometry: %v", err))
@@ -513,7 +513,7 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 		PigeonholeGeometry: e.pigeonholeGeo,
 		Scheme:             e.envelopeScheme,
 
-		SenderEPubKey: courierMessage.SenderPubkey,
+		KEMCiphertext: courierMessage.KemCiphertext1,
 		DEK:           &courierMessage.Dek1,
 		Ciphertext:    courierMessage.Ciphertext,
 	}
@@ -530,7 +530,7 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 		PigeonholeGeometry: e.pigeonholeGeo,
 		Scheme:             e.envelopeScheme,
 
-		SenderEPubKey: courierMessage.SenderPubkey,
+		KEMCiphertext: courierMessage.KemCiphertext2,
 		DEK:           &courierMessage.Dek2,
 		Ciphertext:    courierMessage.Ciphertext,
 	}
@@ -1282,7 +1282,7 @@ func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeo
 			lastErr = fmt.Errorf("no envelope key for shard %d at epoch %d", shard.ReplicaID, replicaEpoch)
 			continue
 		}
-		shardPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
+		shardPubKey, err := replicaCommon.KEMScheme.UnmarshalBinaryPublicKey(keyBytes)
 		if err != nil {
 			lastErr = fmt.Errorf("unmarshal shard %d key: %w", shard.ReplicaID, err)
 			continue
@@ -1325,15 +1325,15 @@ func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeo
 	return nil, lastReplicaCode, lastErr
 }
 
-// tryReadFromShardReplica performs a single MKEM-encrypted read to one
-// specific shard replica, waits for the reply with a timeout, and
+// tryReadFromShardReplica performs a single mrhybrid-encrypted read to
+// one specific shard replica, waits for the reply with a timeout, and
 // returns the parsed ReplicaReadReply plus the replica's ErrorCode
 // (0 on success). A non-nil error signals a transport / crypto /
 // timeout failure — the caller should retry under its transient budget.
 func (e *Courier) tryReadFromShardReplica(
 	boxID *[bacap.BoxIDSize]byte,
 	shard *cpki.ReplicaDescriptor,
-	shardPubKey nike.PublicKey,
+	shardPubKey kem.PublicKey,
 ) (*pigeonhole.ReplicaReadReply, uint8, error) {
 	readMsg := &pigeonhole.ReplicaRead{BoxID: *boxID}
 	innerMsg := &pigeonhole.ReplicaInnerMessage{
@@ -1342,18 +1342,18 @@ func (e *Courier) tryReadFromShardReplica(
 	}
 
 	// Length-prefix-and-pad so the replica's
-	// ExtractMessageFromPaddedPayload recovers the exact bytes after MKEM
-	// decryption. The pigeonhole protocol pads every inbound inner
-	// message regardless of read vs write.
+	// ExtractMessageFromPaddedPayload recovers the exact bytes after
+	// envelope decryption. The pigeonhole protocol pads every inbound
+	// inner message regardless of read vs write.
 	paddedInnerMsg, err := pigeonhole.PadInnerMessageForEncryption(innerMsg, e.pigeonholeGeo)
 	if err != nil {
 		return nil, 0, fmt.Errorf("pad inner read message: %w", err)
 	}
 
-	mkemScheme := mkem.NewScheme(e.envelopeScheme)
+	mkemScheme := mrhybrid.NewScheme(e.envelopeScheme)
 	totalStart := time.Now()
 	encapStart := totalStart
-	mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
+	derivedKeys, mkemCiphertext, err := mkemScheme.Encapsulate([]kem.PublicKey{shardPubKey}, paddedInnerMsg)
 	if err != nil {
 		return nil, 0, fmt.Errorf("encapsulate: %w", err)
 	}
@@ -1363,8 +1363,8 @@ func (e *Courier) tryReadFromShardReplica(
 		Cmds:               e.cmds,
 		PigeonholeGeometry: e.pigeonholeGeo,
 		Scheme:             e.envelopeScheme,
-		SenderEPubKey:      mkemPrivateKey.Public().Bytes(),
-		DEK:                (*[mkem.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[0]),
+		KEMCiphertext:      mkemCiphertext.KEMCiphertexts[0],
+		DEK:                (*[mrhybrid.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[0]),
 		Ciphertext:         mkemCiphertext.Envelope,
 	}
 	envHash := query.EnvelopeHash()
@@ -1395,7 +1395,7 @@ func (e *Courier) tryReadFromShardReplica(
 	}
 
 	decapStart := time.Now()
-	raw, err := mkemScheme.DecryptEnvelope(mkemPrivateKey, shardPubKey, reply.EnvelopeReply)
+	raw, err := mkemScheme.DecryptEnvelope(derivedKeys[0], reply.EnvelopeReply)
 	if err != nil {
 		return nil, 0, fmt.Errorf("shard %d: decrypt envelope: %w", shard.ReplicaID, err)
 	}
@@ -1490,7 +1490,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 		// If BOTH keys are unusable, skip this box.
 		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 		usableReplicaIDs := make([]uint8, 0, 2)
-		usablePubKeys := make([]nike.PublicKey, 0, 2)
+		usablePubKeys := make([]kem.PublicKey, 0, 2)
 		for _, shard := range shards {
 			keyBytes, exists := shard.EnvelopeKeys[replicaEpoch]
 			if !exists {
@@ -1528,33 +1528,33 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 		}
 
 		// Length-prefix-and-pad to match the inbound inner-message
-		// format the replica expects after MKEM decryption.
+		// format the replica expects after envelope decryption.
 		paddedInnerMsg, err := pigeonhole.PadInnerMessageForEncryption(innerMsg, e.pigeonholeGeo)
 		if err != nil {
 			e.log.Errorf("writeTombstone: pad inner message: %v", err)
 			continue
 		}
 
-		// Encrypt using MKEM for whichever shard keys we have.
-		mkemScheme := mkem.NewScheme(e.envelopeScheme)
-		mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
+		// Encrypt using mrhybrid for whichever shard keys we have.
+		mkemScheme := mrhybrid.NewScheme(e.envelopeScheme)
+		_, mkemCiphertext, err := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
 		if err != nil {
 			e.log.Errorf("writeTombstone: encapsulate: %v", err)
 			continue
 		}
-		mkemPublicKey := mkemPrivateKey.Public()
 
-		// Build per-replica ReplicaMessages (all share SenderEPubKey +
-		// Envelope, so they produce the same EnvelopeHash; reply demux
-		// in copyCache uses that single key).
+		// Build per-replica ReplicaMessages: each carries its own
+		// recipient's KEM ciphertext and DEK, but all share Envelope, so
+		// they produce the same EnvelopeHash; reply demux in copyCache
+		// uses that single key.
 		messages := make([]*commands.ReplicaMessage, len(usableReplicaIDs))
 		for j := range usableReplicaIDs {
 			messages[j] = &commands.ReplicaMessage{
 				Cmds:               e.cmds,
 				PigeonholeGeometry: e.pigeonholeGeo,
 				Scheme:             e.envelopeScheme,
-				SenderEPubKey:      mkemPublicKey.Bytes(),
-				DEK:                (*[mkem.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[j]),
+				KEMCiphertext:      mkemCiphertext.KEMCiphertexts[j],
+				DEK:                (*[mrhybrid.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[j]),
 				Ciphertext:         mkemCiphertext.Envelope,
 			}
 		}

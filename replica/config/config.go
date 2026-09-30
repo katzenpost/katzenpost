@@ -64,8 +64,9 @@ type Config struct {
 	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 
-	// ReplicaNIKEScheme specifies the cryptographic signature scheme
-	ReplicaNIKEScheme string
+	// ReplicaKEMScheme specifies the KEM scheme used for encrypting
+	// Pigeonhole envelopes to this replica (mrhybrid).
+	ReplicaKEMScheme string
 
 	// SphinxGeometry is the Sphinx Geometry being used on the mixnet.
 	SphinxGeometry *geo.Geometry
@@ -374,8 +375,8 @@ func (c *Config) validateRequiredFields() error {
 	if c.PKISignatureScheme == "" {
 		return errors.New("config: Server: PKISignatureScheme is not set")
 	}
-	if c.ReplicaNIKEScheme == "" {
-		return errors.New("config: Server: ReplicaNIKEScheme is not set")
+	if c.ReplicaKEMScheme == "" {
+		return errors.New("config: Server: ReplicaKEMScheme is not set")
 	}
 	if c.SphinxGeometry == nil {
 		return errors.New("config: SphinxGeometry must not be nil")

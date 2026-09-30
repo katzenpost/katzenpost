@@ -215,12 +215,15 @@ type ReplicaMessage struct {
 
 func (c *ReplicaMessage) String() string { return "ReplicaMessage" }
 
+// EnvelopeHash hashes only the shared Ciphertext (the envelope,
+// identical across both intermediate replicas' ReplicaMessages for a
+// given CourierEnvelope), not the per-recipient KEMCiphertext: it must
+// match pigeonhole.CourierEnvelope.EnvelopeHash() for whichever
+// ReplicaMessage a replica is replying to, since the courier correlates
+// that reply back to its dedup-cache entry (keyed by the original
+// CourierEnvelope's hash) via this value.
 func (c *ReplicaMessage) EnvelopeHash() *[hash.HashSize]byte {
 	h, err := blake2b.New256(nil)
-	if err != nil {
-		panic(err)
-	}
-	_, err = h.Write(c.KEMCiphertext)
 	if err != nil {
 		panic(err)
 	}

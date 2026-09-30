@@ -10,8 +10,6 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/hpqc/nike"
-
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
@@ -21,8 +19,6 @@ var defaultCleanupInterval = 30 * time.Second
 // ProxyRequest represents a pending proxy request
 type ProxyRequest struct {
 	ResponseCh      chan *commands.ReplicaMessageReply
-	MKEMPrivateKey  nike.PrivateKey
-	TargetPublicKey nike.PublicKey
 	OriginalRequest *commands.ReplicaMessage
 	Timestamp       time.Time
 	PeerIDHash      [32]byte
@@ -75,7 +71,7 @@ func (p *ProxyRequestManager) publishPendingLocked() {
 }
 
 // RegisterProxyRequest registers a new proxy request and returns a response channel
-func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPrivateKey nike.PrivateKey, targetPublicKey nike.PublicKey, originalRequest *commands.ReplicaMessage, peerIDHash [32]byte, peerName string) chan *commands.ReplicaMessageReply {
+func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, originalRequest *commands.ReplicaMessage, peerIDHash [32]byte, peerName string) chan *commands.ReplicaMessageReply {
 	p.Lock()
 	defer p.Unlock()
 
@@ -83,8 +79,6 @@ func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPr
 
 	p.pendingRequests[envelopeHash] = &ProxyRequest{
 		ResponseCh:      responseCh,
-		MKEMPrivateKey:  mkemPrivateKey,
-		TargetPublicKey: targetPublicKey,
 		OriginalRequest: originalRequest,
 		Timestamp:       time.Now(),
 		PeerIDHash:      peerIDHash,

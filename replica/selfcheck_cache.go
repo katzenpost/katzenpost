@@ -13,12 +13,12 @@ import (
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
-// loadOrRunMKEMSelfCheck returns the saturated and solo CTIDH MKEM
+// loadOrRunMKEMSelfCheck returns the saturated and solo envelope KEM
 // measurement for this host. On first call for a given DataDir it
 // runs the live self-check via runMKEMSelfCheck and persists the
 // result to <DataDir>/selfcheck.toml; on subsequent calls (and
 // across daemon restarts) it loads the cached result, so the
-// replica daemon pays the multi-second CTIDH cost only once per
+// replica daemon pays the self-check's cost only once per
 // host. The cache is invalidated automatically when runtime.NumCPU
 // or the hostname changes; an operator forcing a fresh measurement
 // (CPU upgrade, cgroup change) deletes the sidecar file by hand.
@@ -33,7 +33,7 @@ import (
 func loadOrRunMKEMSelfCheck(log *logging.Logger, dataDir string) MKEMSelfCheckResult {
 	if cached, err := selfcheckcache.Load(dataDir); err == nil {
 		log.Noticef(
-			"CTIDH self-check: loaded cached measurement from %s "+
+			"Envelope KEM self-check: loaded cached measurement from %s "+
 				"(NumCPU=%d, solo=%.2f ops/s/core, saturated=%.2f aggregate ops/s, "+
 				"measured %s on host %q); skipping live self-check. "+
 				"Delete the sidecar file to force a fresh measurement.",

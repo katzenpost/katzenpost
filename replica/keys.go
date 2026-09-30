@@ -12,7 +12,7 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/kem"
 
 	"github.com/katzenpost/katzenpost/core/worker"
 )
@@ -27,13 +27,13 @@ type EnvelopeKeys struct {
 
 	log     *logging.Logger
 	datadir string
-	scheme  nike.Scheme
+	scheme  kem.Scheme
 
 	keysLock *sync.RWMutex
 	keys     map[uint64]*replicaCommon.EnvelopeKey
 }
 
-func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, epoch uint64) (*EnvelopeKeys, error) {
+func NewEnvelopeKeys(scheme kem.Scheme, log *logging.Logger, datadir string, epoch uint64) (*EnvelopeKeys, error) {
 	e := &EnvelopeKeys{
 		datadir:  datadir,
 		log:      log,

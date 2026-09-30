@@ -17,7 +17,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -472,10 +472,10 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 		s.log.Errorf("state: Failed to deserialize box from blob: %s", err)
 		return nil, err
 	}
-	scheme := schemes.ByName(s.server.cfg.ReplicaNIKEScheme)
+	scheme := schemes.ByName(s.server.cfg.ReplicaKEMScheme)
 	if scheme == nil {
-		s.log.Errorf("state: Scheme %s doesn't exist", s.server.cfg.ReplicaNIKEScheme)
-		panic(fmt.Sprintf("scheme %s doesn't exist", s.server.cfg.ReplicaNIKEScheme))
+		s.log.Errorf("state: Scheme %s doesn't exist", s.server.cfg.ReplicaKEMScheme)
+		panic(fmt.Sprintf("scheme %s doesn't exist", s.server.cfg.ReplicaKEMScheme))
 	}
 	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry, scheme)
 	// Convert array types to pointer types for wire commands
