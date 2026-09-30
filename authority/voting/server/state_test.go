@@ -85,7 +85,7 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 	runVoteScenario(t, authNum, votingEpoch+5, nil)
 }
 
-func runVoteScenario(t *testing.T, authNum int, votingEpoch uint64, prior *pki.Document) []*pki.Document {
+func buildScenarioStates(t *testing.T, authNum int, votingEpoch uint64, prior *pki.Document) ([]*state, []*config.Config) {
 	require := require.New(t)
 	stateAuthority := make([]*state, authNum)
 	parameters := &config.Parameters{
@@ -245,6 +245,10 @@ func runVoteScenario(t *testing.T, authNum int, votingEpoch uint64, prior *pki.D
 	for i := 0; i < len(stateAuthority); i++ {
 		stateAuthority[i].reverseHash = reverseHash
 		stateAuthority[i].authorityNames = authorityNames
+		stateAuthority[i].authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
+		for j := range peerKeys {
+			stateAuthority[i].authorizedAuthorities[hash.Sum256From(peerKeys[j].idPubKey)] = true
+		}
 	}
 
 	// post descriptors from nodes
@@ -330,6 +334,12 @@ func runVoteScenario(t *testing.T, authNum int, votingEpoch uint64, prior *pki.D
 		}
 	}
 
+	return stateAuthority, authCfgs
+}
+
+func runVoteScenario(t *testing.T, authNum int, votingEpoch uint64, prior *pki.Document) []*pki.Document {
+	require := require.New(t)
+	stateAuthority, authCfgs := buildScenarioStates(t, authNum, votingEpoch, prior)
 	// exchange votes
 	for i, s := range stateAuthority {
 		s.votingEpoch = votingEpoch
