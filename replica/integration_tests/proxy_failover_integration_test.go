@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/constants"
@@ -36,13 +36,13 @@ func waitForReplicasReady(t *testing.T, env *testEnvironment) {
 
 // nonShardReplicas picks two replicas that do not hold the box, so a
 // read addressed to them is forced down the proxy path.
-func nonShardReplicas(t *testing.T, env *testEnvironment, sharding *shardingResult, replicaEpoch uint64) ([2]uint8, []nike.PublicKey) {
+func nonShardReplicas(t *testing.T, env *testEnvironment, sharding *shardingResult, replicaEpoch uint64) ([2]uint8, []kem.PublicKey) {
 	t.Helper()
 	currentEpoch, _, _ := epochtime.Now()
 	doc := env.mockPKIClient.docs[currentEpoch]
 
 	var indices [2]uint8
-	pubKeys := make([]nike.PublicKey, 2)
+	pubKeys := make([]kem.PublicKey, 2)
 	found := 0
 	for i := 0; i < len(doc.StorageReplicas) && found < 2; i++ {
 		isShard := false
@@ -55,7 +55,7 @@ func nonShardReplicas(t *testing.T, env *testEnvironment, sharding *shardingResu
 		if isShard {
 			continue
 		}
-		pubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(
+		pubKey, err := replicaCommon.KEMScheme.UnmarshalBinaryPublicKey(
 			doc.StorageReplicas[i].EnvelopeKeys[replicaEpoch])
 		require.NoError(t, err)
 		indices[found] = uint8(i)
@@ -68,7 +68,7 @@ func nonShardReplicas(t *testing.T, env *testEnvironment, sharding *shardingResu
 
 // proxyRead sends a read for boxID to replicas that do not hold it, so
 // they must proxy to the holders, and returns the decrypted reply.
-func proxyRead(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte, indices [2]uint8, pubKeys []nike.PublicKey, replicaEpoch uint64) *pigeonhole.ReplicaMessageReplyInnerMessage {
+func proxyRead(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte, indices [2]uint8, pubKeys []kem.PublicKey, replicaEpoch uint64) *pigeonhole.ReplicaMessageReplyInnerMessage {
 	t.Helper()
 
 	readMsg := &pigeonhole.ReplicaInnerMessage{
@@ -78,18 +78,19 @@ func proxyRead(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte,
 	paddedReadMsg, err := pigeonhole.PadInnerMessageForEncryption(readMsg, env.geometry)
 	require.NoError(t, err)
 
-	privKey, ciphertext, err := mkemNikeScheme.Encapsulate(pubKeys, paddedReadMsg)
+	derivedKeys, ciphertext, err := mkemNikeScheme.Encapsulate(pubKeys, paddedReadMsg)
 	require.NoError(t, err)
-	senderPubkeyBytes := privKey.Public().Bytes()
 
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: indices,
-		Dek1:                 [mkem.DEKSize]byte(ciphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(ciphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(ciphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(ciphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
+		KemCiphertext1Len:    uint32(len(ciphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       ciphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(ciphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       ciphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(ciphertext.Envelope)),
 		Ciphertext:           ciphertext.Envelope,
 	}
@@ -102,8 +103,9 @@ func proxyRead(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte,
 	}
 	require.Greater(t, len(reply.Payload), 0, "a proxied read must return an envelope")
 
-	replicaPubKey := env.replicaKeys[indices[reply.ReplyIndex]][replicaEpoch]
-	rawInner, err := mkemNikeScheme.DecryptEnvelope(privKey, replicaPubKey, reply.Payload)
+	// reply.ReplyIndex indexes into indices/pubKeys/derivedKeys, all
+	// built in matching order above.
+	rawInner, err := mkemNikeScheme.DecryptEnvelope(derivedKeys[reply.ReplyIndex], reply.Payload)
 	require.NoError(t, err)
 	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInner)
 	require.NoError(t, err)
@@ -138,18 +140,19 @@ func writeBoxToShards(t *testing.T, env *testEnvironment, writer *bacap.Stateful
 	sharding := getShardingInfo(t, env, &boxID)
 	paddedWrite, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, env.geometry)
 	require.NoError(t, err)
-	privKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedWrite)
+	_, mkemCiphertext, err := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedWrite)
 	require.NoError(t, err)
-	senderPubkeyBytes := privKey.Public().Bytes()
 
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: sharding.ReplicaIndices,
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
 	}

@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/constants"
@@ -83,7 +83,7 @@ func TestReplicaReplication(t *testing.T) {
 
 	// Find two replicas that are NOT in the shard (to use as intermediaries)
 	var intermediaryIndices [2]uint8
-	var intermediaryPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
+	var intermediaryPubKeys []kem.PublicKey = make([]kem.PublicKey, 2)
 	nonShardCount := 0
 
 	currentEpoch, _, _ := epochtime.Now()
@@ -100,7 +100,7 @@ func TestReplicaReplication(t *testing.T) {
 		}
 		if !isShard {
 			intermediaryIndices[nonShardCount] = uint8(i)
-			pubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(
+			pubKey, err := replicaCommon.KEMScheme.UnmarshalBinaryPublicKey(
 				doc.StorageReplicas[i].EnvelopeKeys[replicaEpoch])
 			require.NoError(t, err)
 			intermediaryPubKeys[nonShardCount] = pubKey
@@ -131,19 +131,19 @@ func TestReplicaReplication(t *testing.T) {
 	// Pad to write size, matching PadInnerMessageForEncryption in the live encoder.
 	paddedWriteMsg, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(intermediaryPubKeys, paddedWriteMsg)
+	_, mkemCiphertext, err := mkemNikeScheme.Encapsulate(intermediaryPubKeys, paddedWriteMsg)
 	require.NoError(t, err)
-	mkemPublicKey := mkemPrivateKey.Public()
-	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	writeEnvelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediaryIndices, // Non-shard intermediaries!
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
@@ -241,12 +241,14 @@ func readFromSpecificReplica(t *testing.T, env *testEnvironment, boxID *[bacap.B
 
 	// Get the public key for the target replica
 	targetPubKeyBytes := doc.StorageReplicas[replicaIdx].EnvelopeKeys[replicaEpoch]
-	targetPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(targetPubKeyBytes)
+	targetPubKey, err := replicaCommon.KEMScheme.UnmarshalBinaryPublicKey(targetPubKeyBytes)
 	require.NoError(t, err)
 
-	// For MKEM we need 2 keys, so we'll use the same replica twice
-	// This effectively makes a single-recipient envelope
-	replicaPubKeys := []nike.PublicKey{targetPubKey, targetPubKey}
+	// For mrhybrid we need 2 keys, so we'll use the same replica twice.
+	// This effectively makes a single-recipient envelope: mrhybrid still
+	// encapsulates two independent KEM ciphertexts to the same public key,
+	// each with its own derived key.
+	replicaPubKeys := []kem.PublicKey{targetPubKey, targetPubKey}
 	indices := [2]uint8{replicaIdx, replicaIdx}
 
 	readRequest := &pigeonhole.ReplicaRead{
@@ -260,19 +262,19 @@ func readFromSpecificReplica(t *testing.T, env *testEnvironment, boxID *[bacap.B
 	// Pad to write size, matching PadInnerMessageForEncryption in the live encoder.
 	paddedReadMsg, err := pigeonhole.PadInnerMessageForEncryption(readMsg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedReadMsg)
+	derivedKeys, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedReadMsg)
 	require.NoError(t, err)
-	mkemPublicKey := mkemPrivateKey.Public()
-	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	readEnvelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: indices,
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
@@ -290,9 +292,9 @@ func readFromSpecificReplica(t *testing.T, env *testEnvironment, boxID *[bacap.B
 
 	require.Greater(t, len(readReply.Payload), 0, "Replica %d should return a payload", replicaIdx)
 
-	// Decrypt the MKEM envelope
-	replicaPubKey := env.replicaKeys[replicaIdx][replicaEpoch]
-	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKey, readReply.Payload)
+	// Decrypt the MKEM envelope. readReply.ReplyIndex indexes directly
+	// into derivedKeys (built in matching order above).
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(derivedKeys[readReply.ReplyIndex], readReply.Payload)
 	require.NoError(t, err, "Failed to decrypt reply from replica %d", replicaIdx)
 
 	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInnerMsg)

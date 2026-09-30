@@ -16,11 +16,9 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 	kemPEM "github.com/katzenpost/hpqc/kem/pem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
-	nikePem "github.com/katzenpost/hpqc/nike/pem"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -58,7 +56,7 @@ const (
 )
 
 var (
-	mkemNikeScheme *mkem.Scheme = mkem.NewScheme(replicaCommon.NikeScheme)
+	mkemNikeScheme *mrhybrid.Scheme = mrhybrid.NewScheme(replicaCommon.KEMScheme)
 )
 
 // Helper functions to eliminate code duplication
@@ -66,7 +64,7 @@ var (
 // shardingResult holds the result of sharding operations
 type shardingResult struct {
 	ReplicaIndices [2]uint8
-	ReplicaPubKeys []nike.PublicKey
+	ReplicaPubKeys []kem.PublicKey
 }
 
 // getShardingInfo performs the common sharding logic and returns replica IDs and public keys
@@ -82,14 +80,14 @@ func getShardingInfo(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize
 
 	// Use the static ReplicaID from each descriptor, not the array index
 	var replicaIndices [2]uint8
-	var replicaPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
+	var replicaPubKeys []kem.PublicKey = make([]kem.PublicKey, 2)
 
 	for i, shardedReplica := range shardedReplicas {
 		// Use the static ReplicaID field from the descriptor
 		// This is what the courier and replicas use to identify each other
 		replicaIndices[i] = shardedReplica.ReplicaID
 		replicaPubKey := shardedReplica.EnvelopeKeys[replicaEpoch]
-		replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
+		replicaPubKeys[i], err = replicaCommon.KEMScheme.UnmarshalBinaryPublicKey(replicaPubKey)
 		require.NoError(t, err)
 	}
 
@@ -192,7 +190,7 @@ type testEnvironment struct {
 	replicaConfigs []*config.Config
 	courierConfig  *courierConfig.Config
 	cleanup        func()
-	replicaKeys    []map[uint64]nike.PublicKey
+	replicaKeys    []map[uint64]kem.PublicKey
 	geometry       *pigeonholeGeo.Geometry
 	// Response routing system - set up once per test environment
 	responseRouter *responseRouter
@@ -282,7 +280,7 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 
 	replicaDescriptors := make([]*pki.ReplicaDescriptor, numReplicas)
 	replicaConfigs := make([]*config.Config, numReplicas)
-	replicaKeys := make([]map[uint64]nike.PublicKey, numReplicas)
+	replicaKeys := make([]map[uint64]kem.PublicKey, numReplicas)
 
 	// STEP 1: Create all replica descriptors FIRST
 	for i := 0; i < numReplicas; i++ {
@@ -346,7 +344,7 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 
 	// Use the same pigeonhole geometry that the courier uses (derived from Sphinx geometry)
 	// This ensures consistency between test expectations and courier behavior
-	pigeonholeGeometry, err := pigeonholeGeo.NewGeometryFromSphinx(sphinxGeo, replicaCommon.NikeScheme)
+	pigeonholeGeometry, err := pigeonholeGeo.NewGeometryFromSphinx(sphinxGeo, replicaCommon.KEMScheme)
 	require.NoError(t, err)
 
 	// Debug: Print geometry values to understand the size limits
@@ -377,7 +375,7 @@ func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 		Identifier:          fmt.Sprintf(testReplicaNameFormat, replicaID),
 		WireKEMScheme:       linkScheme.Name(),
 		PKISignatureScheme:  pkiScheme.Name(),
-		ReplicaNIKEScheme:   replicaCommon.NikeScheme.Name(),
+		ReplicaKEMScheme:    replicaCommon.KEMScheme.Name(),
 		SphinxGeometry:      sphinxGeo,
 		Addresses:           []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
 		GenerateOnly:        false,
@@ -406,7 +404,7 @@ func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 	}
 }
 
-func generateReplicaKeys(t *testing.T, dataDir, pkiSignatureSchemeName, wireKEMSchemeName string) (map[uint64]nike.PublicKey, kem.PublicKey, sign.PublicKey) {
+func generateReplicaKeys(t *testing.T, dataDir, pkiSignatureSchemeName, wireKEMSchemeName string) (map[uint64]kem.PublicKey, kem.PublicKey, sign.PublicKey) {
 
 	pkiSignatureScheme := signSchemes.ByName(pkiSignatureSchemeName)
 	require.NotNil(t, pkiSignatureScheme)
@@ -414,14 +412,14 @@ func generateReplicaKeys(t *testing.T, dataDir, pkiSignatureSchemeName, wireKEMS
 	wireKEMScheme := kemSchemes.ByName(wireKEMSchemeName)
 	require.NotNil(t, wireKEMScheme)
 
-	replicaKeys := make(map[uint64]nike.PublicKey)
+	replicaKeys := make(map[uint64]kem.PublicKey)
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
-	replicaNIKEPublicKey, replicaNIKEPrivateKey, err := replicaCommon.NikeScheme.GenerateKeyPair()
+	replicaKEMPublicKey, replicaKEMPrivateKey, err := replicaCommon.KEMScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	nikePem.PrivateKeyToFile(filepath.Join(dataDir, fmt.Sprintf("replica.%d.private.pem", replicaEpoch)), replicaNIKEPrivateKey, replicaCommon.NikeScheme)
-	nikePem.PublicKeyToFile(filepath.Join(dataDir, fmt.Sprintf("replica.%d.public.pem", replicaEpoch)), replicaNIKEPublicKey, replicaCommon.NikeScheme)
-	replicaKeys[replicaEpoch] = replicaNIKEPublicKey
+	kemPEM.PrivateKeyToFile(filepath.Join(dataDir, fmt.Sprintf("replica.%d.private.pem", replicaEpoch)), replicaKEMPrivateKey)
+	kemPEM.PublicKeyToFile(filepath.Join(dataDir, fmt.Sprintf("replica.%d.public.pem", replicaEpoch)), replicaKEMPublicKey)
+	replicaKeys[replicaEpoch] = replicaKEMPublicKey
 
 	// generate identity key pair
 	replicaIdentityPublicKey, replicaIdentityPrivateKey, err := pkiSignatureScheme.GenerateKey()
@@ -447,7 +445,7 @@ func createCourierConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 		DataDir:             dataDir,
 		WireKEMScheme:       linkScheme.Name(),
 		PKIScheme:           pkiScheme.Name(),
-		EnvelopeScheme:      replicaCommon.NikeScheme.Name(),
+		EnvelopeScheme:      replicaCommon.KEMScheme.Name(),
 		SphinxGeometry:      sphinxGeo,
 		ConnectTimeout:      60000,
 		HandshakeTimeout:    30000,
@@ -530,7 +528,7 @@ func makeReplicaDescriptor(t *testing.T,
 	replicaID int,
 	linkPubKey kem.PublicKey,
 	identityPubKey sign.PublicKey,
-	replicaKeys map[uint64]nike.PublicKey,
+	replicaKeys map[uint64]kem.PublicKey,
 	portBase int) *pki.ReplicaDescriptor {
 
 	require.NotNil(t, linkPubKey)
@@ -753,22 +751,21 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 
 	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(
+	_, mkemCiphertext, err := mkemNikeScheme.Encapsulate(
 		sharding.ReplicaPubKeys, paddedMsg,
 	)
 	require.NoError(t, err)
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: sharding.ReplicaIndices,
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
@@ -849,7 +846,7 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	// Wait for write to propagate to replicas before reading
 	time.Sleep(5 * time.Second)
 
-	bobReadRequest1, bobPrivateKey1 := composeReadRequest(t, env, bobStatefulReader)
+	bobReadRequest1, bobDerivedKeys1 := composeReadRequest(t, env, bobStatefulReader)
 
 	// First read request should now get immediate reply with payload due to immediate proxying
 	courierReadReply1 := injectCourierEnvelope(t, env, bobReadRequest1)
@@ -873,12 +870,9 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.True(t, len(courierReadReply1.Payload) > 0, "Should have payload either from immediate proxying or cache")
 	require.True(t, len(courierReadReply1.Payload) > 0, "Payload should not be empty")
 
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-
-	// Now ReplyIndex correctly indicates which replica replied (0 or 1)
-	replicaIndex := int(bobReadRequest1.IntermediateReplicas[courierReadReply1.ReplyIndex])
-	replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicaPubKey, courierReadReply1.Payload)
+	// Now ReplyIndex correctly indicates which replica replied (0 or 1),
+	// so it also indexes directly into bobDerivedKeys1.
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobDerivedKeys1[courierReadReply1.ReplyIndex], courierReadReply1.Payload)
 	require.NoError(t, err)
 
 	// pigeonhole.ReplicaMessageReplyInnerMessage
@@ -941,7 +935,7 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 	for i := 0; i < len(messages); i++ {
 		t.Logf("Reading box %d", i+1)
 
-		bobReadRequest, bobPrivateKey := composeReadRequest(t, env, bobStatefulReader)
+		bobReadRequest, bobDerivedKeys := composeReadRequest(t, env, bobStatefulReader)
 
 		// First read request should now get immediate reply with payload due to immediate proxying
 		courierReadReply := injectCourierEnvelope(t, env, bobReadRequest)
@@ -960,11 +954,9 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 		require.True(t, len(courierReadReply.Payload) > 0, "Should have payload either from immediate proxying or cache")
 		require.True(t, len(courierReadReply.Payload) > 0, "Payload should not be empty")
 
-		// Decrypt and verify the message
-		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-		replicaIndex := int(bobReadRequest.IntermediateReplicas[courierReadReply.ReplyIndex])
-		replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey, replicaPubKey, courierReadReply.Payload)
+		// Decrypt and verify the message. ReplyIndex indexes directly into
+		// bobDerivedKeys since it's index-aligned with IntermediateReplicas.
+		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobDerivedKeys[courierReadReply.ReplyIndex], courierReadReply.Payload)
 		require.NoError(t, err)
 
 		// pigeonhole.ReplicaMessageReplyInnerMessage
@@ -1011,7 +1003,11 @@ func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *pigeonh
 	return courierQueryReply.EnvelopeReply
 }
 
-func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.StatefulReader) (*pigeonhole.CourierEnvelope, nike.PrivateKey) {
+// composeReadRequest returns the derived keys for both intermediate
+// replicas (index-aligned with IntermediateReplicas), since mrhybrid has no
+// shared ephemeral keypair to decapsulate a reply with — the caller
+// doesn't know in advance which of the two replicas will answer.
+func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.StatefulReader) (*pigeonhole.CourierEnvelope, [2][]byte) {
 	boxID, err := reader.NextBoxID()
 	require.NoError(t, err)
 
@@ -1035,23 +1031,23 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 
 	paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, env.geometry)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedMsg)
+	derivedKeys, mkemCiphertext, err := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedMsg)
 	require.NoError(t, err)
-	mkemPublicKey := mkemPrivateKey.Public()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: sharding.ReplicaIndices,
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
-	}, mkemPrivateKey
+	}, [2][]byte{derivedKeys[0], derivedKeys[1]}
 }
 
 // waitForReplicaResponse waits for the courier to receive a reply by repeatedly trying the request
@@ -1143,23 +1139,22 @@ func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
 		"padded read and write reply inner messages must be identical size")
 	t.Logf("Padded inner message size: %d bytes", len(readPadded))
 
-	// MKEM-encrypt both and verify ciphertext sizes are identical
-	_, replicaPriv, err := replicaCommon.NikeScheme.GenerateKeyPair()
+	// mrhybrid-encrypt both and verify ciphertext sizes are identical. A
+	// derived key of the right size is all EnvelopeReply needs; its output
+	// size only depends on the plaintext length, not the key.
+	derivedKey := make([]byte, mrhybrid.KeySize)
+
+	readEnvReply, err := mkemNikeScheme.EnvelopeReply(derivedKey, readPadded)
 	require.NoError(t, err)
-	clientPub, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
+	writeEnvReply, err := mkemNikeScheme.EnvelopeReply(derivedKey, writePadded)
 	require.NoError(t, err)
 
-	readEnvReply, err := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, readPadded)
-	require.NoError(t, err)
-	writeEnvReply, err := mkemNikeScheme.EnvelopeReply(replicaPriv, clientPub, writePadded)
-	require.NoError(t, err)
-
-	require.Equal(t, len(readEnvReply.Envelope), len(writeEnvReply.Envelope),
+	require.Equal(t, len(readEnvReply), len(writeEnvReply),
 		"MKEM-encrypted read and write replies must have identical EnvelopeReply size")
-	t.Logf("MKEM EnvelopeReply size: %d bytes (identical for read and write)", len(readEnvReply.Envelope))
+	t.Logf("MKEM EnvelopeReply size: %d bytes (identical for read and write)", len(readEnvReply))
 
 	// Also verify the MKEM envelope size matches what the courier actually returned for the read
-	require.Equal(t, readReplyLen, len(readEnvReply.Envelope),
+	require.Equal(t, readReplyLen, len(readEnvReply),
 		"courier read reply size should match computed MKEM envelope size")
 }
 
