@@ -256,6 +256,13 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	if cfg.Debug == nil {
 		cfg.Debug = &Debug{}
 	}
+	if cfg.Topology != nil {
+		if cfg.Debug.Layers <= 0 {
+			cfg.Debug.Layers = len(cfg.Topology.Layers)
+		} else if cfg.Debug.Layers != len(cfg.Topology.Layers) {
+			return fmt.Errorf("config: Debug: Layers is %d but the configured Topology has %d layers", cfg.Debug.Layers, len(cfg.Topology.Layers))
+		}
+	}
 
 	// Validate and fixup the various sections.
 	if err := cfg.Server.validate(); err != nil {

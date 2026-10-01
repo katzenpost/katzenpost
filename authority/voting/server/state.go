@@ -679,6 +679,21 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		)
 	}
 
+	if err := s.verifyTopology(consensusOfOne.Topology); err != nil {
+		s.log.Noticef(
+			"getMyConsensus: refusing to sign a consensus for epoch %d whose topology is below the configured minimum: layers=%d want=%d minPerLayer=%d",
+			epoch,
+			len(consensusOfOne.Topology),
+			s.s.cfg.Debug.Layers,
+			s.s.cfg.Debug.MinNodesPerLayer,
+		)
+		return nil, fmt.Errorf(
+			"refusing to sign a consensus for epoch %d below the configured topology minimum: %w",
+			epoch,
+			err,
+		)
+	}
+
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
 		return nil, err
@@ -870,31 +885,6 @@ func documentRoleCounts(doc *pki.Document) (mixes, gateways, serviceNodes, repli
 		mixes += len(layer)
 	}
 	return mixes, len(doc.GatewayNodes), len(doc.ServiceNodes), len(doc.StorageReplicas)
-}
-
-func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescriptor) bool {
-	// A Document will be generated iff there are at least:
-	//
-	//  * Debug.Layers * Debug.MinNodesPerLayer nodes.
-	//  * One gateway.
-	//  * One service node.
-	//
-	// Otherwise, it's pointless to generate a unusable document.
-	nrGateways := 0
-	nrServiceNodes := 0
-	for _, v := range m {
-		if v.IsGatewayNode {
-			nrGateways++
-		}
-		if v.IsServiceNode {
-			nrServiceNodes++
-		}
-
-	}
-	nrNodes := len(m) - nrGateways - nrServiceNodes
-
-	minNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
-	return (nrGateways > 0) && (nrServiceNodes > 0) && (nrNodes >= minNodes)
 }
 
 func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte, map[[publicKeyHashSize]byte][]byte) {
