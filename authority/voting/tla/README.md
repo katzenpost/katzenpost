@@ -191,8 +191,11 @@ signers: that enough replicas survive for sharding to address `K` of them, and
 that some node advertising each service survives. Nothing in `getMyConsensus`
 checks either, and under a two-descriptor dispute both hold over an exhaustive
 search of the restricted specification. That is the provisioning margin rather
-than a guarantee: four replicas against a `K` of two, and three couriers, both
-survive two disputed descriptors.
+than a guarantee, and the margin is exactly two: four replicas against a `K` of
+two, and three couriers, survive a two-descriptor dispute, while the same
+configuration with three contested descriptors violates the sharding claim. So the
+deployment has one descriptor of headroom in its thinnest consumer requirement,
+and the authorities would sign either document without noticing.
 
 None of this is established at these node counts, because delivery is pinned to
 full delivery and vote content to one contested set. It is what is reachable where
