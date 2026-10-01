@@ -162,7 +162,8 @@ Init ==
 \* Round 1: deliver votes. Each authority receives the votes of an arbitrary
 \* set of authorities that includes itself. For a Byzantine authority the set
 \* is whatever its certificate will claim.
-VoteChoices(a) == {S \in SUBSET Auths : a \in S}
+FullVoteChoices(a) == {S \in SUBSET Auths : a \in S}
+VoteChoices(a) == FullVoteChoices(a)
 
 \* A restriction of VoteChoices for instances too large to search
 \* exhaustively, substituted for it in a configuration file. Every honest
@@ -193,15 +194,30 @@ MinimalVoteAssignments ==
         n \in Nodes, H \in SUBSET Honest, R \in SUBSET Auths}
 
 \* A restricted choice set must be a subset of the full one, or a counterexample
-\* found under it is not a counterexample of this specification. TLC evaluates an
-\* ASSUME against the configuration's constants before it searches, so a
-\* configuration that substitutes a restriction has that claim checked rather
-\* than argued in a comment.
+\* found under it is not a counterexample of this specification. The claim is
+\* made against FullVoteChoices rather than VoteChoices, because a configuration
+\* that restricts substitutes VoteChoices, and a check written against the name
+\* it substituted would compare a set with itself in exactly the configurations
+\* that need checking. TLC evaluates an ASSUME against the configuration's
+\* constants before it searches, so inverting one stops the run.
 ASSUME MinimalChoicesAreARestriction ==
-    \A a \in Auths : MinimalVoteChoices(a) \subseteq VoteChoices(a)
+    \A a \in Auths : MinimalVoteChoices(a) \subseteq FullVoteChoices(a)
 
-ASSUME MinimalAssignmentsAreARestriction ==
-    MinimalVoteAssignments \subseteq VoteAssignments
+\* A vote assignment is well shaped when it maps every authority to a reply for
+\* every authority, each a set of nodes, and gives an honest authority the same
+\* reply for everyone. Stating it as a predicate rather than as membership of
+\* [Auths -> [Auths -> SUBSET Nodes]] matters: the membership form enumerates
+\* that function space, which at fifteen nodes costs minutes before the first
+\* initial state.
+IsVoteAssignment(v) ==
+    /\ DOMAIN v = Auths
+    /\ \A a \in Auths :
+          /\ DOMAIN v[a] = Auths
+          /\ \A b \in Auths : v[a][b] \subseteq Nodes
+    /\ \A a \in Honest : \A b, c \in Auths : v[a][b] = v[a][c]
+
+ASSUME MinimalAssignmentsAreWellShaped ==
+    \A v \in MinimalVoteAssignments : IsVoteAssignment(v)
 
 DeliverVote ==
     /\ phase = "vote"
@@ -237,10 +253,12 @@ Certifiers ==
         /\ Cardinality(recvVote[h]) >= Threshold
         /\ WellFormed(DescTally(h))}
 
-CertChoices(a) ==
+FullCertChoices(a) ==
     IF a \in Certifiers
     THEN {S \in SUBSET (recvVote[a] \cap Certifiers) : a \in S}
     ELSE {{}}
+
+CertChoices(a) == FullCertChoices(a)
 
 \* The document b computes, or NoDoc if it lacks Threshold certificates or
 \* Threshold consistent commitments (getMyConsensus). The Threshold-votes gate
