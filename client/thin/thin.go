@@ -646,8 +646,11 @@ func (t *ThinClient) Dial() error {
 	}
 
 	// WAIT for connection status message from daemon
-	if err := t.conn.SetDeadline(time.Now().Add(handshakeTimeout)); err == nil {
-		defer t.conn.SetDeadline(time.Time{})
+	t.connMu.RLock()
+	handshakeConn := t.conn
+	t.connMu.RUnlock()
+	if err := handshakeConn.SetDeadline(time.Now().Add(handshakeTimeout)); err == nil {
+		defer handshakeConn.SetDeadline(time.Time{})
 	}
 
 	t.log.Debugf("Waiting for a connection status message")
@@ -774,7 +777,10 @@ func (t *ThinClient) writeMessage(request *Request) error {
 	prefix := make([]byte, blobPrefixLen)
 	binary.BigEndian.PutUint32(prefix, uint32(len(blob)))
 	toSend := append(prefix, blob...)
-	count, err := t.conn.Write(toSend)
+	t.connMu.RLock()
+	conn := t.conn
+	t.connMu.RUnlock()
+	count, err := conn.Write(toSend)
 	if err != nil {
 		return err
 	}
@@ -789,7 +795,10 @@ func (t *ThinClient) readMessage() (*Response, error) {
 	const messagePrefixLen = 4
 
 	prefix := make([]byte, messagePrefixLen)
-	_, err := io.ReadFull(t.conn, prefix)
+	t.connMu.RLock()
+	conn := t.conn
+	t.connMu.RUnlock()
+	_, err := io.ReadFull(conn, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -799,7 +808,7 @@ func (t *ThinClient) readMessage() (*Response, error) {
 		return nil, fmt.Errorf("daemon response frame too large: %d bytes (max %d)", prefixLen, MaxMessageSize)
 	}
 	message := make([]byte, prefixLen)
-	_, err = io.ReadFull(t.conn, message)
+	_, err = io.ReadFull(conn, message)
 	if err != nil {
 		return nil, err
 	}
