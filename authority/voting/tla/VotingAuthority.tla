@@ -36,8 +36,9 @@
 \*     certificate. That case is not explored.
 \*   - The BLAKE2b shared-random value is abstracted to the chain of
 \*     participant sets it derives from; equal chains give equal values.
-\*   - The mix-parameter tally and pki.IsDocumentWellFormed (which refuses a
-\*     document with an empty topology) are not modelled.
+\*   - The mix-parameter tally is not modelled. pki.IsDocumentWellFormed is,
+\*     as WellFormed: it gates both issuing a certificate and computing a
+\*     document, and is vacuous where a configuration leaves Topology empty.
 \*   - A Byzantine certificate relays an arbitrary set of votes, but the same
 \*     set to every recipient. Commitments are signed, so it cannot forge one
 \*     for an honest peer.
@@ -210,19 +211,6 @@ DeliverVote ==
 
 \* Round 2: deliver certificates and compute documents.
 \*
-\* An honest authority issues a certificate only if it holds Threshold votes
-\* (tallyVotes); a Byzantine one always can. A certificate is accepted only
-\* from a peer whose vote arrived (onCertUpload). An authority that issued one
-\* holds its own. One that did not computes no document, so what it accepts is
-\* irrelevant and pinned to {}.
-Certifiers ==
-    Byzantine \cup {h \in Honest : Cardinality(recvVote[h]) >= Threshold}
-
-CertChoices(a) ==
-    IF a \in Certifiers
-    THEN {S \in SUBSET (recvVote[a] \cap Certifiers) : a \in S}
-    ELSE {{}}
-
 \* The commitments b has seen attributed to a in the certificates it holds
 \* (verifyCommits). None: b never learned of a. One: a participates in the
 \* shared random. Several: a equivocated and is excluded.
@@ -236,6 +224,23 @@ Participants(b) == {a \in Auths : Cardinality(Reported(b, a)) = 1}
 DescTally(b) ==
     {n \in Nodes :
         Cardinality({a \in recvVote[b] : n \in voteMsg[a][b]}) >= Threshold}
+
+\* An honest authority issues a certificate only if it holds Threshold votes
+\* and its tally has the shape a document needs (tallyVotes, then the
+\* IsDocumentWellFormed check getCertificate makes at state.go:592 before it
+\* stores or sends anything); a Byzantine one always can. A certificate is
+\* accepted only from a peer whose vote arrived (onCertUpload). An authority
+\* that issued one holds its own. One that did not computes no document, so what
+\* it accepts is irrelevant and pinned to {}.
+Certifiers ==
+    Byzantine \cup {h \in Honest :
+        /\ Cardinality(recvVote[h]) >= Threshold
+        /\ WellFormed(DescTally(h))}
+
+CertChoices(a) ==
+    IF a \in Certifiers
+    THEN {S \in SUBSET (recvVote[a] \cap Certifiers) : a \in S}
+    ELSE {{}}
 
 \* The document b computes, or NoDoc if it lacks Threshold certificates or
 \* Threshold consistent commitments (getMyConsensus). The Threshold-votes gate
@@ -366,15 +371,39 @@ ChainGrounded ==
 \* its fetch does not land. Checked to obtain that trace.
 ChainUnanimity == \A a, b \in Honest : priorSRV[a] = priorSRV[b]
 
-\* With every vote and certificate delivered and a common prior, all honest
-\* authorities compute the same document. Holds only while no Byzantine
-\* authority equivocates; its failure in a Byzantine configuration is the
-\* descriptor-equivocation attack described in the README.
+\* Nothing sent was lost, and the priors agree. An authority that issues no
+\* certificate sends none, so requiring recvCert = Auths would be unreachable as
+\* soon as one authority's tally is malformed; what full delivery means is that
+\* every certificate that was sent arrived.
+FullDelivery ==
+    /\ phase \in {"sig", "done"}
+    /\ \A a \in Honest :
+          /\ recvVote[a] = Auths
+          /\ recvCert[a] = (IF a \in Certifiers THEN Certifiers ELSE {})
+    /\ ChainUnanimity
+
+\* With nothing lost and a common prior, all honest authorities compute the same
+\* document. Holds only while no Byzantine authority equivocates; its failure in
+\* a Byzantine configuration is the descriptor-equivocation attack.
 ConvergenceUnderFullDelivery ==
-    (/\ phase \in {"sig", "done"}
-     /\ \A a \in Honest : recvVote[a] = Auths /\ recvCert[a] = Auths
-     /\ ChainUnanimity)
-        => \A a, b \in Honest : myDoc[a] # NoDoc /\ myDoc[a] = myDoc[b]
+    FullDelivery => \A a, b \in Honest : myDoc[a] # NoDoc /\ myDoc[a] = myDoc[b]
+
+\* Every honest authority's own view already has the shape a document needs.
+HonestViewsWellFormed == \A h \in Honest : WellFormed(voteMsg[h][h])
+
+\* Either every honest authority computed a document or none did. A round in
+\* which some can sign and others cannot is the cost of the shape gate, and is
+\* what Convergence cannot distinguish from honest authorities disagreeing.
+AllOrNone ==
+    \/ \A h \in Honest : myDoc[h] # NoDoc
+    \/ \A h \in Honest : myDoc[h] = NoDoc
+
+\* With nothing lost and no adversary every honest tally is the same, so neither
+\* of these can fail without one. The second says so of a deployment whose
+\* honest authorities each hold a well-formed view, which is the case worth
+\* asking about where every group has more than one node.
+AllOrNoneUnderFullDelivery == FullDelivery => AllOrNone
+NoHonestLeftOut == (FullDelivery /\ HonestViewsWellFormed) => AllOrNone
 
 \* EXPECTED TO FAIL. The counterexample is a run in which every honest
 \* authority finalises the same document, i.e. a successful consensus.
