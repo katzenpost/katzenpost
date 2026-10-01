@@ -68,9 +68,13 @@ ASSUME MaxEpochPos       == MaxEpoch \in (Nat \ {0})
 ASSUME ByzantineSubset   == Byzantine \subseteq Auths
 ASSUME ByzantineMinority == Cardinality(Byzantine) < Threshold
 
-\* Symmetry set for TLC. Only safe for invariant checking.
+\* Symmetry set for TLC. Only safe for invariant checking, and nodes are only
+\* interchangeable while Topology is empty: a permutation that moves a node
+\* between groups does not preserve WellFormed, so a configuration with a real
+\* topology would have states collapsed that are not equivalent.
 Symmetry ==
-    Permutations(Honest) \cup Permutations(Byzantine) \cup Permutations(Nodes)
+    Permutations(Honest) \cup Permutations(Byzantine)
+    \cup (IF Topology = {} THEN Permutations(Nodes) ELSE {})
 
 \* A shared-random value is the chain of links it derives from, oldest first.
 \* computeSharedRandom() hashes in the previous epoch's value, or 32 zero bytes
