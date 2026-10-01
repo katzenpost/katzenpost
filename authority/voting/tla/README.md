@@ -39,6 +39,15 @@ Elements that follow `state.go`:
   it holds `Threshold` votes, `Threshold` certificates and `Threshold`
   consistent commitments, as `getMyConsensus()` requires. Otherwise it signs
   nothing.
+- **A document must have the shape `IsDocumentWellFormed` demands**, when a
+  configuration asks for one. `MixLayers` is one node set per mix layer and a
+  document needs `MinPerLayer` of each; `RoleGroups` is one set for the gateways
+  and one for the service nodes, of which it needs at least one each. An
+  authority whose tally leaves any of them short computes no document, because
+  `getMyConsensus()` refuses to sign a malformed one and returns an error.
+  Storage replicas are neither, because that function checks each replica
+  descriptor and never counts them. Only `Shape` and `ShapeMinTwo` set these;
+  with them empty both conditions are vacuous.
 - **Threshold signatures.** An honest authority signs only its own document,
   and finalises it only with `Threshold` signatures over that exact document,
   as in `getThresholdConsensus()`.
@@ -80,15 +89,43 @@ A property that holds in the model is established only up to these gaps.
   signed, so it cannot forge one for an honest peer. Sending different
   certificates to different recipients is possible in reality and is not
   explored.
-- **Mix parameters and document well-formedness.** The parameter tally in
-  `tallyVotes()` and the refusal to sign a document with an empty topology are
-  not modelled.
+- **Mix parameters.** The parameter tally in `tallyVotes()` is not modelled, and
+  the rates themselves are outside what a model checker can say anything about:
+  they govern how often a client sends and how long a packet waits, not whether
+  a document is agreed. In namenlos all six authorities carry a byte-identical
+  parameter block, so the tally has nothing to resolve; the Go test
+  `TestOneByzantineAuthorityCannotStallOrFork` is what covers the case where one
+  authority votes a different block.
+- **The Sphinx geometry.** A mismatch is rejected by the nodes and clients that
+  consume a consensus, not by the authorities that sign it, so it is not a
+  condition on agreement and belongs with the conformance vectors.
 - **Weekly rotation of `PriorSharedRandom`** is not modelled.
 - **Liveness.** Only invariants are checked. There is no fairness condition
   and no temporal property, so the model says nothing about whether consensus
   is eventually reached.
 - **Cryptography is symbolic.** Signatures are unforgeable, and equal
   shared-random chains give equal values.
+- **How many nodes there are.** `MixLayers` and `RoleGroups` fix which groups a
+  document needs nodes from, and the two shape configurations use the smallest
+  sets that keep the rule meaningful; the others leave them empty and model no
+  document shape at all. Node counts
+  are not a model-checking question: each authority's view is an arbitrary
+  subset of `Nodes`, so the search grows as `2^|Nodes|` per authority and a
+  realistic count is unreachable. The network this follows is namenlos, whose
+  consensus is published at <https://status.namenlos.network/>: six
+  authorities and so a threshold of four, three mix layers holding two, two and
+  three mixes, four gateways, four service nodes and four storage replicas, on
+  a topology pinned in the authority configuration rather than derived from the
+  shared random. `Byzantine6` covers the authority count and `ShapeMinTwo` the
+  two-mix layers; the remaining counts change nothing the model checks, because
+  every property here turns on quorums and orderings and not on how many nodes
+  a layer holds.
+- **The minimum number of storage replicas.** Sharding needs two
+  (`K` in `replica/common/shard.go`, enforced by `GetConfiguredReplicaKeys`),
+  but that is a consumer of the consensus and not a condition on it:
+  `IsDocumentWellFormed` checks each replica descriptor and never counts them,
+  so an authority signs a document with one replica and the pigeonhole path is
+  what fails. It is out of scope here.
 
 The model also assumes `Cardinality(Byzantine) < Threshold`. Byzantine
 authorities sign only documents that honest authorities computed, which loses
@@ -149,6 +186,8 @@ invariant violated.
 | `Byzantine6`          | 6     | 2   | 0     | 1      | `Agreement` violated                  |                 |
 | `EpochsByzantine`     | 3     | 1   | 0     | 2      | `ChainConsistency` violated           |                 |
 | `Equivocation`        | 4     | 1   | 1     | 1      | `ConvergenceUnderFullDelivery` violated |               |
+| `Shape`               | 4     | 1   | 5     | 1      | `ConvergenceUnderFullDelivery` violated |               |
+| `ShapeMinTwo`         | 4     | 1   | 6     | 1      | `ConvergenceUnderFullDelivery` violated |               |
 | `WitnessConsensus`    | 3     | 0   | 1     | 1      | `ConsensusUnreachable` violated       |                 |
 | `WitnessChainRestart` | 3     | 0   | 0     | 2      | `ChainUnanimity` violated             |                 |
 
@@ -243,6 +282,40 @@ and never consults the equivocation findings of `verifyCommits()`. Safety is
 unaffected, since `Byzantine4` passes. The cost is liveness: the split
 authority cannot finalise, and if the Byzantine authority also withholds its
 signature the remaining two honest authorities cannot reach three.
+
+### The same equivocation stops a document being signed at all
+
+`Shape` gives the nodes the roles `IsDocumentWellFormed` checks: three mix
+layers, the gateways, the service nodes. An authority whose tally leaves any of
+them short holds a document that function refuses, and `getMyConsensus` returns
+an error before it signs, so it computes nothing rather than something that
+differs from its peers'.
+
+The trace is the `Equivocation` attack against that shape, with every vote and
+certificate delivered and the priors in agreement. One Byzantine authority
+varies a single descriptor between peers, that descriptor falls below threshold
+in one honest authority's tally, its layer empties, and the authority signs
+nothing. So the cost of descriptor equivocation is not only that honest
+authorities disagree: an authority can be left with no document to sign, and at
+three authorities that is the whole round.
+
+### What the per-layer minimum would cost, if anything applied it
+
+The authority config has a `MinNodesPerLayer` knob, default 2. Two functions in
+`state.go` would apply it, `hasEnoughDescriptors` and `verifyTopology`, and at
+`e17bffb95` neither is called from anywhere in the repository. So per epoch the
+only per-layer rule in force is `IsDocumentWellFormed`'s, which is that a layer
+is not empty. The knob binds once, in `New()`, against the size of the
+whitelist, under a comment that says it assumes every whitelisted node posts a
+descriptor.
+
+`ShapeMinTwo` is the rule as written rather than as enforced: two mix layers of
+two nodes with `MinPerLayer = 2`. It matters because that is the shape of the
+deployed network's first two layers, which hold two mixes each. At
+`MinPerLayer = 1` such a layer survives losing one of its two nodes; at 2 it
+does not, so the same equivocation that costs the round nothing today would
+cost it the epoch if the knob were ever wired up. Both readings produce a
+counterexample, and the difference between them is how much slack a layer has.
 
 ### The shared-random chain
 

@@ -52,6 +52,9 @@ CONSTANTS
     Auths,      \* set of authority identities
     Byzantine,  \* subset of Auths that may behave arbitrarily
     Nodes,      \* set of candidate mix-node descriptors that may be voted on
+    MixLayers,   \* set of node sets, one per mix layer
+    MinPerLayer, \* nodes a document needs from each mix layer
+    RoleGroups,  \* node sets a document needs at least one of each
     MaxEpoch    \* number of consecutive epochs to model (>= 1)
 
 Honest == Auths \ Byzantine
@@ -61,6 +64,9 @@ Threshold == (Cardinality(Auths) \div 2) + 1
 
 ASSUME AuthsFinite       == IsFiniteSet(Auths)
 ASSUME NodesFinite       == IsFiniteSet(Nodes)
+ASSUME MixLayerSets      == MixLayers \subseteq SUBSET Nodes
+ASSUME RoleGroupSets     == RoleGroups \subseteq SUBSET Nodes
+ASSUME MinPerLayerPos    == MinPerLayer \in (Nat \ {0})
 ASSUME MaxEpochPos       == MaxEpoch \in (Nat \ {0})
 ASSUME ByzantineSubset   == Byzantine \subseteq Auths
 ASSUME ByzantineMinority == Cardinality(Byzantine) < Threshold
@@ -75,6 +81,25 @@ Symmetry ==
 SRVLink    == [epoch : 1..MaxEpoch, participants : SUBSET Auths]
 SRVValue   == UNION {[1..k -> SRVLink] : k \in 0..MaxEpoch}
 GenesisSRV == << >>
+
+\* IsDocumentWellFormed (core/pki/document.go) refuses a document with an empty
+\* topology or an empty layer, and one with no gateway node or no service node.
+\* MixLayers is one node set per mix layer and a document needs MinPerLayer of
+\* each; RoleGroups is one set for the gateways and one for the service nodes,
+\* and a document needs at least one of each. Storage replicas are deliberately
+\* neither: that function checks each replica descriptor and never counts them.
+\*
+\* MinPerLayer = 1 is what the reference enforces per epoch. The authority
+\* config has a MinNodesPerLayer knob whose default is 2, and
+\* hasEnoughDescriptors and verifyTopology in state.go would apply it, but
+\* neither is called anywhere at e17bffb95, so it binds only the whitelist size
+\* once in New(). MinPerLayer = 2 models what that knob asks for.
+\*
+\* With MixLayers and RoleGroups empty both conjuncts are vacuously true, so a
+\* configuration that does not model document shape is unaffected.
+WellFormed(S) ==
+    /\ \A L \in MixLayers  : Cardinality(S \cap L) >= MinPerLayer
+    /\ \A R \in RoleGroups : S \cap R # {}
 
 \* A document fixes the epoch, the agreed descriptors, the authorities that
 \* contributed shared randomness (srv), and the SRV it chains onto. NoDoc is
@@ -158,6 +183,21 @@ MinimalVoteChoices(a) ==
              /\ {a} \cup Byzantine \subseteq S
              /\ Cardinality(S) = Threshold}
 
+\* A restriction of VoteAssignments for the shape configurations, substituted
+\* for it in a configuration file. One node is singled out: each honest
+\* authority either holds every node or every node but that one, and a
+\* Byzantine authority reports every node to some recipients and every node but
+\* that one to the rest. Every run of the restricted specification is a run of
+\* the full one, so a counterexample found this way is genuine. An invariant
+\* that passes this way is NOT thereby established.
+MinimalVoteAssignments ==
+    {[a \in Auths |->
+        IF a \in Honest
+        THEN LET v == IF a \in H THEN Nodes ELSE Nodes \ {n}
+             IN  [b \in Auths |-> v]
+        ELSE [b \in Auths |-> IF b \in R THEN Nodes ELSE Nodes \ {n}]] :
+        n \in Nodes, H \in SUBSET Honest, R \in SUBSET Auths}
+
 DeliverVote ==
     /\ phase = "vote"
     /\ recvVote' \in Prod(Auths, [a \in Auths |-> VoteChoices(a)])
@@ -200,6 +240,7 @@ DescTally(b) ==
 DocOf(b) ==
     IF /\ Cardinality(recvCert[b]) >= Threshold
        /\ Cardinality(Participants(b)) >= Threshold
+       /\ WellFormed(DescTally(b))
     THEN [epoch |-> epoch, desc |-> DescTally(b),
           srv |-> Participants(b), prior |-> priorSRV[b]]
     ELSE NoDoc

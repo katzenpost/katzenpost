@@ -50,6 +50,8 @@ check Byzantine5          Agreement
 check Byzantine6          Agreement
 check EpochsByzantine     ChainConsistency
 check Equivocation        ConvergenceUnderFullDelivery
+check Shape               ConvergenceUnderFullDelivery
+check ShapeMinTwo         ConvergenceUnderFullDelivery
 check WitnessConsensus    ConsensusUnreachable
 check WitnessChainRestart ChainUnanimity
 
