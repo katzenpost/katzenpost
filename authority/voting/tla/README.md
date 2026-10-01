@@ -187,7 +187,6 @@ invariant violated.
 | `EpochsByzantine`     | 3     | 1   | 0     | 2      | `ChainConsistency` violated           |                 |
 | `Equivocation`        | 4     | 1   | 1     | 1      | `ConvergenceUnderFullDelivery` violated |               |
 | `Shape`               | 4     | 1   | 5     | 1      | `ConvergenceUnderFullDelivery` violated |               |
-| `ShapeMinTwo`         | 4     | 1   | 6     | 1      | `ConvergenceUnderFullDelivery` violated |               |
 | `WitnessConsensus`    | 3     | 0   | 1     | 1      | `ConsensusUnreachable` violated       |                 |
 | `WitnessChainRestart` | 3     | 0   | 0     | 2      | `ChainUnanimity` violated             |                 |
 
@@ -304,24 +303,6 @@ in one honest authority's tally, its layer empties, and the authority signs
 nothing. So the cost of descriptor equivocation is not only that honest
 authorities disagree: an authority can be left with no document to sign, and at
 three authorities that is the whole round.
-
-### What the per-layer minimum would cost, if anything applied it
-
-The authority config has a `MinNodesPerLayer` knob, default 2. Two functions in
-`state.go` would apply it, `hasEnoughDescriptors` and `verifyTopology`, and at
-`e17bffb95` neither is called from anywhere in the repository. So per epoch the
-only per-layer rule in force is `IsDocumentWellFormed`'s, which is that a layer
-is not empty. The knob binds once, in `New()`, against the size of the
-whitelist, under a comment that says it assumes every whitelisted node posts a
-descriptor.
-
-`ShapeMinTwo` is the rule as written rather than as enforced: two mix layers of
-two nodes with `MinPerLayer = 2`. It matters because that is the shape of the
-deployed network's first two layers, which hold two mixes each. At
-`MinPerLayer = 1` such a layer survives losing one of its two nodes; at 2 it
-does not, so the same equivocation that costs the round nothing today would
-cost it the epoch if the knob were ever wired up. Both readings produce a
-counterexample, and the difference between them is how much slack a layer has.
 
 ### The shared-random chain
 
