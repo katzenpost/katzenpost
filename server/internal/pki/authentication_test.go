@@ -193,6 +193,22 @@ func (*typedNilKey) MarshalBinary() ([]byte, error) { return nil, errors.New("ty
 func (*typedNilKey) Scheme() kem.Scheme             { return nil }
 func (*typedNilKey) Equal(kem.PublicKey) bool       { return false }
 
+type panickingReceiverKey struct {
+	payload []byte
+}
+
+func (k *panickingReceiverKey) MarshalBinary() ([]byte, error) {
+	return append([]byte(nil), k.payload...), nil
+}
+func (k *panickingReceiverKey) Scheme() kem.Scheme       { return nil }
+func (k *panickingReceiverKey) Equal(kem.PublicKey) bool { return false }
+
+type emptyBlobKey struct{}
+
+func (k *emptyBlobKey) MarshalBinary() ([]byte, error) { return []byte{}, nil }
+func (k *emptyBlobKey) Scheme() kem.Scheme             { return nil }
+func (k *emptyBlobKey) Equal(kem.PublicKey) bool       { return false }
+
 func TestAuthenticateConnectionInvalidCredentials(t *testing.T) {
 	f := newAuthFixture(t)
 	now, _, _ := epochtime.Now()
@@ -214,6 +230,8 @@ func TestAuthenticateConnectionInvalidCredentials(t *testing.T) {
 		{"nil credentials", nil, true},
 		{"nil key", &wire.PeerCredentials{AdditionalData: id[:]}, true},
 		{"typed nil key", &wire.PeerCredentials{AdditionalData: id[:], PublicKey: (*typedNilKey)(nil)}, true},
+		{"typed nil panicking receiver key", &wire.PeerCredentials{AdditionalData: id[:], PublicKey: (*panickingReceiverKey)(nil)}, true},
+		{"empty blob key", &wire.PeerCredentials{AdditionalData: id[:], PublicKey: &emptyBlobKey{}}, true},
 		{"empty identity", &wire.PeerCredentials{PublicKey: f.keys[0]}, true},
 		{"short identity", &wire.PeerCredentials{AdditionalData: id[:len(id)-1], PublicKey: f.keys[0]}, true},
 		{"long identity", &wire.PeerCredentials{AdditionalData: make([]byte, len(id)+1), PublicKey: f.keys[0]}, true},
@@ -255,8 +273,8 @@ func TestAuthenticateConnectionExportedMethod(t *testing.T) {
 		pastEntry, _ := f.entry(t, now-1, 0, 0)
 		currentEntry, _ := f.entry(t, now, -1, 0) // layer -1: peer omitted from current topology
 		f.p.docs = map[uint64]*pkicache.Entry{
-			now:   currentEntry,
-			now-1: pastEntry,
+			now:     currentEntry,
+			now - 1: pastEntry,
 		}
 		creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}
 		desc, send, valid := f.p.AuthenticateConnection(creds, false)
@@ -273,8 +291,8 @@ func TestAuthenticateConnectionExportedMethod(t *testing.T) {
 		pastEntry, _ := f.entry(t, now-1, 0, 0)
 		currentEntry, _ := f.entry(t, now, 0, 1)
 		f.p.docs = map[uint64]*pkicache.Entry{
-			now:   currentEntry,
-			now-1: pastEntry,
+			now:     currentEntry,
+			now - 1: pastEntry,
 		}
 		// Peer connects using the old key 0 from past document
 		creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}
