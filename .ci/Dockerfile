@@ -54,4 +54,5 @@ RUN rustup component add clippy
 
 RUN go version && uv --version && cargo clippy --version && act --version \
  && forgejo-runner --version && woodpecker-cli --version \
- && java -version && java -cp /usr/local/share/tla2tools.jar tlc2.TLC 2>&1 | head -n 1
+ && java -version \
+ && java -cp /usr/local/share/tla2tools.jar tlc2.TLC 2>&1 | grep -q 'TLC2 Version 2.19'
