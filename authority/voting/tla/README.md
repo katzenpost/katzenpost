@@ -96,6 +96,8 @@ signatures.
 | `AllOrNone` | Either every honest authority computed a document, or none did. |
 | `AllOrNoneUnderFullDelivery` | `AllOrNone`, with nothing lost and a common prior. |
 | `NoHonestLeftOut` | `AllOrNone`, when every honest authority's own view is well formed too. |
+| `ShardableUnderFullDelivery` | Enough replicas survive the tally for sharding to address `K`. |
+| `ServicesSurviveUnderFullDelivery` | Some node advertising each service survives the tally. |
 
 `UniqueConsensus` is stronger than `Agreement`: it also covers a threshold-signed
 document no honest authority finalised, which a Byzantine authority could still
@@ -143,7 +145,7 @@ and `Byzantine4` exhibits the mechanism at even `N`.
 | `EpochsByzantine` | 3 | 1 | 0 | 2 | `ChainConsistency` violated | |
 | `Equivocation` | 4 | 1 | 1 | 1 | `ConvergenceUnderFullDelivery` violated | |
 | `Shape` | 4 | 1 | 5 | 1 | `AllOrNoneUnderFullDelivery` violated | |
-| `Namenlos` | 4 | 1 | 15 | 1 | `NoHonestLeftOut` violated | |
+| `Namenlos` | 4 | 1 | 19 | 1 | `NoHonestLeftOut` violated | |
 | `WitnessConsensus` | 3 | 0 | 1 | 1 | `ConsensusUnreachable` violated | |
 | `WitnessChainRestart` | 3 | 0 | 0 | 2 | `ChainUnanimity` violated | |
 
@@ -162,18 +164,39 @@ makes every tally malformed, so that invariant fails there with no adversary at
 all, while `AllOrNoneUnderFullDelivery` holds without one over an exhaustive
 search of 2,863,811 states.
 
-`Namenlos` is the same gate at the deployed shape, with the nodes and groups the
-published consensus shows: three mix layers of two, two and three, four gateways
-and four service nodes. Four authorities rather than six, so the threshold is 3
-of 4 where the network's is 4 of 6. Every group there has a spare, so no single
-disputed descriptor can empty one, and emptying the thinnest takes two: in the
-trace a1 and a2 hold one node of a two-node layer and a3 holds the other, so
-every honest view is still well formed, and the Byzantine authority withholds
-both from a1 alone. Each of them then sits below threshold there, a1's layer is
-empty and it issues no certificate, while the other two certify and hold a
-document. This establishes nothing at those node counts, since delivery and vote
-content are restricted; it exhibits that the gate is reachable where the network
-runs.
+`Namenlos` is the same gate at the deployed shape, with the nodes, groups and
+service advertisements the published consensus shows at
+<https://status.namenlos.network/>: three mix layers of two, two and three; four
+gateways; four service nodes, three advertising a courier and all four an echo;
+four storage replicas. Four authorities rather than six, so the threshold is 3 of
+4 where the network's is 4 of 6.
+
+Storage replicas are not a `Topology` group, and in the model they are exactly the
+descriptors in no group, which is the same fact: `IsDocumentWellFormed` checks each
+replica descriptor and never counts them. They are tallied like every other
+descriptor, so they are contestable. A courier is not a role either; it runs on a
+service node and is advertised through that node's Kaetzchen map, so a service is
+the set of nodes offering it.
+
+Every group has a spare, so no single disputed descriptor can empty one, and
+emptying the thinnest takes two: in the trace a1 and a2 hold one node of a
+two-node layer and a3 holds the other, so every honest view is still well formed,
+and the Byzantine authority withholds both from a1 alone. Each sits below
+threshold there, a1's layer is empty and it issues no certificate, while the other
+two certify and hold a document. The round still succeeds without a1, so what this
+shows is one authority excluded rather than a consensus prevented.
+
+Two of its invariants say what a consensus owes its consumers rather than its
+signers: that enough replicas survive for sharding to address `K` of them, and
+that some node advertising each service survives. Nothing in `getMyConsensus`
+checks either, and under a two-descriptor dispute both hold over an exhaustive
+search of the restricted specification. That is the provisioning margin rather
+than a guarantee: four replicas against a `K` of two, and three couriers, both
+survive two disputed descriptors.
+
+None of this is established at these node counts, because delivery is pinned to
+full delivery and vote content to one contested set. It is what is reachable where
+the network actually runs.
 
 `Epochs`, `ByzantineValidity`, `Byzantine4` and `Equivocation` set `SYMMETRY`,
 sound for them because none names a particular authority or node and each leaves

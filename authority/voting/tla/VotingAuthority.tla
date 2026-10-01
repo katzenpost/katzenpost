@@ -99,6 +99,31 @@ GenesisSRV == << >>
 \* does not model document shape is unaffected.
 WellFormed(S) == \A G \in Topology : S \cap G # {}
 
+\* Storage replicas sit in the document's StorageReplicas and are never one of the
+\* Topology groups, because IsDocumentWellFormed checks each replica descriptor
+\* and never counts them. So they are exactly the descriptors in no group, and
+\* are tallied like any other.
+\* With no topology modelled there is no replica distinction either, so this is
+\* empty rather than every node.
+Replicas == IF Topology = {} THEN {} ELSE Nodes \ UNION Topology
+
+\* Kaetzchen are advertised by service nodes and a courier is not a separate
+\* role, so a service is a set of the nodes offering it rather than a node kind.
+Couriers == {}
+EchoServices == {}
+
+\* Replicas addressed per envelope, K in replica/common/shard.go.
+ShardK == 2
+
+\* The deployed service advertisements, from the published consensus. Written as
+\* strings so a configuration can name the same descriptors.
+NamenlosCouriers == {"annares", "waulandservice", "windfallservice"}
+NamenlosEcho     == {"annares", "lilly", "waulandservice", "windfallservice"}
+
+\* The services a consensus is expected to still offer. Empty sets drop out, so
+\* a configuration that models none of them leaves every claim below vacuous.
+AdvertisedServices == {Couriers, EchoServices} \ {{}}
+
 \* A document fixes the epoch, the agreed descriptors, the authorities that
 \* contributed shared randomness (srv), and the SRV it chains onto. NoDoc is
 \* the "no document" value; its epoch 0 sets it apart from every document.
@@ -233,7 +258,9 @@ OnlyFullVotes(a) == {Auths}
 \* contests one pair drawn from one group: an honest authority holds every node,
 \* or neither of the pair, or all but one of it, and a Byzantine authority
 \* reports every node to some recipients and withholds the pair from the rest.
-Pairs == UNION {{P \in SUBSET G : Cardinality(P) = 2} : G \in Topology}
+\* Replicas are contestable too, though they are not a Topology group.
+Contestable == Topology \cup ({Replicas} \ {{}})
+Pairs == UNION {{P \in SUBSET G : Cardinality(P) = 2} : G \in Contestable}
 PairViews(P) == {Nodes, Nodes \ P} \cup {Nodes \ {p} : p \in P}
 PairVoteAssignments ==
     UNION {{[a \in Auths |->
@@ -461,6 +488,23 @@ AllOrNone ==
 \* asking about where every group has more than one node.
 AllOrNoneUnderFullDelivery == FullDelivery => AllOrNone
 NoHonestLeftOut == (FullDelivery /\ HonestViewsWellFormed) => AllOrNone
+
+\* Nothing in getMyConsensus counts replicas, so a document it signs can carry
+\* fewer than sharding addresses and the pigeonhole path is what fails.
+ShardableUnderFullDelivery ==
+    (FullDelivery /\ Replicas # {}) =>
+        \A h \in Honest :
+            myDoc[h] # NoDoc =>
+                Cardinality(myDoc[h].desc \cap Replicas) >= ShardK
+
+\* Nor does it require that any node advertising a service survived the tally, so
+\* a signed consensus can offer clients no courier to reach, and no echo to test
+\* against.
+ServicesSurviveUnderFullDelivery ==
+    FullDelivery =>
+        \A h \in Honest :
+            myDoc[h] # NoDoc =>
+                \A S \in AdvertisedServices : myDoc[h].desc \cap S # {}
 
 \* EXPECTED TO FAIL. The counterexample is a run in which every honest
 \* authority finalises the same document, i.e. a successful consensus.
