@@ -1,6 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 name: tla models
 
 on:
+  pull_request:
+    paths:
+      - 'authority/voting/tla/**'
+      - 'client/tla/**'
+      - 'server/tla/**'
+      - 'Makefile'
+      - '.github/workflows/tla.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'authority/voting/tla/**'
+      - 'client/tla/**'
+      - 'server/tla/**'
   workflow_dispatch:
 
 jobs:

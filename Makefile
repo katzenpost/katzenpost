@@ -12,7 +12,8 @@ GOVULNCHECK_VERSION?=v1.8.0
 tla_dirs=authority/voting/tla client/tla server/tla
 TLA2TOOLS_VERSION?=v1.7.4
 TLA2TOOLS_SHA256?=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
-TLA2TOOLS?=$(CURDIR)/tla2tools.jar
+CI_TLA2TOOLS=/usr/local/share/tla2tools.jar
+TLA2TOOLS?=$(if $(wildcard $(CI_TLA2TOOLS)),$(CI_TLA2TOOLS),$(CURDIR)/tla2tools.jar)
 
 .PHONY: ci-suites
 ci-suites:
