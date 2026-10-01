@@ -49,7 +49,7 @@ authority/voting/tla VotingAuthority Byzantine5          Agreement
 authority/voting/tla VotingAuthority Byzantine6          Agreement
 authority/voting/tla VotingAuthority EpochsByzantine     ChainConsistency
 authority/voting/tla VotingAuthority Equivocation        ConvergenceUnderFullDelivery
-authority/voting/tla VotingAuthority Shape               ConvergenceUnderFullDelivery
+authority/voting/tla VotingAuthority Shape               AllOrNoneUnderFullDelivery
 authority/voting/tla VotingAuthority WitnessConsensus    ConsensusUnreachable
 authority/voting/tla VotingAuthority WitnessChainRestart ChainUnanimity
 client/tla           ClientARQ       Sequential          pass

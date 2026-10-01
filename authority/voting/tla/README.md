@@ -93,6 +93,9 @@ signatures.
 | `ChainConsistency` | Honest authorities chaining onto a prior document chain onto the same one. |
 | `ChainGrounded` | A chain is consecutive epochs ending at the previous one. |
 | `ConvergenceUnderFullDelivery` | With full delivery and a common prior, honest documents are equal. |
+| `AllOrNone` | Either every honest authority computed a document, or none did. |
+| `AllOrNoneUnderFullDelivery` | `AllOrNone`, with nothing lost and a common prior. |
+| `NoHonestLeftOut` | `AllOrNone`, when every honest authority's own view is well formed too. |
 
 `UniqueConsensus` is stronger than `Agreement`: it also covers a threshold-signed
 document no honest authority finalised, which a Byzantine authority could still
@@ -139,7 +142,7 @@ and `Byzantine4` exhibits the mechanism at even `N`.
 | `Byzantine6` | 6 | 2 | 0 | 1 | `Agreement` violated | |
 | `EpochsByzantine` | 3 | 1 | 0 | 2 | `ChainConsistency` violated | |
 | `Equivocation` | 4 | 1 | 1 | 1 | `ConvergenceUnderFullDelivery` violated | |
-| `Shape` | 4 | 1 | 5 | 1 | `ConvergenceUnderFullDelivery` violated | |
+| `Shape` | 4 | 1 | 5 | 1 | `AllOrNoneUnderFullDelivery` violated | |
 | `WitnessConsensus` | 3 | 0 | 1 | 1 | `ConsensusUnreachable` violated | |
 | `WitnessChainRestart` | 3 | 0 | 0 | 2 | `ChainUnanimity` violated | |
 
@@ -147,6 +150,16 @@ Each file is `VotingAuthority_<Config>.cfg` and says in its own comment what its
 result shows. Counts are from TLC 2.19, the release `make tla` pins. A failing
 configuration has no stable count, because TLC stops at the first counterexample
 its workers reach and which one that is varies between runs of an unchanged tree.
+
+`Shape` is the shape gate at the smallest shape that can trip it. One Byzantine
+authority sends a service node to two honest authorities and withholds it from
+the third, which leaves that one below threshold on it, so its service-node group
+is empty, it issues no certificate and holds no document while the other two hold
+one. It checked `ConvergenceUnderFullDelivery` until that was found to be the
+wrong witness: with singleton groups one node missing from every honest view
+makes every tally malformed, so that invariant fails there with no adversary at
+all, while `AllOrNoneUnderFullDelivery` holds without one over an exhaustive
+search of 2,863,811 states.
 
 `Epochs`, `ByzantineValidity`, `Byzantine4` and `Equivocation` set `SYMMETRY`,
 sound for them because none names a particular authority or node and each leaves
