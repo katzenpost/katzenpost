@@ -52,9 +52,7 @@ CONSTANTS
     Auths,      \* set of authority identities
     Byzantine,  \* subset of Auths that may behave arbitrarily
     Nodes,      \* set of candidate mix-node descriptors that may be voted on
-    MixLayers,   \* set of node sets, one per mix layer
-    MinPerLayer, \* nodes a document needs from each mix layer
-    RoleGroups,  \* node sets a document needs at least one of each
+    Topology,    \* node sets a document needs at least one node from each
     MaxEpoch    \* number of consecutive epochs to model (>= 1)
 
 Honest == Auths \ Byzantine
@@ -64,9 +62,7 @@ Threshold == (Cardinality(Auths) \div 2) + 1
 
 ASSUME AuthsFinite       == IsFiniteSet(Auths)
 ASSUME NodesFinite       == IsFiniteSet(Nodes)
-ASSUME MixLayerSets      == MixLayers \subseteq SUBSET Nodes
-ASSUME RoleGroupSets     == RoleGroups \subseteq SUBSET Nodes
-ASSUME MinPerLayerPos    == MinPerLayer \in (Nat \ {0})
+ASSUME TopologyGroups    == Topology \subseteq SUBSET Nodes
 ASSUME MaxEpochPos       == MaxEpoch \in (Nat \ {0})
 ASSUME ByzantineSubset   == Byzantine \subseteq Auths
 ASSUME ByzantineMinority == Cardinality(Byzantine) < Threshold
@@ -84,22 +80,19 @@ GenesisSRV == << >>
 
 \* IsDocumentWellFormed (core/pki/document.go) refuses a document with an empty
 \* topology or an empty layer, and one with no gateway node or no service node.
-\* MixLayers is one node set per mix layer and a document needs MinPerLayer of
-\* each; RoleGroups is one set for the gateways and one for the service nodes,
-\* and a document needs at least one of each. Storage replicas are deliberately
-\* neither: that function checks each replica descriptor and never counts them.
+\* Each element of Topology is a set of nodes a document needs at least one of:
+\* one per mix layer, one for the gateways, one for the service nodes. Storage
+\* replicas are deliberately not one, because that function checks each replica
+\* descriptor and never counts them.
 \*
-\* MinPerLayer = 1 is what the reference enforces per epoch. The authority
-\* config has a MinNodesPerLayer knob whose default is 2, and
-\* hasEnoughDescriptors and verifyTopology in state.go would apply it, but
-\* neither is called anywhere at e17bffb95, so it binds only the whitelist size
-\* once in New(). MinPerLayer = 2 models what that knob asks for.
+\* At least one is what the reference enforces per epoch. The authority config has
+\* a MinNodesPerLayer knob whose default is 2, and hasEnoughDescriptors and
+\* verifyTopology in state.go would apply it, but neither is called anywhere at
+\* e17bffb95, so it binds only the whitelist size once in New().
 \*
-\* With MixLayers and RoleGroups empty both conjuncts are vacuously true, so a
-\* configuration that does not model document shape is unaffected.
-WellFormed(S) ==
-    /\ \A L \in MixLayers  : Cardinality(S \cap L) >= MinPerLayer
-    /\ \A R \in RoleGroups : S \cap R # {}
+\* With Topology empty the conjunction is vacuously true, so a configuration that
+\* does not model document shape is unaffected.
+WellFormed(S) == \A G \in Topology : S \cap G # {}
 
 \* A document fixes the epoch, the agreed descriptors, the authorities that
 \* contributed shared randomness (srv), and the SRV it chains onto. NoDoc is

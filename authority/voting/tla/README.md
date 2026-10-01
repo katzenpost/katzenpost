@@ -40,14 +40,13 @@ Elements that follow `state.go`:
   consistent commitments, as `getMyConsensus()` requires. Otherwise it signs
   nothing.
 - **A document must have the shape `IsDocumentWellFormed` demands**, when a
-  configuration asks for one. `MixLayers` is one node set per mix layer and a
-  document needs `MinPerLayer` of each; `RoleGroups` is one set for the gateways
-  and one for the service nodes, of which it needs at least one each. An
-  authority whose tally leaves any of them short computes no document, because
-  `getMyConsensus()` refuses to sign a malformed one and returns an error.
-  Storage replicas are neither, because that function checks each replica
-  descriptor and never counts them. Only `Shape` and `ShapeMinTwo` set these;
-  with them empty both conditions are vacuous.
+  configuration asks for one. `Topology` is a set of node sets a document needs
+  at least one node from each of: one per mix layer, one for the gateways, one
+  for the service nodes. An authority whose tally leaves any of them empty
+  computes no document, because `getMyConsensus()` refuses to sign a malformed
+  one and returns an error. Storage replicas are not one of the sets, because
+  that function checks each replica descriptor and never counts them. Only
+  `Shape` sets `Topology`; with it empty the condition is vacuous.
 - **Threshold signatures.** An honest authority signs only its own document,
   and finalises it only with `Threshold` signatures over that exact document,
   as in `getThresholdConsensus()`.
@@ -105,10 +104,9 @@ A property that holds in the model is established only up to these gaps.
   is eventually reached.
 - **Cryptography is symbolic.** Signatures are unforgeable, and equal
   shared-random chains give equal values.
-- **How many nodes there are.** `MixLayers` and `RoleGroups` fix which groups a
-  document needs nodes from, and the two shape configurations use the smallest
-  sets that keep the rule meaningful; the others leave them empty and model no
-  document shape at all. Node counts
+- **How many nodes there are.** `Topology` fixes which groups a document needs a
+  node from, and `Shape` uses the smallest sets that keep the rule meaningful;
+  the others leave it empty and model no document shape at all. Node counts
   are not a model-checking question: each authority's view is an arbitrary
   subset of `Nodes`, so the search grows as `2^|Nodes|` per authority and a
   realistic count is unreachable. The network this follows is namenlos, whose
@@ -116,10 +114,9 @@ A property that holds in the model is established only up to these gaps.
   authorities and so a threshold of four, three mix layers holding two, two and
   three mixes, four gateways, four service nodes and four storage replicas, on
   a topology pinned in the authority configuration rather than derived from the
-  shared random. `Byzantine6` covers the authority count and `ShapeMinTwo` the
-  two-mix layers; the remaining counts change nothing the model checks, because
-  every property here turns on quorums and orderings and not on how many nodes
-  a layer holds.
+  shared random. `Byzantine6` covers the authority count; the remaining counts
+  change nothing the model checks, because every property here turns on quorums
+  and orderings and not on how many nodes a layer holds.
 - **The minimum number of storage replicas.** Sharding needs two
   (`K` in `replica/common/shard.go`, enforced by `GetConfiguredReplicaKeys`),
   but that is a consumer of the consensus and not a condition on it:
