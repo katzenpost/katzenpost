@@ -863,6 +863,22 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 // is what re-Pushes the timer on success, and a dropped fire would lose the
 // retry forever. If the client is disconnected the enqueue is a no-op;
 // cleanupForAppID removes the stale map entry.
+// rearmARQRetry puts an operation back on the retry timer without rotating its
+// SURB ID or writing the maps. Writing them here would undo a concurrent
+// cleanupForAppID and resurrect an operation whose client has gone; a timer for a
+// SURB ID that is no longer mapped is harmless, because enqueueResend drops it. handleReply cancels the timer before a handler
+// runs, so a handler that cannot act on the reply has to re-arm or the operation
+// stays tracked and is never resent. Rotation belongs to the InProgress path and
+// deletion to the terminal path, so neither happens here.
+func (d *Daemon) rearmARQRetry(surbID *[sphinxConstants.SURBIDLength]byte) {
+	if surbID == nil || d.arqTimerQueue == nil {
+		return
+	}
+	retryAt := time.Now().Add(resendQueueFullBackoff)
+	d.log.Debugf("rearmARQRetry: re-arming SURB ID %x at %v", surbID[:], retryAt)
+	d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
+}
+
 func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	d.lockReply()
 	message, ok := d.arqSurbIDMap[*surbID]
@@ -1005,16 +1021,15 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		return
 	}
 
-	// Check if the connection still exists before attempting any resend operations.
-	// If the connection is gone, clean up and abort - there's no client to receive the response.
+	// The thin client may be away inside its grace period, which is not a reason
+	// to forget the query: pigeonhole.md has the client resend until it receives a
+	// reply. Re-arm and leave the maps alone, so a cleanupForAppID that has already
+	// run stays done.
 	incomingConn := d.listener.getConnection(message.AppID)
 	if incomingConn == nil {
-		d.log.Debugf("ARQ resend: connection already closed for AppID %x, cleaning up SURB ID %x", message.AppID[:], surbID[:])
-		delete(d.arqSurbIDMap, *surbID)
-		if message.EnvelopeHash != nil {
-			delete(d.arqEnvelopeHashMap, *message.EnvelopeHash)
-		}
+		d.log.Debugf("ARQ resend: no connection for AppID %x, re-arming SURB ID %x", message.AppID[:], surbID[:])
 		d.replyLock.Unlock()
+		d.rearmARQRetry(surbID)
 		return
 	}
 

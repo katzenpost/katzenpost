@@ -1,9 +1,9 @@
 // Replays of orderings found by the TLA+ model in this directory, against
 // the daemon code. Each test runs, step by step on one goroutine, an ordering
 // of operations that in the daemon run on different goroutines. Every test
-// PASSES when the daemon behaves as the model says. For the three marked
-// "problem" that means the problem is present. They are evidence, not
-// regression tests.
+// PASSES when the daemon behaves as the model says. The three marked "problem"
+// are the orderings the model found; each now asserts the behaviour the fix
+// gives, so they are regression tests rather than evidence that a bug exists.
 //
 // The file has a .txt suffix so that it is not compiled. To run it:
 //
@@ -232,9 +232,8 @@ func TestTLAReproCancelRace(t *testing.T) {
 		t.Logf("reply %d to the original call: ErrorCode=%d", i+1, r.ErrorCode)
 	}
 	t.Logf("RESULT cancel race: %d replies to one call", len(got))
-	require.Len(t, got, 2, "the model predicts two replies")
+	require.Len(t, got, 1, "the claim is exclusive, so one caller answers")
 	require.Equal(t, thin.ThinClientErrorStartResendingCancelled, got[0].ErrorCode)
-	require.Equal(t, thin.ThinClientSuccess, got[1].ErrorCode)
 }
 
 // Problem. ClientARQ_RaceResend.cfg: Lookup, DoResend, Handle. The rotation is done
@@ -264,8 +263,8 @@ func TestTLAReproResendRace(t *testing.T) {
 
 	got := e.startReplies()
 	t.Logf("RESULT resend race: %d replies, %d map entries left", len(got), e.tracked())
-	require.Len(t, got, 0, "the model predicts no reply")
-	require.Equal(t, 0, e.tracked(), "the model predicts the operation is deleted")
+	require.Len(t, got, 0, "no reply yet, the query is still outstanding")
+	require.Equal(t, 2, e.tracked(), "an undecryptable reply must not lose the operation")
 }
 
 // disconnect removes the application's connection and returns it, so that
@@ -297,12 +296,12 @@ func TestTLAReproReplyWhileAway(t *testing.T) {
 	e.d.handlePigeonholeARQReply(held, reply) // ingress worker
 	e.resume(conn)
 
-	e.waitArmed(t, 0) // the model predicts no timer is armed
 	queued := len(conn.resendCh)
 	t.Logf("RESULT reply while away: %d map entries, %d queued resends, %d armed timers",
 		e.tracked(), queued, e.d.arqTimerQueue.Len())
-	require.Equal(t, 2, e.tracked(), "the model predicts the operation stays tracked")
-	require.Equal(t, 0, queued, "the model predicts no resend is queued")
+	require.Equal(t, 2, e.tracked(), "the operation stays tracked")
+	require.Equal(t, 1, queued+e.d.arqTimerQueue.Len(),
+		"a reply that cannot be delivered must leave a retry scheduled")
 }
 
 // Not a problem. Disconnect, TimerFire, Resume. The timer is armed again. It

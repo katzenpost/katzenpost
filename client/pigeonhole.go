@@ -1409,6 +1409,29 @@ func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, erro
 // finishARQMessage delivers the terminal outcome of an ARQ operation to its
 // owner: a standalone StartResendingEncryptedMessage gets its per-message thin
 // reply. The map cleanup has already been done by the caller.
+// claimARQTerminal removes the operation from both ARQ maps and reports whether
+// this call is the one that removed it. A cancel removes the same two entries
+// under the same lock, so a reply handler that loses the race finds nothing and
+// must not answer the original query a second time.
+func (d *Daemon) claimARQTerminal(arqMessage *ARQMessage) bool {
+	d.lockReply()
+	defer d.replyLock.Unlock()
+	claimed := false
+	if arqMessage.SURBID != nil {
+		if _, ok := d.arqSurbIDMap[*arqMessage.SURBID]; ok {
+			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			claimed = true
+		}
+	}
+	if arqMessage.EnvelopeHash != nil {
+		if _, ok := d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash]; ok {
+			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+			claimed = true
+		}
+	}
+	return claimed
+}
+
 func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, errorCode uint8, plaintext []byte) {
 	conn.sendResponse(&Response{
 		AppID: arqMessage.AppID,
@@ -1450,15 +1473,16 @@ func courierEnvelopeErrorToThinError(code uint8) uint8 {
 func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxReply) {
 	conn := d.listener.getConnection(arqMessage.AppID)
 	if conn == nil {
-		d.log.Errorf("handlePigeonholeARQReply: no connection for AppID %x", arqMessage.AppID[:])
+		d.log.Errorf("handlePigeonholeARQReply: no connection for AppID %x, re-arming", arqMessage.AppID[:])
+		d.rearmARQRetry(reply.surbID)
 		return
 	}
 
 	// Decrypt the SURB payload
 	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, arqMessage.SURBDecryptionKeys)
 	if err != nil {
-		d.log.Errorf("handlePigeonholeARQReply: SURB payload decryption error: %s", err)
-		d.dropARQMessage(arqMessage)
+		d.log.Errorf("handlePigeonholeARQReply: SURB payload decryption error, re-arming: %s", err)
+		d.rearmARQRetry(reply.surbID)
 		return
 	}
 
@@ -1519,22 +1543,18 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	switch transition.Action {
 	case ARQActionError:
 		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", transition.ErrorCode)
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
 
 		d.finishARQMessage(arqMessage, conn, transition.ErrorCode, nil)
 		return
 
 	case ARQActionComplete:
 		d.log.Debugf("handlePigeonholeARQReply: Write ACK received, returning success (single round-trip)")
-		d.lockReply()
-		if arqMessage.SURBID != nil {
-			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+		if !d.claimARQTerminal(arqMessage) {
+			return
 		}
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
 		instrument.SurbIDDelivered()
 
 		d.finishARQMessage(arqMessage, conn, thin.ThinClientSuccess, nil)
@@ -1598,10 +1618,9 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		return
 
 	case pigeonhole.CopyStatusSucceeded:
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
 		instrument.SurbIDDelivered()
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
@@ -1612,10 +1631,9 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		})
 
 	case pigeonhole.CopyStatusFailed:
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
@@ -1628,10 +1646,9 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 
 	default:
 		d.log.Warningf("handleCopyCommandARQReply: unexpected Status=%d, treating as failure", copyCommandReply.Status)
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
@@ -1929,10 +1946,9 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 
 		case payloadActionIdempotentSuccess:
 			d.log.Debugf("handlePayloadReply: BoxAlreadyExists for write operation - treating as idempotent success")
-			d.lockReply()
-			delete(d.arqSurbIDMap, *arqMessage.SURBID)
-			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-			d.replyLock.Unlock()
+			if !d.claimARQTerminal(arqMessage) {
+				return
+			}
 			instrument.SurbIDDelivered()
 
 			d.finishARQMessage(arqMessage, conn, thin.ThinClientSuccess, nil)
@@ -1940,10 +1956,9 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		}
 
 		// payloadActionReturnError (or retry/idempotent fell through on infrastructure failure)
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
 
 		errorCode := mapDecryptionErrorToCode(err)
 		var re *replicaError
@@ -1958,10 +1973,9 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	}
 
 	// Remove from ARQ tracking
-	d.lockReply()
-	delete(d.arqSurbIDMap, *arqMessage.SURBID)
-	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-	d.replyLock.Unlock()
+	if !d.claimARQTerminal(arqMessage) {
+		return
+	}
 	instrument.SurbIDDelivered()
 
 	// Handle writes: for write operations, we don't expect any payload data.

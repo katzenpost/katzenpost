@@ -57,6 +57,19 @@ func arqTracked(d *Daemon, m *ARQMessage) int {
 	return n
 }
 
+// A cancel and a terminal reply both try to end the same operation. Exactly one
+// of them may answer the original query, so the claim has to be exclusive.
+func TestClaimARQTerminalIsExclusive(t *testing.T) {
+	l := newSchedulerListener()
+	d, _ := newARQTestDaemon(t, l)
+	appID := &[AppIDLength]byte{0x0A}
+	m := trackARQMessage(d, appID)
+
+	require.True(t, d.claimARQTerminal(m), "the first claim takes the operation")
+	require.False(t, d.claimARQTerminal(m), "a second claim must not answer the query again")
+	require.Equal(t, 0, arqTracked(d, m), "a claimed operation is removed from both maps")
+}
+
 // pigeonhole.md: clients MUST resend identical CourierEnvelope bodies until they
 // receive a reply. A thin client that is away within its grace period has not
 // received one, so the operation must survive and stay scheduled.

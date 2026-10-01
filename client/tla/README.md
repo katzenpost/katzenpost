@@ -99,7 +99,9 @@ The protocol is sound: with atomic reply handling and a connected client, every
 property holds. The lookup before rotating does its job, and `CancelIsFinal`
 fails if the lookup is removed from the model.
 
-Three problems appear once those assumptions are dropped.
+Three problems appeared once those assumptions were dropped. All three are fixed,
+so they are what the model found rather than what the code does; the
+configurations still exhibit them, because they model the code at `e17bffb95`.
 
 **A cancel racing a reply answers the application twice** (`RaceCancel`). The
 ingress worker finds the operation, the application cancels and is answered with
@@ -127,7 +129,8 @@ harmless, because `enqueueResend` arms it again.
 
 The first three were replayed against the daemon code by calling the real
 functions in the order the model found, together with three replays of behaviour
-that is not a problem; all six agree with the model. The tests are in
+that is not a problem. Each of the three now asserts the behaviour the fix gives,
+so the file is a regression test for the orderings the model turned up. The tests are in
 [`arq_race_repro_test.go.txt`](arq_race_repro_test.go.txt) with instructions at
 the top. They show what the code does for a given ordering, not how often that
 ordering occurs, and both races need a reply inside a narrow window, so they are
