@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
@@ -885,22 +886,46 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 	return s, nowDoc, now, till
 }
 
+func isUnusableKey(k kem.PublicKey) (bad bool) {
+	if k == nil {
+		return true
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			bad = true
+		}
+	}()
+	b, err := k.MarshalBinary()
+	return err != nil || len(b) == 0
+}
+
 // AuthenticateConnection authenticates a link key against the PKI documents,
 // returning the newest direction-eligible descriptor and whether the peer may
 // send traffic.
 func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (*cpki.MixDescriptor, bool, bool) {
+	if c == nil || isUnusableKey(c.PublicKey) {
+		return nil, false, false
+	}
+	if len(c.AdditionalData) != sConstants.NodeIDLength {
+		dirStr := "Incoming"
+		if isOutgoing {
+			dirStr = "Outgoing"
+		}
+		p.log.Debugf("%v: %x AD not an IdentityKey?.", dirStr, c.AdditionalData)
+		return nil, false, false
+	}
 	docs, nowDoc, now, till := p.documentsForAuthentication()
-	return p.authenticateConnection(c, isOutgoing, docs, nowDoc, now, till)
+	return p.authenticateConnectionWithDocs(c, isOutgoing, docs, nowDoc, now, till)
 }
 
-// authenticateConnection evaluates an authentication snapshot independent of
+// authenticateConnectionWithDocs evaluates an authentication snapshot independent of
 // the wall clock so transition behavior can be tested deterministically.
 // The caller must provide a valid snapshot where docs are ordered newest-first,
 // nowDoc is the entry for epoch now (or nil if missing), the now+1 entry is
 // present only within the early-connect window, and past entries cover up to
 // NumMixKeys previous epochs.
-func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool, docs []*pkicache.Entry, nowDoc *pkicache.Entry, now uint64, till time.Duration) (desc *cpki.MixDescriptor, canSend, isValid bool) {
-	if c == nil || c.PublicKey == nil {
+func (p *pki) authenticateConnectionWithDocs(c *wire.PeerCredentials, isOutgoing bool, docs []*pkicache.Entry, nowDoc *pkicache.Entry, now uint64, till time.Duration) (desc *cpki.MixDescriptor, canSend, isValid bool) {
+	if c == nil || isUnusableKey(c.PublicKey) {
 		return nil, false, false
 	}
 	var earlySendSlack = epochtime.Period / 8
@@ -920,7 +945,7 @@ func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool, d
 	copy(nodeID[:], c.AdditionalData)
 
 	blob, err := c.PublicKey.MarshalBinary()
-	if err != nil {
+	if err != nil || len(blob) == 0 {
 		p.log.Warningf("%v: failed to marshal peer public key", dirStr)
 		return nil, false, false
 	}
