@@ -157,8 +157,8 @@ replayed.
 
 ## Running
 
-`make tla` from the repository root fetches the pinned tla2tools, checks its
-digest and runs every configuration of every model through
+`make tla` from the repository root fetches the pinned tla2tools through
+`make tla-tools`, which checks its digest, and runs every configuration of every model through
 [`.ci/tla.sh`](../../.ci/tla.sh), comparing each verdict with the expected one
 and exiting non-zero if any differs.
 

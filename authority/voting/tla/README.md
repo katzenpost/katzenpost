@@ -29,7 +29,7 @@ Each element follows a named function in `state.go`:
 | Descriptors are tallied over received votes, with no equivocation check | `tallyVotes` |
 | Participants come from certificates; an authority seen with two commitments is excluded | `verifyCommits` |
 | A document needs `Threshold` votes, certificates and consistent commitments, or the authority signs nothing | `getMyConsensus` |
-| A document must have the shape a configuration's `Topology` demands | `IsDocumentWellFormed` |
+| A tally must have the shape a configuration's `Topology` demands, to certify and to compute a document | `IsDocumentWellFormed`, at `getCertificate` and `getMyConsensus` |
 | An authority signs only its own document, and finalises at `Threshold` signatures over it | `getThresholdConsensus` |
 | The prior epoch's value is hashed in, or zero bytes when absent | `computeSharedRandom` |
 | An authority that did not finalise may be given any threshold-signed document, or none | `stateBootstrap` |
@@ -193,8 +193,8 @@ error into a copy of the specification and confirming TLC reported it violated.
 
 ## Running
 
-`make tla` from the repository root fetches the pinned tla2tools, checks its
-digest and runs every configuration of every model through
+`make tla` from the repository root fetches the pinned tla2tools through
+`make tla-tools`, which checks its digest, and runs every configuration of every model through
 [`.ci/tla.sh`](../../../.ci/tla.sh), comparing each verdict with the expected one
 and exiting non-zero if any differs.
 
