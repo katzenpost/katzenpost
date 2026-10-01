@@ -446,18 +446,54 @@ func TestConsensusDocumentInvalidSignature(t *testing.T) {
 		}
 	})
 
-	t.Run("improperly signed document cannot be admitted to authenticate peers", func(t *testing.T) {
+	t.Run("properly signed document admits the peer, unsigned cannot", func(t *testing.T) {
 		f := newAuthFixture(t)
-		attackerID := hash.Sum256(attackerIDBlob)
+		id := hash.Sum256(attackerIDBlob)
+
+		// A document that lists self and the attacker as an incoming peer.
+		cachedDoc := &cpki.Document{
+			Epoch:              now,
+			Topology:           make([][]*cpki.MixDescriptor, 3),
+			Version:            cpki.DocumentVersion,
+			PKISignatureScheme: ed25519.Name(),
+		}
+		cachedDoc.Topology[1] = []*cpki.MixDescriptor{{Name: "self", IdentityKey: f.selfBlob}}
+		cachedDoc.Topology[0] = []*cpki.MixDescriptor{attackerDesc}
+
+		// Snapshot the unsigned certificate before SignDocument adds signatures.
+		unsigned, err := cachedDoc.MarshalCertificate()
+		if err != nil {
+			t.Fatal(err)
+		}
+		signed, err := cpki.SignDocument(authPriv, authPub, cachedDoc)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// A properly signed document parses, can be cached, and admits the peer.
+		parsed, err := cpki.FromPayload(authPub, signed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry, err := pkicache.New(parsed, f.self, false, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.p.docs = map[uint64]*pkicache.Entry{now: entry}
+
 		creds := &wire.PeerCredentials{
-			AdditionalData: attackerID[:],
+			AdditionalData: id[:],
 			PublicKey:      attackerLinkKey,
 		}
-		// Since invalid consensus documents are rejected by FromPayload/VerifyThreshold,
-		// they never get parsed into p.docs.
 		desc, canSend, isValid := f.p.AuthenticateConnection(creds, false)
-		if canSend || isValid || desc != nil {
-			t.Fatalf("attacker authenticated without valid signed consensus: desc=%v canSend=%v isValid=%v", desc, canSend, isValid)
+		if desc == nil || !canSend || !isValid {
+			t.Fatalf("properly signed document should admit the peer: desc=%v canSend=%v isValid=%v", desc, canSend, isValid)
+		}
+
+		// The unsigned certificate is rejected before admission, so it can never
+		// be cached and therefore can never authenticate a peer.
+		if _, err := cpki.FromPayload(authPub, unsigned); err == nil {
+			t.Fatal("expected unsigned document to be rejected at admission")
 		}
 	})
 }
