@@ -132,10 +132,12 @@ node.** `WitnessShortened` shows one that waited for a crypto worker and was the
 held for less than the delay its sender asked for; `MinimumMixing` shows the two
 together are never less than that delay.
 
-**Forward secrecy and the supply of keys both depend on the publish step.**
-`Prune` and, apart from start-up, `Generate` have one call site each, inside
-`publishDescriptorIfNeeded`, so an epoch that passes without that step prunes and
-generates nothing. `OneSkipSecrecy` shows the key of epoch 1 still existing in
+**Forward secrecy and the supply of keys both depended on the publish step.**
+At `e17bffb95`, `Prune` and, apart from start-up, `Generate` had one call site
+each, inside `publishDescriptorIfNeeded`, so an epoch that passed without that
+step pruned and generated nothing. The PKI worker now rotates every pass, so this
+is what the model found rather than what the code does; the configurations still
+exhibit it, because they model the code as it was. `OneSkipSecrecy` shows the key of epoch 1 still existing in
 epoch 4 after epoch 3 was skipped, when it should have been pruned in epoch 3.
 One skipped epoch costs no availability, as `OneSkip` shows, but after two in a
 row the node has no key for the next epoch (`TwoSkips`), and after three it would

@@ -290,6 +290,16 @@ func (p *pki) worker() {
 			}
 		}
 
+		// Rotate the mix keys every pass. Generate and Prune are reached only
+		// from publishDescriptorIfNeeded, which returns early when advertising
+		// is off, when this epoch's descriptor is already posted and when the
+		// upload window has closed, so an epoch that skips publication used to
+		// destroy no expired key and generate no new one.
+		rotateEpoch, _, _ := epochtime.Now()
+		if err := p.rotateMixKeys(rotateEpoch + 1); err != nil {
+			p.log.Errorf("Failed to rotate mix keys for epoch %d: %s", rotateEpoch+1, strconv.QuoteToASCII(err.Error()))
+		}
+
 		// Check to see if we need to publish the descriptor, and do so, along
 		// with all the key rotation bits.
 		err := p.publishDescriptorIfNeeded(pkiCtx)
@@ -589,6 +599,21 @@ func (p *pki) pruneDocuments() {
 			p.log.Debugf("Far future PKI document exists, clock ran backwards?: %v", epoch)
 		}
 	}
+}
+
+// rotateMixKeys generates the keys for the coming epochs and prunes the expired
+// ones, reshadowing the crypto workers when either changed anything. Both calls
+// are idempotent, so running this every pass costs nothing when publication has
+// already done it.
+func (p *pki) rotateMixKeys(epoch uint64) error {
+	didGen, err := p.glue.MixKeys().Generate(epoch)
+	if err != nil {
+		return err
+	}
+	if didPrune := p.glue.MixKeys().Prune(); didGen || didPrune {
+		p.glue.ReshadowCryptoWorkers()
+	}
+	return nil
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
