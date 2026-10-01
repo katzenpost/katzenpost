@@ -889,13 +889,15 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 // usableKeyBlob returns the marshaled form of k, or ok=false if k is nil, a
 // typed-nil whose MarshalBinary panics, fails to marshal, or marshals to an
 // empty blob. Untrusted key material is treated as unusable rather than allowed
-// to crash the server.
-func usableKeyBlob(k kem.PublicKey) (blob []byte, ok bool) {
+// to crash the server. A recovered panic is logged so that a bug in a scheme's
+// MarshalBinary cannot present as a silent authentication failure.
+func (p *pki) usableKeyBlob(k kem.PublicKey) (blob []byte, ok bool) {
 	if k == nil {
 		return nil, false
 	}
 	defer func() {
-		if recover() != nil {
+		if r := recover(); r != nil {
+			p.log.Warningf("recovered panic while marshaling peer public key: %v", r)
 			blob, ok = nil, false
 		}
 	}()
@@ -906,8 +908,8 @@ func usableKeyBlob(k kem.PublicKey) (blob []byte, ok bool) {
 	return b, true
 }
 
-func isUnusableKey(k kem.PublicKey) bool {
-	_, ok := usableKeyBlob(k)
+func (p *pki) isUnusableKey(k kem.PublicKey) bool {
+	_, ok := p.usableKeyBlob(k)
 	return !ok
 }
 
@@ -915,7 +917,7 @@ func isUnusableKey(k kem.PublicKey) bool {
 // returning the newest direction-eligible descriptor and whether the peer may
 // send traffic.
 func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (*cpki.MixDescriptor, bool, bool) {
-	if c == nil || isUnusableKey(c.PublicKey) {
+	if c == nil || p.isUnusableKey(c.PublicKey) {
 		return nil, false, false
 	}
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
@@ -956,7 +958,7 @@ func (p *pki) authenticateConnectionWithDocs(c *wire.PeerCredentials, isOutgoing
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
-	blob, ok := usableKeyBlob(c.PublicKey)
+	blob, ok := p.usableKeyBlob(c.PublicKey)
 	if !ok {
 		p.log.Warningf("%v: failed to marshal peer public key", dirStr)
 		return nil, false, false
