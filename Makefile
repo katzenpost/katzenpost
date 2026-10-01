@@ -62,10 +62,7 @@ tla-tools: $(TLA2TOOLS)
 
 .PHONY: tla
 tla: $(TLA2TOOLS)
-	@for d in $(tla_dirs); do \
-		echo "==> $$d"; \
-		(cd $$d && TLA2TOOLS=$(TLA2TOOLS) ./check.sh) || exit 1; \
-	done
+	@TLA2TOOLS=$(TLA2TOOLS) ./.ci/tla.sh
 
 .PHONY: test-short
 test-short:

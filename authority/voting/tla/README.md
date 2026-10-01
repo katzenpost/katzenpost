@@ -166,14 +166,12 @@ error into a copy of the specification and confirming TLC reported it violated.
 
 ## Running
 
-Needs Java and `tla2tools.jar`. From the repository root, `make tla-tools`
-fetches the pinned release and checks its digest and `make tla` runs every model
-directory; the jar is not committed. To run this directory alone, put the jar
-here or point `TLA2TOOLS` at it, and run `./check.sh`, which compares every
-result with the expected one and exits non-zero if any differs. The suite takes
-one to two minutes on a twelve-core machine, most of it in `Byzantine4`.
+`make tla` from the repository root fetches the pinned tla2tools, checks its
+digest and runs every configuration of every model through
+[`.ci/tla.sh`](../../../.ci/tla.sh), comparing each verdict with the expected one
+and exiting non-zero if any differs.
 
-For one configuration and its trace:
+For one configuration and its trace, with the jar here or named by `TLA2TOOLS`:
 
 ```sh
 java -jar tla2tools.jar -config VotingAuthority_Byzantine.cfg VotingAuthority.tla

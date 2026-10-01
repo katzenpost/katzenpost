@@ -8,6 +8,7 @@ on:
       - 'authority/voting/tla/**'
       - 'client/tla/**'
       - 'server/tla/**'
+      - '.ci/tla.sh'
       - 'Makefile'
       - '.github/workflows/tla.yml'
   push:
@@ -16,6 +17,9 @@ on:
       - 'authority/voting/tla/**'
       - 'client/tla/**'
       - 'server/tla/**'
+      - '.ci/tla.sh'
+      - 'Makefile'
+      - '.github/workflows/tla.yml'
   workflow_dispatch:
 
 jobs:
