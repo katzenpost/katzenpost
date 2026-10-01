@@ -198,6 +198,17 @@ MinimalVoteAssignments ==
         ELSE [b \in Auths |-> IF b \in R THEN Nodes ELSE Nodes \ {n}]] :
         n \in Nodes, H \in SUBSET Honest, R \in SUBSET Auths}
 
+\* A restricted choice set must be a subset of the full one, or a counterexample
+\* found under it is not a counterexample of this specification. TLC evaluates an
+\* ASSUME against the configuration's constants before it searches, so a
+\* configuration that substitutes a restriction has that claim checked rather
+\* than argued in a comment.
+ASSUME MinimalChoicesAreARestriction ==
+    \A a \in Auths : MinimalVoteChoices(a) \subseteq VoteChoices(a)
+
+ASSUME MinimalAssignmentsAreARestriction ==
+    MinimalVoteAssignments \subseteq VoteAssignments
+
 DeliverVote ==
     /\ phase = "vote"
     /\ recvVote' \in Prod(Auths, [a \in Auths |-> VoteChoices(a)])

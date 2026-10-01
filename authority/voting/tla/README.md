@@ -202,6 +202,12 @@ smallest sets that still allow a document. Every run of the restricted
 specification is a run of the full one, so its counterexample is genuine. The
 same substitution must not be used to argue that an invariant holds.
 
+That the restrictions really are restrictions is checked rather than asserted.
+`VotingAuthority.tla` carries an `ASSUME` for each, saying that the restricted
+choice set is a subset of the full one, and TLC evaluates an assumption against
+the configuration's constants before it searches. Inverting one makes TLC stop
+with `Assumption ... is false`, so the check is known to bite.
+
 ## Running
 
 Requires Java and `tla2tools.jar` (TLC). Download it from
