@@ -5,6 +5,11 @@
 #
 # Needs java and tla2tools.jar: $TLA2TOOLS, or tla2tools.jar at the repository
 # root. `make tla` fetches a pinned release, checks its digest and calls this.
+#
+# The manifest at the end is "directory module configuration expected-verdict
+# [workers]". Workers defaults to auto; a configuration names a number where
+# more workers make it slower, which happens when generating initial states
+# dominates the run.
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -19,10 +24,11 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 failed=0
 
-while read -r dir mod cfg expected; do
+while read -r dir mod cfg expected workers; do
     [ -n "${dir:-}" ] || continue
+    : "${workers:=auto}"
     log="$TMP/$mod.$cfg.log"
-    ( cd "$dir" && java -XX:+UseParallelGC -jar "$JAR" -workers auto \
+    ( cd "$dir" && java -XX:+UseParallelGC -jar "$JAR" -workers "$workers" \
         -metadir "$TMP/$mod.$cfg.states" \
         -config "${mod}_$cfg.cfg" "$mod.tla" ) >"$log" 2>&1
     if grep -q "Model checking completed. No error has been found." "$log"; then
@@ -50,7 +56,7 @@ authority/voting/tla VotingAuthority Byzantine6          Agreement
 authority/voting/tla VotingAuthority EpochsByzantine     ChainConsistency
 authority/voting/tla VotingAuthority Equivocation        ConvergenceUnderFullDelivery
 authority/voting/tla VotingAuthority Shape               AllOrNoneUnderFullDelivery
-authority/voting/tla VotingAuthority Namenlos            NoHonestLeftOut
+authority/voting/tla VotingAuthority Namenlos            NoHonestLeftOut              4
 authority/voting/tla VotingAuthority WitnessConsensus    ConsensusUnreachable
 authority/voting/tla VotingAuthority WitnessChainRestart ChainUnanimity
 client/tla           ClientARQ       Sequential          pass
