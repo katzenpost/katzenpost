@@ -223,6 +223,31 @@ IsVoteAssignment(v) ==
 ASSUME MinimalAssignmentsAreWellShaped ==
     \A v \in MinimalVoteAssignments : IsVoteAssignment(v)
 
+\* Restrictions for the deployed-shape configuration. Delivery is pinned to full
+\* delivery, which is the premise the gate invariants carry anyway, so nothing a
+\* lossy run would reach is lost from what they can say.
+OnlyFullVotes(a) == {Auths}
+
+\* Every group has a spare, so one contested descriptor can never empty one and
+\* the gate has no counterexample at this shape. Two can. Each assignment
+\* contests one pair drawn from one group: an honest authority holds every node,
+\* or neither of the pair, or all but one of it, and a Byzantine authority
+\* reports every node to some recipients and withholds the pair from the rest.
+Pairs == UNION {{P \in SUBSET G : Cardinality(P) = 2} : G \in Topology}
+PairViews(P) == {Nodes, Nodes \ P} \cup {Nodes \ {p} : p \in P}
+PairVoteAssignments ==
+    UNION {{[a \in Auths |->
+                IF a \in Honest THEN [b \in Auths |-> hv[a]]
+                ELSE [b \in Auths |-> IF b \in R THEN Nodes ELSE Nodes \ P]] :
+                hv \in [Honest -> PairViews(P)], R \in SUBSET Auths} :
+           P \in Pairs}
+
+ASSUME FullVotesIsARestriction ==
+    \A a \in Auths : OnlyFullVotes(a) \subseteq FullVoteChoices(a)
+
+ASSUME PairAssignmentsAreWellShaped ==
+    \A v \in PairVoteAssignments : IsVoteAssignment(v)
+
 DeliverVote ==
     /\ phase = "vote"
     /\ recvVote' \in Prod(Auths, [a \in Auths |-> VoteChoices(a)])
@@ -263,6 +288,16 @@ FullCertChoices(a) ==
     ELSE {{}}
 
 CertChoices(a) == FullCertChoices(a)
+
+\* Delivery pinned to full delivery, for the deployed-shape configuration.
+OnlyFullCerts(a) == IF a \in Certifiers THEN {Certifiers} ELSE {{}}
+
+\* OnlyFullCerts depends on Certifiers and so on the state, which an ASSUME
+\* cannot see. Checked as an invariant instead, guarded by the phase because
+\* FullCertChoices is empty before any vote is delivered.
+OnlyFullCertsIsARestriction ==
+    phase = "cert" =>
+        \A a \in Honest : OnlyFullCerts(a) \subseteq FullCertChoices(a)
 
 \* The document b computes, or NoDoc if it lacks Threshold certificates or
 \* Threshold consistent commitments (getMyConsensus). The Threshold-votes gate

@@ -143,6 +143,7 @@ and `Byzantine4` exhibits the mechanism at even `N`.
 | `EpochsByzantine` | 3 | 1 | 0 | 2 | `ChainConsistency` violated | |
 | `Equivocation` | 4 | 1 | 1 | 1 | `ConvergenceUnderFullDelivery` violated | |
 | `Shape` | 4 | 1 | 5 | 1 | `AllOrNoneUnderFullDelivery` violated | |
+| `Namenlos` | 4 | 1 | 15 | 1 | `NoHonestLeftOut` violated | |
 | `WitnessConsensus` | 3 | 0 | 1 | 1 | `ConsensusUnreachable` violated | |
 | `WitnessChainRestart` | 3 | 0 | 0 | 2 | `ChainUnanimity` violated | |
 
@@ -160,6 +161,19 @@ wrong witness: with singleton groups one node missing from every honest view
 makes every tally malformed, so that invariant fails there with no adversary at
 all, while `AllOrNoneUnderFullDelivery` holds without one over an exhaustive
 search of 2,863,811 states.
+
+`Namenlos` is the same gate at the deployed shape, with the nodes and groups the
+published consensus shows: three mix layers of two, two and three, four gateways
+and four service nodes. Four authorities rather than six, so the threshold is 3
+of 4 where the network's is 4 of 6. Every group there has a spare, so no single
+disputed descriptor can empty one, and emptying the thinnest takes two: in the
+trace a1 and a2 hold one node of a two-node layer and a3 holds the other, so
+every honest view is still well formed, and the Byzantine authority withholds
+both from a1 alone. Each of them then sits below threshold there, a1's layer is
+empty and it issues no certificate, while the other two certify and hold a
+document. This establishes nothing at those node counts, since delivery and vote
+content are restricted; it exhibits that the gate is reachable where the network
+runs.
 
 `Epochs`, `ByzantineValidity`, `Byzantine4` and `Equivocation` set `SYMMETRY`,
 sound for them because none names a particular authority or node and each leaves
