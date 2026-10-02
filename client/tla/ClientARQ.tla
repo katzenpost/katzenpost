@@ -42,6 +42,8 @@
 \*     At the bound a resend re-arms the timer without rotating.
 \*   - Copy commands, a full resend queue and a failed packet composition
 \*     are not modelled.
+\*   - NoRetryOnBoxIDNotFound and the BoxAlreadyExists-as-success path are not
+\*     modelled, so the invariants hold for the default flags only.
 \*   - Timing is not modelled: a timer may fire at any moment it is armed.
 
 EXTENDS Naturals, FiniteSets, TLC

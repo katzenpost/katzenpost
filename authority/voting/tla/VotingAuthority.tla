@@ -39,6 +39,13 @@
 \*   - The mix-parameter tally is not modelled. pki.IsDocumentWellFormed is,
 \*     as WellFormed: it gates both issuing a certificate and computing a
 \*     document, and is vacuous where a configuration leaves Topology empty.
+\*   - Every certificate is counted. verifyCommits keeps a badnodes set and
+\*     skips an authority already in it (state.go:913 and 919), so its result
+\*     depends on the order it walks them. Counting every certificate can
+\*     only make a threshold easier to reach, so the agreement properties
+\*     still hold under it; the full-delivery shape invariants are
+\*     optimistic, because the model can reach a threshold the code would
+\*     not.
 \*   - A Byzantine certificate relays an arbitrary set of votes, but the same
 \*     set to every recipient. Commitments are signed, so it cannot forge one
 \*     for an honest peer.

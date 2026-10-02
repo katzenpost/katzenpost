@@ -144,6 +144,8 @@ replayed.
 - **Unbounded retries.** Rotation is bounded by `MaxRetx`, and at the bound a
   resend re-arms the timer without rotating, so the races are explored only below
   it.
+- **`NoRetryOnBoxIDNotFound` and the `BoxAlreadyExists`-as-success path**, so
+  the invariants hold for the default flags only.
 - **Timing**, a timer firing at any moment it is armed.
 - **Copy commands**, a full resend queue and a failed packet composition, the
   last two of which re-arm the timer in the code.
