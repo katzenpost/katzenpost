@@ -591,7 +591,23 @@ func (p *pki) pruneDocuments() {
 	}
 }
 
+func (p *pki) rotateMixKeys(epoch uint64) error {
+	didGen, err := p.glue.MixKeys().Generate(epoch)
+	if err != nil {
+		return err
+	}
+	if didPrune := p.glue.MixKeys().Prune(); didGen || didPrune {
+		p.glue.ReshadowCryptoWorkers()
+	}
+	return nil
+}
+
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
+	rotateEpoch, _, _ := epochtime.Now()
+	if err := p.rotateMixKeys(rotateEpoch + 1); err != nil {
+		p.log.Errorf("Failed to rotate mix keys for epoch %d: %s", rotateEpoch+1, strconv.QuoteToASCII(err.Error()))
+	}
+
 	publicationCtx, publicationDone, ok := p.beginDescriptorPublication(pkiCtx)
 	if !ok {
 		p.log.Debug("Descriptor advertising is disabled; skipping publication.")

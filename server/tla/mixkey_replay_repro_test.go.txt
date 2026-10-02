@@ -1,0 +1,47 @@
+// Replay of an ordering found by the TLA+ model in this directory
+// (MixKeys_RestartReplay.cfg), against the server code. The test PASSES when
+// the code behaves as the model says, that is, when the problem is present.
+// It is evidence, not a regression test.
+//
+// The file has a .txt suffix so that it is not compiled. To run it:
+//
+//   cp server/tla/mixkey_replay_repro_test.go.txt \
+//      server/internal/mixkey/zz_tla_repro_test.go
+//   (cd server/internal/mixkey && go test -count=1 -run TestTLARepro -v .)
+//   rm server/internal/mixkey/zz_tla_repro_test.go
+
+package mixkey
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+)
+
+// Accept, Shutdown, Boot, Accept. A key sees a tag, is saved on a clean
+// shutdown, and is loaded on the next boot.
+func TestTLAReproReplayAfterReload(t *testing.T) {
+	g := geo.GeometryFromUserForwardPayloadLength(schemes.ByName("x25519"), 2000, true, 5)
+	dir := t.TempDir()
+
+	k, err := New(7, g)
+	require.NoError(t, err)
+	tag := make([]byte, TagLength)
+	tag[0] = 1
+
+	require.False(t, k.IsReplay(tag), "the first sight of the tag is accepted")
+	require.True(t, k.IsReplay(tag), "the second sight is a replay")
+
+	require.NoError(t, k.Persist(dir))    // Shutdown
+	loaded, found, err := Load(7, g, dir) // Boot
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, k.PublicBytes(), loaded.PublicBytes(), "it is the same key")
+
+	again := loaded.IsReplay(tag)
+	t.Logf("RESULT after reload: same key, tag treated as a replay: %v", again)
+	require.False(t, again, "the model predicts the tag is accepted again")
+}

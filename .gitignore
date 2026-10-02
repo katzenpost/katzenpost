@@ -4,6 +4,9 @@
 *.swp
 *~
 
+# TLA+ model checker (downloaded build artifact)
+tla2tools.jar
+
 docker/*_base.stamp
 docker/*_go_mod.stamp
 docker/*_rust.stamp
