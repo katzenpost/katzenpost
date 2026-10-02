@@ -56,6 +56,7 @@ authority/voting/tla VotingAuthority Byzantine6          Agreement
 authority/voting/tla VotingAuthority EpochsByzantine     ChainConsistency
 authority/voting/tla VotingAuthority Equivocation        ConvergenceUnderFullDelivery
 authority/voting/tla VotingAuthority Shape               AllOrNoneUnderFullDelivery
+authority/voting/tla VotingAuthority ShapeSafety         pass
 authority/voting/tla VotingAuthority Namenlos            NoHonestLeftOut              4
 authority/voting/tla VotingAuthority NamenlosShards      ShardableUnderFullDelivery   4
 authority/voting/tla VotingAuthority NamenlosServices    pass                         4
