@@ -14,7 +14,6 @@ import (
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
-// TestRescheduleARQAfterComposeFailureRotatesMaps covers the arqDoResend
 func TestRescheduleARQAfterComposeFailureRotatesMaps(t *testing.T) {
 	d := &Daemon{
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
@@ -59,7 +58,6 @@ func TestRescheduleARQAfterComposeFailureRotatesMaps(t *testing.T) {
 		"retry must be pushed onto arqTimerQueue, not silently dropped")
 }
 
-// TestRescheduleARQAfterComposeFailureWithDeletedMapEntry covers the
 func TestRescheduleARQAfterComposeFailureDoesNotResurrectRemoved(t *testing.T) {
 	d := &Daemon{
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),

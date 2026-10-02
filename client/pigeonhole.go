@@ -1473,6 +1473,11 @@ func courierEnvelopeErrorToThinError(code uint8) uint8 {
 	}
 }
 
+// handlePigeonholeARQReply handles replies to Pigeonhole ARQ messages.
+// It implements a finite state machine for the stop-and-wait ARQ protocol:
+// - WaitingForACK: Initial state, waiting for ACK from courier
+// - ACKReceived: ACK received, for reads we need to send another SURB for payload
+// - PayloadReceived: Terminal state for reads after receiving payload
 func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxReply) {
 	conn := d.listener.getConnection(arqMessage.AppID)
 	if conn == nil {

@@ -518,8 +518,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	if isARQReply {
 		// The reply acks this SURB; cancel the pending retry so it
 		// does not fire later, walk arqSurbIDMap to find nothing, and
-		// log a warning. Cancel removes the entry regardless of its
-		// position in the queue.
+		// log a warning.
 		d.arqTimerQueue.Cancel(arqMessage.SURBID)
 		instrument.SurbIDReplyMatched()
 		instrument.ARQRoundTrip(time.Since(arqMessage.SentAt))
@@ -819,11 +818,9 @@ const arqComposeRetryBackoff = 1 * time.Second
 // timer entry arqComposeRetryBackoff out. When the timer fires,
 // arqDoResend runs and tries the compose again.
 //
-// Call sites: arqDoResend (where the prior SURBID fired and the entry
-// is still under that key), and the SendNewSURB / retry-on-BoxIDNotFound
-// branches in pigeonhole.go (where handleReply has already deleted the
-// prior entry). The helper handles both: the delete-old step is a
-// no-op when the old key is already gone.
+// Called only from arqDoResend, where the prior SURBID fired and the
+// entry is still under that key. An untracked SURBID means the operation
+// is gone, and rescheduling it would resurrect it.
 func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 	placeholder := &[sphinxConstants.SURBIDLength]byte{}
 	if _, err := rand.Read(placeholder[:]); err != nil {
