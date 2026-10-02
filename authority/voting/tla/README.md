@@ -70,7 +70,8 @@ A property that holds here is established only up to these gaps.
 - **Realistic node counts**, the search growing as `2^|Nodes|` per authority. The
   network this follows is namenlos, whose consensus is published at
   <https://status.namenlos.network/>: six authorities, three mix layers of two,
-  two and three mixes, four gateways, four service nodes, four storage replicas.
+  two and three mixes, four gateways in the consensus, four service nodes, four
+  storage replicas.
 - **Storage replicas**, except in the three `Namenlos` configurations. A
   conforming deployment runs at least four (`pigeonhole.md`) and sharding
   addresses `K` per envelope (`replica/common/shard.go`), but neither is a
