@@ -62,3 +62,35 @@ func TestClosedConnReArmsItsQueuedResends(t *testing.T) {
 	require.Equal(t, 1, d.arqTimerQueue.PushChLen()+int(rearmed.Load()),
 		"a resend queued on a connection that goes away must come back on the timer")
 }
+
+// Handling a reply for a client that is away inside its grace period means the
+// handlers now run with no connection, so any path that still reached for one
+// would panic. The copy-command handler had three such sends. This drives the
+// terminal delivery with a nil connection and no disconnected session, which is
+// the worst case: it must report the loss, not crash the daemon.
+func TestDeliverARQResponseSurvivesNoConnection(t *testing.T) {
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	d := &Daemon{
+		logbackend:         logBackend,
+		log:                logBackend.GetLogger("test"),
+		listener:           newSchedulerListener(),
+		replyLock:          new(sync.Mutex),
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+	}
+	d.listener.log = logBackend.GetLogger("listener")
+	d.listener.disconnectedSessions = make(map[[AppIDLength]byte]*DisconnectedSession)
+
+	appID := &[AppIDLength]byte{0x0F}
+	require.NotPanics(t, func() {
+		d.deliverARQResponse(appID, nil, &Response{AppID: appID})
+	}, "a terminal outcome with no connection must not panic")
+
+	// A nil listener is the other way this can be reached during shutdown.
+	d.listener = nil
+	require.NotPanics(t, func() {
+		d.deliverARQResponse(appID, nil, &Response{AppID: appID})
+	}, "nor with no listener at all")
+}

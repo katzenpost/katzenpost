@@ -3,6 +3,8 @@
 package pki
 
 import (
+	"context"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -97,4 +99,27 @@ func TestRotationDoesNotReshadowWhenNothingChanged(t *testing.T) {
 
 	require.NoError(t, p.rotateMixKeys(7))
 	require.Equal(t, 0, g.reshadows)
+}
+
+// The claim is not that rotateMixKeys works when called, but that an epoch which
+// skips publication still rotates. publishDescriptorIfNeeded is the production
+// entry point the worker calls every pass, and it gives up early when advertising
+// is off, so driving it with advertising off is the skipped-publication case.
+// Deleting the rotation from that function fails this test, which calling
+// rotateMixKeys directly cannot do.
+func TestSkippedPublicationStillRotates(t *testing.T) {
+	mk := &fakeMixKeys{didGen: true, didPrune: true}
+	p, g := newRotationPKI(t, mk)
+	p.advertising = false // publication gives up immediately
+
+	require.NoError(t, p.publishDescriptorIfNeeded(context.Background()),
+		"a pass with advertising off is not an error")
+
+	require.Len(t, mk.generated, 1, "an epoch that publishes nothing still generates")
+	require.Equal(t, 1, mk.prunes, "and still prunes, which is what destroys an expired key")
+	require.Equal(t, 1, g.reshadows, "and reshadows the crypto workers when either changed")
+
+	epoch, _, _ := epochtime.Now()
+	require.Equal(t, epoch+1, mk.generated[0],
+		"the keys generated are for the epoch after the current one")
 }

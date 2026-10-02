@@ -290,16 +290,6 @@ func (p *pki) worker() {
 			}
 		}
 
-		// Rotate the mix keys every pass. Generate and Prune are reached only
-		// from publishDescriptorIfNeeded, which returns early when advertising
-		// is off, when this epoch's descriptor is already posted and when the
-		// upload window has closed, so an epoch that skips publication used to
-		// destroy no expired key and generate no new one.
-		rotateEpoch, _, _ := epochtime.Now()
-		if err := p.rotateMixKeys(rotateEpoch + 1); err != nil {
-			p.log.Errorf("Failed to rotate mix keys for epoch %d: %s", rotateEpoch+1, strconv.QuoteToASCII(err.Error()))
-		}
-
 		// Check to see if we need to publish the descriptor, and do so, along
 		// with all the key rotation bits.
 		err := p.publishDescriptorIfNeeded(pkiCtx)
@@ -617,6 +607,17 @@ func (p *pki) rotateMixKeys(epoch uint64) error {
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
+	// Rotate first, ahead of every early return below. Generate and Prune have no
+	// other call site, and this function gives up when advertising is off, when
+	// this epoch's descriptor is already posted and when the upload window has
+	// closed, so rotating further down meant an epoch that skipped publication
+	// destroyed no expired key and generated no new one. Three such epochs in a
+	// row leave no key for the current epoch and the node refuses every packet.
+	rotateEpoch, _, _ := epochtime.Now()
+	if err := p.rotateMixKeys(rotateEpoch + 1); err != nil {
+		p.log.Errorf("Failed to rotate mix keys for epoch %d: %s", rotateEpoch+1, strconv.QuoteToASCII(err.Error()))
+	}
+
 	publicationCtx, publicationDone, ok := p.beginDescriptorPublication(pkiCtx)
 	if !ok {
 		p.log.Debug("Descriptor advertising is disabled; skipping publication.")

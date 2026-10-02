@@ -1438,17 +1438,24 @@ func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, er
 			CourierQueueID:      arqMessage.RecipientQueueID,
 		},
 	}
+	d.deliverARQResponse(arqMessage.AppID, conn, response)
+}
+
+// deliverARQResponse hands an ARQ outcome to its owner, or buffers it when the
+// thin client is away inside its grace period. Buffering is the only answer that
+// keeps a non-idempotent write honest: resending it would come back
+// BoxAlreadyExists and report a write that succeeded as failed. Every ARQ reply
+// path goes through here, because a handler can now run with no connection and a
+// bare conn.sendResponse would panic.
+func (d *Daemon) deliverARQResponse(appID *[AppIDLength]byte, conn *incomingConn, response *Response) {
 	if conn != nil {
 		conn.sendResponse(response)
 		return
 	}
-	// The thin client is away. Buffering the outcome for its grace period is the
-	// only answer that keeps a non-idempotent write honest: resending it would
-	// come back BoxAlreadyExists and report a write that succeeded as failed.
-	if d.listener != nil && d.listener.queueReplyForDisconnected(arqMessage.AppID, response) {
+	if d.listener != nil && d.listener.queueReplyForDisconnected(appID, response) {
 		return
 	}
-	d.log.Errorf("finishARQMessage: no connection and no disconnected session for AppID %x, outcome lost", arqMessage.AppID[:])
+	d.log.Errorf("deliverARQResponse: no connection and no disconnected session for AppID %x, outcome lost", appID[:])
 }
 
 // courierEnvelopeErrorToThinError maps a courier EnvelopeError code (see
@@ -1659,7 +1666,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 			return
 		}
 		instrument.SurbIDDelivered()
-		conn.sendResponse(&Response{
+		d.deliverARQResponse(arqMessage.AppID, conn, &Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
 				QueryID:   arqMessage.QueryID,
@@ -1671,7 +1678,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		if !d.claimARQTerminal(arqMessage) {
 			return
 		}
-		conn.sendResponse(&Response{
+		d.deliverARQResponse(arqMessage.AppID, conn, &Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
 				QueryID:             arqMessage.QueryID,
@@ -1686,7 +1693,7 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		if !d.claimARQTerminal(arqMessage) {
 			return
 		}
-		conn.sendResponse(&Response{
+		d.deliverARQResponse(arqMessage.AppID, conn, &Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
 				QueryID:   arqMessage.QueryID,
