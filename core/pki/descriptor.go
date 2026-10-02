@@ -115,13 +115,13 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 	if len(d.Name) > constants.NodeIDLength {
 		return fmt.Errorf("Descriptor Name '%v' exceeds max length", d.Name)
 	}
-	if d.LinkKey == nil {
+	if len(d.LinkKey) == 0 {
 		return fmt.Errorf("Descriptor missing LinkKey")
 	}
-	if d.IdentityKey == nil {
+	if len(d.IdentityKey) == 0 {
 		return fmt.Errorf("Descriptor missing IdentityKey")
 	}
-	if d.MixKeys[epoch] == nil {
+	if len(d.MixKeys[epoch]) == 0 {
 		return fmt.Errorf("Descriptor missing MixKey[%v]", epoch)
 	}
 	for e := range d.MixKeys {
@@ -144,8 +144,8 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			}
 		}
 	}
-	if len(d.Addresses) == 0 {
-		return fmt.Errorf("Descriptor contains no addresses")
+	if d.IsGatewayNode && d.IsServiceNode {
+		return fmt.Errorf("Descriptor %q claims to be both a gateway and a service node", d.Name)
 	}
 	if !d.IsServiceNode {
 		if d.Kaetzchen != nil {
@@ -272,18 +272,20 @@ func IsReplicaDescriptorWellFormed(d *ReplicaDescriptor, epoch uint64) error {
 	if len(d.Name) > constants.NodeIDLength {
 		return fmt.Errorf("ReplicaDescriptor Name '%v' exceeds max length", d.Name)
 	}
-	if d.LinkKey == nil {
+	if len(d.LinkKey) == 0 {
 		return fmt.Errorf("ReplicaDescriptor missing LinkKey")
 	}
-	if d.IdentityKey == nil {
+	if len(d.IdentityKey) == 0 {
 		return fmt.Errorf("ReplicaDescriptor missing IdentityKey")
 	}
 
-	if d.EnvelopeKeys == nil {
-		return errors.New("ReplicaDescriptor EnvelopeKeys is nil")
-	}
 	if len(d.EnvelopeKeys) == 0 {
 		return errors.New("ReplicaDescriptor EnvelopeKeys is zero size")
+	}
+	for e, k := range d.EnvelopeKeys {
+		if len(k) == 0 {
+			return fmt.Errorf("ReplicaDescriptor EnvelopeKeys[%v] is empty", e)
+		}
 	}
 
 	if len(d.Addresses) == 0 {

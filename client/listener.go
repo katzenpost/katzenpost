@@ -19,6 +19,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -66,6 +67,8 @@ type listener struct {
 
 	// Callback function to clean up state when a connection closes
 	onAppDisconnectFn func(*[AppIDLength]byte)
+
+	onResendOrphanFn func(*[sphinxConstants.SURBIDLength]byte)
 
 	clientTokens     map[[16]byte]*[AppIDLength]byte
 	clientTokensLock sync.Mutex
@@ -282,8 +285,29 @@ func (l *listener) waitForPKIDoc(timeout time.Duration) []byte {
 	}
 }
 
+func (l *listener) rearmQueuedResends(c *incomingConn) {
+	if c == nil || c.resendCh == nil || l.onResendOrphanFn == nil {
+		return
+	}
+	for {
+		select {
+		case surbID, ok := <-c.resendCh:
+			if !ok {
+				return
+			}
+			if l.log != nil {
+				l.log.Debugf("rearmQueuedResends: re-arming SURB ID %x from a closing connection", surbID[:])
+			}
+			l.onResendOrphanFn(surbID)
+		default:
+			return
+		}
+	}
+}
+
 func (l *listener) onClosedConn(c *incomingConn) {
 	l.unregisterConn(*c.appID)
+	l.rearmQueuedResends(c)
 
 	if c.explicitClose {
 		// ThinClose received: destroy all state immediately
@@ -524,6 +548,10 @@ func (l *listener) SetLocalDispatch(fn func(*Request)) {
 	l.localDispatch = fn
 }
 
+func (l *listener) SetResendOrphanHandler(fn func(*[sphinxConstants.SURBIDLength]byte)) {
+	l.onResendOrphanFn = fn
+}
+
 func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 	l.connsLock.RLock()
 	conn, ok := l.conns[*appID]
@@ -639,6 +667,16 @@ func (l *listener) flushDisconnectedSession(c *incomingConn, appID *[AppIDLength
 		instrument.DisconnectedSessionsSet(count)
 		l.log.Infof("Grace timer cancelled on session resume for AppID %x", appID[:4])
 	}
+}
+
+func (l *listener) hasDisconnectedSession(appID *[AppIDLength]byte) bool {
+	if appID == nil {
+		return false
+	}
+	l.disconnectedSessionsLock.Lock()
+	defer l.disconnectedSessionsLock.Unlock()
+	_, ok := l.disconnectedSessions[*appID]
+	return ok
 }
 
 // queueReplyForDisconnected buffers a reply for a disconnected session.

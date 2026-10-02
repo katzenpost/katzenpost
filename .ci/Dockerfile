@@ -12,6 +12,8 @@ ARG FORGEJO_RUNNER_VERSION=13.2.0
 ARG FORGEJO_RUNNER_SHA256=fadaec897f5e6641c363f87ecaf75f866f99c81b7097ec6b433e4c48123fcad1
 ARG WOODPECKER_CLI_VERSION=3.18.1
 ARG WOODPECKER_CLI_SHA256=e7e78b0cc2f1172407d4e1439909bf8f55fb9b55f0fa79ae28338b195ecb56a5
+ARG TLA2TOOLS_VERSION=v1.7.4
+ARG TLA2TOOLS_SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
 
 COPY --from=uv /usr/local/bin/uv /usr/local/bin/uv
 COPY --from=uv /usr/local/bin/uvx /usr/local/bin/uvx
@@ -39,9 +41,18 @@ RUN curl -fsSLO "https://github.com/nektos/act/releases/download/v${ACT_VERSION}
  && install -m 0755 woodpecker-cli /usr/local/bin/woodpecker-cli \
  && cd / && rm -rf /tmp/runners
 
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends default-jre-headless \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL -o /usr/local/share/tla2tools.jar \
+      "https://github.com/tlaplus/tlaplus/releases/download/${TLA2TOOLS_VERSION}/tla2tools.jar" \
+ && echo "${TLA2TOOLS_SHA256}  /usr/local/share/tla2tools.jar" | sha256sum -c -
+
 WORKDIR /
 
 RUN rustup component add clippy
 
 RUN go version && uv --version && cargo clippy --version && act --version \
- && forgejo-runner --version && woodpecker-cli --version
+ && forgejo-runner --version && woodpecker-cli --version \
+ && java -version \
+ && java -cp /usr/local/share/tla2tools.jar tlc2.TLC 2>&1 | grep -q 'TLC2 Version 2.19'
