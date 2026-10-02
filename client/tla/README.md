@@ -36,10 +36,12 @@ current id of a tracked operation (`SurbIDReplyNoMatch`). `Outcome` transcribes
 Only the egress worker rotates: a handler that wants another round sets the state
 and queues a resend (`scheduleARQFollowUp`), which leaves on the scheduler's tick
 rather than in reaction to the reply, and `arqDoResend` looks the operation up
-before rotating. The terminal branches do not check that the operation is still
-tracked, and the model has no such check either. A timer that fires with no
-connection is armed again. Every `StartResendingEncryptedMessageReply` is
-counted, including the Cancelled reply a cancel sends to the original call.
+before rotating. Every terminal branch goes through `claimARQTerminal`, which
+answers only if the operation was still tracked and cancels the retry timer of
+the SURB id it claims, and the model's terminal outcome does both. A timer that
+fires with no connection is armed again. Every
+`StartResendingEncryptedMessageReply` is counted, including the Cancelled reply a
+cancel sends to the original call.
 
 Two constants select what is explored: `Atomic`, nothing runs between `Lookup`
 and `Handle`, and `Disconnects`, the thin client may disconnect and resume. Both
@@ -67,9 +69,8 @@ TLC reported it violated.
 | Config | `Atomic` | `Disconnects` | Expected | Distinct states |
 |---|---|---|---|---|
 | `Sequential` | yes | no | all seven hold | 282,263 |
-| `Concurrent` | no | no | six hold | 678,956 |
+| `Concurrent` | no | no | seven hold | 609,290 |
 | `Disconnect` | yes | yes | seven hold | 406,649 |
-| `RaceTimer` | no | no | `NoStrayTimer` violated | |
 | `WitnessCompletes` | yes | no | `NeverCompletes` violated | |
 | `WitnessStale` | yes | no | `NeverStale` violated | |
 
@@ -87,7 +88,7 @@ Which invariant holds where:
 | `NoSilentDrop` | holds | holds | holds |
 | `NoOrphan` | holds | holds | holds |
 | `CancelIsFinal` | holds | holds | holds |
-| `NoStrayTimer` | holds | violated | holds |
+| `NoStrayTimer` | holds | holds | holds |
 | `CompletionMatchesKind` | holds | holds | holds |
 
 ## What the model shows
@@ -96,7 +97,7 @@ The protocol is sound: with atomic reply handling and a connected client, every
 property holds. The lookup before rotating does its job, and `CancelIsFinal`
 fails if the lookup is removed from the model.
 
-Three problems appeared once those assumptions were dropped. All three are
+Four problems appeared once those assumptions were dropped. All four are
 fixed and the model follows the fixed code, so their configurations fold into
 `Concurrent` and `Disconnect`, which now carry the invariants that used to be
 the counterexample.
@@ -114,8 +115,17 @@ fires and queues a resend; a late reply is looked up and found; the egress worke
 rotates to a fresh SURB and fresh keys; the worker then decrypts with the keys
 the operation holds now, which are the wrong ones. That deleted the operation,
 leaving the application unanswered with nothing retrying; it now arms the timer
-again. The timer of the new SURB stays armed, which is `RaceTimer`, and is
-harmless because nothing is found when it fires.
+again.
+
+**A terminal outcome left its retry timer armed** (`Concurrent`, fixed). A
+resend arms the timer on the SURB id whose reply the ingress worker is already
+holding; the worker then reaches a terminal outcome, which deleted both map
+entries and left that timer entry where it was. Firing it was harmless, since
+nothing is found, but it is a timer armed on an operation that no longer exists.
+TLC reaches it at the rotation bound, where a resend arms the timer on the SURB
+id it did not rotate away from; in the code the same shape is any re-arm of the
+current SURB id between the lookup and the terminal branch.
+`claimARQTerminal` now cancels the timer entry of the SURB id it claims.
 
 **A disconnect within the grace period stranded operations**
 (`Disconnect`, fixed). `resendCh` belongs to the connection, so a SURB id
@@ -127,10 +137,12 @@ the application still waiting. `onClosedConn` now drains the queue back onto the
 timer, and a reply inside the grace period is handled and queued for the client's
 return.
 
-All three were replayed against the daemon code by calling the real functions in
-the order the model found, together with three replays of behaviour that is not a
-problem. Each now asserts the behaviour the code gives, so the file is a
-regression test for the orderings the model turned up. The tests are in
+The cancel race, the resend race and the disconnect were replayed against the
+daemon code by calling the real functions in the order the model found, together
+with three replays of behaviour that is not a problem. Each now asserts the
+behaviour the code gives, so the file is a regression test for the orderings the
+model turned up. The stray timer is pinned by a Go test on `claimARQTerminal`
+instead, the ordering being internal to one call. The tests are in
 [`arq_race_repro_test.go.txt`](arq_race_repro_test.go.txt) with instructions at
 the top. They show what the code does for a given ordering, not how often that
 ordering occurs, and both races need a reply inside a narrow window, so they are
@@ -170,5 +182,5 @@ and exiting non-zero if any differs.
 For one configuration and its trace, with the jar here or named by `TLA2TOOLS`:
 
 ```sh
-java -jar tla2tools.jar -config ClientARQ_RaceTimer.cfg ClientARQ.tla
+java -jar tla2tools.jar -config ClientARQ_Concurrent.cfg ClientARQ.tla
 ```

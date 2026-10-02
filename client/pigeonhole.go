@@ -1417,6 +1417,9 @@ func (d *Daemon) claimARQTerminal(arqMessage *ARQMessage) bool {
 			claimed = true
 		}
 	}
+	if claimed && arqMessage.SURBID != nil && d.arqTimerQueue != nil {
+		d.arqTimerQueue.Cancel(arqMessage.SURBID)
+	}
 	return claimed
 }
 

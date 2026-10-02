@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -67,6 +68,21 @@ func TestClaimARQTerminalIsExclusive(t *testing.T) {
 	require.True(t, d.claimARQTerminal(m), "the first claim takes the operation")
 	require.False(t, d.claimARQTerminal(m), "a second claim must not answer the query again")
 	require.Equal(t, 0, arqTracked(d, m), "a claimed operation is removed from both maps")
+}
+
+func TestClaimARQTerminalCancelsThePendingTimer(t *testing.T) {
+	l := newSchedulerListener()
+	d, armed := newARQTestDaemon(t, l)
+	appID := &[AppIDLength]byte{0x0E}
+	m := trackARQMessage(d, appID)
+	d.arqTimerQueue.EnqueueDirect(uint64(time.Now().Add(time.Hour).UnixNano()), m.SURBID)
+	require.Equal(t, 1, d.arqTimerQueue.Len(), "the retry is armed")
+
+	require.True(t, d.claimARQTerminal(m), "the claim takes the operation")
+
+	require.Equal(t, 0,
+		d.arqTimerQueue.Len()+d.arqTimerQueue.PushChLen()+int(armed.Load()),
+		"a terminal outcome must leave no timer armed on an untracked operation")
 }
 
 func TestARQResendKeepsOperationWhileClientIsAway(t *testing.T) {

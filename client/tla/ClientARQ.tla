@@ -6,8 +6,8 @@
 \* It follows arq.go (computeARQStateTransition), daemon.go (handleReply,
 \* enqueueResend, scheduleARQFollowUp, arqDoResend, rotateARQSurbIDLocked,
 \* rearmARQRetry, cleanupForAppID) and pigeonhole.go (arqSend,
-\* handlePigeonholeARQReply, handlePayloadReply, deliverARQResponse,
-\* cancelResendingEncryptedMessage).
+\* handlePigeonholeARQReply, handlePayloadReply, claimARQTerminal,
+\* deliverARQResponse, cancelResendingEncryptedMessage).
 \*
 \* WHO RUNS WHAT. The daemon touches an ARQ message from three goroutines,
 \* which share the two ARQ maps under replyLock:
@@ -218,16 +218,16 @@ Lookup(m, g, k) ==
 \*     terminal outcome is queued for the client's return (deliverARQResponse).
 \*   - The message was rotated since Lookup: its keys are no longer those of
 \*     this reply, decryption fails, and the timer is armed again.
-\*   - A terminal outcome deletes the operation and answers the application,
-\*     but only if claimARQTerminal finds it still tracked. A cancel that got
-\*     there first has already answered.
+\*   - A terminal outcome deletes the operation, cancels its retry timer and
+\*     answers the application, but only if claimARQTerminal finds it still
+\*     tracked. A cancel that got there first has already answered.
 \*   - Otherwise the state is set and a follow-up is asked for
 \*     (scheduleARQFollowUp).
 Handle ==
     \E j \in handling :
         LET r == op[j.m]
             o == Outcome(r.fsm, j.k, r.kind)
-            gone == [r EXCEPT !.tracked = FALSE]
+            gone == Untracked(r)
         IN  /\ handling' = {}
             /\ op' = [op EXCEPT ![j.m] =
                         IF conn = "closed" THEN ReArmed(r)
