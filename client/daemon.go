@@ -802,6 +802,13 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 // to drain the queue on a Poisson tick before we retry.
 const resendQueueFullBackoff = 100 * time.Millisecond
 
+// arqRearmBackoff is how long enqueueResend and rearmARQRetry wait before
+// re-arming the ARQ timer for an operation that cannot be handed to the
+// scheduler at all: the owning thin client has no live connection, or a reply
+// arrived that the handler could not act on. Both can last as long as
+// defaultSessionGracePeriod, so it is measured in seconds.
+const arqRearmBackoff = 5 * time.Second
+
 // arqComposeRetryBackoff is how long an ARQ retry site waits before
 // retrying after ComposeSphinxPacketForQuery fails. Compose failures are
 // typically transient — a missing or stale PKI document, or a path-
@@ -861,11 +868,12 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 // scheduler picks it up on a Poisson tick along with new sends, so
 // retransmits now share fairly with other clients' traffic.
 //
-// If the client's resendCh is full, the attempt is re-armed on the ARQ
-// timer after a short backoff — never dropped silently, because arqDoResend
+// If the client's resendCh is full, the attempt is re-armed on the ARQ timer
+// after resendQueueFullBackoff, never dropped silently, because arqDoResend
 // is what re-Pushes the timer on success, and a dropped fire would lose the
-// retry forever. If the client is disconnected the enqueue is a no-op;
-// cleanupForAppID removes the stale map entry.
+// retry forever. If the client has no live connection the attempt is re-armed
+// after arqRearmBackoff instead; cleanupForAppID removes the map entry and
+// cancels its timer when the session is really gone.
 func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	d.lockReply()
 	message, ok := d.arqSurbIDMap[*surbID]
@@ -886,7 +894,7 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		// completes. If the app is truly gone, the per-AppID disconnect
 		// cleanup deletes this entry and cancels its timer, so the next
 		// fire finds it absent and stops re-arming.
-		retryAt := time.Now().Add(resendQueueFullBackoff)
+		retryAt := time.Now().Add(arqRearmBackoff)
 		d.log.Debugf("enqueueResend: no live connection for AppID %x, re-arming SURB ID %x at %v", message.AppID[:], surbID[:], retryAt)
 		if d.arqTimerQueue != nil {
 			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
@@ -914,7 +922,7 @@ func (d *Daemon) rearmARQRetry(arqMessage *ARQMessage) {
 	if surbID == nil {
 		return
 	}
-	retryAt := time.Now().Add(resendQueueFullBackoff)
+	retryAt := time.Now().Add(arqRearmBackoff)
 	d.log.Debugf("rearmARQRetry: re-arming SURB ID %x at %v", surbID[:], retryAt)
 	d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
 }

@@ -6,6 +6,7 @@ package client
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -249,11 +250,12 @@ func TestEnqueueResend_ReschedulesWhenClientQueueFull(t *testing.T) {
 	require.True(t, ok, "arqSurbIDMap entry must survive across reschedule")
 }
 
-func TestEnqueueResend_ClientDisconnectedIsNoOp(t *testing.T) {
+func TestEnqueueResend_ClientDisconnectedRearms(t *testing.T) {
 	l := newSchedulerListener()
 	// No clients registered: the appID maps to nothing.
 
 	d := newSchedulerDaemon(t, l)
+	d.arqTimerQueue = queue.NewTimerQueue(func(interface{}) {})
 
 	var missingAppID [AppIDLength]byte
 	missingAppID[0] = 0xDD
@@ -263,9 +265,20 @@ func TestEnqueueResend_ClientDisconnectedIsNoOp(t *testing.T) {
 	d.arqSurbIDMap[surbID] = &ARQMessage{AppID: &missingAppID, SURBID: &surbID}
 	d.replyLock.Unlock()
 
-	// Must not panic, not block. Stale arqSurbIDMap entry is left for
-	// cleanupForAppID to eventually remove.
+	// Must not panic, not block. A client with no live connection may be
+	// inside its grace period, so the retry is re-armed, not dropped.
+	before := time.Now()
 	require.NotPanics(t, func() { d.enqueueResend(&surbID) })
+
+	d.arqTimerQueue.Start()
+	t.Cleanup(func() { d.arqTimerQueue.Halt() })
+	require.Eventually(t, func() bool { return d.arqTimerQueue.Len() == 1 },
+		2*time.Second, 5*time.Millisecond, "the retry must be re-armed, not dropped")
+	armed := d.arqTimerQueue.Peek()
+	require.NotNil(t, armed)
+	require.GreaterOrEqual(t, time.Duration(int64(armed.Priority)-before.UnixNano()),
+		time.Second,
+		"a client that may be away for its whole grace period must not be woken sub-second")
 }
 
 func TestEnqueueResend_UnknownSurbIDIsNoOp(t *testing.T) {

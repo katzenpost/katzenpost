@@ -325,7 +325,8 @@ func TestTLAReproTimerWhileAway(t *testing.T) {
 	e.resume(conn)
 
 	require.Eventually(t, func() bool { return len(conn.resendCh) == 1 },
-		2*time.Second, 5*time.Millisecond, "the model predicts the resend is queued after resume")
+		arqRearmBackoff+2*time.Second, 5*time.Millisecond,
+		"the model predicts the resend is queued after resume")
 	t.Logf("RESULT timer while away: %d map entries, %d queued resends after resume",
 		e.tracked(), len(conn.resendCh))
 	require.Equal(t, 2, e.tracked())
