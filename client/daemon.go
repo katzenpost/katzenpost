@@ -223,6 +223,7 @@ func (d *Daemon) halt() {
 
 	timerWg.Wait()
 	d.log.Infof("All timer queues stopped in %v", time.Since(timerStart))
+	d.wipeHeldSURBKeys()
 
 	// Step 4: Stop client
 	clientStart := time.Now()
@@ -231,6 +232,20 @@ func (d *Daemon) halt() {
 	d.log.Infof("Client stopped in %v", time.Since(clientStart))
 
 	d.log.Infof("Daemon shutdown complete in %v", time.Since(shutdownStart))
+}
+
+func (d *Daemon) wipeHeldSURBKeys() {
+	d.lockReply()
+	defer d.replyLock.Unlock()
+	for _, desc := range d.replies {
+		utils.ExplicitBzero(desc.surbKey)
+	}
+	for _, desc := range d.decoys {
+		utils.ExplicitBzero(desc.surbKey)
+	}
+	for _, message := range d.arqSurbIDMap {
+		utils.ExplicitBzero(message.SURBDecryptionKeys)
+	}
 }
 
 func (d *Daemon) Start() error {
