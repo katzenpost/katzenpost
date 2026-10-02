@@ -61,6 +61,8 @@ CONSTANTS
     Byzantine,  \* subset of Auths that may behave arbitrarily
     Nodes,      \* set of candidate mix-node descriptors that may be voted on
     Topology,    \* node sets a document needs at least one node from each
+    Couriers,    \* nodes advertising a courier
+    EchoServices, \* nodes advertising an echo service
     MaxEpoch    \* number of consecutive epochs to model (>= 1)
 
 Honest == Auths \ Byzantine
@@ -71,17 +73,20 @@ Threshold == (Cardinality(Auths) \div 2) + 1
 ASSUME AuthsFinite       == IsFiniteSet(Auths)
 ASSUME NodesFinite       == IsFiniteSet(Nodes)
 ASSUME TopologyGroups    == Topology \subseteq SUBSET Nodes
+ASSUME ServicesAreNodes  == Couriers \cup EchoServices \subseteq Nodes
 ASSUME MaxEpochPos       == MaxEpoch \in (Nat \ {0})
 ASSUME ByzantineSubset   == Byzantine \subseteq Auths
 ASSUME ByzantineMinority == Cardinality(Byzantine) < Threshold
 
 \* Symmetry set for TLC. Only safe for invariant checking, and nodes are only
-\* interchangeable while Topology is empty: a permutation that moves a node
-\* between groups does not preserve WellFormed, so a configuration with a real
-\* topology would have states collapsed that are not equivalent.
+\* interchangeable while Topology and the services are empty: a permutation
+\* that moves a node between groups does not preserve WellFormed, so a
+\* configuration with a real topology would have states collapsed that are not
+\* equivalent, and the same holds for a node moved into or out of a service.
 Symmetry ==
     Permutations(Honest) \cup Permutations(Byzantine)
-    \cup (IF Topology = {} THEN Permutations(Nodes) ELSE {})
+    \cup (IF Topology = {} /\ Couriers = {} /\ EchoServices = {}
+          THEN Permutations(Nodes) ELSE {})
 
 \* A shared-random value is the chain of links it derives from, oldest first.
 \* computeSharedRandom() hashes in the previous epoch's value, or 32 zero bytes
@@ -122,17 +127,11 @@ WellFormed(S) == \A G \in Topology : S \cap G # {}
 Replicas == IF Topology = {} THEN {} ELSE Nodes \ UNION Topology
 
 \* Kaetzchen are advertised by service nodes and a courier is not a separate
-\* role, so a service is a set of the nodes offering it rather than a node kind.
-Couriers == {}
-EchoServices == {}
+\* role, so Couriers and EchoServices are sets of the nodes offering them
+\* rather than node kinds.
 
 \* Replicas addressed per envelope, K in replica/common/shard.go.
 ShardK == 2
-
-\* The deployed service advertisements, from the published consensus. Written as
-\* strings so a configuration can name the same descriptors.
-NamenlosCouriers == {"annares", "waulandservice", "windfallservice"}
-NamenlosEcho     == {"annares", "lilly", "waulandservice", "windfallservice"}
 
 \* The services a consensus is expected to still offer. Empty sets drop out, so
 \* a configuration that models none of them leaves every claim below vacuous.
