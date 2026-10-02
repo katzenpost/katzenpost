@@ -102,6 +102,12 @@ GenesisSRV == << >>
 \* verifyTopology in state.go would apply it, but neither is called anywhere at
 \* e17bffb95, so it binds only the whitelist size once in New().
 \*
+\* Topology groups are the layers a configuration pins, so this follows
+\* generateFixedTopology: only that function maps a configured group to a layer.
+\* generateRandomTopology and generateTopology empty a layer when there are too
+\* few mixes in total, not when particular nodes are missing, and the gate says
+\* nothing about them.
+\*
 \* With Topology empty the conjunction is vacuously true, so a configuration that
 \* does not model document shape is unaffected.
 WellFormed(S) == \A G \in Topology : S \cap G # {}
@@ -179,10 +185,11 @@ Prod(D, f) ==
 
 \* The votes of one epoch. An honest authority sends its descriptor view to
 \* everyone; a Byzantine authority may send each recipient something different.
-VoteAssignments ==
+FullVoteAssignments ==
     {[a \in Auths |-> IF a \in Honest THEN [b \in Auths |-> hv[a]] ELSE bm[a]] :
         hv \in [Honest -> SUBSET Nodes],
         bm \in [Byzantine -> [Auths -> SUBSET Nodes]]}
+VoteAssignments == FullVoteAssignments
 
 Init ==
     /\ epoch = 1
@@ -239,12 +246,12 @@ MinimalVoteAssignments ==
 ASSUME MinimalChoicesAreARestriction ==
     \A a \in Auths : MinimalVoteChoices(a) \subseteq FullVoteChoices(a)
 
-\* A vote assignment is well shaped when it maps every authority to a reply for
-\* every authority, each a set of nodes, and gives an honest authority the same
-\* reply for everyone. Stating it as a predicate rather than as membership of
-\* [Auths -> [Auths -> SUBSET Nodes]] matters: the membership form enumerates
-\* that function space, which at fifteen nodes costs minutes before the first
-\* initial state.
+\* Membership of FullVoteAssignments, written as a predicate: it maps every
+\* authority to a reply for every authority, each a set of nodes, and gives an
+\* honest authority the same reply for everyone. The two have to be changed
+\* together. A restriction cannot be checked against FullVoteAssignments the way
+\* OnlyFullVotes is checked against FullVoteChoices, because that enumerates
+\* SUBSET Nodes once per authority, which at nineteen nodes TLC cannot do.
 IsVoteAssignment(v) ==
     /\ DOMAIN v = Auths
     /\ \A a \in Auths :
