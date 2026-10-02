@@ -1524,8 +1524,11 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	// Handle envelope reply (type 0)
 	if courierQueryReply.ReplyType != 0 || courierQueryReply.EnvelopeReply == nil {
-		d.log.Errorf("handlePigeonholeARQReply: unexpected reply type %d for envelope operation, re-arming", courierQueryReply.ReplyType)
-		d.rearmARQRetry(arqMessage)
+		d.log.Errorf("handlePigeonholeARQReply: unexpected reply type %d for envelope operation", courierQueryReply.ReplyType)
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
+		d.finishARQMessage(arqMessage, conn, thin.ThinClientErrorCourierInvalidEnvelope, nil)
 		return
 	}
 
@@ -1614,9 +1617,12 @@ const CopyPollInterval = 5 * time.Second
 func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryReply *pigeonhole.CourierQueryReply, conn *incomingConn) {
 	// Verify this is a copy command reply (ReplyType: 1)
 	if courierQueryReply.ReplyType != 1 || courierQueryReply.CopyCommandReply == nil {
-		d.log.Errorf("handleCopyCommandARQReply: expected copy command reply (type 1), got type %d, re-arming",
+		d.log.Errorf("handleCopyCommandARQReply: expected copy command reply (type 1), got type %d",
 			courierQueryReply.ReplyType)
-		d.rearmARQRetry(arqMessage)
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
+		d.finishARQMessage(arqMessage, conn, thin.ThinClientErrorCourierInvalidEnvelope, nil)
 		return
 	}
 
