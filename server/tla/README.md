@@ -135,9 +135,10 @@ together are never less than that delay.
 **Forward secrecy and the supply of keys both depended on the publish step.**
 At `e17bffb95`, `Prune` and, apart from start-up, `Generate` had one call site
 each, inside `publishDescriptorIfNeeded`, so an epoch that passed without that
-step pruned and generated nothing. The PKI worker now rotates every pass, so this
-is what the model found rather than what the code does; the configurations still
-exhibit it, because they model the code as it was. `OneSkipSecrecy` shows the key of epoch 1 still existing in
+step pruned and generated nothing. Rotation is now the first statement of
+`publishDescriptorIfNeeded`, ahead of every early return, so a skipped
+publication still rotates; the configurations model the code as it was and still
+exhibit the finding. `OneSkipSecrecy` shows the key of epoch 1 still existing in
 epoch 4 after epoch 3 was skipped, when it should have been pruned in epoch 3.
 One skipped epoch costs no availability, as `OneSkip` shows, but after two in a
 row the node has no key for the next epoch (`TwoSkips`), and after three it would

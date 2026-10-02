@@ -65,9 +65,7 @@ client/tla           ClientARQ       Sequential          pass
 client/tla           ClientARQ       Concurrent          pass
 client/tla           ClientARQ       Disconnect          pass
 client/tla           ClientARQ       RaceCancel          AtMostOneResponse
-client/tla           ClientARQ       RaceResend          NoSilentDrop
 client/tla           ClientARQ       RaceTimer           NoStrayTimer
-client/tla           ClientARQ       DisconnectOrphan    NoOrphan
 client/tla           ClientARQ       WitnessCompletes    NeverCompletes
 client/tla           ClientARQ       WitnessStale        NeverStale
 server/tla           MixNode         Pipeline            pass

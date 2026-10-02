@@ -1,6 +1,9 @@
 // Replays of orderings found by the TLA+ model in this directory, against
 // the daemon code. Each test runs, step by step on one goroutine, an ordering
 // of operations that in the daemon run on different goroutines. Every test
+// PASSES when the daemon behaves as the model says. Two of the three problems
+// it found are fixed, so those now pass by surviving the ordering; the cancel
+// race still answers the application twice.
 //
 // The file has a .txt suffix so that it is not compiled. To run it:
 //
@@ -204,7 +207,7 @@ func TestTLAReproBaseline(t *testing.T) {
 	require.Equal(t, 0, e.tracked())
 }
 
-// Problem. ClientARQ_RaceCancel.cfg: Lookup, Cancel, Handle.
+// Still a problem. ClientARQ_RaceCancel.cfg: Lookup, Cancel, Handle.
 func TestTLAReproCancelRace(t *testing.T) {
 	e := newReproEnv(t)
 	m, keys := e.install(t, false)
@@ -233,7 +236,8 @@ func TestTLAReproCancelRace(t *testing.T) {
 	require.Equal(t, thin.ThinClientErrorStartResendingCancelled, got[0].ErrorCode)
 }
 
-// Problem. ClientARQ_RaceResend.cfg: Lookup, DoResend, Handle. The rotation is done
+// Was a problem. Concurrent, NoSilentDrop: Lookup, DoResend, Handle. The
+// rotation is done
 // with rotateARQSurbIDLocked, which is what arqDoResend calls once it has
 // composed the packet.
 func TestTLAReproResendRace(t *testing.T) {
@@ -280,9 +284,9 @@ func (e *reproEnv) resume(conn *incomingConn) {
 	e.d.listener.conns[*e.appID] = conn
 }
 
-// Problem. ClientARQ_DisconnectOrphan.cfg: Disconnect, Lookup, Handle,
-// Resume. Looking the reply up cancels the timer, and the handler returns
-// for lack of a connection.
+// Was a problem. Disconnect, NoOrphan: Disconnect, Lookup, Handle,
+// Resume. Looking the reply up cancels the timer; the handler used to return
+// for lack of a connection and now re-arms.
 func TestTLAReproReplyWhileAway(t *testing.T) {
 	e := newReproEnv(t)
 	m, keys := e.install(t, true)
@@ -293,12 +297,16 @@ func TestTLAReproReplyWhileAway(t *testing.T) {
 	e.d.handlePigeonholeARQReply(held, reply) // ingress worker
 	e.resume(conn)
 
-	queued := len(conn.resendCh)
-	t.Logf("RESULT reply while away: %d map entries, %d queued resends, %d armed timers",
-		e.tracked(), queued, e.d.arqTimerQueue.Len())
 	require.Equal(t, 2, e.tracked(), "the operation stays tracked")
-	require.Equal(t, 1, queued+e.d.arqTimerQueue.Len(),
+	scheduled := func() int {
+		return len(conn.resendCh) + e.d.arqTimerQueue.PushChLen() +
+			e.d.arqTimerQueue.Len()
+	}
+	require.Eventually(t, func() bool { return scheduled() == 1 },
+		2*time.Second, 5*time.Millisecond,
 		"a reply that cannot be delivered must leave a retry scheduled")
+	t.Logf("RESULT reply while away: %d map entries, %d retries scheduled",
+		e.tracked(), scheduled())
 }
 
 // Not a problem. Disconnect, TimerFire, Resume. The timer is armed again. It

@@ -67,12 +67,10 @@ TLC reported it violated.
 | Config | `Atomic` | `Disconnects` | Expected | Distinct states |
 |---|---|---|---|---|
 | `Sequential` | yes | no | all seven hold | 282,263 |
-| `Concurrent` | no | no | four hold | 1,127,906 |
-| `Disconnect` | yes | yes | six hold | 475,399 |
+| `Concurrent` | no | no | five hold | 923,723 |
+| `Disconnect` | yes | yes | seven hold | 406,649 |
 | `RaceCancel` | no | no | `AtMostOneResponse` violated | |
-| `RaceResend` | no | no | `NoSilentDrop` violated | |
 | `RaceTimer` | no | no | `NoStrayTimer` violated | |
-| `DisconnectOrphan` | yes | yes | `NoOrphan` violated | |
 | `WitnessCompletes` | yes | no | `NeverCompletes` violated | |
 | `WitnessStale` | yes | no | `NeverStale` violated | |
 
@@ -87,8 +85,8 @@ Which invariant holds where:
 | Invariant | `Sequential` | `Concurrent` | `Disconnect` |
 |---|---|---|---|
 | `AtMostOneResponse` | holds | violated | holds |
-| `NoSilentDrop` | holds | violated | holds |
-| `NoOrphan` | holds | holds | violated |
+| `NoSilentDrop` | holds | holds | holds |
+| `NoOrphan` | holds | holds | holds |
 | `CancelIsFinal` | holds | holds | holds |
 | `NoStrayTimer` | holds | violated | holds |
 | `CompletionMatchesKind` | holds | holds | holds |
@@ -99,44 +97,47 @@ The protocol is sound: with atomic reply handling and a connected client, every
 property holds. The lookup before rotating does its job, and `CancelIsFinal`
 fails if the lookup is removed from the model.
 
-Three problems appeared once those assumptions were dropped. All three are fixed,
-so they are what the model found rather than what the code does; the
-configurations still exhibit them, because they model the code at `e17bffb95`.
+Three problems appeared once those assumptions were dropped. Two are fixed and
+the model follows the fixed code, so their configurations fold into `Concurrent`
+and `Disconnect`, which now carry the invariants that used to be the
+counterexample. The third stands.
 
-**A cancel racing a reply answers the application twice** (`RaceCancel`). The
+**A cancel racing a reply answers the application twice** (`RaceCancel`, still
+open). The
 ingress worker finds the operation, the application cancels and is answered with
 a Cancelled error, and the worker then reaches a terminal outcome and answers
 again. The terminal branches of `handlePigeonholeARQReply` and
 `handlePayloadReply` delete the map entries and call `finishARQMessage` without
 checking that the operation is still tracked.
 
-**A resend racing a reply loses the operation** (`RaceResend`). The timer fires
-and queues a resend; a late reply is looked up and found; the egress worker
+**A resend racing a reply lost the operation** (`Concurrent`, fixed). The timer
+fires and queues a resend; a late reply is looked up and found; the egress worker
 rotates to a fresh SURB and fresh keys; the worker then decrypts with the keys
-the operation holds now, which are the wrong ones, so `dropARQMessage` deletes
-it. The application is never answered and nothing retries. The timer of the new
-SURB stays armed, which is `RaceTimer`, and is harmless because nothing is found
-when it fires.
+the operation holds now, which are the wrong ones. That deleted the operation,
+leaving the application unanswered with nothing retrying; it now arms the timer
+again. The timer of the new SURB stays armed, which is `RaceTimer`, and is
+harmless because nothing is found when it fires.
 
-**A disconnect within the grace period strands operations**
-(`DisconnectOrphan`). `resendCh` belongs to the connection, so a SURB id still
-queued when the connection goes away goes with it and no timer is left behind;
-and while a session-aware client is away a reply makes `handleReply` cancel the
-timer and `handlePigeonholeARQReply` return with no connection. Either way the
-operation is still tracked after the client resumes, will never be re-sent, and
-the application is still waiting. A timer firing while the client is away is
-harmless, because `enqueueResend` arms it again.
+**A disconnect within the grace period stranded operations**
+(`Disconnect`, fixed). `resendCh` belongs to the connection, so a SURB id
+still queued when the connection went away went with it and no timer was left
+behind; and while a session-aware client was away a reply made `handleReply`
+cancel the timer and `handlePigeonholeARQReply` return with no connection. Either
+way the operation was still tracked after the client resumed, never re-sent, and
+the application still waiting. `onClosedConn` now drains the queue back onto the
+timer, and a reply inside the grace period is handled and queued for the client's
+return.
 
-The first three were replayed against the daemon code by calling the real
-functions in the order the model found, together with three replays of behaviour
-that is not a problem. Each of the three now asserts the behaviour the fix gives,
-so the file is a regression test for the orderings the model turned up. The tests are in
+All three were replayed against the daemon code by calling the real functions in
+the order the model found, together with three replays of behaviour that is not a
+problem. Each now asserts the behaviour the code gives, so the file is a
+regression test for the orderings the model turned up. The tests are in
 [`arq_race_repro_test.go.txt`](arq_race_repro_test.go.txt) with instructions at
 the top. They show what the code does for a given ordering, not how often that
 ordering occurs, and both races need a reply inside a narrow window, so they are
-likely rare. The deletion in `arqDoResend` was read from the code and not
-replayed; it needs a resend to be taken from the queue after the connection has
-gone, which the scheduler makes a narrow window.
+likely rare. The re-arm in `arqDoResend` when the connection has gone was read
+from the code and not replayed; it needs a resend to be taken from the queue
+after the connection has gone, which the scheduler makes a narrow window.
 
 ## What is not modelled
 
