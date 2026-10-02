@@ -40,7 +40,7 @@ labels the code reports to its metrics.
 |---|---|
 | `MinimumMixing` | A packet that is sent spent at least the requested delay in the node, and at least one tick. |
 | `ClientPacketsAreMixed` | A packet from a client never reaches a local backend or the decoy handler. |
-| `ServiceNodeTerminates` | A service node sends on nothing that a mix gave it. |
+| `ServiceNodeTerminates` | A service node forwards on nothing that a mix gave it; its SURB replies are not covered. |
 | `MixHasNoBackend` | Nothing reaches a backend on a mix. |
 | `PlaceMatchesCommand` | Only forward packets are sent on; only decoy replies reach the decoy handler. |
 | `TypeOK` | Type invariant. |
