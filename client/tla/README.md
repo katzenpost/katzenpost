@@ -68,7 +68,7 @@ TLC reported it violated.
 |---|---|---|---|---|
 | `Sequential` | yes | no | all seven hold | 282,263 |
 | `Concurrent` | no | no | four hold | 1,127,906 |
-| `Disconnect` | yes | yes | six hold | 475,399 |
+| `Disconnect` | yes | yes | five hold | 475,399 |
 | `RaceCancel` | no | no | `AtMostOneResponse` violated | |
 | `RaceResend` | no | no | `NoSilentDrop` violated | |
 | `RaceTimer` | no | no | `NoStrayTimer` violated | |
@@ -87,7 +87,7 @@ Which invariant holds where:
 | Invariant | `Sequential` | `Concurrent` | `Disconnect` |
 |---|---|---|---|
 | `AtMostOneResponse` | holds | violated | holds |
-| `NoSilentDrop` | holds | violated | holds |
+| `NoSilentDrop` | holds | violated | not checked |
 | `NoOrphan` | holds | holds | violated |
 | `CancelIsFinal` | holds | holds | holds |
 | `NoStrayTimer` | holds | violated | holds |
@@ -132,8 +132,9 @@ that is not a problem; all six agree with the model. The tests are in
 the top. They show what the code does for a given ordering, not how often that
 ordering occurs, and both races need a reply inside a narrow window, so they are
 likely rare. The deletion in `arqDoResend` was read from the code and not
-replayed; it needs a resend to be taken from the queue after the connection has
-gone, which the scheduler makes a narrow window.
+replayed; it needs the connection to go after the scheduler has taken a resend
+from the queue and before `arqDoResend` handles it. The model has no step there,
+so `Disconnect` does not check `NoSilentDrop`.
 
 ## What is not modelled
 
