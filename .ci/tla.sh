@@ -57,6 +57,8 @@ authority/voting/tla VotingAuthority EpochsByzantine     ChainConsistency
 authority/voting/tla VotingAuthority Equivocation        ConvergenceUnderFullDelivery
 authority/voting/tla VotingAuthority Shape               AllOrNoneUnderFullDelivery
 authority/voting/tla VotingAuthority Namenlos            NoHonestLeftOut              4
+authority/voting/tla VotingAuthority NamenlosShards      ShardableUnderFullDelivery   4
+authority/voting/tla VotingAuthority NamenlosServices    pass                         4
 authority/voting/tla VotingAuthority WitnessConsensus    ConsensusUnreachable
 authority/voting/tla VotingAuthority WitnessChainRestart ChainUnanimity
 client/tla           ClientARQ       Sequential          pass

@@ -503,13 +503,18 @@ AllOrNone ==
 AllOrNoneUnderFullDelivery == FullDelivery => AllOrNone
 NoHonestLeftOut == (FullDelivery /\ HonestViewsWellFormed) => AllOrNone
 
-\* Nothing in getMyConsensus counts replicas, so a document it signs can carry
-\* fewer than sharding addresses and the pigeonhole path is what fails.
+\* Nothing in getMyConsensus counts replicas, so a document it signs can leave
+\* an envelope with no replica to address and the pigeonhole path is what fails.
+\* GetShards (replica/common/shard.go) picks K replicas per envelope from the
+\* configured list and then drops any the document omits, so an envelope is
+\* unreachable exactly when all K of its shards are missing. Counting the
+\* replicas present would not say that: it is the missing set that has to stay
+\* smaller than K.
 ShardableUnderFullDelivery ==
     (FullDelivery /\ Replicas # {}) =>
         \A h \in Honest :
             myDoc[h] # NoDoc =>
-                Cardinality(myDoc[h].desc \cap Replicas) >= ShardK
+                Cardinality(Replicas \ myDoc[h].desc) < ShardK
 
 \* Nor does it require that any node advertising a service survived the tally, so
 \* a signed consensus can offer clients no courier to reach, and no echo to test

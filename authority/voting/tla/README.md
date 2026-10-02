@@ -71,11 +71,11 @@ A property that holds here is established only up to these gaps.
   network this follows is namenlos, whose consensus is published at
   <https://status.namenlos.network/>: six authorities, three mix layers of two,
   two and three mixes, four gateways, four service nodes, four storage replicas.
-- **Storage replicas**, of which this model has none. A conforming deployment
-  runs at least four (`pigeonhole.md`) and sharding addresses `K` per envelope
-  (`replica/common/shard.go`), but neither is a condition on a consensus, so an
-  authority signs a document with one replica and the pigeonhole path is what
-  fails.
+- **Storage replicas**, except in the three `Namenlos` configurations. A
+  conforming deployment runs at least four (`pigeonhole.md`) and sharding
+  addresses `K` per envelope (`replica/common/shard.go`), but neither is a
+  condition on a consensus, so an authority signs a document that leaves an
+  envelope unreachable and the pigeonhole path is what fails.
 
 The model assumes `Cardinality(Byzantine) < Threshold`. Byzantine authorities
 sign only documents an honest authority computed, which loses nothing under that
@@ -96,7 +96,7 @@ signatures.
 | `AllOrNone` | Either every honest authority computed a document, or none did. |
 | `AllOrNoneUnderFullDelivery` | `AllOrNone`, with nothing lost and a common prior. |
 | `NoHonestLeftOut` | `AllOrNone`, when every honest authority's own view is well formed too. |
-| `ShardableUnderFullDelivery` | Enough replicas survive the tally for sharding to address `K`. |
+| `ShardableUnderFullDelivery` | Fewer than `K` replicas are missing, so every envelope keeps a shard. |
 | `ServicesSurviveUnderFullDelivery` | Some node advertising each service survives the tally. |
 
 `UniqueConsensus` is stronger than `Agreement`: it also covers a threshold-signed
@@ -146,6 +146,8 @@ and `Byzantine4` exhibits the mechanism at even `N`.
 | `Equivocation` | 4 | 1 | 1 | 1 | `ConvergenceUnderFullDelivery` violated | |
 | `Shape` | 4 | 1 | 5 | 1 | `AllOrNoneUnderFullDelivery` violated | |
 | `Namenlos` | 4 | 1 | 19 | 1 | `NoHonestLeftOut` violated | |
+| `NamenlosShards` | 4 | 1 | 19 | 1 | `ShardableUnderFullDelivery` violated | |
+| `NamenlosServices` | 4 | 1 | 19 | 1 | five hold | 75,959 |
 | `WitnessConsensus` | 3 | 0 | 1 | 1 | `ConsensusUnreachable` violated | |
 | `WitnessChainRestart` | 3 | 0 | 0 | 2 | `ChainUnanimity` violated | |
 
@@ -186,25 +188,32 @@ threshold there, a1's layer is empty and it issues no certificate, while the oth
 two certify and hold a document. The round still succeeds without a1, so what this
 shows is one authority excluded rather than a consensus prevented.
 
-Two of its invariants say what a consensus owes its consumers rather than its
-signers: that enough replicas survive for sharding to address `K` of them, and
-that some node advertising each service survives. Nothing in `getMyConsensus`
-checks either, and under a two-descriptor dispute both hold over an exhaustive
-search of the restricted specification. That is the provisioning margin rather
-than a guarantee, and the margin is exactly two: four replicas against a `K` of
-two, and three couriers, survive a two-descriptor dispute, while the same
-configuration with three contested descriptors violates the sharding claim. So the
-deployment has one descriptor of headroom in its thinnest consumer requirement,
-and the authorities would sign either document without noticing.
+`NamenlosShards` and `NamenlosServices` ask the same shape what a consensus owes
+its consumers rather than its signers. Each has its own file because TLC stops at
+the first counterexample, so a configuration decides one claim.
+
+Sharding has no margin at all. `GetShards` addresses `K` of the four configured
+replicas per envelope and then drops the ones the document omits, so an envelope
+is unreachable as soon as all `K` of its shards are missing, and with `K` of two
+a two-descriptor dispute is enough. `NamenlosShards` exhibits it. The services
+claim holds over an exhaustive search of the restricted specification: three
+nodes advertise a courier and four an echo, so one contested pair cannot empty
+either. Both are provisioning margins rather than guarantees, because
+`getMyConsensus` checks neither, and the authorities sign such a document without
+noticing. `NamenlosServices` also carries `Agreement`, `UniqueConsensus` and
+`DescriptorValidity`, which every other configuration checks with `Topology`
+empty.
 
 None of this is established at these node counts, because delivery is pinned to
 full delivery and vote content to one contested set. It is what is reachable where
 the network actually runs.
 
-`Epochs`, `ByzantineValidity`, `Byzantine4` and `Equivocation` set `SYMMETRY`,
-sound for them because none names a particular authority or node and each leaves
-`Topology` empty. Permuting nodes is not sound with a non-empty `Topology`, which
-moves nodes between groups.
+`Epochs`, `ByzantineValidity`, `Byzantine4`, `Equivocation` and the three
+`Namenlos` configurations set `SYMMETRY`, sound for them because no invariant
+they check names a particular authority or node. Permuting nodes is not sound
+with a non-empty `Topology`, which moves nodes between groups, so `Symmetry`
+permutes nodes only where `Topology` is empty and permutes authorities either
+way.
 
 `Byzantine5` and `Byzantine6` substitute `MinimalVoteChoices` for `VoteChoices`,
 restricting delivery to the smallest sets that still allow a document. Every run
