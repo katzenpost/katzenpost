@@ -68,12 +68,11 @@ TLC reported it violated.
 |---|---|---|---|---|
 | `Sequential` | yes | no | all seven hold | 282,263 |
 | `Concurrent` | no | no | four hold | 1,127,906 |
-| `Disconnect` | yes | yes | five hold | 1,092,974 |
+| `Disconnect` | yes | yes | six hold | 475,399 |
 | `RaceCancel` | no | no | `AtMostOneResponse` violated | |
 | `RaceResend` | no | no | `NoSilentDrop` violated | |
 | `RaceTimer` | no | no | `NoStrayTimer` violated | |
 | `DisconnectOrphan` | yes | yes | `NoOrphan` violated | |
-| `DisconnectDrop` | yes | yes | `NoSilentDrop` violated | |
 | `WitnessCompletes` | yes | no | `NeverCompletes` violated | |
 | `WitnessStale` | yes | no | `NeverStale` violated | |
 
@@ -88,7 +87,7 @@ Which invariant holds where:
 | Invariant | `Sequential` | `Concurrent` | `Disconnect` |
 |---|---|---|---|
 | `AtMostOneResponse` | holds | violated | holds |
-| `NoSilentDrop` | holds | violated | violated |
+| `NoSilentDrop` | holds | violated | holds |
 | `NoOrphan` | holds | holds | violated |
 | `CancelIsFinal` | holds | holds | holds |
 | `NoStrayTimer` | holds | violated | holds |
@@ -118,13 +117,13 @@ SURB stays armed, which is `RaceTimer`, and is harmless because nothing is found
 when it fires.
 
 **A disconnect within the grace period strands operations**
-(`DisconnectOrphan`, `DisconnectDrop`). While a session-aware client is away, a
-reply makes `handleReply` cancel the timer and `handlePigeonholeARQReply` return
-with no connection, leaving the operation tracked and never re-sent; and a queued
-resend makes `arqDoResend` find no connection and delete it. After the client
-resumes the operation is stuck or gone and the application is still waiting. A
-timer firing while the client is away is harmless, because `enqueueResend` arms
-it again.
+(`DisconnectOrphan`). `resendCh` belongs to the connection, so a SURB id still
+queued when the connection goes away goes with it and no timer is left behind;
+and while a session-aware client is away a reply makes `handleReply` cancel the
+timer and `handlePigeonholeARQReply` return with no connection. Either way the
+operation is still tracked after the client resumes, will never be re-sent, and
+the application is still waiting. A timer firing while the client is away is
+harmless, because `enqueueResend` arms it again.
 
 The first three were replayed against the daemon code by calling the real
 functions in the order the model found, together with three replays of behaviour
@@ -133,7 +132,8 @@ that is not a problem; all six agree with the model. The tests are in
 the top. They show what the code does for a given ordering, not how often that
 ordering occurs, and both races need a reply inside a narrow window, so they are
 likely rare. The deletion in `arqDoResend` was read from the code and not
-replayed.
+replayed; it needs a resend to be taken from the queue after the connection has
+gone, which the scheduler makes a narrow window.
 
 ## What is not modelled
 

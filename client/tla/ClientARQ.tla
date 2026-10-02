@@ -232,11 +232,13 @@ Handle ==
 \* The thin client's connection.
 
 \* The connection drops. A session-aware client keeps its state for a grace
-\* period (onClosedConn).
+\* period (onClosedConn). resendCh belongs to the connection, so every SURB id
+\* still waiting in it goes away with no timer left behind.
 Disconnect ==
     /\ Disconnects /\ Free /\ conn = "up"
     /\ conn' = "away"
-    /\ UNCHANGED <<op, handling>>
+    /\ op' = [m \in Msgs |-> [op[m] EXCEPT !.resendQ = {}]]
+    /\ UNCHANGED handling
 
 \* The client reconnects within the grace period (handleSessionToken).
 Resume ==
