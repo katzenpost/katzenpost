@@ -56,6 +56,7 @@ authority/voting/tla VotingAuthority Byzantine6          Agreement
 authority/voting/tla VotingAuthority EpochsByzantine     ChainConsistency
 authority/voting/tla VotingAuthority Equivocation        ConvergenceUnderFullDelivery
 authority/voting/tla VotingAuthority Shape               AllOrNoneUnderFullDelivery
+authority/voting/tla VotingAuthority ShapeSafety         pass
 authority/voting/tla VotingAuthority Namenlos            NoHonestLeftOut              4
 authority/voting/tla VotingAuthority NamenlosShards      ShardableUnderFullDelivery   4
 authority/voting/tla VotingAuthority NamenlosServices    pass                         4
@@ -64,10 +65,6 @@ authority/voting/tla VotingAuthority WitnessChainRestart ChainUnanimity
 client/tla           ClientARQ       Sequential          pass
 client/tla           ClientARQ       Concurrent          pass
 client/tla           ClientARQ       Disconnect          pass
-client/tla           ClientARQ       RaceCancel          AtMostOneResponse
-client/tla           ClientARQ       RaceResend          NoSilentDrop
-client/tla           ClientARQ       RaceTimer           NoStrayTimer
-client/tla           ClientARQ       DisconnectOrphan    NoOrphan
 client/tla           ClientARQ       WitnessCompletes    NeverCompletes
 client/tla           ClientARQ       WitnessStale        NeverStale
 server/tla           MixNode         Pipeline            pass
@@ -76,8 +73,7 @@ server/tla           MixNode         WitnessDelivered    NeverDelivered
 server/tla           MixNode         WitnessShortened    NeverShortened
 server/tla           MixKeys         Healthy             pass
 server/tla           MixKeys         OneSkip             pass
-server/tla           MixKeys         OneSkipSecrecy      KeysDestroyedOnTime
-server/tla           MixKeys         TwoSkips            KeysAvailable
+server/tla           MixKeys         TwoSkips            pass
 server/tla           MixKeys         Restart             pass
 server/tla           MixKeys         RestartReplay       ReplayFreedom
 server/tla           MixKeys         RestartSecrecy      KeysDestroyedOnTime

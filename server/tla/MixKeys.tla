@@ -7,20 +7,22 @@
 \* server/internal/pki (publishDescriptorIfNeeded) and
 \* server/internal/cryptoworker (doUnwrap).
 \*
-\* A mix key belongs to one epoch. Once per epoch, while it prepares the
-\* descriptor for the next epoch, the PKI worker generates the keys of the
-\* next NumMixKeys epochs and prunes those older than the previous epoch. It
-\* then tells every crypto worker to copy the key set again. Apart from
-\* start-up, generating and pruning happen nowhere else.
+\* A mix key belongs to one epoch. Once per epoch the PKI worker generates the
+\* keys of the next NumMixKeys epochs, prunes those older than the previous
+\* epoch, and tells every crypto worker to copy the key set again. That is the
+\* first thing publishDescriptorIfNeeded does, ahead of every early return, so
+\* it happens whether or not a descriptor goes out. Apart from start-up,
+\* generating and pruning happen nowhere else.
 \*
 \* A crypto worker tries the keys of the previous, current and next epoch on
 \* each packet. Each key carries its own replay filter, shared by all
 \* workers, and testing and setting a tag is one atomic step.
 \*
-\* The constant MaxSkips is the number of epochs that may pass without the
-\* publish step. In the implementation an epoch passes without it when its
-\* upload window has closed, when the step fails before it reaches the keys,
-\* or when the node has stopped advertising itself before a shutdown.
+\* The constant MaxSkips is the number of epochs that may pass without a
+\* descriptor being published. In the implementation that happens when the
+\* upload window has closed, when the upload fails, or when the node has
+\* stopped advertising itself before a shutdown. Rotation is not skipped with
+\* it, which is what the split between Rotate and Publish models.
 \*
 \* The constant Restarts lets the node shut down cleanly and boot again with
 \* PersistMixKeysOnShutdown set. On shutdown every key is written to a file.
@@ -40,6 +42,10 @@
 \*   - A restart without saved keys is not modelled, nor is a crash. The
 \*     node then begins with fresh keys, which no earlier packet unwraps
 \*     under.
+\*   - A rotation that fails is not modelled. Generate can return an error,
+\*     which rotateMixKeys passes to a caller that logs it and goes on, leaving
+\*     the key set as it was and Prune unrun. Every epoch the node is up
+\*     rotates here.
 
 EXTENDS Integers, FiniteSets, TLC
 
@@ -47,7 +53,7 @@ CONSTANTS
     Workers,    \* crypto workers
     Tags,       \* replay tags
     MaxEpoch,   \* last epoch to explore
-    MaxSkips,   \* how many epochs may pass without the publish step
+    MaxSkips,   \* how many epochs may pass without a published descriptor
     Restarts    \* TRUE: the node may shut down and boot with its keys saved
 
 ASSUME MaxEpoch \in Nat \ {0} /\ MaxSkips \in Nat /\ Restarts \in BOOLEAN
@@ -61,8 +67,9 @@ Epochs == 0 .. (MaxEpoch + NumMixKeys)
 
 VARIABLES
     epoch,      \* the current epoch
-    published,  \* the publish step has run in this epoch
-    skips,      \* how many epochs have passed without it
+    rotated,    \* the keys have been rotated in this epoch
+    published,  \* a descriptor has been published in this epoch
+    skips,      \* how many epochs have passed without one
     keys,       \* the key set of the node: the epochs it holds a key for
     shadow,     \* [Workers -> SUBSET Epochs]  each worker's copy of it
     pending,    \* [Workers -> BOOLEAN]  the worker was told to copy again
@@ -71,11 +78,12 @@ VARIABLES
     down,       \* the node is shut down
     files       \* the epochs with a key file on disk
 
-vars == <<epoch, published, skips, keys, shadow, pending, seen, accepts,
-          down, files>>
+vars == <<epoch, rotated, published, skips, keys, shadow, pending, seen,
+          accepts, down, files>>
 
 TypeOK ==
     /\ epoch \in 1 .. MaxEpoch
+    /\ rotated \in BOOLEAN
     /\ published \in BOOLEAN
     /\ skips \in 0 .. MaxSkips
     /\ keys \subseteq Epochs
@@ -90,6 +98,7 @@ TypeOK ==
 \* (mixKeys.init).
 Init ==
     /\ epoch = 1
+    /\ rotated = FALSE
     /\ published = FALSE
     /\ skips = 0
     /\ keys = 1 .. NumMixKeys
@@ -102,30 +111,44 @@ Init ==
 
 Settled == \A w \in Workers : ~pending[w]
 
-\* The publish step (publishDescriptorIfNeeded): Generate for the next epoch,
-\* then Prune, then tell the workers if anything changed. It runs at most
-\* once per epoch, and waits for the workers before it returns.
-Publish ==
-    /\ ~down /\ ~published /\ Settled
-    /\ published' = TRUE
+\* Rotation (rotateMixKeys): Generate for the next epoch, then Prune, then tell
+\* the workers if anything changed, and wait for them. It is the first statement
+\* of publishDescriptorIfNeeded, ahead of every early return, so it runs once in
+\* every epoch the node is up, whether a descriptor is published or not.
+Rotate ==
+    /\ ~down /\ ~rotated /\ Settled
+    /\ rotated' = TRUE
     /\ keys' = (keys \cup ((epoch + 1) .. (epoch + NumMixKeys)))
                   \ {k \in keys : k < epoch - 1}
     /\ pending' = [w \in Workers |-> keys' # keys]
-    /\ UNCHANGED <<epoch, skips, shadow, seen, accepts, down, files>>
+    /\ UNCHANGED <<epoch, published, skips, shadow, seen, accepts, down, files>>
+
+\* The rest of publishDescriptorIfNeeded: the descriptor for the next epoch is
+\* posted. It runs at most once per epoch, after that epoch's rotation, and
+\* touches no keys.
+Publish ==
+    /\ ~down /\ rotated /\ ~published /\ Settled
+    /\ published' = TRUE
+    /\ UNCHANGED <<epoch, rotated, skips, keys, shadow, pending, seen, accepts,
+                   down, files>>
 
 \* A worker copies the key set (Shadow).
 Reshadow(w) ==
     /\ ~down /\ pending[w]
     /\ shadow' = [shadow EXCEPT ![w] = keys]
     /\ pending' = [pending EXCEPT ![w] = FALSE]
-    /\ UNCHANGED <<epoch, published, skips, keys, seen, accepts, down, files>>
+    /\ UNCHANGED <<epoch, rotated, published, skips, keys, seen, accepts, down,
+                   files>>
 
-\* The epoch ends. A node that is down publishes nothing, and that is not
+\* The epoch ends. A node that is up has rotated, being down the only way a
+\* rotation is missed. A node that is down publishes nothing, and that is not
 \* counted as a skip.
 NextEpoch ==
     /\ epoch < MaxEpoch /\ Settled
+    /\ down \/ rotated
     /\ down \/ published \/ skips < MaxSkips
     /\ epoch' = epoch + 1
+    /\ rotated' = FALSE
     /\ published' = FALSE
     /\ skips' = IF down \/ published THEN skips ELSE skips + 1
     /\ UNCHANGED <<keys, shadow, pending, seen, accepts, down, files>>
@@ -141,7 +164,8 @@ Accept(w, k, t) ==
     /\ t \notin seen[k]
     /\ seen' = [seen EXCEPT ![k] = @ \cup {t}]
     /\ accepts' = [accepts EXCEPT ![<<k, t>>] = IF @ < 2 THEN @ + 1 ELSE @]
-    /\ UNCHANGED <<epoch, published, skips, keys, shadow, pending, down, files>>
+    /\ UNCHANGED <<epoch, rotated, published, skips, keys, shadow, pending,
+                   down, files>>
 
 \* A clean shutdown (Halt). Every key the node holds is written to a file.
 \* The process ends, and its replay filters end with it.
@@ -152,7 +176,7 @@ Shutdown ==
     /\ keys' = {}
     /\ shadow' = [w \in Workers |-> {}]
     /\ seen' = [k \in Epochs |-> {}]
-    /\ UNCHANGED <<epoch, published, skips, pending, accepts>>
+    /\ UNCHANGED <<epoch, rotated, published, skips, pending, accepts>>
 
 \* The next boot (init). Files outside the current epoch and the two after
 \* it are removed. Generate then loads a key from its file, which removes the
@@ -163,11 +187,12 @@ Boot ==
     /\ files' = {}
     /\ keys' = epoch .. (epoch + NumMixKeys - 1)
     /\ shadow' = [w \in Workers |-> keys']
+    /\ rotated' = FALSE
     /\ published' = FALSE
     /\ UNCHANGED <<epoch, skips, pending, seen, accepts>>
 
 Next ==
-    \/ Publish \/ NextEpoch \/ Shutdown \/ Boot
+    \/ Rotate \/ Publish \/ NextEpoch \/ Shutdown \/ Boot
     \/ \E w \in Workers :
           \/ Reshadow(w)
           \/ \E k \in Epochs, t \in Tags : Accept(w, k, t)
@@ -189,7 +214,7 @@ Alive(k) ==
 ReplayFreedom == \A x \in Epochs \X Tags : accepts[x] <= 1
 
 \* Forward secrecy: the key of epoch k is destroyed before epoch k + 3
-\* begins. It is last usable in epoch k + 1, and the publish step of epoch
+\* begins. It is last usable in epoch k + 1, and the rotation of epoch
 \* k + 2 prunes it.
 KeysDestroyedOnTime == \A k \in Epochs : Alive(k) => k + 2 >= epoch
 

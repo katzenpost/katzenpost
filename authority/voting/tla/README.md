@@ -146,6 +146,7 @@ and `Byzantine4` exhibits the mechanism at even `N`.
 | `EpochsByzantine` | 3 | 1 | 0 | 2 | `ChainConsistency` violated | |
 | `Equivocation` | 4 | 1 | 1 | 1 | `ConvergenceUnderFullDelivery` violated | |
 | `Shape` | 4 | 1 | 5 | 1 | `AllOrNoneUnderFullDelivery` violated | |
+| `ShapeSafety` | 4 | 1 | 5 | 1 | all safety invariants hold | 3,741,466 |
 | `Namenlos` | 4 | 1 | 19 | 1 | `NoHonestLeftOut` violated | |
 | `NamenlosShards` | 4 | 1 | 19 | 1 | `ShardableUnderFullDelivery` violated | |
 | `NamenlosServices` | 4 | 1 | 19 | 1 | five hold | 75,959 |
@@ -201,18 +202,41 @@ claim holds over an exhaustive search of the restricted specification: three
 nodes advertise a courier and four an echo, so one contested pair cannot empty
 either. Both are provisioning margins rather than guarantees, because
 `getMyConsensus` checks neither, and the authorities sign such a document without
-noticing. `NamenlosServices` also carries `Agreement`, `UniqueConsensus` and
-`DescriptorValidity`, which every other configuration checks with `Topology`
-empty.
+noticing.
 
 None of this is established at these node counts, because delivery is pinned to
 full delivery and vote content to one contested set. It is what is reachable where
 the network actually runs.
 
-`Epochs`, `ByzantineValidity`, `Byzantine4`, `Equivocation` and the three
-`Namenlos` configurations set `SYMMETRY`, sound for them because no invariant
-they check names a particular authority or node. Permuting nodes is not sound
-with a non-empty `Topology`, which moves nodes between groups, so `Symmetry`
+No configuration establishes a safety invariant with a non-empty `Topology`.
+`Agreement`, `UniqueConsensus` and `DescriptorValidity` are established only where
+`Topology` is empty, `Byzantine4` being the configuration that carries them
+against a Byzantine authority and restricting nothing. The two that check them
+with a non-empty `Topology`, `ShapeSafety` and `NamenlosServices`, both restrict
+`VoteAssignments`, and a pass under a restriction establishes nothing.
+
+`ShapeSafety` is `Shape`'s shape with those three invariants in place of the gate.
+What it adds to `NamenlosServices` is delivery: it is the only configuration that
+checks safety with a non-empty `Topology` and arbitrary loss, and it passes over
+3,741,466 distinct states, fewer than `Byzantine4`'s 6,100,574 and `MixNode`
+`Pipeline`'s 6,591,120. It needs `SYMMETRY` for that: without it the same search
+is 22,055,812 distinct states.
+
+Lifting the content restriction is what would establish those three at a
+non-empty `Topology`, and the search does not permit it. `FullVoteAssignments`
+draws a view from `SUBSET Nodes` for each honest authority and one per recipient
+for each Byzantine one, so five nodes and four authorities of which one is
+Byzantine give 32^3 * 32^4, which is 34,359,738,368 initial states before a
+single round is taken. One node per group is the smallest non-empty `Topology`,
+and three nodes with those authorities still give 8^3 * 8^4, which is 2,097,152,
+against `Byzantine4`'s 128. What carries safety at
+the deployed shape is the threshold arithmetic above and `Byzantine4`, not a
+configuration at that shape.
+
+`Epochs`, `ByzantineValidity`, `Byzantine4`, `Equivocation`, `ShapeSafety` and the
+three `Namenlos` configurations set `SYMMETRY`, sound for them because no
+invariant they check names a particular authority or node. Permuting nodes is not
+sound with a non-empty `Topology`, which moves nodes between groups, so `Symmetry`
 permutes nodes only where `Topology` is empty and permutes authorities either
 way.
 

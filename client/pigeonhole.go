@@ -1401,16 +1401,33 @@ func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, erro
 	})
 }
 
-// handlePigeonholeARQReply handles replies to Pigeonhole ARQ messages.
-// It implements a finite state machine for the stop-and-wait ARQ protocol:
-// - WaitingForACK: Initial state, waiting for ACK from courier
-// - ACKReceived: ACK received, for reads we need to send another SURB for payload
-// - PayloadReceived: Terminal state for reads after receiving payload
+func (d *Daemon) claimARQTerminal(arqMessage *ARQMessage) bool {
+	d.lockReply()
+	defer d.replyLock.Unlock()
+	claimed := false
+	if arqMessage.SURBID != nil {
+		if _, ok := d.arqSurbIDMap[*arqMessage.SURBID]; ok {
+			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			claimed = true
+		}
+	}
+	if arqMessage.EnvelopeHash != nil {
+		if _, ok := d.arqEnvelopeHashMap[*arqMessage.EnvelopeHash]; ok {
+			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+			claimed = true
+		}
+	}
+	if claimed && arqMessage.SURBID != nil && d.arqTimerQueue != nil {
+		d.arqTimerQueue.Cancel(arqMessage.SURBID)
+	}
+	return claimed
+}
+
 // finishARQMessage delivers the terminal outcome of an ARQ operation to its
 // owner: a standalone StartResendingEncryptedMessage gets its per-message thin
 // reply. The map cleanup has already been done by the caller.
 func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, errorCode uint8, plaintext []byte) {
-	conn.sendResponse(&Response{
+	response := &Response{
 		AppID: arqMessage.AppID,
 		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
 			QueryID:             arqMessage.QueryID,
@@ -1419,7 +1436,23 @@ func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, er
 			CourierIdentityHash: arqMessage.DestinationIdHash,
 			CourierQueueID:      arqMessage.RecipientQueueID,
 		},
-	})
+	}
+	d.deliverARQResponse(arqMessage.AppID, conn, response)
+}
+
+func (d *Daemon) deliverARQResponse(appID *[AppIDLength]byte, conn *incomingConn, response *Response) {
+	if conn == nil && d.listener != nil {
+		conn = d.listener.getConnection(appID)
+	}
+	if conn != nil {
+		if err := conn.sendResponse(response); err == nil {
+			return
+		}
+	}
+	if d.listener != nil && d.listener.queueReplyForDisconnected(appID, response) {
+		return
+	}
+	d.log.Errorf("deliverARQResponse: no connection and no disconnected session for AppID %x, outcome lost", appID[:])
 }
 
 // courierEnvelopeErrorToThinError maps a courier EnvelopeError code (see
@@ -1447,26 +1480,35 @@ func courierEnvelopeErrorToThinError(code uint8) uint8 {
 	}
 }
 
+// handlePigeonholeARQReply handles replies to Pigeonhole ARQ messages.
+// It implements a finite state machine for the stop-and-wait ARQ protocol:
+// - WaitingForACK: Initial state, waiting for ACK from courier
+// - ACKReceived: ACK received, for reads we need to send another SURB for payload
+// - PayloadReceived: Terminal state for reads after receiving payload
 func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxReply) {
 	conn := d.listener.getConnection(arqMessage.AppID)
 	if conn == nil {
-		d.log.Errorf("handlePigeonholeARQReply: no connection for AppID %x", arqMessage.AppID[:])
-		return
+		if d.listener == nil || !d.listener.hasDisconnectedSession(arqMessage.AppID) {
+			d.log.Errorf("handlePigeonholeARQReply: no connection for AppID %x, re-arming", arqMessage.AppID[:])
+			d.rearmARQRetry(arqMessage)
+			return
+		}
+		d.log.Debugf("handlePigeonholeARQReply: AppID %x is away inside its grace period, handling the reply for its return", arqMessage.AppID[:])
 	}
 
 	// Decrypt the SURB payload
 	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, arqMessage.SURBDecryptionKeys)
 	if err != nil {
-		d.log.Errorf("handlePigeonholeARQReply: SURB payload decryption error: %s", err)
-		d.dropARQMessage(arqMessage)
+		d.log.Errorf("handlePigeonholeARQReply: SURB payload decryption error, re-arming: %s", err)
+		d.rearmARQRetry(arqMessage)
 		return
 	}
 
 	// Parse the CourierQueryReply
 	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(surbPayload)
 	if err != nil {
-		d.log.Errorf("handlePigeonholeARQReply: failed to parse CourierQueryReply: %s", err)
-		d.dropARQMessage(arqMessage)
+		d.log.Errorf("handlePigeonholeARQReply: failed to parse CourierQueryReply, re-arming: %s", err)
+		d.rearmARQRetry(arqMessage)
 		return
 	}
 
@@ -1480,14 +1522,20 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		// Handle envelope reply (type 0) - fall through to existing logic
 	default:
 		d.log.Errorf("handlePigeonholeARQReply: unknown ARQ message type %d", arqMessage.MessageType)
-		d.dropARQMessage(arqMessage)
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
+		d.finishARQMessage(arqMessage, conn, thin.ThinClientErrorInternalError, nil)
 		return
 	}
 
 	// Handle envelope reply (type 0)
 	if courierQueryReply.ReplyType != 0 || courierQueryReply.EnvelopeReply == nil {
 		d.log.Errorf("handlePigeonholeARQReply: unexpected reply type %d for envelope operation", courierQueryReply.ReplyType)
-		d.dropARQMessage(arqMessage)
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
+		d.finishARQMessage(arqMessage, conn, thin.ThinClientErrorCourierInvalidEnvelope, nil)
 		return
 	}
 
@@ -1519,22 +1567,18 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	switch transition.Action {
 	case ARQActionError:
 		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", transition.ErrorCode)
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
 
 		d.finishARQMessage(arqMessage, conn, transition.ErrorCode, nil)
 		return
 
 	case ARQActionComplete:
 		d.log.Debugf("handlePigeonholeARQReply: Write ACK received, returning success (single round-trip)")
-		d.lockReply()
-		if arqMessage.SURBID != nil {
-			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+		if !d.claimARQTerminal(arqMessage) {
+			return
 		}
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
 		instrument.SurbIDDelivered()
 
 		d.finishARQMessage(arqMessage, conn, thin.ThinClientSuccess, nil)
@@ -1553,7 +1597,8 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		return
 
 	case ARQActionIgnore:
-		d.log.Warningf("handlePigeonholeARQReply: Received reply in terminal state, ignoring")
+		d.log.Warningf("handlePigeonholeARQReply: reply in terminal state, ignoring and re-arming if still tracked")
+		d.rearmARQRetry(arqMessage)
 		return
 	}
 }
@@ -1581,6 +1626,10 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 	if courierQueryReply.ReplyType != 1 || courierQueryReply.CopyCommandReply == nil {
 		d.log.Errorf("handleCopyCommandARQReply: expected copy command reply (type 1), got type %d",
 			courierQueryReply.ReplyType)
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
+		d.finishARQMessage(arqMessage, conn, thin.ThinClientErrorCourierInvalidEnvelope, nil)
 		return
 	}
 
@@ -1598,12 +1647,11 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		return
 
 	case pigeonhole.CopyStatusSucceeded:
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
 		instrument.SurbIDDelivered()
-		conn.sendResponse(&Response{
+		d.deliverARQResponse(arqMessage.AppID, conn, &Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
 				QueryID:   arqMessage.QueryID,
@@ -1612,11 +1660,10 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 		})
 
 	case pigeonhole.CopyStatusFailed:
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
-		conn.sendResponse(&Response{
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
+		d.deliverARQResponse(arqMessage.AppID, conn, &Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
 				QueryID:             arqMessage.QueryID,
@@ -1628,11 +1675,10 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 
 	default:
 		d.log.Warningf("handleCopyCommandARQReply: unexpected Status=%d, treating as failure", copyCommandReply.Status)
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
-		conn.sendResponse(&Response{
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
+		d.deliverARQResponse(arqMessage.AppID, conn, &Response{
 			AppID: arqMessage.AppID,
 			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
 				QueryID:   arqMessage.QueryID,
@@ -1929,10 +1975,9 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 
 		case payloadActionIdempotentSuccess:
 			d.log.Debugf("handlePayloadReply: BoxAlreadyExists for write operation - treating as idempotent success")
-			d.lockReply()
-			delete(d.arqSurbIDMap, *arqMessage.SURBID)
-			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-			d.replyLock.Unlock()
+			if !d.claimARQTerminal(arqMessage) {
+				return
+			}
 			instrument.SurbIDDelivered()
 
 			d.finishARQMessage(arqMessage, conn, thin.ThinClientSuccess, nil)
@@ -1940,10 +1985,9 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		}
 
 		// payloadActionReturnError (or retry/idempotent fell through on infrastructure failure)
-		d.lockReply()
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-		d.replyLock.Unlock()
+		if !d.claimARQTerminal(arqMessage) {
+			return
+		}
 
 		errorCode := mapDecryptionErrorToCode(err)
 		var re *replicaError
@@ -1958,10 +2002,9 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	}
 
 	// Remove from ARQ tracking
-	d.lockReply()
-	delete(d.arqSurbIDMap, *arqMessage.SURBID)
-	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-	d.replyLock.Unlock()
+	if !d.claimARQTerminal(arqMessage) {
+		return
+	}
 	instrument.SurbIDDelivered()
 
 	// Handle writes: for write operations, we don't expect any payload data.
