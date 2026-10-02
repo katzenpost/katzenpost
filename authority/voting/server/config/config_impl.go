@@ -257,11 +257,6 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		cfg.Debug = &Debug{}
 	}
 	if cfg.Topology != nil {
-		if cfg.Debug.Layers <= 0 {
-			cfg.Debug.Layers = len(cfg.Topology.Layers)
-		} else if cfg.Debug.Layers != len(cfg.Topology.Layers) {
-			return fmt.Errorf("config: Debug: Layers is %d but the configured Topology has %d layers", cfg.Debug.Layers, len(cfg.Topology.Layers))
-		}
 		minPerLayer := cfg.Debug.MinNodesPerLayer
 		if minPerLayer <= 0 {
 			minPerLayer = defaultMinNodesPerLayer

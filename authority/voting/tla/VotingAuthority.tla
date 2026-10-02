@@ -101,9 +101,9 @@ GenesisSRV == << >>
 \* authority config has a MinNodesPerLayer knob whose default is 2, and
 \* hasEnoughDescriptors and verifyTopology in state.go would have applied it, but
 \* neither was called anywhere, so it bound only the whitelist size once in New().
-\* getMyConsensus now calls verifyTopology and hasEnoughDescriptors is gone, so the
-\* floor is applied where a document exists. WellFormed is still the weaker
-\* at-least-one rule, which is what IsDocumentWellFormed itself checks.
+\* The floor is now a config-time check on a pinned topology, and getMyConsensus
+\* refuses only an unroutable one, so the per-epoch rule is still at least one
+\* and WellFormed is exactly what IsDocumentWellFormed checks.
 \*
 \* Topology groups are the layers a configuration pins, so this follows
 \* generateFixedTopology: only that function maps a configured group to a layer.

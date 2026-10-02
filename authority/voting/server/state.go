@@ -681,14 +681,12 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 
 	if err := s.verifyTopology(consensusOfOne.Topology); err != nil {
 		s.log.Noticef(
-			"getMyConsensus: refusing to sign a consensus for epoch %d whose topology is below the configured minimum: layers=%d want=%d minPerLayer=%d",
+			"getMyConsensus: refusing to sign a consensus for epoch %d whose topology cannot carry a packet: %d layers",
 			epoch,
 			len(consensusOfOne.Topology),
-			s.s.cfg.Debug.Layers,
-			s.s.cfg.Debug.MinNodesPerLayer,
 		)
 		return nil, fmt.Errorf(
-			"refusing to sign a consensus for epoch %d below the configured topology minimum: %w",
+			"refusing to sign an unroutable consensus for epoch %d: %w",
 			epoch,
 			err,
 		)
@@ -3072,12 +3070,12 @@ func sha256b64(raw []byte) string {
 
 // validate the topology
 func (s *state) verifyTopology(topology [][]*pki.MixDescriptor) error {
-	if len(topology) < s.s.cfg.Debug.Layers {
+	if len(topology) == 0 {
 		return errInvalidTopology
 	}
 
 	for strata, _ := range topology {
-		if len(topology[strata]) < s.s.cfg.Debug.MinNodesPerLayer {
+		if len(topology[strata]) == 0 {
 			return errInvalidTopology
 		}
 	}
