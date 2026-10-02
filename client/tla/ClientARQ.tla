@@ -5,9 +5,9 @@
 \*
 \* It follows arq.go (computeARQStateTransition), daemon.go (handleReply,
 \* enqueueResend, scheduleARQFollowUp, arqDoResend, rotateARQSurbIDLocked,
-\* dropARQMessage, cleanupForAppID) and pigeonhole.go (arqSend,
-\* handlePigeonholeARQReply, handlePayloadReply,
-\* cancelResendingEncryptedMessage).
+\* rearmARQRetry, cleanupForAppID) and pigeonhole.go (arqSend,
+\* handlePigeonholeARQReply, handlePayloadReply, claimARQTerminal,
+\* deliverARQResponse, cancelResendingEncryptedMessage).
 \*
 \* WHO RUNS WHAT. The daemon touches an ARQ message from three goroutines,
 \* which share the two ARQ maps under replyLock:
@@ -129,6 +129,11 @@ Rotated(r) ==
 
 Untracked(r) == [r EXCEPT !.tracked = FALSE, !.timer = FALSE]
 
+\* r after rearmARQRetry. It looks the SURB id up and arms the timer again only
+\* if the operation is still tracked, so an operation already answered or
+\* cancelled is not resurrected.
+ReArmed(r) == IF r.tracked THEN [r EXCEPT !.timer = TRUE] ELSE r
+
 \* r after enqueueResend is called for its current SURB id. If r is no longer
 \* tracked, nothing happens. With a live connection the id goes on the resend
 \* queue. Without one the timer is armed again, to try later.
@@ -179,14 +184,14 @@ TimerFire(m) ==
 \* The egress worker takes a SURB id from the resend queue (arqDoResend). An
 \* id that is not in the map is stale, or belongs to an operation that was
 \* cancelled, and the resend is abandoned. That lookup is what stops a
-\* rotation from undoing a cancel. With no live connection the operation is
-\* deleted. Otherwise it is rotated and re-sent.
+\* rotation from undoing a cancel. With no live connection the timer is armed
+\* again. Otherwise it is rotated and re-sent.
 DoResend(m, g) ==
     LET r == [op[m] EXCEPT !.resendQ = @ \ {g}]
     IN  /\ Free /\ g \in op[m].resendQ
         /\ op' = [op EXCEPT ![m] =
                     IF ~(r.tracked /\ g = r.gen) THEN r
-                    ELSE IF ~connected THEN [r EXCEPT !.tracked = FALSE]
+                    ELSE IF ~connected THEN ReArmed(r)
                     ELSE Rotated(r)]
         /\ UNCHANGED <<conn, handling>>
 
@@ -208,23 +213,28 @@ Lookup(m, g, k) ==
         /\ UNCHANGED conn
 
 \* The ingress worker acts on the message it holds (handlePigeonholeARQReply).
-\*   - No live connection: it returns at once.
+\*   - The session is gone: rearmARQRetry finds nothing tracked and the reply
+\*     goes nowhere. Inside the grace period the reply is handled, and a
+\*     terminal outcome is queued for the client's return (deliverARQResponse).
 \*   - The message was rotated since Lookup: its keys are no longer those of
-\*     this reply, decryption fails, and dropARQMessage deletes the operation.
-\*   - A terminal outcome deletes the operation and answers the application.
-\*     The implementation does not check that it is still tracked.
+\*     this reply, decryption fails, and the timer is armed again.
+\*   - A terminal outcome deletes the operation, cancels its retry timer and
+\*     answers the application, but only if claimARQTerminal finds it still
+\*     tracked. A cancel that got there first has already answered.
 \*   - Otherwise the state is set and a follow-up is asked for
 \*     (scheduleARQFollowUp).
 Handle ==
     \E j \in handling :
         LET r == op[j.m]
             o == Outcome(r.fsm, j.k, r.kind)
-            gone == [r EXCEPT !.tracked = FALSE]
+            gone == Untracked(r)
         IN  /\ handling' = {}
             /\ op' = [op EXCEPT ![j.m] =
-                        IF ~connected THEN r
-                        ELSE IF j.g # r.gen THEN gone
-                        ELSE IF o = "RESPOND" THEN Responded(gone, j.k)
+                        IF conn = "closed" THEN ReArmed(r)
+                        ELSE IF j.g # r.gen THEN ReArmed(r)
+                        ELSE IF o = "RESPOND"
+                             THEN IF r.tracked THEN Responded(gone, j.k)
+                                               ELSE gone
                         ELSE Enqueued([r EXCEPT !.fsm = o])]
             /\ UNCHANGED conn
 
@@ -232,12 +242,14 @@ Handle ==
 \* The thin client's connection.
 
 \* The connection drops. A session-aware client keeps its state for a grace
-\* period (onClosedConn). resendCh belongs to the connection, so every SURB id
-\* still waiting in it goes away with no timer left behind.
+\* period (onClosedConn). resendCh belongs to the connection, so onClosedConn
+\* drains it first and puts every SURB id still waiting in it back on the timer.
 Disconnect ==
     /\ Disconnects /\ Free /\ conn = "up"
     /\ conn' = "away"
-    /\ op' = [m \in Msgs |-> [op[m] EXCEPT !.resendQ = {}]]
+    /\ op' = [m \in Msgs |-> [op[m] EXCEPT
+                 !.resendQ = {},
+                 !.timer = @ \/ (op[m].tracked /\ op[m].gen \in op[m].resendQ)]]
     /\ UNCHANGED handling
 
 \* The client reconnects within the grace period (handleSessionToken).

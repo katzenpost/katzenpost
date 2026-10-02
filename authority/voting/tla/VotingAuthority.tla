@@ -102,11 +102,14 @@ GenesisSRV == << >>
 \* replicas are deliberately not one, because that function checks each replica
 \* descriptor and never counts them.
 \*
-\* At least one is what the reference enforces per epoch. The authority config has
-\* a MinNodesPerLayer knob whose default is 2, and hasEnoughDescriptors and
-\* verifyTopology in state.go would apply it, but neither is called anywhere at
-\* e17bffb95efed80a6a7fb236a131303c05494a5e, so it binds only the whitelist
-\* size once in New().
+\* At least one is what the reference enforced per epoch at
+\* e17bffb95efed80a6a7fb236a131303c05494a5e. The authority config has a
+\* MinNodesPerLayer knob whose default is 2, and hasEnoughDescriptors and
+\* verifyTopology in state.go would have applied it, but neither was called
+\* anywhere, so it bound only the whitelist size once in New().
+\* The floor is now a config-time check on a pinned topology, and getMyConsensus
+\* refuses only an unroutable one, so the per-epoch rule is still at least one
+\* and WellFormed is exactly what IsDocumentWellFormed checks.
 \*
 \* Topology groups are the layers a configuration pins, so this follows
 \* generateFixedTopology: only that function maps a configured group to a layer.

@@ -21,7 +21,7 @@ func TestTimerQueuePeekPopLen(t *testing.T) {
 	require.Nil(t, q.Peek())
 	require.Nil(t, q.Pop())
 
-	// Enqueue directly (bypassing Push/pushCh/worker)
+	// Enqueue directly (bypassing Push/pending/worker)
 	q.EnqueueDirect(300, "third")
 	q.EnqueueDirect(100, "first")
 	q.EnqueueDirect(200, "second")
@@ -124,7 +124,8 @@ func TestTimerQueueCancelDoesNotFireAction(t *testing.T) {
 	deadline := uint64(time.Now().Add(300 * time.Millisecond).UnixNano())
 	q.Push(deadline, "doomed")
 
-	// Wait for the worker to drain pushCh into the heap before cancelling.
+	// Wait for the worker to move the pending list into the heap before
+	// cancelling.
 	require.Eventually(t, func() bool { return q.Len() == 1 }, time.Second, 5*time.Millisecond)
 
 	require.True(t, q.Cancel("doomed"))
