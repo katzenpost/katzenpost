@@ -1,7 +1,7 @@
 # TLA+ models of the mix server
 
 Two models of a mix node, from the `server` package as it is on `main` at commit
-`e17bffb95`.
+`e17bffb95efed80a6a7fb236a131303c05494a5e`.
 
 | Model | Covers |
 |---|---|

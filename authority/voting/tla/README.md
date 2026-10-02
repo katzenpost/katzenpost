@@ -2,7 +2,7 @@
 
 A model of the consensus protocol in
 [`authority/voting/server/state.go`](../server/state.go), as it is on `main` at
-commit `e17bffb95`.
+commit `e17bffb95efed80a6a7fb236a131303c05494a5e`.
 
 ## What is modelled
 

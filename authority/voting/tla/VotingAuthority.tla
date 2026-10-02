@@ -100,7 +100,8 @@ GenesisSRV == << >>
 \* At least one is what the reference enforces per epoch. The authority config has
 \* a MinNodesPerLayer knob whose default is 2, and hasEnoughDescriptors and
 \* verifyTopology in state.go would apply it, but neither is called anywhere at
-\* e17bffb95, so it binds only the whitelist size once in New().
+\* e17bffb95efed80a6a7fb236a131303c05494a5e, so it binds only the whitelist
+\* size once in New().
 \*
 \* Topology groups are the layers a configuration pins, so this follows
 \* generateFixedTopology: only that function maps a configured group to a layer.
