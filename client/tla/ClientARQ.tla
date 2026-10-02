@@ -218,8 +218,9 @@ Lookup(m, g, k) ==
 \*     terminal outcome is queued for the client's return (deliverARQResponse).
 \*   - The message was rotated since Lookup: its keys are no longer those of
 \*     this reply, decryption fails, and the timer is armed again.
-\*   - A terminal outcome deletes the operation and answers the application.
-\*     The implementation does not check that it is still tracked.
+\*   - A terminal outcome deletes the operation and answers the application,
+\*     but only if claimARQTerminal finds it still tracked. A cancel that got
+\*     there first has already answered.
 \*   - Otherwise the state is set and a follow-up is asked for
 \*     (scheduleARQFollowUp).
 Handle ==
@@ -231,7 +232,9 @@ Handle ==
             /\ op' = [op EXCEPT ![j.m] =
                         IF conn = "closed" THEN ReArmed(r)
                         ELSE IF j.g # r.gen THEN ReArmed(r)
-                        ELSE IF o = "RESPOND" THEN Responded(gone, j.k)
+                        ELSE IF o = "RESPOND"
+                             THEN IF r.tracked THEN Responded(gone, j.k)
+                                               ELSE gone
                         ELSE Enqueued([r EXCEPT !.fsm = o])]
             /\ UNCHANGED conn
 

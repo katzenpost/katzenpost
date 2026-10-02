@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/queue"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -123,4 +124,116 @@ func TestClaimARQTerminalIsExclusiveUnderContention(t *testing.T) {
 			"exactly one of two concurrent claims may answer the query")
 		require.Equal(t, 0, arqTracked(d, m), "the operation is gone from both maps")
 	}
+}
+
+func TestCancelAndTerminalReplyAnswerOnlyOnce(t *testing.T) {
+	answersAfter := func(t *testing.T, cancelFirst bool) int {
+		t.Helper()
+		l := newSchedulerListener()
+		d, _ := newARQTestDaemon(t, l)
+		conn := newTestIncomingConn(0x0F, 1, 1)
+		conn.sendWake = make(chan struct{}, 1)
+		l.testRegister(conn)
+
+		m := trackARQMessage(d, conn.appID)
+		m.QueryID = &[thin.QueryIDLength]byte{0x33}
+		m.DestinationIdHash = &[32]byte{0x44}
+
+		cancel := func() {
+			d.cancelResendingEncryptedMessage(&Request{
+				AppID: conn.appID,
+				CancelResendingEncryptedMessage: &thin.CancelResendingEncryptedMessage{
+					QueryID:      &[thin.QueryIDLength]byte{0x55},
+					EnvelopeHash: m.EnvelopeHash,
+				},
+			})
+		}
+		terminal := func() {
+			if d.claimARQTerminal(m) {
+				d.finishARQMessage(m, conn, thin.ThinClientSuccess, nil)
+			}
+		}
+		if cancelFirst {
+			cancel()
+			terminal()
+		} else {
+			terminal()
+			cancel()
+		}
+
+		answers := 0
+		conn.sendQueueMu.Lock()
+		for _, r := range conn.sendQueue {
+			if r.StartResendingEncryptedMessageReply != nil {
+				answers++
+			}
+		}
+		conn.sendQueueMu.Unlock()
+		require.Equal(t, 0, arqTracked(d, m), "the operation is gone from both maps")
+		return answers
+	}
+
+	require.Equal(t, 1, answersAfter(t, true),
+		"a terminal reply after a cancel must not answer the query again")
+	require.Equal(t, 1, answersAfter(t, false),
+		"a cancel after a terminal reply must not answer the query again")
+}
+
+func TestCancelAndTerminalCopyReplyAnswerOnlyOnce(t *testing.T) {
+	answersAfter := func(t *testing.T, cancelFirst bool) int {
+		t.Helper()
+		l := newSchedulerListener()
+		d, _ := newARQTestDaemon(t, l)
+		conn := newTestIncomingConn(0x10, 1, 1)
+		conn.sendWake = make(chan struct{}, 1)
+		l.testRegister(conn)
+
+		m := trackARQMessage(d, conn.appID)
+		m.QueryID = &[thin.QueryIDLength]byte{0x66}
+		m.MessageType = ARQMessageTypeCopyCommand
+
+		cancel := func() {
+			d.cancelResendingCopyCommand(&Request{
+				AppID: conn.appID,
+				CancelResendingCopyCommand: &thin.CancelResendingCopyCommand{
+					QueryID:      &[thin.QueryIDLength]byte{0x77},
+					WriteCapHash: m.EnvelopeHash,
+				},
+			})
+		}
+		terminal := func() {
+			if d.claimARQTerminal(m) {
+				d.deliverARQResponse(m.AppID, conn, &Response{
+					AppID: m.AppID,
+					StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
+						QueryID:   m.QueryID,
+						ErrorCode: thin.ThinClientSuccess,
+					},
+				})
+			}
+		}
+		if cancelFirst {
+			cancel()
+			terminal()
+		} else {
+			terminal()
+			cancel()
+		}
+
+		answers := 0
+		conn.sendQueueMu.Lock()
+		for _, r := range conn.sendQueue {
+			if r.StartResendingCopyCommandReply != nil {
+				answers++
+			}
+		}
+		conn.sendQueueMu.Unlock()
+		require.Equal(t, 0, arqTracked(d, m), "the operation is gone from both maps")
+		return answers
+	}
+
+	require.Equal(t, 1, answersAfter(t, true),
+		"a terminal copy reply after a cancel must not answer the query again")
+	require.Equal(t, 1, answersAfter(t, false),
+		"a cancel after a terminal copy reply must not answer the query again")
 }

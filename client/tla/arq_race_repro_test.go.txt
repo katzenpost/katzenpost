@@ -1,9 +1,8 @@
 // Replays of orderings found by the TLA+ model in this directory, against
 // the daemon code. Each test runs, step by step on one goroutine, an ordering
 // of operations that in the daemon run on different goroutines. Every test
-// PASSES when the daemon behaves as the model says. Two of the three problems
-// it found are fixed, so those now pass by surviving the ordering; the cancel
-// race still answers the application twice.
+// PASSES when the daemon behaves as the model says. All three problems it found
+// are fixed, so those three now pass by surviving the ordering.
 //
 // The file has a .txt suffix so that it is not compiled. To run it:
 //
@@ -207,7 +206,7 @@ func TestTLAReproBaseline(t *testing.T) {
 	require.Equal(t, 0, e.tracked())
 }
 
-// Still a problem. ClientARQ_RaceCancel.cfg: Lookup, Cancel, Handle.
+// Was a problem. Concurrent, AtMostOneResponse: Lookup, Cancel, Handle.
 func TestTLAReproCancelRace(t *testing.T) {
 	e := newReproEnv(t)
 	m, keys := e.install(t, false)

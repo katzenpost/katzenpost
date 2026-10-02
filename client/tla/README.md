@@ -67,9 +67,8 @@ TLC reported it violated.
 | Config | `Atomic` | `Disconnects` | Expected | Distinct states |
 |---|---|---|---|---|
 | `Sequential` | yes | no | all seven hold | 282,263 |
-| `Concurrent` | no | no | five hold | 923,723 |
+| `Concurrent` | no | no | six hold | 678,956 |
 | `Disconnect` | yes | yes | seven hold | 406,649 |
-| `RaceCancel` | no | no | `AtMostOneResponse` violated | |
 | `RaceTimer` | no | no | `NoStrayTimer` violated | |
 | `WitnessCompletes` | yes | no | `NeverCompletes` violated | |
 | `WitnessStale` | yes | no | `NeverStale` violated | |
@@ -84,7 +83,7 @@ Which invariant holds where:
 
 | Invariant | `Sequential` | `Concurrent` | `Disconnect` |
 |---|---|---|---|
-| `AtMostOneResponse` | holds | violated | holds |
+| `AtMostOneResponse` | holds | holds | holds |
 | `NoSilentDrop` | holds | holds | holds |
 | `NoOrphan` | holds | holds | holds |
 | `CancelIsFinal` | holds | holds | holds |
@@ -97,18 +96,18 @@ The protocol is sound: with atomic reply handling and a connected client, every
 property holds. The lookup before rotating does its job, and `CancelIsFinal`
 fails if the lookup is removed from the model.
 
-Three problems appeared once those assumptions were dropped. Two are fixed and
-the model follows the fixed code, so their configurations fold into `Concurrent`
-and `Disconnect`, which now carry the invariants that used to be the
-counterexample. The third stands.
+Three problems appeared once those assumptions were dropped. All three are
+fixed and the model follows the fixed code, so their configurations fold into
+`Concurrent` and `Disconnect`, which now carry the invariants that used to be
+the counterexample.
 
-**A cancel racing a reply answers the application twice** (`RaceCancel`, still
-open). The
-ingress worker finds the operation, the application cancels and is answered with
-a Cancelled error, and the worker then reaches a terminal outcome and answers
-again. The terminal branches of `handlePigeonholeARQReply` and
-`handlePayloadReply` delete the map entries and call `finishARQMessage` without
-checking that the operation is still tracked.
+**A cancel racing a reply answered the application twice** (`Concurrent`,
+fixed). The ingress worker finds the operation, the application cancels and is
+answered with a Cancelled error, and the worker then reaches a terminal outcome
+and answered again, because the terminal branches deleted the map entries
+without checking that the operation was still tracked. Every terminal branch now
+goes through `claimARQTerminal`, which deletes the same two entries the cancel
+deletes, under the same lock, and answers only if it won.
 
 **A resend racing a reply lost the operation** (`Concurrent`, fixed). The timer
 fires and queues a resend; a late reply is looked up and found; the egress worker
@@ -171,5 +170,5 @@ and exiting non-zero if any differs.
 For one configuration and its trace, with the jar here or named by `TLA2TOOLS`:
 
 ```sh
-java -jar tla2tools.jar -config ClientARQ_RaceCancel.cfg ClientARQ.tla
+java -jar tla2tools.jar -config ClientARQ_RaceTimer.cfg ClientARQ.tla
 ```
