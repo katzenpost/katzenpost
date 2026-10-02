@@ -10,12 +10,12 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/sign"
 
+	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
-	"github.com/katzenpost/katzenpost/core/thwack"
-	"github.com/katzenpost/katzenpost/core/connlimit"
 )
 
 // A mix key store that records what a rotation pass asked of it.
@@ -32,8 +32,8 @@ func (f *fakeMixKeys) Generate(e uint64) (bool, error) {
 	f.generated = append(f.generated, e)
 	return f.didGen, f.genErr
 }
-func (f *fakeMixKeys) Prune() bool                  { f.prunes++; return f.didPrune }
-func (f *fakeMixKeys) Get(uint64) ([]byte, bool)    { return nil, false }
+func (f *fakeMixKeys) Prune() bool                      { f.prunes++; return f.didPrune }
+func (f *fakeMixKeys) Get(uint64) ([]byte, bool)        { return nil, false }
 func (f *fakeMixKeys) Shadow(map[uint64]*mixkey.MixKey) {}
 
 // Enough of glue.Glue to reach the mix keys and the reshadow call.
@@ -42,22 +42,22 @@ type rotationGlue struct {
 	reshadows int
 }
 
-func (g *rotationGlue) Config() *config.Config          { return nil }
-func (g *rotationGlue) LogBackend() *log.Backend        { return nil }
-func (g *rotationGlue) IdentityKey() sign.PrivateKey    { return nil }
+func (g *rotationGlue) Config() *config.Config            { return nil }
+func (g *rotationGlue) LogBackend() *log.Backend          { return nil }
+func (g *rotationGlue) IdentityKey() sign.PrivateKey      { return nil }
 func (g *rotationGlue) IdentityPublicKey() sign.PublicKey { return nil }
-func (g *rotationGlue) LinkKey() kem.PrivateKey         { return nil }
-func (g *rotationGlue) Management() *thwack.Server      { return nil }
-func (g *rotationGlue) MixKeys() glue.MixKeys           { return g.mk }
-func (g *rotationGlue) PKI() glue.PKI                   { return nil }
-func (g *rotationGlue) Gateway() glue.Gateway           { return nil }
-func (g *rotationGlue) ServiceNode() glue.ServiceNode   { return nil }
-func (g *rotationGlue) Scheduler() glue.Scheduler       { return nil }
-func (g *rotationGlue) Connector() glue.Connector       { return nil }
-func (g *rotationGlue) Listeners() []glue.Listener      { return nil }
-func (g *rotationGlue) Decoy() glue.Decoy               { return nil }
-func (g *rotationGlue) PeerConnSet() *connlimit.PeerSet { return nil }
-func (g *rotationGlue) ReshadowCryptoWorkers()          { g.reshadows++ }
+func (g *rotationGlue) LinkKey() kem.PrivateKey           { return nil }
+func (g *rotationGlue) Management() *thwack.Server        { return nil }
+func (g *rotationGlue) MixKeys() glue.MixKeys             { return g.mk }
+func (g *rotationGlue) PKI() glue.PKI                     { return nil }
+func (g *rotationGlue) Gateway() glue.Gateway             { return nil }
+func (g *rotationGlue) ServiceNode() glue.ServiceNode     { return nil }
+func (g *rotationGlue) Scheduler() glue.Scheduler         { return nil }
+func (g *rotationGlue) Connector() glue.Connector         { return nil }
+func (g *rotationGlue) Listeners() []glue.Listener        { return nil }
+func (g *rotationGlue) Decoy() glue.Decoy                 { return nil }
+func (g *rotationGlue) PeerConnSet() *connlimit.PeerSet   { return nil }
+func (g *rotationGlue) ReshadowCryptoWorkers()            { g.reshadows++ }
 
 func newRotationPKI(t *testing.T, mk glue.MixKeys) (*pki, *rotationGlue) {
 	t.Helper()
@@ -98,4 +98,3 @@ func TestRotationDoesNotReshadowWhenNothingChanged(t *testing.T) {
 	require.NoError(t, p.rotateMixKeys(7))
 	require.Equal(t, 0, g.reshadows)
 }
-

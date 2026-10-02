@@ -68,7 +68,7 @@ func TestRescheduleARQAfterComposeFailureRotatesMaps(t *testing.T) {
 // the retry branch runs, handleReply has already deleted the prior SURBID
 // from arqSurbIDMap and arqEnvelopeHashMap. The helper must tolerate the
 // missing old entry and still register the placeholder and timer.
-func TestRescheduleARQAfterComposeFailureWithDeletedMapEntry(t *testing.T) {
+func TestRescheduleARQAfterComposeFailureDoesNotResurrectRemoved(t *testing.T) {
 	d := &Daemon{
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
 		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
@@ -82,8 +82,13 @@ func TestRescheduleARQAfterComposeFailureWithDeletedMapEntry(t *testing.T) {
 	envHash := &[32]byte{}
 	copy(envHash[:], []byte("envelope-hash-exactly-32-bytes!!"))
 
-	// Simulate the post-handleReply state: arqMessage.SURBID still points
-	// at the stale ID, but the maps no longer contain it.
+	// A message that still points at a SURB ID the maps no longer hold. This used
+	// to be described as the state handleReply left behind, and the reschedule was
+	// expected to re-register it. handleReply no longer removes the ARQ entries for
+	// an ARQ reply, which TestHandleReplyLeavesMapsIntactForARQReply pins, so the
+	// only things that remove an entry now are a cancel, a terminal claim and
+	// cleanupForAppID. Each of those is deliberate, and re-registering here would
+	// undo it.
 	arqMessage := &ARQMessage{
 		EnvelopeHash: envHash,
 		SURBID:       staleSurbID,
@@ -94,12 +99,12 @@ func TestRescheduleARQAfterComposeFailureWithDeletedMapEntry(t *testing.T) {
 	d.replyLock.Lock()
 	defer d.replyLock.Unlock()
 
-	require.NotEqual(t, staleSurbID, arqMessage.SURBID,
-		"SURBID must be rotated to a fresh placeholder even when the old key was absent")
-	require.Same(t, arqMessage, d.arqSurbIDMap[*arqMessage.SURBID])
-	require.Equal(t, arqMessage.SURBID, d.arqEnvelopeHashMap[*envHash])
-	require.Equal(t, 1, d.arqTimerQueue.PushChLen(),
-		"retry must be pushed onto arqTimerQueue")
+	require.Equal(t, staleSurbID, arqMessage.SURBID,
+		"a removed operation is left alone, not rotated onto a fresh placeholder")
+	require.Empty(t, d.arqSurbIDMap, "the operation must not come back into arqSurbIDMap")
+	require.Empty(t, d.arqEnvelopeHashMap, "nor into arqEnvelopeHashMap")
+	require.Equal(t, 0, d.arqTimerQueue.PushChLen(),
+		"and nothing is scheduled for an operation that was removed")
 }
 
 // TestRescheduleARQAfterComposeFailureNilEnvelopeHash guards against a

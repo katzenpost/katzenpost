@@ -252,7 +252,7 @@ func (d *Daemon) Start() error {
 		d.listener.SetSessionGracePeriod(d.cfg.SessionGracePeriod)
 	}
 	d.listener.SetLocalDispatch(d.dispatchLocal)
-	d.listener.SetResendOrphanHandler(d.rearmARQRetry)
+	d.listener.SetResendOrphanHandler(d.rearmOrphanedResend)
 
 	d.cfg.Callbacks = &config.Callbacks{}
 	d.cfg.Callbacks.OnACKFn = d.proxyReplies
@@ -832,8 +832,23 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 	}
 
 	d.lockReply()
+	// Only reschedule an operation that is still tracked. The caller releases
+	// replyLock before getting here, so a cancel, a terminal claim or a
+	// cleanupForAppID can land in that window, and writing the maps regardless
+	// would bring back an operation that was deliberately removed.
+	// A message that never had a SURB ID was never registered, so there is nothing
+	// to resurrect and registering it is the point of the call. A message that has
+	// one which is no longer in the map is a different matter: handleReply leaves
+	// the ARQ maps alone, so the only things that remove an entry are a cancel, a
+	// terminal claim and cleanupForAppID, all deliberate. Rewriting the maps then
+	// would undo one of them.
 	hadOld := arqMessage.SURBID != nil
 	if hadOld {
+		if _, tracked := d.arqSurbIDMap[*arqMessage.SURBID]; !tracked {
+			d.replyLock.Unlock()
+			d.log.Debugf("rescheduleARQAfterComposeFailure: SURB ID %x was removed, not resurrecting it", arqMessage.SURBID[:])
+			return
+		}
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	}
 	arqMessage.SURBID = placeholder
@@ -864,22 +879,6 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 // is what re-Pushes the timer on success, and a dropped fire would lose the
 // retry forever. If the client is disconnected the enqueue is a no-op;
 // cleanupForAppID removes the stale map entry.
-// rearmARQRetry puts an operation back on the retry timer without rotating its
-// SURB ID or writing the maps. Writing them here would undo a concurrent
-// cleanupForAppID and resurrect an operation whose client has gone; a timer for a
-// SURB ID that is no longer mapped is harmless, because enqueueResend drops it. handleReply cancels the timer before a handler
-// runs, so a handler that cannot act on the reply has to re-arm or the operation
-// stays tracked and is never resent. Rotation belongs to the InProgress path and
-// deletion to the terminal path, so neither happens here.
-func (d *Daemon) rearmARQRetry(surbID *[sphinxConstants.SURBIDLength]byte) {
-	if surbID == nil || d.arqTimerQueue == nil {
-		return
-	}
-	retryAt := time.Now().Add(resendQueueFullBackoff)
-	d.log.Debugf("rearmARQRetry: re-arming SURB ID %x at %v", surbID[:], retryAt)
-	d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
-}
-
 func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	d.lockReply()
 	message, ok := d.arqSurbIDMap[*surbID]
@@ -918,6 +917,50 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 }
 
+// rearmARQRetry puts an operation back on the retry timer without rotating its
+// SURB ID or writing the maps. handleReply cancels the timer before a handler
+// runs, so a handler that cannot act on the reply has to re-arm or the operation
+// stays tracked and is never resent. Writing the maps here would undo a
+// concurrent cleanupForAppID, and a timer for a SURB ID that is no longer mapped
+// is harmless because enqueueResend drops it.
+//
+// The pointer pushed is the one the message holds, read under replyLock, because
+// TimerQueue.Cancel matches on pointer identity and cleanupForAppID cancels with
+// arqMessage.SURBID. Pushing any other pointer with the same bytes would leave an
+// entry that cleanup cannot cancel.
+func (d *Daemon) rearmARQRetry(arqMessage *ARQMessage) {
+	if arqMessage == nil || d.arqTimerQueue == nil {
+		return
+	}
+	d.lockReply()
+	surbID := arqMessage.SURBID
+	d.replyLock.Unlock()
+	if surbID == nil {
+		return
+	}
+	retryAt := time.Now().Add(resendQueueFullBackoff)
+	d.log.Debugf("rearmARQRetry: re-arming SURB ID %x at %v", surbID[:], retryAt)
+	d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
+}
+
+// rearmOrphanedResend takes a SURB ID that was still queued on a connection when
+// it went away and puts its operation back on the timer, if it is still tracked.
+// The lookup is what keeps the canonical pointer: the channel holds whatever
+// pointer enqueueResend was given, which need not be the one the message holds.
+func (d *Daemon) rearmOrphanedResend(surbID *[sphinxConstants.SURBIDLength]byte) {
+	if surbID == nil {
+		return
+	}
+	d.lockReply()
+	message, ok := d.arqSurbIDMap[*surbID]
+	d.replyLock.Unlock()
+	if !ok {
+		d.log.Debugf("rearmOrphanedResend: SURB ID %x no longer tracked, dropping", surbID[:])
+		return
+	}
+	d.rearmARQRetry(message)
+}
+
 // scheduleARQFollowUp routes the next round of an in-flight ARQ exchange (the
 // second-round read after a courier ACK, or a retry after BoxIDNotFound) onto
 // the owning client's resend queue, so the Poisson scheduler releases it on a
@@ -937,24 +980,6 @@ func (d *Daemon) scheduleARQFollowUp(arqMessage *ARQMessage) {
 		return
 	}
 	d.enqueueResend(surbID)
-}
-
-// dropARQMessage deletes both map entries for arqMessage under replyLock.
-// Used by handler early-bail paths that cannot rotate or retry, e.g.
-// a malformed reply, to prevent map-entry leaks now that handleReply
-// no longer pre-deletes on receipt of an ARQ reply.
-func (d *Daemon) dropARQMessage(arqMessage *ARQMessage) {
-	d.lockReply()
-	if arqMessage.SURBID != nil {
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-	}
-	if arqMessage.EnvelopeHash != nil {
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-	}
-	inflight := len(d.arqSurbIDMap)
-	d.replyLock.Unlock()
-	instrument.ARQInflightSet(inflight)
-	instrument.SurbIDGarbageCollected()
 }
 
 // rotateARQSurbIDLocked rewires an ARQMessage to use newSurbID for its next
@@ -1030,7 +1055,7 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	if incomingConn == nil {
 		d.log.Debugf("ARQ resend: no connection for AppID %x, re-arming SURB ID %x", message.AppID[:], surbID[:])
 		d.replyLock.Unlock()
-		d.rearmARQRetry(surbID)
+		d.rearmARQRetry(message)
 		return
 	}
 

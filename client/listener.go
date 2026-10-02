@@ -681,6 +681,19 @@ func (l *listener) flushDisconnectedSession(c *incomingConn, appID *[AppIDLength
 	}
 }
 
+// hasDisconnectedSession reports whether this AppID has state preserved for its
+// grace period, so a reply that arrives now can be buffered for its return
+// rather than thrown away or turned into a resend.
+func (l *listener) hasDisconnectedSession(appID *[AppIDLength]byte) bool {
+	if appID == nil {
+		return false
+	}
+	l.disconnectedSessionsLock.Lock()
+	defer l.disconnectedSessionsLock.Unlock()
+	_, ok := l.disconnectedSessions[*appID]
+	return ok
+}
+
 // queueReplyForDisconnected buffers a reply for a disconnected session.
 // Returns true if the reply was queued, false if no disconnected session exists.
 func (l *listener) queueReplyForDisconnected(appID *[AppIDLength]byte, reply *Response) bool {

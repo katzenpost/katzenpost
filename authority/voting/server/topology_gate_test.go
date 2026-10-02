@@ -3,6 +3,7 @@
 package server
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,12 +15,25 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
+// populatedLayers builds n layers each holding perLayer placeholder nodes, so a
+// test says explicitly whether it means to satisfy the per-layer floor or not.
+func populatedLayers(n, perLayer int) []config.Layer {
+	layers := make([]config.Layer, n)
+	for i := range layers {
+		layers[i].Nodes = make([]config.Node, perLayer)
+		for j := range layers[i].Nodes {
+			layers[i].Nodes[j].Identifier = fmt.Sprintf("layer%d-node%d", i, j)
+		}
+	}
+	return layers
+}
+
 func TestFixupAndValidateDerivesLayersFromPinnedTopology(t *testing.T) {
 	require := require.New(t)
 	_, cfgs, err := genVotingAuthoritiesCfg(&config.Parameters{Mu: 0.001}, 1)
 	require.NoError(err)
 	cfg := cfgs[0]
-	cfg.Topology = &config.Topology{Layers: make([]config.Layer, 2)}
+	cfg.Topology = &config.Topology{Layers: populatedLayers(2, 2)}
 	cfg.Server.WireKEMScheme = "x25519"
 
 	cfg.Debug.Layers = 0
@@ -32,7 +46,7 @@ func TestFixupAndValidateRejectsLayerCountMismatch(t *testing.T) {
 	_, cfgs, err := genVotingAuthoritiesCfg(&config.Parameters{Mu: 0.001}, 1)
 	require.NoError(err)
 	cfg := cfgs[0]
-	cfg.Topology = &config.Topology{Layers: make([]config.Layer, 2)}
+	cfg.Topology = &config.Topology{Layers: populatedLayers(2, 2)}
 	cfg.Debug.Layers = 3
 
 	err = cfg.FixupAndValidate(true)
@@ -190,4 +204,39 @@ func TestGetMyConsensusSignsAtTheConfiguredMinimum(t *testing.T) {
 			require.GreaterOrEqual(len(nodes), 2, "layer %d", layer)
 		}
 	}
+}
+
+// The per-layer floor has to be refused at startup, or an authority with a thin
+// pinned layer starts and then refuses to sign every epoch. The default has to be
+// resolved where the check runs: Debug is created empty during validation and its
+// defaults are applied later, so a check reading the field directly would compare
+// against zero and never fire.
+func TestConfigRefusesLayerBelowMinNodesPerLayer(t *testing.T) {
+	require := require.New(t)
+
+	build := func(perLayer, minPerLayer int) *config.Config {
+		_, cfgs, err := genVotingAuthoritiesCfg(&config.Parameters{Mu: 0.001}, 1)
+		require.NoError(err)
+		cfg := cfgs[0]
+		cfg.Topology = &config.Topology{Layers: populatedLayers(2, perLayer)}
+		cfg.Debug.Layers = 2 // agree with the pinned topology, so the floor is what fires
+		cfg.Debug.MinNodesPerLayer = minPerLayer
+		cfg.Server.WireKEMScheme = "x25519"
+		return cfg
+	}
+
+	// A configured floor the pinned topology cannot meet.
+	err := build(1, 2).FixupAndValidate(true)
+	require.Error(err, "a layer below the configured minimum must be refused")
+	require.Contains(err.Error(), "fewer than MinNodesPerLayer 2")
+
+	// At the floor, accepted.
+	require.NoError(build(2, 2).FixupAndValidate(true), "a layer at the minimum must be accepted")
+
+	// An unset floor must resolve to the default where the check runs, not to
+	// zero: Debug is created empty during validation and its defaults are applied
+	// later, so a check reading the field directly would never fire.
+	err = build(1, 0).FixupAndValidate(true)
+	require.Error(err, "an unset minimum must resolve to the default, not to zero")
+	require.Contains(err.Error(), "fewer than MinNodesPerLayer 2")
 }

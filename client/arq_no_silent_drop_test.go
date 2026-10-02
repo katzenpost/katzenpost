@@ -103,3 +103,36 @@ func TestARQReplyWhileClientIsAwayReschedules(t *testing.T) {
 	require.Equal(t, 1, d.arqTimerQueue.PushChLen()+int(armed.Load()),
 		"a reply that cannot be delivered must leave a retry scheduled")
 }
+
+// The claim has to be exclusive under contention, not merely in sequence: a
+// cancel and a terminal reply can run on different goroutines, and exactly one of
+// them may answer the original query. Running the two concurrently is what
+// distinguishes an exclusive claim from a check followed by a delete.
+func TestClaimARQTerminalIsExclusiveUnderContention(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		l := newSchedulerListener()
+		d, _ := newARQTestDaemon(t, l)
+		appID := &[AppIDLength]byte{0x0E}
+		m := trackARQMessage(d, appID)
+
+		var claims atomic.Int32
+		var wg sync.WaitGroup
+		wg.Add(2)
+		start := make(chan struct{})
+		for j := 0; j < 2; j++ {
+			go func() {
+				defer wg.Done()
+				<-start
+				if d.claimARQTerminal(m) {
+					claims.Add(1)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		require.Equal(t, int32(1), claims.Load(),
+			"exactly one of two concurrent claims may answer the query")
+		require.Equal(t, 0, arqTracked(d, m), "the operation is gone from both maps")
+	}
+}

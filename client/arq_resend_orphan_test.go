@@ -39,7 +39,7 @@ func TestClosedConnReArmsItsQueuedResends(t *testing.T) {
 	l.log = logBackend.GetLogger("listener")
 	l.sessionGracePeriod = 0
 	d.listener = l
-	l.SetResendOrphanHandler(d.rearmARQRetry)
+	l.SetResendOrphanHandler(d.rearmOrphanedResend)
 
 	conn := newTestIncomingConn(0x0D, 1, 2)
 	l.testRegister(conn)
