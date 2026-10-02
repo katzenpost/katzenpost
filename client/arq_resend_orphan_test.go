@@ -83,6 +83,32 @@ func TestDeliverARQResponseSurvivesNoConnection(t *testing.T) {
 	}, "nor with no listener at all")
 }
 
+func TestDeliverARQResponseFindsAReconnectedClient(t *testing.T) {
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	d := &Daemon{
+		logbackend: logBackend,
+		log:        logBackend.GetLogger("test"),
+		listener:   newSchedulerListener(),
+		replyLock:  new(sync.Mutex),
+	}
+	d.listener.log = logBackend.GetLogger("listener")
+	d.listener.disconnectedSessions = make(map[[AppIDLength]byte]*DisconnectedSession)
+
+	conn := newTestIncomingConn(0x11, 1, 1)
+	conn.sendWake = make(chan struct{}, 1)
+	d.listener.testRegister(conn)
+
+	d.deliverARQResponse(conn.appID, nil, &Response{AppID: conn.appID})
+
+	conn.sendQueueMu.Lock()
+	queued := len(conn.sendQueue)
+	conn.sendQueueMu.Unlock()
+	require.Equal(t, 1, queued,
+		"a client that reconnected before the outcome was delivered must still be answered")
+}
+
 func TestMalformedCopyReplyAnswersInsteadOfResending(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)

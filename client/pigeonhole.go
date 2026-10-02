@@ -1438,9 +1438,13 @@ func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, er
 }
 
 func (d *Daemon) deliverARQResponse(appID *[AppIDLength]byte, conn *incomingConn, response *Response) {
+	if conn == nil && d.listener != nil {
+		conn = d.listener.getConnection(appID)
+	}
 	if conn != nil {
-		conn.sendResponse(response)
-		return
+		if err := conn.sendResponse(response); err == nil {
+			return
+		}
 	}
 	if d.listener != nil && d.listener.queueReplyForDisconnected(appID, response) {
 		return
