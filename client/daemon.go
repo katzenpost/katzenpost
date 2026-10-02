@@ -17,8 +17,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 	hpqcRand "github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/common"
@@ -569,22 +568,24 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	conn.sendResponse(response)
 }
 
-// decryptMKEMEnvelope decrypts the MKEM envelope and returns the inner message
-// tryDecryptMKEMWithReplicas attempts MKEM decryption using each replica's public key
-// in order, returning the decrypted payload and the replica number that succeeded.
+// decryptMKEMEnvelope decrypts the envelope and returns the inner message.
+// tryDecryptMKEMWithReplicas attempts decryption using each replica's
+// derived key in order, returning the decrypted payload and the replica
+// number that succeeded. Unlike mkem, mrhybrid's derived keys are already
+// fully resolved at Encapsulate time, so no PKI document lookup is needed
+// here at all — the client doesn't always know which of the two
+// intermediate replicas actually answered, so it just tries both.
 func tryDecryptMKEMWithReplicas(
-	mkemScheme *mkem.Scheme,
-	privateKey nike.PrivateKey,
+	mkemScheme *mrhybrid.Scheme,
+	derivedKeys [2][]byte,
 	envelope []byte,
-	replicaNums []uint8,
-	replicaPubKeys map[uint8]nike.PublicKey,
+	replicaNums [2]uint8,
 ) ([]byte, uint8, error) {
-	for _, replicaNum := range replicaNums {
-		pubKey, ok := replicaPubKeys[replicaNum]
-		if !ok {
+	for i, replicaNum := range replicaNums {
+		if len(derivedKeys[i]) == 0 {
 			continue
 		}
-		decrypted, err := mkemScheme.DecryptEnvelope(privateKey, pubKey, envelope)
+		decrypted, err := mkemScheme.DecryptEnvelope(derivedKeys[i], envelope)
 		if err != nil {
 			continue
 		}
@@ -593,41 +594,11 @@ func tryDecryptMKEMWithReplicas(
 	return nil, 0, errMKEMDecryptionFailed
 }
 
-func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
-	_, doc := d.client.CurrentDocument()
-	if doc == nil {
-		d.log.Errorf("no pki doc found")
-		return nil, fmt.Errorf("no pki doc found")
-	}
-
-	// EnvelopeDescriptor.Epoch already contains the replica epoch
-	replicaEpoch := envelopeDesc.Epoch
-
-	// Resolve replica public keys from the PKI document
-	replicaPubKeys := make(map[uint8]nike.PublicKey)
-	for _, replicaNum := range envelopeDesc.ReplicaNums {
-		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
-		if err != nil {
-			d.log.Errorf("MKEM DECRYPT: no replicaNum:%v in doc:%v", replicaNum, doc)
-			continue
-		}
-		replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
-		if !ok || len(replicaPubKeyBytes) == 0 {
-			d.log.Errorf("MKEM DECRYPT: no usable replicaPubKeyBytes in replicaEpoch:%v", replicaEpoch)
-			continue
-		}
-		replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
-		if err != nil {
-			d.log.Errorf("MKEM DECRYPT: can't parse replicaPubKey: %v", err)
-			continue
-		}
-		replicaPubKeys[replicaNum] = replicaPubKey
-	}
-
-	// Try decryption with each replica's key
+func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
+	// Try decryption with each replica's derived key
 	rawInnerMsg, replicaNum, err := tryDecryptMKEMWithReplicas(
-		replicaCommon.MKEMNikeScheme, privateKey, env.Payload,
-		envelopeDesc.ReplicaNums[:], replicaPubKeys,
+		replicaCommon.MRHybridScheme, envelopeDesc.DerivedKeys, env.Payload,
+		envelopeDesc.ReplicaNums,
 	)
 	if err != nil {
 		d.log.Errorf("MKEM DECRYPT FAILED with all possible replicas")

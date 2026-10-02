@@ -18,7 +18,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
-	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -93,7 +92,7 @@ type Server struct {
 	// proxySema limits the number of concurrent proxy request goroutines
 	proxySema chan struct{}
 
-	// decapSema bounds concurrent local MKEM decapsulations.
+	// decapSema bounds concurrent local envelope KEM decapsulations.
 	decapSema chan struct{}
 
 	// firstShardCandidate overrides which of a box's shard holders a
@@ -104,7 +103,7 @@ type Server struct {
 	// would be written by a test while another reads it mid-sweep.
 	firstShardCandidate atomic.Pointer[shardChooser]
 
-	// mkemOpCost is the wall-clock latency of one MKEM operation when
+	// mkemOpCost is the wall-clock latency of one envelope KEM operation when
 	// the host is saturated, measured by the startup self-check. Every
 	// proxied attempt pays it once, for its encapsulation, before any
 	// waiting begins, so it is the smallest share of a sweep budget
@@ -334,19 +333,19 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	s.peerSet.Rebuild(replicaStaticAuthorityAddresses(s.cfg))
 
 	// Derive the Pigeonhole geometry once from the Sphinx geometry and the
-	// configured replica NIKE scheme; the message handlers reuse it rather
+	// configured replica KEM scheme; the message handlers reuse it rather
 	// than re-deriving it on every request.
-	pigeonholeNIKE := nikeSchemes.ByName(s.cfg.ReplicaNIKEScheme)
-	if pigeonholeNIKE == nil {
-		return nil, fmt.Errorf("replica: invalid ReplicaNIKEScheme %q", s.cfg.ReplicaNIKEScheme)
+	pigeonholeKEM := kemSchemes.ByName(s.cfg.ReplicaKEMScheme)
+	if pigeonholeKEM == nil {
+		return nil, fmt.Errorf("replica: invalid ReplicaKEMScheme %q", s.cfg.ReplicaKEMScheme)
 	}
-	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, pigeonholeNIKE)
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, pigeonholeKEM)
 	if err != nil {
 		return nil, fmt.Errorf("replica: cannot derive Pigeonhole geometry: %w", err)
 	}
 	s.pigeonholeGeo = pigeonholeGeo
 
-	// Startup CTIDH self-check. Measures the per-core MKEM Decapsulate
+	// Startup self-check. Measures the per-core mrhybrid Decapsulate
 	// ops/sec rate on this host so ops teams have a concrete throughput
 	// ceiling number to reason about, exposed both as a log notice and
 	// as prometheus gauges. The measurement also feeds
@@ -354,8 +353,8 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	//
 	// The result is cached to <DataDir>/selfcheck.toml after the first
 	// successful measurement, so a restart on the same host reuses
-	// the cached numbers instead of paying the multi-second CTIDH
-	// cost again. loadOrRunMKEMSelfCheck handles invalidation when
+	// the cached numbers instead of paying the encapsulation cost
+	// again. loadOrRunMKEMSelfCheck handles invalidation when
 	// hostname or NumCPU changes.
 	selfCheck := loadOrRunMKEMSelfCheck(s.log, s.cfg.DataDir)
 
@@ -367,7 +366,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	// saturated ops/sec; explicit TOML values win and are intended
 	// only for multi-tenant or research workloads.
 	s.cfg.ApplyRuntimeDefaults(selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
-	s.log.Noticef("Replica runtime defaults: ProxyWorkerCount=%d, IncomingQueueSize=%d, ProxyRequestTimeout=%ds (derived from runtime.NumCPU=%d, saturated CTIDH=%.2f ops/s)",
+	s.log.Noticef("Replica runtime defaults: ProxyWorkerCount=%d, IncomingQueueSize=%d, ProxyRequestTimeout=%ds (derived from runtime.NumCPU=%d, saturated decapsulation=%.2f ops/s)",
 		s.cfg.ProxyWorkerCount, s.cfg.IncomingQueueSize, s.cfg.ProxyRequestTimeout,
 		selfCheck.NumCPU, selfCheck.OpsPerSecSaturated)
 
@@ -378,7 +377,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 	// rather than the latency of any one of them.
 	if selfCheck.OpsPerSecSaturated > 0 && selfCheck.NumCPU > 0 {
 		s.mkemOpCost = time.Duration(float64(selfCheck.NumCPU) / selfCheck.OpsPerSecSaturated * float64(time.Second))
-		s.log.Noticef("Replica proxy attempt floor: %v (one saturated MKEM operation)", s.mkemOpCost)
+		s.log.Noticef("Replica proxy attempt floor: %v (one saturated KEM encapsulation)", s.mkemOpCost)
 	}
 
 	// Initialize proxy request manager and concurrency limiter.
@@ -466,8 +465,8 @@ func (s *Server) logNodeIdentity() {
 	s.log.Noticef("Replica node identity: Identifier=%q ReplicaID=%d", s.cfg.Identifier, s.cfg.ReplicaID)
 	s.log.Noticef("Replica identity public key hash: %x", idPubKeyHash[:])
 	s.log.Noticef("Replica link public key hash: %x", linkPubKeyHash[:])
-	s.log.Noticef("Replica schemes: PKISignature=%q WireKEM=%q ReplicaNIKE=%q",
-		s.cfg.PKISignatureScheme, s.cfg.WireKEMScheme, s.cfg.ReplicaNIKEScheme)
+	s.log.Noticef("Replica schemes: PKISignature=%q WireKEM=%q ReplicaKEM=%q",
+		s.cfg.PKISignatureScheme, s.cfg.WireKEMScheme, s.cfg.ReplicaKEMScheme)
 	s.log.Noticef("Replica addresses: announce=%v bind=%v DataDir=%q",
 		s.cfg.Addresses, s.cfg.BindAddresses, s.cfg.DataDir)
 	s.log.Noticef("Replica storage limits: MaxStorageMiB=%d MinFreeStorageMiB=%d",
@@ -566,12 +565,12 @@ func (s *Server) initLinkKeys() error {
 
 // initEnvelopeKeys initializes the server's envelope keys
 func (s *Server) initEnvelopeKeys() error {
-	s.log.Debug("ensuring replica NIKE keypair exists")
-	nikeScheme := nikeSchemes.ByName(s.cfg.ReplicaNIKEScheme)
+	s.log.Debug("ensuring replica KEM keypair exists")
+	kemScheme := kemSchemes.ByName(s.cfg.ReplicaKEMScheme)
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	var err error
-	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("replica envelopeKeys"), s.cfg.DataDir, replicaEpoch)
-	s.log.Debug("AFTER ensuring replica NIKE keypair exists")
+	s.envelopeKeys, err = NewEnvelopeKeys(kemScheme, s.logBackend.GetLogger("replica envelopeKeys"), s.cfg.DataDir, replicaEpoch)
+	s.log.Debug("AFTER ensuring replica KEM keypair exists")
 	if err != nil {
 		panic(err)
 	}

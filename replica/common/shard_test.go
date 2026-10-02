@@ -27,7 +27,7 @@ const (
 	testPKIScheme = "Ed25519 Sphincs+"
 	// testLinkScheme is the link KEM scheme used in tests
 	testLinkScheme = "Xwing"
-	// testReplicaScheme is the replica NIKE scheme used in tests
+	// testReplicaScheme is the replica KEM scheme used in tests
 	testReplicaScheme = "x25519"
 	// testSphinxNikeScheme is the Sphinx NIKE scheme used in tests
 	testSphinxNikeScheme = "x25519"
@@ -43,7 +43,7 @@ const (
 type DocumentConfig struct {
 	PKIScheme          sign.Scheme
 	LinkScheme         kem.Scheme
-	ReplicaScheme      nike.Scheme
+	ReplicaScheme      kem.Scheme
 	SphinxNikeScheme   nike.Scheme
 	SphinxKemScheme    kem.Scheme
 	NumDirAuths        int
@@ -58,7 +58,7 @@ func createDefaultTestConfig() *DocumentConfig {
 	return &DocumentConfig{
 		PKIScheme:          signschemes.ByName(testPKIScheme),
 		LinkScheme:         kemschemes.ByName(testLinkScheme),
-		ReplicaScheme:      nikeschemes.ByName(testReplicaScheme),
+		ReplicaScheme:      kemschemes.ByName(testReplicaScheme),
 		SphinxNikeScheme:   nikeschemes.ByName(testSphinxNikeScheme),
 		SphinxKemScheme:    nil,
 		NumDirAuths:        testNumDirAuths,
@@ -128,7 +128,7 @@ func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Sche
 	}
 }
 
-func generateReplica(t *testing.T, name string, replicaID uint8, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme) *pki.ReplicaDescriptor {
+func generateReplica(t *testing.T, name string, replicaID uint8, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme kem.Scheme) *pki.ReplicaDescriptor {
 	pubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 

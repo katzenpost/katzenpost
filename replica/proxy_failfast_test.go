@@ -30,8 +30,8 @@ func TestProxyManagerFailPeer(t *testing.T) {
 	hashA := [32]byte{0xaa}
 	hashB := [32]byte{0xbb}
 
-	chA := m.RegisterProxyRequest(hashA, nil, nil, nil, peerA, "storagereplicaA")
-	chB := m.RegisterProxyRequest(hashB, nil, nil, nil, peerB, "storagereplicaB")
+	chA := m.RegisterProxyRequest(hashA, nil, peerA, "storagereplicaA")
+	chB := m.RegisterProxyRequest(hashB, nil, peerB, "storagereplicaB")
 
 	m.FailPeer(peerA)
 
@@ -67,8 +67,8 @@ func TestProxyManagerFailRequest(t *testing.T) {
 	hashA := [32]byte{0xaa}
 	hashB := [32]byte{0xbb}
 
-	chA := m.RegisterProxyRequest(hashA, nil, nil, nil, peer, "storagereplicaA")
-	chB := m.RegisterProxyRequest(hashB, nil, nil, nil, peer, "storagereplicaA")
+	chA := m.RegisterProxyRequest(hashA, nil, peer, "storagereplicaA")
+	chB := m.RegisterProxyRequest(hashB, nil, peer, "storagereplicaA")
 
 	m.FailRequest(hashA, "undeliverable")
 
@@ -108,11 +108,11 @@ func TestDispatchCommandFailsProxyRequestInsteadOfQueueing(t *testing.T) {
 
 	peer := peerID(0xDD)
 	msg := &commands.ReplicaMessage{
-		SenderEPubKey: []byte{1, 2, 3, 4},
+		KEMCiphertext: []byte{1, 2, 3, 4},
 		DEK:           &[60]byte{},
 		Ciphertext:    []byte("proxied read"),
 	}
-	waiter := proxyManager.RegisterProxyRequest(*msg.EnvelopeHash(), nil, nil, msg, peer, "storagereplicaA")
+	waiter := proxyManager.RegisterProxyRequest(*msg.EnvelopeHash(), msg, peer, "storagereplicaA")
 
 	// No connection exists for this peer.
 	co.DispatchCommand(msg, &peer)
@@ -152,7 +152,7 @@ func TestProxyResponseChannelIsBufferedAndSingleOwner(t *testing.T) {
 
 	peer := [32]byte{1}
 	hash := [32]byte{0xaa}
-	ch := m.RegisterProxyRequest(hash, nil, nil, nil, peer, "storagereplicaA")
+	ch := m.RegisterProxyRequest(hash, nil, peer, "storagereplicaA")
 	require.Equal(t, 1, cap(ch),
 		"the response channel must be buffered so delivering a reply never blocks on an absent waiter")
 
@@ -200,7 +200,7 @@ func TestProxyRequestDisposalPathsRace(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		peer := [32]byte{byte(i)}
 		hash := [32]byte{byte(i), 0xbb}
-		ch := m.RegisterProxyRequest(hash, nil, nil, nil, peer, "storagereplicaA")
+		ch := m.RegisterProxyRequest(hash, nil, peer, "storagereplicaA")
 
 		var wg sync.WaitGroup
 		wg.Add(4)
@@ -247,7 +247,7 @@ func TestHandleReplyReleasesWaiterDuringShutdown(t *testing.T) {
 	for i := 0; i < iterations; i++ {
 		peer := [32]byte{byte(i)}
 		hash := [32]byte{byte(i), 0xaa}
-		ch := m.RegisterProxyRequest(hash, nil, nil, nil, peer, "storagereplicaA")
+		ch := m.RegisterProxyRequest(hash, nil, peer, "storagereplicaA")
 
 		require.True(t, m.HandleReply(&commands.ReplicaMessageReply{EnvelopeHash: &hash}),
 			"a reply must still be routed once its request has been claimed (iteration %d)", i)

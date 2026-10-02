@@ -16,9 +16,9 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/client/constants"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -70,7 +70,7 @@ type Courier struct {
 
 	cmds           *commands.Commands
 	geo            *geo.Geometry
-	envelopeScheme nike.Scheme
+	envelopeScheme kem.Scheme
 	pigeonholeGeo  *pigeonholeGeo.Geometry
 
 	dedupCacheLock sync.RWMutex
@@ -149,10 +149,11 @@ const (
 	// longer than a LAN round trip: the query waits its turn in the
 	// LambdaR-paced sender queue, the replica deliberately delays the
 	// reply with uniform jitter to hide read/write timing, the reply
-	// rides the paced return link, and the envelope crypto (e.g. CTIDH)
-	// is not cheap. A short deadline abandons replies that are merely
-	// slow, and because each retry re-enqueues behind the same backlog
-	// it times out again, so a slow-but-live replica is never caught and
+	// rides the paced return link, and the envelope crypto (the
+	// McEliece348864-X25519 KEM) is not cheap. A short deadline abandons
+	// replies that are merely slow, and because each retry re-enqueues
+	// behind the same backlog it times out again, so a slow-but-live
+	// replica is never caught and
 	// the Copy fails with "no replica reply" even though the box is
 	// there. The budget (attempts x this timeout, per shard, x2 shards)
 	// is deliberately generous: a Copy is a background all-or-nothing
@@ -164,7 +165,7 @@ const (
 	// dispatch a single copy-stream envelope to its intermediate
 	// replicas before aborting the Copy command. Write-side failover
 	// between shard peers is not available — the intermediate replicas
-	// are baked into the client's MKEM envelope.
+	// are baked into the client's envelope.
 	maxCopyWriteAttempts = 10
 
 	// copyWriteReplyTimeout bounds how long the courier waits for
@@ -261,7 +262,7 @@ const maxConcurrentReplicaDispatch = 256
 const maxConcurrentReplyWrites = 256
 
 // NewCourier returns a new Courier type.
-func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
+func NewCourier(s *Server, cmds *commands.Commands, scheme kem.Scheme) *Courier {
 	pigeonholeGeo, err := pigeonholeGeo.NewGeometryFromSphinx(s.cfg.SphinxGeometry, scheme)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create pigeonhole geometry: %v", err))
@@ -513,7 +514,7 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 		PigeonholeGeometry: e.pigeonholeGeo,
 		Scheme:             e.envelopeScheme,
 
-		SenderEPubKey: courierMessage.SenderPubkey,
+		KEMCiphertext: courierMessage.KemCiphertext1,
 		DEK:           &courierMessage.Dek1,
 		Ciphertext:    courierMessage.Ciphertext,
 	}
@@ -530,7 +531,7 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 		PigeonholeGeometry: e.pigeonholeGeo,
 		Scheme:             e.envelopeScheme,
 
-		SenderEPubKey: courierMessage.SenderPubkey,
+		KEMCiphertext: courierMessage.KemCiphertext2,
 		DEK:           &courierMessage.Dek2,
 		Ciphertext:    courierMessage.Ciphertext,
 	}
@@ -1134,7 +1135,7 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 // is retried with backoff, as are transport-level failures (SendMessage
 // errors and "no replies before the deadline"). No shard-level failover
 // is available on the write path because the two intermediate replicas
-// are MKEM-baked into the client's envelope.
+// are baked into the client's envelope.
 func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bool, uint8) {
 	envHash := envelope.EnvelopeHash()
 
@@ -1253,8 +1254,8 @@ func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDS
 // last observed replica ErrorCode (for a Failed CopyCommandReply) and
 // a non-nil error if every shard exhausted.
 //
-// Every attempt uses a fresh ephemeral MKEM keypair so its EnvelopeHash
-// is unique in the copyCache reply-demux table.
+// Every attempt Encapsulates under a fresh random envelope key so its
+// EnvelopeHash is unique in the copyCache reply-demux table.
 func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole.ReplicaReadReply, uint8, error) {
 	e.log.Debugf("readBoxFromShardReplicas: Reading box %x", boxID[:8])
 
@@ -1282,7 +1283,7 @@ func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeo
 			lastErr = fmt.Errorf("no envelope key for shard %d at epoch %d", shard.ReplicaID, replicaEpoch)
 			continue
 		}
-		shardPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
+		shardPubKey, err := replicaCommon.KEMScheme.UnmarshalBinaryPublicKey(keyBytes)
 		if err != nil {
 			lastErr = fmt.Errorf("unmarshal shard %d key: %w", shard.ReplicaID, err)
 			continue
@@ -1325,15 +1326,15 @@ func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeo
 	return nil, lastReplicaCode, lastErr
 }
 
-// tryReadFromShardReplica performs a single MKEM-encrypted read to one
-// specific shard replica, waits for the reply with a timeout, and
+// tryReadFromShardReplica performs a single mrhybrid-encrypted read to
+// one specific shard replica, waits for the reply with a timeout, and
 // returns the parsed ReplicaReadReply plus the replica's ErrorCode
 // (0 on success). A non-nil error signals a transport / crypto /
 // timeout failure — the caller should retry under its transient budget.
 func (e *Courier) tryReadFromShardReplica(
 	boxID *[bacap.BoxIDSize]byte,
 	shard *cpki.ReplicaDescriptor,
-	shardPubKey nike.PublicKey,
+	shardPubKey kem.PublicKey,
 ) (*pigeonhole.ReplicaReadReply, uint8, error) {
 	readMsg := &pigeonhole.ReplicaRead{BoxID: *boxID}
 	innerMsg := &pigeonhole.ReplicaInnerMessage{
@@ -1342,18 +1343,18 @@ func (e *Courier) tryReadFromShardReplica(
 	}
 
 	// Length-prefix-and-pad so the replica's
-	// ExtractMessageFromPaddedPayload recovers the exact bytes after MKEM
-	// decryption. The pigeonhole protocol pads every inbound inner
-	// message regardless of read vs write.
+	// ExtractMessageFromPaddedPayload recovers the exact bytes after
+	// envelope decryption. The pigeonhole protocol pads every inbound
+	// inner message regardless of read vs write.
 	paddedInnerMsg, err := pigeonhole.PadInnerMessageForEncryption(innerMsg, e.pigeonholeGeo)
 	if err != nil {
 		return nil, 0, fmt.Errorf("pad inner read message: %w", err)
 	}
 
-	mkemScheme := mkem.NewScheme(e.envelopeScheme)
+	mkemScheme := mrhybrid.NewScheme(e.envelopeScheme)
 	totalStart := time.Now()
 	encapStart := totalStart
-	mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate([]nike.PublicKey{shardPubKey}, paddedInnerMsg)
+	derivedKeys, mkemCiphertext, err := mkemScheme.Encapsulate([]kem.PublicKey{shardPubKey}, paddedInnerMsg)
 	if err != nil {
 		return nil, 0, fmt.Errorf("encapsulate: %w", err)
 	}
@@ -1363,8 +1364,8 @@ func (e *Courier) tryReadFromShardReplica(
 		Cmds:               e.cmds,
 		PigeonholeGeometry: e.pigeonholeGeo,
 		Scheme:             e.envelopeScheme,
-		SenderEPubKey:      mkemPrivateKey.Public().Bytes(),
-		DEK:                (*[mkem.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[0]),
+		KEMCiphertext:      mkemCiphertext.KEMCiphertexts[0],
+		DEK:                (*[mrhybrid.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[0]),
 		Ciphertext:         mkemCiphertext.Envelope,
 	}
 	envHash := query.EnvelopeHash()
@@ -1395,7 +1396,7 @@ func (e *Courier) tryReadFromShardReplica(
 	}
 
 	decapStart := time.Now()
-	raw, err := mkemScheme.DecryptEnvelope(mkemPrivateKey, shardPubKey, reply.EnvelopeReply)
+	raw, err := mkemScheme.DecryptEnvelope(derivedKeys[0], reply.EnvelopeReply)
 	if err != nil {
 		return nil, 0, fmt.Errorf("shard %d: decrypt envelope: %w", shard.ReplicaID, err)
 	}
@@ -1490,7 +1491,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 		// If BOTH keys are unusable, skip this box.
 		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 		usableReplicaIDs := make([]uint8, 0, 2)
-		usablePubKeys := make([]nike.PublicKey, 0, 2)
+		usablePubKeys := make([]kem.PublicKey, 0, 2)
 		for _, shard := range shards {
 			keyBytes, exists := shard.EnvelopeKeys[replicaEpoch]
 			if !exists {
@@ -1528,33 +1529,33 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 		}
 
 		// Length-prefix-and-pad to match the inbound inner-message
-		// format the replica expects after MKEM decryption.
+		// format the replica expects after envelope decryption.
 		paddedInnerMsg, err := pigeonhole.PadInnerMessageForEncryption(innerMsg, e.pigeonholeGeo)
 		if err != nil {
 			e.log.Errorf("writeTombstone: pad inner message: %v", err)
 			continue
 		}
 
-		// Encrypt using MKEM for whichever shard keys we have.
-		mkemScheme := mkem.NewScheme(e.envelopeScheme)
-		mkemPrivateKey, mkemCiphertext, err := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
+		// Encrypt using mrhybrid for whichever shard keys we have.
+		mkemScheme := mrhybrid.NewScheme(e.envelopeScheme)
+		_, mkemCiphertext, err := mkemScheme.Encapsulate(usablePubKeys, paddedInnerMsg)
 		if err != nil {
 			e.log.Errorf("writeTombstone: encapsulate: %v", err)
 			continue
 		}
-		mkemPublicKey := mkemPrivateKey.Public()
 
-		// Build per-replica ReplicaMessages (all share SenderEPubKey +
-		// Envelope, so they produce the same EnvelopeHash; reply demux
-		// in copyCache uses that single key).
+		// Build per-replica ReplicaMessages: each carries its own
+		// recipient's KEM ciphertext and DEK, but all share Envelope, so
+		// they produce the same EnvelopeHash; reply demux in copyCache
+		// uses that single key.
 		messages := make([]*commands.ReplicaMessage, len(usableReplicaIDs))
 		for j := range usableReplicaIDs {
 			messages[j] = &commands.ReplicaMessage{
 				Cmds:               e.cmds,
 				PigeonholeGeometry: e.pigeonholeGeo,
 				Scheme:             e.envelopeScheme,
-				SenderEPubKey:      mkemPublicKey.Bytes(),
-				DEK:                (*[mkem.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[j]),
+				KEMCiphertext:      mkemCiphertext.KEMCiphertexts[j],
+				DEK:                (*[mrhybrid.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[j]),
 				Ciphertext:         mkemCiphertext.Envelope,
 			}
 		}

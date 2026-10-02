@@ -13,7 +13,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/log"
@@ -27,12 +27,12 @@ func setupMockDaemon(t *testing.T) (*ThinClient, net.Conn) {
 	client, server := net.Pipe()
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
-	nikeScheme := schemes.ByName("x25519")
+	kemScheme := schemes.ByName("x25519")
 
 	tc := &ThinClient{
 		cfg:         &Config{},
 		sphinxGeo:   &geo.Geometry{UserForwardPayloadLength: 1000},
-		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, nikeScheme),
+		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, kemScheme),
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
 		conn:        client,
@@ -140,11 +140,11 @@ func newTestMessageBoxIndex(t *testing.T) *bacap.MessageBoxIndex {
 func setupTestThinClient(t *testing.T) *ThinClient {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
-	nikeScheme := schemes.ByName("x25519")
+	kemScheme := schemes.ByName("x25519")
 	return &ThinClient{
 		cfg:         &Config{},
 		sphinxGeo:   &geo.Geometry{UserForwardPayloadLength: 1000},
-		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, nikeScheme),
+		pigeonGeo:   pigeonholeGeo.NewGeometry(1000, kemScheme),
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
 		eventSink:   make(chan Event, 10),

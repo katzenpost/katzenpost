@@ -237,7 +237,7 @@ type ReplicaDescriptor struct {
 	// LinkKey is our PQ Noise Public Key.
 	LinkKey []byte
 
-	// EnvelopeKeys is mapping from Replica Epoch ID to Public NIKE Key used with our MKEM scheme.
+	// EnvelopeKeys is mapping from Replica Epoch ID to Public KEM Key used with our mrhybrid scheme.
 	EnvelopeKeys map[uint64][]byte
 
 	// Addresses is the map of transport to address combinations that can

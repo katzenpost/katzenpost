@@ -6,7 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeSchmes "github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
@@ -56,7 +57,8 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := NewStorageReplicaCommands(s.Geometry(), nike)
+	kemScheme := kemSchemes.ByName("x25519")
+	cmds := NewStorageReplicaCommands(s.Geometry(), kemScheme)
 
 	envelopeHash := &[32]byte{}
 	_, err := rand.Reader.Read(envelopeHash[:])
@@ -90,33 +92,32 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 func TestReplicaMessage(t *testing.T) {
 	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
 
-	//nike := ecdh.Scheme(rand.Reader)
-	nike := nikeSchmes.ByName("CTIDH1024-X25519")
+	kemScheme := kemSchemes.ByName("x25519")
 	forwardPayloadLength := 5000
 	nrHops := 5
 
 	sphinxNike := nikeSchmes.ByName("X25519")
 	geo := geo.GeometryFromUserForwardPayloadLength(sphinxNike, forwardPayloadLength, true, nrHops)
-	cmds := NewStorageReplicaCommands(geo, nike)
+	cmds := NewStorageReplicaCommands(geo, kemScheme)
 
 	// Create pigeonhole geometry from sphinx geometry
-	pgeo, err := pgeo.NewGeometryFromSphinx(geo, nike)
+	pgeo, err := pgeo.NewGeometryFromSphinx(geo, kemScheme)
 	require.NoError(t, err)
 
-	senderKey := make([]byte, HybridKeySize(nike))
+	senderKey := make([]byte, RecipientCiphertextSize(kemScheme))
 	_, err = rand.Reader.Read(senderKey[:])
 	require.NoError(t, err)
 
-	dek := &[mkem.DEKSize]byte{}
+	dek := &[mrhybrid.DEKSize]byte{}
 	_, err = rand.Reader.Read(dek[:])
 	require.NoError(t, err)
 
 	replicaMessage1 := &ReplicaMessage{
 		PigeonholeGeometry: pgeo,
 		Cmds:               cmds,
-		Scheme:             nike,
+		Scheme:             kemScheme,
 
-		SenderEPubKey: senderKey,
+		KEMCiphertext: senderKey,
 		DEK:           dek,
 		Ciphertext:    []byte(payload),
 	}
@@ -140,7 +141,8 @@ func TestReplicaWrite(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := NewStorageReplicaCommands(s.Geometry(), nike)
+	kemScheme := kemSchemes.ByName("x25519")
+	cmds := NewStorageReplicaCommands(s.Geometry(), kemScheme)
 	id := &[32]byte{}
 	_, err := rand.Reader.Read(id[:])
 	require.NoError(t, err)
@@ -207,7 +209,8 @@ func TestReplicaWriteReply(t *testing.T) {
 	nrHops := 5
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	cmds := NewStorageReplicaCommands(geo, nike)
+	kemScheme := kemSchemes.ByName("x25519")
+	cmds := NewStorageReplicaCommands(geo, kemScheme)
 	id := &[32]byte{}
 	_, err := rand.Reader.Read(id[:])
 	require.NoError(t, err)
@@ -236,7 +239,8 @@ func TestReplicaDecoy(t *testing.T) {
 	nrHops := 5
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	cmds := NewStorageReplicaCommands(geo, nike)
+	kemScheme := kemSchemes.ByName("x25519")
+	cmds := NewStorageReplicaCommands(geo, kemScheme)
 
 	decoyCmd1 := &ReplicaDecoy{
 		Cmds: cmds,

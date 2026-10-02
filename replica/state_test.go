@@ -15,8 +15,6 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/kem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
-	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -30,7 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
-func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme) *pki.ReplicaDescriptor {
+func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme kem.Scheme) *pki.ReplicaDescriptor {
 	idkey := make([]byte, pkiScheme.PublicKeySize())
 	_, err := rand.Reader.Read(idkey)
 	require.NoError(t, err)
@@ -70,13 +68,13 @@ func TestState(t *testing.T) {
 
 	pkiScheme := signschemes.ByName("ed25519")
 	linkScheme := kemschemes.ByName("x25519")
-	replicaScheme := nikeschemes.ByName("x25519")
+	replicaScheme := kemschemes.ByName("x25519")
 
 	pk, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 
 	cfg := &config.Config{
-		ReplicaNIKEScheme: "X25519",
+		ReplicaKEMScheme:  "X25519",
 		DataDir:           dname,
 		SphinxGeometry:    geo,
 		Logging: &config.Logging{

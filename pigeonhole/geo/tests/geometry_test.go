@@ -11,9 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -28,15 +29,15 @@ const (
 
 func TestGeometryUseCase1FromBoxPayloadLength(t *testing.T) {
 	// Use Case 1: Given BoxPayloadLength, derive all envelope sizes
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	boxPayloadLength := 1000
-	g := pigeonholegeo.NewGeometry(boxPayloadLength, nikeScheme)
+	g := pigeonholegeo.NewGeometry(boxPayloadLength, kemScheme)
 
 	require.NoError(t, g.Validate())
 	require.Equal(t, boxPayloadLength, g.MaxPlaintextPayloadLength)
-	require.Equal(t, "x25519", g.NIKEName)
+	require.Equal(t, "x25519", g.KEMName)
 	require.Equal(t, "Ed25519", g.SignatureSchemeName)
 
 	// All envelope sizes should be calculated and positive
@@ -56,11 +57,11 @@ func TestGeometryUseCase1FromBoxPayloadLength(t *testing.T) {
 
 func TestGeometryUseCase2ToSphinxGeometry(t *testing.T) {
 	// Use Case 2: Given precomputed Geometry, derive accommodating Sphinx Geometry
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	// Create a pigeonhole geometry
-	pigeonholeGeo := pigeonholegeo.NewGeometry(500, nikeScheme)
+	pigeonholeGeo := pigeonholegeo.NewGeometry(500, kemScheme)
 	require.NoError(t, pigeonholeGeo.Validate())
 
 	// Derive a Sphinx geometry that can accommodate it
@@ -84,15 +85,22 @@ func TestGeometryUseCase2ToSphinxGeometry(t *testing.T) {
 
 func TestGeometryUseCase3FromSphinxGeometry(t *testing.T) {
 	// Use Case 3: Given Sphinx Geometry constraint, derive optimal Geometry
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	//
+	// This uses two distinct schemes: the Sphinx packet's own NIKE (for
+	// the mixnet's per-hop routing crypto) and the Pigeonhole envelope's
+	// KEM (for mrhybrid encryption to the two intermediate replicas).
+	// They are unrelated and need not match.
+	sphinxNikeScheme := nikeschemes.ByName("x25519")
+	require.NotNil(t, sphinxNikeScheme)
+	envelopeKemScheme := schemes.ByName("x25519")
+	require.NotNil(t, envelopeKemScheme)
 
 	// Create a Sphinx geometry with limited space
-	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 2000, true, 5)
+	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(sphinxNikeScheme, 2000, true, 5)
 	require.NoError(t, sphinxGeo.Validate())
 
 	// Derive the optimal pigeonhole geometry that maximizes usage of the Sphinx space
-	pigeonholeGeo, err := pigeonholegeo.NewGeometryFromSphinx(sphinxGeo, nikeScheme)
+	pigeonholeGeo, err := pigeonholegeo.NewGeometryFromSphinx(sphinxGeo, envelopeKemScheme)
 	require.NoError(t, err)
 	require.NoError(t, pigeonholeGeo.Validate())
 
@@ -117,18 +125,18 @@ func TestGeometryUseCase3FromSphinxGeometry(t *testing.T) {
 
 func TestGeometryPrecisionComparison(t *testing.T) {
 	// Test that demonstrates the precision and determinism of trunnel's fixed binary format
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	testCases := []int{100, 500, 1000, 2000, 5000}
 
 	for _, boxPayloadLength := range testCases {
 		t.Run(fmt.Sprintf("BoxPayloadLength_%d", boxPayloadLength), func(t *testing.T) {
-			g := pigeonholegeo.NewGeometry(boxPayloadLength, nikeScheme)
+			g := pigeonholegeo.NewGeometry(boxPayloadLength, kemScheme)
 			require.NoError(t, g.Validate())
 
 			// With trunnel, calculations should be perfectly deterministic
-			g2 := pigeonholegeo.NewGeometry(boxPayloadLength, nikeScheme)
+			g2 := pigeonholegeo.NewGeometry(boxPayloadLength, kemScheme)
 			require.Equal(t, g.CourierQueryReadLength, g2.CourierQueryReadLength)
 			require.Equal(t, g.CourierQueryWriteLength, g2.CourierQueryWriteLength)
 			require.Equal(t, g.CourierQueryReplyReadLength, g2.CourierQueryReplyReadLength)
@@ -146,18 +154,18 @@ func TestGeometryPrecisionComparison(t *testing.T) {
 
 func TestGeometryBidirectionalSizing(t *testing.T) {
 	// Test the bidirectional sizing capability
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	// Start with a BoxPayloadLength
 	originalBoxPayloadLength := 1000
-	pigeonholeGeo1 := pigeonholegeo.NewGeometry(originalBoxPayloadLength, nikeScheme)
+	pigeonholeGeo1 := pigeonholegeo.NewGeometry(originalBoxPayloadLength, kemScheme)
 
 	// Convert to Sphinx geometry
 	sphinxGeo := pigeonholeGeo1.ToSphinxGeometry(5, true)
 
 	// Convert back to pigeonhole geometry
-	pigeonholeGeo2, err := pigeonholegeo.NewGeometryFromSphinx(sphinxGeo, nikeScheme)
+	pigeonholeGeo2, err := pigeonholegeo.NewGeometryFromSphinx(sphinxGeo, kemScheme)
 	require.NoError(t, err)
 
 	t.Logf("Original MaxPlaintextPayloadLength: %d", originalBoxPayloadLength)
@@ -192,10 +200,10 @@ func TestGeometryBidirectionalSizing(t *testing.T) {
 func TestGeometryPrecisePredictions(t *testing.T) {
 	// Test that geometry predictions exactly match actual serialized message sizes
 	// This test creates real messages like the integration tests do
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
-	g := pigeonholegeo.NewGeometry(4559, nikeScheme) // Use the same BoxPayloadLength as integration test
+	g := pigeonholegeo.NewGeometry(4559, kemScheme) // Use the same BoxPayloadLength as integration test
 	require.NoError(t, g.Validate())
 
 	// Create BACAP keys like integration tests
@@ -205,14 +213,14 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create MKEM keys for replicas like integration tests
-	mkemNikeScheme := mkem.NewScheme(nikeScheme)
-	replicaPublicKey1, replicaPrivateKey1, err := nikeScheme.GenerateKeyPair()
+	mkemNikeScheme := mrhybrid.NewScheme(kemScheme)
+	replicaPublicKey1, replicaPrivateKey1, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	replicaPublicKey2, replicaPrivateKey2, err := nikeScheme.GenerateKeyPair()
+	replicaPublicKey2, replicaPrivateKey2, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
 	_ = replicaPrivateKey1 // Avoid unused variable warning
 	_ = replicaPrivateKey2 // Avoid unused variable warning
-	replicaPubKeys := []nike.PublicKey{
+	replicaPubKeys := []kem.PublicKey{
 		replicaPublicKey1,
 		replicaPublicKey2,
 	}
@@ -251,20 +259,20 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		// encoder path.
 		paddedMsg, err := pigeonhole.PadInnerMessageForEncryption(msg, g)
 		require.NoError(t, err)
-		mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedMsg)
+		_, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedMsg)
 		require.NoError(t, err)
-		mkemPublicKey := mkemPrivateKey.Public()
-		senderPubkeyBytes := mkemPublicKey.Bytes()
 
 		// Create CourierEnvelope like integration tests
 		envelope := &pigeonhole.CourierEnvelope{
 			IntermediateReplicas: [2]uint8{0, 1},
-			Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-			Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+			Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+			Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 			ReplyIndex:           0,
 			Epoch:                1, // Use test epoch
-			SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-			SenderPubkey:         senderPubkeyBytes,
+			KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+			KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+			KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+			KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 			CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 			Ciphertext:           mkemCiphertext.Envelope,
 		}
@@ -300,8 +308,11 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		t.Logf("MKEM ciphertext size: %d, CourierEnvelope size: %d", mkemCiphertextSize, envelopeSize)
 		t.Logf("Actual CourierEnvelope overhead: %d bytes", actualCourierEnvelopeOverhead)
 
-		// Check what our calculation predicts
-		senderPubkeySize := len(senderPubkeyBytes)
+		// Check what our calculation predicts. mrhybrid has no shared
+		// sender pubkey: each intermediate replica carries its own
+		// length-prefixed KEM ciphertext.
+		kemCiphertext1Size := len(mkemCiphertext.KEMCiphertexts[0])
+		kemCiphertext2Size := len(mkemCiphertext.KEMCiphertexts[1])
 
 		// Calculate what our function should return
 		const intermediateReplicasSize = 2 // [2]uint8
@@ -309,14 +320,14 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		const dek2Size = 60                // [60]uint8
 		const replyIndexSize = 1           // uint8
 		const epochSize = 8                // uint64
-		const senderPubkeyLenSize = 2      // uint16
+		const kemCiphertextLenSize = 4     // uint32, one per intermediate replica
 		const ciphertextLenSize = 4        // uint32
 
 		expectedFixedOverhead := intermediateReplicasSize + dek1Size + dek2Size +
-			replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenSize
-		expectedTotalOverhead := expectedFixedOverhead + senderPubkeySize
+			replyIndexSize + epochSize + 2*kemCiphertextLenSize + ciphertextLenSize
+		expectedTotalOverhead := expectedFixedOverhead + kemCiphertext1Size + kemCiphertext2Size
 
-		t.Logf("Sender pubkey size: %d", senderPubkeySize)
+		t.Logf("KEM ciphertext sizes: %d, %d", kemCiphertext1Size, kemCiphertext2Size)
 		t.Logf("Expected fixed overhead: %d", expectedFixedOverhead)
 		t.Logf("Expected total overhead: %d", expectedTotalOverhead)
 
@@ -399,31 +410,32 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		t.Logf("Layer 4a - length-prefix-pad: bare %d → padded %d (overhead %d)",
 			len(replicaInnerBytes), len(paddedInnerBytes), paddingOverhead)
 
-		// Layer 4b: MKEM encryption (encrypts the padded ReplicaInnerMessage)
-		mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedInnerBytes)
+		// Layer 4b: mrhybrid encryption (encrypts the padded ReplicaInnerMessage)
+		_, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedInnerBytes)
 		require.NoError(t, err)
 		mkemOverhead := len(mkemCiphertext.Envelope) - len(paddedInnerBytes)
-		expectedMKEMOverhead := 28 // mkemEncryptionOverhead constant
+		expectedMKEMOverhead := 28 // envelopeAEADOverhead constant
 
-		t.Logf("Layer 4b - MKEM:")
+		t.Logf("Layer 4b - mrhybrid:")
 		t.Logf("  padded ReplicaInnerMessage: %d bytes", len(paddedInnerBytes))
-		t.Logf("  MKEM ciphertext: %d bytes", len(mkemCiphertext.Envelope))
-		t.Logf("  Actual MKEM overhead: %d bytes", mkemOverhead)
-		t.Logf("  Expected MKEM overhead: %d bytes", expectedMKEMOverhead)
-		require.Equal(t, expectedMKEMOverhead, mkemOverhead, "MKEM overhead should match constant")
+		t.Logf("  mrhybrid ciphertext: %d bytes", len(mkemCiphertext.Envelope))
+		t.Logf("  Actual mrhybrid overhead: %d bytes", mkemOverhead)
+		t.Logf("  Expected mrhybrid overhead: %d bytes", expectedMKEMOverhead)
+		require.Equal(t, expectedMKEMOverhead, mkemOverhead, "mrhybrid overhead should match constant")
 
-		// Layer 5: CourierEnvelope (contains MKEM ciphertext)
-		mkemPublicKey := mkemPrivateKey.Public()
-		senderPubkeyBytes := mkemPublicKey.Bytes()
-
+		// Layer 5: CourierEnvelope (contains mrhybrid ciphertext). mrhybrid
+		// has no shared sender pubkey: each intermediate replica carries
+		// its own length-prefixed KEM ciphertext.
 		envelope := &pigeonhole.CourierEnvelope{
 			IntermediateReplicas: [2]uint8{0, 1},
-			Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-			Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+			Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+			Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 			ReplyIndex:           0,
 			Epoch:                1,
-			SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-			SenderPubkey:         senderPubkeyBytes,
+			KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+			KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+			KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+			KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 			CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 			Ciphertext:           mkemCiphertext.Envelope,
 		}
@@ -437,15 +449,18 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		const dek2Size = 60                // [60]uint8
 		const replyIndexSize = 1           // uint8
 		const epochSize = 8                // uint64
-		const senderPubkeyLenSize = 2      // uint16
+		const kemCiphertextLenSize = 4     // uint32, one per intermediate replica
 		const ciphertextLenSize = 4        // uint32
 
+		kemCiphertext1Size := len(mkemCiphertext.KEMCiphertexts[0])
+		kemCiphertext2Size := len(mkemCiphertext.KEMCiphertexts[1])
+
 		expectedCourierEnvelopeOverhead := intermediateReplicasSize + dek1Size + dek2Size +
-			replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenSize + len(senderPubkeyBytes)
+			replyIndexSize + epochSize + 2*kemCiphertextLenSize + ciphertextLenSize + kemCiphertext1Size + kemCiphertext2Size
 
 		t.Logf("Layer 5 - CourierEnvelope:")
-		t.Logf("  MKEM ciphertext: %d bytes", len(mkemCiphertext.Envelope))
-		t.Logf("  Sender pubkey: %d bytes", len(senderPubkeyBytes))
+		t.Logf("  mrhybrid ciphertext: %d bytes", len(mkemCiphertext.Envelope))
+		t.Logf("  KEM ciphertexts: %d, %d bytes", kemCiphertext1Size, kemCiphertext2Size)
 		t.Logf("  CourierEnvelope total: %d bytes", len(envelopeBytes))
 		t.Logf("  Actual CourierEnvelope overhead: %d bytes", courierEnvelopeOverhead)
 		t.Logf("  Expected CourierEnvelope overhead: %d bytes", expectedCourierEnvelopeOverhead)
@@ -482,10 +497,10 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 
 	t.Run("DebugGeometryCalculation", func(t *testing.T) {
 		// Debug the exact geometry calculation step by step
-		nikeScheme := schemes.ByName("x25519")
-		require.NotNil(t, nikeScheme)
+		kemScheme := schemes.ByName("x25519")
+		require.NotNil(t, kemScheme)
 
-		g := pigeonholegeo.NewGeometry(4559, nikeScheme)
+		g := pigeonholegeo.NewGeometry(4559, kemScheme)
 
 		// Manually calculate what the geometry should be
 		// Step 1: BACAP payload (MaxPlaintextPayloadLength + length prefix + BACAP overhead)
@@ -505,16 +520,18 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		paddedInnerSize := replicaInnerMessageSize + 4 // trunnel-layer length prefix
 		t.Logf("Step 3b - padded inner: %d + 4 = %d", replicaInnerMessageSize, paddedInnerSize)
 
-		// Step 4: MKEM ciphertext (encrypts the padded plaintext)
-		mkemCiphertextSize := paddedInnerSize + 28 // mkemEncryptionOverhead
-		t.Logf("Step 4 - MKEM ciphertext: %d + 28 = %d", paddedInnerSize, mkemCiphertextSize)
+		// Step 4: mrhybrid ciphertext (encrypts the padded plaintext)
+		mkemCiphertextSize := paddedInnerSize + 28 // envelopeAEADOverhead
+		t.Logf("Step 4 - mrhybrid ciphertext: %d + 28 = %d", paddedInnerSize, mkemCiphertextSize)
 
-		// Step 5: CourierEnvelope
-		senderPubkeySize := nikeScheme.PublicKeySize()
-		courierEnvelopeFixedOverhead := 2 + 60 + 60 + 1 + 8 + 2 + 4 // All fixed fields
-		courierEnvelopeOverhead := courierEnvelopeFixedOverhead + senderPubkeySize
+		// Step 5: CourierEnvelope. mrhybrid has no shared sender pubkey:
+		// each of the 2 intermediate replicas carries its own
+		// length-prefixed (u32) KEM ciphertext.
+		kemCiphertextSize := kemScheme.CiphertextSize()
+		courierEnvelopeFixedOverhead := 2 + 60 + 60 + 1 + 8 + 2*4 + 4 // All fixed fields
+		courierEnvelopeOverhead := courierEnvelopeFixedOverhead + 2*kemCiphertextSize
 		courierEnvelopeSize := courierEnvelopeOverhead + mkemCiphertextSize
-		t.Logf("Step 5 - CourierEnvelope: (%d + %d) + %d = %d", courierEnvelopeFixedOverhead, senderPubkeySize, mkemCiphertextSize, courierEnvelopeSize)
+		t.Logf("Step 5 - CourierEnvelope: (%d + 2*%d) + %d = %d", courierEnvelopeFixedOverhead, kemCiphertextSize, mkemCiphertextSize, courierEnvelopeSize)
 
 		// Step 6: CourierQuery
 		courierQueryOverhead := 1 // QueryType (union discriminator, no envelope length prefix in trunnel)
@@ -531,11 +548,12 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 	})
 
 	t.Run("IntegrationTestGeometry", func(t *testing.T) {
-		// Test the exact geometry used in the integration test
-		nikeScheme := schemes.ByName("CTIDH1024-X25519")
-		require.NotNil(t, nikeScheme)
+		// Test the exact geometry used in the integration test, i.e. the
+		// production replica envelope scheme.
+		kemScheme := schemes.ByName("mceliece348864-X25519")
+		require.NotNil(t, kemScheme)
 
-		g := pigeonholegeo.NewGeometry(4551, nikeScheme) // BoxPayloadLength from integration test
+		g := pigeonholegeo.NewGeometry(4551, kemScheme) // BoxPayloadLength from integration test
 
 		t.Logf("Integration test geometry:")
 		t.Logf("  MaxPlaintextPayloadLength: %d", g.MaxPlaintextPayloadLength)
@@ -561,11 +579,11 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 
 func TestGeometryCourierEnvelopeCiphertextSizeHelpers(t *testing.T) {
 	// Test the new exported helper methods for calculating courier envelope ciphertext sizes
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	maxPlaintextPayloadLength := 1000
-	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, kemScheme)
 	require.NoError(t, g.Validate())
 
 	t.Run("ReadCiphertextSize", func(t *testing.T) {
@@ -625,11 +643,11 @@ func TestGeometryCourierEnvelopeCiphertextSizeHelpers(t *testing.T) {
 
 func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 	// Test that the new helper methods give accurate predictions by creating real messages
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	maxPlaintextPayloadLength := 500
-	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, kemScheme)
 	require.NoError(t, g.Validate())
 
 	// Create BACAP keys for testing
@@ -639,12 +657,12 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create MKEM keys for replicas
-	mkemNikeScheme := mkem.NewScheme(nikeScheme)
-	replicaPublicKey1, _, err := nikeScheme.GenerateKeyPair()
+	mkemNikeScheme := mrhybrid.NewScheme(kemScheme)
+	replicaPublicKey1, _, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	replicaPublicKey2, _, err := nikeScheme.GenerateKeyPair()
+	replicaPublicKey2, _, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	replicaPubKeys := []nike.PublicKey{replicaPublicKey1, replicaPublicKey2}
+	replicaPubKeys := []kem.PublicKey{replicaPublicKey1, replicaPublicKey2}
 
 	t.Run("ReadCiphertextSizePrediction", func(t *testing.T) {
 		// Test read query ciphertext size prediction
@@ -743,7 +761,7 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 
 		for _, size := range testSizes {
 			t.Run(fmt.Sprintf("PayloadSize_%d", size), func(t *testing.T) {
-				testGeometry := pigeonholegeo.NewGeometry(size, nikeScheme)
+				testGeometry := pigeonholegeo.NewGeometry(size, kemScheme)
 				require.NoError(t, testGeometry.Validate())
 
 				// Test read prediction
@@ -807,11 +825,11 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 
 func TestEnvelopeReplySizePredictions(t *testing.T) {
 	// Test that the new EnvelopeReply helper methods give accurate predictions
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	maxPlaintextPayloadLength := 500
-	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, kemScheme)
 	require.NoError(t, g.Validate())
 
 	// Create BACAP keys for testing
@@ -821,11 +839,10 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create MKEM scheme and keys for EnvelopeReply
-	mkemNikeScheme := mkem.NewScheme(nikeScheme)
-	_, replicaPrivateKey, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
-	senderPublicKey, _, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
+	mkemNikeScheme := mrhybrid.NewScheme(kemScheme)
+	// A derived key of the right size is all EnvelopeReply needs; its
+	// output size only depends on the plaintext length, not the key.
+	derivedKey := make([]byte, mrhybrid.KeySize)
 
 	t.Run("ReadEnvelopeReplySizePrediction", func(t *testing.T) {
 		// Test read reply EnvelopeReply size prediction
@@ -867,11 +884,11 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 		paddedInner, err := pigeonhole.CreatePaddedPayload(
 			replyInnerMessage.Bytes(), g.ReplicaReplyInnerMessagePaddedSize())
 		require.NoError(t, err)
-		envelopeReply, err := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, paddedInner)
+		envelopeReply, err := mkemNikeScheme.EnvelopeReply(derivedKey, paddedInner)
 		require.NoError(t, err)
 
 		// Measure the actual EnvelopeReply size
-		actualSize := len(envelopeReply.Envelope)
+		actualSize := len(envelopeReply)
 
 		t.Logf("Read EnvelopeReply prediction: %d bytes", predictedSize)
 		t.Logf("Actual read EnvelopeReply size: %d bytes", actualSize)
@@ -904,11 +921,11 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 		paddedInner, err := pigeonhole.CreatePaddedPayload(
 			replyInnerMessage.Bytes(), g.ReplicaReplyInnerMessagePaddedSize())
 		require.NoError(t, err)
-		envelopeReply, err := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, paddedInner)
+		envelopeReply, err := mkemNikeScheme.EnvelopeReply(derivedKey, paddedInner)
 		require.NoError(t, err)
 
 		// Measure the actual EnvelopeReply size
-		actualSize := len(envelopeReply.Envelope)
+		actualSize := len(envelopeReply)
 
 		t.Logf("Write EnvelopeReply prediction: %d bytes", predictedSize)
 		t.Logf("Actual write EnvelopeReply size: %d bytes", actualSize)
@@ -925,7 +942,7 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 
 		for _, size := range testSizes {
 			t.Run(fmt.Sprintf("PayloadSize_%d", size), func(t *testing.T) {
-				testGeometry := pigeonholegeo.NewGeometry(size, nikeScheme)
+				testGeometry := pigeonholegeo.NewGeometry(size, kemScheme)
 				require.NoError(t, testGeometry.Validate())
 
 				// Test read EnvelopeReply prediction
@@ -956,9 +973,9 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 				readPaddedInner, err := pigeonhole.CreatePaddedPayload(
 					replyInnerMessage.Bytes(), testGeometry.ReplicaReplyInnerMessagePaddedSize())
 				require.NoError(t, err)
-				envelopeReply, err := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, readPaddedInner)
+				envelopeReply, err := mkemNikeScheme.EnvelopeReply(derivedKey, readPaddedInner)
 				require.NoError(t, err)
-				actualReadSize := len(envelopeReply.Envelope)
+				actualReadSize := len(envelopeReply)
 
 				require.Equal(t, readPrediction, actualReadSize,
 					"Read EnvelopeReply prediction failed for payload size %d", size)
@@ -974,9 +991,9 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 				writePaddedInner, err := pigeonhole.CreatePaddedPayload(
 					writeReplyInnerMessage.Bytes(), testGeometry.ReplicaReplyInnerMessagePaddedSize())
 				require.NoError(t, err)
-				writeEnvelopeReply, err := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, writePaddedInner)
+				writeEnvelopeReply, err := mkemNikeScheme.EnvelopeReply(derivedKey, writePaddedInner)
 				require.NoError(t, err)
-				actualWriteSize := len(writeEnvelopeReply.Envelope)
+				actualWriteSize := len(writeEnvelopeReply)
 
 				require.Equal(t, writePrediction, actualWriteSize,
 					"Write EnvelopeReply prediction failed for payload size %d", size)
@@ -991,12 +1008,12 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 func TestGeometryLengthPrefixBug(t *testing.T) {
 	// TDD test to expose the bug: geometry predictions don't account for 4-byte length prefix overhead
 	// This test should FAIL initially, showing the geometry prediction is wrong
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	// Use a small BoxPayloadLength to make the bug more obvious
 	boxPayloadLength := 100
-	g := pigeonholegeo.NewGeometry(boxPayloadLength, nikeScheme)
+	g := pigeonholegeo.NewGeometry(boxPayloadLength, kemScheme)
 	require.NoError(t, g.Validate())
 
 	// Create BACAP keys
@@ -1006,12 +1023,12 @@ func TestGeometryLengthPrefixBug(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create MKEM keys for replicas
-	mkemNikeScheme := mkem.NewScheme(nikeScheme)
-	replicaPublicKey1, _, err := nikeScheme.GenerateKeyPair()
+	mkemNikeScheme := mrhybrid.NewScheme(kemScheme)
+	replicaPublicKey1, _, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	replicaPublicKey2, _, err := nikeScheme.GenerateKeyPair()
+	replicaPublicKey2, _, err := kemScheme.GenerateKeyPair()
 	require.NoError(t, err)
-	replicaPubKeys := []nike.PublicKey{replicaPublicKey1, replicaPublicKey2}
+	replicaPubKeys := []kem.PublicKey{replicaPublicKey1, replicaPublicKey2}
 
 	// The key insight: MaxPlaintextPayloadLength should represent the maximum usable plaintext size
 	// But CreatePaddedPayload creates a payload that includes the 4-byte length prefix
@@ -1060,24 +1077,24 @@ func TestGeometryLengthPrefixBug(t *testing.T) {
 		WriteMsg:    &writeRequest,
 	}
 
-	// MKEM encrypt the inner message after the live encoder's length-prefix
+	// mrhybrid encrypt the inner message after the live encoder's length-prefix
 	// and zero-pad to the write size.
 	paddedInner, err := pigeonhole.PadInnerMessageForEncryption(msg, g)
 	require.NoError(t, err)
-	mkemPrivateKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedInner)
+	_, mkemCiphertext, err := mkemNikeScheme.Encapsulate(replicaPubKeys, paddedInner)
 	require.NoError(t, err)
-	mkemPublicKey := mkemPrivateKey.Public()
-	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	// Create CourierEnvelope
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1},
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
 		Epoch:                1,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
@@ -1106,15 +1123,15 @@ func TestGeometryLengthPrefixBug(t *testing.T) {
 func TestCalculateEnvelopeReplySizeRead(t *testing.T) {
 	// Test the CalculateEnvelopeReplySizeRead function by creating real EnvelopeReply messages
 	// and comparing their actual sizes with the geometry predictions
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	// Test with different payload sizes to ensure the function works correctly across various scenarios
 	testSizes := []int{100, 500, 1000, 2000}
 
 	for _, maxPlaintextPayloadLength := range testSizes {
 		t.Run(fmt.Sprintf("PayloadSize_%d", maxPlaintextPayloadLength), func(t *testing.T) {
-			g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+			g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, kemScheme)
 			require.NoError(t, g.Validate())
 
 			// Create BACAP keys for testing
@@ -1124,11 +1141,11 @@ func TestCalculateEnvelopeReplySizeRead(t *testing.T) {
 			require.NoError(t, err)
 
 			// Create MKEM scheme and keys for EnvelopeReply
-			mkemNikeScheme := mkem.NewScheme(nikeScheme)
-			_, replicaPrivateKey, err := nikeScheme.GenerateKeyPair()
-			require.NoError(t, err)
-			senderPublicKey, _, err := nikeScheme.GenerateKeyPair()
-			require.NoError(t, err)
+			mkemNikeScheme := mrhybrid.NewScheme(kemScheme)
+			// A derived key of the right size is all EnvelopeReply needs;
+			// its output size only depends on the plaintext length, not
+			// the key.
+			derivedKey := make([]byte, mrhybrid.KeySize)
 
 			// Get the prediction from the function we're testing
 			predictedSize := g.CalculateEnvelopeReplySizeRead()
@@ -1171,11 +1188,11 @@ func TestCalculateEnvelopeReplySizeRead(t *testing.T) {
 			paddedInner, err := pigeonhole.CreatePaddedPayload(
 				replyInnerMessageBlob, g.ReplicaReplyInnerMessagePaddedSize())
 			require.NoError(t, err)
-			envelopeReply, err := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, paddedInner)
+			envelopeReply, err := mkemNikeScheme.EnvelopeReply(derivedKey, paddedInner)
 			require.NoError(t, err)
 
 			// Measure the actual EnvelopeReply size
-			actualSize := len(envelopeReply.Envelope)
+			actualSize := len(envelopeReply)
 
 			t.Logf("MaxPlaintextPayloadLength: %d bytes", g.MaxPlaintextPayloadLength)
 			t.Logf("Test message size: %d bytes", len(testMessage))
@@ -1197,11 +1214,11 @@ func TestCalculateEnvelopeReplySizeRead(t *testing.T) {
 
 func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 	// Detailed test that validates the internal calculation steps of CalculateEnvelopeReplySizeRead
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	kemScheme := schemes.ByName("x25519")
+	require.NotNil(t, kemScheme)
 
 	maxPlaintextPayloadLength := 500
-	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, kemScheme)
 	require.NoError(t, g.Validate())
 
 	// Create BACAP keys for testing
@@ -1211,11 +1228,10 @@ func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create MKEM scheme and keys for EnvelopeReply
-	mkemNikeScheme := mkem.NewScheme(nikeScheme)
-	_, replicaPrivateKey, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
-	senderPublicKey, _, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
+	mkemNikeScheme := mrhybrid.NewScheme(kemScheme)
+	// A derived key of the right size is all EnvelopeReply needs; its
+	// output size only depends on the plaintext length, not the key.
+	derivedKey := make([]byte, mrhybrid.KeySize)
 
 	t.Run("StepByStepCalculation", func(t *testing.T) {
 		// Manually calculate what CalculateEnvelopeReplySizeRead should return
@@ -1315,11 +1331,11 @@ func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 			replyInnerMessageBytes, g.ReplicaReplyInnerMessagePaddedSize())
 		require.NoError(t, err)
 
-		envelopeReply, err := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, paddedInner)
+		envelopeReply, err := mkemNikeScheme.EnvelopeReply(derivedKey, paddedInner)
 		require.NoError(t, err)
 
 		// Verify the final EnvelopeReply size
-		actualSize := len(envelopeReply.Envelope)
+		actualSize := len(envelopeReply)
 		predictedSize := g.CalculateEnvelopeReplySizeRead()
 
 		t.Logf("ReplicaReadReply size: %d bytes", len(replicaReadReplyBytes))
@@ -1351,13 +1367,13 @@ func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 
 		// Create EnvelopeReply
 		errorReplyInnerMessageBytes := errorReplyInnerMessage.Bytes()
-		errorEnvelopeReply, err := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, errorReplyInnerMessageBytes)
+		errorEnvelopeReply, err := mkemNikeScheme.EnvelopeReply(derivedKey, errorReplyInnerMessageBytes)
 		require.NoError(t, err)
 
 		// The prediction should still be based on the maximum possible size (success case)
 		// because the geometry function calculates for the worst-case scenario
 		predictedSize := g.CalculateEnvelopeReplySizeRead()
-		actualErrorSize := len(errorEnvelopeReply.Envelope)
+		actualErrorSize := len(errorEnvelopeReply)
 
 		t.Logf("Error reply size: %d bytes", actualErrorSize)
 		t.Logf("Predicted size (success case): %d bytes", predictedSize)

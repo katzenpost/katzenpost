@@ -32,7 +32,6 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
-	nikepem "github.com/katzenpost/hpqc/nike/pem"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -152,7 +151,7 @@ func getIPVer(h string) (int, error) {
 	return 0, fmt.Errorf("address is not an IP")
 }
 
-func (d *ReplicaDescriptor) DisplayWithSchemes(linkScheme kem.Scheme, identityScheme sign.Scheme, envelopeScheme nike.Scheme) string {
+func (d *ReplicaDescriptor) DisplayWithSchemes(linkScheme kem.Scheme, identityScheme sign.Scheme, envelopeScheme kem.Scheme) string {
 	// This is a debug/logging path reachable with attacker-influenced
 	// descriptors, so a short or malformed key must never crash the caller.
 	// UnmarshalBinaryPublicKey on some schemes (the hybrid Ed25519 Sphincs+)
@@ -174,13 +173,13 @@ func (d *ReplicaDescriptor) DisplayWithSchemes(linkScheme kem.Scheme, identitySc
 
 	envelopeKeys := []string{}
 	for epoch, rawkey := range d.EnvelopeKeys {
-		nikeKey := "<invalid envelope key>"
+		envelopeKey := "<invalid envelope key>"
 		if len(rawkey) == envelopeScheme.PublicKeySize() {
-			if nikePubkey, err := envelopeScheme.UnmarshalBinaryPublicKey(rawkey); err == nil {
-				nikeKey = nikepem.ToPublicPEMString(nikePubkey, envelopeScheme)
+			if envelopePubkey, err := envelopeScheme.UnmarshalBinaryPublicKey(rawkey); err == nil {
+				envelopeKey = kempem.ToPublicPEMString(envelopePubkey)
 			}
 		}
-		envelopeKeys = append(envelopeKeys, fmt.Sprintf("epoch %d -> %s", epoch, nikeKey))
+		envelopeKeys = append(envelopeKeys, fmt.Sprintf("epoch %d -> %s", epoch, envelopeKey))
 	}
 
 	return fmt.Sprintf(`ReplicaDescriptor:

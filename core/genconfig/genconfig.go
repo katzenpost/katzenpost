@@ -25,7 +25,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -221,7 +220,7 @@ type Katzenpost struct {
 
 	WireKEMScheme      string
 	PkiSignatureScheme sign.Scheme
-	ReplicaNIKEScheme  nike.Scheme
+	ReplicaKEMScheme   kem.Scheme
 	SphinxGeometry     *geo.Geometry
 	VotingAuthConfigs  []*vConfig.Config
 	Authorities        map[[32]byte]*vConfig.Authority
@@ -509,7 +508,7 @@ func (s *Katzenpost) GenCourierConfig(datadir string, serviceNodeName string) *c
 		Logging:                &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
 		WireKEMScheme:          s.WireKEMScheme,
 		PKIScheme:              s.PkiSignatureScheme.Name(),
-		EnvelopeScheme:         s.ReplicaNIKEScheme.Name(),
+		EnvelopeScheme:         s.ReplicaKEMScheme.Name(),
 		DataDir:                datadir,
 		SphinxGeometry:         s.SphinxGeometry,
 		ConnectTimeout:         config.DefaultConnectTimeout,
@@ -532,7 +531,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.ReplicaID = uint8(s.ReplicaNodeIdx)
 	cfg.SphinxGeometry = s.SphinxGeometry
 	cfg.WireKEMScheme = s.WireKEMScheme
-	cfg.ReplicaNIKEScheme = s.ReplicaNIKEScheme.Name()
+	cfg.ReplicaKEMScheme = s.ReplicaKEMScheme.Name()
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
 	// Docker-mixnet replicas address dirauths and peers by container
 	// hostname; opt in to hostname-permitting validation.
@@ -1045,12 +1044,12 @@ func SetupGeometry(s *Katzenpost, cfg *Config) error {
 		s.PkiSignatureScheme = signScheme
 	}
 
-	s.ReplicaNIKEScheme = replicaCommon.NikeScheme
+	s.ReplicaKEMScheme = replicaCommon.KEMScheme
 
 	// The Pigeonhole geometry is not emitted into any config file: the
 	// client, courier and replicas derive it from the Sphinx geometry.
 	// Fail early here if that Sphinx geometry is too small to yield one.
-	if _, err := pigeonholeGeo.NewGeometryFromSphinx(s.SphinxGeometry, s.ReplicaNIKEScheme); err != nil {
+	if _, err := pigeonholeGeo.NewGeometryFromSphinx(s.SphinxGeometry, s.ReplicaKEMScheme); err != nil {
 		return fmt.Errorf("the Sphinx geometry cannot yield a Pigeonhole geometry: %w", err)
 	}
 

@@ -7,8 +7,7 @@
 // Constants for fixed sizes
 const BACAP_BOX_ID_SIZE = 32;        // ed25519.PublicKeySize
 const BACAP_SIGNATURE_SIZE = 64;     // ed25519.SignatureSize  
-const MKEM_DEK_SIZE = 60;            // mkem.DEKSize
-const MKEM_PUBKEY_SIZE = 160;        // CTIDH1024-X25519 hybrid size (estimated)
+const DEK_SIZE = 60;                 // mrhybrid.DEKSize
 const HASH_SIZE = 32;                // SHA256/Blake2b hash size
 
 // CourierEnvelope - the main envelope structure
@@ -17,8 +16,8 @@ struct courier_envelope {
     u8 intermediate_replicas[2];
 
     // Data Encryption Keys for 2 replicas
-    u8 dek1[MKEM_DEK_SIZE];
-    u8 dek2[MKEM_DEK_SIZE];
+    u8 dek1[DEK_SIZE];
+    u8 dek2[DEK_SIZE];
 
     // Reply index for response routing
     u8 reply_index;
@@ -26,9 +25,13 @@ struct courier_envelope {
     // Epoch number
     u64 epoch;
 
-    // Sender's ephemeral public key (variable length)
-    u16 sender_pubkey_len;
-    u8 sender_pubkey[sender_pubkey_len];
+    // Per-recipient KEM ciphertexts (variable length: mrhybrid has no
+    // shared ephemeral key, each of the 2 intermediate replicas gets its
+    // own KEM ciphertext).
+    u32 kem_ciphertext1_len;
+    u8 kem_ciphertext1[kem_ciphertext1_len];
+    u32 kem_ciphertext2_len;
+    u8 kem_ciphertext2[kem_ciphertext2_len];
 
     // Encrypted payload (variable length)
     u32 ciphertext_len;

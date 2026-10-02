@@ -12,14 +12,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
 )
 
 func TestEnvelopeKey(t *testing.T) {
-	nikeScheme := nikeschemes.ByName("CTIDH512-X25519")
-	keys := replicaCommon.NewEnvelopeKey(nikeScheme)
+	kemScheme := kemschemes.ByName("x25519")
+	keys := replicaCommon.NewEnvelopeKey(kemScheme)
 	require.NotNil(t, keys)
 }
 
@@ -31,7 +31,7 @@ func TestEnvelopeKeys(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dname)
 
-	replicaScheme := nikeschemes.ByName("CTIDH512-X25519")
+	replicaScheme := kemschemes.ByName("x25519")
 	keys := &EnvelopeKeys{
 		log:      logBackend.GetLogger("envelope keys"),
 		datadir:  dname,
@@ -93,7 +93,7 @@ func TestNewEnvelopeKeysLoadsPreviousEpochFromDisk(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dname)
 
-	replicaScheme := nikeschemes.ByName("CTIDH512-X25519")
+	replicaScheme := kemschemes.ByName("x25519")
 	epoch, _, _ := replicaCommon.ReplicaNow()
 	require.Greater(t, epoch, uint64(0), "need a non-zero epoch for this test")
 
@@ -114,7 +114,11 @@ func TestNewEnvelopeKeysLoadsPreviousEpochFromDisk(t *testing.T) {
 	got, err := ek.GetKeypair(epoch - 1)
 	require.NoError(t, err, "previous-epoch key file on disk must be loaded at startup")
 	require.NotNil(t, got)
-	require.Equal(t, prevKey.PublicKey.Bytes(), got.PublicKey.Bytes())
+	prevKeyBytes, err := prevKey.PublicKey.MarshalBinary()
+	require.NoError(t, err)
+	gotKeyBytes, err := got.PublicKey.MarshalBinary()
+	require.NoError(t, err)
+	require.Equal(t, prevKeyBytes, gotKeyBytes)
 }
 
 // TestEnsureKeyRefusesPastEpochs pins the invariant that EnsureKey, which
@@ -130,7 +134,7 @@ func TestEnsureKeyRefusesPastEpochs(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dname)
 
-	replicaScheme := nikeschemes.ByName("CTIDH512-X25519")
+	replicaScheme := kemschemes.ByName("x25519")
 	keys := &EnvelopeKeys{
 		log:      logBackend.GetLogger("envelope keys"),
 		datadir:  dname,

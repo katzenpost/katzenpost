@@ -18,7 +18,7 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
@@ -67,7 +67,7 @@ func (m *MockSession) ClockSkew() time.Duration {
 func TestIncomingConn(t *testing.T) {
 	pkiScheme := signschemes.ByName(testPKIScheme)
 	linkScheme := kemschemes.ByName("Xwing")
-	replicaScheme := nikeschemes.ByName("CTIDH1024-X25519")
+	replicaScheme := kemschemes.ByName("x25519")
 	sphinxScheme := nikeschemes.ByName("x25519")
 
 	nrHops := 5
@@ -94,7 +94,7 @@ func TestIncomingConn(t *testing.T) {
 		DataDir:            dname,
 		SphinxGeometry:     geometry,
 		PKISignatureScheme: pkiScheme.Name(),
-		ReplicaNIKEScheme:  replicaScheme.Name(),
+		ReplicaKEMScheme:   replicaScheme.Name(),
 		WireKEMScheme:      linkScheme.Name(),
 		Addresses:          []string{"tcp://127.0.0.1:34394"},
 	}
@@ -225,11 +225,11 @@ func TestIncomingConn(t *testing.T) {
 	require.NotNil(t, reply2)
 
 	// Generate valid cryptographic material for the ReplicaMessage
-	senderEPubKey := make([]byte, commands.HybridKeySize(replicaScheme))
+	senderEPubKey := make([]byte, commands.RecipientCiphertextSize(replicaScheme))
 	_, err = rand.Reader.Read(senderEPubKey)
 	require.NoError(t, err)
 
-	dek := &[mkem.DEKSize]byte{}
+	dek := &[mrhybrid.DEKSize]byte{}
 	_, err = rand.Reader.Read(dek[:])
 	require.NoError(t, err)
 
@@ -246,7 +246,7 @@ func TestIncomingConn(t *testing.T) {
 		PigeonholeGeometry: pigeonholeGeo,
 		Scheme:             replicaScheme,
 
-		SenderEPubKey: senderEPubKey,
+		KEMCiphertext: senderEPubKey,
 		DEK:           dek,
 		Ciphertext:    ciphertext,
 	}

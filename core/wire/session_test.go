@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/nike/schemes"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -429,8 +429,8 @@ func TestSessionMaxMessageSize(t *testing.T) {
 	t.Logf("yo %d", sAlice.commands.MaxCommandSize())
 	require.NotZero(size)
 
-	nikeScheme := schemes.ByName("X25519")
-	sAlice, err = NewStorageReplicaSession(cfgAlice, nikeScheme, true)
+	kemScheme := kemschemes.ByName("X25519")
+	sAlice, err = NewStorageReplicaSession(cfgAlice, kemScheme, true)
 	require.NoError(err)
 	size = sAlice.MaxMesgSize()
 	t.Logf("max message size %d", size)

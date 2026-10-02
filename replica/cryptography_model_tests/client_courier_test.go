@@ -12,12 +12,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 
@@ -43,14 +44,14 @@ type Replica struct {
 	Cmds             *commands.Commands
 	SphinxGeo        *geo.Geometry
 	SphinxNIKEScheme nike.Scheme
-	NIKEScheme       nike.Scheme
-	PrivateKey       nike.PrivateKey
-	PublicKey        nike.PublicKey
+	KEMScheme        kem.Scheme
+	PrivateKey       kem.PrivateKey
+	PublicKey        kem.PublicKey
 	DB               map[[32]byte]*Box
 	ID               uint8
 }
 
-func NewReplicas(count int, scheme nike.Scheme, cmds *commands.Commands, sphinxGeo *geo.Geometry, sphinxNIKEScheme nike.Scheme) []*Replica {
+func NewReplicas(count int, scheme kem.Scheme, cmds *commands.Commands, sphinxGeo *geo.Geometry, sphinxNIKEScheme nike.Scheme) []*Replica {
 	replicas := make([]*Replica, count)
 	for i := 0; i < count; i++ {
 		pk, sk, err := scheme.GenerateKeyPair()
@@ -61,7 +62,7 @@ func NewReplicas(count int, scheme nike.Scheme, cmds *commands.Commands, sphinxG
 			Cmds:             cmds,
 			SphinxGeo:        sphinxGeo,
 			SphinxNIKEScheme: sphinxNIKEScheme,
-			NIKEScheme:       scheme,
+			KEMScheme:        scheme,
 			PrivateKey:       sk,
 			PublicKey:        pk,
 			DB:               make(map[[32]byte]*Box),
@@ -138,19 +139,15 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 		panic("Replica received invalid message")
 	}
 
-	scheme := mkem.NewScheme(r.NIKEScheme)
+	scheme := mrhybrid.NewScheme(r.KEMScheme)
 
-	ephemeralPublicKey, err := r.NIKEScheme.UnmarshalBinaryPublicKey(replicaMessage.SenderEPubKey)
-	if err != nil {
-		panic(err)
-	}
-	ct := &mkem.Ciphertext{
-		EphemeralPublicKey: ephemeralPublicKey,
-		DEKCiphertexts:     [][]byte{replicaMessage.DEK[:]},
-		Envelope:           replicaMessage.Ciphertext,
+	ct := &mrhybrid.Ciphertext{
+		KEMCiphertexts: [][]byte{replicaMessage.KEMCiphertext},
+		DEKCiphertexts: [][]byte{replicaMessage.DEK[:]},
+		Envelope:       replicaMessage.Ciphertext,
 	}
 
-	requestRaw, err := scheme.Decapsulate(r.PrivateKey, ct)
+	derivedKey, requestRaw, err := scheme.Decapsulate(r.PrivateKey, ct)
 	if err != nil {
 		panic(err)
 	}
@@ -160,11 +157,7 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 		panic(err)
 	}
 
-	envelopeHash := blake2b.Sum256(replicaMessage.SenderEPubKey[:])
-	senderpubkey, err := r.NIKEScheme.UnmarshalBinaryPublicKey(replicaMessage.SenderEPubKey[:])
-	if err != nil {
-		panic(err)
-	}
+	envelopeHash := replicaMessage.EnvelopeHash()
 	switch {
 	case msg.ReadMsg != nil:
 		readReply := r.handleReplicaRead(msg.ReadMsg)
@@ -173,15 +166,15 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 			ReadReply:   readReply,
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply, err := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
+		envelopeReply, err := scheme.EnvelopeReply(derivedKey, replyInnerMessageBlob)
 		if err != nil {
 			panic(err)
 		}
 		reply := &commands.ReplicaMessageReply{
 			Cmds:          r.Cmds,
 			ErrorCode:     0, // Zero means success.
-			EnvelopeHash:  &envelopeHash,
-			EnvelopeReply: envelopeReply.Envelope,
+			EnvelopeHash:  envelopeHash,
+			EnvelopeReply: envelopeReply,
 			ReplicaID:     r.ID,
 		}
 		return reply.ToBytes()
@@ -193,15 +186,15 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 			WriteReply:  writeReply,
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply, err := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
+		envelopeReply, err := scheme.EnvelopeReply(derivedKey, replyInnerMessageBlob)
 		if err != nil {
 			panic(err)
 		}
 		reply := &commands.ReplicaMessageReply{
 			Cmds:          r.Cmds,
 			ErrorCode:     0, // Zero means success.
-			EnvelopeHash:  &envelopeHash,
-			EnvelopeReply: envelopeReply.Envelope,
+			EnvelopeHash:  envelopeHash,
+			EnvelopeReply: envelopeReply,
 			ReplicaID:     r.ID,
 		}
 		return reply.ToBytes()
@@ -215,7 +208,7 @@ type Courier struct {
 	Cmds          *commands.Commands
 	Geo           *geo.Geometry
 	PigeonholeGeo *pgeo.Geometry
-	ReplicaScheme nike.Scheme
+	ReplicaScheme kem.Scheme
 }
 
 func (c *Courier) SendToReplica(id uint8, replicaMessage *commands.ReplicaMessage) *commands.ReplicaMessageReply {
@@ -246,7 +239,7 @@ func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeRe
 		PigeonholeGeometry: c.PigeonholeGeo,
 		Scheme:             c.ReplicaScheme,
 
-		SenderEPubKey: courierMessage.SenderPubkey,
+		KEMCiphertext: courierMessage.KemCiphertext1,
 		DEK:           &courierMessage.Dek1,
 		Ciphertext:    courierMessage.Ciphertext,
 	})
@@ -258,7 +251,7 @@ func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeRe
 		PigeonholeGeometry: c.PigeonholeGeo,
 		Scheme:             c.ReplicaScheme,
 
-		SenderEPubKey: courierMessage.SenderPubkey,
+		KEMCiphertext: courierMessage.KemCiphertext2,
 		DEK:           &courierMessage.Dek2,
 		Ciphertext:    courierMessage.Ciphertext,
 	})
@@ -275,11 +268,11 @@ func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeRe
 type ClientWriter struct {
 	WriteCap       *bacap.WriteCap
 	StatefulWriter *bacap.StatefulWriter
-	MKEMNikeScheme *mkem.Scheme
+	MRHybridScheme *mrhybrid.Scheme
 	Replicas       []*Replica
 }
 
-func NewClientWriter(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, ctx []byte) *ClientWriter {
+func NewClientWriter(replicas []*Replica, MRHybridScheme *mrhybrid.Scheme, ctx []byte) *ClientWriter {
 	owner, err := bacap.NewWriteCap(rand.Reader)
 	if err != nil {
 		panic(err)
@@ -291,7 +284,7 @@ func NewClientWriter(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, ctx []byt
 	return &ClientWriter{
 		WriteCap:       owner,
 		StatefulWriter: statefulWriter,
-		MKEMNikeScheme: MKEMNikeScheme,
+		MRHybridScheme: MRHybridScheme,
 		Replicas:       replicas,
 	}
 }
@@ -316,26 +309,26 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 		WriteMsg:    writeRequest,
 	}
 
-	replicaPubKeys := make([]nike.PublicKey, 2)
+	replicaPubKeys := make([]kem.PublicKey, 2)
 	for i := 0; i < 2; i++ {
 		replicaPubKeys[i] = c.Replicas[i].PublicKey
 	}
 
-	mkemPrivateKey, mkemCiphertext, err := c.MKEMNikeScheme.Encapsulate(
+	_, mkemCiphertext, err := c.MRHybridScheme.Encapsulate(
 		replicaPubKeys, msg.Bytes())
 	if err != nil {
 		panic(err)
 	}
-	mkemPublicKey := mkemPrivateKey.Public()
 
-	senderPubkey := mkemPublicKey.Bytes()
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
-		SenderPubkeyLen:      uint16(len(senderPubkey)),
-		SenderPubkey:         senderPubkey,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
@@ -345,11 +338,11 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 type ClientReader struct {
 	ReadCap        *bacap.ReadCap
 	StatefulReader *bacap.StatefulReader
-	MKEMNikeScheme *mkem.Scheme
+	MRHybridScheme *mrhybrid.Scheme
 	Replicas       []*Replica
 }
 
-func NewClientReader(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, readCap *bacap.ReadCap, ctx []byte) *ClientReader {
+func NewClientReader(replicas []*Replica, MRHybridScheme *mrhybrid.Scheme, readCap *bacap.ReadCap, ctx []byte) *ClientReader {
 	statefulReader, err := bacap.NewStatefulReader(readCap, ctx)
 	if err != nil {
 		panic(err)
@@ -357,12 +350,18 @@ func NewClientReader(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, readCap *
 	return &ClientReader{
 		ReadCap:        readCap,
 		StatefulReader: statefulReader,
-		MKEMNikeScheme: MKEMNikeScheme,
+		MRHybridScheme: MRHybridScheme,
 		Replicas:       replicas,
 	}
 }
 
-func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *pigeonhole.CourierEnvelope) {
+// ComposeReadNextMessage returns the derived keys for both intermediate
+// replicas (index-aligned with the envelope's IntermediateReplicas), since
+// mrhybrid has no shared ephemeral keypair to decapsulate a reply with —
+// the caller doesn't know in advance which of the two replicas will answer,
+// so it tries both derived keys, mirroring EnvelopeDescriptor.DerivedKeys
+// in the real client (client/envelope_descriptor.go).
+func (c *ClientReader) ComposeReadNextMessage() ([2][]byte, *pigeonhole.CourierEnvelope) {
 	boxid, err := c.StatefulReader.NextBoxID()
 	if err != nil {
 		panic(err)
@@ -375,37 +374,37 @@ func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *pigeonhole.Co
 		ReadMsg:     readMsg,
 	}
 
-	replicaPubKeys := make([]nike.PublicKey, 2)
+	replicaPubKeys := make([]kem.PublicKey, 2)
 	for i := 0; i < 2; i++ {
 		replicaPubKeys[i] = c.Replicas[i].PublicKey
 	}
 
-	mkemPrivateKey, mkemCiphertext, err := c.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	derivedKeys, mkemCiphertext, err := c.MRHybridScheme.Encapsulate(replicaPubKeys, msg.Bytes())
 	if err != nil {
 		panic(err)
 	}
-	mkemPublicKey := mkemPrivateKey.Public()
-	senderPubkey := mkemPublicKey.Bytes()
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
+		Dek1:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
+		Dek2:                 [mrhybrid.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
-		SenderPubkeyLen:      uint16(len(senderPubkey)),
-		SenderPubkey:         senderPubkey,
+		KemCiphertext1Len:    uint32(len(mkemCiphertext.KEMCiphertexts[0])),
+		KemCiphertext1:       mkemCiphertext.KEMCiphertexts[0],
+		KemCiphertext2Len:    uint32(len(mkemCiphertext.KEMCiphertexts[1])),
+		KemCiphertext2:       mkemCiphertext.KEMCiphertexts[1],
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
-	return mkemPrivateKey, envelope
+	return [2][]byte{derivedKeys[0], derivedKeys[1]}, envelope
 }
 
 func TestClientCourierProtocolFlow(t *testing.T) {
-	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(schemes.ByName("X25519"), 5000, true, 5)
-	sphinxNikeScheme := schemes.ByName("X25519")
-	scheme := schemes.ByName("CTIDH1024-X25519")
+	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(nikeschemes.ByName("X25519"), 5000, true, 5)
+	sphinxNikeScheme := nikeschemes.ByName("X25519")
+	scheme := kemschemes.ByName("x25519")
 	cmds := commands.NewStorageReplicaCommands(sphinxGeo, scheme)
 
-	mkemNikeScheme := mkem.NewScheme(scheme)
+	mrhybridScheme := mrhybrid.NewScheme(scheme)
 
 	replicas := NewReplicas(4, scheme, cmds, sphinxGeo, sphinxNikeScheme)
 	require.NotNil(t, replicas)
@@ -431,9 +430,9 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 
 	// --- Alice creates a BACAP sequence and gives Bob a sequence read capability
 
-	alice := NewClientWriter(replicas, mkemNikeScheme, ctx)
+	alice := NewClientWriter(replicas, mrhybridScheme, ctx)
 	readCap := alice.WriteCap.ReadCap()
-	bob := NewClientReader(replicas, mkemNikeScheme, readCap, ctx)
+	bob := NewClientReader(replicas, mrhybridScheme, readCap, ctx)
 
 	// --- Alice encrypts a message to Bob in the BACAP sequence.
 	// and it gets sent to the storage replicas.
@@ -445,10 +444,13 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 
 	// --- Bob retrieves and decrypts the message
 
-	bobPrivateKey1, bobReceiveRequest := bob.ComposeReadNextMessage()
+	bobDerivedKeys, bobReceiveRequest := bob.ComposeReadNextMessage()
 	bobReply1 := courier.ReceiveClientQuery(bobReceiveRequest.Bytes())
 
-	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicas[0].PublicKey, bobReply1.Payload)
+	// ReceiveClientQuery always answers from IntermediateReplicas[0] (see
+	// its reply0/firstReplicaID handling above), so the matching derived
+	// key is bobDerivedKeys[0].
+	rawInnerMsg, err := mrhybridScheme.DecryptEnvelope(bobDerivedKeys[0], bobReply1.Payload)
 	require.NoError(t, err)
 
 	// pigeonhole.ReplicaMessageReplyInnerMessage

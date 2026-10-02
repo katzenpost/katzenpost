@@ -11,8 +11,8 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 
 	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
@@ -47,10 +47,12 @@ commands, as they will all be uniformly padded to the same size.
 
 ****/
 
-// HybridKeySize is a helper function which is used in our
-// geometry calculations below.
-func HybridKeySize(scheme nike.Scheme) int {
-	return scheme.PublicKeySize()
+// RecipientCiphertextSize is a helper function which is used in our
+// geometry calculations below: the wire size of one recipient's KEM
+// ciphertext (mrhybrid has no shared ephemeral key, each recipient gets
+// its own KEM ciphertext).
+func RecipientCiphertextSize(scheme kem.Scheme) int {
+	return scheme.CiphertextSize()
 }
 
 // ReplicaWrite has two distinct uses. Firstly, it is
@@ -204,21 +206,24 @@ func replicaDecoyFromBytes(b []byte, cmds *Commands) (Command, error) {
 type ReplicaMessage struct {
 	Cmds               *Commands
 	PigeonholeGeometry *pgeo.Geometry
-	Scheme             nike.Scheme
+	Scheme             kem.Scheme
 
-	SenderEPubKey []byte
-	DEK           *[mkem.DEKSize]byte
+	KEMCiphertext []byte
+	DEK           *[mrhybrid.DEKSize]byte
 	Ciphertext    []byte
 }
 
 func (c *ReplicaMessage) String() string { return "ReplicaMessage" }
 
+// EnvelopeHash hashes only the shared Ciphertext (the envelope,
+// identical across both intermediate replicas' ReplicaMessages for a
+// given CourierEnvelope), not the per-recipient KEMCiphertext: it must
+// match pigeonhole.CourierEnvelope.EnvelopeHash() for whichever
+// ReplicaMessage a replica is replying to, since the courier correlates
+// that reply back to its dedup-cache entry (keyed by the original
+// CourierEnvelope's hash) via this value.
 func (c *ReplicaMessage) EnvelopeHash() *[hash.HashSize]byte {
 	h, err := blake2b.New256(nil)
-	if err != nil {
-		panic(err)
-	}
-	_, err = h.Write(c.SenderEPubKey)
 	if err != nil {
 		panic(err)
 	}
@@ -233,7 +238,7 @@ func (c *ReplicaMessage) EnvelopeHash() *[hash.HashSize]byte {
 }
 
 func (c *ReplicaMessage) ToBytes() []byte {
-	hkSize := len(c.SenderEPubKey)
+	hkSize := len(c.KEMCiphertext)
 
 	// Validate that DEK is not nil to prevent panic
 	if c.DEK == nil {
@@ -243,10 +248,10 @@ func (c *ReplicaMessage) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(replicaMessage)
 	out[1] = 0
-	totalLen := hkSize + mkem.DEKSize + len(c.Ciphertext)
+	totalLen := hkSize + mrhybrid.DEKSize + len(c.Ciphertext)
 	binary.BigEndian.PutUint32(out[2:6], uint32(totalLen))
 
-	out = append(out, c.SenderEPubKey...)
+	out = append(out, c.KEMCiphertext...)
 	out = append(out, c.DEK[:]...)
 	out = append(out, c.Ciphertext...)
 
@@ -258,26 +263,26 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 
 	c := new(ReplicaMessage)
 	c.Cmds = cmds
-	c.Scheme = cmds.replicaNikeScheme
+	c.Scheme = cmds.replicaKEMScheme
 
 	if c.Scheme == nil {
 		return nil, errInvalidCommand
 	}
 
-	hkSize := HybridKeySize(c.Scheme)
+	hkSize := RecipientCiphertextSize(c.Scheme)
 	offset := 0
 
-	if len(b) < hkSize+mkem.DEKSize+uint32len {
+	if len(b) < hkSize+mrhybrid.DEKSize+uint32len {
 		return nil, fmt.Errorf("message too short")
 	}
 
-	c.SenderEPubKey = make([]byte, hkSize)
-	copy(c.SenderEPubKey, b[offset:offset+hkSize])
+	c.KEMCiphertext = make([]byte, hkSize)
+	copy(c.KEMCiphertext, b[offset:offset+hkSize])
 	offset += hkSize
 
-	c.DEK = new([mkem.DEKSize]byte)
-	copy(c.DEK[:], b[offset:offset+mkem.DEKSize])
-	offset += mkem.DEKSize
+	c.DEK = new([mrhybrid.DEKSize]byte)
+	copy(c.DEK[:], b[offset:offset+mrhybrid.DEKSize])
+	offset += mrhybrid.DEKSize
 
 	c.Ciphertext = make([]byte, len(b[offset:]))
 	copy(c.Ciphertext, b[offset:])
@@ -288,7 +293,7 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 // Length is the largest possible length of a ReplicaMessage.
 func (c *ReplicaMessage) Length() int {
 	ciphertextLen := c.PigeonholeGeometry.CalculateCourierEnvelopeCiphertextSizeWrite()
-	return cmdOverhead + mkem.DEKSize + HybridKeySize(c.Scheme) + ciphertextLen
+	return cmdOverhead + mrhybrid.DEKSize + RecipientCiphertextSize(c.Scheme) + ciphertextLen
 }
 
 // ReplicaMessageReply is sent by replicas to couriers as a reply
@@ -307,7 +312,7 @@ type ReplicaMessageReply struct {
 	// ReplicaID identifies the replica replying.
 	ReplicaID uint8
 
-	// EnvelopeReply contains the mkem ciphertext reply.
+	// EnvelopeReply contains the AEAD ciphertext reply.
 	EnvelopeReply []byte
 }
 

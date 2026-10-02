@@ -36,7 +36,7 @@ func PadToSize(data []byte, targetSize int) ([]byte, error) {
 // PadInnerMessageForEncryption serializes a ReplicaInnerMessage and pads it
 // with a 4-byte length prefix and trailing zeros to the padded write size,
 // so that reads, writes, and tombstones are all indistinguishable to any
-// observer of the resulting MKEM ciphertext length. The receiver recovers
+// observer of the resulting envelope ciphertext length. The receiver recovers
 // the exact message bytes via ExtractMessageFromPaddedPayload.
 func PadInnerMessageForEncryption(msg *ReplicaInnerMessage, geo *pgeo.Geometry) ([]byte, error) {
 	if geo == nil {
@@ -49,7 +49,7 @@ func PadInnerMessageForEncryption(msg *ReplicaInnerMessage, geo *pgeo.Geometry) 
 // and pads it with a 4-byte length prefix and trailing zeros to the padded
 // read-reply size, so that read replies, write replies, and tombstone
 // replies are all indistinguishable to any observer of the resulting
-// MKEM-AEAD ciphertext length. The receiver recovers the exact message
+// AEAD ciphertext length. The receiver recovers the exact message
 // bytes via ExtractMessageFromPaddedPayload.
 func PadReplyInnerMessageForEncryption(msg *ReplicaMessageReplyInnerMessage, geo *pgeo.Geometry) ([]byte, error) {
 	if geo == nil {
@@ -60,13 +60,16 @@ func PadReplyInnerMessageForEncryption(msg *ReplicaMessageReplyInnerMessage, geo
 
 // Helper functions for backward compatibility with the old methods.go file
 
-// EnvelopeHash returns the hash of the CourierEnvelope.
+// EnvelopeHash returns the hash of the CourierEnvelope. It hashes only
+// the shared Ciphertext (the envelope, identical for both intermediate
+// replicas), not the per-recipient KemCiphertext1/KemCiphertext2:
+// commands.ReplicaMessage.EnvelopeHash() must produce this same value
+// for either of the two ReplicaMessages the courier splits this
+// envelope into (each carrying only its own recipient's KEM
+// ciphertext), since a replica's reply is correlated back to this
+// envelope's dedup-cache entry by that shared hash.
 func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
 	h, err := blake2b.New256(nil)
-	if err != nil {
-		panic(err)
-	}
-	_, err = h.Write(c.SenderPubkey)
 	if err != nil {
 		panic(err)
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -41,7 +40,7 @@ type testSetup struct {
 	idpubkey      sign.PublicKey
 	linkScheme    kem.Scheme
 	linkpubkey    kem.PublicKey
-	replicaScheme nike.Scheme
+	replicaScheme kem.Scheme
 	geometry      *geo.Geometry
 	cfg           *config.Config
 	server        *Server
@@ -60,7 +59,7 @@ func createTestSetup(t *testing.T) *testSetup {
 	linkpubkey, _, err := linkScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
-	replicaScheme := nikeschemes.ByName("x25519")
+	replicaScheme := kemschemes.ByName("x25519")
 	nrHops := 5
 	payloadSize := 5000
 	sphinxScheme := nikeschemes.ByName("x25519")
@@ -91,7 +90,7 @@ func createTestSetup(t *testing.T) *testSetup {
 		Identifier:          "replica1",
 		WireKEMScheme:       linkScheme.Name(),
 		PKISignatureScheme:  pkiScheme.Name(),
-		ReplicaNIKEScheme:   replicaScheme.Name(),
+		ReplicaKEMScheme:    replicaScheme.Name(),
 		SphinxGeometry:      geometry,
 		Addresses:           []string{testReplicaAddress},
 		ProxyWorkerCount:    8,
@@ -174,7 +173,7 @@ func createPublishDescriptorTestWorker(t *testing.T, pkiClient pki.ReplicaNodeCl
 	linkpubkey, _, err := linkScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
-	replicaScheme := nikeschemes.ByName("x25519")
+	replicaScheme := kemschemes.ByName("x25519")
 	nrHops := 5
 	payloadSize := 5000
 	sphinxScheme := nikeschemes.ByName("x25519")
@@ -205,7 +204,7 @@ func createPublishDescriptorTestWorker(t *testing.T, pkiClient pki.ReplicaNodeCl
 		Identifier:         "replica1",
 		WireKEMScheme:      linkScheme.Name(),
 		PKISignatureScheme: pkiScheme.Name(),
-		ReplicaNIKEScheme:  replicaScheme.Name(),
+		ReplicaKEMScheme:  replicaScheme.Name(),
 		SphinxGeometry:     geometry,
 		Addresses:          []string{testReplicaAddress},
 	}
@@ -727,7 +726,9 @@ func TestReplicaPublishDescriptorAdvertisesPreviousEpochKey(t *testing.T) {
 
 	prev, err := pkiWorker.server.envelopeKeys.GetKeypair(replicaEpoch - 1)
 	require.NoError(t, err)
-	require.Equal(t, prev.PublicKey.Bytes(), keys[replicaEpoch-1])
+	prevBytes, err := prev.PublicKey.MarshalBinary()
+	require.NoError(t, err)
+	require.Equal(t, prevBytes, keys[replicaEpoch-1])
 }
 
 func TestReplicaPublishDescriptorFreshInstallOmitsPreviousEpochKey(t *testing.T) {

@@ -164,8 +164,8 @@ func (cfg *Config) estimateConsensusSize(numNodes, numReplicas int) int {
 		}
 	}
 	envPub := 0
-	if replicaCommon.NikeScheme != nil {
-		envPub = replicaCommon.NikeScheme.PublicKeySize()
+	if replicaCommon.KEMScheme != nil {
+		envPub = replicaCommon.KEMScheme.PublicKeySize()
 	}
 	return pki.EstimateConsensusSize(pki.ConsensusSizeParams{
 		SignPubSize:     cfg.PKISignatureScheme.PublicKeySize(),

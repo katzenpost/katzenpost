@@ -407,7 +407,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return err
 	}
 
-	// Handle the replica NIKE keys.
+	// Handle the replica KEM keys.
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	envelopeKeys := make(map[uint64][]byte)
 
@@ -419,14 +419,22 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	if err != nil {
 		return err
 	}
-	envelopeKeys[replicaEpoch] = key1.PublicKey.Bytes()
-	envelopeKeys[replicaEpoch+1] = key2.PublicKey.Bytes()
+	envelopeKeys[replicaEpoch], err = key1.PublicKey.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	envelopeKeys[replicaEpoch+1], err = key2.PublicKey.MarshalBinary()
+	if err != nil {
+		return err
+	}
 
 	// Advertise the previous epoch's key while it is retained, so clients
 	// can decrypt replies to envelopes sent before the epoch transition.
 	if replicaEpoch > 0 {
 		if prev, err := p.server.envelopeKeys.GetKeypair(replicaEpoch - 1); err == nil {
-			envelopeKeys[replicaEpoch-1] = prev.PublicKey.Bytes()
+			if prevBytes, err := prev.PublicKey.MarshalBinary(); err == nil {
+				envelopeKeys[replicaEpoch-1] = prevBytes
+			}
 		}
 	}
 

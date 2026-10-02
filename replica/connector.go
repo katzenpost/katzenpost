@@ -25,7 +25,7 @@ import (
 // maxConcurrentReplications bounds the number of in-flight
 // DispatchReplication goroutines. Each goroutine is short-lived
 // (a few microseconds of PKI lookup, hashing, and a per-peer
-// channel send to the outbound queue; no MKEM or DB work happens
+// channel send to the outbound queue; no envelope crypto or DB work happens
 // here), so the constant is not a throughput knob but a hard
 // ceiling against unbounded goroutine spawn during bursty inbound
 // writes. The matching const on the courier side is
@@ -121,10 +121,10 @@ func cmdIdentity(cmd commands.Command) ([32]byte, bool) {
 // a waiter long gone: it spends link capacity on a request nobody wants
 // and produces a reply HandleReply discards. Nor does the queue's dedup
 // help, since cmdIdentity keys a ReplicaMessage by envelope hash and
-// mkem.Encapsulate draws a fresh ephemeral keypair per attempt, so
-// every retry is a distinct entry and up to maxRetryQueuePerPeer of
-// them can pile up. Failing the request instead lets the sweep fail
-// over to the co-holder immediately.
+// Encapsulate draws a fresh random envelope key per attempt, so every
+// retry is a distinct entry and up to maxRetryQueuePerPeer of them can
+// pile up. Failing the request instead lets the sweep fail over to the
+// co-holder immediately.
 //
 // Replication writes keep the retry queue; they are what it was built
 // for, and they have no waiter to disappoint.

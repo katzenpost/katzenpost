@@ -52,7 +52,7 @@ func newNoSessionEnv(t *testing.T) *noSessionEnv {
 
 func noSessionProxyRequest(payload string) *commands.ReplicaMessage {
 	return &commands.ReplicaMessage{
-		SenderEPubKey: []byte{1, 2, 3, 4},
+		KEMCiphertext: []byte{1, 2, 3, 4},
 		DEK:           &[60]byte{},
 		Ciphertext:    []byte(payload),
 	}
@@ -74,7 +74,7 @@ func TestDispatchToPeerWithNoSessionFailsProxyRequest(t *testing.T) {
 	env := newNoSessionEnv(t)
 
 	msg := noSessionProxyRequest("a proxied read for a holder that is down")
-	waiter := env.proxyManager.RegisterProxyRequest(*msg.EnvelopeHash(), nil, nil, msg, env.peer, env.conn.dst.Name)
+	waiter := env.proxyManager.RegisterProxyRequest(*msg.EnvelopeHash(), msg, env.peer, env.conn.dst.Name)
 
 	env.co.DispatchCommand(msg, &env.peer)
 
@@ -108,7 +108,7 @@ func TestDispatchToPeerWithSessionQueuesProxyRequest(t *testing.T) {
 	env.conn.sessionUp.Store(true)
 
 	msg := noSessionProxyRequest("a proxied read for a holder that is up")
-	waiter := env.proxyManager.RegisterProxyRequest(*msg.EnvelopeHash(), nil, nil, msg, env.peer, env.conn.dst.Name)
+	waiter := env.proxyManager.RegisterProxyRequest(*msg.EnvelopeHash(), msg, env.peer, env.conn.dst.Name)
 
 	env.co.DispatchCommand(msg, &env.peer)
 

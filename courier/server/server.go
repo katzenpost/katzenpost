@@ -12,7 +12,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	pemkem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
-	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -142,9 +141,9 @@ func (s *Server) initializeLinkKeys() error {
 // initializeServices sets up connector and courier services
 func (s *Server) initializeServices() {
 	// Initialize the Courier plugin first (before connector)
-	nikeScheme := nikeSchemes.ByName(s.cfg.EnvelopeScheme)
-	cmds := commands.NewStorageReplicaCommands(s.cfg.SphinxGeometry, nikeScheme)
-	s.Courier = NewCourier(s, cmds, nikeScheme)
+	kemScheme := schemes.ByName(s.cfg.EnvelopeScheme)
+	cmds := commands.NewStorageReplicaCommands(s.cfg.SphinxGeometry, kemScheme)
+	s.Courier = NewCourier(s, cmds, kemScheme)
 
 	// Initialize connector after courier is ready
 	s.connector = newConnector(s)

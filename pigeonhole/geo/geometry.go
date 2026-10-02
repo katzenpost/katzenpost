@@ -30,9 +30,9 @@ type Geometry struct {
 	// CourierQueryReplyWriteLength is the size of a CourierQueryReply containing a ReplicaWriteReply
 	CourierQueryReplyWriteLength int
 
-	// NIKEName specifies the NIKE scheme to be used in our MKEM scheme for encrypting
-	// to multiple storage replicas
-	NIKEName string
+	// KEMName specifies the KEM scheme to be used in our mrhybrid scheme for
+	// encrypting to multiple storage replicas
+	KEMName string
 
 	// SignatureSchemeName specifies the signature scheme used for BACAP
 	SignatureSchemeName string
@@ -45,8 +45,9 @@ const (
 	// Length prefix for padded payloads
 	lengthPrefixSize = 4
 
-	// MKEM encryption overhead (ChaCha20-Poly1305)
-	mkemEncryptionOverhead = chacha20poly1305.NonceSize + chacha20poly1305.Overhead
+	// Envelope AEAD overhead (nonce + tag; numerically identical for both
+	// ChaCha20-Poly1305 and mrhybrid's AES-256-GCM-SIV)
+	envelopeAEADOverhead = chacha20poly1305.NonceSize + chacha20poly1305.Overhead
 
 	// Signature scheme (always Ed25519 for BACAP)
 	signatureSchemeName = "Ed25519"
@@ -80,7 +81,7 @@ const (
 	intermediateReplicasSize = 2 // [2]uint8
 	replyIndexSize           = 1 // uint8
 	epochSize                = 8 // uint64
-	senderPubkeyLenSize      = 2 // uint16
+	kemCiphertextLenSize     = 4 // uint32, one per intermediate replica
 
 	// CourierQuery field sizes
 	queryTypeSize = 1 // uint8 discriminator

@@ -138,7 +138,7 @@ func TestAuthentication(t *testing.T) {
 	schemes := &TestSchemes{
 		PKI:     signschemes.ByName("Ed25519"),
 		Link:    kemschemes.ByName("Kyber768-X25519"),
-		Replica: nikeschemes.ByName("X25519"),
+		Replica: kemschemes.ByName("X25519"),
 		Sphinx:  nikeschemes.ByName("X25519"),
 	}
 	geometry := CreateTestGeometryCustom(schemes, 5000, 5)

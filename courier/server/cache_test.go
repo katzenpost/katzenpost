@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/sign"
 
 	dirauthconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -240,7 +240,7 @@ func createTestCourier(t *testing.T) *Courier {
 		NIKEName:                    sphinxNikeSchemeName,
 	}
 
-	replicaSchemeName := "CTIDH1024-X25519"
+	replicaSchemeName := "x25519"
 	replicaScheme := schemes.ByName(replicaSchemeName)
 	require.NotNil(t, replicaScheme)
 

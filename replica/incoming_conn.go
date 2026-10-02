@@ -21,7 +21,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
-	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -227,8 +226,8 @@ func (c *incomingConn) initializeSession() (*wire.Session, error) {
 	var err error
 	c.l.Lock()
 
-	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-	session, err := wire.NewStorageReplicaSession(cfg, nikeScheme, false)
+	kemScheme := kemschemes.ByName(c.l.server.cfg.ReplicaKEMScheme)
+	session, err := wire.NewStorageReplicaSession(cfg, kemScheme, false)
 
 	c.l.Unlock()
 

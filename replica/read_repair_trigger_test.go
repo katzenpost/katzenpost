@@ -11,12 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 // holderScript says how one shard holder behaves when a proxied read
@@ -121,16 +121,13 @@ func (sc *scriptedConnector) peerAtSweepPosition(n int) [32]byte {
 // the proxying replica's ephemeral key, exactly as a real holder would.
 func (sc *scriptedConnector) answerAsHolder(msg *commands.ReplicaMessage, keys *TestKeys, script holderScript) {
 	t := sc.t
-	nikeScheme := replicaCommon.NikeScheme
-	scheme := mkem.NewScheme(nikeScheme)
+	kemScheme := kemschemes.ByName(sc.env.cfg.ReplicaKEMScheme)
+	scheme := mrhybrid.NewScheme(kemScheme)
 
-	senderEPub, err := nikeScheme.UnmarshalBinaryPublicKey(msg.SenderEPubKey)
-	require.NoError(t, err)
-
-	plaintext, err := scheme.Decapsulate(keys.ReplicaPrivKey, &mkem.Ciphertext{
-		EphemeralPublicKey: senderEPub,
-		DEKCiphertexts:     [][]byte{msg.DEK[:]},
-		Envelope:           msg.Ciphertext,
+	derivedKey, plaintext, err := scheme.Decapsulate(keys.ReplicaPrivKey, &mrhybrid.Ciphertext{
+		KEMCiphertexts: [][]byte{msg.KEMCiphertext},
+		DEKCiphertexts: [][]byte{msg.DEK[:]},
+		Envelope:       msg.Ciphertext,
 	})
 	require.NoError(t, err)
 	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(plaintext)
@@ -154,15 +151,15 @@ func (sc *scriptedConnector) answerAsHolder(msg *commands.ReplicaMessage, keys *
 	blob, err := pigeonhole.PadReplyInnerMessageForEncryption(
 		&pigeonhole.ReplicaMessageReplyInnerMessage{ReadReply: readReply}, sc.env.pigeonGeo)
 	require.NoError(t, err)
-	envelope, err := scheme.EnvelopeReply(keys.ReplicaPrivKey, senderEPub, blob)
+	envelope, err := scheme.EnvelopeReply(derivedKey, blob)
 	require.NoError(t, err)
 
 	sc.env.server.proxyManager.HandleReply(&commands.ReplicaMessageReply{
-		Cmds:               commands.NewStorageReplicaCommands(sc.env.sphinxGeo, nikeScheme),
+		Cmds:               commands.NewStorageReplicaCommands(sc.env.sphinxGeo, kemScheme),
 		PigeonholeGeometry: sc.env.pigeonGeo,
 		ErrorCode:          script.errorCode,
 		EnvelopeHash:       msg.EnvelopeHash(),
-		EnvelopeReply:      envelope.Envelope,
+		EnvelopeReply:      envelope,
 	})
 }
 
@@ -230,13 +227,13 @@ func TestNoReadRepairOnSilentHolder(t *testing.T) {
 	env := setupSemaScopeTestServer(t)
 	// The silent holder burns its share (budget/candidates) of the sweep
 	// deadline before the co-holder is tried, and every candidate also
-	// spends its CTIDH1024 keygen and group action from the same budget
+	// spends its KEM encapsulation from the same budget
 	// before it can wait. The budget must therefore cover both
 	// candidates' crypto plus the failover wait even on a slow, contended
 	// runner; too small a value exhausts the sweep on crypto alone and no
 	// failover happens. A 10s budget flaked under -race with -parallel on
 	// CI, so size it generously. Production instead derives this from
-	// measured CTIDH throughput.
+	// measured KEM throughput.
 	env.server.cfg.ProxyRequestTimeout = 60
 	sc := newScriptedConnector(t, env,
 		holderScript{silent: true},

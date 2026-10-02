@@ -59,7 +59,7 @@ func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Sche
 	}
 }
 
-func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme) *ReplicaDescriptor {
+func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme kem.Scheme) *ReplicaDescriptor {
 	idkey := make([]byte, pkiScheme.PublicKeySize())
 	_, err := rand.Reader.Read(idkey)
 	require.NoError(t, err)
@@ -84,7 +84,7 @@ func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme,
 	}
 }
 
-func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme, numDirAuths, numMixNodes, numStorageReplicas int) *Document {
+func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme kem.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme, numDirAuths, numMixNodes, numStorageReplicas int) *Document {
 	mixNodes := make([]*MixDescriptor, numMixNodes)
 	for i := 0; i < numMixNodes; i++ {
 		mixNodes[i] = generateDescriptor(t, pkiScheme, linkScheme, sphinxNikeScheme, sphinxKemScheme)
@@ -129,7 +129,7 @@ func TestDocumentGeometryCartesianProductNIKESphinx(t *testing.T) {
 
 		pkiScheme := signschemes.ByName(p[0].(string))
 		linkScheme := kemschemes.ByName(p[1].(string))
-		replicaScheme := nikeschemes.ByName(p[2].(string))
+		replicaScheme := kemschemes.ByName(p[2].(string))
 		sphinxNikeScheme := nikeschemes.ByName(p[3].(string))
 		numMixNodes := p[4].(int)
 		numStorageReplicas := p[5].(int)
@@ -162,7 +162,7 @@ func TestDocumentGeometryCartesianProductKEMSphinx(t *testing.T) {
 
 		pkiScheme := signschemes.ByName(p[0].(string))
 		linkScheme := kemschemes.ByName(p[1].(string))
-		replicaScheme := nikeschemes.ByName(p[2].(string))
+		replicaScheme := kemschemes.ByName(p[2].(string))
 		sphinxKemScheme := kemschemes.ByName(p[3].(string))
 		numMixNodes := p[4].(int)
 		numStorageReplicas := p[5].(int)

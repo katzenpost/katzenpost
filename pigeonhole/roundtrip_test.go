@@ -341,9 +341,13 @@ func mustMarshal(t *testing.T, m interface{ MarshalBinary() ([]byte, error) }) [
 }
 
 func buildCourierEnvelope() *CourierEnvelope {
-	pubkey := make([]byte, 32)
-	for i := range pubkey {
-		pubkey[i] = byte(i)
+	kemCt1 := make([]byte, 32)
+	for i := range kemCt1 {
+		kemCt1[i] = byte(i)
+	}
+	kemCt2 := make([]byte, 32)
+	for i := range kemCt2 {
+		kemCt2[i] = byte(i) ^ 0x55
 	}
 	ct := make([]byte, 16)
 	for i := range ct {
@@ -355,8 +359,10 @@ func buildCourierEnvelope() *CourierEnvelope {
 		Dek2:                 [60]uint8{},
 		ReplyIndex:           1,
 		Epoch:                987654321,
-		SenderPubkeyLen:      uint16(len(pubkey)),
-		SenderPubkey:         pubkey,
+		KemCiphertext1Len:    uint32(len(kemCt1)),
+		KemCiphertext1:       kemCt1,
+		KemCiphertext2Len:    uint32(len(kemCt2)),
+		KemCiphertext2:       kemCt2,
 		CiphertextLen:        uint32(len(ct)),
 		Ciphertext:           ct,
 	}

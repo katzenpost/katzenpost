@@ -11,10 +11,12 @@ func TestMeasureTrunnelOverhead(t *testing.T) {
 	// Test CourierQuery overhead
 	t.Run("CourierQuery", func(t *testing.T) {
 		envelope := &pigeonhole.CourierEnvelope{
-			SenderPubkeyLen: 32,                // Set the length field
-			SenderPubkey:    make([]byte, 32),  // 32 bytes
-			CiphertextLen:   100,               // 4 bytes
-			Ciphertext:      make([]byte, 100), // 100 bytes
+			KemCiphertext1Len: 32,                // Set the length field
+			KemCiphertext1:    make([]byte, 32),  // 32 bytes
+			KemCiphertext2Len: 32,                // Set the length field
+			KemCiphertext2:    make([]byte, 32),  // 32 bytes
+			CiphertextLen:     100,               // 4 bytes
+			Ciphertext:        make([]byte, 100), // 100 bytes
 		}
 
 		query := &pigeonhole.CourierQuery{
@@ -40,14 +42,16 @@ func TestMeasureTrunnelOverhead(t *testing.T) {
 	// Test CourierEnvelope overhead
 	t.Run("CourierEnvelope", func(t *testing.T) {
 		envelope := &pigeonhole.CourierEnvelope{
-			SenderPubkeyLen: 32,                // Set the length field
-			SenderPubkey:    make([]byte, 32),  // 32 bytes
-			CiphertextLen:   100,               // 4 bytes
-			Ciphertext:      make([]byte, 100), // 100 bytes
+			KemCiphertext1Len: 32,                // Set the length field
+			KemCiphertext1:    make([]byte, 32),  // 32 bytes
+			KemCiphertext2Len: 32,                // Set the length field
+			KemCiphertext2:    make([]byte, 32),  // 32 bytes
+			CiphertextLen:     100,               // 4 bytes
+			Ciphertext:        make([]byte, 100), // 100 bytes
 		}
 
 		// Calculate struct field sizes (just the variable-length fields)
-		structFieldSize := 32 + 4 + 100 // SenderPubkey + CiphertextLen + Ciphertext
+		structFieldSize := 32 + 32 + 4 + 100 // KemCiphertext1 + KemCiphertext2 + CiphertextLen + Ciphertext
 
 		// Serialize and measure
 		serialized := envelope.Bytes()

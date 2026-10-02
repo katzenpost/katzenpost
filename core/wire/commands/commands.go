@@ -8,8 +8,8 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
-	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mrhybrid"
 	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -38,7 +38,7 @@ type Command interface {
 type Commands struct {
 	geo                         *geo.Geometry
 	pkiSignatureScheme          sign.Scheme
-	replicaNikeScheme           nike.Scheme
+	replicaKEMScheme            kem.Scheme
 	clientToServerCommands      []Command
 	serverToClientCommands      []Command
 	MaxMessageLenServerToClient int
@@ -95,11 +95,11 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 
 // NewStorageReplicaCommands creates a Commands instance suitale to be used by storage replica nodes
 // and couriers. This ensures all messages are padded to the same size.
-func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands {
+func NewStorageReplicaCommands(geo *geo.Geometry, scheme kem.Scheme) *Commands {
 	c := &Commands{
 		geo:                geo,
 		pkiSignatureScheme: nil,
-		replicaNikeScheme:  scheme,
+		replicaKEMScheme:   scheme,
 	}
 	payload := make([]byte, geo.PacketLength) // XXX TODO(David): Pick a more precise size.
 
@@ -115,8 +115,8 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 			Cmds:               c,
 			Scheme:             scheme,
 
-			SenderEPubKey: make([]byte, HybridKeySize(scheme)),
-			DEK:           &[mkem.DEKSize]byte{},
+			KEMCiphertext: make([]byte, RecipientCiphertextSize(scheme)),
+			DEK:           &[mrhybrid.DEKSize]byte{},
 			Ciphertext:    payload,
 		},
 		&ReplicaMessageReply{

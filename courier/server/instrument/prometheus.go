@@ -86,14 +86,14 @@ var (
 	copyShardReadCompute = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "katzenpost_courier_copy_shard_read_compute_seconds",
-			Help:    "Wall-clock time the courier itself spends on MKEM Encapsulate plus DecryptEnvelope during one per-shard Copy read. Pair with katzenpost_courier_copy_shard_read_total_seconds to derive the courier's CTIDH wait-to-compute ratio: W/C = (total - compute) / compute.",
+			Help:    "Wall-clock time the courier itself spends on KEM Encapsulate plus DecryptEnvelope during one per-shard Copy read. Pair with katzenpost_courier_copy_shard_read_total_seconds to derive the courier's compute wait-to-compute ratio: W/C = (total - compute) / compute.",
 			Buckets: prometheus.DefBuckets,
 		},
 	)
 	copyShardReadTotal = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "katzenpost_courier_copy_shard_read_total_seconds",
-			Help:    "Wall-clock from Encapsulate start to DecryptEnvelope end on a per-shard Copy read. Includes the courier's own CTIDH compute plus the replica round-trip (network plus the replica's own CTIDH). Only observed on the success path so every sample carries both an Encap and a Decap.",
+			Help:    "Wall-clock from Encapsulate start to DecryptEnvelope end on a per-shard Copy read. Includes the courier's own KEM compute plus the replica round-trip (network plus the replica's own KEM compute). Only observed on the success path so every sample carries both an Encap and a Decap.",
 			Buckets: prometheus.DefBuckets,
 		},
 	)
@@ -207,7 +207,7 @@ func DispatchSemWaitEnd() {
 	dispatchSemWaiters.Dec()
 }
 
-// CopyShardReadCompute observes the per-shard Copy-read MKEM compute time
+// CopyShardReadCompute observes the per-shard Copy-read KEM compute time
 // (Encapsulate plus DecryptEnvelope), in seconds.
 func CopyShardReadCompute(d time.Duration) {
 	copyShardReadCompute.Observe(d.Seconds())

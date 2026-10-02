@@ -109,14 +109,14 @@ var (
 	)
 	selfCheckOpsPerSecSolo = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_solo",
-			Help: "MKEM (CTIDH1024-X25519) Decapsulate ops/sec measured by a single goroutine at startup: the best-case per-core throughput. Useful for a one-replica-per-machine deployment baseline. For a co-tenanted host, see the saturated gauge instead.",
+			Name: "katzenpost_replica_selfcheck_envelope_kem_ops_per_sec_solo",
+			Help: "Envelope KEM (mrhybrid) Decapsulate ops/sec measured by a single goroutine at startup: the best-case per-core throughput. Useful for a one-replica-per-machine deployment baseline. For a co-tenanted host, see the saturated gauge instead.",
 		},
 	)
 	selfCheckOpsPerSecSaturated = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "katzenpost_replica_selfcheck_ctidh_ops_per_sec_saturated",
-			Help: "MKEM (CTIDH1024-X25519) Decapsulate ops/sec measured at startup with runtime.NumCPU goroutines decapsulating concurrently: the realistic aggregate ceiling for this replica process when the host's cores are fully utilised. Ops teams running multiple replicas on one host should divide this number by the count of co-tenanted replicas to estimate the per-replica share.",
+			Name: "katzenpost_replica_selfcheck_envelope_kem_ops_per_sec_saturated",
+			Help: "Envelope KEM (mrhybrid) Decapsulate ops/sec measured at startup with runtime.NumCPU goroutines decapsulating concurrently: the realistic aggregate ceiling for this replica process when the host's cores are fully utilised. Ops teams running multiple replicas on one host should divide this number by the count of co-tenanted replicas to estimate the per-replica share.",
 		},
 	)
 	selfCheckCores = prometheus.NewGauge(
@@ -152,7 +152,7 @@ var (
 	proxyRequestLatency = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "katzenpost_replica_proxy_request_latency_seconds",
-			Help:    "Wall-clock latency of a single proxied request to one shard holder, measured from MKEM encapsulation through dispatch to reply, timeout or fast-fail. Excludes the proxy semaphore wait (see katzenpost_replica_proxy_sem_waiters). One observation per candidate attempt, so a failover sweep records one per holder tried.",
+			Help:    "Wall-clock latency of a single proxied request to one shard holder, measured from KEM encapsulation through dispatch to reply, timeout or fast-fail. Excludes the proxy semaphore wait (see katzenpost_replica_proxy_sem_waiters). One observation per candidate attempt, so a failover sweep records one per holder tried.",
 			Buckets: prometheus.DefBuckets,
 		},
 	)
@@ -284,8 +284,8 @@ func DroppedByReason(reason string) {
 	replicaDroppedByReason.With(prometheus.Labels{"reason": reason}).Inc()
 }
 
-// SelfCheckResults publishes the startup CTIDH self-check measurement
-// to its prometheus gauges. opsPerSecSolo is the single-goroutine rate
+// SelfCheckResults publishes the startup envelope KEM self-check
+// measurement to its prometheus gauges. opsPerSecSolo is the single-goroutine rate
 // (best-case per-core); opsPerSecSaturated is the
 // NumCPU-goroutines-in-parallel aggregate (realistic ceiling for one
 // replica process when its host is busy); numCPU is the cores at
@@ -356,7 +356,7 @@ func ProxySemWaitEnd() {
 }
 
 // ProxyRequestLatency observes the duration of one proxied-request
-// attempt against a single shard holder, from MKEM encapsulation
+// attempt against a single shard holder, from KEM encapsulation
 // through dispatch to reply, timeout or fast-fail. The proxy
 // semaphore wait is not included; see ProxySemWaitStart/End.
 func ProxyRequestLatency(d time.Duration) {

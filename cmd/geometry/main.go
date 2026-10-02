@@ -209,7 +209,7 @@ func runPigeonhole(cfg pigeonholeConfig) error {
 // yields both the Pigeonhole geometry and an accommodating Sphinx
 // geometry.
 func runPigeonholeFromBoxPayload(cfg pigeonholeConfig) error {
-	pigeonGeo := pgeo.NewGeometry(cfg.BoxPayloadLength, replicaCommon.NikeScheme)
+	pigeonGeo := pgeo.NewGeometry(cfg.BoxPayloadLength, replicaCommon.KEMScheme)
 	if err := pigeonGeo.Validate(); err != nil {
 		return fmt.Errorf("invalid geometry for box payload %d: %w",
 			cfg.BoxPayloadLength, err)
@@ -235,7 +235,7 @@ func runPigeonholeFromSphinxGeometry(cfg pigeonholeConfig) error {
 		return fmt.Errorf("%q has no [SphinxGeometry] table", cfg.SphinxGeometry)
 	}
 
-	pigeonGeo, err := pgeo.NewGeometryFromSphinx(wrapper.SphinxGeometry, replicaCommon.NikeScheme)
+	pigeonGeo, err := pgeo.NewGeometryFromSphinx(wrapper.SphinxGeometry, replicaCommon.KEMScheme)
 	if err != nil {
 		return fmt.Errorf("deriving Pigeonhole geometry: %w", err)
 	}

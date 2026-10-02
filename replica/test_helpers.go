@@ -45,7 +45,7 @@ const (
 type TestSchemes struct {
 	PKI     sign.Scheme
 	Link    kem.Scheme
-	Replica nike.Scheme
+	Replica kem.Scheme
 	Sphinx  nike.Scheme
 }
 
@@ -54,7 +54,7 @@ func NewTestSchemes() *TestSchemes {
 	return &TestSchemes{
 		PKI:     signschemes.ByName("ed25519"),
 		Link:    kemschemes.ByName("x25519"),
-		Replica: nikeschemes.ByName("x25519"),
+		Replica: kemschemes.ByName("x25519"),
 		Sphinx:  nikeschemes.ByName("x25519"),
 	}
 }
@@ -64,7 +64,7 @@ func NewTestSchemesAdvanced() *TestSchemes {
 	return &TestSchemes{
 		PKI:     signschemes.ByName(testPKIScheme),
 		Link:    kemschemes.ByName("Xwing"),
-		Replica: nikeschemes.ByName("x25519"),
+		Replica: kemschemes.ByName("x25519"),
 		Sphinx:  nikeschemes.ByName("x25519"),
 	}
 }
@@ -95,8 +95,8 @@ type TestKeys struct {
 	LinkPubKey      kem.PublicKey
 	LinkPrivKey     kem.PrivateKey
 	LinkKeyBlob     []byte
-	ReplicaPubKey   nike.PublicKey
-	ReplicaPrivKey  nike.PrivateKey
+	ReplicaPubKey   kem.PublicKey
+	ReplicaPrivKey  kem.PrivateKey
 	ReplicaKeyBlob  []byte
 }
 
@@ -181,7 +181,7 @@ func CreateTestConfig(t *testing.T, schemes *TestSchemes, geometry *geo.Geometry
 		Identifier:          identifier,
 		WireKEMScheme:       schemes.Link.Name(),
 		PKISignatureScheme:  schemes.PKI.Name(),
-		ReplicaNIKEScheme:   schemes.Replica.Name(),
+		ReplicaKEMScheme:    schemes.Replica.Name(),
 		SphinxGeometry:      geometry,
 		Addresses:           addresses,
 		ProxyWorkerCount:    8,
@@ -346,7 +346,7 @@ func newTestState(t *testing.T, dataDir string) *state {
 	require.NoError(t, err)
 
 	cfg := &config.Config{
-		ReplicaNIKEScheme: "X25519",
+		ReplicaKEMScheme:  "X25519",
 		DataDir:           dataDir,
 		SphinxGeometry:    geom,
 		Logging: &config.Logging{

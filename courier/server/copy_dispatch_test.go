@@ -56,11 +56,13 @@ func (f *fakeConnector) DispatchMessage(dest uint8, msg *commands.ReplicaMessage
 	return nil
 }
 
-// buildTestCourierEnvelope constructs a minimal CourierEnvelope with
-// deterministic SenderPubkey + Ciphertext so its EnvelopeHash is
-// stable across the dispatch + reply round-trip inside a test.
+// buildTestCourierEnvelope constructs a minimal CourierEnvelope with a
+// deterministic Ciphertext so its EnvelopeHash (which hashes only the
+// shared Ciphertext) is stable across the dispatch + reply round-trip
+// inside a test.
 func buildTestCourierEnvelope() *pigeonhole.CourierEnvelope {
-	senderKey := bytes.Repeat([]byte{0x77}, 16)
+	kemCt1 := bytes.Repeat([]byte{0x77}, 16)
+	kemCt2 := bytes.Repeat([]byte{0x66}, 16)
 	ciphertext := bytes.Repeat([]byte{0x88}, 32)
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: [2]uint8{1, 2},
@@ -68,8 +70,10 @@ func buildTestCourierEnvelope() *pigeonhole.CourierEnvelope {
 		Dek2:                 [60]uint8{},
 		ReplyIndex:           0,
 		Epoch:                42,
-		SenderPubkeyLen:      uint16(len(senderKey)),
-		SenderPubkey:         senderKey,
+		KemCiphertext1Len:    uint32(len(kemCt1)),
+		KemCiphertext1:       kemCt1,
+		KemCiphertext2Len:    uint32(len(kemCt2)),
+		KemCiphertext2:       kemCt2,
 		CiphertextLen:        uint32(len(ciphertext)),
 		Ciphertext:           ciphertext,
 	}

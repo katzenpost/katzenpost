@@ -14,23 +14,26 @@ import (
 
 // createTestEnvelope creates a simple test CourierEnvelope with the given ciphertext size.
 func createTestEnvelope(ciphertextSize int) *CourierEnvelope {
+	kemCiphertextSize := replicaCommon.KEMScheme.CiphertextSize()
 	return &CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1},
 		Dek1:                 [60]uint8{},
 		Dek2:                 [60]uint8{},
 		ReplyIndex:           0,
 		Epoch:                12345,
-		SenderPubkeyLen:      32,
-		SenderPubkey:         make([]byte, 32),
+		KemCiphertext1Len:    uint32(kemCiphertextSize),
+		KemCiphertext1:       make([]byte, kemCiphertextSize),
+		KemCiphertext2Len:    uint32(kemCiphertextSize),
+		KemCiphertext2:       make([]byte, kemCiphertextSize),
 		CiphertextLen:        uint32(ciphertextSize),
 		Ciphertext:           make([]byte, ciphertextSize),
 	}
 }
 
 // createTestGeometry creates a geometry with the given max plaintext payload length.
-// Uses the same NIKE scheme (CTIDH1024-X25519) that the courier and client use.
+// Uses the same KEM scheme that the courier and client use.
 func createTestGeometry(maxPlaintextPayloadLength int) *geo.Geometry {
-	return geo.NewGeometry(maxPlaintextPayloadLength, replicaCommon.NikeScheme)
+	return geo.NewGeometry(maxPlaintextPayloadLength, replicaCommon.KEMScheme)
 }
 
 // createTestEnvelopeFromGeometry creates a test CourierEnvelope with the correct ciphertext size

@@ -9,6 +9,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/fuzz/seed"
 
+	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
@@ -61,7 +62,8 @@ func FuzzPKICommandsFromBytes(f *testing.F) {
 func FuzzStorageReplicaCommandsFromBytes(f *testing.F) {
 	nike := nikeSchemes.ByName("x25519")
 	g := geo.GeometryFromUserForwardPayloadLength(nike, 5000, true, 5)
-	cmds := NewStorageReplicaCommands(sphinx.NewSphinx(g).Geometry(), nike)
+	kemScheme := kemSchemes.ByName("x25519")
+	cmds := NewStorageReplicaCommands(sphinx.NewSphinx(g).Geometry(), kemScheme)
 	fuzzSeeds(f)
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if seed.Export(data) {

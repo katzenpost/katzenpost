@@ -273,7 +273,9 @@ func (p *PKIWorker) updateReadiness() {
 		idKeyHash := hash.Sum256From(p.server.identityPublicKey)
 		if desc, err := doc.GetReplicaNodeByKeyHash(&idKeyHash); err == nil {
 			if key, err := p.server.envelopeKeys.GetKeypair(replicaEpoch); err == nil {
-				ready = hmac.Equal(desc.EnvelopeKeys[replicaEpoch], key.PublicKey.Bytes())
+				if keyBytes, err := key.PublicKey.MarshalBinary(); err == nil {
+					ready = hmac.Equal(desc.EnvelopeKeys[replicaEpoch], keyBytes)
+				}
 			}
 		}
 	}

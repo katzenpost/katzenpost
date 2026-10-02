@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/sign"
 
 	dirauthconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -76,7 +76,7 @@ func createTestCourierRecording(t *testing.T, rec *recordingPKIClient) *Courier 
 		SPRPKeyMaterialLength:       64,
 		NIKEName:                    "X25519",
 	}
-	replicaSchemeName := "CTIDH1024-X25519"
+	replicaSchemeName := "x25519"
 	replicaScheme := schemes.ByName(replicaSchemeName)
 	require.NotNil(t, replicaScheme)
 	cmds := commands.NewStorageReplicaCommands(geo, replicaScheme)
@@ -122,9 +122,10 @@ func TestStaleEnvelopeDoesNotTriggerOldEpochFetch(t *testing.T) {
 	staleEpochs := []uint64{1, 2, 42, 238948, 239132}
 	for _, e := range staleEpochs {
 		env := &pigeonhole.CourierEnvelope{
-			Epoch:        e,
-			SenderPubkey: []byte("stale-sender-pubkey"),
-			Ciphertext:   []byte("stale-ciphertext"),
+			Epoch:          e,
+			KemCiphertext1: []byte("stale-kem-ciphertext-1"),
+			KemCiphertext2: []byte("stale-kem-ciphertext-2"),
+			Ciphertext:     []byte("stale-ciphertext"),
 		}
 		reply := courier.cacheHandleCourierEnvelope(0, env)
 		require.NotNil(t, reply)
