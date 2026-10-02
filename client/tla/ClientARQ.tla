@@ -42,6 +42,8 @@
 \*     At the bound a resend re-arms the timer without rotating.
 \*   - Copy commands, a full resend queue and a failed packet composition
 \*     are not modelled.
+\*   - NoRetryOnBoxIDNotFound and the BoxAlreadyExists-as-success path are not
+\*     modelled, so the invariants hold for the default flags only.
 \*   - Timing is not modelled: a timer may fire at any moment it is armed.
 
 EXTENDS Naturals, FiniteSets, TLC
@@ -230,11 +232,13 @@ Handle ==
 \* The thin client's connection.
 
 \* The connection drops. A session-aware client keeps its state for a grace
-\* period (onClosedConn).
+\* period (onClosedConn). resendCh belongs to the connection, so every SURB id
+\* still waiting in it goes away with no timer left behind.
 Disconnect ==
     /\ Disconnects /\ Free /\ conn = "up"
     /\ conn' = "away"
-    /\ UNCHANGED <<op, handling>>
+    /\ op' = [m \in Msgs |-> [op[m] EXCEPT !.resendQ = {}]]
+    /\ UNCHANGED handling
 
 \* The client reconnects within the grace period (handleSessionToken).
 Resume ==

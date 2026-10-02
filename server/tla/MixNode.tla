@@ -213,8 +213,8 @@ ClientPacketsAreMixed ==
     \A p \in Packets :
         pkt[p].fromClient => ~Is(p, "backend") /\ ~Is(p, "decoy")
 
-\* A service node sends on nothing that a mix gave it. Traffic cannot loop
-\* back into the mixnet from its last layer.
+\* A service node forwards on nothing that a mix gave it. It does send SURB
+\* replies back into the mixnet, which this says nothing about.
 ServiceNodeTerminates ==
     \A p \in Packets : (role = "service" /\ Is(p, "sent")) => pkt[p].fromClient
 
