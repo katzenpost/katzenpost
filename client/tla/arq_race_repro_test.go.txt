@@ -1,0 +1,354 @@
+// Replays of orderings found by the TLA+ model in this directory, against
+// the daemon code. Each test runs, step by step on one goroutine, an ordering
+// of operations that in the daemon run on different goroutines. Every test
+// PASSES when the daemon behaves as the model says. The three problems replayed
+// here are fixed, so those three now pass by surviving the ordering.
+//
+// The file has a .txt suffix so that it is not compiled. To run it:
+//
+//   cp client/tla/arq_race_repro_test.go.txt client/zz_tla_repro_test.go
+//   (cd client && go test -count=1 -run TestTLARepro -v .)
+//   rm client/zz_tla_repro_test.go
+
+//go:build !windows
+
+package client
+
+import (
+	"crypto/rand"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"gitlab.com/yawning/aez.git"
+
+	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/katzenpost/client/thin"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/queue"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/pigeonhole"
+)
+
+const reproKeyLen = 48 + 16 // SPRP key + IV, one hop
+
+type reproEnv struct {
+	d          *Daemon
+	appID      *[AppIDLength]byte
+	responseCh chan *Response
+	sphinx     *sphinx.Sphinx
+}
+
+func newReproEnv(t *testing.T) *reproEnv {
+	t.Helper()
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	g := geo.GeometryFromUserForwardPayloadLength(schemes.ByName("x25519"), 2000, true, 5)
+	s, err := sphinx.FromGeometry(g)
+	require.NoError(t, err)
+
+	l := &listener{
+		logBackend: logBackend,
+		log:        logBackend.GetLogger("listener"),
+		conns:      make(map[[AppIDLength]byte]*incomingConn),
+		connsLock:  new(sync.RWMutex),
+	}
+	t.Cleanup(func() { l.Halt() })
+
+	e := &reproEnv{sphinx: s}
+	e.d = &Daemon{
+		logbackend:         logBackend,
+		log:                logBackend.GetLogger("repro"),
+		listener:           l,
+		client:             &Client{sphinx: s},
+		replyLock:          new(sync.Mutex),
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+	}
+	// The callback is the one the daemon installs.
+	e.d.arqTimerQueue = queue.NewTimerQueue(func(x interface{}) {
+		e.d.enqueueResend(x.(*[sphinxConstants.SURBIDLength]byte))
+	})
+	e.d.arqTimerQueue.Start()
+	t.Cleanup(func() { e.d.arqTimerQueue.Halt() })
+
+	e.appID = &[AppIDLength]byte{}
+	copy(e.appID[:], []byte("tla-repro-app-00"))
+	e.responseCh = make(chan *Response, 10)
+	mock := &mockIncomingConn{appID: e.appID, responseCh: e.responseCh}
+	conn := mock.toIncomingConn(l, logBackend)
+	conn.resendCh = make(chan *[sphinxConstants.SURBIDLength]byte, 8)
+	l.connsLock.Lock()
+	l.conns[*e.appID] = conn
+	l.connsLock.Unlock()
+	return e
+}
+
+// install registers an ARQ message as arqSend would, and returns it with
+// the keys its reply must be encrypted under.
+func (e *reproEnv) install(t *testing.T, isRead bool) (*ARQMessage, []byte) {
+	t.Helper()
+	surbID := &[sphinxConstants.SURBIDLength]byte{}
+	_, err := rand.Read(surbID[:])
+	require.NoError(t, err)
+	keys := make([]byte, reproKeyLen)
+	_, err = rand.Read(keys)
+	require.NoError(t, err)
+
+	envHash := &[32]byte{}
+	copy(envHash[:], []byte("tla-repro-envelope-hash-00000000"))
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("tla-repro-query0"))
+
+	m := &ARQMessage{
+		MessageType:        ARQMessageTypeEnvelope,
+		AppID:              e.appID,
+		QueryID:            queryID,
+		EnvelopeHash:       envHash,
+		DestinationIdHash:  &[32]byte{},
+		SURBID:             surbID,
+		SURBDecryptionKeys: append([]byte{}, keys...),
+		IsRead:             isRead,
+		State:              ARQStateWaitingForACK,
+		SentAt:             time.Now(),
+	}
+	e.d.replyLock.Lock()
+	e.d.arqSurbIDMap[*surbID] = m
+	e.d.arqEnvelopeHashMap[*envHash] = surbID
+	e.d.replyLock.Unlock()
+	e.d.arqTimerQueue.Push(uint64(time.Now().Add(time.Hour).UnixNano()), surbID)
+	e.waitArmed(t, 1)
+	return m, keys
+}
+
+// waitArmed waits until the timer queue holds n entries. The queue takes a
+// Push through a channel, so an entry appears a moment after the call. It
+// then checks that the count stays at n.
+func (e *reproEnv) waitArmed(t *testing.T, n int) {
+	t.Helper()
+	require.Eventually(t, func() bool { return e.d.arqTimerQueue.Len() == n },
+		2*time.Second, 5*time.Millisecond, "timer queue did not reach %d entries", n)
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, n, e.d.arqTimerQueue.Len())
+}
+
+// ackReply builds the SURB reply the courier sends as an ACK, encrypted
+// under keys.
+func (e *reproEnv) ackReply(t *testing.T, m *ARQMessage, keys []byte) *sphinxReply {
+	t.Helper()
+	inner := (&pigeonhole.CourierQueryReply{
+		ReplyType: 0,
+		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
+			EnvelopeHash: *m.EnvelopeHash,
+			ReplyType:    0, // ACK
+			ErrorCode:    0,
+		},
+	}).Bytes()
+	tagLen := e.sphinx.Geometry().PayloadTagLength
+	plain := append(make([]byte, tagLen), inner...)
+	ct := aez.Encrypt(keys[:48], keys[48:], nil, 0, plain, nil)
+	id := *m.SURBID
+	return &sphinxReply{surbID: &id, ciphertext: ct}
+}
+
+// lookup does what handleReply does under replyLock: find the message by
+// the reply's SURB id, and leave the maps as they are.
+func (e *reproEnv) lookup(t *testing.T, r *sphinxReply) *ARQMessage {
+	t.Helper()
+	e.d.replyLock.Lock()
+	m, ok := e.d.arqSurbIDMap[*r.surbID]
+	e.d.replyLock.Unlock()
+	require.True(t, ok, "reply must match a tracked message")
+	require.True(t, e.d.arqTimerQueue.Cancel(m.SURBID), "the timer was armed")
+	return m
+}
+
+// startReplies collects, for a short while, the replies sent to the
+// application for the original StartResendingEncryptedMessage call.
+func (e *reproEnv) startReplies() []*thin.StartResendingEncryptedMessageReply {
+	var out []*thin.StartResendingEncryptedMessageReply
+	deadline := time.After(500 * time.Millisecond)
+	for {
+		select {
+		case r := <-e.responseCh:
+			if r.StartResendingEncryptedMessageReply != nil {
+				out = append(out, r.StartResendingEncryptedMessageReply)
+			}
+		case <-deadline:
+			return out
+		}
+	}
+}
+
+func (e *reproEnv) tracked() int {
+	e.d.replyLock.Lock()
+	defer e.d.replyLock.Unlock()
+	return len(e.d.arqSurbIDMap) + len(e.d.arqEnvelopeHashMap)
+}
+
+// Baseline: with nothing in between, an idempotent write completes on its
+// ACK with exactly one reply. Shows the harness itself is sound.
+func TestTLAReproBaseline(t *testing.T) {
+	e := newReproEnv(t)
+	m, keys := e.install(t, false)
+	reply := e.ackReply(t, m, keys)
+
+	held := e.lookup(t, reply)
+	e.d.handlePigeonholeARQReply(held, reply)
+
+	got := e.startReplies()
+	require.Len(t, got, 1)
+	require.Equal(t, thin.ThinClientSuccess, got[0].ErrorCode)
+	require.Equal(t, 0, e.tracked())
+}
+
+// Was a problem. Concurrent, AtMostOneResponse: Lookup, Cancel, Handle.
+func TestTLAReproCancelRace(t *testing.T) {
+	e := newReproEnv(t)
+	m, keys := e.install(t, false)
+	reply := e.ackReply(t, m, keys)
+
+	held := e.lookup(t, reply) // ingress worker
+
+	cancelID := &[thin.QueryIDLength]byte{}
+	copy(cancelID[:], []byte("tla-repro-cancel"))
+	e.d.cancelResendingEncryptedMessage(&Request{ // thin-client reader
+		AppID: e.appID,
+		CancelResendingEncryptedMessage: &thin.CancelResendingEncryptedMessage{
+			QueryID:      cancelID,
+			EnvelopeHash: m.EnvelopeHash,
+		},
+	})
+
+	e.d.handlePigeonholeARQReply(held, reply) // ingress worker
+
+	got := e.startReplies()
+	for i, r := range got {
+		t.Logf("reply %d to the original call: ErrorCode=%d", i+1, r.ErrorCode)
+	}
+	t.Logf("RESULT cancel race: %d replies to one call", len(got))
+	require.Len(t, got, 1, "the claim is exclusive, so one caller answers")
+	require.Equal(t, thin.ThinClientErrorStartResendingCancelled, got[0].ErrorCode)
+}
+
+// Was a problem. Concurrent, NoSilentDrop: Lookup, DoResend, Handle. The
+// rotation is done
+// with rotateARQSurbIDLocked, which is what arqDoResend calls once it has
+// composed the packet.
+func TestTLAReproResendRace(t *testing.T) {
+	e := newReproEnv(t)
+	m, keys := e.install(t, true)
+	reply := e.ackReply(t, m, keys)
+
+	held := e.lookup(t, reply) // ingress worker
+
+	newID := &[sphinxConstants.SURBIDLength]byte{} // egress worker
+	_, err := rand.Read(newID[:])
+	require.NoError(t, err)
+	newKeys := make([]byte, reproKeyLen)
+	_, err = rand.Read(newKeys)
+	require.NoError(t, err)
+	e.d.replyLock.Lock()
+	e.d.rotateARQSurbIDLocked(m, newID, newKeys, time.Second)
+	e.d.replyLock.Unlock()
+	e.d.arqTimerQueue.Push(uint64(time.Now().Add(time.Hour).UnixNano()), newID)
+	e.waitArmed(t, 1)
+	require.Equal(t, 2, e.tracked(), "still tracked after the rotation")
+
+	e.d.handlePigeonholeARQReply(held, reply) // ingress worker
+
+	got := e.startReplies()
+	t.Logf("RESULT resend race: %d replies, %d map entries left", len(got), e.tracked())
+	require.Len(t, got, 0, "no reply yet, the query is still outstanding")
+	require.Equal(t, 2, e.tracked(), "an undecryptable reply must not lose the operation")
+}
+
+// disconnect removes the application's connection and returns it, so that
+// resume can put it back.
+func (e *reproEnv) disconnect() *incomingConn {
+	e.d.listener.connsLock.Lock()
+	defer e.d.listener.connsLock.Unlock()
+	conn := e.d.listener.conns[*e.appID]
+	delete(e.d.listener.conns, *e.appID)
+	return conn
+}
+
+func (e *reproEnv) resume(conn *incomingConn) {
+	e.d.listener.connsLock.Lock()
+	defer e.d.listener.connsLock.Unlock()
+	e.d.listener.conns[*e.appID] = conn
+}
+
+// Was a problem. Disconnect, NoOrphan: Disconnect, Lookup, Handle,
+// Resume. Looking the reply up cancels the timer; the handler used to return
+// for lack of a connection and now re-arms.
+func TestTLAReproReplyWhileAway(t *testing.T) {
+	e := newReproEnv(t)
+	m, keys := e.install(t, true)
+	reply := e.ackReply(t, m, keys)
+
+	conn := e.disconnect()
+	held := e.lookup(t, reply)                // ingress worker
+	e.d.handlePigeonholeARQReply(held, reply) // ingress worker
+	e.resume(conn)
+
+	require.Equal(t, 2, e.tracked(), "the operation stays tracked")
+	scheduled := func() int {
+		return len(conn.resendCh) + e.d.arqTimerQueue.PushChLen() +
+			e.d.arqTimerQueue.Len()
+	}
+	require.Eventually(t, func() bool { return scheduled() == 1 },
+		2*time.Second, 5*time.Millisecond,
+		"a reply that cannot be delivered must leave a retry scheduled")
+	t.Logf("RESULT reply while away: %d map entries, %d retries scheduled",
+		e.tracked(), scheduled())
+}
+
+// Not a problem. Disconnect, TimerFire, Resume. The timer is armed again. It
+// fires a moment later, finds the connection, and queues the resend.
+func TestTLAReproTimerWhileAway(t *testing.T) {
+	e := newReproEnv(t)
+	m, _ := e.install(t, true)
+
+	conn := e.disconnect()
+	// The timer fires: it leaves the queue, and its callback runs.
+	require.True(t, e.d.arqTimerQueue.Cancel(m.SURBID))
+	e.waitArmed(t, 0)
+	e.d.enqueueResend(m.SURBID)
+	require.Eventually(t, func() bool { return e.d.arqTimerQueue.Len() == 1 },
+		time.Second, time.Millisecond, "the model predicts the timer is armed again")
+	require.Equal(t, 0, len(conn.resendCh), "nothing is queued while away")
+	e.resume(conn)
+
+	require.Eventually(t, func() bool { return len(conn.resendCh) == 1 },
+		arqRearmBackoff+2*time.Second, 5*time.Millisecond,
+		"the model predicts the resend is queued after resume")
+	t.Logf("RESULT timer while away: %d map entries, %d queued resends after resume",
+		e.tracked(), len(conn.resendCh))
+	require.Equal(t, 2, e.tracked())
+}
+
+// Not a problem. A read gets its ACK. The follow-up is queued for the egress
+// worker, and the operation keeps its SURB id until the resend runs.
+func TestTLAReproFollowUpIsQueued(t *testing.T) {
+	e := newReproEnv(t)
+	m, keys := e.install(t, true)
+	reply := e.ackReply(t, m, keys)
+	before := *m.SURBID
+
+	held := e.lookup(t, reply)
+	e.d.handlePigeonholeARQReply(held, reply)
+
+	e.d.listener.connsLock.RLock()
+	conn := e.d.listener.conns[*e.appID]
+	e.d.listener.connsLock.RUnlock()
+	t.Logf("RESULT follow-up: state=%d, SURB id unchanged=%v, %d queued resends",
+		m.State, *m.SURBID == before, len(conn.resendCh))
+	require.Equal(t, ARQStateACKReceived, m.State)
+	require.True(t, *m.SURBID == before, "the model predicts no rotation in the handler")
+	require.Equal(t, 1, len(conn.resendCh), "the model predicts one queued resend")
+}

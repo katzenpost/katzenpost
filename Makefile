@@ -9,6 +9,10 @@ suite_timeout?=30m
 
 ci_config_files=.github/workflows/linux.yml .forgejo/workflows/ci.yml .woodpecker/test.yaml
 GOVULNCHECK_VERSION?=v1.8.0
+TLA2TOOLS_VERSION?=v1.7.4
+TLA2TOOLS_SHA256?=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
+CI_TLA2TOOLS=/usr/local/share/tla2tools.jar
+TLA2TOOLS?=$(if $(wildcard $(CI_TLA2TOOLS)),$(CI_TLA2TOOLS),$(CURDIR)/tla2tools.jar)
 
 .PHONY: ci-suites
 ci-suites:
@@ -44,6 +48,20 @@ check: ci-config-check prune-docker-cache
 .PHONY: check-live
 check-live:
 	$(MAKE) -C docker client-check
+
+$(TLA2TOOLS):
+	@set -e; \
+	trap 'rm -f $@.tmp' EXIT; \
+	curl -sSfL -o $@.tmp https://github.com/tlaplus/tlaplus/releases/download/$(TLA2TOOLS_VERSION)/tla2tools.jar; \
+	echo "$(TLA2TOOLS_SHA256)  $@.tmp" | sha256sum -c -; \
+	mv $@.tmp $@
+
+.PHONY: tla-tools
+tla-tools: $(TLA2TOOLS)
+
+.PHONY: tla
+tla: $(TLA2TOOLS)
+	@TLA2TOOLS=$(TLA2TOOLS) ./.ci/tla.sh
 
 .PHONY: test-short
 test-short:

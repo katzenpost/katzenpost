@@ -252,6 +252,7 @@ func (d *Daemon) Start() error {
 		d.listener.SetSessionGracePeriod(d.cfg.SessionGracePeriod)
 	}
 	d.listener.SetLocalDispatch(d.dispatchLocal)
+	d.listener.SetResendOrphanHandler(d.rearmOrphanedResend)
 
 	d.cfg.Callbacks = &config.Callbacks{}
 	d.cfg.Callbacks.OnACKFn = d.proxyReplies
@@ -517,8 +518,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	if isARQReply {
 		// The reply acks this SURB; cancel the pending retry so it
 		// does not fire later, walk arqSurbIDMap to find nothing, and
-		// log a warning. Cancel removes the entry regardless of its
-		// position in the queue.
+		// log a warning.
 		d.arqTimerQueue.Cancel(arqMessage.SURBID)
 		instrument.SurbIDReplyMatched()
 		instrument.ARQRoundTrip(time.Since(arqMessage.SentAt))
@@ -802,6 +802,13 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 // to drain the queue on a Poisson tick before we retry.
 const resendQueueFullBackoff = 100 * time.Millisecond
 
+// arqRearmBackoff is how long enqueueResend and rearmARQRetry wait before
+// re-arming the ARQ timer for an operation that cannot be handed to the
+// scheduler at all: the owning thin client has no live connection, or a reply
+// arrived that the handler could not act on. Both can last as long as
+// defaultSessionGracePeriod, so it is measured in seconds.
+const arqRearmBackoff = 5 * time.Second
+
 // arqComposeRetryBackoff is how long an ARQ retry site waits before
 // retrying after ComposeSphinxPacketForQuery fails. Compose failures are
 // typically transient — a missing or stale PKI document, or a path-
@@ -818,11 +825,9 @@ const arqComposeRetryBackoff = 1 * time.Second
 // timer entry arqComposeRetryBackoff out. When the timer fires,
 // arqDoResend runs and tries the compose again.
 //
-// Call sites: arqDoResend (where the prior SURBID fired and the entry
-// is still under that key), and the SendNewSURB / retry-on-BoxIDNotFound
-// branches in pigeonhole.go (where handleReply has already deleted the
-// prior entry). The helper handles both: the delete-old step is a
-// no-op when the old key is already gone.
+// Called only from arqDoResend, where the prior SURBID fired and the
+// entry is still under that key. An untracked SURBID means the operation
+// is gone, and rescheduling it would resurrect it.
 func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 	placeholder := &[sphinxConstants.SURBIDLength]byte{}
 	if _, err := rand.Read(placeholder[:]); err != nil {
@@ -833,6 +838,11 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 	d.lockReply()
 	hadOld := arqMessage.SURBID != nil
 	if hadOld {
+		if _, tracked := d.arqSurbIDMap[*arqMessage.SURBID]; !tracked {
+			d.replyLock.Unlock()
+			d.log.Debugf("rescheduleARQAfterComposeFailure: SURB ID %x was removed, not resurrecting it", arqMessage.SURBID[:])
+			return
+		}
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	}
 	arqMessage.SURBID = placeholder
@@ -858,11 +868,12 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 // scheduler picks it up on a Poisson tick along with new sends, so
 // retransmits now share fairly with other clients' traffic.
 //
-// If the client's resendCh is full, the attempt is re-armed on the ARQ
-// timer after a short backoff — never dropped silently, because arqDoResend
+// If the client's resendCh is full, the attempt is re-armed on the ARQ timer
+// after resendQueueFullBackoff, never dropped silently, because arqDoResend
 // is what re-Pushes the timer on success, and a dropped fire would lose the
-// retry forever. If the client is disconnected the enqueue is a no-op;
-// cleanupForAppID removes the stale map entry.
+// retry forever. If the client has no live connection the attempt is re-armed
+// after arqRearmBackoff instead; cleanupForAppID removes the map entry and
+// cancels its timer when the session is really gone.
 func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	d.lockReply()
 	message, ok := d.arqSurbIDMap[*surbID]
@@ -883,7 +894,7 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		// completes. If the app is truly gone, the per-AppID disconnect
 		// cleanup deletes this entry and cancels its timer, so the next
 		// fire finds it absent and stops re-arming.
-		retryAt := time.Now().Add(resendQueueFullBackoff)
+		retryAt := time.Now().Add(arqRearmBackoff)
 		d.log.Debugf("enqueueResend: no live connection for AppID %x, re-arming SURB ID %x at %v", message.AppID[:], surbID[:], retryAt)
 		if d.arqTimerQueue != nil {
 			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
@@ -899,6 +910,35 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
 		}
 	}
+}
+
+func (d *Daemon) rearmARQRetry(arqMessage *ARQMessage) {
+	if arqMessage == nil || d.arqTimerQueue == nil {
+		return
+	}
+	d.lockReply()
+	surbID := arqMessage.SURBID
+	d.replyLock.Unlock()
+	if surbID == nil {
+		return
+	}
+	retryAt := time.Now().Add(arqRearmBackoff)
+	d.log.Debugf("rearmARQRetry: re-arming SURB ID %x at %v", surbID[:], retryAt)
+	d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
+}
+
+func (d *Daemon) rearmOrphanedResend(surbID *[sphinxConstants.SURBIDLength]byte) {
+	if surbID == nil {
+		return
+	}
+	d.lockReply()
+	message, ok := d.arqSurbIDMap[*surbID]
+	d.replyLock.Unlock()
+	if !ok {
+		d.log.Debugf("rearmOrphanedResend: SURB ID %x no longer tracked, dropping", surbID[:])
+		return
+	}
+	d.rearmARQRetry(message)
 }
 
 // scheduleARQFollowUp routes the next round of an in-flight ARQ exchange (the
@@ -920,24 +960,6 @@ func (d *Daemon) scheduleARQFollowUp(arqMessage *ARQMessage) {
 		return
 	}
 	d.enqueueResend(surbID)
-}
-
-// dropARQMessage deletes both map entries for arqMessage under replyLock.
-// Used by handler early-bail paths that cannot rotate or retry, e.g.
-// a malformed reply, to prevent map-entry leaks now that handleReply
-// no longer pre-deletes on receipt of an ARQ reply.
-func (d *Daemon) dropARQMessage(arqMessage *ARQMessage) {
-	d.lockReply()
-	if arqMessage.SURBID != nil {
-		delete(d.arqSurbIDMap, *arqMessage.SURBID)
-	}
-	if arqMessage.EnvelopeHash != nil {
-		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-	}
-	inflight := len(d.arqSurbIDMap)
-	d.replyLock.Unlock()
-	instrument.ARQInflightSet(inflight)
-	instrument.SurbIDGarbageCollected()
 }
 
 // rotateARQSurbIDLocked rewires an ARQMessage to use newSurbID for its next
@@ -1005,16 +1027,11 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		return
 	}
 
-	// Check if the connection still exists before attempting any resend operations.
-	// If the connection is gone, clean up and abort - there's no client to receive the response.
 	incomingConn := d.listener.getConnection(message.AppID)
 	if incomingConn == nil {
-		d.log.Debugf("ARQ resend: connection already closed for AppID %x, cleaning up SURB ID %x", message.AppID[:], surbID[:])
-		delete(d.arqSurbIDMap, *surbID)
-		if message.EnvelopeHash != nil {
-			delete(d.arqEnvelopeHashMap, *message.EnvelopeHash)
-		}
+		d.log.Debugf("ARQ resend: no connection for AppID %x, re-arming SURB ID %x", message.AppID[:], surbID[:])
 		d.replyLock.Unlock()
+		d.rearmARQRetry(message)
 		return
 	}
 
