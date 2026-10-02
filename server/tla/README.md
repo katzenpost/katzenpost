@@ -48,12 +48,14 @@ labels the code reports to its metrics.
 ## Keys and replays: `MixKeys.tla`
 
 A mix key belongs to one epoch. Once per epoch `publishDescriptorIfNeeded`
-prepares the next epoch's descriptor, and that step also manages the keys. Apart
-from start-up it is the only place that does.
+rotates the keys and then prepares the next epoch's descriptor. Rotation is its
+first statement, ahead of every early return, so it happens whether or not a
+descriptor goes out; apart from start-up it is the only place that rotates.
 
 | Step | What happens | Code |
 |---|---|---|
-| `Publish` | Keys for the next three epochs are generated; keys older than the previous epoch are pruned. | `Generate`, `Prune` |
+| `Rotate` | Keys for the next three epochs are generated; keys older than the previous epoch are pruned. | `rotateMixKeys`, `Generate`, `Prune` |
+| `Publish` | The descriptor for the next epoch is posted. Touches no keys. | `publishDescriptorIfNeeded` |
 | `Reshadow` | A crypto worker copies the key set. | `UpdateMixKeys`, `Shadow` |
 | `Accept` | A crypto worker accepts a packet and records its tag. | `doUnwrap`, `IsReplay` |
 | `NextEpoch` | The epoch ends. | |
@@ -68,13 +70,15 @@ there is one replay filter per key, shared by all workers, and testing and
 setting a tag is atomic; a key file holds the private key and nothing else, so a
 loaded key starts with an empty filter.
 
-`MaxSkips` sets how many epochs may pass without the publish step, and `Restarts`
-lets the node shut down and boot with its keys saved, which is the option
-`PersistMixKeysOnShutdown`, off by default. An epoch passes without the publish
-step when its upload window has closed, when the step fails before it reaches the
-keys, or when the node has stopped advertising itself, the last happening under
+`MaxSkips` sets how many epochs may pass without a descriptor being published,
+and `Restarts` lets the node shut down and boot with its keys saved, which is the
+option `PersistMixKeysOnShutdown`, off by default. An epoch publishes nothing
+when its upload window has closed, when the upload fails, or when the node has
+stopped advertising itself, the last happening under
 `WaitForConsensusExitOnShutdown`, where a node asked to stop keeps serving traffic
-until it has left the consensus.
+until it has left the consensus. Rotation is not skipped with it: the only way an
+epoch misses one here is the node being down for it, which is also the only way
+in the code short of `Generate` returning an error, which is not modelled.
 
 | Invariant | Statement |
 |---|---|
@@ -84,7 +88,7 @@ until it has left the consensus.
 | `TypeOK` | Type invariant. |
 
 `KeysDestroyedOnTime` is the forward secrecy property: a key is last usable in
-epoch `k + 1` and the publish step of epoch `k + 2` prunes it, where a key counts
+epoch `k + 1` and the rotation of epoch `k + 2` prunes it, where a key counts
 as existing while the node, a worker or a file holds it.
 
 Without restarts `ReplayFreedom` holds by construction, since a packet is
@@ -100,11 +104,10 @@ With restarts it can fail, and does.
 | `MixNode` | `WitnessSent` | `NeverSent` violated | |
 | `MixNode` | `WitnessDelivered` | `NeverDelivered` violated | |
 | `MixNode` | `WitnessShortened` | `NeverShortened` violated | |
-| `MixKeys` | `Healthy` | all four hold | 44,184 |
-| `MixKeys` | `OneSkip` | three hold | 121,328 |
-| `MixKeys` | `OneSkipSecrecy` | `KeysDestroyedOnTime` violated | |
-| `MixKeys` | `TwoSkips` | `KeysAvailable` violated | |
-| `MixKeys` | `Restart` | two hold | 113 |
+| `MixKeys` | `Healthy` | all four hold | 55,230 |
+| `MixKeys` | `OneSkip` | all four hold | 110,410 |
+| `MixKeys` | `TwoSkips` | `KeysAvailable` holds | 165,410 |
+| `MixKeys` | `Restart` | two hold | 135 |
 | `MixKeys` | `RestartReplay` | `ReplayFreedom` violated | |
 | `MixKeys` | `RestartSecrecy` | `KeysDestroyedOnTime` violated | |
 | `MixKeys` | `WitnessAccepts` | `NeverAccepts` violated | |
@@ -132,18 +135,21 @@ node.** `WitnessShortened` shows one that waited for a crypto worker and was the
 held for less than the delay its sender asked for; `MinimumMixing` shows the two
 together are never less than that delay.
 
-**Forward secrecy and the supply of keys both depended on the publish step.**
+**Forward secrecy and the supply of keys used to depend on the publish step.**
 At `e17bffb95`, `Prune` and, apart from start-up, `Generate` had one call site
-each, inside `publishDescriptorIfNeeded`, so an epoch that passed without that
-step pruned and generated nothing. Rotation is now the first statement of
-`publishDescriptorIfNeeded`, ahead of every early return, so a skipped
-publication still rotates; the configurations model the code as it was and still
-exhibit the finding. `OneSkipSecrecy` shows the key of epoch 1 still existing in
-epoch 4 after epoch 3 was skipped, when it should have been pruned in epoch 3.
-One skipped epoch costs no availability, as `OneSkip` shows, but after two in a
-row the node has no key for the next epoch (`TwoSkips`), and after three it would
-have none for the current one and would refuse every packet. Both findings were
-read from the code and checked in the model, not reproduced by running the server.
+each, behind the early returns of `publishDescriptorIfNeeded`, so an epoch that
+published nothing pruned and generated nothing. One such epoch left the key of
+epoch 1 alive in epoch 4 when it should have been pruned in epoch 3; two in a row
+left the node with no key for the next epoch, and three would have left it none
+for the current one, refusing every packet. Rotation is now the first statement
+of that function, ahead of every early return, and the model follows: `Rotate`
+and `Publish` are separate steps and only `Publish` can be skipped. The two
+configurations that exhibited the finding now pass. `OneSkipSecrecy` had
+`OneSkip`'s constants and only the forward-secrecy invariant, so it folds into
+`OneSkip`, which now carries all four; `TwoSkips` keeps the availability one. A
+regression in either shows up as a failure where it used to show up as a pass.
+Both findings were read from the code and checked in the model, not reproduced by
+running the server.
 
 **A restart with saved keys lets a packet through twice.** `RestartReplay` shows
 a worker accepting a packet under the key of epoch 1, a clean shutdown writing
@@ -200,5 +206,5 @@ and exiting non-zero if any differs.
 For one configuration and its trace, with the jar here or named by `TLA2TOOLS`:
 
 ```sh
-java -jar tla2tools.jar -config MixKeys_OneSkipSecrecy.cfg MixKeys.tla
+java -jar tla2tools.jar -config MixKeys_RestartSecrecy.cfg MixKeys.tla
 ```

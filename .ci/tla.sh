@@ -72,8 +72,7 @@ server/tla           MixNode         WitnessDelivered    NeverDelivered
 server/tla           MixNode         WitnessShortened    NeverShortened
 server/tla           MixKeys         Healthy             pass
 server/tla           MixKeys         OneSkip             pass
-server/tla           MixKeys         OneSkipSecrecy      KeysDestroyedOnTime
-server/tla           MixKeys         TwoSkips            KeysAvailable
+server/tla           MixKeys         TwoSkips            pass
 server/tla           MixKeys         Restart             pass
 server/tla           MixKeys         RestartReplay       ReplayFreedom
 server/tla           MixKeys         RestartSecrecy      KeysDestroyedOnTime
