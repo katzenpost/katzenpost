@@ -252,6 +252,7 @@ func (d *Daemon) Start() error {
 		d.listener.SetSessionGracePeriod(d.cfg.SessionGracePeriod)
 	}
 	d.listener.SetLocalDispatch(d.dispatchLocal)
+	d.listener.SetResendOrphanHandler(d.rearmARQRetry)
 
 	d.cfg.Callbacks = &config.Callbacks{}
 	d.cfg.Callbacks.OnACKFn = d.proxyReplies

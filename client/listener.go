@@ -19,6 +19,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -66,6 +67,11 @@ type listener struct {
 
 	// Callback function to clean up state when a connection closes
 	onAppDisconnectFn func(*[AppIDLength]byte)
+
+	// onResendOrphanFn, if set, is handed each ARQ resend still queued on a
+	// connection that is going away, so it can be put back on the ARQ timer.
+	// Wired up by the daemon after construction.
+	onResendOrphanFn func(*[sphinxConstants.SURBIDLength]byte)
 
 	clientTokens     map[[16]byte]*[AppIDLength]byte
 	clientTokensLock sync.Mutex
@@ -282,8 +288,35 @@ func (l *listener) waitForPKIDoc(timeout time.Duration) []byte {
 	}
 }
 
+// rearmQueuedResends empties the connection's resend queue back onto the ARQ
+// timer. resendCh belongs to this connection and is drained by its slot in the
+// scheduler, so anything still in it when the connection goes away goes with it,
+// and enqueueResend re-arms only when it could not hand the SURB ID over. An
+// operation whose state is being destroyed anyway is harmless to re-arm, because
+// enqueueResend drops a SURB ID that is no longer mapped.
+func (l *listener) rearmQueuedResends(c *incomingConn) {
+	if c == nil || c.resendCh == nil || l.onResendOrphanFn == nil {
+		return
+	}
+	for {
+		select {
+		case surbID, ok := <-c.resendCh:
+			if !ok {
+				return
+			}
+			if l.log != nil {
+				l.log.Debugf("rearmQueuedResends: re-arming SURB ID %x from a closing connection", surbID[:])
+			}
+			l.onResendOrphanFn(surbID)
+		default:
+			return
+		}
+	}
+}
+
 func (l *listener) onClosedConn(c *incomingConn) {
 	l.unregisterConn(*c.appID)
+	l.rearmQueuedResends(c)
 
 	if c.explicitClose {
 		// ThinClose received: destroy all state immediately
@@ -522,6 +555,13 @@ func (l *listener) PickNextRequest() *Request {
 // real reader loop.
 func (l *listener) SetLocalDispatch(fn func(*Request)) {
 	l.localDispatch = fn
+}
+
+// SetResendOrphanHandler installs the handler that takes ARQ resends still
+// queued on a connection when it goes away. Safe to leave unset in tests that
+// never close a connection holding one.
+func (l *listener) SetResendOrphanHandler(fn func(*[sphinxConstants.SURBIDLength]byte)) {
+	l.onResendOrphanFn = fn
 }
 
 func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
