@@ -3,7 +3,7 @@
 A model of the stop-and-wait ARQ in the client daemon, which sends a Pigeonhole
 query into the mixnet and retransmits it until a reply arrives on a SURB. It
 follows [`arq.go`](../arq.go), [`daemon.go`](../daemon.go) and
-[`pigeonhole.go`](../pigeonhole.go), as they are on `main` at commit `e17bffb95`.
+[`pigeonhole.go`](../pigeonhole.go), as they are on `main` at commit `e17bffb95efed80a6a7fb236a131303c05494a5e`.
 
 ## What is modelled
 
