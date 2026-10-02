@@ -164,8 +164,8 @@ is empty, it issues no certificate and holds no document while the other two hol
 one. It checked `ConvergenceUnderFullDelivery` until that was found to be the
 wrong witness: with singleton groups one node missing from every honest view
 makes every tally malformed, so that invariant fails there with no adversary at
-all, while `AllOrNoneUnderFullDelivery` holds without one over an exhaustive
-search of 2,863,811 states.
+all. `AllOrNoneUnderFullDelivery` found no counterexample without one, but under
+`MinimalVoteAssignments`, so that run establishes nothing either.
 
 `Namenlos` is the same gate at the deployed shape, with the nodes, groups and
 service advertisements the published consensus shows at
