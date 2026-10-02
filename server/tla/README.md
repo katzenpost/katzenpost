@@ -1,7 +1,7 @@
 # TLA+ models of the mix server
 
 Two models of a mix node, from the `server` package as it is on `main` at commit
-`e17bffb95`.
+`e17bffb95efed80a6a7fb236a131303c05494a5e`.
 
 | Model | Covers |
 |---|---|
@@ -40,7 +40,7 @@ labels the code reports to its metrics.
 |---|---|
 | `MinimumMixing` | A packet that is sent spent at least the requested delay in the node, and at least one tick. |
 | `ClientPacketsAreMixed` | A packet from a client never reaches a local backend or the decoy handler. |
-| `ServiceNodeTerminates` | A service node sends on nothing that a mix gave it. |
+| `ServiceNodeTerminates` | A service node forwards on nothing that a mix gave it; its SURB replies are not covered. |
 | `MixHasNoBackend` | Nothing reaches a backend on a mix. |
 | `PlaceMatchesCommand` | Only forward packets are sent on; only decoy replies reach the decoy handler. |
 | `TypeOK` | Type invariant. |
@@ -136,7 +136,7 @@ held for less than the delay its sender asked for; `MinimumMixing` shows the two
 together are never less than that delay.
 
 **Forward secrecy and the supply of keys used to depend on the publish step.**
-At `e17bffb95`, `Prune` and, apart from start-up, `Generate` had one call site
+At `e17bffb95efed80a6a7fb236a131303c05494a5e`, `Prune` and, apart from start-up, `Generate` had one call site
 each, behind the early returns of `publishDescriptorIfNeeded`, so an epoch that
 published nothing pruned and generated nothing. One such epoch left the key of
 epoch 1 alive in epoch 4 when it should have been pruned in epoch 3; two in a row
