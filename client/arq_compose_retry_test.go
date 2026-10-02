@@ -52,7 +52,7 @@ func TestRescheduleARQAfterComposeFailureRotatesMaps(t *testing.T) {
 	require.Equal(t, newSurbID, d.arqEnvelopeHashMap[*envHash],
 		"arqEnvelopeHashMap must point to the new placeholder SURBID")
 
-	// The pushCh entry proves the retry was queued; we cannot inspect the
+	// The pending entry proves the retry was queued; we cannot inspect the
 	// internal heap without starting the worker.
 	require.Equal(t, 1, d.arqTimerQueue.PushChLen(),
 		"retry must be pushed onto arqTimerQueue, not silently dropped")

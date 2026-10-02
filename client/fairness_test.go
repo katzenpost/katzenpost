@@ -240,8 +240,8 @@ func TestEnqueueResend_ReschedulesWhenClientQueueFull(t *testing.T) {
 
 	require.Len(t, a.resendCh, resendBuf, "resendCh should still be full")
 	// The TimerQueue worker is not running in this test, so the push
-	// remains in the push channel (where Push enqueues synchronously)
-	// rather than in the internal heap that Len() exposes.
+	// remains on the queue's pending list rather than in the internal
+	// heap that Len() exposes.
 	require.Equal(t, 1, d.arqTimerQueue.PushChLen(), "retry must be re-armed on arqTimerQueue")
 	d.replyLock.Lock()
 	_, ok := d.arqSurbIDMap[surbID]
