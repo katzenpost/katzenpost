@@ -70,7 +70,7 @@ A property that holds here is established only up to these gaps.
 - **Realistic node counts**, the search growing as `2^|Nodes|` per authority. The
   network this follows is namenlos, whose consensus is published at
   <https://status.namenlos.network/>: six authorities, three mix layers of two,
-  two and three mixes, four gateways in the consensus, four service nodes, four
+  two and three mixes, five gateways in the consensus, four service nodes, four
   storage replicas.
 - **Storage replicas**, except in the three `Namenlos` configurations. A
   conforming deployment runs at least four (`pigeonhole.md`) and sharding
@@ -146,9 +146,9 @@ and `Byzantine4` exhibits the mechanism at even `N`.
 | `EpochsByzantine` | 3 | 1 | 0 | 2 | `ChainConsistency` violated | |
 | `Equivocation` | 4 | 1 | 1 | 1 | `ConvergenceUnderFullDelivery` violated | |
 | `Shape` | 4 | 1 | 5 | 1 | `AllOrNoneUnderFullDelivery` violated | |
-| `Namenlos` | 4 | 1 | 19 | 1 | `NoHonestLeftOut` violated | |
-| `NamenlosShards` | 4 | 1 | 19 | 1 | `ShardableUnderFullDelivery` violated | |
-| `NamenlosServices` | 4 | 1 | 19 | 1 | five hold | 75,959 |
+| `Namenlos` | 4 | 1 | 20 | 1 | `NoHonestLeftOut` violated | |
+| `NamenlosShards` | 4 | 1 | 20 | 1 | `ShardableUnderFullDelivery` violated | |
+| `NamenlosServices` | 4 | 1 | 20 | 1 | five hold | 89,580 |
 | `WitnessConsensus` | 3 | 0 | 1 | 1 | `ConsensusUnreachable` violated | |
 | `WitnessChainRestart` | 3 | 0 | 0 | 2 | `ChainUnanimity` violated | |
 
@@ -169,7 +169,7 @@ all. `AllOrNoneUnderFullDelivery` found no counterexample without one, but under
 
 `Namenlos` is the same gate at the deployed shape, with the nodes, groups and
 service advertisements the published consensus shows at
-<https://status.namenlos.network/>: three mix layers of two, two and three; four
+<https://status.namenlos.network/>: three mix layers of two, two and three; five
 gateways; four service nodes, three advertising a courier and all four an echo;
 four storage replicas. Four authorities rather than six, so the threshold is 3 of
 4 where the network's is 4 of 6.

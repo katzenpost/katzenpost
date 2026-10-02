@@ -251,7 +251,7 @@ ASSUME MinimalChoicesAreARestriction ==
 \* honest authority the same reply for everyone. The two have to be changed
 \* together. A restriction cannot be checked against FullVoteAssignments the way
 \* OnlyFullVotes is checked against FullVoteChoices, because that enumerates
-\* SUBSET Nodes once per authority, which at nineteen nodes TLC cannot do.
+\* SUBSET Nodes once per authority, which at twenty nodes TLC cannot do.
 IsVoteAssignment(v) ==
     /\ DOMAIN v = Auths
     /\ \A a \in Auths :
