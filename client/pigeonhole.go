@@ -1401,10 +1401,6 @@ func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, erro
 	})
 }
 
-// claimARQTerminal removes the operation from both ARQ maps and reports whether
-// this call is the one that removed it. A cancel removes the same two entries
-// under the same lock, so a reply handler that loses the race finds nothing and
-// must not answer the original query a second time.
 func (d *Daemon) claimARQTerminal(arqMessage *ARQMessage) bool {
 	d.lockReply()
 	defer d.replyLock.Unlock()
@@ -1441,12 +1437,6 @@ func (d *Daemon) finishARQMessage(arqMessage *ARQMessage, conn *incomingConn, er
 	d.deliverARQResponse(arqMessage.AppID, conn, response)
 }
 
-// deliverARQResponse hands an ARQ outcome to its owner, or buffers it when the
-// thin client is away inside its grace period. Buffering is the only answer that
-// keeps a non-idempotent write honest: resending it would come back
-// BoxAlreadyExists and report a write that succeeded as failed. Every ARQ reply
-// path goes through here, because a handler can now run with no connection and a
-// bare conn.sendResponse would panic.
 func (d *Daemon) deliverARQResponse(appID *[AppIDLength]byte, conn *incomingConn, response *Response) {
 	if conn != nil {
 		conn.sendResponse(response)
@@ -1483,18 +1473,9 @@ func courierEnvelopeErrorToThinError(code uint8) uint8 {
 	}
 }
 
-// handlePigeonholeARQReply handles replies to Pigeonhole ARQ messages.
-// It implements a finite state machine for the stop-and-wait ARQ protocol:
-// - WaitingForACK: Initial state, waiting for ACK from courier
-// - ACKReceived: ACK received, for reads we need to send another SURB for payload
-// - PayloadReceived: Terminal state for reads after receiving payload
 func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxReply) {
 	conn := d.listener.getConnection(arqMessage.AppID)
 	if conn == nil {
-		// A session inside its grace period can still be answered, and must be:
-		// resending instead would turn a successful non-idempotent write into a
-		// BoxAlreadyExists failure. Only a session that is really gone gets the
-		// operation put back on the timer.
 		if d.listener == nil || !d.listener.hasDisconnectedSession(arqMessage.AppID) {
 			d.log.Errorf("handlePigeonholeARQReply: no connection for AppID %x, re-arming", arqMessage.AppID[:])
 			d.rearmARQRetry(arqMessage)
@@ -1514,9 +1495,6 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	// Parse the CourierQueryReply
 	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(surbPayload)
 	if err != nil {
-		// A reply we cannot parse is not a reply, and pigeonhole.md has the client
-		// resend until it gets one. Dropping here answered nobody and hung the
-		// caller for good.
 		d.log.Errorf("handlePigeonholeARQReply: failed to parse CourierQueryReply, re-arming: %s", err)
 		d.rearmARQRetry(arqMessage)
 		return
@@ -1531,9 +1509,6 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	case ARQMessageTypeEnvelope:
 		// Handle envelope reply (type 0) - fall through to existing logic
 	default:
-		// MessageType is ours, set when the operation was created, so an unknown
-		// one is a bug here rather than anything the network did. Retrying would
-		// loop on it, so answer the caller instead of dropping it silently.
 		d.log.Errorf("handlePigeonholeARQReply: unknown ARQ message type %d", arqMessage.MessageType)
 		if !d.claimARQTerminal(arqMessage) {
 			return
@@ -1544,8 +1519,6 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	// Handle envelope reply (type 0)
 	if courierQueryReply.ReplyType != 0 || courierQueryReply.EnvelopeReply == nil {
-		// The courier sent something that does not answer an envelope query, so
-		// treat it as no answer at all and keep the operation alive.
 		d.log.Errorf("handlePigeonholeARQReply: unexpected reply type %d for envelope operation, re-arming", courierQueryReply.ReplyType)
 		d.rearmARQRetry(arqMessage)
 		return
@@ -1609,10 +1582,6 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		return
 
 	case ARQActionIgnore:
-		// A duplicate reply in a terminal state. If the operation was claimed it is
-		// no longer tracked and the re-arm is a no-op, because enqueueResend drops
-		// a SURB ID it cannot find; if it is somehow still tracked, handleReply has
-		// cancelled its timer and this is what puts it back.
 		d.log.Warningf("handlePigeonholeARQReply: reply in terminal state, ignoring and re-arming if still tracked")
 		d.rearmARQRetry(arqMessage)
 		return
@@ -1640,8 +1609,6 @@ const CopyPollInterval = 5 * time.Second
 func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryReply *pigeonhole.CourierQueryReply, conn *incomingConn) {
 	// Verify this is a copy command reply (ReplyType: 1)
 	if courierQueryReply.ReplyType != 1 || courierQueryReply.CopyCommandReply == nil {
-		// Not an answer to this query, and handleReply has already cancelled the
-		// timer, so returning here left the operation tracked and never resent.
 		d.log.Errorf("handleCopyCommandARQReply: expected copy command reply (type 1), got type %d, re-arming",
 			courierQueryReply.ReplyType)
 		d.rearmARQRetry(arqMessage)

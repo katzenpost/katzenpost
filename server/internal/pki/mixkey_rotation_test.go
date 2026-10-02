@@ -20,7 +20,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 )
 
-// A mix key store that records what a rotation pass asked of it.
 type fakeMixKeys struct {
 	generated []uint64
 	prunes    int
@@ -38,7 +37,6 @@ func (f *fakeMixKeys) Prune() bool                      { f.prunes++; return f.d
 func (f *fakeMixKeys) Get(uint64) ([]byte, bool)        { return nil, false }
 func (f *fakeMixKeys) Shadow(map[uint64]*mixkey.MixKey) {}
 
-// Enough of glue.Glue to reach the mix keys and the reshadow call.
 type rotationGlue struct {
 	mk        glue.MixKeys
 	reshadows int
@@ -69,8 +67,6 @@ func newRotationPKI(t *testing.T, mk glue.MixKeys) (*pki, *rotationGlue) {
 	return &pki{glue: g, log: backend.GetLogger("pki")}, g
 }
 
-// A rotation pass must prune even when it generated nothing, because pruning is
-// what destroys an expired key. mixnet.md requires a node to destroy one.
 func TestRotationPrunesEvenWhenNothingIsGenerated(t *testing.T) {
 	mk := &fakeMixKeys{didGen: false, didPrune: true}
 	p, g := newRotationPKI(t, mk)
@@ -81,7 +77,6 @@ func TestRotationPrunesEvenWhenNothingIsGenerated(t *testing.T) {
 	require.Equal(t, 1, g.reshadows, "dropping a key must reshadow the crypto workers")
 }
 
-// Generation alone must reshadow too, so the workers see the new key.
 func TestRotationReshadowsOnGenerationAlone(t *testing.T) {
 	mk := &fakeMixKeys{didGen: true, didPrune: false}
 	p, g := newRotationPKI(t, mk)
@@ -91,8 +86,6 @@ func TestRotationReshadowsOnGenerationAlone(t *testing.T) {
 	require.Equal(t, 1, g.reshadows)
 }
 
-// Nothing changed, so nothing is reshadowed: the pass is cheap to repeat, which
-// is what lets the worker run it every time round.
 func TestRotationDoesNotReshadowWhenNothingChanged(t *testing.T) {
 	mk := &fakeMixKeys{didGen: false, didPrune: false}
 	p, g := newRotationPKI(t, mk)
@@ -101,12 +94,6 @@ func TestRotationDoesNotReshadowWhenNothingChanged(t *testing.T) {
 	require.Equal(t, 0, g.reshadows)
 }
 
-// The claim is not that rotateMixKeys works when called, but that an epoch which
-// skips publication still rotates. publishDescriptorIfNeeded is the production
-// entry point the worker calls every pass, and it gives up early when advertising
-// is off, so driving it with advertising off is the skipped-publication case.
-// Deleting the rotation from that function fails this test, which calling
-// rotateMixKeys directly cannot do.
 func TestSkippedPublicationStillRotates(t *testing.T) {
 	mk := &fakeMixKeys{didGen: true, didPrune: true}
 	p, g := newRotationPKI(t, mk)

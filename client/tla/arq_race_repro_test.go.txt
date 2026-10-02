@@ -1,9 +1,6 @@
 // Replays of orderings found by the TLA+ model in this directory, against
 // the daemon code. Each test runs, step by step on one goroutine, an ordering
 // of operations that in the daemon run on different goroutines. Every test
-// PASSES when the daemon behaves as the model says. The three marked "problem"
-// are the orderings the model found; each now asserts the behaviour the fix
-// gives, so they are regression tests rather than evidence that a bug exists.
 //
 // The file has a .txt suffix so that it is not compiled. To run it:
 //

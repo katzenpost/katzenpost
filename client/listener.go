@@ -68,9 +68,6 @@ type listener struct {
 	// Callback function to clean up state when a connection closes
 	onAppDisconnectFn func(*[AppIDLength]byte)
 
-	// onResendOrphanFn, if set, is handed each ARQ resend still queued on a
-	// connection that is going away, so it can be put back on the ARQ timer.
-	// Wired up by the daemon after construction.
 	onResendOrphanFn func(*[sphinxConstants.SURBIDLength]byte)
 
 	clientTokens     map[[16]byte]*[AppIDLength]byte
@@ -288,12 +285,6 @@ func (l *listener) waitForPKIDoc(timeout time.Duration) []byte {
 	}
 }
 
-// rearmQueuedResends empties the connection's resend queue back onto the ARQ
-// timer. resendCh belongs to this connection and is drained by its slot in the
-// scheduler, so anything still in it when the connection goes away goes with it,
-// and enqueueResend re-arms only when it could not hand the SURB ID over. An
-// operation whose state is being destroyed anyway is harmless to re-arm, because
-// enqueueResend drops a SURB ID that is no longer mapped.
 func (l *listener) rearmQueuedResends(c *incomingConn) {
 	if c == nil || c.resendCh == nil || l.onResendOrphanFn == nil {
 		return
@@ -557,9 +548,6 @@ func (l *listener) SetLocalDispatch(fn func(*Request)) {
 	l.localDispatch = fn
 }
 
-// SetResendOrphanHandler installs the handler that takes ARQ resends still
-// queued on a connection when it goes away. Safe to leave unset in tests that
-// never close a connection holding one.
 func (l *listener) SetResendOrphanHandler(fn func(*[sphinxConstants.SURBIDLength]byte)) {
 	l.onResendOrphanFn = fn
 }
@@ -681,9 +669,6 @@ func (l *listener) flushDisconnectedSession(c *incomingConn, appID *[AppIDLength
 	}
 }
 
-// hasDisconnectedSession reports whether this AppID has state preserved for its
-// grace period, so a reply that arrives now can be buffered for its return
-// rather than thrown away or turned into a resend.
 func (l *listener) hasDisconnectedSession(appID *[AppIDLength]byte) bool {
 	if appID == nil {
 		return false

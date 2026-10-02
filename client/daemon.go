@@ -832,16 +832,6 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 	}
 
 	d.lockReply()
-	// Only reschedule an operation that is still tracked. The caller releases
-	// replyLock before getting here, so a cancel, a terminal claim or a
-	// cleanupForAppID can land in that window, and writing the maps regardless
-	// would bring back an operation that was deliberately removed.
-	// A message that never had a SURB ID was never registered, so there is nothing
-	// to resurrect and registering it is the point of the call. A message that has
-	// one which is no longer in the map is a different matter: handleReply leaves
-	// the ARQ maps alone, so the only things that remove an entry are a cancel, a
-	// terminal claim and cleanupForAppID, all deliberate. Rewriting the maps then
-	// would undo one of them.
 	hadOld := arqMessage.SURBID != nil
 	if hadOld {
 		if _, tracked := d.arqSurbIDMap[*arqMessage.SURBID]; !tracked {
@@ -917,17 +907,6 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 }
 
-// rearmARQRetry puts an operation back on the retry timer without rotating its
-// SURB ID or writing the maps. handleReply cancels the timer before a handler
-// runs, so a handler that cannot act on the reply has to re-arm or the operation
-// stays tracked and is never resent. Writing the maps here would undo a
-// concurrent cleanupForAppID, and a timer for a SURB ID that is no longer mapped
-// is harmless because enqueueResend drops it.
-//
-// The pointer pushed is the one the message holds, read under replyLock, because
-// TimerQueue.Cancel matches on pointer identity and cleanupForAppID cancels with
-// arqMessage.SURBID. Pushing any other pointer with the same bytes would leave an
-// entry that cleanup cannot cancel.
 func (d *Daemon) rearmARQRetry(arqMessage *ARQMessage) {
 	if arqMessage == nil || d.arqTimerQueue == nil {
 		return
@@ -943,10 +922,6 @@ func (d *Daemon) rearmARQRetry(arqMessage *ARQMessage) {
 	d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
 }
 
-// rearmOrphanedResend takes a SURB ID that was still queued on a connection when
-// it went away and puts its operation back on the timer, if it is still tracked.
-// The lookup is what keeps the canonical pointer: the channel holds whatever
-// pointer enqueueResend was given, which need not be the one the message holds.
 func (d *Daemon) rearmOrphanedResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	if surbID == nil {
 		return
@@ -1047,10 +1022,6 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		return
 	}
 
-	// The thin client may be away inside its grace period, which is not a reason
-	// to forget the query: pigeonhole.md has the client resend until it receives a
-	// reply. Re-arm and leave the maps alone, so a cleanupForAppID that has already
-	// run stays done.
 	incomingConn := d.listener.getConnection(message.AppID)
 	if incomingConn == nil {
 		d.log.Debugf("ARQ resend: no connection for AppID %x, re-arming SURB ID %x", message.AppID[:], surbID[:])

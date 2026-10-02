@@ -591,10 +591,6 @@ func (p *pki) pruneDocuments() {
 	}
 }
 
-// rotateMixKeys generates the keys for the coming epochs and prunes the expired
-// ones, reshadowing the crypto workers when either changed anything. Both calls
-// are idempotent, so running this every pass costs nothing when publication has
-// already done it.
 func (p *pki) rotateMixKeys(epoch uint64) error {
 	didGen, err := p.glue.MixKeys().Generate(epoch)
 	if err != nil {
@@ -607,12 +603,6 @@ func (p *pki) rotateMixKeys(epoch uint64) error {
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
-	// Rotate first, ahead of every early return below. Generate and Prune have no
-	// other call site, and this function gives up when advertising is off, when
-	// this epoch's descriptor is already posted and when the upload window has
-	// closed, so rotating further down meant an epoch that skipped publication
-	// destroyed no expired key and generated no new one. Three such epochs in a
-	// row leave no key for the current epoch and the node refuses every packet.
 	rotateEpoch, _, _ := epochtime.Now()
 	if err := p.rotateMixKeys(rotateEpoch + 1); err != nil {
 		p.log.Errorf("Failed to rotate mix keys for epoch %d: %s", rotateEpoch+1, strconv.QuoteToASCII(err.Error()))

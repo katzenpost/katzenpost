@@ -15,8 +15,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
-// populatedLayers builds n layers each holding perLayer placeholder nodes, so a
-// test says explicitly whether it means to satisfy the per-layer floor or not.
 func populatedLayers(n, perLayer int) []config.Layer {
 	layers := make([]config.Layer, n)
 	for i := range layers {
@@ -54,12 +52,6 @@ func TestFixupAndValidateRejectsLayerCountMismatch(t *testing.T) {
 	require.Contains(err.Error(), "Layers is 3 but the configured Topology has 2 layers")
 }
 
-// MinNodesPerLayer is the authority's own configured floor on how many mixes a
-// layer must hold (config.Debug), and nothing applies it per epoch: verifyTopology
-// enforces it but no caller reaches it. mixnet.md requires the layered topology
-// this rests on. Every layer of the scenario topology holds two
-// mixes, so withholding one mix descriptor leaves exactly one layer short
-// while the document stays well formed by IsDocumentWellFormed's weaker rule.
 func TestGetMyConsensusRefusesTopologyBelowMinimum(t *testing.T) {
 	require := require.New(t)
 	epoch, _, _ := epochtime.Now()
@@ -206,11 +198,6 @@ func TestGetMyConsensusSignsAtTheConfiguredMinimum(t *testing.T) {
 	}
 }
 
-// The per-layer floor has to be refused at startup, or an authority with a thin
-// pinned layer starts and then refuses to sign every epoch. The default has to be
-// resolved where the check runs: Debug is created empty during validation and its
-// defaults are applied later, so a check reading the field directly would compare
-// against zero and never fire.
 func TestConfigRefusesLayerBelowMinNodesPerLayer(t *testing.T) {
 	require := require.New(t)
 
@@ -225,17 +212,12 @@ func TestConfigRefusesLayerBelowMinNodesPerLayer(t *testing.T) {
 		return cfg
 	}
 
-	// A configured floor the pinned topology cannot meet.
 	err := build(1, 2).FixupAndValidate(true)
 	require.Error(err, "a layer below the configured minimum must be refused")
 	require.Contains(err.Error(), "fewer than MinNodesPerLayer 2")
 
-	// At the floor, accepted.
 	require.NoError(build(2, 2).FixupAndValidate(true), "a layer at the minimum must be accepted")
 
-	// An unset floor must resolve to the default where the check runs, not to
-	// zero: Debug is created empty during validation and its defaults are applied
-	// later, so a check reading the field directly would never fire.
 	err = build(1, 0).FixupAndValidate(true)
 	require.Error(err, "an unset minimum must resolve to the default, not to zero")
 	require.Contains(err.Error(), "fewer than MinNodesPerLayer 2")

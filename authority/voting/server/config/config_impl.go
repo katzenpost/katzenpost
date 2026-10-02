@@ -262,12 +262,6 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		} else if cfg.Debug.Layers != len(cfg.Topology.Layers) {
 			return fmt.Errorf("config: Debug: Layers is %d but the configured Topology has %d layers", cfg.Debug.Layers, len(cfg.Topology.Layers))
 		}
-		// A layer pinned with fewer nodes than the minimum can never satisfy the
-		// gate getMyConsensus now applies, so such an authority would start and
-		// then refuse to sign every epoch. Refuse at startup instead. The minimum
-		// is resolved here rather than read straight off Debug, because Debug is
-		// created empty just above and its defaults are applied later, so reading
-		// the field directly would compare against zero and never fire.
 		minPerLayer := cfg.Debug.MinNodesPerLayer
 		if minPerLayer <= 0 {
 			minPerLayer = defaultMinNodesPerLayer

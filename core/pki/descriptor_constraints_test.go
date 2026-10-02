@@ -42,10 +42,6 @@ func TestDescriptorRejectsEmptyKeys(t *testing.T) {
 	})
 }
 
-// A consumer cannot rely on the authority having filtered this: the authority
-// rejects contradictory role flags at upload, but a compromised one can sign a
-// document containing them, and getDocument's carving silently files such a
-// node as a gateway alone.
 func TestDescriptorRejectsContradictoryRoleFlags(t *testing.T) {
 	const epoch = 7
 	d := wellFormedDescriptor(epoch)
@@ -64,8 +60,6 @@ func wellFormedReplica(epoch uint64) *ReplicaDescriptor {
 	}
 }
 
-// Storage replicas go through their own validator, which had the same nil
-// rather than length check on both keys.
 func TestReplicaDescriptorRejectsEmptyKeys(t *testing.T) {
 	const epoch = 7
 	require.NoError(t, IsReplicaDescriptorWellFormed(wellFormedReplica(epoch), epoch),

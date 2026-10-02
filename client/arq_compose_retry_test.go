@@ -15,10 +15,6 @@ import (
 )
 
 // TestRescheduleARQAfterComposeFailureRotatesMaps covers the arqDoResend
-// call shape: the message is still keyed in arqSurbIDMap under the SURBID
-// whose timer just fired, and rescheduleARQAfterComposeFailure is expected
-// to delete that stale key, insert a fresh placeholder, update both maps,
-// and push the placeholder onto arqTimerQueue for a later retry.
 func TestRescheduleARQAfterComposeFailureRotatesMaps(t *testing.T) {
 	d := &Daemon{
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
@@ -64,10 +60,6 @@ func TestRescheduleARQAfterComposeFailureRotatesMaps(t *testing.T) {
 }
 
 // TestRescheduleARQAfterComposeFailureWithDeletedMapEntry covers the
-// handlePigeonholeARQReply / handlePayloadReply call shape: by the time
-// the retry branch runs, handleReply has already deleted the prior SURBID
-// from arqSurbIDMap and arqEnvelopeHashMap. The helper must tolerate the
-// missing old entry and still register the placeholder and timer.
 func TestRescheduleARQAfterComposeFailureDoesNotResurrectRemoved(t *testing.T) {
 	d := &Daemon{
 		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
@@ -82,13 +74,6 @@ func TestRescheduleARQAfterComposeFailureDoesNotResurrectRemoved(t *testing.T) {
 	envHash := &[32]byte{}
 	copy(envHash[:], []byte("envelope-hash-exactly-32-bytes!!"))
 
-	// A message that still points at a SURB ID the maps no longer hold. This used
-	// to be described as the state handleReply left behind, and the reschedule was
-	// expected to re-register it. handleReply no longer removes the ARQ entries for
-	// an ARQ reply, which TestHandleReplyLeavesMapsIntactForARQReply pins, so the
-	// only things that remove an entry now are a cancel, a terminal claim and
-	// cleanupForAppID. Each of those is deliberate, and re-registering here would
-	// undo it.
 	arqMessage := &ARQMessage{
 		EnvelopeHash: envHash,
 		SURBID:       staleSurbID,

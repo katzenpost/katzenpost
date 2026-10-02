@@ -57,8 +57,6 @@ func arqTracked(d *Daemon, m *ARQMessage) int {
 	return n
 }
 
-// A cancel and a terminal reply both try to end the same operation. Exactly one
-// of them may answer the original query, so the claim has to be exclusive.
 func TestClaimARQTerminalIsExclusive(t *testing.T) {
 	l := newSchedulerListener()
 	d, _ := newARQTestDaemon(t, l)
@@ -70,9 +68,6 @@ func TestClaimARQTerminalIsExclusive(t *testing.T) {
 	require.Equal(t, 0, arqTracked(d, m), "a claimed operation is removed from both maps")
 }
 
-// pigeonhole.md: clients MUST resend identical CourierEnvelope bodies until they
-// receive a reply. A thin client that is away within its grace period has not
-// received one, so the operation must survive and stay scheduled.
 func TestARQResendKeepsOperationWhileClientIsAway(t *testing.T) {
 	l := newSchedulerListener()
 	d, armed := newARQTestDaemon(t, l)
@@ -87,9 +82,6 @@ func TestARQResendKeepsOperationWhileClientIsAway(t *testing.T) {
 		"the operation must stay scheduled for a later retry")
 }
 
-// The same rule applies when a reply arrives while the client is away:
-// handleReply has already cancelled the retry, so returning without
-// rescheduling would leave the operation tracked and never resent.
 func TestARQReplyWhileClientIsAwayReschedules(t *testing.T) {
 	l := newSchedulerListener()
 	d, armed := newARQTestDaemon(t, l)
@@ -104,10 +96,6 @@ func TestARQReplyWhileClientIsAwayReschedules(t *testing.T) {
 		"a reply that cannot be delivered must leave a retry scheduled")
 }
 
-// The claim has to be exclusive under contention, not merely in sequence: a
-// cancel and a terminal reply can run on different goroutines, and exactly one of
-// them may answer the original query. Running the two concurrently is what
-// distinguishes an exclusive claim from a check followed by a delete.
 func TestClaimARQTerminalIsExclusiveUnderContention(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		l := newSchedulerListener()
