@@ -1,5 +1,6 @@
 
 include $(dir $(lastword $(MAKEFILE_LIST)))ci.mk
+include $(dir $(lastword $(MAKEFILE_LIST)))packaging/debian/targets.mk
 
 .PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
 

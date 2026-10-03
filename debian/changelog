@@ -1,0 +1,5 @@
+katzenpost (0.0.104) unstable; urgency=medium
+
+  * Package kpclientd, the Katzenpost thin client daemon.
+
+ -- Katzenpost <packages@katzenpost.network>  Fri, 03 Oct 2026 09:12:00 +0200

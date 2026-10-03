@@ -1,0 +1,19 @@
+[Unit]
+Description=Katzenpost voting directory authority %i
+Documentation=https://katzenpost.network/docs/admin_guide/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=katzenpost
+Group=katzenpost
+ExecStart=/usr/bin/kpdirauth -f /etc/katzenpost/authority/%i.toml
+StateDirectory=katzenpost/authority/%i
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=multi-user.target

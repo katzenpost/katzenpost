@@ -1,0 +1,19 @@
+[Unit]
+Description=Katzenpost pigeonhole storage replica %i
+Documentation=https://katzenpost.network/docs/admin_guide/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=katzenpost
+Group=katzenpost
+ExecStart=/usr/bin/kpreplica -f /etc/katzenpost/replica/%i.toml
+StateDirectory=katzenpost/replica/%i
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=multi-user.target
