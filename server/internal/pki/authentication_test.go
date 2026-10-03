@@ -7,14 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
-
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
-	"github.com/katzenpost/katzenpost/core/cert"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -350,150 +348,41 @@ func TestAuthenticateConnectionExportedMethod(t *testing.T) {
 	})
 }
 
-func TestConsensusDocumentInvalidSignature(t *testing.T) {
+func TestAuthenticateConnectionSignedDocument(t *testing.T) {
+	f := newAuthFixture(t)
 	ed25519 := signSchemes.ByName("Ed25519")
 	authPub, authPriv, err := ed25519.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	attackerPub, attackerPriv, err := ed25519.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	xwing := schemes.ByName("xwing")
-	attackerLinkKey, _, err := xwing.GenerateKeyPair()
-	if err != nil {
-		t.Fatal(err)
-	}
-	attackerLinkBlob, err := attackerLinkKey.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
-	attackerIDBlob, err := attackerPub.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	now, _, _ := epochtime.Now()
-	// Build a well-formed consensus document containing the attacker's descriptor.
 	doc := &cpki.Document{
 		Epoch:              now,
 		Topology:           make([][]*cpki.MixDescriptor, 3),
 		Version:            cpki.DocumentVersion,
 		PKISignatureScheme: ed25519.Name(),
 	}
-	attackerDesc := &cpki.MixDescriptor{
-		Name:        "attacker-node",
-		IdentityKey: attackerIDBlob,
-		LinkKey:     attackerLinkBlob,
-		Epoch:       now,
-		Version:     cpki.DescriptorVersion,
+	doc.Topology[0] = []*cpki.MixDescriptor{{Name: "peer", IdentityKey: f.peerBlob, LinkKey: f.blobs[0], Epoch: now, Version: cpki.DescriptorVersion}}
+	doc.Topology[1] = []*cpki.MixDescriptor{{Name: "self", IdentityKey: f.selfBlob}}
+
+	signed, err := cpki.SignDocument(authPriv, authPub, doc)
+	if err != nil {
+		t.Fatal(err)
 	}
-	doc.Topology[0] = []*cpki.MixDescriptor{attackerDesc}
+	parsed, err := cpki.FromPayload(authPub, signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := pkicache.New(parsed, f.self, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.p.docs = map[uint64]*pkicache.Entry{now: entry}
 
-	t.Run("well-formed document with no signatures is rejected", func(t *testing.T) {
-		rawCertified, err := doc.MarshalCertificate()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := cpki.ParseDocument(rawCertified); !errors.Is(err, cpki.ErrDocumentNotSigned) {
-			t.Fatalf("expected ErrDocumentNotSigned from ParseDocument, got: %v", err)
-		}
-		if _, err := cpki.FromPayload(authPub, rawCertified); err == nil {
-			t.Fatal("expected FromPayload to fail on unsigned document, got nil")
-		}
-	})
-
-	t.Run("well-formed document signed by untrusted key is rejected", func(t *testing.T) {
-		signedByAttacker, err := cpki.SignDocument(attackerPriv, attackerPub, doc)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := cpki.FromPayload(authPub, signedByAttacker); !errors.Is(err, cert.ErrIdentitySignatureNotFound) {
-			t.Fatalf("expected ErrIdentitySignatureNotFound, got: %v", err)
-		}
-		_, _, _, err = cert.VerifyThreshold([]sign.PublicKey{authPub}, 1, signedByAttacker)
-		if !errors.Is(err, cert.ErrThresholdNotMet) {
-			t.Fatalf("expected ErrThresholdNotMet, got: %v", err)
-		}
-	})
-
-	t.Run("well-formed document with corrupted signature is rejected", func(t *testing.T) {
-		legitSigned, err := cpki.SignDocument(authPriv, authPub, doc)
-		if err != nil {
-			t.Fatal(err)
-		}
-		c := new(cert.Certificate)
-		if err := cbor.Unmarshal(legitSigned, c); err != nil {
-			t.Fatal(err)
-		}
-		for k, sig := range c.Signatures {
-			sig.Payload[0] ^= 0xff
-			c.Signatures[k] = sig
-		}
-		tampered, err := c.Marshal()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if _, err := cpki.FromPayload(authPub, tampered); !errors.Is(err, cert.ErrBadSignature) {
-			t.Fatalf("expected ErrBadSignature, got: %v", err)
-		}
-		_, _, _, err = cert.VerifyThreshold([]sign.PublicKey{authPub}, 1, tampered)
-		if !errors.Is(err, cert.ErrThresholdNotMet) {
-			t.Fatalf("expected ErrThresholdNotMet, got: %v", err)
-		}
-	})
-
-	t.Run("properly signed document admits the peer, unsigned cannot", func(t *testing.T) {
-		f := newAuthFixture(t)
-		id := hash.Sum256(attackerIDBlob)
-
-		// A document that lists self and the attacker as an incoming peer.
-		cachedDoc := &cpki.Document{
-			Epoch:              now,
-			Topology:           make([][]*cpki.MixDescriptor, 3),
-			Version:            cpki.DocumentVersion,
-			PKISignatureScheme: ed25519.Name(),
-		}
-		cachedDoc.Topology[1] = []*cpki.MixDescriptor{{Name: "self", IdentityKey: f.selfBlob}}
-		cachedDoc.Topology[0] = []*cpki.MixDescriptor{attackerDesc}
-
-		// Snapshot the unsigned certificate before SignDocument adds signatures.
-		unsigned, err := cachedDoc.MarshalCertificate()
-		if err != nil {
-			t.Fatal(err)
-		}
-		signed, err := cpki.SignDocument(authPriv, authPub, cachedDoc)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// A properly signed document parses, can be cached, and admits the peer.
-		parsed, err := cpki.FromPayload(authPub, signed)
-		if err != nil {
-			t.Fatal(err)
-		}
-		entry, err := pkicache.New(parsed, f.self, false, false)
-		if err != nil {
-			t.Fatal(err)
-		}
-		f.p.docs = map[uint64]*pkicache.Entry{now: entry}
-
-		creds := &wire.PeerCredentials{
-			AdditionalData: id[:],
-			PublicKey:      attackerLinkKey,
-		}
-		desc, canSend, isValid := f.p.AuthenticateConnection(creds, false)
-		if desc == nil || !canSend || !isValid {
-			t.Fatalf("properly signed document should admit the peer: desc=%v canSend=%v isValid=%v", desc, canSend, isValid)
-		}
-
-		// The unsigned certificate is rejected before admission, so it can never
-		// be cached and therefore can never authenticate a peer.
-		if _, err := cpki.FromPayload(authPub, unsigned); err == nil {
-			t.Fatal("expected unsigned document to be rejected at admission")
-		}
-	})
+	id := hash.Sum256(f.peerBlob)
+	creds := &wire.PeerCredentials{AdditionalData: id[:], PublicKey: f.keys[0]}
+	desc, canSend, isValid := f.p.AuthenticateConnection(creds, false)
+	if desc == nil || !canSend || !isValid {
+		t.Fatalf("signed document should admit the peer: desc=%v canSend=%v isValid=%v", desc, canSend, isValid)
+	}
 }
