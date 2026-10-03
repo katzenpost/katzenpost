@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+
+export GOFLAGS := -trimpath -buildvcs=false
+export SOURCE_DATE_EPOCH ?= $(shell dpkg-parsechangelog -STimestamp)
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE) all
+	cd cmd/kpconfig && go build -trimpath -ldflags "-s -w"
+
+override_dh_auto_test:
+	:
+
+override_dh_auto_install:
+	install -d debian/katzenpost/usr/bin
+	for d in cmd/*/; do \
+		b=$$(basename $$d); \
+		test -x $$d$$b || continue; \
+		case $$b in \
+		kp*) n=$$b ;; \
+		*) n=kp$$b ;; \
+		esac; \
+		install -m0755 $$d$$b debian/katzenpost/usr/bin/$$n; \
+	done
+
+override_dh_auto_clean:
+	for d in cmd/*/; do rm -f $$d$$(basename $$d); done
+
+override_dh_install:
+	dh_install
+	dh_installsysusers
+
+override_dh_installsystemduser:
+	dh_installsystemduser --no-enable --name=kpclientd
+
+override_dh_installsystemd:
+	dh_installsystemd --no-enable --no-start --name=kpclientd
+	dh_installsystemd --no-enable --no-start --name=kpserver@
+	dh_installsystemd --no-enable --no-start --name=kpauthority@
+	dh_installsystemd --no-enable --no-start --name=kpreplica@
