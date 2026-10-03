@@ -752,7 +752,7 @@ $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 # _base and _rust image/stamp. An interrupted `make -j test-distros` may
 # also leave orphan containers behind, so sweep those too.
 STAMP_DISTROS=$(sort $(patsubst %_base.stamp,%,$(wildcard *_base.stamp)) $(patsubst %_go_mod.stamp,%,$(wildcard *_go_mod.stamp)) $(patsubst %_rust.stamp,%,$(wildcard *_rust.stamp)))
-CACHE_DISTROS=$(sort $(patsubst cache/go-build-%,%,$(wildcard cache/go-build-*)) $(patsubst cache/cargo-home-%,%,$(wildcard cache/cargo-home-*)) $(patsubst cache/cargo-target-%,%,$(wildcard cache/cargo-target-*)))
+CACHE_DISTROS=$(sort $(patsubst $(cache_dir)/go-build-%,%,$(wildcard $(cache_dir)/go-build-*)) $(patsubst $(cache_dir)/cargo-home-%,%,$(wildcard $(cache_dir)/cargo-home-*)) $(patsubst $(cache_dir)/cargo-target-%,%,$(wildcard $(cache_dir)/cargo-target-*)))
 KNOWN_DISTROS=$(sort $(DISTROS) $(STAMP_DISTROS) $(CACHE_DISTROS))
 
 clean-images: stop
