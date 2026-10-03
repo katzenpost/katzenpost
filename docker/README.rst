@@ -211,8 +211,8 @@ second build of any distro is fast:
 
 Set ``cache_dir`` to keep the cache outside the checkout, for example
 ``make cache_dir=/var/tmp/katzenpost-cache``. Several checkouts can then share
-one cache, and it is easy to wipe; the client docker tests use the same
-setting.
+one cache, and ``make clean-caches`` wipes it; the client docker tests use
+the same setting.
 
 The Go toolchain version is the single source of truth in ``go.mod``; the base
 Dockerfiles receive it as a ``GO_VERSION`` build arg and fail-fast if it is not

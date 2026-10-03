@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-combo client-check
+.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-combo client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -796,9 +796,13 @@ clean-bin: stop
 # clean, so this depends on `stop` (not `clean-bin`) to avoid a redundant
 # rm.
 clean-local: stop
+	-$(docker) pod rm -f pod_$(compose_project_name) >/dev/null 2>&1
 	rm -f .base_port_seed
 	git clean -f -x $(net_name)
 	git status .
+
+clean-caches:
+	[ ! -d $(cache_dir) ] || $(docker) run --rm -v $(abspath $(cache_dir)):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
 
 clean-local-dryrun:
 	git clean -n -x $(net_name)
@@ -812,12 +816,7 @@ clean: stop-all
 	# plain untracked directory.
 	git clean -fdx voting_mixnet
 	$(MAKE) clean-images
-	# The go module cache is intentionally written read-only (dirs 0555,
-	# files 0444), so only a root-capable process can wipe it: even the
-	# owning host user cannot delete files inside read-only directories.
-	# Run the wipe in a throwaway alpine container (rootless podman maps
-	# its uid 0 to the invoking user with full capabilities in-namespace).
-	$(docker) run --rm -v $(abspath $(cache_dir)):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
+	$(MAKE) clean-caches
 	-$(docker) ps -a|grep katzenpost|cat
 	-$(docker) images|grep katzenpost|cat
 
