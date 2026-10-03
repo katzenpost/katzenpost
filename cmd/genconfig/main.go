@@ -171,6 +171,8 @@ performance optimization and security requirements.`,
 	cmd.Flags().IntVar(&cfg.ProxyRequestTimeout, "proxyRequestTimeout", 0,
 		"proxy request timeout in seconds per replica (0 for auto-derived from MKEM ops/sec)")
 
+	cmd.Flags().StringVar(&cfg.DBusName, "dbusName", "",
+		"session dbus name written into the generated kpclientd client.toml (empty owns none)")
 	cmd.Flags().DurationVar(&cfg.SessionGracePeriod, "sessionGracePeriod", 0,
 		"how long kpclientd preserves per-app state after a thin-client disconnect "+
 			"before reaping it (0 means use the daemon's built-in default of 10 minutes; "+
