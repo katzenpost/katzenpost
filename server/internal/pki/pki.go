@@ -924,26 +924,10 @@ func (p *pki) usableKeyBlob(k kem.PublicKey) (blob []byte, ok bool) {
 	return b, true
 }
 
-func (p *pki) isUnusableKey(k kem.PublicKey) bool {
-	_, ok := p.usableKeyBlob(k)
-	return !ok
-}
-
 // AuthenticateConnection authenticates a link key against the PKI documents,
 // returning the newest direction-eligible descriptor and whether the peer may
 // send traffic.
 func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (*cpki.MixDescriptor, bool, bool) {
-	if c == nil || p.isUnusableKey(c.PublicKey) {
-		return nil, false, false
-	}
-	if len(c.AdditionalData) != sConstants.NodeIDLength {
-		dirStr := "Incoming"
-		if isOutgoing {
-			dirStr = "Outgoing"
-		}
-		p.log.Debugf("%v: %x AD not an IdentityKey?.", dirStr, c.AdditionalData)
-		return nil, false, false
-	}
 	docs, nowDoc, now, till := p.documentsForAuthentication()
 	return p.authenticateConnectionWithDocs(c, isOutgoing, docs, nowDoc, now, till)
 }
@@ -953,7 +937,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 // The caller must provide a valid snapshot where docs are ordered newest-first,
 // nowDoc is the entry for epoch now (or nil if missing), the now+1 entry is
 // present only within the early-connect window, and past entries cover up to
-// NumMixKeys previous epochs.
+// NumMixKeys-1 previous epochs.
 func (p *pki) authenticateConnectionWithDocs(c *wire.PeerCredentials, isOutgoing bool, docs []*pkicache.Entry, nowDoc *pkicache.Entry, now uint64, till time.Duration) (desc *cpki.MixDescriptor, canSend, isValid bool) {
 	if c == nil {
 		return nil, false, false
