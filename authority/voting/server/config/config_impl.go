@@ -256,6 +256,17 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	if cfg.Debug == nil {
 		cfg.Debug = &Debug{}
 	}
+	if cfg.Topology != nil {
+		minPerLayer := cfg.Debug.MinNodesPerLayer
+		if minPerLayer <= 0 {
+			minPerLayer = defaultMinNodesPerLayer
+		}
+		for i, layer := range cfg.Topology.Layers {
+			if len(layer.Nodes) < minPerLayer {
+				return fmt.Errorf("config: Topology: layer %d has %d nodes, fewer than MinNodesPerLayer %d", i, len(layer.Nodes), minPerLayer)
+			}
+		}
+	}
 
 	// Validate and fixup the various sections.
 	if err := cfg.Server.validate(); err != nil {

@@ -63,7 +63,7 @@ func TestEnqueueResendNeverLoses(t *testing.T) {
 	require.Len(t, a.resendCh, resendBuf)
 	// Every remaining attempt must be queued for retry on the timer —
 	// nothing silently dropped. With the TimerQueue worker unstarted, the
-	// re-armed items sit in the push channel rather than the internal heap.
+	// re-armed items sit on the queue's pending list, not the internal heap.
 	require.Equal(t, numResends-resendBuf, d.arqTimerQueue.PushChLen(),
 		"all resends that could not enter resendCh must be re-armed, none dropped")
 }

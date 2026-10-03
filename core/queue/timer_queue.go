@@ -24,20 +24,16 @@ type TimerQueue struct {
 	mutex  sync.RWMutex
 	action func(interface{})
 
-	pushCh chan *pushedItem
+	pending []*pushedItem
+	wakeCh  chan struct{}
 }
 
 func NewTimerQueue(action func(interface{})) *TimerQueue {
-	// NOTE(david): pushCh is a buffered channel that sits between
-	// the worker goroutine and the goroutine which
-	// calls our Push method. It needs to be a buffered
-	// channel in case a Push happens while the worker
-	// isn't blocking on it's select statement's timer channel.
 	return &TimerQueue{
 		timer:  time.NewTimer(0),
 		queue:  New(),
 		action: action,
-		pushCh: make(chan *pushedItem, 100),
+		wakeCh: make(chan struct{}, 1),
 	}
 }
 
@@ -63,10 +59,11 @@ func (t *TimerQueue) Len() int {
 	return t.queue.Len()
 }
 
-// Cancel removes the first queued entry whose Value is equal to the supplied
-// value (Go == comparison, which for pointer values is pointer identity), and
-// returns true if an entry was removed. Entries already popped by the worker
-// are not cancellable; callers that need to defend against the
+// Cancel removes the first entry whose Value is equal to the supplied value
+// (Go == comparison, which for pointer values is pointer identity), whether
+// the worker has moved it into the heap yet or not, and returns true if an
+// entry was removed. Entries already popped by the worker are not
+// cancellable; callers that need to defend against the
 // popped-but-action-not-yet-run race must handle that at the action callback.
 func (t *TimerQueue) Cancel(value interface{}) bool {
 	t.mutex.Lock()
@@ -81,29 +78,45 @@ func (t *TimerQueue) Cancel(value interface{}) bool {
 			return true
 		}
 	}
+	for i, item := range t.pending {
+		if item.value == value {
+			t.pending = append(t.pending[:i], t.pending[i+1:]...)
+			return true
+		}
+	}
 	return false
 }
 
 func (t *TimerQueue) Push(priority uint64, value interface{}) {
 	select {
-	case t.pushCh <- &pushedItem{
+	case <-t.HaltCh():
+		return
+	default:
+	}
+	t.mutex.Lock()
+	t.pending = append(t.pending, &pushedItem{
 		priority: priority,
 		value:    value,
-	}:
-	case <-t.HaltCh():
+	})
+	t.mutex.Unlock()
+	select {
+	case t.wakeCh <- struct{}{}:
+	default:
 	}
 }
 
-// PushChLen reports the number of items presently buffered in the push
-// channel waiting to be ingested by the worker. Intended for tests that
-// wish to assert "items were pushed but the worker has not yet drained
-// them"; production callers should not depend on this value.
+// PushChLen reports the number of items Push has accepted that the worker has
+// not yet moved into the heap. Intended for tests that wish to assert "items
+// were pushed but the worker has not yet drained them"; production callers
+// should not depend on this value.
 func (t *TimerQueue) PushChLen() int {
-	return len(t.pushCh)
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+	return len(t.pending)
 }
 
 // EnqueueDirect inserts an entry directly into the internal heap,
-// bypassing the push channel and any worker buffering. Intended for
+// bypassing the pending list and any worker buffering. Intended for
 // tests that wish to populate the heap without running the worker.
 // Holds the queue's write lock for the duration of the call.
 func (t *TimerQueue) EnqueueDirect(priority uint64, value interface{}) {
@@ -140,9 +153,12 @@ func (t *TimerQueue) worker() {
 					}
 				}(m.Value)
 			}
-		case item := <-t.pushCh:
+		case <-t.wakeCh:
 			t.mutex.Lock()
-			t.queue.Enqueue(item.priority, item.value)
+			for _, item := range t.pending {
+				t.queue.Enqueue(item.priority, item.value)
+			}
+			t.pending = nil
 			t.mutex.Unlock()
 		}
 
