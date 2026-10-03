@@ -60,8 +60,16 @@ ci-local-image-shell: ci-local-image
 	  -v "$(CI_SOCKET):$(CI_SOCKET)" -e DOCKER_HOST="$(CI_DAEMON_SOCKET)" \
 	  --entrypoint /bin/bash $(CI_IMAGE)
 
+# On exit, stop only the testnets this run brought up; one that was already
+# running before the run is left alone.
 ci-local-run:
-	@runner="$(RUNNER)"; \
+	@up_before=" $$(echo docker/mixnet-*/running.stamp) "; \
+	trap 'for d in docker/mixnet-*/; do d=$${d%/}; \
+	  case "$$up_before" in *" $$d/running.stamp "*) continue;; esac; \
+	  if [ -d "$$d" ]; then $(MAKE) -C docker distro=$${d#docker/mixnet-} stop >/dev/null 2>&1 || true; fi; \
+	done' EXIT; \
+	trap 'exit 130' INT; trap 'exit 143' TERM; \
+	runner="$(RUNNER)"; \
 	if [ -z "$$runner" ]; then \
 	  for candidate in $(CI_RUNNERS); do \
 	    command -v "$$candidate" >/dev/null 2>&1 && { runner="$$candidate"; break; }; \

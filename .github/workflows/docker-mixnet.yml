@@ -94,6 +94,7 @@ jobs:
           podman compose logs --tail 30 replica1 replica2 replica3 replica4 2>&1 | tail -100
 
       - name: Stop the mixnet
+        if: always()
         run: |
           cd docker && make stop
 

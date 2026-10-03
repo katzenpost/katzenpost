@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-combo client-check
+.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-combo client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -162,7 +162,7 @@ compose_network_name = $(subst .,,$(compose_project_name))_katzenpost-net
 # bash is installed in every base image (alpine, debian, ubuntu), so a
 # single shell covers all distros.
 sh?=bash
-cache_dir=cache
+cache_dir?=cache
 dockertest_race?=-race
 dockertest_timeout?=1h
 dockertest_parallel?=5
@@ -366,8 +366,8 @@ else
   replace_name= --name
   i_if_podman=
 endif
-docker_args_common=-v $(shell readlink -f .)/$(go_mod_cache):/go/ \
-	-v $(shell readlink -f .)/$(go_build_cache):/gocache/ \
+docker_args_common=-v $(abspath $(go_mod_cache)):/go/ \
+	-v $(abspath $(go_build_cache)):/gocache/ \
 	-e GOCACHE=/gocache -e GOPATH=/go --pids-limit 4096
 docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost $(docker_args_common)
 
@@ -752,7 +752,7 @@ $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 # _base and _rust image/stamp. An interrupted `make -j test-distros` may
 # also leave orphan containers behind, so sweep those too.
 STAMP_DISTROS=$(sort $(patsubst %_base.stamp,%,$(wildcard *_base.stamp)) $(patsubst %_go_mod.stamp,%,$(wildcard *_go_mod.stamp)) $(patsubst %_rust.stamp,%,$(wildcard *_rust.stamp)))
-CACHE_DISTROS=$(sort $(patsubst cache/go-build-%,%,$(wildcard cache/go-build-*)) $(patsubst cache/cargo-home-%,%,$(wildcard cache/cargo-home-*)) $(patsubst cache/cargo-target-%,%,$(wildcard cache/cargo-target-*)))
+CACHE_DISTROS=$(sort $(patsubst $(cache_dir)/go-build-%,%,$(wildcard $(cache_dir)/go-build-*)) $(patsubst $(cache_dir)/cargo-home-%,%,$(wildcard $(cache_dir)/cargo-home-*)) $(patsubst $(cache_dir)/cargo-target-%,%,$(wildcard $(cache_dir)/cargo-target-*)))
 KNOWN_DISTROS=$(sort $(DISTROS) $(STAMP_DISTROS) $(CACHE_DISTROS))
 
 clean-images: stop
@@ -796,9 +796,19 @@ clean-bin: stop
 # clean, so this depends on `stop` (not `clean-bin`) to avoid a redundant
 # rm.
 clean-local: stop
+	-$(docker) pod rm -f pod_$(compose_project_name) >/dev/null 2>&1
 	rm -f .base_port_seed
 	git clean -f -x $(net_name)
 	git status .
+
+# The go module cache is intentionally written read-only (dirs 0555,
+# files 0444), so only a root-capable process can wipe it: even the
+# owning host user cannot delete files inside read-only directories.
+# Run the wipe in a throwaway alpine container (rootless podman maps
+# its uid 0 to the invoking user with full capabilities in-namespace).
+clean-caches:
+	$(if $(strip $(cache_dir)),,$(error cache_dir is empty))
+	[ ! -d $(cache_dir) ] || $(docker) run --rm -v $(abspath $(cache_dir)):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
 
 clean-local-dryrun:
 	git clean -n -x $(net_name)
@@ -812,12 +822,7 @@ clean: stop-all
 	# plain untracked directory.
 	git clean -fdx voting_mixnet
 	$(MAKE) clean-images
-	# The go module cache is intentionally written read-only (dirs 0555,
-	# files 0444), so only a root-capable process can wipe it: even the
-	# owning host user cannot delete files inside read-only directories.
-	# Run the wipe in a throwaway alpine container (rootless podman maps
-	# its uid 0 to the invoking user with full capabilities in-namespace).
-	$(docker) run --rm -v $(shell readlink -f .)/$(cache_dir):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
+	$(MAKE) clean-caches
 	-$(docker) ps -a|grep katzenpost|cat
 	-$(docker) images|grep katzenpost|cat
 
@@ -902,8 +907,8 @@ $(net_name)/pigeonhole-cp.$(distro): $(distro)_rust.stamp thin-client-sync | $(n
 		echo "error: no Cargo.toml at $(thin_client_dir). Set thin_client_dir to a thin_client checkout or run 'make thin-client-sync'."; exit 1; \
 	fi
 	$(docker) run --rm ${docker_args} ${thin_client_mount} \
-		-v $(shell readlink -f .)/$(cargo_home):/cargo-home \
-		-v $(shell readlink -f .)/$(cargo_target):/cargo-target \
+		-v $(abspath $(cargo_home)):/cargo-home \
+		-v $(abspath $(cargo_target)):/cargo-target \
 		-e CARGO_HOME=/cargo-home \
 		katzenpost-$(distro)_rust \
 		bash -c "cd /go/thin_client && cargo build --release --bin pigeonhole-cp --features cli --target-dir /cargo-target"
