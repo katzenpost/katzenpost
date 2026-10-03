@@ -801,7 +801,13 @@ clean-local: stop
 	git clean -f -x $(net_name)
 	git status .
 
+# The go module cache is intentionally written read-only (dirs 0555,
+# files 0444), so only a root-capable process can wipe it: even the
+# owning host user cannot delete files inside read-only directories.
+# Run the wipe in a throwaway alpine container (rootless podman maps
+# its uid 0 to the invoking user with full capabilities in-namespace).
 clean-caches:
+	$(if $(strip $(cache_dir)),,$(error cache_dir is empty))
 	[ ! -d $(cache_dir) ] || $(docker) run --rm -v $(abspath $(cache_dir)):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
 
 clean-local-dryrun:
