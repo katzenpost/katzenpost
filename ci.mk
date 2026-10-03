@@ -61,7 +61,8 @@ ci-local-image-shell: ci-local-image
 	  --entrypoint /bin/bash $(CI_IMAGE)
 
 ci-local-run:
-	@runner="$(RUNNER)"; \
+	@trap '$(MAKE) -C docker stop-all >/dev/null 2>&1' EXIT INT TERM; \
+	runner="$(RUNNER)"; \
 	if [ -z "$$runner" ]; then \
 	  for candidate in $(CI_RUNNERS); do \
 	    command -v "$$candidate" >/dev/null 2>&1 && { runner="$$candidate"; break; }; \
