@@ -264,7 +264,8 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 	copy(nodeID[:], c.AdditionalData)
 	blob, err := c.PublicKey.MarshalBinary()
 	if err != nil {
-		panic(err)
+		p.GetLogger().Errorf("AuthenticateReplicaConnection: failed to marshal peer public key: %s", err)
+		return nil, false
 	}
 	if replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID); isReplica {
 		if hmac.Equal(replicaDesc.LinkKey, blob) {

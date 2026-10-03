@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
@@ -901,7 +902,62 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 	return s, nowDoc, now, till
 }
 
-func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (desc *cpki.MixDescriptor, canSend, isValid bool) {
+// usableKeyBlob returns the marshaled form of k, or ok=false if k is nil, a
+// typed-nil whose MarshalBinary panics, fails to marshal, or marshals to an
+// empty blob. Untrusted key material is treated as unusable rather than allowed
+// to crash the server. A recovered panic is logged so that a bug in a scheme's
+// MarshalBinary cannot present as a silent authentication failure.
+func (p *pki) usableKeyBlob(k kem.PublicKey) (blob []byte, ok bool) {
+	if k == nil {
+		return nil, false
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			p.log.Warningf("recovered panic while marshaling peer public key: %v", r)
+			blob, ok = nil, false
+		}
+	}()
+	b, err := k.MarshalBinary()
+	if err != nil || len(b) == 0 {
+		return nil, false
+	}
+	return b, true
+}
+
+func (p *pki) isUnusableKey(k kem.PublicKey) bool {
+	_, ok := p.usableKeyBlob(k)
+	return !ok
+}
+
+// AuthenticateConnection authenticates a link key against the PKI documents,
+// returning the newest direction-eligible descriptor and whether the peer may
+// send traffic.
+func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (*cpki.MixDescriptor, bool, bool) {
+	if c == nil || p.isUnusableKey(c.PublicKey) {
+		return nil, false, false
+	}
+	if len(c.AdditionalData) != sConstants.NodeIDLength {
+		dirStr := "Incoming"
+		if isOutgoing {
+			dirStr = "Outgoing"
+		}
+		p.log.Debugf("%v: %x AD not an IdentityKey?.", dirStr, c.AdditionalData)
+		return nil, false, false
+	}
+	docs, nowDoc, now, till := p.documentsForAuthentication()
+	return p.authenticateConnectionWithDocs(c, isOutgoing, docs, nowDoc, now, till)
+}
+
+// authenticateConnectionWithDocs evaluates an authentication snapshot independent of
+// the wall clock so transition behavior can be tested deterministically.
+// The caller must provide a valid snapshot where docs are ordered newest-first,
+// nowDoc is the entry for epoch now (or nil if missing), the now+1 entry is
+// present only within the early-connect window, and past entries cover up to
+// NumMixKeys previous epochs.
+func (p *pki) authenticateConnectionWithDocs(c *wire.PeerCredentials, isOutgoing bool, docs []*pkicache.Entry, nowDoc *pkicache.Entry, now uint64, till time.Duration) (desc *cpki.MixDescriptor, canSend, isValid bool) {
+	if c == nil {
+		return nil, false, false
+	}
 	var earlySendSlack = epochtime.Period / 8
 
 	dirStr := "Incoming"
@@ -918,9 +974,13 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
-	// Iterate over whatever documents we happen to have for the epochs
-	// [now+1, now, now-1, now-2].
-	docs, nowDoc, now, till := p.documentsForAuthentication()
+	blob, ok := p.usableKeyBlob(c.PublicKey)
+	if !ok {
+		p.log.Warningf("%v: failed to marshal peer public key", dirStr)
+		return nil, false, false
+	}
+
+	var newestKeyMatches bool
 	for _, d := range docs {
 		var m *cpki.MixDescriptor
 		switch isOutgoing {
@@ -935,19 +995,12 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		}
 
 		if desc == nil {
-			// This is the most recent descriptor we have.
 			desc = m
+			newestKeyMatches = hmac.Equal(desc.LinkKey, blob)
 		}
 
-		// The LinkKey that is being used for authentication should
-		// match what is listed in the descriptor in the document, or
-		// the most recent descriptor we have for the node.
-		blob, err := c.PublicKey.MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
 		if !hmac.Equal(m.LinkKey, blob) {
-			if desc == m || !hmac.Equal(m.LinkKey, blob) {
+			if !newestKeyMatches {
 				p.log.Warningf("%v: %x Public Key mismatch: %x", dirStr, c.AdditionalData, hash.Sum256(blob))
 				continue
 			}

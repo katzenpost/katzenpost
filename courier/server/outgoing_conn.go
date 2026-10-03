@@ -105,7 +105,8 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
-		panic(err)
+		c.log.Errorf("courier/outgoing: IsPeerValid(): failed to marshal peer public key: %s", err)
+		return false
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
 		peerName := getPeerName()
@@ -167,8 +168,11 @@ func (c *outgoingConn) worker() {
 		c.sender.Halt()
 	}()
 
-	dialCtx, dialer, dialCheckCreds := c.initializeWorker()
+	dialCtx, dialer, dialCheckCreds, ok := c.initializeWorker()
 	defer dialCtx.cancelFn()
+	if !ok {
+		return
+	}
 
 	c.runConnectionLoop(dialCtx, dialer, dialCheckCreds, retryIncrement, maxRetryDelay)
 }
@@ -180,7 +184,7 @@ type workerContext struct {
 }
 
 // initializeWorker sets up the dial context, dialer, and credentials for the worker
-func (c *outgoingConn) initializeWorker() (*workerContext, *net.Dialer, *wire.PeerCredentials) {
+func (c *outgoingConn) initializeWorker() (*workerContext, *net.Dialer, *wire.PeerCredentials, bool) {
 	dialCtx, cancelFn := context.WithCancel(context.Background())
 
 	dialer := &net.Dialer{
@@ -201,7 +205,8 @@ func (c *outgoingConn) initializeWorker() (*workerContext, *net.Dialer, *wire.Pe
 	identityHash := hash.Sum256(c.dst.IdentityKey)
 	linkPubKey, err := c.linkScheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 	if err != nil {
-		panic(err)
+		c.log.Errorf("courier/outgoing: failed to unmarshal link key for peer '%s': %s", c.dst.Name, err)
+		return &workerContext{dialCtx, cancelFn}, dialer, nil, false
 	}
 
 	dialCheckCreds := &wire.PeerCredentials{
@@ -209,7 +214,7 @@ func (c *outgoingConn) initializeWorker() (*workerContext, *net.Dialer, *wire.Pe
 		PublicKey:      linkPubKey,
 	}
 
-	return &workerContext{dialCtx, cancelFn}, dialer, dialCheckCreds
+	return &workerContext{dialCtx, cancelFn}, dialer, dialCheckCreds, true
 }
 
 // runConnectionLoop handles the main connection establishment loop
@@ -241,7 +246,8 @@ func (c *outgoingConn) validateAndUpdateDescriptor(dialCheckCreds *wire.PeerCred
 			c.dst = desc
 			linkPubKey, err := c.linkScheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 			if err != nil {
-				panic(err)
+				c.log.Errorf("courier/outgoing: failed to unmarshal link key for peer '%s': %s", c.dst.Name, err)
+				return false
 			}
 			dialCheckCreds.PublicKey = linkPubKey
 		}
