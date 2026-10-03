@@ -162,7 +162,7 @@ compose_network_name = $(subst .,,$(compose_project_name))_katzenpost-net
 # bash is installed in every base image (alpine, debian, ubuntu), so a
 # single shell covers all distros.
 sh?=bash
-cache_dir=cache
+cache_dir?=cache
 dockertest_race?=-race
 dockertest_timeout?=1h
 dockertest_parallel?=5
@@ -366,8 +366,8 @@ else
   replace_name= --name
   i_if_podman=
 endif
-docker_args_common=-v $(shell readlink -f .)/$(go_mod_cache):/go/ \
-	-v $(shell readlink -f .)/$(go_build_cache):/gocache/ \
+docker_args_common=-v $(abspath $(go_mod_cache)):/go/ \
+	-v $(abspath $(go_build_cache)):/gocache/ \
 	-e GOCACHE=/gocache -e GOPATH=/go --pids-limit 4096
 docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost $(docker_args_common)
 
@@ -817,7 +817,7 @@ clean: stop-all
 	# owning host user cannot delete files inside read-only directories.
 	# Run the wipe in a throwaway alpine container (rootless podman maps
 	# its uid 0 to the invoking user with full capabilities in-namespace).
-	$(docker) run --rm -v $(shell readlink -f .)/$(cache_dir):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
+	$(docker) run --rm -v $(abspath $(cache_dir)):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
 	-$(docker) ps -a|grep katzenpost|cat
 	-$(docker) images|grep katzenpost|cat
 
@@ -902,8 +902,8 @@ $(net_name)/pigeonhole-cp.$(distro): $(distro)_rust.stamp thin-client-sync | $(n
 		echo "error: no Cargo.toml at $(thin_client_dir). Set thin_client_dir to a thin_client checkout or run 'make thin-client-sync'."; exit 1; \
 	fi
 	$(docker) run --rm ${docker_args} ${thin_client_mount} \
-		-v $(shell readlink -f .)/$(cargo_home):/cargo-home \
-		-v $(shell readlink -f .)/$(cargo_target):/cargo-target \
+		-v $(abspath $(cargo_home)):/cargo-home \
+		-v $(abspath $(cargo_target)):/cargo-target \
 		-e CARGO_HOME=/cargo-home \
 		katzenpost-$(distro)_rust \
 		bash -c "cd /go/thin_client && cargo build --release --bin pigeonhole-cp --features cli --target-dir /cargo-target"
