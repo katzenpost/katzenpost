@@ -43,6 +43,17 @@ jobs:
             git
             gcc
 
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: ${{ runner.os }}-go-1.26.x-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-1.26.x-
+            ${{ runner.os }}-go-
+
       - name: Gather runtime environment
         shell: msys2 {0}
         run: |
@@ -57,18 +68,15 @@ jobs:
         run: |
           cd cmd/genconfig && go build && ./genconfig --wirekem xwing --port 35000 --voting --baseDir /conf --outDir ../../docker/mixnet-alpine/
 
-      - name: Hammer the two victim packages
+      - name: Hammer the client suite with the production command
         shell: msys2 {0}
         run: |
           cd client
           fails=0
-          for i in $(seq 1 25); do
-            GORACE=history_size=7 go test ${{ matrix.race }} -count=1 -timeout 20m ./config/... \
-              || { fails=$((fails+1)); echo "ITERATION $i config FAILED"; }
-          done
-          for i in $(seq 1 5); do
-            GORACE=history_size=7 go test ${{ matrix.race }} -count=1 -failfast -timeout 20m ./... \
-              || { fails=$((fails+1)); echo "ITERATION $i fullsuite FAILED"; }
+          for i in $(seq 1 8); do
+            GORACE=history_size=7 go test ${{ matrix.race }} -v -failfast -timeout 30m ./... \
+              > iter-$i.log 2>&1 || { fails=$((fails+1)); echo "ITERATION $i FAILED"; \
+                grep -E "fatal error|panic:|FAIL\s" iter-$i.log | head -5; }
           done
           echo "LEG gc=${{ matrix.gc == '' && 'greentea' || matrix.gc }} race=${{ matrix.race == '' && 'off' || 'on' }} failures=$fails"
           exit 0
