@@ -89,7 +89,8 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
-		panic(err)
+		c.log.Warningf("server/outgoing: IsPeerValid(): failed to marshal peer public key: %s", err)
+		return false
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
 		c.log.Warningf("server/outgoing: IsPeerValid(): Link key mismatch for peer '%s' (identity_hash=%x)", c.dst.Name, creds.AdditionalData)
@@ -176,7 +177,8 @@ func (c *outgoingConn) worker() {
 	identityHash := hash.Sum256(c.dst.IdentityKey)
 	linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 	if err != nil {
-		panic(err)
+		c.log.Errorf("server/outgoing: failed to unmarshal link key for peer '%s': %s", c.dst.Name, err)
+		return
 	}
 	dialCheckCreds := wire.PeerCredentials{
 		AdditionalData: identityHash[:],
@@ -198,7 +200,8 @@ func (c *outgoingConn) worker() {
 				c.dst = desc
 				linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 				if err != nil {
-					panic(err)
+					c.log.Errorf("server/outgoing: failed to unmarshal link key for peer '%s': %s", c.dst.Name, err)
+					return
 				}
 				dialCheckCreds.PublicKey = linkPubKey
 			}

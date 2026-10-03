@@ -543,7 +543,8 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 	// Verify link key matches
 	blob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
-		panic(err)
+		c.log.Errorf("replica/incoming: authenticateReplica(): failed to marshal peer public key: %s", err)
+		return false
 	}
 	if !hmac.Equal(replicaDesc.LinkKey, blob) {
 		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: link key mismatch for replica '%s'", replicaDesc.Name)
