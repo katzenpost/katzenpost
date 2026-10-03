@@ -1,0 +1,74 @@
+name: Windows GC diagnostic
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gc:
+    env:
+      HIGHCTIDH_PORTABLE: 1
+      CGO_ENABLED: 1
+      GODEBUG: cgocheck=1
+      GOTRACEBACK: crash
+      CGO_LDFLAGS: "-Wl,--no-as-needed -Wl,-allow-multiple-definition"
+      GOEXPERIMENT: ${{ matrix.gc }}
+    strategy:
+      matrix:
+        gc: ["", "nogreenteagc"]
+        race: ["-race", ""]
+      fail-fast: false
+    runs-on: windows-2022
+    name: gc-${{ matrix.gc == '' && 'greentea' || matrix.gc }}-${{ matrix.race == '' && 'norace' || 'race' }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: Set up Msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-gcc
+            make
+            git
+            gcc
+
+      - name: Gather runtime environment
+        shell: msys2 {0}
+        run: |
+          uname -a
+          gcc -v
+          go version
+          go env GOEXPERIMENT GODEBUG CGO_ENABLED
+          wmic cpu get name,numberofcores,numberoflogicalprocessors || true
+
+      - name: Generate mixnet configuration
+        shell: msys2 {0}
+        run: |
+          cd cmd/genconfig && go build && ./genconfig --wirekem xwing --port 35000 --voting --baseDir /conf --outDir ../../docker/mixnet-alpine/
+
+      - name: Hammer the two victim packages
+        shell: msys2 {0}
+        run: |
+          cd client
+          fails=0
+          for i in $(seq 1 25); do
+            GORACE=history_size=7 go test ${{ matrix.race }} -count=1 -timeout 20m ./config/... \
+              || { fails=$((fails+1)); echo "ITERATION $i config FAILED"; }
+          done
+          for i in $(seq 1 5); do
+            GORACE=history_size=7 go test ${{ matrix.race }} -count=1 -failfast -timeout 20m ./... \
+              || { fails=$((fails+1)); echo "ITERATION $i fullsuite FAILED"; }
+          done
+          echo "LEG gc=${{ matrix.gc == '' && 'greentea' || matrix.gc }} race=${{ matrix.race == '' && 'off' || 'on' }} failures=$fails"
+          exit 0
