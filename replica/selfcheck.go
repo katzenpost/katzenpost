@@ -86,6 +86,7 @@ func measureMKEM(log *logging.Logger, scheme *mkem.Scheme, nikeScheme nike.Schem
 		log.Warningf("self-check: GenerateKeyPair failed (%v); skipping CTIDH self-check", err)
 		return MKEMSelfCheckResult{NumCPU: numCPU}
 	}
+	defer privKey.Reset()
 
 	payload := make([]byte, mkemSelfCheckPayload)
 	if _, err := rand.Reader.Read(payload); err != nil {
@@ -96,11 +97,12 @@ func measureMKEM(log *logging.Logger, scheme *mkem.Scheme, nikeScheme nike.Schem
 	// Build a representative ciphertext once. Decapsulate is the hot
 	// path; Encapsulate happens at lower frequency on the reply side
 	// so we don't bench it.
-	_, ct, err := scheme.Encapsulate([]nike.PublicKey{pubKey}, payload)
+	ephemeralKey, ct, err := scheme.Encapsulate([]nike.PublicKey{pubKey}, payload)
 	if err != nil {
 		log.Warningf("self-check: Encapsulate failed (%v); skipping CTIDH self-check", err)
 		return MKEMSelfCheckResult{NumCPU: numCPU}
 	}
+	ephemeralKey.Reset()
 
 	// Solo mode: warm up, then time mkemSelfCheckIterations ops in one
 	// goroutine.
