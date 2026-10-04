@@ -43,6 +43,8 @@ type MixDescriptor struct {
 	// LinkKey is the node's wire protocol public key.
 	LinkKey []byte
 
+	QUICKeyHash []byte `cbor:"QUICKeyHash,omitempty"`
+
 	// MixKeys is a map of epochs to Sphinx keys.
 	MixKeys map[uint64][]byte
 
@@ -236,6 +238,8 @@ type ReplicaDescriptor struct {
 
 	// LinkKey is our PQ Noise Public Key.
 	LinkKey []byte
+
+	QUICKeyHash []byte `cbor:"QUICKeyHash,omitempty"`
 
 	// EnvelopeKeys is mapping from Replica Epoch ID to Public NIKE Key used with our MKEM scheme.
 	EnvelopeKeys map[uint64][]byte
