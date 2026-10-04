@@ -503,7 +503,9 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	// vote topology is irrelevent.
 	var zeros [32]byte
 	s.log.Debugf("getVote: Generating document with %d mix descriptors and %d replica descriptors", len(descriptors), len(replicaDescriptors))
-	vote := s.getDocument(descriptors, replicaDescriptors, s.s.cfg.Parameters, zeros[:])
+	params := *s.s.cfg.Parameters
+	params.Notice = s.s.cfg.Notice
+	vote := s.getDocument(descriptors, replicaDescriptors, &params, zeros[:])
 
 	// create our SharedRandom Commit
 	s.log.Debugf("getVote: Generating SharedRandom commit for epoch %d", epoch)
@@ -871,6 +873,8 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		PriorSharedRandom:             s.priorSRV,
 		SphinxGeometryHash:            s.geo.Hash(),
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
+		MinClientVersion:              params.Notice.MinClientVersion,
+		ClientNotice:                  params.Notice.ClientNotice,
 	}
 	return doc
 }
@@ -1483,6 +1487,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	nodes := make([]*pki.MixDescriptor, 0)
 	mixTally := make(map[string][]*pki.Document)
 	mixParams := make(map[string][]*pki.Document)
+	noticeTally := make(map[noticeVote]int)
 	replicaTally := make(map[string][]*pki.Document)
 	replicaNodes := make([]*pki.ReplicaDescriptor, 0)
 	for id, vote := range s.votes[epoch] {
@@ -1496,6 +1501,12 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			mixParams[bs] = make([]*pki.Document, 0)
 		}
 		mixParams[bs] = append(mixParams[bs], vote)
+
+		notice := noticeVote{}
+		if err := pki.IsClientNoticeWellFormed(vote.MinClientVersion, vote.ClientNotice); err == nil {
+			notice = noticeVote{minClientVersion: vote.MinClientVersion, clientNotice: vote.ClientNotice}
+		}
+		noticeTally[notice]++
 
 		// include edge nodes in the tally.
 		for _, desc := range vote.GatewayNodes {
@@ -1593,6 +1604,14 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 
 		if len(votes) >= s.threshold {
 			sortNodesByPublicKey(nodes)
+			notice := noticeVote{}
+			for n, count := range noticeTally {
+				if count >= s.threshold {
+					notice = n
+					break
+				}
+			}
+			params.Notice = config.Notice{MinClientVersion: notice.minClientVersion, ClientNotice: notice.clientNotice}
 			// successful tally
 			return nodes, replicaNodes, params, nil
 		} else if len(votes) >= s.dissenters {
@@ -2836,6 +2855,11 @@ type votedParameters struct {
 	LambdaL float64
 	LambdaM float64
 	LambdaR float64
+}
+
+type noticeVote struct {
+	minClientVersion string
+	clientNotice     string
 }
 
 var canonicalCBOR cbor.EncMode
