@@ -1,0 +1,14 @@
+[Unit]
+Description=Katzenpost thin client daemon (user)
+Documentation=https://katzenpost.network/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kpclientd -c /etc/katzenpost/kpclientd.toml
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

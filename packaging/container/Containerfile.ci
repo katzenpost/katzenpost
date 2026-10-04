@@ -1,0 +1,22 @@
+ARG BASE=docker.io/debian:13
+FROM ${BASE}
+
+ARG GO_VERSION=1.27.1
+ARG GO_SHA256=63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends \
+		build-essential ca-certificates curl debhelper dpkg-dev \
+		git iputils-ping make systemd \
+	&& rm -rf /var/lib/apt/lists/*
+
+RUN arch=$(dpkg --print-architecture) \
+	&& curl -fsSLo /tmp/go.tar.gz \
+		"https://go.dev/dl/go${GO_VERSION}.linux-$arch.tar.gz" \
+	&& echo "${GO_SHA256}  /tmp/go.tar.gz" | sha256sum -c - \
+	&& tar -C /usr/local -xzf /tmp/go.tar.gz \
+	&& rm -f /tmp/go.tar.gz
+
+ENV PATH=/usr/local/go/bin:$PATH
+WORKDIR /build
