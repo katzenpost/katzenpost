@@ -50,11 +50,9 @@ func TestProxyIntegration(t *testing.T) {
 	// --- Setup BACAP: Alice creates a write capability and gives Bob a read capability ---
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	alice := &writerSide{aliceOwner, aliceOwner.GetMessageBoxIndex()}
 	bobReadCap := aliceOwner.ReadCap()
-	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	bob := &readerSide{bobReadCap, bobReadCap.GetMessageBoxIndex()}
 
 	// --- STEP 1: Alice writes data using BACAP encryption to correct shard replicas ---
 	writeData := []byte("test data for proxy integration")
@@ -64,7 +62,9 @@ func TestProxyIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Encrypt with BACAP - this produces the correct ciphertext size
-	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+	boxID, ciphertext, sigraw, err := alice.next.EncryptForContext(alice.writeCap, constants.PIGEONHOLE_CTX, paddedPayload)
+	require.NoError(t, err)
+	alice.next, err = alice.next.NextIndex()
 	require.NoError(t, err)
 
 	t.Logf("PROXY_TEST: Alice writes to BoxID: %x", boxID[:8])
@@ -156,8 +156,7 @@ func TestProxyIntegration(t *testing.T) {
 		sharding.ReplicaIndices[0], sharding.ReplicaIndices[1])
 
 	// Get the BoxID Bob expects to read (same as what Alice wrote)
-	expectedBoxID, err := bobStatefulReader.NextBoxID()
-	require.NoError(t, err)
+	expectedBoxID := bob.boxID(t)
 	t.Logf("PROXY_TEST: Bob reads from BoxID: %x", expectedBoxID[:8])
 
 	readRequest := &pigeonhole.ReplicaRead{
@@ -217,11 +216,9 @@ func TestProxyIntegration(t *testing.T) {
 	require.Equal(t, pigeonhole.ReplicaSuccess, innerMsg.ReadReply.ErrorCode,
 		"Proxy read must succeed - error code: %d", innerMsg.ReadReply.ErrorCode)
 
-	// Decrypt the BACAP payload using Bob's StatefulReader
-	var signature [64]byte
-	copy(signature[:], innerMsg.ReadReply.Signature[:])
-	bobPaddedPlaintext, err := bobStatefulReader.DecryptNext(
-		constants.PIGEONHOLE_CTX, *expectedBoxID, innerMsg.ReadReply.Payload, signature)
+	// Decrypt the BACAP payload at Bob's index
+	bobPaddedPlaintext, err := pigeonhole.OpenBox(bob.readCap, bob.next, constants.PIGEONHOLE_CTX,
+		*expectedBoxID, innerMsg.ReadReply.Payload, innerMsg.ReadReply.Signature[:])
 	require.NoError(t, err, "Failed to decrypt BACAP payload")
 
 	// Extract the actual message data from the padded payload

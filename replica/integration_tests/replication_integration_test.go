@@ -57,11 +57,9 @@ func TestReplicaReplication(t *testing.T) {
 	// --- Setup BACAP: Alice creates a write capability and gives Bob a read capability ---
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	alice := &writerSide{aliceOwner, aliceOwner.GetMessageBoxIndex()}
 	bobReadCap := aliceOwner.ReadCap()
-	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	bob := &readerSide{bobReadCap, bobReadCap.GetMessageBoxIndex()}
 
 	// --- STEP 1: Determine the BoxID and find shard vs non-shard replicas ---
 	writeData := []byte("test data for replication verification")
@@ -71,7 +69,9 @@ func TestReplicaReplication(t *testing.T) {
 	require.NoError(t, err)
 
 	// Encrypt with BACAP - this produces the BoxID
-	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+	boxID, ciphertext, sigraw, err := alice.next.EncryptForContext(alice.writeCap, constants.PIGEONHOLE_CTX, paddedPayload)
+	require.NoError(t, err)
+	alice.next, err = alice.next.NextIndex()
 	require.NoError(t, err)
 
 	t.Logf("REPLICATION_TEST: BoxID: %x", boxID[:8])
@@ -159,8 +159,7 @@ func TestReplicaReplication(t *testing.T) {
 
 	// --- STEP 3: Read from EACH shard replica individually to verify replication ---
 	// Get the BoxID Bob expects to read (same as what Alice wrote)
-	expectedBoxID, err := bobStatefulReader.NextBoxID()
-	require.NoError(t, err)
+	expectedBoxID := bob.boxID(t)
 	require.Equal(t, boxID, *expectedBoxID, "Bob's expected BoxID should match Alice's written BoxID")
 
 	// Verify both shard replicas have the data
@@ -204,18 +203,15 @@ func TestReplicaReplication(t *testing.T) {
 		require.Equal(t, pigeonhole.ReplicaSuccess, readReply.ReadReply.ErrorCode,
 			"Shard replica %d should have the data (error code: %d)", shardIdx, readReply.ReadReply.ErrorCode)
 
-		// Decrypt and verify the data
-		var signature [64]byte
-		copy(signature[:], readReply.ReadReply.Signature[:])
-
-		// Create a fresh reader for each verification (since DecryptNext advances state)
-		verifyReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
+		// Decrypt and verify the data at Bob's read cap's index
+		verifyIndex := bobReadCap.GetMessageBoxIndex()
+		verifyBoxID, err := verifyIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
 		require.NoError(t, err)
-		verifyBoxID, err := verifyReader.NextBoxID()
-		require.NoError(t, err)
+		var verifyBox [bacap.BoxIDSize]byte
+		copy(verifyBox[:], verifyBoxID.Bytes())
 
-		decryptedPadded, err := verifyReader.DecryptNext(
-			constants.PIGEONHOLE_CTX, *verifyBoxID, readReply.ReadReply.Payload, signature)
+		decryptedPadded, err := pigeonhole.OpenBox(bobReadCap, verifyIndex, constants.PIGEONHOLE_CTX,
+			verifyBox, readReply.ReadReply.Payload, readReply.ReadReply.Signature[:])
 		require.NoError(t, err, "Failed to decrypt data from shard replica %d", shardIdx)
 
 		decryptedData, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedPadded)

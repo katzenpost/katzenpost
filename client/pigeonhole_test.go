@@ -333,10 +333,8 @@ func TestDaemonEncryptRead_Success(t *testing.T) {
 	require.NoError(t, err)
 	readCap := writeCap.ReadCap()
 
-	// Create a StatefulWriter to get a valid MessageBoxIndex
-	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-	messageBoxIndex := statefulWriter.GetCurrentMessageIndex()
+	// The cap's own index is a valid MessageBoxIndex
+	messageBoxIndex := writeCap.GetMessageBoxIndex()
 
 	// Set up mock connection
 	testAppID := &[AppIDLength]byte{}
@@ -489,10 +487,8 @@ func TestDaemonEncryptWrite_Success(t *testing.T) {
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 
-	// Create a StatefulWriter to get a valid MessageBoxIndex
-	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-	messageBoxIndex := statefulWriter.GetCurrentMessageIndex()
+	// The cap's own index is a valid MessageBoxIndex
+	messageBoxIndex := writeCap.GetMessageBoxIndex()
 
 	// Set up mock connection
 	testAppID := &[AppIDLength]byte{}
@@ -986,9 +982,7 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	listener.connsLock.Unlock()
 
 	// Alice gets the current MessageBoxIndex from her WriteCap
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceWriteCap, constants.PIGEONHOLE_CTX)
-	require.NoError(err)
-	aliceMessageBoxIndex := aliceStatefulWriter.GetCurrentMessageIndex()
+	aliceMessageBoxIndex := aliceWriteCap.GetMessageBoxIndex()
 
 	// Alice creates an EncryptWrite request
 	aliceQueryID := &[thin.QueryIDLength]byte{}
@@ -1034,10 +1028,8 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	listener.conns[*bobAppID] = bobMockConn.toIncomingConn(listener, logBackend)
 	listener.connsLock.Unlock()
 
-	// Bob creates a StatefulReader from the ReadCap Alice gave him
-	// Bob starts reading from the same MessageBoxIndex that Alice wrote to
-	bobStatefulReader, err := bacap.NewStatefulReaderWithIndex(bobReadCap, constants.PIGEONHOLE_CTX, aliceMessageBoxIndex)
-	require.NoError(err)
+	// Bob reads from the same MessageBoxIndex that Alice wrote to
+	bobMessageBoxIndex := aliceMessageBoxIndex
 
 	// Bob creates an EncryptRead request
 	bobQueryID := &[thin.QueryIDLength]byte{}
@@ -1069,13 +1061,13 @@ func TestAliceSendsBobMessage(t *testing.T) {
 
 	// Verify that both Alice and Bob are targeting the same BoxID
 	// by using the BACAP API directly
-	aliceBoxID, err := aliceStatefulWriter.NextBoxID()
+	aliceBoxID, err := aliceWriteCap.DeriveBoxID(aliceMessageBoxIndex)
 	require.NoError(err)
 
-	bobBoxID, err := bobStatefulReader.NextBoxID()
+	bobBoxID, err := bobReadCap.DeriveBoxID(bobMessageBoxIndex)
 	require.NoError(err)
 
-	require.Equal(aliceBoxID.Bytes(), bobBoxID[:], "Alice's write BoxID should match Bob's read BoxID")
+	require.Equal(aliceBoxID.Bytes(), bobBoxID.Bytes(), "Alice's write BoxID should match Bob's read BoxID")
 	t.Logf("   ✓ BoxIDs match: %x...", aliceBoxID.Bytes()[:8])
 
 	t.Log("=== Step 5: Simulate Bob decrypting Alice's message ===")
@@ -1085,14 +1077,11 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	// using the BACAP primitives.
 
 	// Get the BoxID, ciphertext, and signature that Alice created
-	aliceBoxIDFromWriter, aliceCiphertext, aliceSigRaw, err := aliceStatefulWriter.PrepareNext(aliceMessage)
+	aliceBoxIDFromWriter, aliceCiphertext, aliceSig, err := aliceMessageBoxIndex.EncryptForContext(aliceWriteCap, constants.PIGEONHOLE_CTX, aliceMessage)
 	require.NoError(err)
 
-	aliceSig := [bacap.SignatureSize]byte{}
-	copy(aliceSig[:], aliceSigRaw)
-
-	// Bob decrypts using his StatefulReader
-	bobDecrypted, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, aliceBoxIDFromWriter, aliceCiphertext, aliceSig)
+	// Bob checks the box and decrypts
+	bobDecrypted, err := pigeonhole.OpenBox(bobReadCap, bobMessageBoxIndex, constants.PIGEONHOLE_CTX, aliceBoxIDFromWriter, aliceCiphertext, aliceSig)
 	require.NoError(err)
 
 	require.Equal(aliceMessage, bobDecrypted, "Bob should decrypt Alice's original message")
@@ -1169,12 +1158,9 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 	bobReadCap := aliceWriteCap.ReadCap()
 	require.NotNil(bobReadCap)
 
-	// Create stateful writer and reader
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceWriteCap, constants.PIGEONHOLE_CTX)
-	require.NoError(err)
-
-	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
-	require.NoError(err)
+	// Alice writes from her cap's index and Bob reads from his
+	aliceMessageBoxIndex := aliceWriteCap.GetMessageBoxIndex()
+	bobMessageBoxIndex := bobReadCap.GetMessageBoxIndex()
 
 	// Set up Alice's mock connection
 	aliceAppID := &[AppIDLength]byte{}
@@ -1211,9 +1197,6 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 		message := []byte(fmt.Sprintf("Message %d from Alice to Bob", i))
 		t.Logf("\n--- Message %d ---", i)
 
-		// Alice gets current MessageBoxIndex
-		aliceMessageBoxIndex := aliceStatefulWriter.GetCurrentMessageIndex()
-
 		// Alice encrypts the message
 		aliceQueryID := &[thin.QueryIDLength]byte{}
 		copy(aliceQueryID[:], []byte(fmt.Sprintf("alice-msg-%d-----", i)))
@@ -1240,27 +1223,26 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 			t.Fatalf("Expected Alice's write response for message %d but got none", i)
 		}
 
-		// Get the encrypted data using PrepareNext (doesn't advance state)
-		aliceBoxID, aliceCiphertext, aliceSigRaw, err := aliceStatefulWriter.PrepareNext(message)
+		// The encrypted data at Alice's current index
+		aliceBoxID, aliceCiphertext, aliceSig, err := aliceMessageBoxIndex.EncryptForContext(aliceWriteCap, constants.PIGEONHOLE_CTX, message)
 		require.NoError(err)
 
-		aliceSig := [bacap.SignatureSize]byte{}
-		copy(aliceSig[:], aliceSigRaw)
-
-		// Bob decrypts the message
-		bobDecrypted, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, aliceBoxID, aliceCiphertext, aliceSig)
+		// Bob checks the box, decrypts, and moves on to the next one
+		bobDecrypted, err := pigeonhole.OpenBox(bobReadCap, bobMessageBoxIndex, constants.PIGEONHOLE_CTX, aliceBoxID, aliceCiphertext, aliceSig)
 		require.NoError(err)
 		require.Equal(message, bobDecrypted)
 		t.Logf("   ✓ Bob decrypted message %d: %q", i, string(bobDecrypted))
-
-		// Simulate ACK: Alice advances her state after successful write
-		err = aliceStatefulWriter.AdvanceState()
+		bobMessageBoxIndex, err = bobMessageBoxIndex.NextIndex()
 		require.NoError(err)
-		t.Logf("   ✓ Alice advanced state after ACK for message %d", i)
+
+		// Simulate ACK: Alice advances her index after successful write
+		aliceMessageBoxIndex, err = aliceMessageBoxIndex.NextIndex()
+		require.NoError(err)
+		t.Logf("   ✓ Alice advanced her index after ACK for message %d", i)
 
 		// Verify that Alice and Bob's indices are in sync
-		aliceNextIdx := aliceStatefulWriter.GetCurrentMessageIndex().Idx64
-		bobNextIdx := bobStatefulReader.GetCurrentMessageIndex().Idx64
+		aliceNextIdx := aliceMessageBoxIndex.Idx64
+		bobNextIdx := bobMessageBoxIndex.Idx64
 		require.Equal(aliceNextIdx, bobNextIdx, "Alice and Bob should be at the same index")
 		t.Logf("   ✓ Alice and Bob indices in sync: %d", aliceNextIdx)
 	}
@@ -2174,9 +2156,7 @@ func TestNextMessageBoxIndex_Success(t *testing.T) {
 	// Create a real message box index via BACAP
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-	firstIndex := statefulWriter.GetCurrentMessageIndex()
+	firstIndex := writeCap.GetMessageBoxIndex()
 
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("nextidx-query000"))
@@ -2231,13 +2211,11 @@ func TestNextMessageBoxIndex_NilIndex(t *testing.T) {
 func TestGetMessageBoxIndexCounter_Success(t *testing.T) {
 	d, testAppID, responseCh := setupDaemonWithMockConn(t)
 
-	// Build a real MessageBoxIndex from a StatefulWriter and advance it a
+	// Take a real MessageBoxIndex from a write cap and advance it a
 	// few times so we're not asking about the uninitialized state.
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	sw, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-	advanced := sw.GetCurrentMessageIndex()
+	advanced := writeCap.GetMessageBoxIndex()
 	for i := 0; i < 3; i++ {
 		advanced, err = advanced.NextIndex()
 		require.NoError(t, err)
@@ -2298,9 +2276,7 @@ func TestCreateCourierEnvelopesFromPayload_Success(t *testing.T) {
 	// Create a destination keypair
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-	destStartIndex := statefulWriter.GetCurrentMessageIndex()
+	destStartIndex := writeCap.GetMessageBoxIndex()
 
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("envelope-query00"))
@@ -2366,12 +2342,8 @@ func TestCreateCourierEnvelopesFromPayloads_Success(t *testing.T) {
 	// Create two destination keypairs
 	writeCap1, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	sw1, err := bacap.NewStatefulWriter(writeCap1, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
 
 	writeCap2, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	sw2, err := bacap.NewStatefulWriter(writeCap2, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 
 	queryID := &[thin.QueryIDLength]byte{}
@@ -2385,12 +2357,12 @@ func TestCreateCourierEnvelopesFromPayloads_Success(t *testing.T) {
 				{
 					Payload:    []byte("payload for channel 1"),
 					WriteCap:   writeCap1,
-					StartIndex: sw1.GetCurrentMessageIndex(),
+					StartIndex: writeCap1.GetMessageBoxIndex(),
 				},
 				{
 					Payload:    []byte("payload for channel 2"),
 					WriteCap:   writeCap2,
-					StartIndex: sw2.GetCurrentMessageIndex(),
+					StartIndex: writeCap2.GetMessageBoxIndex(),
 				},
 			},
 			IsStart: true,

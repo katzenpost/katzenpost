@@ -115,12 +115,14 @@ func proxyRead(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte,
 
 // writeBoxToShards writes one BACAP box to both of its shard holders
 // through the courier, and returns the box ID and the plaintext.
-func writeBoxToShards(t *testing.T, env *testEnvironment, writer *bacap.StatefulWriter, payload []byte, replicaEpoch uint64) (*[bacap.BoxIDSize]byte, *shardingResult) {
+func writeBoxToShards(t *testing.T, env *testEnvironment, writer *writerSide, payload []byte, replicaEpoch uint64) (*[bacap.BoxIDSize]byte, *shardingResult) {
 	t.Helper()
 
 	padded, err := pigeonhole.CreatePaddedPayload(payload, env.geometry.MaxPlaintextPayloadLength+4)
 	require.NoError(t, err)
-	boxID, ciphertext, sigraw, err := writer.EncryptNext(padded)
+	boxID, ciphertext, sigraw, err := writer.next.EncryptForContext(writer.writeCap, constants.PIGEONHOLE_CTX, padded)
+	require.NoError(t, err)
+	writer.next, err = writer.next.NextIndex()
 	require.NoError(t, err)
 
 	sig := [bacap.SignatureSize]byte{}
@@ -173,10 +175,8 @@ func TestProxyReadNotFoundWhenNoHolderHasBox(t *testing.T) {
 	// A box ID from a fresh capability that is never written.
 	owner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	reader, err := bacap.NewStatefulReader(owner.ReadCap(), constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-	boxID, err := reader.NextBoxID()
-	require.NoError(t, err)
+	reader := &readerSide{owner.ReadCap(), owner.GetMessageBoxIndex()}
+	boxID := reader.boxID(t)
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	sharding := getShardingInfo(t, env, boxID)
@@ -208,17 +208,14 @@ func TestProxyFailsOverWhenHolderIsDown(t *testing.T) {
 
 	owner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	writer, err := bacap.NewStatefulWriter(owner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-	reader, err := bacap.NewStatefulReader(owner.ReadCap(), constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	writer := &writerSide{owner, owner.GetMessageBoxIndex()}
+	reader := &readerSide{owner.ReadCap(), owner.GetMessageBoxIndex()}
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	payload := []byte("failover must degrade to the surviving holder")
 	_, sharding := writeBoxToShards(t, env, writer, payload, replicaEpoch)
 
-	boxID, err := reader.NextBoxID()
-	require.NoError(t, err)
+	boxID := reader.boxID(t)
 
 	// Take one holder out. The other still has the box.
 	downed := sharding.ReplicaIndices[0]
@@ -250,11 +247,7 @@ func TestProxyFailsOverWhenHolderIsDown(t *testing.T) {
 		"an unreachable holder must fail fast, not consume its share of the sweep budget")
 	t.Logf("FAILOVER_TEST: proxied read completed in %v against a %v budget", elapsed, timeout)
 
-	var signature [64]byte
-	copy(signature[:], inner.ReadReply.Signature[:])
-	paddedPlaintext, err := reader.DecryptNext(
-		constants.PIGEONHOLE_CTX, *boxID, inner.ReadReply.Payload, signature)
-	require.NoError(t, err)
+	paddedPlaintext := reader.open(t, *boxID, inner.ReadReply.Payload, inner.ReadReply.Signature[:])
 	plaintext, err := pigeonhole.ExtractMessageFromPaddedPayload(paddedPlaintext)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(payload, plaintext), "the surviving holder must serve the real payload")

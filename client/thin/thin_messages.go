@@ -100,6 +100,8 @@ const (
 
 	// ThinClientImpossibleNewStatefulWriterError indicates that the daemon was unable
 	// to create a new stateful writer.
+	// The daemon no longer uses a stateful writer and no longer sends it; the
+	// code stays defined so that it keeps its meaning on the wire.
 	ThinClientImpossibleNewStatefulWriterError uint8 = 20
 
 	// ThinClientCapabilityAlreadyInUse indicates that the provided capability

@@ -201,8 +201,7 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 	// Create BACAP keys like integration tests
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	aliceIndex := aliceOwner.GetMessageBoxIndex()
 
 	// Create MKEM keys for replicas like integration tests
 	mkemNikeScheme := mkem.NewScheme(nikeScheme)
@@ -226,7 +225,9 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		require.NoError(t, err)
 
 		// BACAP encrypt the payload (like integration tests)
-		boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+		boxID, ciphertext, sigraw, err := aliceIndex.EncryptForContext(aliceOwner, constants.PIGEONHOLE_CTX, paddedPayload)
+		require.NoError(t, err)
+		aliceIndex, err = aliceIndex.NextIndex()
 		require.NoError(t, err)
 
 		sig := [bacap.SignatureSize]byte{}
@@ -339,7 +340,9 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
 		require.NoError(t, err)
 
-		boxID, bacapCiphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+		boxID, bacapCiphertext, sigraw, err := aliceIndex.EncryptForContext(aliceOwner, constants.PIGEONHOLE_CTX, paddedPayload)
+		require.NoError(t, err)
+		aliceIndex, err = aliceIndex.NextIndex()
 		require.NoError(t, err)
 
 		bacapOverhead := len(bacapCiphertext) - len(paddedPayload)
@@ -635,8 +638,7 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 	// Create BACAP keys for testing
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	aliceIndex := aliceOwner.GetMessageBoxIndex()
 
 	// Create MKEM keys for replicas
 	mkemNikeScheme := mkem.NewScheme(nikeScheme)
@@ -699,7 +701,9 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 		require.NoError(t, err)
 
 		// BACAP encrypt the padded payload
-		boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+		boxID, ciphertext, sigraw, err := aliceIndex.EncryptForContext(aliceOwner, constants.PIGEONHOLE_CTX, paddedPayload)
+		require.NoError(t, err)
+		aliceIndex, err = aliceIndex.NextIndex()
 		require.NoError(t, err)
 
 		sig := [bacap.SignatureSize]byte{}
@@ -773,7 +777,9 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 				paddedPayload, err := pigeonhole.CreatePaddedPayload(testPayload, size+4)
 				require.NoError(t, err)
 
-				boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+				boxID, ciphertext, sigraw, err := aliceIndex.EncryptForContext(aliceOwner, constants.PIGEONHOLE_CTX, paddedPayload)
+				require.NoError(t, err)
+				aliceIndex, err = aliceIndex.NextIndex()
 				require.NoError(t, err)
 
 				sig := [bacap.SignatureSize]byte{}
@@ -817,8 +823,7 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 	// Create BACAP keys for testing
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	aliceIndex := aliceOwner.GetMessageBoxIndex()
 
 	// Create MKEM scheme and keys for EnvelopeReply
 	mkemNikeScheme := mkem.NewScheme(nikeScheme)
@@ -841,7 +846,9 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
 		require.NoError(t, err)
 
-		boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+		boxID, ciphertext, sigraw, err := aliceIndex.EncryptForContext(aliceOwner, constants.PIGEONHOLE_CTX, paddedPayload)
+		require.NoError(t, err)
+		aliceIndex, err = aliceIndex.NextIndex()
 		require.NoError(t, err)
 
 		sig := [bacap.SignatureSize]byte{}
@@ -936,7 +943,9 @@ func TestEnvelopeReplySizePredictions(t *testing.T) {
 				paddedPayload, err := pigeonhole.CreatePaddedPayload(testPayload, size+4)
 				require.NoError(t, err)
 
-				boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+				boxID, ciphertext, sigraw, err := aliceIndex.EncryptForContext(aliceOwner, constants.PIGEONHOLE_CTX, paddedPayload)
+				require.NoError(t, err)
+				aliceIndex, err = aliceIndex.NextIndex()
 				require.NoError(t, err)
 
 				sig := [bacap.SignatureSize]byte{}
@@ -1002,8 +1011,7 @@ func TestGeometryLengthPrefixBug(t *testing.T) {
 	// Create BACAP keys
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	aliceIndex := aliceOwner.GetMessageBoxIndex()
 
 	// Create MKEM keys for replicas
 	mkemNikeScheme := mkem.NewScheme(nikeScheme)
@@ -1040,7 +1048,9 @@ func TestGeometryLengthPrefixBug(t *testing.T) {
 		"CreatePaddedPayload should create payload of exactly MaxPlaintextPayloadLength + 4 bytes")
 
 	// BACAP encrypt the padded payload
-	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+	boxID, ciphertext, sigraw, err := aliceIndex.EncryptForContext(aliceOwner, constants.PIGEONHOLE_CTX, paddedPayload)
+	require.NoError(t, err)
+	aliceIndex, err = aliceIndex.NextIndex()
 	require.NoError(t, err)
 
 	sig := [bacap.SignatureSize]byte{}
@@ -1120,8 +1130,7 @@ func TestCalculateEnvelopeReplySizeRead(t *testing.T) {
 			// Create BACAP keys for testing
 			aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 			require.NoError(t, err)
-			aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
-			require.NoError(t, err)
+			aliceIndex := aliceOwner.GetMessageBoxIndex()
 
 			// Create MKEM scheme and keys for EnvelopeReply
 			mkemNikeScheme := mkem.NewScheme(nikeScheme)
@@ -1143,7 +1152,9 @@ func TestCalculateEnvelopeReplySizeRead(t *testing.T) {
 			paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
 			require.NoError(t, err)
 
-			boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+			boxID, ciphertext, sigraw, err := aliceIndex.EncryptForContext(aliceOwner, constants.PIGEONHOLE_CTX, paddedPayload)
+			require.NoError(t, err)
+			aliceIndex, err = aliceIndex.NextIndex()
 			require.NoError(t, err)
 
 			sig := [bacap.SignatureSize]byte{}
@@ -1207,8 +1218,7 @@ func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 	// Create BACAP keys for testing
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
+	aliceIndex := aliceOwner.GetMessageBoxIndex()
 
 	// Create MKEM scheme and keys for EnvelopeReply
 	mkemNikeScheme := mkem.NewScheme(nikeScheme)
@@ -1274,7 +1284,9 @@ func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
 		require.NoError(t, err)
 
-		boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+		boxID, ciphertext, sigraw, err := aliceIndex.EncryptForContext(aliceOwner, constants.PIGEONHOLE_CTX, paddedPayload)
+		require.NoError(t, err)
+		aliceIndex, err = aliceIndex.NextIndex()
 		require.NoError(t, err)
 
 		sig := [bacap.SignatureSize]byte{}

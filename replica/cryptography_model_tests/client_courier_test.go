@@ -274,7 +274,8 @@ func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeRe
 
 type ClientWriter struct {
 	WriteCap       *bacap.WriteCap
-	StatefulWriter *bacap.StatefulWriter
+	NextIndex      *bacap.MessageBoxIndex
+	Ctx            []byte
 	MKEMNikeScheme *mkem.Scheme
 	Replicas       []*Replica
 }
@@ -284,20 +285,21 @@ func NewClientWriter(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, ctx []byt
 	if err != nil {
 		panic(err)
 	}
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	if err != nil {
-		panic(err)
-	}
 	return &ClientWriter{
 		WriteCap:       owner,
-		StatefulWriter: statefulWriter,
+		NextIndex:      owner.GetMessageBoxIndex(),
+		Ctx:            ctx,
 		MKEMNikeScheme: MKEMNikeScheme,
 		Replicas:       replicas,
 	}
 }
 
 func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.CourierEnvelope {
-	boxID, ciphertext, sigraw, err := c.StatefulWriter.EncryptNext(message)
+	boxID, ciphertext, sigraw, err := c.NextIndex.EncryptForContext(c.WriteCap, c.Ctx, message)
+	if err != nil {
+		panic(err)
+	}
+	c.NextIndex, err = c.NextIndex.NextIndex()
 	if err != nil {
 		panic(err)
 	}
@@ -344,32 +346,29 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 
 type ClientReader struct {
 	ReadCap        *bacap.ReadCap
-	StatefulReader *bacap.StatefulReader
+	NextIndex      *bacap.MessageBoxIndex
+	Ctx            []byte
 	MKEMNikeScheme *mkem.Scheme
 	Replicas       []*Replica
 }
 
 func NewClientReader(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, readCap *bacap.ReadCap, ctx []byte) *ClientReader {
-	statefulReader, err := bacap.NewStatefulReader(readCap, ctx)
-	if err != nil {
-		panic(err)
-	}
 	return &ClientReader{
 		ReadCap:        readCap,
-		StatefulReader: statefulReader,
+		NextIndex:      readCap.GetMessageBoxIndex(),
+		Ctx:            ctx,
 		MKEMNikeScheme: MKEMNikeScheme,
 		Replicas:       replicas,
 	}
 }
 
 func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *pigeonhole.CourierEnvelope) {
-	boxid, err := c.StatefulReader.NextBoxID()
+	boxPub, err := c.NextIndex.BoxIDForContext(c.ReadCap, c.Ctx)
 	if err != nil {
 		panic(err)
 	}
-	readMsg := &pigeonhole.ReplicaRead{
-		BoxID: *boxid,
-	}
+	readMsg := &pigeonhole.ReplicaRead{}
+	copy(readMsg.BoxID[:], boxPub.Bytes())
 	msg := &pigeonhole.ReplicaInnerMessage{
 		MessageType: 0, // 0 = read
 		ReadMsg:     readMsg,
@@ -456,7 +455,9 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, innerMsg.ReadReply)
 
-	plaintext, err := bob.StatefulReader.DecryptNext(ctx, innerMsg.ReadReply.BoxID, innerMsg.ReadReply.Payload, innerMsg.ReadReply.Signature)
+	plaintext, err := pigeonhole.OpenBox(bob.ReadCap, bob.NextIndex, ctx, innerMsg.ReadReply.BoxID, innerMsg.ReadReply.Payload, innerMsg.ReadReply.Signature[:])
+	require.NoError(t, err)
+	bob.NextIndex, err = bob.NextIndex.NextIndex()
 	require.NoError(t, err)
 
 	require.Equal(t, aliceMsg1[:], plaintext[:])

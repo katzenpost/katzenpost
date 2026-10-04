@@ -112,21 +112,15 @@ func (d *Daemon) encryptRead(request *Request) {
 		return
 	}
 
-	// Create a StatefulReader from the provided ReadCap and MessageBoxIndex
-	statefulReader, err := bacap.NewStatefulReaderWithIndex(readCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
+	// The box this read operation targets
+	boxPub, err := messageBoxIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
-		d.log.Errorf("encryptRead: failed to create stateful reader: %v", err)
+		d.log.Errorf("encryptRead: failed to derive box ID: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-
-	// Get the BoxID for this read operation
-	boxID, err := statefulReader.NextBoxID()
-	if err != nil {
-		d.log.Errorf("encryptRead: failed to get next box ID: %v", err)
-		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
-		return
-	}
+	boxID := &[bacap.BoxIDSize]byte{}
+	copy(boxID[:], boxPub.Bytes())
 	d.log.Debugf("encryptRead: Idx64=%d, BoxID=%x", messageBoxIndex.Idx64, boxID)
 
 	// Create the ReplicaInnerMessage for a read operation
@@ -294,19 +288,10 @@ func (d *Daemon) encryptWrite(request *Request) {
 			return
 		}
 
-		// Create a StatefulWriter from the provided WriteCap and MessageBoxIndex
-		statefulWriter, err := bacap.NewStatefulWriterWithIndex(writeCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
-		if err != nil {
-			d.log.Errorf("encryptWrite: failed to create stateful writer: %v", err)
-			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
-			return
-		}
-
-		// Encrypt the message WITHOUT advancing state (using PrepareNext)
 		var sigraw []byte
-		boxID, ciphertext, sigraw, err = statefulWriter.PrepareNext(paddedPayload)
+		boxID, ciphertext, sigraw, err = messageBoxIndex.EncryptForContext(writeCap, constants.PIGEONHOLE_CTX, paddedPayload)
 		if err != nil {
-			d.log.Errorf("encryptWrite: failed to prepare next message: %v", err)
+			d.log.Errorf("encryptWrite: failed to encrypt message: %v", err)
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 			return
 		}
@@ -477,30 +462,19 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 }
 
 // encryptWriteChunk pads a user chunk to the geometry's plaintext size
-// and runs it through the StatefulWriter to produce the boxID,
-// BACAP-encrypted ciphertext, and signature that feed writeInnerMessage.
-// If advance is true the writer's NextIndex is advanced (EncryptNext);
-// otherwise the writer is only peeked (PrepareNext) and the caller owns
-// index advancement.
-func (d *Daemon) encryptWriteChunk(writer *bacap.StatefulWriter, chunk []byte, advance bool) ([bacap.BoxIDSize]byte, []byte, [bacap.SignatureSize]byte, error) {
+// and encrypts it for the box at idx on writeCap's stream, producing the
+// boxID, BACAP-encrypted ciphertext, and signature that feed
+// writeInnerMessage. The caller advances the index.
+func (d *Daemon) encryptWriteChunk(writeCap *bacap.WriteCap, idx *bacap.MessageBoxIndex, chunk []byte) ([bacap.BoxIDSize]byte, []byte, [bacap.SignatureSize]byte, error) {
 	var zeroBox [bacap.BoxIDSize]byte
 	var zeroSig [bacap.SignatureSize]byte
 	paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength+4)
 	if err != nil {
 		return zeroBox, nil, zeroSig, fmt.Errorf("failed to pad payload: %w", err)
 	}
-	var (
-		boxID      [bacap.BoxIDSize]byte
-		ciphertext []byte
-		sigraw     []byte
-	)
-	if advance {
-		boxID, ciphertext, sigraw, err = writer.EncryptNext(paddedPayload)
-	} else {
-		boxID, ciphertext, sigraw, err = writer.PrepareNext(paddedPayload)
-	}
+	boxID, ciphertext, sigraw, err := idx.EncryptForContext(writeCap, constants.PIGEONHOLE_CTX, paddedPayload)
 	if err != nil {
-		return zeroBox, nil, zeroSig, fmt.Errorf("failed to encrypt next message: %w", err)
+		return zeroBox, nil, zeroSig, fmt.Errorf("failed to encrypt message: %w", err)
 	}
 	var sig [bacap.SignatureSize]byte
 	copy(sig[:], sigraw)
@@ -532,19 +506,16 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	// doc.Epoch around a mixnet-epoch boundary.
 	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 
-	statefulWriter, err := bacap.NewStatefulWriter(req.DestWriteCap, []byte(constants.PIGEONHOLE_CTX))
-	if err != nil {
-		d.log.Errorf("createCourierEnvelopesFromPayload: failed to create stateful writer: %v", err)
-		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-	statefulWriter.NextIndex = req.DestStartIndex
+	idx := req.DestStartIndex
 
 	maxPayload := d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength - 4
 	chunks := chunkPayload(req.Payload, maxPayload)
 	envelopes := make([]*pigeonhole.CourierEnvelope, 0, len(chunks))
 	for _, chunk := range chunks {
-		boxID, ciphertext, sig, err := d.encryptWriteChunk(statefulWriter, chunk, true)
+		boxID, ciphertext, sig, err := d.encryptWriteChunk(req.DestWriteCap, idx, chunk)
+		if err == nil {
+			idx, err = idx.NextIndex()
+		}
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
@@ -594,7 +565,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		CreateCourierEnvelopesFromPayloadReply: &thin.CreateCourierEnvelopesFromPayloadReply{
 			QueryID:       req.QueryID,
 			Envelopes:     elements,
-			NextDestIndex: statefulWriter.NextIndex,
+			NextDestIndex: idx,
 			ErrorCode:     thin.ThinClientSuccess,
 		},
 	})
@@ -690,12 +661,6 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 		}
 
 		currentIndex := dest.StartIndex
-		statefulWriter, err := bacap.NewStatefulWriter(dest.WriteCap, []byte(constants.PIGEONHOLE_CTX))
-		if err != nil {
-			d.log.Errorf("createCourierEnvelopesFromPayloads: failed to create stateful writer: %v", err)
-			d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
-			return
-		}
 
 		// Chunk the payload and create CourierEnvelopes for this destination
 		for offset := 0; offset < len(dest.Payload); offset += maxPayload {
@@ -705,11 +670,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 			}
 			chunk := dest.Payload[offset:end]
 
-			// Reposition the writer to the current index before each
-			// chunk; encryptWriteChunk with advance=false peeks without
-			// mutating NextIndex so the caller owns advancement.
-			statefulWriter.NextIndex = currentIndex
-			boxID, ciphertext, sig, err := d.encryptWriteChunk(statefulWriter, chunk, false)
+			boxID, ciphertext, sig, err := d.encryptWriteChunk(dest.WriteCap, currentIndex, chunk)
 			if err != nil {
 				d.log.Errorf("createCourierEnvelopesFromPayloads: %v", err)
 				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
@@ -2138,32 +2099,13 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 			}
 			d.log.Debugf("decryptPigeonholeReply: Performing BACAP decryption, Idx64=%d", messageBoxIndex.Idx64)
 
-			// Create a StatefulReader from the ReadCap and MessageBoxIndex
-			statefulReader, err := bacap.NewStatefulReaderWithIndex(arqMessage.ReadCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
-			if err != nil {
-				d.log.Errorf("decryptPigeonholeReply: Failed to create StatefulReader: %v", err)
-				return nil, fmt.Errorf("%w: failed to create StatefulReader: %v", errBACAPDecryptionFailed, err)
-			}
-
-			// Calculate the expected BoxID from the ReadCap and MessageBoxIndex.
-			// The Got field is logged for diagnostic comparison against
-			// Expected; this is information, not an error, so log it at
-			// Debug. The decryption a few lines below is what will fail
-			// loudly when the BoxIDs actually disagree.
-			if expectedBoxID, err := messageBoxIndex.BoxIDForContext(arqMessage.ReadCap, constants.PIGEONHOLE_CTX); err == nil {
-				d.log.Debugf("decryptPigeonholeReply: BoxID comparison - Expected: %x, Got from replica: %x",
-					expectedBoxID.Bytes(), innerMsg.ReadReply.BoxID)
-			} else {
-				d.log.Debugf("decryptPigeonholeReply: failed to derive expected BoxID for diagnostic comparison: %v", err)
-			}
-
-			// Decrypt the BACAP payload (also verifies signature)
-			signature := (*[bacap.SignatureSize]byte)(innerMsg.ReadReply.Signature[:])
-			plaintext, err := statefulReader.DecryptNext(
-				[]byte(constants.PIGEONHOLE_CTX),
+			// Check the box is the one the read cap and index derive, then
+			// verify the signature and decrypt.
+			plaintext, err := pigeonhole.OpenBox(arqMessage.ReadCap, messageBoxIndex,
+				constants.PIGEONHOLE_CTX,
 				innerMsg.ReadReply.BoxID,
 				innerMsg.ReadReply.Payload,
-				*signature)
+				innerMsg.ReadReply.Signature[:])
 			if err != nil {
 				if innerMsg.ReadReply.ErrorCode == pigeonhole.ReplicaErrorTombstone {
 					d.log.Errorf("decryptPigeonholeReply: tombstone signature verification failed: %v", err)

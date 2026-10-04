@@ -85,21 +85,25 @@ func FuzzMessageBoxIndexUnmarshal(f *testing.F) {
 	})
 }
 
-func FuzzStatefulReaderFromBytesNextBoxID(f *testing.F) {
+func FuzzReadCapIndexBoxID(f *testing.F) {
 	f.Add([]byte(nil))
 	f.Add([]byte{})
-	f.Add(make([]byte, bacap.ReadCapSize))
+	f.Add(make([]byte, bacap.ReadCapSize+bacap.MessageBoxIndexSize))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if seed.Export(data) {
 			return
 		}
-		sr, err := bacap.NewStatefulReaderFromBytes(data)
+		if len(data) < bacap.ReadCapSize+bacap.MessageBoxIndexSize {
+			return
+		}
+		rc, err := bacap.ReadCapFromBytes(data[:bacap.ReadCapSize])
 		if err != nil {
 			return
 		}
-		if sr == nil {
-			t.Fatal("NewStatefulReaderFromBytes returned nil reader and nil error")
+		idx, err := bacap.NewEmptyMessageBoxIndexFromBytes(data[bacap.ReadCapSize : bacap.ReadCapSize+bacap.MessageBoxIndexSize])
+		if err != nil {
+			return
 		}
-		_, _ = sr.NextBoxID()
+		_, _ = idx.BoxIDForContext(rc, []byte("pigeonhole context"))
 	})
 }
