@@ -108,6 +108,8 @@ const (
 	// failed due to an authentication error.
 	DescriptorForbidden = 3
 
+	DescriptorInternalError = 4
+
 	// VoteOk signifies that the vote was accepted by the peer.
 	VoteOk = 0
 
@@ -195,6 +197,8 @@ func DescriptorErrorToString(code uint8) string {
 		return "Conflict"
 	case DescriptorForbidden:
 		return "Forbidden"
+	case DescriptorInternalError:
+		return "InternalError"
 	default:
 		return "Unknown"
 	}
