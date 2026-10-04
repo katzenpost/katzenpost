@@ -147,7 +147,7 @@ func (s *Server) onConn(conn net.Conn) {
 
 	if err = wireConn.Initialize(context.Background(), conn); err != nil {
 		// Try to identify the peer from the handshake error.
-		peerID := rAddr.String()
+		peerID := "anonymous"
 		if he, ok := wire.GetHandshakeError(err); ok && he.PeerCredentials != nil {
 			if name := s.state.PeerName(he.PeerCredentials.AdditionalData); name != "" {
 				peerID = name
@@ -186,10 +186,8 @@ func (s *Server) onConn(conn net.Conn) {
 		}
 
 		s.log.Errorf(
-			"Peer %s: Failed session handshake local=%v remote=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
+			"Peer %s: Failed session handshake after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
 			peerID,
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
 			elapsed,
 			handshakeTimeout,
 			phaseAtAccept,
@@ -208,10 +206,9 @@ func (s *Server) onConn(conn net.Conn) {
 	handshakeDuration := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("incoming", "success", handshakeDuration)
 
-	// Determine peer identifier for logging (name if known, otherwise IP)
 	peerID := auth.peerName
 	if peerID == "" {
-		peerID = rAddr.String()
+		peerID = "anonymous"
 	}
 
 	phaseAfterHandshake, remainingAfterHandshake := s.state.PhaseInfo()
@@ -337,12 +334,10 @@ func (s *Server) onConn(conn net.Conn) {
 		if err = wireConn.SendCommand(context.Background(), resp); err != nil {
 			phaseNow, remainingNow := s.state.PhaseInfo()
 			s.log.Warningf(
-				"Peer %s: Failed to send response command=%T response=%T local=%v remote=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s total_since_accept=%v: %v",
+				"Peer %s: Failed to send response command=%T response=%T after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s total_since_accept=%v: %v",
 				peerID,
 				cmd,
 				resp,
-				conn.LocalAddr(),
-				conn.RemoteAddr(),
 				time.Since(sendStart),
 				responseTimeout,
 				phaseAtAccept,
