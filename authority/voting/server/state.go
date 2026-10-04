@@ -2621,6 +2621,8 @@ func (s *state) restorePersistence() error {
 	const (
 		metadataBucket = "metadata"
 		versionKey     = "version"
+		schemaKey      = "schema"
+		schemaVersion  = 1
 	)
 
 	return s.db.Update(func(tx *bolt.Tx) error {
@@ -2640,6 +2642,14 @@ func (s *state) restorePersistence() error {
 		docsBkt, err := tx.CreateBucketIfNotExists([]byte(documentsBucket))
 		if err != nil {
 			return err
+		}
+
+		if v := bkt.Get([]byte(schemaKey)); v == nil {
+			if err := bkt.Put([]byte(schemaKey), []byte{schemaVersion}); err != nil {
+				return err
+			}
+		} else if !bytes.Equal(v, []byte{schemaVersion}) {
+			return fmt.Errorf("state: persistence schema %x, want %x", v, schemaVersion)
 		}
 
 		if b := bkt.Get([]byte(versionKey)); b != nil {
