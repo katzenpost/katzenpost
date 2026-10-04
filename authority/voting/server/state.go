@@ -1485,6 +1485,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	nodes := make([]*pki.MixDescriptor, 0)
 	mixTally := make(map[string][]*pki.Document)
 	mixParams := make(map[string][]*pki.Document)
+	noticeTally := make(map[noticeVote]int)
 	replicaTally := make(map[string][]*pki.Document)
 	replicaNodes := make([]*pki.ReplicaDescriptor, 0)
 	for id, vote := range s.votes[epoch] {
@@ -1498,6 +1499,12 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			mixParams[bs] = make([]*pki.Document, 0)
 		}
 		mixParams[bs] = append(mixParams[bs], vote)
+
+		notice := noticeVote{}
+		if err := pki.IsClientNoticeWellFormed(vote.MinClientVersion, vote.ClientNotice); err == nil {
+			notice = noticeVote{minClientVersion: vote.MinClientVersion, clientNotice: vote.ClientNotice}
+		}
+		noticeTally[notice]++
 
 		// include edge nodes in the tally.
 		for _, desc := range vote.GatewayNodes {
@@ -1595,6 +1602,14 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 
 		if len(votes) >= s.threshold {
 			sortNodesByPublicKey(nodes)
+			notice := noticeVote{}
+			for n, count := range noticeTally {
+				if count >= s.threshold {
+					notice = n
+					break
+				}
+			}
+			params.Notice = config.Notice{MinClientVersion: notice.minClientVersion, ClientNotice: notice.clientNotice}
 			// successful tally
 			return nodes, replicaNodes, params, nil
 		} else if len(votes) >= s.dissenters {
@@ -2760,13 +2775,16 @@ func votingThresholds(votingSetSize int) (threshold, dissenters int) {
 }
 
 type votedParameters struct {
-	Mu               float64
-	LambdaP          float64
-	LambdaL          float64
-	LambdaM          float64
-	LambdaR          float64
-	MinClientVersion string `cbor:"MinClientVersion,omitempty"`
-	ClientNotice     string `cbor:"ClientNotice,omitempty"`
+	Mu      float64
+	LambdaP float64
+	LambdaL float64
+	LambdaM float64
+	LambdaR float64
+}
+
+type noticeVote struct {
+	minClientVersion string
+	clientNotice     string
 }
 
 var canonicalCBOR cbor.EncMode
@@ -2780,17 +2798,12 @@ func init() {
 }
 
 func votedParametersKey(vote *pki.Document) (string, error) {
-	if err := pki.IsClientNoticeWellFormed(vote.MinClientVersion, vote.ClientNotice); err != nil {
-		return "", err
-	}
 	b, err := canonicalCBOR.Marshal(&votedParameters{
-		Mu:               vote.Mu,
-		LambdaP:          vote.LambdaP,
-		LambdaL:          vote.LambdaL,
-		LambdaM:          vote.LambdaM,
-		LambdaR:          vote.LambdaR,
-		MinClientVersion: vote.MinClientVersion,
-		ClientNotice:     vote.ClientNotice,
+		Mu:      vote.Mu,
+		LambdaP: vote.LambdaP,
+		LambdaL: vote.LambdaL,
+		LambdaM: vote.LambdaM,
+		LambdaR: vote.LambdaR,
 	})
 	if err != nil {
 		return "", err
@@ -2809,7 +2822,6 @@ func votedParametersFromKey(key string) (*config.Parameters, error) {
 		LambdaL: v.LambdaL,
 		LambdaM: v.LambdaM,
 		LambdaR: v.LambdaR,
-		Notice:  config.Notice{MinClientVersion: v.MinClientVersion, ClientNotice: v.ClientNotice},
 	}, nil
 }
 
