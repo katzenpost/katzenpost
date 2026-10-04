@@ -128,8 +128,8 @@ func TestPostRejectionQuorumIsPermanent(t *testing.T) {
 	}{
 		{"all forbidden", []uint8{forb, forb, forb}, true},
 		{"all invalid", []uint8{inv, inv, inv}, true},
-		{"mixed rejections", []uint8{conf, inv, 4}, true},
-		{"unknown code", []uint8{4, 4, 4}, false},
+		{"mixed rejections", []uint8{conf, inv, 0xfe}, true},
+		{"unknown code", []uint8{0xfe, 0xfe, 0xfe}, false},
 	}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
