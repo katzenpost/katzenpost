@@ -596,6 +596,7 @@ type postPeerState struct {
 	accepted      bool
 	conflict      bool
 	lastErr       error
+	lastKind      postAttemptKind
 	attempts      int
 	nextAttemptAt time.Time
 }
@@ -814,10 +815,7 @@ func updatePostSummary(states map[string]*postPeerState) postSummary {
 			}
 
 		case state.lastErr != nil:
-			msg := state.lastErr.Error()
-			if strings.Contains(msg, "unexpected reply") ||
-				strings.EqualFold(msg, "Ok") ||
-				strings.Contains(msg, "Descriptor") {
+			if state.lastKind == postAttemptSemantic {
 				summary.semanticErrors++
 			} else {
 				summary.transportErrors++
@@ -1085,6 +1083,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 			case postAttemptSemantic, postAttemptTransport:
 				state.lastErr = result.err
+				state.lastKind = result.kind
 				state.attempts++
 
 				delay := descriptorPostRetryDelay(p.cfg, state.attempts)
