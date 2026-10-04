@@ -18,6 +18,7 @@
 package retry
 
 import (
+	"errors"
 	"math"
 	"net"
 	"net/url"
@@ -93,16 +94,8 @@ func IsTransientError(err error) bool {
 		}
 	}
 
-	if netErr, ok := err.(net.Error); ok {
-		if netErr.Timeout() {
-			return true
-		}
-		if netErr.Temporary() {
-			return true
-		}
-	}
-
-	return false
+	var netErr net.Error
+	return errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary())
 }
 
 // DetectAddressCapabilities analyzes a list of addresses (which may be URLs)
