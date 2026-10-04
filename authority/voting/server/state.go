@@ -501,7 +501,9 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	// vote topology is irrelevent.
 	var zeros [32]byte
 	s.log.Debugf("getVote: Generating document with %d mix descriptors and %d replica descriptors", len(descriptors), len(replicaDescriptors))
-	vote := s.getDocument(descriptors, replicaDescriptors, s.s.cfg.Parameters, zeros[:])
+	params := *s.s.cfg.Parameters
+	params.Notice = s.s.cfg.Notice
+	vote := s.getDocument(descriptors, replicaDescriptors, &params, zeros[:])
 
 	// create our SharedRandom Commit
 	s.log.Debugf("getVote: Generating SharedRandom commit for epoch %d", epoch)
@@ -869,8 +871,8 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		PriorSharedRandom:             s.priorSRV,
 		SphinxGeometryHash:            s.geo.Hash(),
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
-		MinClientVersion:              s.s.cfg.Notice.MinClientVersion,
-		ClientNotice:                  s.s.cfg.Notice.ClientNotice,
+		MinClientVersion:              params.Notice.MinClientVersion,
+		ClientNotice:                  params.Notice.ClientNotice,
 	}
 	return doc
 }
@@ -2758,11 +2760,13 @@ func votingThresholds(votingSetSize int) (threshold, dissenters int) {
 }
 
 type votedParameters struct {
-	Mu      float64
-	LambdaP float64
-	LambdaL float64
-	LambdaM float64
-	LambdaR float64
+	Mu               float64
+	LambdaP          float64
+	LambdaL          float64
+	LambdaM          float64
+	LambdaR          float64
+	MinClientVersion string `cbor:"MinClientVersion,omitempty"`
+	ClientNotice     string `cbor:"ClientNotice,omitempty"`
 }
 
 var canonicalCBOR cbor.EncMode
@@ -2776,12 +2780,17 @@ func init() {
 }
 
 func votedParametersKey(vote *pki.Document) (string, error) {
+	if err := pki.IsClientNoticeWellFormed(vote.MinClientVersion, vote.ClientNotice); err != nil {
+		return "", err
+	}
 	b, err := canonicalCBOR.Marshal(&votedParameters{
-		Mu:      vote.Mu,
-		LambdaP: vote.LambdaP,
-		LambdaL: vote.LambdaL,
-		LambdaM: vote.LambdaM,
-		LambdaR: vote.LambdaR,
+		Mu:               vote.Mu,
+		LambdaP:          vote.LambdaP,
+		LambdaL:          vote.LambdaL,
+		LambdaM:          vote.LambdaM,
+		LambdaR:          vote.LambdaR,
+		MinClientVersion: vote.MinClientVersion,
+		ClientNotice:     vote.ClientNotice,
 	})
 	if err != nil {
 		return "", err
@@ -2800,6 +2809,7 @@ func votedParametersFromKey(key string) (*config.Parameters, error) {
 		LambdaL: v.LambdaL,
 		LambdaM: v.LambdaM,
 		LambdaR: v.LambdaR,
+		Notice:  config.Notice{MinClientVersion: v.MinClientVersion, ClientNotice: v.ClientNotice},
 	}, nil
 }
 
