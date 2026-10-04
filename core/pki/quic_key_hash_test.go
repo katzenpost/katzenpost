@@ -50,10 +50,10 @@ func TestQUICKeyHashRoundTrip(t *testing.T) {
 }
 
 func TestIsQUICKeyHashWellFormed(t *testing.T) {
-	for _, h := range [][]byte{nil, {}, make([]byte, 32)} {
+	for _, h := range [][]byte{nil, {}, make([]byte, 32), make([]byte, 64)} {
 		require.NoError(t, IsQUICKeyHashWellFormed(h), "%d", len(h))
 	}
-	for _, h := range [][]byte{{1}, make([]byte, 31), make([]byte, 33), make([]byte, 64)} {
+	for _, h := range [][]byte{{1}, make([]byte, 31), make([]byte, 33), make([]byte, 48), make([]byte, 63), make([]byte, 65), make([]byte, 96)} {
 		require.Error(t, IsQUICKeyHashWellFormed(h), "%d", len(h))
 	}
 }
