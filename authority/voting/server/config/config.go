@@ -436,6 +436,7 @@ type Config struct {
 	Logging     *Logging
 	Parameters  *Parameters
 	Debug       *Debug
+	Notice      Notice
 
 	Mixes           []*Node
 	GatewayNodes    []*Node

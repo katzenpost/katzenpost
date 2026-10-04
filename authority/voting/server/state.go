@@ -869,6 +869,8 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		PriorSharedRandom:             s.priorSRV,
 		SphinxGeometryHash:            s.geo.Hash(),
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
+		MinClientVersion:              s.s.cfg.Notice.MinClientVersion,
+		ClientNotice:                  s.s.cfg.Notice.ClientNotice,
 	}
 	return doc
 }
