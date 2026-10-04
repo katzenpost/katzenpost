@@ -1102,7 +1102,7 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 	// already written, so an incomplete temp-stream cleanup is a cache
 	// inefficiency, not a correctness failure. It must therefore not
 	// gate the terminal Copy reply: the daemon polls InProgress until
-	// processCopyCommand returns, and a run of replica-rejected
+	// processCopyCommand returns, and a run of failing
 	// tombstone writes can span minutes per box, hanging the client.
 	// Run it off the reply path; boxIDList and writeCap are local and
 	// no longer touched here, so the goroutine owns them safely.
@@ -1417,6 +1417,28 @@ func (e *Courier) tryReadFromShardReplica(
 	return replyInner.ReadReply, 0, nil
 }
 
+// tempTombstone is the write that deletes the temp-stream box at idx: the
+// empty payload, signed under that box's key, which a replica stores as a
+// tombstone. It also returns the index of the next box.
+//
+// A tombstone carries no payload, but the inner message is padded to a
+// fixed size before it is encrypted to the replicas (see
+// pigeonhole.PadInnerMessageForEncryption), so on the wire it is as long
+// as any other write.
+func tempTombstone(writeCap *bacap.WriteCap, idx *bacap.MessageBoxIndex) (*pigeonhole.ReplicaWrite, *bacap.MessageBoxIndex, error) {
+	boxID, sigraw, err := idx.SignBox(writeCap, constants.PIGEONHOLE_CTX, []byte{})
+	if err != nil {
+		return nil, nil, err
+	}
+	next, err := idx.NextIndex()
+	if err != nil {
+		return nil, nil, err
+	}
+	var sig [bacap.SignatureSize]byte
+	copy(sig[:], sigraw)
+	return &pigeonhole.ReplicaWrite{BoxID: boxID, Signature: sig}, next, nil
+}
+
 // writeTombstonesToTempChannel writes tombstones to clean up the temporary channel
 func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs [][bacap.BoxIDSize]byte) {
 	// This runs as a detached goroutine spawned by processCopyCommand,
@@ -1448,28 +1470,15 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 
 	// Write tombstones for each box
 	for i, boxID := range boxIDs {
-		// Create properly padded tombstone payload (empty message padded to required size)
-		// This ensures tombstones are indistinguishable from regular writes to prevent traffic analysis
-		paddedPayload, err := pigeonhole.CreatePaddedPayload([]byte{}, e.pigeonholeGeo.PaddedPayloadLength())
+		writeMsg, next, err := tempTombstone(writeCap, idx)
 		if err != nil {
-			e.log.Errorf("writeTombstonesToTempChannel: Failed to create padded tombstone %d: %v", i, err)
-			continue
-		}
-
-		// Encrypt and sign the tombstone, then move on to the next box
-		encBoxID, ciphertext, sig, err := idx.EncryptForContext(writeCap, constants.PIGEONHOLE_CTX, paddedPayload)
-		var next *bacap.MessageBoxIndex
-		if err == nil {
-			next, err = idx.NextIndex()
-		}
-		if err != nil {
-			e.log.Errorf("writeTombstonesToTempChannel: Failed to encrypt tombstone %d: %v", i, err)
+			e.log.Errorf("writeTombstonesToTempChannel: Failed to sign tombstone %d: %v", i, err)
 			continue
 		}
 		idx = next
 
 		// Verify the BoxID matches
-		if encBoxID != boxID {
+		if writeMsg.BoxID != boxID {
 			e.log.Errorf("writeTombstonesToTempChannel: BoxID mismatch for tombstone %d", i)
 			continue
 		}
@@ -1509,17 +1518,6 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 		if len(usablePubKeys) == 0 {
 			e.log.Errorf("writeTombstonesToTempChannel: no usable shard keys for box %d, skipping", i)
 			continue
-		}
-
-		// Create ReplicaWrite with the tombstone
-		sigArray := [bacap.SignatureSize]byte{}
-		copy(sigArray[:], sig)
-
-		writeMsg := &pigeonhole.ReplicaWrite{
-			BoxID:      boxID,
-			Signature:  sigArray,
-			PayloadLen: uint32(len(ciphertext)),
-			Payload:    ciphertext,
 		}
 
 		// Wrap in ReplicaInnerMessage
