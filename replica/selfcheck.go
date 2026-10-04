@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 
@@ -74,8 +75,10 @@ type MKEMSelfCheckResult struct {
 // a structured result for callers that need to consume the numbers
 // directly, e.g. for ProxyWorkerCount recommendations.
 func runMKEMSelfCheck(log *logging.Logger) MKEMSelfCheckResult {
-	scheme := replicaCommon.MKEMNikeScheme
-	nikeScheme := replicaCommon.NikeScheme
+	return measureMKEM(log, replicaCommon.MKEMNikeScheme, replicaCommon.NikeScheme)
+}
+
+func measureMKEM(log *logging.Logger, scheme *mkem.Scheme, nikeScheme nike.Scheme) MKEMSelfCheckResult {
 	numCPU := runtime.NumCPU()
 
 	pubKey, privKey, err := nikeScheme.GenerateKeyPair()
