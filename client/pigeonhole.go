@@ -255,16 +255,13 @@ func (d *Daemon) encryptWrite(request *Request) {
 	if len(plaintext) == 0 {
 		d.log.Debug("encryptWrite: Detected tombstone (zero-length plaintext)")
 
-		// For tombstones, we sign an empty payload without encryption
-		var sigraw []byte
-		var err error
-		boxID, sigraw, err = messageBoxIndex.SignBox(writeCap, constants.PIGEONHOLE_CTX, []byte{})
+		tombstone, err := pigeonhole.NewTombstone(writeCap, messageBoxIndex, constants.PIGEONHOLE_CTX)
 		if err != nil {
-			d.log.Errorf("encryptWrite: failed to sign tombstone box: %v", err)
+			d.log.Errorf("encryptWrite: failed to make tombstone: %v", err)
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		copy(sig[:], sigraw)
+		boxID, sig = tombstone.BoxID, tombstone.Signature
 		ciphertext = nil // Empty payload for tombstone
 		d.log.Debugf("encryptWrite: Generated tombstone BoxID: %x, Idx64=%d", boxID, messageBoxIndex.Idx64)
 	} else {
@@ -796,18 +793,16 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 	var courierEnvelopes []*pigeonhole.CourierEnvelope
 
 	for i := uint32(0); i < maxCount; i++ {
-		// Tombstone: sign empty payload with blinded private key, then
-		// encrypt the ReplicaWrite via the shared buildCourierEnvelope.
-		boxID, sigraw, err := cur.SignBox(destWriteCap, constants.PIGEONHOLE_CTX, []byte{})
+		// Make the tombstone, then encrypt it via the shared buildCourierEnvelope.
+		tombstone, err := pigeonhole.NewTombstone(destWriteCap, cur, constants.PIGEONHOLE_CTX)
 		if err != nil {
-			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: failed to sign tombstone box: %v", err)
+			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: failed to make tombstone: %v", err)
 			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		sig := [bacap.SignatureSize]byte{}
-		copy(sig[:], sigraw)
 
-		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &boxID, writeInnerMessage(boxID, nil, sig))
+		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &tombstone.BoxID,
+			&pigeonhole.ReplicaInnerMessage{MessageType: 1, WriteMsg: tombstone})
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: %v", err)
 			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)

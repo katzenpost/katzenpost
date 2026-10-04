@@ -41,3 +41,22 @@ func OpenBox(readCap *bacap.ReadCap, idx *bacap.MessageBoxIndex, ctx []byte,
 	}
 	return idx.DecryptForContext(box, ctx, ciphertext, sig)
 }
+
+// NewTombstone returns the write that deletes the box at idx on writeCap's
+// stream: the empty payload, signed under that box's key, with no payload.
+// A replica stores exactly this as a tombstone; a write that carries any
+// payload, even an encrypted empty message, is an ordinary write, which a
+// box already holding data refuses.
+//
+// A tombstone is no shorter on the wire than any other write: the inner
+// message is padded to a fixed size before it is encrypted to the replicas
+// (see PadInnerMessageForEncryption).
+func NewTombstone(writeCap *bacap.WriteCap, idx *bacap.MessageBoxIndex, ctx []byte) (*ReplicaWrite, error) {
+	boxID, sigraw, err := idx.SignBox(writeCap, ctx, []byte{})
+	if err != nil {
+		return nil, err
+	}
+	w := &ReplicaWrite{BoxID: boxID}
+	copy(w.Signature[:], sigraw)
+	return w, nil
+}
