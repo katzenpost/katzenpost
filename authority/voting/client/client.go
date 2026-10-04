@@ -41,7 +41,6 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/retry"
@@ -1462,6 +1461,7 @@ type fetchResult struct {
 	doc    *pki.Document
 	rawDoc []byte
 	sigs   int
+	gone   bool
 	err    error
 }
 
@@ -1512,9 +1512,13 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 		close(results)
 	}()
 
+	gone := 0
 	for res := range results {
 		if res.err != nil {
 			c.log.Errorf("Get: %s: %v", res.peer, res.err)
+			if res.gone {
+				gone++
+			}
 			continue
 		}
 		c.log.Noticef("Get: retrieved valid consensus from %s for epoch %d (%d sigs)", res.peer, epoch, res.sigs)
@@ -1533,8 +1537,7 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 		return res.doc, res.rawDoc, nil
 	}
 
-	e, _, _ := epochtime.Now()
-	if epoch <= e {
+	if gone > len(c.verifiers)-c.threshold {
 		return nil, nil, pki.ErrDocumentGone
 	}
 
@@ -1558,6 +1561,7 @@ func (c *Client) fetchAndValidate(ctx context.Context, auth *config.Authority, l
 		return res
 	}
 	if r.ErrorCode != commands.ConsensusOk {
+		res.gone = r.ErrorCode == commands.ConsensusGone
 		res.err = fmt.Errorf("consensus error code %d", r.ErrorCode)
 		return res
 	}
