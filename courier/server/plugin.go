@@ -20,7 +20,6 @@ import (
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
-	"github.com/katzenpost/katzenpost/client/constants"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -1030,9 +1029,8 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 		e.log.Errorf("processCopyCommand: deserialize WriteCap: %v", err)
 		return copyFailedReply(0, 0)
 	}
-	readCap := writeCap.ReadCap()
 	// The temp stream is read from the cap's own index, one box at a time.
-	idx := readCap.GetMessageBoxIndex()
+	pos := writeCap.ReadCap().Start()
 
 	// envelopesProcessed is the count of copy-stream envelopes that have
 	// been successfully dispatched to their intermediate replicas. When
@@ -1053,18 +1051,17 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 			e.log.Errorf("processCopyCommand: copy stream exceeded %d envelopes, aborting", maxCopyStreamEnvelopes)
 			return copyFailedReply(0, envelopesProcessed+1)
 		}
-		boxPub, err := idx.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+		box, err := pigeonhole.BoxID(pos)
 		if err != nil {
-			e.log.Errorf("processCopyCommand: BoxIDForContext: %v", err)
+			e.log.Errorf("processCopyCommand: BoxID: %v", err)
 			return copyFailedReply(0, envelopesProcessed+1)
 		}
-		boxID := &[bacap.BoxIDSize]byte{}
-		copy(boxID[:], boxPub.Bytes())
-		boxIDList = append(boxIDList, *boxID)
+		boxID := &box
+		boxIDList = append(boxIDList, box)
 
-		boxPlaintext, replicaCode, err := e.readNextBox(readCap, idx, boxID)
+		boxPlaintext, replicaCode, err := e.readNextBox(pos, boxID)
 		if err == nil {
-			idx, err = idx.NextIndex()
+			pos, err = pos.Next()
 		}
 		if err != nil {
 			e.log.Errorf("processCopyCommand: readNextBox box %x: replicaCode=%d err=%v", boxID[:8], replicaCode, err)
@@ -1224,14 +1221,13 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 // and returns the CopyStreamElement bytes plus the replica ErrorCode
 // that caused failure (0 on success). Used by the Copy command to
 // walk the temp stream.
-func (e *Courier) readNextBox(readCap *bacap.ReadCap, idx *bacap.MessageBoxIndex, boxID *[bacap.BoxIDSize]byte) ([]byte, uint8, error) {
+func (e *Courier) readNextBox(pos *bacap.ReadPosition, boxID *[bacap.BoxIDSize]byte) ([]byte, uint8, error) {
 	replicaReadReply, replicaCode, err := e.readBoxFromShardReplicas(boxID)
 	if err != nil {
 		return nil, replicaCode, err
 	}
 
-	decryptedPadded, err := pigeonhole.OpenBox(readCap, idx, constants.PIGEONHOLE_CTX,
-		*boxID, replicaReadReply.Payload, replicaReadReply.Signature[:])
+	decryptedPadded, err := pigeonhole.Open(pos, *boxID, replicaReadReply.Payload, replicaReadReply.Signature[:])
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to decrypt box %x: %v", boxID[:8], err)
 		instrument.DroppedByReason("copy_read_decrypt_failed")
@@ -1436,7 +1432,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 	e.log.Debugf("writeTombstonesToTempChannel: Writing %d tombstones", len(boxIDs))
 
 	// The temp stream's boxes are written from the cap's own index.
-	idx := writeCap.GetMessageBoxIndex()
+	pos := writeCap.Start()
 
 	// Get PKI document for replica selection
 	doc := e.pkiDocForSharding()
@@ -1448,16 +1444,16 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 
 	// Write tombstones for each box
 	for i, boxID := range boxIDs {
-		writeMsg, err := pigeonhole.NewTombstone(writeCap, idx, constants.PIGEONHOLE_CTX)
-		var next *bacap.MessageBoxIndex
+		writeMsg, err := pigeonhole.NewTombstone(pos)
+		var next *bacap.WritePosition
 		if err == nil {
-			next, err = idx.NextIndex()
+			next, err = pos.Next()
 		}
 		if err != nil {
 			e.log.Errorf("writeTombstonesToTempChannel: Failed to make tombstone %d: %v", i, err)
 			continue
 		}
-		idx = next
+		pos = next
 
 		// Verify the BoxID matches
 		if writeMsg.BoxID != boxID {

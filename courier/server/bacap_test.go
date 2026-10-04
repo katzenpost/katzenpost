@@ -9,8 +9,6 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
-
-	"github.com/katzenpost/katzenpost/pigeonhole"
 )
 
 const testContext = "PIGEONHOLE_CTX"
@@ -71,7 +69,9 @@ func TestBACAPSequenceOverwrite(t *testing.T) {
 		require.Equal(t, expectedBoxID.Bytes(), originalBox.BoxID[:], "BoxID should match")
 
 		// Decrypt the message
-		plaintext, err := pigeonhole.OpenBox(readCap, readIdx, ctx, originalBox.BoxID, originalBox.Ciphertext, originalBox.Signature)
+		readPos, err := readCap.PositionAt(readIdx)
+		require.NoError(t, err)
+		plaintext, err := readPos.Open(ctx, originalBox.BoxID, originalBox.Ciphertext, originalBox.Signature)
 		require.NoError(t, err)
 		readIdx, err = readIdx.NextIndex()
 		require.NoError(t, err)
@@ -120,7 +120,11 @@ func TestBACAPSequenceOverwrite(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedBoxID.Bytes(), originalBoxes[i].BoxID[:], "BoxID should still match")
 
-		plaintext, err := pigeonhole.OpenBox(readCap, tombstoneReadIdx, ctx, originalBoxes[i].BoxID, originalBoxes[i].Ciphertext, originalBoxes[i].Signature)
+		readPos, err := readCap.PositionAt(tombstoneReadIdx)
+
+		require.NoError(t, err)
+
+		plaintext, err := readPos.Open(ctx, originalBoxes[i].BoxID, originalBoxes[i].Ciphertext, originalBoxes[i].Signature)
 		require.NoError(t, err)
 		tombstoneReadIdx, err = tombstoneReadIdx.NextIndex()
 		require.NoError(t, err)

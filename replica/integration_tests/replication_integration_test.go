@@ -210,7 +210,11 @@ func TestReplicaReplication(t *testing.T) {
 		var verifyBox [bacap.BoxIDSize]byte
 		copy(verifyBox[:], verifyBoxID.Bytes())
 
-		decryptedPadded, err := pigeonhole.OpenBox(bobReadCap, verifyIndex, constants.PIGEONHOLE_CTX,
+		readPos, err := bobReadCap.PositionAt(verifyIndex)
+
+		require.NoError(t, err)
+
+		decryptedPadded, err := pigeonhole.Open(readPos,
 			verifyBox, readReply.ReadReply.Payload, readReply.ReadReply.Signature[:])
 		require.NoError(t, err, "Failed to decrypt data from shard replica %d", shardIdx)
 

@@ -217,7 +217,9 @@ func TestProxyIntegration(t *testing.T) {
 		"Proxy read must succeed - error code: %d", innerMsg.ReadReply.ErrorCode)
 
 	// Decrypt the BACAP payload at Bob's index
-	bobPaddedPlaintext, err := pigeonhole.OpenBox(bob.readCap, bob.next, constants.PIGEONHOLE_CTX,
+	readPos, err := bob.readCap.PositionAt(bob.next)
+	require.NoError(t, err)
+	bobPaddedPlaintext, err := pigeonhole.Open(readPos,
 		*expectedBoxID, innerMsg.ReadReply.Payload, innerMsg.ReadReply.Signature[:])
 	require.NoError(t, err, "Failed to decrypt BACAP payload")
 

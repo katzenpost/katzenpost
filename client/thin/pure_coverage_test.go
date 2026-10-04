@@ -52,7 +52,9 @@ func TestPureThinClientErrorToString(t *testing.T) {
 		{"voucher seal open failed", ThinClientErrorVoucherSealOpenFailed, "Voucher sealed reply could not be opened"},
 		{"courier invalid envelope", ThinClientErrorCourierInvalidEnvelope, "Courier rejected the envelope as malformed"},
 		{"courier invalid epoch", ThinClientErrorCourierInvalidEpoch, "Courier rejected the envelope: replica epoch outside tolerance window"},
-		{"unknown just above range", 33, "Unknown thin client error code: 33"},
+		{"index not in channel", ThinClientErrorIndexNotInChannel, "Message box index is not on the capability's stream"},
+		{"index too far", ThinClientErrorIndexTooFar, "Message box index is too far ahead of the capability to check"},
+		{"unknown just above range", 35, "Unknown thin client error code: 35"},
 		{"unknown max", 255, "Unknown thin client error code: 255"},
 	}
 	for _, tc := range cases {

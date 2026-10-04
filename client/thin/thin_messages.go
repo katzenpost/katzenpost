@@ -167,6 +167,17 @@ const (
 	// a courier-side staleness signal, NOT a replica database failure, even
 	// though the two share wire value 4 in their respective source namespaces.
 	ThinClientErrorCourierInvalidEpoch uint8 = 32
+
+	// ThinClientErrorIndexNotInChannel indicates that a message box index is
+	// not on the stream of the capability it was sent with: it is behind the
+	// cap's own index, or from another stream. Read or written anyway, it
+	// would address a box no one else uses.
+	ThinClientErrorIndexNotInChannel uint8 = 33
+
+	// ThinClientErrorIndexTooFar indicates that a message box index is too far
+	// ahead of its capability's own index for the daemon to check it is on the
+	// cap's stream. Re-basing the cap closer to the index avoids this.
+	ThinClientErrorIndexTooFar uint8 = 34
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -246,6 +257,10 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "Courier rejected the envelope as malformed"
 	case ThinClientErrorCourierInvalidEpoch:
 		return "Courier rejected the envelope: replica epoch outside tolerance window"
+	case ThinClientErrorIndexNotInChannel:
+		return "Message box index is not on the capability's stream"
+	case ThinClientErrorIndexTooFar:
+		return "Message box index is too far ahead of the capability to check"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}

@@ -1081,7 +1081,9 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	require.NoError(err)
 
 	// Bob checks the box and decrypts
-	bobDecrypted, err := pigeonhole.OpenBox(bobReadCap, bobMessageBoxIndex, constants.PIGEONHOLE_CTX, aliceBoxIDFromWriter, aliceCiphertext, aliceSig)
+	readPos, err := bobReadCap.PositionAt(bobMessageBoxIndex)
+	require.NoError(err)
+	bobDecrypted, err := pigeonhole.Open(readPos, aliceBoxIDFromWriter, aliceCiphertext, aliceSig)
 	require.NoError(err)
 
 	require.Equal(aliceMessage, bobDecrypted, "Bob should decrypt Alice's original message")
@@ -1228,7 +1230,9 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 		require.NoError(err)
 
 		// Bob checks the box, decrypts, and moves on to the next one
-		bobDecrypted, err := pigeonhole.OpenBox(bobReadCap, bobMessageBoxIndex, constants.PIGEONHOLE_CTX, aliceBoxID, aliceCiphertext, aliceSig)
+		readPos, err := bobReadCap.PositionAt(bobMessageBoxIndex)
+		require.NoError(err)
+		bobDecrypted, err := pigeonhole.Open(readPos, aliceBoxID, aliceCiphertext, aliceSig)
 		require.NoError(err)
 		require.Equal(message, bobDecrypted)
 		t.Logf("   ✓ Bob decrypted message %d: %q", i, string(bobDecrypted))

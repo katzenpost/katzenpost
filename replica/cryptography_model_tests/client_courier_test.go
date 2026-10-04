@@ -455,7 +455,11 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, innerMsg.ReadReply)
 
-	plaintext, err := pigeonhole.OpenBox(bob.ReadCap, bob.NextIndex, ctx, innerMsg.ReadReply.BoxID, innerMsg.ReadReply.Payload, innerMsg.ReadReply.Signature[:])
+	readPos, err := bob.ReadCap.PositionAt(bob.NextIndex)
+
+	require.NoError(t, err)
+
+	plaintext, err := readPos.Open(ctx, innerMsg.ReadReply.BoxID, innerMsg.ReadReply.Payload, innerMsg.ReadReply.Signature[:])
 	require.NoError(t, err)
 	bob.NextIndex, err = bob.NextIndex.NextIndex()
 	require.NoError(t, err)

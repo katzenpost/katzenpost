@@ -16,7 +16,6 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/client/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -112,22 +111,27 @@ func (d *Daemon) encryptRead(request *Request) {
 		return
 	}
 
+	pos, err := readCap.PositionAt(messageBoxIndex)
+	if err != nil {
+		d.log.Errorf("encryptRead: %v", err)
+		d.sendEncryptReadError(request, positionErrorCode(err))
+		return
+	}
+
 	// The box this read operation targets
-	boxPub, err := messageBoxIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+	boxID, err := pigeonhole.BoxID(pos)
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to derive box ID: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	boxID := &[bacap.BoxIDSize]byte{}
-	copy(boxID[:], boxPub.Bytes())
 	d.log.Debugf("encryptRead: Idx64=%d, BoxID=%x", messageBoxIndex.Idx64, boxID)
 
 	// Create the ReplicaInnerMessage for a read operation
 	msg := &pigeonhole.ReplicaInnerMessage{
 		MessageType: 0, // 0 = read
 		ReadMsg: &pigeonhole.ReplicaRead{
-			BoxID: *boxID,
+			BoxID: boxID,
 		},
 	}
 
@@ -170,7 +174,7 @@ func (d *Daemon) encryptRead(request *Request) {
 	}
 
 	// Compute the next message box index
-	nextMessageBoxIndex, err := messageBoxIndex.NextIndex()
+	next, err := pos.Next()
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to compute next index: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
@@ -184,7 +188,7 @@ func (d *Daemon) encryptRead(request *Request) {
 			MessageCiphertext:   courierQuery.Bytes(),
 			EnvelopeDescriptor:  envelopeDescriptorBytes,
 			EnvelopeHash:        envHash,
-			NextMessageBoxIndex: nextMessageBoxIndex,
+			NextMessageBoxIndex: next.Index(),
 			ErrorCode:           thin.ThinClientSuccess,
 		},
 	})
@@ -225,6 +229,13 @@ func (d *Daemon) encryptWrite(request *Request) {
 	}
 	d.log.Debugf("encryptWrite: MessageBoxIndex Idx64=%d, CurBlindingFactor=%x", messageBoxIndex.Idx64, messageBoxIndex.CurBlindingFactor)
 
+	pos, err := writeCap.PositionAt(messageBoxIndex)
+	if err != nil {
+		d.log.Errorf("encryptWrite: %v", err)
+		d.sendEncryptWriteError(request, positionErrorCode(err))
+		return
+	}
+
 	plaintext := request.EncryptWrite.Plaintext
 	if plaintext == nil {
 		d.log.Error("encryptWrite: Plaintext is nil")
@@ -247,23 +258,19 @@ func (d *Daemon) encryptWrite(request *Request) {
 		return
 	}
 
-	var boxID [bacap.BoxIDSize]byte
-	var sig [bacap.SignatureSize]byte
-	var ciphertext []byte
+	var writeRequest *pigeonhole.ReplicaWrite
 
 	// Check if this is a tombstone (zero-length plaintext)
 	if len(plaintext) == 0 {
 		d.log.Debug("encryptWrite: Detected tombstone (zero-length plaintext)")
 
-		tombstone, err := pigeonhole.NewTombstone(writeCap, messageBoxIndex, constants.PIGEONHOLE_CTX)
+		writeRequest, err = pigeonhole.NewTombstone(pos)
 		if err != nil {
 			d.log.Errorf("encryptWrite: failed to make tombstone: %v", err)
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		boxID, sig = tombstone.BoxID, tombstone.Signature
-		ciphertext = nil // Empty payload for tombstone
-		d.log.Debugf("encryptWrite: Generated tombstone BoxID: %x, Idx64=%d", boxID, messageBoxIndex.Idx64)
+		d.log.Debugf("encryptWrite: Generated tombstone BoxID: %x, Idx64=%d", writeRequest.BoxID, messageBoxIndex.Idx64)
 	} else {
 		// Normal write path: validate size, pad, and encrypt
 
@@ -285,23 +292,13 @@ func (d *Daemon) encryptWrite(request *Request) {
 			return
 		}
 
-		var sigraw []byte
-		boxID, ciphertext, sigraw, err = messageBoxIndex.EncryptForContext(writeCap, constants.PIGEONHOLE_CTX, paddedPayload)
+		writeRequest, err = pigeonhole.Seal(pos, paddedPayload)
 		if err != nil {
 			d.log.Errorf("encryptWrite: failed to encrypt message: %v", err)
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		d.log.Debugf("encryptWrite: Generated BoxID: %x, Idx64=%d", boxID, messageBoxIndex.Idx64)
-		copy(sig[:], sigraw)
-	}
-
-	// Create the ReplicaWrite message
-	writeRequest := &pigeonhole.ReplicaWrite{
-		BoxID:      boxID,
-		Signature:  sig,
-		PayloadLen: uint32(len(ciphertext)),
-		Payload:    ciphertext,
+		d.log.Debugf("encryptWrite: Generated BoxID: %x, Idx64=%d", writeRequest.BoxID, messageBoxIndex.Idx64)
 	}
 
 	// Create the ReplicaInnerMessage for a write operation
@@ -341,7 +338,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 	}
 
 	// Compute the next message box index
-	nextMessageBoxIndex, err := messageBoxIndex.NextIndex()
+	next, err := pos.Next()
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to compute next index: %v", err)
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
@@ -355,7 +352,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 			MessageCiphertext:   courierQuery.Bytes(),
 			EnvelopeDescriptor:  envelopeDescriptorBytes,
 			EnvelopeHash:        envHash,
-			NextMessageBoxIndex: nextMessageBoxIndex,
+			NextMessageBoxIndex: next.Index(),
 			ErrorCode:           thin.ThinClientSuccess,
 		},
 	})
@@ -409,19 +406,24 @@ func validateEnvelopePayloadRequest(payload []byte, writeCap *bacap.WriteCap, st
 	return nil
 }
 
-// writeInnerMessage builds a ReplicaInnerMessage for a write or tombstone
-// from the outputs of a BACAP signing step. A zero-length ciphertext is
-// valid and produces a tombstone; PayloadLen is set from the byte length
-// either way.
-func writeInnerMessage(boxID [bacap.BoxIDSize]byte, ciphertext []byte, sig [bacap.SignatureSize]byte) *pigeonhole.ReplicaInnerMessage {
+// positionErrorCode is the thin client error code for a cap and index
+// that PositionAt refused.
+func positionErrorCode(err error) uint8 {
+	switch {
+	case errors.Is(err, bacap.ErrIndexTooFar):
+		return thin.ThinClientErrorIndexTooFar
+	case errors.Is(err, bacap.ErrIndexNotInChannel):
+		return thin.ThinClientErrorIndexNotInChannel
+	default:
+		return thin.ThinClientErrorInvalidRequest
+	}
+}
+
+// writeInnerMessage wraps a write or tombstone in a ReplicaInnerMessage.
+func writeInnerMessage(write *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaInnerMessage {
 	return &pigeonhole.ReplicaInnerMessage{
 		MessageType: 1, // write
-		WriteMsg: &pigeonhole.ReplicaWrite{
-			BoxID:      boxID,
-			Signature:  sig,
-			PayloadLen: uint32(len(ciphertext)),
-			Payload:    ciphertext,
-		},
+		WriteMsg:    write,
 	}
 }
 
@@ -459,23 +461,17 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 }
 
 // encryptWriteChunk pads a user chunk to the geometry's plaintext size
-// and encrypts it for the box at idx on writeCap's stream, producing the
-// boxID, BACAP-encrypted ciphertext, and signature that feed
-// writeInnerMessage. The caller advances the index.
-func (d *Daemon) encryptWriteChunk(writeCap *bacap.WriteCap, idx *bacap.MessageBoxIndex, chunk []byte) ([bacap.BoxIDSize]byte, []byte, [bacap.SignatureSize]byte, error) {
-	var zeroBox [bacap.BoxIDSize]byte
-	var zeroSig [bacap.SignatureSize]byte
+// and seals it for the box at pos. The caller advances the position.
+func (d *Daemon) encryptWriteChunk(pos *bacap.WritePosition, chunk []byte) (*pigeonhole.ReplicaWrite, error) {
 	paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength+4)
 	if err != nil {
-		return zeroBox, nil, zeroSig, fmt.Errorf("failed to pad payload: %w", err)
+		return nil, fmt.Errorf("failed to pad payload: %w", err)
 	}
-	boxID, ciphertext, sigraw, err := idx.EncryptForContext(writeCap, constants.PIGEONHOLE_CTX, paddedPayload)
+	write, err := pigeonhole.Seal(pos, paddedPayload)
 	if err != nil {
-		return zeroBox, nil, zeroSig, fmt.Errorf("failed to encrypt message: %w", err)
+		return nil, fmt.Errorf("failed to encrypt message: %w", err)
 	}
-	var sig [bacap.SignatureSize]byte
-	copy(sig[:], sigraw)
-	return boxID, ciphertext, sig, nil
+	return write, nil
 }
 
 func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
@@ -503,28 +499,33 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	// doc.Epoch around a mixnet-epoch boundary.
 	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 
-	idx := req.DestStartIndex
+	pos, err := req.DestWriteCap.PositionAt(req.DestStartIndex)
+	if err != nil {
+		d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
+		d.sendCreateCourierEnvelopesFromPayloadError(request, positionErrorCode(err))
+		return
+	}
 
 	maxPayload := d.cfg.PigeonholeGeometry().MaxPlaintextPayloadLength - 4
 	chunks := chunkPayload(req.Payload, maxPayload)
 	envelopes := make([]*pigeonhole.CourierEnvelope, 0, len(chunks))
 	for _, chunk := range chunks {
-		boxID, ciphertext, sig, err := d.encryptWriteChunk(req.DestWriteCap, idx, chunk)
+		write, err := d.encryptWriteChunk(pos, chunk)
 		if err == nil {
-			idx, err = idx.NextIndex()
+			pos, err = pos.Next()
 		}
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &boxID, writeInnerMessage(boxID, ciphertext, sig))
+		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		d.log.Debugf("createCourierEnvelopesFromPayload: BoxID=%x", boxID)
+		d.log.Debugf("createCourierEnvelopesFromPayload: BoxID=%x", write.BoxID)
 		envelopes = append(envelopes, envelope)
 	}
 
@@ -562,7 +563,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		CreateCourierEnvelopesFromPayloadReply: &thin.CreateCourierEnvelopesFromPayloadReply{
 			QueryID:       req.QueryID,
 			Envelopes:     elements,
-			NextDestIndex: idx,
+			NextDestIndex: pos.Index(),
 			ErrorCode:     thin.ThinClientSuccess,
 		},
 	})
@@ -657,7 +658,12 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 			return
 		}
 
-		currentIndex := dest.StartIndex
+		pos, err := dest.WriteCap.PositionAt(dest.StartIndex)
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromPayloads: destination %d: %v", destIdx, err)
+			d.sendCreateCourierEnvelopesFromPayloadsError(request, positionErrorCode(err))
+			return
+		}
 
 		// Chunk the payload and create CourierEnvelopes for this destination
 		for offset := 0; offset < len(dest.Payload); offset += maxPayload {
@@ -667,15 +673,15 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 			}
 			chunk := dest.Payload[offset:end]
 
-			boxID, ciphertext, sig, err := d.encryptWriteChunk(dest.WriteCap, currentIndex, chunk)
+			write, err := d.encryptWriteChunk(pos, chunk)
 			if err != nil {
 				d.log.Errorf("createCourierEnvelopesFromPayloads: %v", err)
 				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
 				return
 			}
-			d.log.Debugf("createCourierEnvelopesFromPayloads: dest=%d, Idx64=%d, BoxID=%x", destIdx, currentIndex.Idx64, boxID)
+			d.log.Debugf("createCourierEnvelopesFromPayloads: dest=%d, Idx64=%d, BoxID=%x", destIdx, pos.Index().Idx64, write.BoxID)
 
-			envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &boxID, writeInnerMessage(boxID, ciphertext, sig))
+			envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
 			if err != nil {
 				d.log.Errorf("createCourierEnvelopesFromPayloads: %v", err)
 				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
@@ -690,14 +696,14 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 			elements = append(elements, newElements...)
 			totalEnvelopes++
 
-			currentIndex, err = currentIndex.NextIndex()
+			pos, err = pos.Next()
 			if err != nil {
 				d.log.Errorf("createCourierEnvelopesFromPayloads: failed to advance index: %v", err)
 				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
 				return
 			}
 		}
-		nextDestIndices[destIdx] = currentIndex
+		nextDestIndices[destIdx] = pos.Index()
 	}
 
 	// Flush or return residual buffer
@@ -788,21 +794,26 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 		return
 	}
 
+	cur, err := destWriteCap.PositionAt(destStartIndex)
+	if err != nil {
+		d.log.Errorf("createCourierEnvelopesFromTombstoneRange: %v", err)
+		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, positionErrorCode(err))
+		return
+	}
+
 	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
-	cur := destStartIndex
 	var courierEnvelopes []*pigeonhole.CourierEnvelope
 
 	for i := uint32(0); i < maxCount; i++ {
 		// Make the tombstone, then encrypt it via the shared buildCourierEnvelope.
-		tombstone, err := pigeonhole.NewTombstone(destWriteCap, cur, constants.PIGEONHOLE_CTX)
+		tombstone, err := pigeonhole.NewTombstone(cur)
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: failed to make tombstone: %v", err)
 			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
 			return
 		}
 
-		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &tombstone.BoxID,
-			&pigeonhole.ReplicaInnerMessage{MessageType: 1, WriteMsg: tombstone})
+		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &tombstone.BoxID, writeInnerMessage(tombstone))
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: %v", err)
 			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
@@ -810,13 +821,12 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 		}
 		courierEnvelopes = append(courierEnvelopes, envelope)
 
-		nextIndex, err := cur.NextIndex()
+		cur, err = cur.Next()
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: failed to advance index: %v", err)
 			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		cur = nextIndex
 	}
 
 	// Encode via CopyStreamEncoder with stateless buffer continuation
@@ -869,7 +879,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 			QueryID:       request.CreateCourierEnvelopesFromTombstoneRange.QueryID,
 			Envelopes:     elements,
 			Buffer:        bufferState,
-			NextDestIndex: cur,
+			NextDestIndex: cur.Index(),
 			ErrorCode:     thin.ThinClientSuccess,
 		},
 	})
@@ -1137,6 +1147,16 @@ func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, d
 // startResendingEncryptedMessage starts resending an encrypted Pigeonhole message
 // via the ARQ mechanism. It will retry forever until cancelled or successful.
 // validateStartResendingRequest validates the fields of a StartResendingEncryptedMessage request.
+// readPosition decodes a serialized message box index and checks it is on
+// readCap's stream.
+func readPosition(readCap *bacap.ReadCap, index []byte) (*bacap.ReadPosition, error) {
+	idx, err := bacap.NewEmptyMessageBoxIndexFromBytes(index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize MessageBoxIndex: %w", err)
+	}
+	return readCap.PositionAt(idx)
+}
+
 func validateStartResendingRequest(req *thin.StartResendingEncryptedMessage) error {
 	if req.QueryID == nil {
 		return fmt.Errorf("QueryID is nil")
@@ -1238,6 +1258,14 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	}
 
 	isRead := req.ReadCap != nil
+	if isRead && len(req.MessageBoxIndex) > 0 {
+		// Refuse an index the reply could never be opened at.
+		if _, err := readPosition(req.ReadCap, req.MessageBoxIndex); err != nil {
+			d.log.Errorf("startResendingEncryptedMessage: %v", err)
+			d.sendStartResendingEncryptedMessageError(request, positionErrorCode(err))
+			return
+		}
+	}
 	d.logBoxIDForRequest(req, isRead)
 
 	_, doc := d.client.CurrentDocument()
@@ -2086,18 +2114,16 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 
 		// Perform BACAP decryption if this is a read operation
 		if arqMessage.IsRead && arqMessage.ReadCap != nil && arqMessage.MessageBoxIndex != nil {
-			// Deserialize the MessageBoxIndex
-			messageBoxIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(arqMessage.MessageBoxIndex)
+			pos, err := readPosition(arqMessage.ReadCap, arqMessage.MessageBoxIndex)
 			if err != nil {
-				d.log.Errorf("decryptPigeonholeReply: Failed to deserialize MessageBoxIndex: %v", err)
-				return nil, fmt.Errorf("%w: failed to deserialize MessageBoxIndex: %v", errBACAPDecryptionFailed, err)
+				d.log.Errorf("decryptPigeonholeReply: %v", err)
+				return nil, fmt.Errorf("%w: %v", errBACAPDecryptionFailed, err)
 			}
-			d.log.Debugf("decryptPigeonholeReply: Performing BACAP decryption, Idx64=%d", messageBoxIndex.Idx64)
+			d.log.Debugf("decryptPigeonholeReply: Performing BACAP decryption, Idx64=%d", pos.Index().Idx64)
 
-			// Check the box is the one the read cap and index derive, then
-			// verify the signature and decrypt.
-			plaintext, err := pigeonhole.OpenBox(arqMessage.ReadCap, messageBoxIndex,
-				constants.PIGEONHOLE_CTX,
+			// Check the box is the one the position derives, then verify
+			// the signature and decrypt.
+			plaintext, err := pigeonhole.Open(pos,
 				innerMsg.ReadReply.BoxID,
 				innerMsg.ReadReply.Payload,
 				innerMsg.ReadReply.Signature[:])
@@ -2111,7 +2137,7 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 			}
 
 			if innerMsg.ReadReply.ErrorCode == pigeonhole.ReplicaErrorTombstone {
-				d.log.Debugf("decryptPigeonholeReply: verified tombstone at Idx64=%d", messageBoxIndex.Idx64)
+				d.log.Debugf("decryptPigeonholeReply: verified tombstone at Idx64=%d", pos.Index().Idx64)
 				return nil, &replicaError{code: pigeonhole.ReplicaErrorTombstone}
 			}
 

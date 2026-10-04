@@ -531,9 +531,9 @@ func TestEncryptReadNoPKIDoc(t *testing.T) {
 
 	d.client.pki.docs = sync.Map{}
 
-	readCap := createTestReadCap(t)
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
+	readCap := writeCap.ReadCap()
 	mbi := writeCap.GetMessageBoxIndex()
 	queryID := &[thin.QueryIDLength]byte{}
 	copy(queryID[:], []byte("encread-nopki000"))
@@ -551,6 +551,38 @@ func TestEncryptReadNoPKIDoc(t *testing.T) {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.EncryptReadReply)
 		require.Equal(t, thin.ThinClientErrorInternalError, resp.EncryptReadReply.ErrorCode)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+// An index from another stream is refused before anything is built: read
+// anyway, it would address a box no one writes to.
+func TestEncryptReadIndexNotInChannel(t *testing.T) {
+	d, testAppID, responseCh := setupDaemonWithMockConn(t)
+
+	readCap := createTestReadCap(t)
+	other, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	// Another stream's index at this cap's own counter value.
+	foreign := *other.GetMessageBoxIndex()
+	foreign.Idx64 = readCap.GetMessageBoxIndex().Idx64
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("encread-foreign0"))
+
+	d.encryptRead(&Request{
+		AppID: testAppID,
+		EncryptRead: &thin.EncryptRead{
+			QueryID:         queryID,
+			ReadCap:         readCap,
+			MessageBoxIndex: &foreign,
+		},
+	})
+
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.EncryptReadReply)
+		require.Equal(t, thin.ThinClientErrorIndexNotInChannel, resp.EncryptReadReply.ErrorCode)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout")
 	}

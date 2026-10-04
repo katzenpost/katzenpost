@@ -737,7 +737,9 @@ func (r *readerSide) boxID(t *testing.T) *[bacap.BoxIDSize]byte {
 
 // open checks and decrypts the box Bob reads next, then moves him on.
 func (r *readerSide) open(t *testing.T, box [bacap.BoxIDSize]byte, payload []byte, sig []byte) []byte {
-	plaintext, err := pigeonhole.OpenBox(r.readCap, r.next, constants.PIGEONHOLE_CTX, box, payload, sig)
+	readPos, err := r.readCap.PositionAt(r.next)
+	require.NoError(t, err)
+	plaintext, err := pigeonhole.Open(readPos, box, payload, sig)
 	require.NoError(t, err)
 	r.next, err = r.next.NextIndex()
 	require.NoError(t, err)
