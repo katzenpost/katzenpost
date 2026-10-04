@@ -821,6 +821,13 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 		return resp
 	}
 
+	if err := pki.IsContactInfoWellFormed(desc.ContactInfo); err != nil {
+		s.log.Noticef("onPostDescriptor: Rejecting descriptor for node %s epoch %d from peer %s: %s", strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+		instrument.DescriptorRejected("mix", "malformed")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
+
 	// Hand the descriptor off to the state worker. As long as this returns
 	// a nil, the authority "accepts" the descriptor.
 	s.log.Debugf("onPostDescriptor: Submitting descriptor for node %s epoch %d to state worker from peer %s", strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(peerID))
