@@ -677,6 +677,13 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 		return resp
 	}
 
+	if err := pki.IsContactInfoWellFormed(desc.ContactInfo); err != nil {
+		s.log.Noticef("Peer %s: Rejecting replica descriptor for node %s epoch %d: %s", strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(err.Error()))
+		instrument.DescriptorRejected("replica", "malformed")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
+
 	// Hand the replica descriptor off to the state worker. As long as this returns
 	// a nil, the authority "accepts" the replica descriptor.
 	err = s.state.onReplicaDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
@@ -815,6 +822,13 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 			strconv.QuoteToASCII(peerID),
 			strconv.QuoteToASCII(err.Error()),
 		)
+		instrument.DescriptorRejected("mix", "malformed")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
+
+	if err := pki.IsContactInfoWellFormed(desc.ContactInfo); err != nil {
+		s.log.Noticef("onPostDescriptor: Rejecting descriptor for node %s epoch %d from peer %s: %s", strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
 		instrument.DescriptorRejected("mix", "malformed")
 		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
