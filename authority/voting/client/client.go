@@ -659,8 +659,8 @@ func descriptorStatusIsOK(code uint8) bool {
 	return code == commands.DescriptorOk || strings.EqualFold(descriptorStatusText(code), "Ok")
 }
 
-func descriptorStatusIsConflict(code uint8) bool {
-	return strings.EqualFold(descriptorStatusText(code), "Conflict")
+func descriptorStatusIsRejection(code uint8) bool {
+	return code == commands.DescriptorConflict || code == commands.DescriptorInvalid || code == commands.DescriptorForbidden
 }
 
 func (p *connector) postAuthorityOnce(
@@ -743,7 +743,7 @@ func (p *connector) postAuthorityOnce(
 			elapsed:    elapsed,
 			statusText: statusText,
 		}
-	case descriptorStatusIsConflict(status.ErrorCode):
+	case descriptorStatusIsRejection(status.ErrorCode):
 		return postAttemptResult{
 			peer:       peer,
 			round:      round,
