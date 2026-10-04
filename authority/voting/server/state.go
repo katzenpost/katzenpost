@@ -2429,7 +2429,12 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 				s.RUnlock()
 				return err
 			}
-			if !hmac.Equal(serialized, rawDesc) {
+			uploaded, err := desc.Marshal()
+			if err != nil {
+				s.RUnlock()
+				return err
+			}
+			if !hmac.Equal(serialized, uploaded) {
 				s.RUnlock()
 				return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
 			}
@@ -2506,7 +2511,12 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 				s.RUnlock()
 				return err
 			}
-			if !hmac.Equal(serialized, rawDesc) {
+			uploaded, err := desc.MarshalBinary()
+			if err != nil {
+				s.RUnlock()
+				return err
+			}
+			if !hmac.Equal(serialized, uploaded) {
 				s.RUnlock()
 				return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
 			}
