@@ -291,8 +291,8 @@ was probed against a healthy mixnet-alpine and passed as of this writing
   ``nodes-mixed``, ``nodes-old``, ``nodes-old-n1``, ``everything-mixed`` and
   ``everything-mixed-n1``. ``make interop-matrix`` runs twelve combinations in
   turn.
-* ``make client-check`` -- run the working-tree client with ``warped=false``
-  against the live namenlos network, using only the public
+* ``make client-check`` -- run the working-tree client with the default
+  20-minute epoch against the live namenlos network, using only the public
   ``client-configs/namenlos.toml``.
 
 Each gate runs on its own ``net_name`` and port band (section 3), so several can
@@ -311,10 +311,9 @@ waits on or fails because of the public network.
 
 Notes
 
-* ``warped`` defaults to ``true``: the network runs with a 2-minute warped
-  epoch (``epoch_duration=2m``), so PKI, topology, and mix keys churn fast
-  enough to exercise the system in a dev loop. The old explicit
-  ``warped=true`` incantation is no longer needed.
+* The network runs with a 2-minute epoch (``epoch_duration=2m``, passed to
+  every container as ``KATZENPOST_EPOCH_DURATION``), so PKI, topology, and
+  mix keys churn fast enough to exercise the system in a dev loop.
 * ``make wait`` waits until every node — gateway, mixes, servicenodes
   (with their courier plugins), and storage replicas — reports ready
   against the current consensus, i.e. each node's live per-epoch keys

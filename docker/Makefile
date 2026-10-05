@@ -47,7 +47,6 @@ help:
 	@echo " test-distros              - bring up and ping the testnet on every DISTRO, leaving them running (serial, or parallel with make -j)"
 	@echo
 
-warped?=true
 no_decoy?=true
 no_client_decoy?=false
 no_courier_replica_decoy?=false
@@ -346,7 +345,7 @@ log_level=DEBUG
 # only used when explicitly requested (make docker=docker ...).
 docker?=$(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 
-ldflags_body=-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}
+ldflags_body=-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid=
 ldflags="$(ldflags_body)"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
@@ -380,9 +379,11 @@ else
   docker_compose= DOCKER_USER=$(docker_user) $(docker_compose_v1_or_v2)
 endif
 
+docker_args += -e KATZENPOST_EPOCH_DURATION=$(epoch_duration)
+
 # Recursive `$(MAKE)` invocations inherit these instead of re-deriving
 # them from a hardcoded argument list.
-export docker docker_user docker_args distro sh warped net_name compose_network_name cache_dir mount_net_name
+export docker docker_user docker_args distro sh net_name compose_network_name cache_dir mount_net_name
 export no_decoy no_client_decoy no_courier_replica_decoy no_mixdecoy no_gatewaydecoy
 export no_metrics pyroscope_dirauth pyroscope_kpclientd kpclientd_metrics
 export wirekem nike kem mixes auths gateways serviceNodes storageNodes layers
@@ -994,7 +995,7 @@ docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --volume $$src:/go/ka
 
 interop-ref-binaries: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	@set -e; for ref in $(release_refs); do \
-	  refdir=$(cache_dir)/refbins/$$ref-warped-$(warped); mkdir -p $$refdir; \
+	  refdir=$(cache_dir)/refbins/$$ref; mkdir -p $$refdir; \
 	  ( flock 9; \
 	  if [ -x $$refdir/server.$(distro).$$ref ] && [ -x $$refdir/dirauth.$(distro).$$ref ] && [ -x $$refdir/replica.$(distro).$$ref ]; then \
 	    rm -f $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref; \
@@ -1078,7 +1079,7 @@ client-check: | $(cache_dir)
 	sed 's/@katzenpost/@namenlos-client/; s#\$$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock#/namenlos-client/kpclientd.sock#' $(namenlos_config) > namenlos-client/client/client.toml
 	sed 's/@katzenpost/@namenlos-client/' $(namenlos_thin_config) > namenlos-client/client/thinclient.toml
 	@grep -q '@namenlos-client' namenlos-client/client/client.toml && ! grep -q 'XDG_RUNTIME_DIR' namenlos-client/client/client.toml && grep -q '@namenlos-client' namenlos-client/client/thinclient.toml || { echo "client-check: socket rewrite failed" >&2; exit 1; }
-	$(MAKE) warped=false net_name=namenlos-client namenlos-client/kpclientd.$(distro) namenlos-client/fetch.$(distro) namenlos-client/ping.$(distro)
+	$(MAKE) net_name=namenlos-client namenlos-client/kpclientd.$(distro) namenlos-client/fetch.$(distro) namenlos-client/ping.$(distro)
 	$(docker) rm -f namenlos-client 2>/dev/null; $(docker) run -d --name namenlos-client --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/kpclientd.$(distro) -c /namenlos-client/client/client.toml
 	@for i in $$(seq 1 60); do [ -S namenlos-client/kpclientd.sock ] && break; sleep 1; done; [ -S namenlos-client/kpclientd.sock ] || { echo "client-check: kpclientd did not open its socket within 60s" >&2; $(docker) logs namenlos-client 2>&1 | tail -50; $(docker) rm -f namenlos-client; exit 1; }
 	timeout 120 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/fetch.$(distro) -f /namenlos-client/client/thinclient.toml \
