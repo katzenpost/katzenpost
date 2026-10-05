@@ -1750,20 +1750,7 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
 
-			var identityPublicKey sign.PublicKey
-			var err error
-			if filepath.IsAbs(node.IdentityPublicKeyPem) {
-				identityPublicKey, err = signpem.FromPublicPEMFile(node.IdentityPublicKeyPem, pkiSignatureScheme)
-				if err != nil {
-					panic(err)
-				}
-			} else {
-				pemFilePath := filepath.Join(s.s.cfg.Server.DataDir, node.IdentityPublicKeyPem)
-				identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-				if err != nil {
-					panic(err)
-				}
-			}
+			identityPublicKey := loadNodeIdentityKey(s.s.cfg.Server.DataDir, node.IdentityPublicKeyPem, pkiSignatureScheme)
 
 			id := hash.Sum256From(identityPublicKey)
 
@@ -2836,20 +2823,7 @@ func newState(s *Server) (*state, error) {
 	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Mixes {
-		var identityPublicKey sign.PublicKey
-		var err error
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		}
+		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.IdentityPublicKeyPem, pkiSignatureScheme)
 
 		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedMixes[pk] = v.Identifier
@@ -2857,21 +2831,7 @@ func newState(s *Server) (*state, error) {
 	}
 	st.authorizedGatewayNodes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.GatewayNodes {
-		var identityPublicKey sign.PublicKey
-		var err error
-
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		}
+		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.IdentityPublicKeyPem, pkiSignatureScheme)
 
 		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedGatewayNodes[pk] = v.Identifier
@@ -2879,21 +2839,7 @@ func newState(s *Server) (*state, error) {
 	}
 	st.authorizedServiceNodes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.ServiceNodes {
-		var identityPublicKey sign.PublicKey
-		var err error
-
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		}
+		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.IdentityPublicKeyPem, pkiSignatureScheme)
 
 		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedServiceNodes[pk] = v.Identifier
@@ -2901,21 +2847,7 @@ func newState(s *Server) (*state, error) {
 	}
 	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]*authorizedReplicaInfo)
 	for _, v := range st.s.cfg.StorageReplicas {
-		var identityPublicKey sign.PublicKey
-		var err error
-
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		}
+		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.IdentityPublicKeyPem, pkiSignatureScheme)
 
 		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedReplicaNodes[pk] = &authorizedReplicaInfo{
@@ -3151,4 +3083,15 @@ func (s *state) reveal(epoch uint64) []byte {
 	}
 	s.log.Debugf("reveal: Successfully retrieved reveal for epoch %d", epoch)
 	return signed
+}
+
+func loadNodeIdentityKey(dataDir, path string, scheme sign.Scheme) sign.PublicKey {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dataDir, path)
+	}
+	k, err := signpem.FromPublicPEMFile(path, scheme)
+	if err != nil {
+		panic(err)
+	}
+	return k
 }
