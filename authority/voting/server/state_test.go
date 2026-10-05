@@ -156,8 +156,7 @@ func buildScenarioStates(t *testing.T, authNum int, votingEpoch uint64, prior *p
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
-		require.NoError(err)
+		tmpDir := t.TempDir()
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
 		require.NoError(err)
@@ -962,8 +961,7 @@ func TestReplicaDescriptorConsensus(t *testing.T) {
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
-		require.NoError(err)
+		tmpDir := t.TempDir()
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
 		require.NoError(err)
@@ -1431,8 +1429,7 @@ func TestConfiguredReplicaIdentityKeys(t *testing.T) {
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
-		require.NoError(err)
+		tmpDir := t.TempDir()
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
 		require.NoError(err)
@@ -1748,8 +1745,7 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
-		require.NoError(err)
+		tmpDir := t.TempDir()
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
 		require.NoError(err)
@@ -2140,8 +2136,7 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
-		require.NoError(err)
+		tmpDir := t.TempDir()
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
 		require.NoError(err)
@@ -2524,8 +2519,7 @@ func TestEmptyEnvelopeKeysWithConfiguredReplicas(t *testing.T) {
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
-		require.NoError(err)
+		tmpDir := t.TempDir()
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
 		require.NoError(err)
@@ -2810,8 +2804,7 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
-		require.NoError(err)
+		tmpDir := t.TempDir()
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
 		require.NoError(err)
@@ -3262,8 +3255,7 @@ func TestConsensusIdenticalAfterAuthorityRestart(t *testing.T) {
 		st.reverseHash = reverseHash
 		st.authorityNames = authorityNames
 
-		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
-		require.NoError(err)
+		tmpDir := t.TempDir()
 		db, err := bolt.Open(filepath.Join(tmpDir, "persistence.db"), 0600, nil)
 		require.NoError(err)
 		st.db = db

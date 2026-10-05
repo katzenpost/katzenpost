@@ -17,7 +17,6 @@
 package kaetzchen
 
 import (
-	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -218,7 +217,7 @@ func TestKaetzchenWorker(t *testing.T) {
 		return
 	}
 
-	datadir := os.TempDir()
+	datadir := t.TempDir()
 
 	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 	require.NoError(t, err)
