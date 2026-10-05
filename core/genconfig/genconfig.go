@@ -116,11 +116,13 @@ func (s *Katzenpost) kpclientdMetricsPort() uint16 {
 	return s.BasePort + kpclientdMetricsPortOffset
 }
 
-// peerAddr returns the tcp:// URL another container should dial to reach the
-// named service on the bridge network. Both endpoints resolve the hostname
-// through the compose runtime's embedded DNS to the service's bridge IP.
-func peerAddr(identifier string, port uint16) string {
-	return fmt.Sprintf("tcp://%s:%d", identifier, port)
+func (s *Katzenpost) peerAddr(identifier string, port uint16) string {
+	scheme := "tcp"
+	if s.Transport == "quic" || (s.Transport == "alternate" && s.peerCount%2 == 1) {
+		scheme = "quic"
+	}
+	s.peerCount++
+	return fmt.Sprintf("%s://%s:%d", scheme, identifier, port)
 }
 
 // metricsScrapeAddr returns the host:port form a service writes into
@@ -179,6 +181,7 @@ type Config struct {
 	NoMixDecoy               bool
 	NoGatewayDecoy           bool
 	NoMetrics                bool
+	Transport                string
 	PyroscopeDirauth         bool
 	PyroscopeKpclientd       bool
 	KpclientdMetricsAddress  string
@@ -243,6 +246,8 @@ type Katzenpost struct {
 	NoMixDecoy              bool
 	NoGatewayDecoy          bool
 	NoMetrics               bool
+	Transport               string
+	peerCount               int
 	PyroscopeDirauth        bool
 	PyroscopeKpclientd      bool
 	KpclientdMetricsAddress string
@@ -538,7 +543,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
 
-	cfg.Addresses = []string{peerAddr(cfg.Identifier, s.LastPort)}
+	cfg.Addresses = []string{s.peerAddr(cfg.Identifier, s.LastPort)}
 	s.LastPort++
 
 	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastPort)
@@ -609,8 +614,9 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// by net.Listen) point at the service's own hostname. Inside the
 	// container that resolves to the private bridge IP via /etc/hosts,
 	// so we never bind to 0.0.0.0.
-	cfg.Server.Addresses = []string{peerAddr(n, s.LastPort)}
-	cfg.Server.BindAddresses = []string{peerAddr(n, s.LastPort)}
+	addr := s.peerAddr(n, s.LastPort)
+	cfg.Server.Addresses = []string{addr}
+	cfg.Server.BindAddresses = []string{addr}
 	s.LastPort += 2
 	cfg.Server.DataDir = filepath.Join(s.BaseDir, n)
 
@@ -790,7 +796,7 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
 			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 			Identifier:             authIdentifier,
-			Addresses:              []string{peerAddr(authIdentifier, s.LastPort)},
+			Addresses:              []string{s.peerAddr(authIdentifier, s.LastPort)},
 			DataDir:                filepath.Join(s.BaseDir, authIdentifier),
 		}
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
@@ -957,6 +963,12 @@ func ValidateConfig(cfg *Config) error {
 		return fmt.Errorf("invalid wire KEM scheme")
 	}
 
+	switch cfg.Transport {
+	case "", "tcp", "quic", "alternate":
+	default:
+		return fmt.Errorf("transport must be tcp, quic or alternate, not %q", cfg.Transport)
+	}
+
 	return nil
 }
 
@@ -992,6 +1004,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.NoMixDecoy = cfg.NoMixDecoy
 	s.NoGatewayDecoy = cfg.NoGatewayDecoy
 	s.NoMetrics = cfg.NoMetrics
+	s.Transport = cfg.Transport
 	s.PyroscopeDirauth = cfg.PyroscopeDirauth
 	s.PyroscopeKpclientd = cfg.PyroscopeKpclientd
 	s.KpclientdMetricsAddress = cfg.KpclientdMetricsAddress
