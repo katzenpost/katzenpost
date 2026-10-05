@@ -713,16 +713,51 @@ func createCourierServer(t *testing.T, cfg *courierConfig.Config, pkiClient pki.
 	return server
 }
 
-func aliceComposesNextMessage(t *testing.T, message []byte, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter) *pigeonhole.CourierEnvelope {
-	return aliceComposesNextMessageWithIsLast(t, message, env, aliceStatefulWriter, false)
+// writerSide is Alice's end of a BACAP stream: her write cap and the index of
+// the next box she writes.
+type writerSide struct {
+	writeCap *bacap.WriteCap
+	next     *bacap.MessageBoxIndex
 }
 
-func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter, isLast bool) *pigeonhole.CourierEnvelope {
+// readerSide is Bob's end: his read cap and the index of the next box he reads.
+type readerSide struct {
+	readCap *bacap.ReadCap
+	next    *bacap.MessageBoxIndex
+}
+
+// boxID is the box Bob reads next.
+func (r *readerSide) boxID(t *testing.T) *[bacap.BoxIDSize]byte {
+	pub, err := r.next.BoxIDForContext(r.readCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+	box := &[bacap.BoxIDSize]byte{}
+	copy(box[:], pub.Bytes())
+	return box
+}
+
+// open checks and decrypts the box Bob reads next, then moves him on.
+func (r *readerSide) open(t *testing.T, box [bacap.BoxIDSize]byte, payload []byte, sig []byte) []byte {
+	readPos, err := r.readCap.PositionAt(r.next)
+	require.NoError(t, err)
+	plaintext, err := pigeonhole.Open(readPos, box, payload, sig)
+	require.NoError(t, err)
+	r.next, err = r.next.NextIndex()
+	require.NoError(t, err)
+	return plaintext
+}
+
+func aliceComposesNextMessage(t *testing.T, message []byte, env *testEnvironment, alice *writerSide) *pigeonhole.CourierEnvelope {
+	return aliceComposesNextMessageWithIsLast(t, message, env, alice, false)
+}
+
+func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testEnvironment, alice *writerSide, isLast bool) *pigeonhole.CourierEnvelope {
 	// Create padded payload with length prefix for BACAP
 	paddedPayload, err := pigeonhole.CreatePaddedPayload(message, env.geometry.MaxPlaintextPayloadLength+4)
 	require.NoError(t, err)
 
-	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+	boxID, ciphertext, sigraw, err := alice.next.EncryptForContext(alice.writeCap, constants.PIGEONHOLE_CTX, paddedPayload)
+	require.NoError(t, err)
+	alice.next, err = alice.next.NextIndex()
 	require.NoError(t, err)
 
 	// DEBUG: Log Alice's BoxID
@@ -774,17 +809,14 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 	}
 }
 
-func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.StatefulWriter, *bacap.StatefulReader) {
+func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*writerSide, *readerSide) {
 	// --- Alice creates a BACAP sequence and gives Bob a sequence read capability
-	// Bob can read from his StatefulReader that which Alice writes with her StatefulWriter.
+	// Bob reads, from his read cap's index on, what Alice writes from hers.
 	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
 	bobReadCap := aliceOwner.ReadCap()
-	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-	return aliceStatefulWriter, bobStatefulReader
+	return &writerSide{aliceOwner, aliceOwner.GetMessageBoxIndex()},
+		&readerSide{bobReadCap, bobReadCap.GetMessageBoxIndex()}
 }
 
 // waitForCourierPKI waits for the courier to have a PKI document
@@ -834,10 +866,10 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	waitForCourierPKI(t, env)
 	waitForReplicasPKI(t, env)
 
-	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
+	alice, bob := aliceAndBobKeyExchangeKeys(t, env)
 
 	alicePayload1 := []byte("Hello, Bob!")
-	aliceEnvelope1 := aliceComposesNextMessage(t, alicePayload1, env, aliceStatefulWriter)
+	aliceEnvelope1 := aliceComposesNextMessage(t, alicePayload1, env, alice)
 
 	courierWriteReply1 := injectCourierEnvelope(t, env, aliceEnvelope1)
 
@@ -849,7 +881,7 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	// Wait for write to propagate to replicas before reading
 	time.Sleep(5 * time.Second)
 
-	bobReadRequest1, bobPrivateKey1 := composeReadRequest(t, env, bobStatefulReader)
+	bobReadRequest1, bobPrivateKey1 := composeReadRequest(t, env, bob)
 
 	// First read request should now get immediate reply with payload due to immediate proxying
 	courierReadReply1 := injectCourierEnvelope(t, env, bobReadRequest1)
@@ -888,12 +920,8 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.NoError(t, err)
 	require.NotNil(t, innerMsg.ReadReply)
 
-	boxid, err := bobStatefulReader.NextBoxID()
-	require.NoError(t, err)
-	var signature [64]byte
-	copy(signature[:], innerMsg.ReadReply.Signature[:])
-	bobPaddedPlaintext1, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxid, innerMsg.ReadReply.Payload, signature)
-	require.NoError(t, err)
+	boxid := bob.boxID(t)
+	bobPaddedPlaintext1 := bob.open(t, *boxid, innerMsg.ReadReply.Payload, innerMsg.ReadReply.Signature[:])
 
 	// Extract the actual message data from the padded payload (remove 4-byte length prefix and padding)
 	bobPlaintext1, err := pigeonhole.ExtractMessageFromPaddedPayload(bobPaddedPlaintext1)
@@ -906,7 +934,7 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 	waitForCourierPKI(t, env)
 	waitForReplicasPKI(t, env)
 
-	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
+	alice, bob := aliceAndBobKeyExchangeKeys(t, env)
 
 	// Define the sequence of messages to write
 	messages := [][]byte{
@@ -920,7 +948,7 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 	for i, payload := range messages {
 		t.Logf("Writing box %d with payload: %s", i+1, string(payload))
 
-		aliceEnvelope := aliceComposesNextMessage(t, payload, env, aliceStatefulWriter)
+		aliceEnvelope := aliceComposesNextMessage(t, payload, env, alice)
 		courierWriteReply := injectCourierEnvelope(t, env, aliceEnvelope)
 
 		// Note: EnvelopeHash method doesn't exist on trunnel types, skipping hash comparison
@@ -941,7 +969,7 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 	for i := 0; i < len(messages); i++ {
 		t.Logf("Reading box %d", i+1)
 
-		bobReadRequest, bobPrivateKey := composeReadRequest(t, env, bobStatefulReader)
+		bobReadRequest, bobPrivateKey := composeReadRequest(t, env, bob)
 
 		// First read request should now get immediate reply with payload due to immediate proxying
 		courierReadReply := injectCourierEnvelope(t, env, bobReadRequest)
@@ -974,12 +1002,8 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 		require.NoError(t, err)
 		require.NotNil(t, innerMsg.ReadReply)
 
-		boxid, err := bobStatefulReader.NextBoxID()
-		require.NoError(t, err)
-		var signature [64]byte
-		copy(signature[:], innerMsg.ReadReply.Signature[:])
-		bobPaddedPlaintext, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxid, innerMsg.ReadReply.Payload, signature)
-		require.NoError(t, err)
+		boxid := bob.boxID(t)
+		bobPaddedPlaintext := bob.open(t, *boxid, innerMsg.ReadReply.Payload, innerMsg.ReadReply.Signature[:])
 
 		// Extract the actual message data from the padded payload (remove 4-byte length prefix and padding)
 		bobPlaintext, err := pigeonhole.ExtractMessageFromPaddedPayload(bobPaddedPlaintext)
@@ -1011,9 +1035,8 @@ func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *pigeonh
 	return courierQueryReply.EnvelopeReply
 }
 
-func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.StatefulReader) (*pigeonhole.CourierEnvelope, nike.PrivateKey) {
-	boxID, err := reader.NextBoxID()
-	require.NoError(t, err)
+func composeReadRequest(t *testing.T, env *testEnvironment, reader *readerSide) (*pigeonhole.CourierEnvelope, nike.PrivateKey) {
+	boxID := reader.boxID(t)
 
 	// DEBUG: Log Bob's BoxID
 	t.Logf("DEBUG: Bob reads from BoxID: %x", boxID[:])

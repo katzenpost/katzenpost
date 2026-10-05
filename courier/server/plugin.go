@@ -20,7 +20,6 @@ import (
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
-	"github.com/katzenpost/katzenpost/client/constants"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -1030,12 +1029,8 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 		e.log.Errorf("processCopyCommand: deserialize WriteCap: %v", err)
 		return copyFailedReply(0, 0)
 	}
-	readCap := writeCap.ReadCap()
-	reader, err := bacap.NewStatefulReader(readCap, constants.PIGEONHOLE_CTX)
-	if err != nil {
-		e.log.Errorf("processCopyCommand: NewStatefulReader: %v", err)
-		return copyFailedReply(0, 0)
-	}
+	// The temp stream is read from the cap's own index, one box at a time.
+	pos := writeCap.ReadCap().Start()
 
 	// envelopesProcessed is the count of copy-stream envelopes that have
 	// been successfully dispatched to their intermediate replicas. When
@@ -1056,14 +1051,18 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 			e.log.Errorf("processCopyCommand: copy stream exceeded %d envelopes, aborting", maxCopyStreamEnvelopes)
 			return copyFailedReply(0, envelopesProcessed+1)
 		}
-		boxID, err := reader.NextBoxID()
+		box, err := pigeonhole.BoxID(pos)
 		if err != nil {
-			e.log.Errorf("processCopyCommand: NextBoxID: %v", err)
+			e.log.Errorf("processCopyCommand: BoxID: %v", err)
 			return copyFailedReply(0, envelopesProcessed+1)
 		}
-		boxIDList = append(boxIDList, *boxID)
+		boxID := &box
+		boxIDList = append(boxIDList, box)
 
-		boxPlaintext, replicaCode, err := e.readNextBox(reader, boxID)
+		boxPlaintext, replicaCode, err := e.readNextBox(pos, boxID)
+		if err == nil {
+			pos, err = pos.Next()
+		}
 		if err != nil {
 			e.log.Errorf("processCopyCommand: readNextBox box %x: replicaCode=%d err=%v", boxID[:8], replicaCode, err)
 			return copyFailedReply(replicaCode, envelopesProcessed+1)
@@ -1100,7 +1099,7 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 	// already written, so an incomplete temp-stream cleanup is a cache
 	// inefficiency, not a correctness failure. It must therefore not
 	// gate the terminal Copy reply: the daemon polls InProgress until
-	// processCopyCommand returns, and a run of replica-rejected
+	// processCopyCommand returns, and a run of failing
 	// tombstone writes can span minutes per box, hanging the client.
 	// Run it off the reply path; boxIDList and writeCap are local and
 	// no longer touched here, so the goroutine owns them safely.
@@ -1222,15 +1221,13 @@ func (e *Courier) dispatchCopyEnvelope(envelope *pigeonhole.CourierEnvelope) (bo
 // and returns the CopyStreamElement bytes plus the replica ErrorCode
 // that caused failure (0 on success). Used by the Copy command to
 // walk the temp stream.
-func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDSize]byte) ([]byte, uint8, error) {
+func (e *Courier) readNextBox(pos *bacap.ReadPosition, boxID *[bacap.BoxIDSize]byte) ([]byte, uint8, error) {
 	replicaReadReply, replicaCode, err := e.readBoxFromShardReplicas(boxID)
 	if err != nil {
 		return nil, replicaCode, err
 	}
 
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], replicaReadReply.Signature[:])
-	decryptedPadded, err := reader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, sig)
+	decryptedPadded, err := pigeonhole.Open(pos, *boxID, replicaReadReply.Payload, replicaReadReply.Signature[:])
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to decrypt box %x: %v", boxID[:8], err)
 		instrument.DroppedByReason("copy_read_decrypt_failed")
@@ -1434,13 +1431,8 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 
 	e.log.Debugf("writeTombstonesToTempChannel: Writing %d tombstones", len(boxIDs))
 
-	// Create StatefulWriter from WriteCap
-	writer, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
-	if err != nil {
-		e.log.Errorf("writeTombstonesToTempChannel: Failed to create StatefulWriter: %v", err)
-		instrument.DroppedByReason("tombstone_writer_create_failed")
-		return
-	}
+	// The temp stream's boxes are written from the cap's own index.
+	pos := writeCap.Start()
 
 	// Get PKI document for replica selection
 	doc := e.pkiDocForSharding()
@@ -1452,23 +1444,19 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 
 	// Write tombstones for each box
 	for i, boxID := range boxIDs {
-		// Create properly padded tombstone payload (empty message padded to required size)
-		// This ensures tombstones are indistinguishable from regular writes to prevent traffic analysis
-		paddedPayload, err := pigeonhole.CreatePaddedPayload([]byte{}, e.pigeonholeGeo.PaddedPayloadLength())
+		writeMsg, err := pigeonhole.NewTombstone(pos)
+		var next *bacap.WritePosition
+		if err == nil {
+			next, err = pos.Next()
+		}
 		if err != nil {
-			e.log.Errorf("writeTombstonesToTempChannel: Failed to create padded tombstone %d: %v", i, err)
+			e.log.Errorf("writeTombstonesToTempChannel: Failed to make tombstone %d: %v", i, err)
 			continue
 		}
-
-		// Encrypt and sign the tombstone
-		encBoxID, ciphertext, sig, err := writer.EncryptNext(paddedPayload)
-		if err != nil {
-			e.log.Errorf("writeTombstonesToTempChannel: Failed to encrypt tombstone %d: %v", i, err)
-			continue
-		}
+		pos = next
 
 		// Verify the BoxID matches
-		if encBoxID != boxID {
+		if writeMsg.BoxID != boxID {
 			e.log.Errorf("writeTombstonesToTempChannel: BoxID mismatch for tombstone %d", i)
 			continue
 		}
@@ -1508,17 +1496,6 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 		if len(usablePubKeys) == 0 {
 			e.log.Errorf("writeTombstonesToTempChannel: no usable shard keys for box %d, skipping", i)
 			continue
-		}
-
-		// Create ReplicaWrite with the tombstone
-		sigArray := [bacap.SignatureSize]byte{}
-		copy(sigArray[:], sig)
-
-		writeMsg := &pigeonhole.ReplicaWrite{
-			BoxID:      boxID,
-			Signature:  sigArray,
-			PayloadLen: uint32(len(ciphertext)),
-			Payload:    ciphertext,
 		}
 
 		// Wrap in ReplicaInnerMessage

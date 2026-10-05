@@ -21,9 +21,8 @@ func TestBACAPSequenceOverwrite(t *testing.T) {
 	owner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 
-	// Create a StatefulWriter for writing the original sequence
-	writer, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
+	// Write the original sequence from the cap's own index
+	idx := owner.GetMessageBoxIndex()
 
 	// Write some messages to the sequence
 	messages := [][]byte{
@@ -40,7 +39,9 @@ func TestBACAPSequenceOverwrite(t *testing.T) {
 
 	t.Log("Writing original messages to sequence...")
 	for i, msg := range messages {
-		boxID, ciphertext, sig, err := writer.EncryptNext(msg)
+		boxID, ciphertext, sig, err := idx.EncryptForContext(owner, ctx, msg)
+		require.NoError(t, err)
+		idx, err = idx.NextIndex()
 		require.NoError(t, err)
 
 		originalBoxes = append(originalBoxes, struct {
@@ -59,19 +60,20 @@ func TestBACAPSequenceOverwrite(t *testing.T) {
 	// Now verify we can read the original messages
 	t.Log("Verifying original messages can be read...")
 	readCap := owner.ReadCap()
-	reader, err := bacap.NewStatefulReader(readCap, ctx)
-	require.NoError(t, err)
+	readIdx := readCap.GetMessageBoxIndex()
 
 	for i, originalBox := range originalBoxes {
 		// Get the expected BoxID
-		expectedBoxID, err := reader.NextBoxID()
+		expectedBoxID, err := readIdx.BoxIDForContext(readCap, ctx)
 		require.NoError(t, err)
-		require.Equal(t, expectedBoxID[:], originalBox.BoxID[:], "BoxID should match")
+		require.Equal(t, expectedBoxID.Bytes(), originalBox.BoxID[:], "BoxID should match")
 
 		// Decrypt the message
-		sig := [bacap.SignatureSize]byte{}
-		copy(sig[:], originalBox.Signature)
-		plaintext, err := reader.DecryptNext(ctx, originalBox.BoxID, originalBox.Ciphertext, sig)
+		readPos, err := readCap.PositionAt(readIdx)
+		require.NoError(t, err)
+		plaintext, err := readPos.Open(ctx, originalBox.BoxID, originalBox.Ciphertext, originalBox.Signature)
+		require.NoError(t, err)
+		readIdx, err = readIdx.NextIndex()
 		require.NoError(t, err)
 		require.Equal(t, messages[i], plaintext, "Decrypted message should match original")
 
@@ -81,16 +83,17 @@ func TestBACAPSequenceOverwrite(t *testing.T) {
 	// Now let's figure out how to overwrite with tombstones
 	t.Log("Now attempting to overwrite with tombstones...")
 
-	// The key question: Can we create a new StatefulWriter from the same WriteCap
-	// and have it generate the same BoxIDs?
-	tombstoneWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
+	// The key question: does walking again from the same WriteCap's index
+	// generate the same BoxIDs?
+	tombstoneIdx := owner.GetMessageBoxIndex()
 
 	tombstonePayload := make([]byte, 100) // All zeros
 
 	for i := 0; i < len(originalBoxes); i++ {
 		// Get the next BoxID from the tombstone writer
-		tombstoneBoxID, tombstoneCiphertext, tombstoneSig, err := tombstoneWriter.EncryptNext(tombstonePayload)
+		tombstoneBoxID, tombstoneCiphertext, tombstoneSig, err := tombstoneIdx.EncryptForContext(owner, ctx, tombstonePayload)
+		require.NoError(t, err)
+		tombstoneIdx, err = tombstoneIdx.NextIndex()
 		require.NoError(t, err)
 
 		t.Logf("Tombstone %d: BoxID %x (original was %x)", i+1, tombstoneBoxID[:8], originalBoxes[i].BoxID[:8])
@@ -110,17 +113,20 @@ func TestBACAPSequenceOverwrite(t *testing.T) {
 
 	// Now verify that reading the sequence gives us tombstones (all zeros)
 	t.Log("Verifying tombstones can be read...")
-	tombstoneReader, err := bacap.NewStatefulReader(readCap, ctx)
-	require.NoError(t, err)
+	tombstoneReadIdx := readCap.GetMessageBoxIndex()
 
 	for i := 0; i < len(originalBoxes); i++ {
-		expectedBoxID, err := tombstoneReader.NextBoxID()
+		expectedBoxID, err := tombstoneReadIdx.BoxIDForContext(readCap, ctx)
 		require.NoError(t, err)
-		require.Equal(t, expectedBoxID[:], originalBoxes[i].BoxID[:], "BoxID should still match")
+		require.Equal(t, expectedBoxID.Bytes(), originalBoxes[i].BoxID[:], "BoxID should still match")
 
-		sig := [bacap.SignatureSize]byte{}
-		copy(sig[:], originalBoxes[i].Signature)
-		plaintext, err := tombstoneReader.DecryptNext(ctx, originalBoxes[i].BoxID, originalBoxes[i].Ciphertext, sig)
+		readPos, err := readCap.PositionAt(tombstoneReadIdx)
+
+		require.NoError(t, err)
+
+		plaintext, err := readPos.Open(ctx, originalBoxes[i].BoxID, originalBoxes[i].Ciphertext, originalBoxes[i].Signature)
+		require.NoError(t, err)
+		tombstoneReadIdx, err = tombstoneReadIdx.NextIndex()
 		require.NoError(t, err)
 
 		// Verify it's all zeros (tombstone)
@@ -141,12 +147,9 @@ func TestBACAPBoxIDDeterminism(t *testing.T) {
 	owner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 
-	// Create two StatefulWriters from the same WriteCap
-	writer1, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	writer2, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
+	// Walk twice from the same WriteCap's index
+	idx1 := owner.GetMessageBoxIndex()
+	idx2 := owner.GetMessageBoxIndex()
 
 	// Write the same number of messages with both writers
 	numMessages := 5
@@ -154,10 +157,14 @@ func TestBACAPBoxIDDeterminism(t *testing.T) {
 	for i := 0; i < numMessages; i++ {
 		msg := []byte("test message")
 
-		boxID1, _, _, err := writer1.EncryptNext(msg)
+		boxID1, _, _, err := idx1.EncryptForContext(owner, ctx, msg)
+		require.NoError(t, err)
+		idx1, err = idx1.NextIndex()
 		require.NoError(t, err)
 
-		boxID2, _, _, err := writer2.EncryptNext(msg)
+		boxID2, _, _, err := idx2.EncryptForContext(owner, ctx, msg)
+		require.NoError(t, err)
+		idx2, err = idx2.NextIndex()
 		require.NoError(t, err)
 
 		t.Logf("Message %d: Writer1 BoxID %x, Writer2 BoxID %x", i+1, boxID1[:8], boxID2[:8])

@@ -89,20 +89,11 @@ func TestPaddingInvalidCases(t *testing.T) {
 
 // TestBACAPBoxIDDerivation tests that BoxIDForContext produces consistent results
 func TestBACAPBoxIDDerivation(t *testing.T) {
-	// Create a WriteCap
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-
 	readCap := writeCap.ReadCap()
+	messageBoxIndex := writeCap.GetMessageBoxIndex()
 
-	// Create a StatefulWriter
-	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-
-	// Get the current message index
-	messageBoxIndex := statefulWriter.GetCurrentMessageIndex()
-
-	// Derive BoxID using BoxIDForContext (correct method)
 	boxID1, err := messageBoxIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 	boxID2, err := messageBoxIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
@@ -116,122 +107,69 @@ func TestBACAPBoxIDDerivation(t *testing.T) {
 
 // TestBACAPEncryptionDecryption tests that BACAP encryption and decryption work correctly
 func TestBACAPEncryptionDecryption(t *testing.T) {
-	// Create a WriteCap
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
+	pos := writeCap.Start()
 
-	readCap := writeCap.ReadCap()
-
-	// Create a StatefulWriter
-	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-
-	// Get the current message index
-	messageBoxIndex := statefulWriter.GetCurrentMessageIndex()
-
-	// Create a test message
 	testMessage := []byte("Test message for BACAP encryption")
-
-	// Pad the message
 	paddedMessage, err := pigeonhole.CreatePaddedPayload(testMessage, 1557)
 	require.NoError(t, err)
 
-	// Encrypt the message
-	boxID, ciphertext, signature, err := statefulWriter.EncryptNext(paddedMessage)
+	write, err := pigeonhole.Seal(pos, paddedMessage)
 	require.NoError(t, err)
-	require.NotNil(t, boxID)
-	require.NotNil(t, ciphertext)
-	require.NotNil(t, signature)
+	require.NotEmpty(t, write.Payload)
 
-	// Create a StatefulReader with the same index
-	statefulReader, err := bacap.NewStatefulReaderWithIndex(readCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
+	decryptedPadded, err := pigeonhole.Open(pos.ReadPosition(), write.BoxID, write.Payload, write.Signature[:])
 	require.NoError(t, err)
 
-	// Convert signature to array
-	var sigArray [64]byte
-	copy(sigArray[:], signature)
-
-	// Decrypt the message
-	decryptedPadded, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, boxID, ciphertext, sigArray)
-	require.NoError(t, err)
-
-	// Unpad the decrypted message
 	decryptedMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedPadded)
 	require.NoError(t, err)
-
-	// Verify the message matches
 	require.Equal(t, testMessage, decryptedMessage, "Decrypted message should match original")
 
 	t.Logf("✓ Successfully encrypted and decrypted message: %d bytes", len(testMessage))
 }
 
-// TestBACAPStateAdvancement tests that message box index advances correctly
+// TestBACAPStateAdvancement tests that a position advances correctly
 func TestBACAPStateAdvancement(t *testing.T) {
-	// Create a WriteCap
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 
-	readCap := writeCap.ReadCap()
-
-	// Create a StatefulWriter
-	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
+	first := writeCap.Start()
+	firstBoxID, err := pigeonhole.BoxID(first.ReadPosition())
 	require.NoError(t, err)
 
-	// Get the first message index
-	firstIndex := statefulWriter.GetCurrentMessageIndex()
-	firstBoxID, err := firstIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-
-	// Encrypt first message
 	testMessage1 := []byte("First message")
 	paddedMessage1, err := pigeonhole.CreatePaddedPayload(testMessage1, 1557)
 	require.NoError(t, err)
-
-	boxID1, ciphertext1, signature1, err := statefulWriter.EncryptNext(paddedMessage1)
+	write1, err := pigeonhole.Seal(first, paddedMessage1)
 	require.NoError(t, err)
+	require.Equal(t, firstBoxID, write1.BoxID, "BoxID should match calculated value")
 
-	// Verify the boxID matches what we calculated
-	require.Equal(t, firstBoxID.Bytes(), boxID1[:], "BoxID should match calculated value")
-
-	// Get the second message index (state should have advanced)
-	secondIndex := statefulWriter.GetCurrentMessageIndex()
-	secondBoxID, err := secondIndex.BoxIDForContext(readCap, constants.PIGEONHOLE_CTX)
+	second, err := first.Next()
 	require.NoError(t, err)
+	secondBoxID, err := pigeonhole.BoxID(second.ReadPosition())
+	require.NoError(t, err)
+	require.NotEqual(t, firstBoxID, secondBoxID, "BoxID should change after the index advances")
 
-	// BoxIDs should be different after state advancement
-	require.NotEqual(t, firstBoxID.Bytes(), secondBoxID.Bytes(), "BoxID should change after state advancement")
-
-	// Encrypt second message
 	testMessage2 := []byte("Second message")
 	paddedMessage2, err := pigeonhole.CreatePaddedPayload(testMessage2, 1557)
 	require.NoError(t, err)
-
-	boxID2, ciphertext2, signature2, err := statefulWriter.EncryptNext(paddedMessage2)
+	write2, err := pigeonhole.Seal(second, paddedMessage2)
 	require.NoError(t, err)
+	require.Equal(t, secondBoxID, write2.BoxID, "Second BoxID should match calculated value")
 
-	// Verify the second boxID matches
-	require.Equal(t, secondBoxID.Bytes(), boxID2[:], "Second BoxID should match calculated value")
-
-	// Create a StatefulReader starting at the first index
-	statefulReader, err := bacap.NewStatefulReaderWithIndex(readCap, constants.PIGEONHOLE_CTX, firstIndex)
+	// A reader starting at the cap's own index opens both, advancing in between.
+	reader := writeCap.ReadCap().Start()
+	decrypted1, err := pigeonhole.Open(reader, write1.BoxID, write1.Payload, write1.Signature[:])
 	require.NoError(t, err)
-
-	// Decrypt first message
-	var sig1Array [64]byte
-	copy(sig1Array[:], signature1)
-	decrypted1, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, boxID1, ciphertext1, sig1Array)
-	require.NoError(t, err)
-
 	unpadded1, err := pigeonhole.ExtractMessageFromPaddedPayload(decrypted1)
 	require.NoError(t, err)
 	require.Equal(t, testMessage1, unpadded1, "First message should match")
 
-	// Decrypt second message (reader state should have advanced)
-	var sig2Array [64]byte
-	copy(sig2Array[:], signature2)
-	decrypted2, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, boxID2, ciphertext2, sig2Array)
+	reader, err = reader.Next()
 	require.NoError(t, err)
-
+	decrypted2, err := pigeonhole.Open(reader, write2.BoxID, write2.Payload, write2.Signature[:])
+	require.NoError(t, err)
 	unpadded2, err := pigeonhole.ExtractMessageFromPaddedPayload(decrypted2)
 	require.NoError(t, err)
 	require.Equal(t, testMessage2, unpadded2, "Second message should match")
@@ -241,44 +179,27 @@ func TestBACAPStateAdvancement(t *testing.T) {
 
 // TestBACAPBoxIDMismatch tests that decryption fails with wrong BoxID
 func TestBACAPBoxIDMismatch(t *testing.T) {
-	// Create a WriteCap
 	writeCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
+	pos := writeCap.Start()
 
-	readCap := writeCap.ReadCap()
-
-	// Create a StatefulWriter
-	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-
-	messageIndex := statefulWriter.GetCurrentMessageIndex()
-
-	// Encrypt a message
 	testMessage := []byte("Test message")
 	paddedMessage, err := pigeonhole.CreatePaddedPayload(testMessage, 1557)
 	require.NoError(t, err)
-
-	correctBoxID, ciphertext, signature, err := statefulWriter.EncryptNext(paddedMessage)
+	write, err := pigeonhole.Seal(pos, paddedMessage)
 	require.NoError(t, err)
 
-	// Create a different BoxID (advance state and get next BoxID)
-	wrongBoxID, _, _, err := statefulWriter.EncryptNext(paddedMessage)
+	// The next position's box is a different BoxID
+	next, err := pos.Next()
+	require.NoError(t, err)
+	wrong, err := pigeonhole.Seal(next, paddedMessage)
 	require.NoError(t, err)
 
-	// Create a StatefulReader at the original index
-	statefulReader, err := bacap.NewStatefulReaderWithIndex(readCap, constants.PIGEONHOLE_CTX, messageIndex)
-	require.NoError(t, err)
+	_, err = pigeonhole.Open(pos.ReadPosition(), wrong.BoxID, write.Payload, write.Signature[:])
+	require.ErrorIs(t, err, bacap.ErrBoxMismatch, "Decryption should fail with wrong BoxID")
 
-	// Try to decrypt with the WRONG BoxID - should fail
-	var sigArray [64]byte
-	copy(sigArray[:], signature)
-	_, err = statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, wrongBoxID, ciphertext, sigArray)
-	require.Error(t, err, "Decryption should fail with wrong BoxID")
-
-	// Try to decrypt with the CORRECT BoxID - should succeed
-	decrypted, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, correctBoxID, ciphertext, sigArray)
+	decrypted, err := pigeonhole.Open(pos.ReadPosition(), write.BoxID, write.Payload, write.Signature[:])
 	require.NoError(t, err, "Decryption should succeed with correct BoxID")
-
 	unpadded, err := pigeonhole.ExtractMessageFromPaddedPayload(decrypted)
 	require.NoError(t, err)
 	require.Equal(t, testMessage, unpadded)

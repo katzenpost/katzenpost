@@ -19,8 +19,8 @@ import (
 // whole courier. writeTombstonesToTempChannel must recover on its own.
 //
 // The Courier here has a nil server, so writeTombstonesToTempChannel
-// reaches e.pkiDocForSharding() (after NewStatefulWriter succeeds on a
-// real WriteCap) and dereferences the nil server: a real panic in the
+// reaches e.pkiDocForSharding() (after taking a real WriteCap's first
+// index) and dereferences the nil server: a real panic in the
 // real function body. Without the recover, require.NotPanics fails.
 func TestWriteTombstonesToTempChannelRecoversFromPanic(t *testing.T) {
 	backendLog, err := log.New("", "ERROR", false)
