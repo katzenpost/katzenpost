@@ -2679,8 +2679,7 @@ func (s *state) restorePersistence() error {
 					if len(wantHash) != publicKeyHashSize {
 						panic("stored hash should be 32 bytes")
 					}
-					desc := new(pki.ReplicaDescriptor)
-					err := desc.Unmarshal(rawDesc)
+					desc, err := s.restoredReplicaDescriptor(rawDesc)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
@@ -2736,8 +2735,7 @@ func (s *state) restorePersistence() error {
 					if len(wantHash) != publicKeyHashSize {
 						panic("stored hash should be 32 bytes")
 					}
-					desc := new(pki.MixDescriptor)
-					err := desc.UnmarshalBinary(rawDesc)
+					desc, err := s.restoredMixDescriptor(rawDesc)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
@@ -2767,6 +2765,50 @@ func (s *state) restorePersistence() error {
 
 		return bkt.Put([]byte(versionKey), []byte(kpcommon.Version()))
 	})
+}
+
+func (s *state) uploaderKey(id []byte) (sign.PublicKey, error) {
+	scheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+	if len(id) != scheme.PublicKeySize() {
+		return nil, fmt.Errorf("identity key length %d, want %d", len(id), scheme.PublicKeySize())
+	}
+	return scheme.UnmarshalBinaryPublicKey(id)
+}
+
+func (s *state) restoredMixDescriptor(raw []byte) (*pki.MixDescriptor, error) {
+	up := new(pki.SignedUpload)
+	if err := up.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	if up.MixDescriptor == nil {
+		return nil, errors.New("no descriptor in upload")
+	}
+	pub, err := s.uploaderKey(up.MixDescriptor.IdentityKey)
+	if err != nil {
+		return nil, err
+	}
+	if !up.Verify(pub) {
+		return nil, errors.New("invalid upload signature")
+	}
+	return up.MixDescriptor, nil
+}
+
+func (s *state) restoredReplicaDescriptor(raw []byte) (*pki.ReplicaDescriptor, error) {
+	up := new(pki.SignedReplicaUpload)
+	if err := up.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	if up.ReplicaDescriptor == nil {
+		return nil, errors.New("no descriptor in upload")
+	}
+	pub, err := s.uploaderKey(up.ReplicaDescriptor.IdentityKey)
+	if err != nil {
+		return nil, err
+	}
+	if !up.Verify(pub) {
+		return nil, errors.New("invalid upload signature")
+	}
+	return up.ReplicaDescriptor, nil
 }
 
 func votingThresholds(votingSetSize int) (threshold, dissenters int) {
