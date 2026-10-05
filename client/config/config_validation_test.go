@@ -351,7 +351,7 @@ func TestUnmarshalTOML(t *testing.T) {
 		require.NotEmpty(t, gw.Addresses)
 	})
 
-	t.Run("empty PKISignatureScheme panics", func(t *testing.T) {
+	t.Run("empty PKISignatureScheme errors", func(t *testing.T) {
 		data := map[string]interface{}{
 			"Name":               "test",
 			"PKISignatureScheme": "",
@@ -361,12 +361,10 @@ func TestUnmarshalTOML(t *testing.T) {
 			"Addresses":          []interface{}{"tcp://127.0.0.1:1234"},
 		}
 		gw := &Gateway{}
-		require.Panics(t, func() {
-			gw.UnmarshalTOML(data)
-		})
+		require.Error(t, gw.UnmarshalTOML(data))
 	})
 
-	t.Run("invalid PKISignatureScheme panics", func(t *testing.T) {
+	t.Run("invalid PKISignatureScheme errors", func(t *testing.T) {
 		data := map[string]interface{}{
 			"Name":               "test",
 			"PKISignatureScheme": "nonexistent-scheme",
@@ -376,9 +374,7 @@ func TestUnmarshalTOML(t *testing.T) {
 			"Addresses":          []interface{}{"tcp://127.0.0.1:1234"},
 		}
 		gw := &Gateway{}
-		require.Panics(t, func() {
-			gw.UnmarshalTOML(data)
-		})
+		require.Error(t, gw.UnmarshalTOML(data))
 	})
 
 	t.Run("bad IdentityKey PEM", func(t *testing.T) {
