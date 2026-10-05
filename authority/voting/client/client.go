@@ -754,6 +754,9 @@ func (p *connector) postAuthorityOnce(
 			statusText: statusText,
 		}
 	default:
+		if status.ErrorCode == commands.DescriptorInternalError {
+			p.log.Warningf("post authority %s reported an internal error", peer.Identifier)
+		}
 		return postAttemptResult{
 			peer:       peer,
 			round:      round,

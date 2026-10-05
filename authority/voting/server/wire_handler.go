@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -680,10 +681,13 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	// a nil, the authority "accepts" the replica descriptor.
 	err = s.state.onReplicaDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
 	if err != nil {
-		// This is either a internal server error or the peer is trying to
-		// retroactively modify their descriptor. This should disambituate
-		// the condition, but the latter is more likely.
-		s.log.Errorf("Peer %s: Rejected probably a conflict: %v", peerID, err)
+		if !errors.Is(err, errConflictingDescriptor) && !errors.Is(err, errLateUpload) {
+			s.log.Errorf("Peer %s: internal error storing replica descriptor for node %s: %v", peerID, strconv.QuoteToASCII(desc.Name), err)
+			instrument.DescriptorRejected("replica", "internal")
+			resp.ErrorCode = commands.DescriptorInternalError
+			return resp
+		}
+		s.log.Errorf("Peer %s: Rejected replica descriptor: %v", peerID, err)
 		instrument.DescriptorRejected("replica", "conflict")
 		resp.ErrorCode = commands.DescriptorConflict
 		return resp
@@ -821,10 +825,13 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	s.log.Debugf("onPostDescriptor: Submitting descriptor for node %s epoch %d to state worker from peer %s", strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(peerID))
 	err = s.state.onDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
 	if err != nil {
-		// This is either a internal server error or the peer is trying to
-		// retroactively modify their descriptor. This should disambituate
-		// the condition, but the latter is more likely.
-		s.log.Errorf("onPostDescriptor: DESCRIPTOR UPLOAD FAILED for node %s from peer %s: probably a conflict: %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+		if !errors.Is(err, errConflictingDescriptor) && !errors.Is(err, errLateUpload) {
+			s.log.Errorf("onPostDescriptor: internal error storing descriptor for node %s from peer %s: %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+			instrument.DescriptorRejected("mix", "internal")
+			resp.ErrorCode = commands.DescriptorInternalError
+			return resp
+		}
+		s.log.Errorf("onPostDescriptor: DESCRIPTOR UPLOAD FAILED for node %s from peer %s: %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
 		instrument.DescriptorRejected("mix", "conflict")
 		resp.ErrorCode = commands.DescriptorConflict
 		return resp
