@@ -1255,6 +1255,12 @@ func (s *state) phaseDeadline(targetDeadline time.Duration) time.Time {
 	return time.Now().Add(remaining)
 }
 
+func (s *state) clockView() string {
+	epoch, elapsed, _ := epochtime.Now()
+	phase, _ := s.PhaseInfo()
+	return fmt.Sprintf("local epoch=%d elapsed=%v phase=%s", epoch, elapsed.Round(time.Millisecond), phase)
+}
+
 // PhaseInfo returns the current phase name and time remaining until the next phase.
 // This is useful for debugging connection handling relative to the voting schedule.
 // This function is lock-free to avoid blocking incoming connections during state transitions.
@@ -1358,9 +1364,9 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 			case commands.CertOk:
 				s.log.Debugf("Cert accepted by %s", peer.Identifier)
 			case commands.CertTooLate:
-				s.log.Warningf("Cert rejected (too late) by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (too late) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.CertTooEarly:
-				s.log.Warningf("Cert rejected (too early) by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (too early) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.CertAlreadyReceived:
 				s.log.Debugf("Cert already received by %s", peer.Identifier)
 			case commands.CertNotAuthorized:
@@ -1406,9 +1412,9 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 			case commands.VoteOk:
 				s.log.Debugf("Vote accepted by %s", peer.Identifier)
 			case commands.VoteTooLate:
-				s.log.Warningf("Vote rejected (too late) by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (too late) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.VoteTooEarly:
-				s.log.Warningf("Vote rejected (too early) by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (too early) by %s (%s)", peer.Identifier, s.clockView())
 			default:
 				s.log.Warningf("Vote rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
@@ -1446,9 +1452,9 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 			case commands.RevealOk:
 				s.log.Debugf("Reveal accepted by %s", peer.Identifier)
 			case commands.RevealTooLate:
-				s.log.Warningf("Reveal rejected (too late) by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (too late) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.RevealTooEarly:
-				s.log.Warningf("Reveal rejected (too early) by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (too early) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.RevealAlreadyReceived:
 				s.log.Debugf("Reveal already received by %s", peer.Identifier)
 			case commands.RevealNotAuthorized:
@@ -1493,9 +1499,9 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 			case commands.SigOk:
 				s.log.Debugf("Signature accepted by %s", peer.Identifier)
 			case commands.SigTooLate:
-				s.log.Warningf("Signature rejected (too late) by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (too late) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.SigTooEarly:
-				s.log.Warningf("Signature rejected (too early) by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (too early) by %s (%s)", peer.Identifier, s.clockView())
 			default:
 				s.log.Warningf("Signature rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
@@ -2188,11 +2194,11 @@ func (s *state) verifyCertUpload(certificate *commands.Cert, peerIdentityKeyHash
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if certificate.Epoch < s.votingEpoch {
-		s.log.Errorf("Certificate from %s received too late: %d < %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
+		s.log.Errorf("Certificate from %s received too late: %d < %d (%s)", s.authorityNames[pk], certificate.Epoch, s.votingEpoch, s.clockView())
 		return nil, commands.CertTooLate
 	}
 	if certificate.Epoch > s.votingEpoch {
-		s.log.Errorf("Certificate from %s received too early: %d > %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
+		s.log.Errorf("Certificate from %s received too early: %d > %d (%s)", s.authorityNames[pk], certificate.Epoch, s.votingEpoch, s.clockView())
 		return nil, commands.CertTooEarly
 	}
 
@@ -2313,14 +2319,14 @@ func (s *state) onRevealUpload(reveal *commands.Reveal, peerIdentityKeyHash []by
 	e := epochFromBytes(certified[:8])
 	// received too late
 	if e < s.votingEpoch {
-		s.log.Errorf("Reveal from %s received too late: %d < %d", s.authorityNames[pk], e, s.votingEpoch)
+		s.log.Errorf("Reveal from %s received too late: %d < %d (%s)", s.authorityNames[pk], e, s.votingEpoch, s.clockView())
 		resp.ErrorCode = commands.RevealTooLate
 		return &resp
 	}
 
 	// received too early
 	if e > s.votingEpoch {
-		s.log.Errorf("Reveal from %s received too early: %d > %d", s.authorityNames[pk], e, s.votingEpoch)
+		s.log.Errorf("Reveal from %s received too early: %d > %d (%s)", s.authorityNames[pk], e, s.votingEpoch, s.clockView())
 		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
 	}
@@ -2403,13 +2409,13 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if vote.Epoch < s.votingEpoch {
-		s.log.Errorf("Vote from %s received too late: %d < %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		s.log.Errorf("Vote from %s received too late: %d < %d (%s)", s.authorityNames[pk], vote.Epoch, s.votingEpoch, s.clockView())
 		instrument.VoteReceived("too_late")
 		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
 	if vote.Epoch > s.votingEpoch {
-		s.log.Errorf("Vote from %s received too early: %d > %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		s.log.Errorf("Vote from %s received too early: %d > %d (%s)", s.authorityNames[pk], vote.Epoch, s.votingEpoch, s.clockView())
 		instrument.VoteReceived("too_early")
 		resp.ErrorCode = commands.VoteTooEarly
 		return &resp
@@ -2503,12 +2509,12 @@ func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) comma
 		return &resp
 	}
 	if sig.Epoch < s.votingEpoch {
-		s.log.Errorf("Signature from %s received too late: %d < %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
+		s.log.Errorf("Signature from %s received too late: %d < %d (%s)", s.authorityNames[pk], sig.Epoch, s.votingEpoch, s.clockView())
 		resp.ErrorCode = commands.SigTooLate
 		return &resp
 	}
 	if sig.Epoch > s.votingEpoch {
-		s.log.Errorf("Signature from %s received too early: %d > %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
+		s.log.Errorf("Signature from %s received too early: %d > %d (%s)", s.authorityNames[pk], sig.Epoch, s.votingEpoch, s.clockView())
 		resp.ErrorCode = commands.SigTooEarly
 		return &resp
 	}
