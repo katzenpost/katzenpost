@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -87,6 +88,9 @@ type pki struct {
 	clockSkew     int64
 
 	forceUpdateCh chan interface{}
+
+	refetch      atomic.Bool
+	refetchEpoch uint64
 }
 
 // ClockSkew returns the current best guess difference between the client's
@@ -184,6 +188,7 @@ func (p *pki) setClockSkew(skew int64) {
 	p.clockSkewLock.Lock()
 	p.clockSkew = skew
 	p.clockSkewLock.Unlock()
+	p.refetch.Store(true)
 
 	// Wake up the worker if able to.
 	select {
@@ -308,8 +313,10 @@ func (p *pki) worker() {
 		}
 		// Fetch the documents that we are missing.
 		didUpdate := false
+		force := p.refetch.Swap(false) || now != p.refetchEpoch
+		p.refetchEpoch = now
 		for _, epoch := range epochs {
-			if _, ok := p.docs.Load(epoch); ok {
+			if _, ok := p.docs.Load(epoch); ok && !force {
 				continue
 			}
 
