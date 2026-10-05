@@ -33,7 +33,6 @@ jobs:
     permissions:
       contents: read
     env:
-      warped: true
       no_mixdecoy: true
       no_decoy: true
       epoch_duration: 2m
