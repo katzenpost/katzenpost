@@ -106,6 +106,8 @@ type state struct {
 	sync.RWMutex
 	worker.Worker
 
+	uploadMu sync.Mutex
+
 	s   *Server
 	geo *geo.Geometry
 	log *logging.Logger
@@ -2408,6 +2410,9 @@ func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) comma
 }
 
 func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
+	s.uploadMu.Lock()
+	defer s.uploadMu.Unlock()
+
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
@@ -2490,6 +2495,9 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
+	s.uploadMu.Lock()
+	defer s.uploadMu.Unlock()
+
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
