@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"path/filepath"
 
+	"golang.org/x/net/idna"
+
 	"github.com/katzenpost/katzenpost/common/config"
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -194,6 +196,12 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 	if err := c.validateRequiredFields(); err != nil {
 		return err
 	}
+
+	id, err := idna.Lookup.ToASCII(c.Identifier)
+	if err != nil {
+		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
+	}
+	c.Identifier = id
 
 	if err := c.validateAndSetupAddresses(); err != nil {
 		return err
