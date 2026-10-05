@@ -26,7 +26,6 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
@@ -519,5 +518,5 @@ func newOutgoingConn(co *connector, dst *cpki.MixDescriptor, geo *geo.Geometry, 
 func refusedBeforeHandshake(err error) bool {
 	he, ok := wire.GetHandshakeError(err)
 	return ok && he.IsInitiator && he.State == wire.HandshakeStateMsg2Receive && he.MessageSize == 0 &&
-		(errors.Is(he.UnderlyingError, io.EOF) || errors.Is(he.UnderlyingError, syscall.ECONNRESET))
+		(errors.Is(he.UnderlyingError, io.EOF) || isConnReset(he.UnderlyingError))
 }
