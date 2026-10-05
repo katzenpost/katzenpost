@@ -526,63 +526,6 @@ func (p *connector) roundTrip(ctx context.Context, s *wire.Session, cmd commands
 	return resp, err
 }
 
-type PeerResponse struct {
-	Peer     *config.Authority
-	Response commands.Command
-	Error    error
-}
-
-func (p *connector) allPeersRoundTrip(
-	ctx context.Context,
-	linkKey kem.PrivateKey,
-	signingKey sign.PublicKey,
-	cmd commands.Command,
-) ([]PeerResponse, error) {
-	p.log.Debugf("allPeersRoundTrip: contacting %d authorities in parallel", len(p.cfg.Authorities))
-
-	responseCh := make(chan PeerResponse, len(p.cfg.Authorities))
-	var w worker.Worker
-
-	for _, peer := range p.cfg.Authorities {
-		peer := peer
-		w.Go(func() {
-			ictx, cancelFn := context.WithCancel(ctx)
-			defer cancelFn()
-
-			conn, err := p.initSessionWithRetry(ictx, linkKey, signingKey, peer)
-			if err != nil {
-				p.log.Errorf("allPeersRoundTrip: %s: %v", peer.Identifier, err)
-				responseCh <- PeerResponse{Peer: peer, Error: err}
-				return
-			}
-			defer conn.Close()
-
-			resp, err := p.roundTrip(ictx, conn.session, cmd)
-			if err != nil {
-				p.log.Errorf("allPeersRoundTrip: %s round trip failed: %v", peer.Identifier, err)
-				responseCh <- PeerResponse{Peer: peer, Error: err}
-				return
-			}
-
-			responseCh <- PeerResponse{Peer: peer, Response: resp}
-		})
-	}
-
-	w.Wait()
-	close(responseCh)
-
-	peerResponses := []PeerResponse{}
-	for resp := range responseCh {
-		peerResponses = append(peerResponses, resp)
-	}
-
-	if len(peerResponses) == 0 {
-		return nil, errors.New("allPeersRoundTrip: got zero responses")
-	}
-
-	return peerResponses, nil
-}
-
 type postAttemptKind int
 
 const (
