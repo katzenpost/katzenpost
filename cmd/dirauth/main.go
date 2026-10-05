@@ -150,10 +150,7 @@ func runAuthority(cfg Config) error {
 	}()
 
 	// Rotate server logs upon SIGHUP.
-	go func() {
-		<-rotateCh
-		svr.RotateLog()
-	}()
+	go common.RotateOnSignal(rotateCh, svr.RotateLog)
 
 	// Wait for the authority to explode or be terminated.
 	svr.Wait()
