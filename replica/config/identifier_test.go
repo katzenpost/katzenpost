@@ -32,3 +32,24 @@ func TestIdentifierInvalidIsRejected(t *testing.T) {
 	_, err := loadWithIdentifier(t, "xn--zz")
 	require.Error(t, err)
 }
+
+func TestIdentifierNormalizedValues(t *testing.T) {
+	for id, want := range map[string]string{
+		"Replica1":              "replica1",
+		"Storage.Example.ORG":   "storage.example.org",
+		"B\u00fccher.Example":   "xn--bcher-kva.example",
+		"xn--bcher-kva.example": "xn--bcher-kva.example",
+	} {
+		c, err := loadWithIdentifier(t, id)
+		require.NoError(t, err, id)
+		require.Equal(t, want, c.Identifier, id)
+	}
+}
+
+func TestIdentifierRejectionNamesTheField(t *testing.T) {
+	_, err := loadWithIdentifier(t, "xn--zz")
+	require.ErrorContains(t, err, "Identifier")
+
+	_, err = loadWithIdentifier(t, "")
+	require.ErrorContains(t, err, "Identifier is not set")
+}
