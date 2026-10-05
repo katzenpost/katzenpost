@@ -158,11 +158,7 @@ func runAuthority(cfg Config) error {
 		svr.RotateLog()
 	}()
 
-	go func() {
-		for range reloadCh {
-			svr.ReloadNodesFromFile(cfg.ConfigFile)
-		}
-	}()
+	go reloadOnSignal(reloadCh, func() { svr.ReloadNodesFromFile(cfg.ConfigFile) })
 
 	// Wait for the authority to explode or be terminated.
 	svr.Wait()
