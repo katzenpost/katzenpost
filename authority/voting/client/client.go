@@ -658,8 +658,8 @@ func descriptorStatusIsOK(code uint8) bool {
 	return code == commands.DescriptorOk || strings.EqualFold(descriptorStatusText(code), "Ok")
 }
 
-func descriptorStatusIsConflict(code uint8) bool {
-	return strings.EqualFold(descriptorStatusText(code), "Conflict")
+func descriptorStatusIsRejection(code uint8) bool {
+	return code == commands.DescriptorConflict || code == commands.DescriptorInvalid || code == commands.DescriptorForbidden
 }
 
 func (p *connector) postAuthorityOnce(
@@ -742,7 +742,7 @@ func (p *connector) postAuthorityOnce(
 			elapsed:    elapsed,
 			statusText: statusText,
 		}
-	case descriptorStatusIsConflict(status.ErrorCode):
+	case descriptorStatusIsRejection(status.ErrorCode):
 		return postAttemptResult{
 			peer:       peer,
 			round:      round,
@@ -924,7 +924,7 @@ func logPostAttemptResult(
 	switch result.kind {
 	case postAttemptAccepted:
 		log.Noticef(
-			"Post(%d): %s accepted by %s after %v successes=%d/%d conflicts=%d pending=%d",
+			"Post(%d): %s accepted by %s after %v successes=%d/%d rejections=%d pending=%d",
 			epoch,
 			roundLabel,
 			strconv.QuoteToASCII(result.peer.Identifier),
@@ -936,9 +936,10 @@ func logPostAttemptResult(
 		)
 	case postAttemptConflict:
 		log.Warningf(
-			"Post(%d): %s conflict from %s after %v successes=%d/%d conflicts=%d/%d pending=%d",
+			"Post(%d): %s rejected (%s) by %s after %v successes=%d/%d rejections=%d/%d pending=%d",
 			epoch,
 			roundLabel,
+			result.statusText,
 			strconv.QuoteToASCII(result.peer.Identifier),
 			result.elapsed,
 			summary.successes,
@@ -1000,7 +1001,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 		if len(targets) == 0 {
 			p.log.Noticef(
-				"Post(%d): descriptor upload complete successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
+				"Post(%d): descriptor upload complete successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d",
 				epoch,
 				summary.successes,
 				threshold,
@@ -1119,7 +1120,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 			if summary.conflicts >= threshold {
 				p.log.Warningf(
-					"Post(%d): conflict quorum reached conflicts=%d/%d successes=%d/%d transport_errors=%d semantic_errors=%d",
+					"Post(%d): rejection quorum reached rejections=%d/%d successes=%d/%d transport_errors=%d semantic_errors=%d",
 					epoch,
 					summary.conflicts,
 					threshold,
@@ -1137,7 +1138,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 			pending := len(peersNeedingCompletion(states))
 			if summary.successes+pending < threshold {
 				p.log.Warningf(
-					"Post(%d): quorum impossible successes=%d/%d conflicts=%d/%d pending=%d",
+					"Post(%d): quorum impossible successes=%d/%d rejections=%d/%d pending=%d",
 					epoch,
 					summary.successes,
 					threshold,
@@ -1162,7 +1163,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 	summary := updatePostSummary(states)
 	p.log.Noticef(
-		"Post(%d): descriptor upload fanout stopped successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
+		"Post(%d): descriptor upload fanout stopped successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d",
 		epoch,
 		summary.successes,
 		threshold,
@@ -1308,7 +1309,7 @@ func (c *Client) Post(
 	if summary.successes >= threshold {
 		if len(summary.errs) > 0 {
 			c.log.Warningf(
-				"Post(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+				"Post(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
 				epoch,
 				summary.successes,
 				threshold,
@@ -1324,7 +1325,7 @@ func (c *Client) Post(
 
 	if summary.conflicts >= threshold {
 		c.log.Warningf(
-			"Post(%d): conflict quorum for descriptor upload: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+			"Post(%d): rejection quorum for descriptor upload: successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
 			epoch,
 			summary.successes,
 			threshold,
@@ -1338,7 +1339,7 @@ func (c *Client) Post(
 	}
 
 	return fmt.Errorf(
-		"Post(%d) failed: %d/%d successes, %d/%d conflicts, transport_errors=%d semantic_errors=%d, errors: %v",
+		"Post(%d) failed: %d/%d successes, %d/%d rejections, transport_errors=%d semantic_errors=%d, errors: %v",
 		epoch,
 		summary.successes,
 		threshold,
@@ -1399,7 +1400,7 @@ func (c *Client) PostReplica(
 		}
 
 		c.log.Noticef(
-			"PostReplica(%d): replica descriptor upload succeeded accepted_by=%v conflicts_from=%v successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
+			"PostReplica(%d): replica descriptor upload succeeded accepted_by=%v rejections_from=%v successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d",
 			epoch,
 			acceptedAuthorities,
 			conflictAuthorities,
@@ -1413,7 +1414,7 @@ func (c *Client) PostReplica(
 
 		if len(summary.errs) > 0 {
 			c.log.Warningf(
-				"PostReplica(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+				"PostReplica(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
 				epoch,
 				summary.successes,
 				threshold,
@@ -1430,7 +1431,7 @@ func (c *Client) PostReplica(
 	if summary.conflicts >= threshold {
 		c.rememberLastPostReplicaSummary(epoch, summary)
 		c.log.Warningf(
-			"PostReplica(%d): conflict quorum for replica descriptor upload: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+			"PostReplica(%d): rejection quorum for replica descriptor upload: successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
 			epoch,
 			summary.successes,
 			threshold,
@@ -1445,7 +1446,7 @@ func (c *Client) PostReplica(
 
 	c.rememberLastPostReplicaSummary(epoch, summary)
 	return fmt.Errorf(
-		"PostReplica(%d) failed: %d/%d successes, %d/%d conflicts, transport_errors=%d semantic_errors=%d, errors: %v",
+		"PostReplica(%d) failed: %d/%d successes, %d/%d rejections, transport_errors=%d semantic_errors=%d, errors: %v",
 		epoch,
 		summary.successes,
 		threshold,
