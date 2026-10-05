@@ -122,6 +122,8 @@ type Config struct {
 	// allowance (deriveMaxMessageSize), so it scales with the primitives in
 	// use. Raise it for a network larger than the allowance.
 	MaxConsensusSize int
+
+	LocalAddresses []string
 }
 
 // clientNodeAllowance and clientReplicaAllowance bound the topology the client
@@ -279,6 +281,10 @@ func (p *connector) initSession(
 	signingKey sign.PublicKey,
 	peer *config.Authority,
 ) (*connection, error) {
+	usable := *peer
+	usable.Addresses = retry.FilterByLocalAddresses(p.cfg.LocalAddresses, peer.Addresses)
+	peer = &usable
+
 	var conn net.Conn
 	var err error
 	var connectedURL string
