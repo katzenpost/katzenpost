@@ -386,8 +386,8 @@ func New(cfg *config.Config) (*Server, error) {
 	logStartupStep("version and hardware checks")
 
 	// Initialize the server identity and link keys.
-	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
-	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
+	identityPrivateKeyFile := s.cfg.Server.IdentityPrivateKeyPath()
+	identityPublicKeyFile := s.cfg.Server.IdentityPublicKeyPath()
 
 	var err error
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
@@ -422,8 +422,8 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
 	logStartupStep("identity key initialization")
 
-	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
+	linkPrivateKeyFile := s.cfg.Server.LinkPrivateKeyPath()
+	linkPublicKeyFile := s.cfg.Server.LinkPublicKeyPath()
 	scheme := schemes.ByName(cfg.Server.WireKEM)
 	if scheme == nil {
 		panic("KEM scheme not found")
