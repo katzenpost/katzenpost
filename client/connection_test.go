@@ -1257,3 +1257,38 @@ func TestIsPeerValidIdentityMismatch(t *testing.T) {
 	}
 	require.False(t, conn.IsPeerValid(creds))
 }
+
+func TestGetConsensusCanceledNoDeadlock(t *testing.T) {
+	c := newTestConnection(t)
+	c.isConnected.Store(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.GetConsensus(ctx, 123)
+		done <- err
+	}()
+
+	request := <-c.getConsensusCh
+	request.doneFn(nil)
+	cancel()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, errGetConsensusCanceled)
+	case <-time.After(time.Second):
+		t.Fatal("GetConsensus did not cancel in time")
+	}
+
+	// Late reply must not block because replyCh is buffered
+	delivered := false
+	select {
+	case request.replyCh <- ErrNotConnected:
+		delivered = true
+	default:
+	}
+	require.True(t, delivered, "buffered replyCh must accept late reply without receiver")
+
+	c.Shutdown()
+}

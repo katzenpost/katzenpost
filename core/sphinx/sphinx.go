@@ -153,10 +153,13 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	if utils.CtIsZero(sharedSecret) {
 		return nil, nil, errors.New("sphinx: degenerate shared secret")
 	}
-	defer utils.ExplicitBzero(sharedSecret)
+	defer func() {
+		utils.ExplicitBzero(sharedSecret)
+	}()
 
 	keys[0] = crypto.KDF(sharedSecret, s.nike)
 	defer keys[0].Reset()
+	utils.ExplicitBzero(sharedSecret)
 
 	groupElements[0], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
 	if err != nil {
@@ -179,10 +182,12 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 			if blinded == nil {
 				return nil, nil, errors.New("sphinx: degenerate blinded key")
 			}
+			utils.ExplicitBzero(sharedSecret)
 			sharedSecret = blinded.Bytes()
 		}
 		keys[i] = crypto.KDF(sharedSecret, s.nike)
 		defer keys[i].Reset()
+		utils.ExplicitBzero(sharedSecret)
 		err = clientPublicKey.Blind(keys[i-1].BlindingFactor)
 		if err != nil {
 			panic(err)
@@ -335,7 +340,9 @@ func (s *Sphinx) unwrapNike(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte
 	}
 
 	var sharedSecret []byte
-	defer utils.ExplicitBzero(sharedSecret)
+	defer func() {
+		utils.ExplicitBzero(sharedSecret)
+	}()
 
 	// Calculate the hop's shared secret, and replay_tag.
 	groupElement, err := s.nike.UnmarshalBinaryPublicKey(pkt[geOff:riOff])
@@ -352,6 +359,7 @@ func (s *Sphinx) unwrapNike(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte
 	// Derive the various keys required for packet processing.
 	keys := crypto.KDF(sharedSecret, s.nike)
 	defer keys.Reset()
+	utils.ExplicitBzero(sharedSecret)
 
 	// Validate the Sphinx Packet Header.
 	m := crypto.NewMAC(&keys.HeaderMAC)

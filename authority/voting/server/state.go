@@ -1519,9 +1519,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	}
 
 	nodes := make([]*pki.MixDescriptor, 0)
-	mixTally := make(map[string][]*pki.Document)
-	mixParams := make(map[string][]*pki.Document)
-	replicaTally := make(map[string][]*pki.Document)
+	mixTally := make(map[string]map[[publicKeyHashSize]byte]struct{})
+	mixParams := make(map[string]map[[publicKeyHashSize]byte]struct{})
+	replicaTally := make(map[string]map[[publicKeyHashSize]byte]struct{})
 	replicaNodes := make([]*pki.ReplicaDescriptor, 0)
 	for id, vote := range s.votes[epoch] {
 		// serialize the vote parameters and tally these as well.
@@ -1531,9 +1531,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			continue
 		}
 		if _, ok := mixParams[bs]; !ok {
-			mixParams[bs] = make([]*pki.Document, 0)
+			mixParams[bs] = make(map[[publicKeyHashSize]byte]struct{})
 		}
-		mixParams[bs] = append(mixParams[bs], vote)
+		mixParams[bs][id] = struct{}{}
 
 		// include edge nodes in the tally.
 		for _, desc := range vote.GatewayNodes {
@@ -1544,9 +1544,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 			k := string(rawDesc)
 			if _, ok := mixTally[k]; !ok {
-				mixTally[k] = make([]*pki.Document, 0)
+				mixTally[k] = make(map[[publicKeyHashSize]byte]struct{})
 			}
-			mixTally[k] = append(mixTally[k], vote)
+			mixTally[k][id] = struct{}{}
 		}
 		for _, desc := range vote.ServiceNodes {
 			rawDesc, err := desc.MarshalBinary()
@@ -1556,9 +1556,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 			k := string(rawDesc)
 			if _, ok := mixTally[k]; !ok {
-				mixTally[k] = make([]*pki.Document, 0)
+				mixTally[k] = make(map[[publicKeyHashSize]byte]struct{})
 			}
-			mixTally[k] = append(mixTally[k], vote)
+			mixTally[k][id] = struct{}{}
 		}
 		// include the rest of the mixes in the tally.
 		for _, l := range vote.Topology {
@@ -1571,9 +1571,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 
 				k := string(rawDesc)
 				if _, ok := mixTally[k]; !ok {
-					mixTally[k] = make([]*pki.Document, 0)
+					mixTally[k] = make(map[[publicKeyHashSize]byte]struct{})
 				}
-				mixTally[k] = append(mixTally[k], vote)
+				mixTally[k][id] = struct{}{}
 			}
 		}
 		for _, desc := range vote.StorageReplicas {
@@ -1584,14 +1584,14 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 			k := string(rawDesc)
 			if _, ok := replicaTally[k]; !ok {
-				replicaTally[k] = make([]*pki.Document, 0)
+				replicaTally[k] = make(map[[publicKeyHashSize]byte]struct{})
 			}
-			replicaTally[k] = append(replicaTally[k], vote)
+			replicaTally[k][id] = struct{}{}
 		}
 	}
 	// include mixes that have a threshold of votes
-	for rawDesc, votes := range mixTally {
-		if len(votes) >= s.threshold {
+	for rawDesc, authorities := range mixTally {
+		if len(authorities) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			desc := new(pki.MixDescriptor)
 			err := desc.UnmarshalBinary([]byte(rawDesc))
@@ -1604,8 +1604,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 		}
 	}
-	for rawDesc, votes := range replicaTally {
-		if len(votes) >= s.threshold {
+	for rawDesc, authorities := range replicaTally {
+		if len(authorities) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			desc := new(pki.ReplicaDescriptor)
 			err := desc.Unmarshal([]byte(rawDesc))
@@ -1622,18 +1622,18 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	sortReplicaNodesByPublicKey(replicaNodes)
 
 	// include parameters that have a threshold of votes
-	for bs, votes := range mixParams {
+	for bs, authorities := range mixParams {
 		params, err := votedParametersFromKey(bs)
 		if err != nil {
 			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%x", err, bs)
 			continue
 		}
 
-		if len(votes) >= s.threshold {
+		if len(authorities) >= s.threshold {
 			sortNodesByPublicKey(nodes)
 			// successful tally
 			return nodes, replicaNodes, params, nil
-		} else if len(votes) >= s.dissenters {
+		} else if len(authorities) >= s.dissenters {
 			s.log.Errorf("tallyVotes: failed threshold with params: %v", params)
 			continue
 		}
@@ -1671,7 +1671,11 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 	srv.Write(epochToBytes(epoch))
 
 	sort.Slice(sortedreveals, func(i, j int) bool {
-		return string(sortedreveals[i].Digest) > string(sortedreveals[j].Digest)
+		a, b := sortedreveals[i], sortedreveals[j]
+		if cmp := bytes.Compare(a.Digest, b.Digest); cmp != 0 {
+			return cmp > 0
+		}
+		return bytes.Compare(a.PublicKey[:], b.PublicKey[:]) < 0
 	})
 
 	for _, reveal := range sortedreveals {
@@ -2441,6 +2445,22 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 	// Check that the deserialiezd payload was signed for the correct Epoch
 	if doc.Epoch != s.votingEpoch {
 		s.log.Errorf("Vote from %s contains wrong Epoch %d", s.authorityNames[pk], doc.Epoch)
+		instrument.VoteReceived("malformed")
+		resp.ErrorCode = commands.VoteMalformed
+		return &resp
+	}
+
+	// Verify the document is well formed and has valid structure/descriptors
+	if err := pki.IsDocumentWellFormed(doc, s.getVerifiers()); err != nil {
+		s.log.Errorf("Vote from %s is not well-formed: %v", s.authorityNames[pk], err)
+		instrument.VoteReceived("malformed")
+		resp.ErrorCode = commands.VoteMalformed
+		return &resp
+	}
+
+	// A Vote must carry exactly 1 commit and 0 reveals
+	if len(doc.SharedRandomCommit) != 1 || len(doc.SharedRandomReveal) != 0 {
+		s.log.Errorf("Vote from %s carries invalid SharedRandom commit/reveal count", s.authorityNames[pk])
 		instrument.VoteReceived("malformed")
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp

@@ -531,6 +531,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 		}
 	}
 	cmdCloseCh := make(chan interface{})
+	defer close(cmdCloseCh)
 	defer func() {
 		if wireErr == nil {
 			// Set a default error if wireErr is nil during shutdown
@@ -551,6 +552,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				//read tcp 127.0.0.1:34688->127.0.0.1:30004: use of closed network connection
 				select {
 				case <-c.HaltCh():
+				case <-cmdCloseCh:
 				case cmdCh <- err:
 				}
 				return
@@ -573,7 +575,9 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 		if consensusCtx != nil {
 			select {
 			case <-c.HaltCh():
+			case <-cmdCloseCh:
 			case consensusCtx.replyCh <- ErrNotConnected:
+			default:
 			}
 		}
 	}()
@@ -702,14 +706,13 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				// Check for error responses from the gateway.
 				if cmd.ErrorCode != commands.ConsensusOk {
 					c.log.Debugf("Received Consensus2 error code: %v for epoch %v", cmd.ErrorCode, consensusCtx.epoch)
-					consensusCtx.replyCh <- cmd
+					select {
+					case consensusCtx.replyCh <- cmd:
+					default:
+					}
 					consensusCtx = nil
 					dechunker = cpki.NewDechunker()
 				} else {
-					if dechunker.ChunkNum == 0 {
-						dechunker.ChunkNum = int(cmd.ChunkNum)
-						dechunker.ChunkTotal = int(cmd.ChunkTotal)
-					}
 					err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
 					if err != nil {
 						// A chunk-stream error (e.g. EOF when the
@@ -732,7 +735,10 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 						// last chunk
 						cmd.Payload = make([]byte, len(dechunker.Output))
 						copy(cmd.Payload, dechunker.Output)
-						consensusCtx.replyCh <- cmd
+						select {
+						case consensusCtx.replyCh <- cmd:
+						default:
+						}
 						consensusCtx = nil
 						dechunker = cpki.NewDechunker()
 					}
@@ -860,7 +866,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 	}
 
 	errCh := make(chan error, 1)
-	replyCh := make(chan interface{})
+	replyCh := make(chan interface{}, 1)
 
 	select {
 	case c.getConsensusCh <- &getConsensusCtx{

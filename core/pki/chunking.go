@@ -56,6 +56,15 @@ func Chunk(blob []byte, chunkSize int) ([][]byte, error) {
 	return chunks, nil
 }
 
+const (
+	// MaxChunks is the maximum number of chunks allowed for a consensus document.
+	MaxChunks = 1024
+	// MaxCompressedConsensusBytes is the maximum total size of compressed chunks (16 MiB).
+	MaxCompressedConsensusBytes = 16 * 1024 * 1024
+	// MaxDecompressedConsensusBytes is the maximum allowed size for decompressed consensus (32 MiB).
+	MaxDecompressedConsensusBytes = 32 * 1024 * 1024
+)
+
 type Dechunker struct {
 	ChunkNum   int
 	ChunkTotal int
@@ -71,13 +80,19 @@ func NewDechunker() *Dechunker {
 }
 
 func (d *Dechunker) Consume(payload []byte, num, total int) error {
-	if total <= 0 || num < 0 || num >= total {
+	if total <= 0 || total > MaxChunks || num < 0 || num >= total {
 		return errors.New("invalid chunk index or total")
 	}
 	if d.ChunkNum == 0 && d.ChunkTotal == 0 {
 		d.ChunkTotal = total
 	} else if total != d.ChunkTotal {
 		return errors.New("Receive invalid Consensus2.ChunkTotal")
+	}
+	if num != d.ChunkNum {
+		return errors.New("unexpected chunk sequence")
+	}
+	if len(payload) > MaxCompressedConsensusBytes-d.Chunks.Len() {
+		return errors.New("compressed consensus too large")
 	}
 	d.Chunks.Write(payload)
 	d.ChunkNum++
@@ -89,9 +104,13 @@ func (d *Dechunker) Consume(payload []byte, num, total int) error {
 		}
 		defer zr.Close()
 		var acc bytes.Buffer
-		_, err = io.Copy(&acc, zr)
+		lr := io.LimitReader(zr, int64(MaxDecompressedConsensusBytes)+1)
+		n, err := io.Copy(&acc, lr)
 		if err != nil {
 			return err
+		}
+		if n > int64(MaxDecompressedConsensusBytes) {
+			return errors.New("decompressed consensus exceeds maximum allowed size")
 		}
 		d.Output = acc.Bytes()
 	}

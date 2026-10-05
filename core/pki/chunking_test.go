@@ -78,3 +78,24 @@ func TestChunkingInvalidSize(t *testing.T) {
 	err = d.Consume(payload, 2, 1)
 	require.Error(t, err)
 }
+
+func TestChunkingSequenceAndBounds(t *testing.T) {
+	d := NewDechunker()
+	// Chunk sequence must start at 0
+	err := d.Consume([]byte("data"), 1, 2)
+	require.Error(t, err)
+
+	// Valid first chunk
+	d = NewDechunker()
+	err = d.Consume([]byte("data"), 0, 2)
+	require.NoError(t, err)
+
+	// Repeated chunk must be rejected
+	err = d.Consume([]byte("data"), 0, 2)
+	require.Error(t, err)
+
+	// Total exceeding MaxChunks must be rejected
+	d = NewDechunker()
+	err = d.Consume([]byte("data"), 0, MaxChunks+1)
+	require.Error(t, err)
+}
