@@ -386,6 +386,9 @@ func (p *pki) worker() {
 				if newMuSafetyCap := ent.MuSafetyCap(); newMuSafetyCap != lastMuSafetyCap {
 					p.log.Debugf("Updating scheduler per-hop deadline for epoch %v: %v ms", now, newMuSafetyCap)
 					p.glue.Scheduler().OnNewMixMaxDelay(newMuSafetyCap)
+					if sn := p.glue.ServiceNode(); sn != nil && p.glue.Config().Server.IsServiceNode {
+						sn.OnNewMixMaxDelay(newMuSafetyCap)
+					}
 					lastMuSafetyCap = newMuSafetyCap
 				}
 
