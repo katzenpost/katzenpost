@@ -557,7 +557,7 @@ func (s *Server) initLinkKeys() error {
 			return err
 		}
 	} else {
-		panic("Improbable: Only found one link PEM file.")
+		return fmt.Errorf("%s and %s must either both exist or not exist", linkPrivateKeyFile, linkPublicKeyFile)
 	}
 
 	s.linkKey = linkPrivateKey
