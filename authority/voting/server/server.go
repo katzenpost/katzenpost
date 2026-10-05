@@ -546,7 +546,8 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+		var linkPublicKey kem.PublicKey
+		linkPublicKey, linkPrivateKey, err = scheme.GenerateKeyPair()
 		if err != nil {
 			return nil, err
 		}
