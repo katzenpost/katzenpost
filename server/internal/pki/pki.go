@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
@@ -1125,6 +1126,20 @@ func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 	return val, nil
 }
 
+func pkiClientConfig(g glue.Glue, kemscheme kem.Scheme, pkiSignatureScheme sign.Scheme) *vClient.Config {
+	return &vClient.Config{
+		KEMScheme:           kemscheme,
+		PKISignatureScheme:  pkiSignatureScheme,
+		LinkKey:             g.LinkKey(),
+		LogBackend:          g.LogBackend(),
+		Authorities:         g.Config().PKI.Voting.Authorities,
+		Geo:                 g.Config().SphinxGeometry,
+		DialTimeoutSec:      g.Config().Debug.ConnectTimeout / 1000,
+		HandshakeTimeoutSec: g.Config().Debug.HandshakeTimeout / 1000,
+		LocalAddresses:      g.Config().Server.Addresses,
+	}
+}
+
 // New returns a new pki.
 func New(glue glue.Glue) (glue.PKI, error) {
 	p := &pki{
@@ -1154,21 +1169,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		return nil, errors.New("pki signature scheme not found in registry")
 	}
 
-	pkiCfg := &vClient.Config{
-		KEMScheme:          kemscheme,
-		PKISignatureScheme: pkiSignatureScheme,
-		LinkKey:            glue.LinkKey(),
-		LogBackend:         glue.LogBackend(),
-		Authorities:        glue.Config().PKI.Voting.Authorities,
-		Geo:                glue.Config().SphinxGeometry,
-
-		// Convert milliseconds to seconds for PKI client timeouts.
-		DialTimeoutSec:      glue.Config().Debug.ConnectTimeout / 1000,
-		HandshakeTimeoutSec: glue.Config().Debug.HandshakeTimeout / 1000,
-		LocalAddresses:      glue.Config().Server.Addresses,
-	}
-
-	p.impl, err = vClient.New(pkiCfg)
+	p.impl, err = vClient.New(pkiClientConfig(glue, kemscheme, pkiSignatureScheme))
 	if err != nil {
 		return nil, err
 	}
