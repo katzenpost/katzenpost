@@ -27,7 +27,8 @@ const (
 
 	// Above the docker testnet's ~54s worst-case round trip, so a
 	// tail-latency reply is not mistaken for a lost one.
-	replyWaitTimeout = 3 * time.Minute
+	replyWaitTimeout    = 3 * time.Minute
+	replyResendInterval = 45 * time.Second
 
 	// Hard cap on a single payload-reconstruction loop (TestFromPayloadMultiCall,
 	// TestFromMultiPayloadMultiCall). These loops can otherwise stall for the whole
@@ -141,19 +142,31 @@ func setupClientAndTargets(t *testing.T) (*thin.ThinClient, []*cpki.MixDescripto
 
 // sendAndWait sends a message and waits for a reply, returning an error on timeout or failure.
 func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte) ([]byte, error) {
-	surbID := client.NewSURBID()
 	eventSink := client.EventSink()
 	defer client.StopEventSink(eventSink)
-	err := client.SendMessage(surbID, message, nodeID, queueID)
-	if err != nil {
+	sent := map[string]bool{}
+	send := func() error {
+		surbID := client.NewSURBID()
+		sent[string(surbID[:])] = true
+		return client.SendMessage(surbID, message, nodeID, queueID)
+	}
+	if err := send(); err != nil {
 		return nil, fmt.Errorf("SendMessage: %w", err)
 	}
 
 	timeout := time.After(replyWaitTimeout)
+	resend := time.NewTicker(replyResendInterval)
+	defer resend.Stop()
 	for {
 		var event thin.Event
 		select {
 		case event = <-eventSink:
+		case <-resend.C:
+			t.Log("no reply yet, resending with a fresh SURB")
+			if err := send(); err != nil {
+				return nil, fmt.Errorf("SendMessage: %w", err)
+			}
+			continue
 		case <-timeout:
 			return nil, fmt.Errorf("timed out waiting for reply")
 		case <-shutdownCh:
@@ -176,8 +189,9 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 			t.Log("MessageSentEvent")
 		case *thin.MessageReplyEvent:
 			t.Log("MessageReplyEvent")
-			if fmt.Sprintf("%x", surbID[:]) != fmt.Sprintf("%x", v.SURBID[:]) {
-				return nil, fmt.Errorf("SURBID mismatch")
+			if v.SURBID == nil || !sent[string(v.SURBID[:])] {
+				t.Log("reply for an earlier SURB, ignoring")
+				continue
 			}
 			return v.Payload, nil
 		default:
