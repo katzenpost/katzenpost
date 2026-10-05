@@ -109,6 +109,14 @@ func (s *Katzenpost) thinClientDialAddress() string {
 	return fmt.Sprintf("localhost:%d", s.BasePort+kpclientdPublishedPortOffset)
 }
 
+func (s *Katzenpost) coverDir(service string) string {
+	if !s.Cover {
+		return ""
+	}
+	os.MkdirAll(filepath.Join(s.OutDir, "coverage", service), 0755)
+	return s.BaseDir + "/coverage/" + service
+}
+
 // kpclientdMetricsPort returns the in-bridge port kpclientd serves its
 // /metrics endpoint on. It is derived from base_port so the client.toml
 // listener address and the prometheus scrape target stay in lockstep.
@@ -185,6 +193,7 @@ type Config struct {
 	PyroscopeDirauth         bool
 	PyroscopeKpclientd       bool
 	KpclientdMetricsAddress  string
+	Cover                    bool
 	DialTimeout              int
 	MaxPKIDelay              int
 	PollingIntvl             int
@@ -251,6 +260,7 @@ type Katzenpost struct {
 	PyroscopeDirauth        bool
 	PyroscopeKpclientd      bool
 	KpclientdMetricsAddress string
+	Cover                   bool
 	EpochDuration           string
 	DebugConfig             *cConfig.Debug
 	SchedulerSlack          int
@@ -1018,6 +1028,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.ProxyRequestTimeout = cfg.ProxyRequestTimeout
 	s.SessionGracePeriod = cfg.SessionGracePeriod
 	s.PersistMixKeysOnShutdownDir = cfg.PersistMixKeysOnShutdownDir
+	s.Cover = cfg.Cover
 
 	return s
 }
@@ -2605,6 +2616,9 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		var envVars []string
 		if s.EpochDuration != "" {
 			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
+		}
+		if d := s.coverDir(serviceName); d != "" {
+			envVars = append(envVars, "GOCOVERDIR="+d)
 		}
 		if s.PyroscopeDirauth && strings.HasPrefix(serviceName, "auth") {
 			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040")

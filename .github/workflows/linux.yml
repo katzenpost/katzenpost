@@ -48,6 +48,14 @@ jobs:
       - name: Run ${{ matrix.test-suite.name }} unit tests
         run: cd ${{ matrix.test-suite.path }} && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout ${{ matrix.test-suite.timeout }} ./...
 
+      - name: Upload ${{ matrix.test-suite.name }} coverage
+        if: ${{ always() && !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.test-suite.name }}
+          path: ${{ matrix.test-suite.path }}/coverage.out
+          if-no-files-found: ignore
+
   check:
     runs-on: ubuntu-latest
     name: check
