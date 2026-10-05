@@ -58,6 +58,9 @@ pyroscope_dirauth?=false
 pyroscope_kpclientd?=false
 kpclientd_metrics?=false
 epoch_duration?=2m
+epoch_seconds:=$(shell printf '%s' '$(epoch_duration)' | awk '{s=0; while (match($$0,/^[0-9]*\.?[0-9]+[hms]/)) {u=substr($$0,RLENGTH,1); n=substr($$0,1,RLENGTH-1); s+=n*(u=="h"?3600:(u=="m"?60:1)); $$0=substr($$0,RLENGTH+1)} printf "%d", (s>0?s:120)}')
+wait_epochs?=5
+wait_seconds?=$(shell expr $(wait_epochs) \* $(epoch_seconds))
 # session_grace_period sets how long kpclientd preserves per-app
 # state after a thin-client connection drops without thin_close.
 # Thirty seconds is the docker-mixnet default: short enough that
@@ -667,7 +670,7 @@ $(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
 	@echo '    Network = "tcp"'                          >> $@
 
 wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	@deadline=$$(( $$(date +%s) + 600 )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	@deadline=$$(( $$(date +%s) + $(wait_seconds) )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready --ready-timeout $${left}s; do \
 	  echo "wait: the client daemon is not accepting connections yet; retrying"; sleep 5; done
 
@@ -1020,8 +1023,16 @@ interop-gate: interop-ref-binaries
 	      *)        echo "  $$s:"; echo "    command: /$(net_name)/server.$(distro).$$v -f /$(net_name)/$$s/katzenpost.toml";; \
 	    esac; done; } > $(net_name)/docker-compose.override.yml
 	$(MAKE) start
-	@( $(MAKE) wait 2>&1; echo $$? > $(net_name)/wait.rc ) | tee $(net_name)/wait.log; \
-	  $(MAKE) -s interop-report; rc=$$?; [ "$$(cat $(net_name)/wait.rc)" = 0 ] && [ $$rc = 0 ] \
+	@deadline=$$(( $$(date +%s) + $(wait_seconds) )); poll=$$(( $(epoch_seconds) / 4 )); \
+	  [ $$poll -gt 0 ] || poll=1; ok=0; \
+	  while left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ]; do \
+	    ( $(MAKE) wait wait_seconds=$$left 2>&1; echo $$? > $(net_name)/wait.rc ) | tee $(net_name)/wait.log; \
+	    [ "$$(cat $(net_name)/wait.rc)" = 0 ] || { echo "interop-gate: the client daemon never returned a consensus document"; break; }; \
+	    $(MAKE) -s interop-report && { ok=1; break; }; \
+	    echo "interop-gate: participants missing from the epoch just fetched; refetching in $${poll}s"; \
+	    sleep $$poll; \
+	  done; \
+	  [ $$ok = 1 ] \
 	  || { echo "interop-gate: the network did not come up with every authority signing and every node listed" >&2; exit 1; }
 	@for pair in $(strip $(interop_swaps)); do s=$${pair%%=*}; v=$${pair#*=}; \
 	  grep -q " rev $$(git -C .. rev-list -n 1 $$v)" $(net_name)/$$s/*.log \
