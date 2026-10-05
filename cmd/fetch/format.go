@@ -32,6 +32,16 @@ type docView struct {
 	Signers            []string
 }
 
+func signerLabel(name string, fp [32]byte, withFingerprint bool) string {
+	if name == "" {
+		return fmt.Sprintf("%x", fp[:])
+	}
+	if withFingerprint {
+		return fmt.Sprintf("%s (%x)", name, fp[:])
+	}
+	return name
+}
+
 func mixNames(descs []*cpki.MixDescriptor) []string {
 	names := make([]string, len(descs))
 	for i, d := range descs {
@@ -67,11 +77,7 @@ func newDocView(doc *cpki.Document, signerNames map[[32]byte]string) docView {
 		v.StorageReplicas[i] = r.Name
 	}
 	for fp := range doc.Signatures {
-		if name := signerNames[fp]; name != "" {
-			v.Signers = append(v.Signers, name)
-		} else {
-			v.Signers = append(v.Signers, hex.EncodeToString(fp[:]))
-		}
+		v.Signers = append(v.Signers, signerLabel(signerNames[fp], fp, false))
 	}
 	sort.Strings(v.Signers)
 	return v
