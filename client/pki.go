@@ -29,8 +29,6 @@ var (
 	mixServerCacheDelay     = epochtime.Period / 16
 	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
 	recheckInterval         = epochtime.Period / 16
-	// WarpedEpoch is a build time flag that accelerates the recheckInterval
-	WarpedEpoch = "false"
 
 	// waitForCurrentDocumentAttempts caps the number of synchronous
 	// updateDocument retries WaitForCurrentDocument performs before
