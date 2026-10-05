@@ -2752,7 +2752,9 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	case now + 1:
 		// If it's past the time by which we should have generated a document
 		// then we will never be able to service this.
-		if elapsed > generationDeadline {
+		// Allow a clock skew / generation tolerance window before returning errGone.
+		const clockTolerance = 2 * time.Second
+		if elapsed > generationDeadline+clockTolerance {
 			s.log.Errorf("No document for next epoch %v and it's already past 7/8 of previous epoch", now+1)
 			return nil, errGone
 		}

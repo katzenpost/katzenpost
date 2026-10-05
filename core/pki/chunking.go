@@ -16,6 +16,9 @@ type Chunker struct {
 }
 
 func Chunk(blob []byte, chunkSize int) ([][]byte, error) {
+	if chunkSize <= 0 {
+		return nil, errors.New("chunkSize must be greater than zero")
+	}
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
 	_, err := zw.Write(blob)
@@ -28,6 +31,9 @@ func Chunk(blob []byte, chunkSize int) ([][]byte, error) {
 	}
 	compressedRawDoc := buf.Bytes()
 	docSize := len(compressedRawDoc)
+	if docSize == 0 {
+		return [][]byte{}, nil
+	}
 	total := docSize / chunkSize
 	size := chunkSize * total
 	if size < docSize {
@@ -65,20 +71,28 @@ func NewDechunker() *Dechunker {
 }
 
 func (d *Dechunker) Consume(payload []byte, num, total int) error {
-	if d.ChunkNum != 0 {
-		if total != d.ChunkTotal {
-			return errors.New("Receive invalid Consensus2.ChunkTotal")
-		}
+	if total <= 0 || num < 0 || num >= total {
+		return errors.New("invalid chunk index or total")
+	}
+	if d.ChunkNum == 0 && d.ChunkTotal == 0 {
+		d.ChunkTotal = total
+	} else if total != d.ChunkTotal {
+		return errors.New("Receive invalid Consensus2.ChunkTotal")
 	}
 	d.Chunks.Write(payload)
+	d.ChunkNum++
 	if int(num) == (d.ChunkTotal - 1) {
 		// last chunk
 		zr, err := gzip.NewReader(d.Chunks)
 		if err != nil {
 			return err
 		}
+		defer zr.Close()
 		var acc bytes.Buffer
-		io.Copy(&acc, zr)
+		_, err = io.Copy(&acc, zr)
+		if err != nil {
+			return err
+		}
 		d.Output = acc.Bytes()
 	}
 	return nil
