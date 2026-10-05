@@ -125,7 +125,7 @@ func (d *Daemon) encryptRead(request *Request) {
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	d.log.Debugf("encryptRead: Idx64=%d, BoxID=%x", messageBoxIndex.Idx64, boxID)
+	d.log.Debugf("encryptRead: Idx64=%d", messageBoxIndex.Idx64)
 
 	// Create the ReplicaInnerMessage for a read operation
 	msg := &pigeonhole.ReplicaInnerMessage{
@@ -270,7 +270,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		d.log.Debugf("encryptWrite: Generated tombstone BoxID: %x, Idx64=%d", writeRequest.BoxID, messageBoxIndex.Idx64)
+		d.log.Debugf("encryptWrite: Generated tombstone, Idx64=%d", messageBoxIndex.Idx64)
 	} else {
 		// Normal write path: validate size, pad, and encrypt
 
@@ -298,7 +298,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		d.log.Debugf("encryptWrite: Generated BoxID: %x, Idx64=%d", writeRequest.BoxID, messageBoxIndex.Idx64)
+		d.log.Debugf("encryptWrite: Generated write, Idx64=%d", messageBoxIndex.Idx64)
 	}
 
 	// Create the ReplicaInnerMessage for a write operation
@@ -525,7 +525,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		d.log.Debugf("createCourierEnvelopesFromPayload: BoxID=%x", write.BoxID)
+		d.log.Debug("createCourierEnvelopesFromPayload: built an envelope")
 		envelopes = append(envelopes, envelope)
 	}
 
@@ -679,7 +679,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
 				return
 			}
-			d.log.Debugf("createCourierEnvelopesFromPayloads: dest=%d, Idx64=%d, BoxID=%x", destIdx, pos.Index().Idx64, write.BoxID)
+			d.log.Debugf("createCourierEnvelopesFromPayloads: dest=%d, Idx64=%d", destIdx, pos.Index().Idx64)
 
 			envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
 			if err != nil {
@@ -1225,28 +1225,15 @@ func (d *Daemon) arqSend(message *ARQMessage, envHashKey [32]byte) error {
 	return nil
 }
 
-// logBoxIDForRequest derives the box ID from the request's ReadCap/WriteCap
-// and MessageBoxIndex and emits a debug line. Pure diagnostic; never fails.
 func (d *Daemon) logBoxIDForRequest(req *thin.StartResendingEncryptedMessage, isRead bool) {
-	boxIDHex := "<unknown>"
 	idx64Str := "<unknown>"
 	if len(req.MessageBoxIndex) > 0 {
 		if mbi, err := bacap.NewEmptyMessageBoxIndexFromBytes(req.MessageBoxIndex); err == nil {
 			idx64Str = fmt.Sprintf("%d", mbi.Idx64)
-			switch {
-			case isRead && req.ReadCap != nil:
-				if boxID, err := req.ReadCap.DeriveBoxID(mbi); err == nil {
-					boxIDHex = fmt.Sprintf("%x", boxID.Bytes())
-				}
-			case !isRead && req.WriteCap != nil:
-				if boxID, err := req.WriteCap.DeriveBoxID(mbi); err == nil {
-					boxIDHex = fmt.Sprintf("%x", boxID.Bytes())
-				}
-			}
 		}
 	}
-	d.log.Debugf("startResendingEncryptedMessage: isRead=%v, Idx64=%s, boxID=%s, NoRetryOnBoxIDNotFound=%v, NoIdempotentBoxAlreadyExists=%v, EnvelopeHash=%x",
-		isRead, idx64Str, boxIDHex, req.NoRetryOnBoxIDNotFound, req.NoIdempotentBoxAlreadyExists, req.EnvelopeHash[:])
+	d.log.Debugf("startResendingEncryptedMessage: isRead=%v, Idx64=%s, NoRetryOnBoxIDNotFound=%v, NoIdempotentBoxAlreadyExists=%v",
+		isRead, idx64Str, req.NoRetryOnBoxIDNotFound, req.NoIdempotentBoxAlreadyExists)
 }
 
 func (d *Daemon) startResendingEncryptedMessage(request *Request) {
@@ -1348,7 +1335,7 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 	}
 
 	if !ok {
-		d.log.Debugf("cancelResendingEncryptedMessage: EnvelopeHash %x not found", req.EnvelopeHash[:])
+		d.log.Debug("cancelResendingEncryptedMessage: EnvelopeHash not found")
 		// Still send success - the message may have already completed
 	} else if arqMessage != nil {
 		// Send cancellation error to the original StartResendingEncryptedMessage call
@@ -1533,8 +1520,8 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	thinErrorCode := courierEnvelopeErrorToThinError(courierEnvelopeReply.ErrorCode)
 
 	// Log all state for debugging
-	d.log.Debugf("handlePigeonholeARQReply: EnvelopeHash=%x, State=%d, ReplyType=%d, PayloadLen=%d, CourierErrorCode=%d, ThinErrorCode=%d, IsRead=%v",
-		arqMessage.EnvelopeHash[:], arqMessage.State, courierEnvelopeReply.ReplyType, courierEnvelopeReply.PayloadLen, courierEnvelopeReply.ErrorCode, thinErrorCode, arqMessage.IsRead)
+	d.log.Debugf("handlePigeonholeARQReply: State=%d, ReplyType=%d, PayloadLen=%d, CourierErrorCode=%d, ThinErrorCode=%d, IsRead=%v",
+		arqMessage.State, courierEnvelopeReply.ReplyType, courierEnvelopeReply.PayloadLen, courierEnvelopeReply.ErrorCode, thinErrorCode, arqMessage.IsRead)
 
 	// Use the pure FSM to determine the action
 	transition := computeARQStateTransition(
@@ -1619,8 +1606,8 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 
 	copyCommandReply := courierQueryReply.CopyCommandReply
 
-	d.log.Debugf("handleCopyCommandARQReply: Received copy command reply, Status=%d, ErrorCode=%d, FailedEnvelopeIndex=%d, WriteCapHash=%x",
-		copyCommandReply.Status, copyCommandReply.ErrorCode, copyCommandReply.FailedEnvelopeIndex, arqMessage.EnvelopeHash[:])
+	d.log.Debugf("handleCopyCommandARQReply: Received copy command reply, Status=%d, ErrorCode=%d, FailedEnvelopeIndex=%d",
+		copyCommandReply.Status, copyCommandReply.ErrorCode, copyCommandReply.FailedEnvelopeIndex)
 
 	switch copyCommandReply.Status {
 	case pigeonhole.CopyStatusInProgress:
@@ -1719,7 +1706,7 @@ func (d *Daemon) scheduleCopyCommandPoll(arqMessage *ARQMessage) {
 	}
 	priority := uint64(time.Now().Add(CopyPollInterval).UnixNano())
 	d.arqTimerQueue.Push(priority, placeholder)
-	d.log.Debugf("scheduleCopyCommandPoll: next Copy poll scheduled in %v for WriteCapHash %x", CopyPollInterval, arqMessage.EnvelopeHash[:])
+	d.log.Debugf("scheduleCopyCommandPoll: next Copy poll scheduled in %v", CopyPollInterval)
 }
 
 // validateStartResendingCopyCommandRequest validates the fields of a StartResendingCopyCommand request.
@@ -1813,8 +1800,7 @@ func (d *Daemon) startResendingCopyCommand(request *Request) {
 		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	d.log.Debugf("startResendingCopyCommand: Sending copy command, QueryID=%x, WriteCapHash=%x",
-		req.QueryID[:], writeCapHash[:])
+	d.log.Debugf("startResendingCopyCommand: Sending copy command, QueryID=%x", req.QueryID[:])
 }
 
 func (d *Daemon) sendStartResendingCopyCommandError(request *Request, errorCode uint8) {
@@ -1858,7 +1844,7 @@ func (d *Daemon) cancelResendingCopyCommand(request *Request) {
 	}
 
 	if !ok {
-		d.log.Debugf("cancelResendingCopyCommand: WriteCapHash %x not found", req.WriteCapHash[:])
+		d.log.Debug("cancelResendingCopyCommand: WriteCapHash not found")
 		// Still send success - the message may have already completed
 	} else if arqMessage != nil {
 		// Send cancellation error to the original StartResendingCopyCommand call

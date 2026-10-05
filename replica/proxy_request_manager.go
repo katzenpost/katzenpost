@@ -92,7 +92,7 @@ func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPr
 	}
 
 	p.publishPendingLocked()
-	p.log.Debugf("Registered proxy request to %s for envelope hash: %x", peerName, envelopeHash)
+	p.log.Debugf("Registered proxy request to %s", peerName)
 
 	return responseCh
 }
@@ -109,7 +109,7 @@ func (p *ProxyRequestManager) FailPeer(peerIDHash [32]byte) {
 		if request.PeerIDHash != peerIDHash {
 			continue
 		}
-		p.log.Warningf("Failing pending proxy request to %s (connection died): envelope hash %x", request.PeerName, hash)
+		p.log.Warningf("Failing pending proxy request to %s (connection died)", request.PeerName)
 		close(request.ResponseCh)
 		delete(p.pendingRequests, hash)
 	}
@@ -139,7 +139,7 @@ func (p *ProxyRequestManager) FailRequest(envelopeHash [32]byte, reason string) 
 	if !exists {
 		return
 	}
-	p.log.Warningf("Failing pending proxy request to %s (%s): envelope hash %x", request.PeerName, reason, envelopeHash)
+	p.log.Warningf("Failing pending proxy request to %s (%s)", request.PeerName, reason)
 	close(request.ResponseCh)
 	delete(p.pendingRequests, envelopeHash)
 	p.publishPendingLocked()
@@ -160,7 +160,7 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 	request, exists := p.pendingRequests[*reply.EnvelopeHash]
 	if !exists {
 		p.Unlock()
-		p.log.Debugf("No pending request found for envelope hash: %x", reply.EnvelopeHash)
+		p.log.Debug("No pending request found for the reply")
 		return false
 	}
 	responseCh := request.ResponseCh
@@ -168,7 +168,7 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 	p.publishPendingLocked()
 	p.Unlock()
 
-	p.log.Debugf("PROXY REPLY RECEIVED: Found pending request for envelope hash: %x", reply.EnvelopeHash)
+	p.log.Debug("PROXY REPLY RECEIVED: Found pending request")
 
 	// This send cannot block, so it needs no shutdown escape. Removing
 	// the map entry above made us the channel's exclusive owner, no
@@ -181,7 +181,7 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 	// no longer reach.
 	responseCh <- reply
 	close(responseCh)
-	p.log.Debugf("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
+	p.log.Debug("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request")
 	return true
 }
 
@@ -219,7 +219,7 @@ func (p *ProxyRequestManager) Shutdown() {
 	defer p.Unlock()
 
 	for hash, request := range p.pendingRequests {
-		p.log.Debugf("Cleaning up remaining proxy request for envelope hash: %x", hash)
+		p.log.Debug("Cleaning up remaining proxy request")
 		close(request.ResponseCh)
 		delete(p.pendingRequests, hash)
 	}
@@ -234,7 +234,7 @@ func (p *ProxyRequestManager) CleanupExpiredRequests(timeout time.Duration) {
 	now := time.Now()
 	for hash, request := range p.pendingRequests {
 		if now.Sub(request.Timestamp) > timeout {
-			p.log.Warningf("Cleaning up expired proxy request for envelope hash: %x", hash)
+			p.log.Warningf("Cleaning up expired proxy request to %s", request.PeerName)
 			close(request.ResponseCh)
 			delete(p.pendingRequests, hash)
 		}

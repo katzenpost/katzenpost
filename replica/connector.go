@@ -345,7 +345,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	}
 
 	if len(allShards) == 0 {
-		co.log.Warningf("REPLICATION: No shards available for BoxID %x", cmd.BoxID)
+		co.log.Warning("REPLICATION: No shards available")
 		return
 	}
 
@@ -358,7 +358,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 
 		// Skip self - we already wrote locally
 		if hmac.Equal(idHash[:], myIdHash[:]) {
-			co.log.Debugf("REPLICATION: Skipping self for BoxID %x", cmd.BoxID)
+			co.log.Debug("REPLICATION: Skipping self")
 			continue
 		}
 
@@ -378,14 +378,14 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	}
 
 	if totalTargets == 0 {
-		co.log.Infof("REPLICATION: No remote shards needed for BoxID %x (we are the only shard)", cmd.BoxID)
+		co.log.Info("REPLICATION: No remote shards needed (we are the only shard)")
 		return
 	}
 
 	if successCount == totalTargets {
-		co.log.Infof("REPLICATION: Successfully dispatched to all %d targets for BoxID %x", totalTargets, cmd.BoxID)
+		co.log.Infof("REPLICATION: Successfully dispatched to all %d targets", totalTargets)
 	} else {
-		co.log.Warningf("REPLICATION: Only dispatched to %d/%d targets for BoxID %x (others queued for retry)", successCount, totalTargets, cmd.BoxID)
+		co.log.Warningf("REPLICATION: Only dispatched to %d/%d targets (others queued for retry)", successCount, totalTargets)
 	}
 }
 
