@@ -7,6 +7,8 @@
 package genconfig
 
 import (
+	"encoding"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -1042,6 +1044,9 @@ func SetupGeometry(s *Katzenpost, cfg *Config) error {
 		if signScheme == nil {
 			return fmt.Errorf("failed to resolve pki signature scheme %s", cfg.PkiSignatureScheme)
 		}
+		if err := checkWritableKey(signScheme); err != nil {
+			return fmt.Errorf("pki signature scheme %s: keys cannot be written to a config: %w", cfg.PkiSignatureScheme, err)
+		}
 		s.PkiSignatureScheme = signScheme
 	}
 
@@ -1055,6 +1060,23 @@ func SetupGeometry(s *Katzenpost, cfg *Config) error {
 	}
 
 	return nil
+}
+
+func checkWritableKey(scheme sign.Scheme) error {
+	pub, _, err := scheme.GenerateKey()
+	if err != nil {
+		return err
+	}
+	m, ok := pub.(encoding.TextMarshaler)
+	if !ok {
+		return errors.New("public key has no text encoding")
+	}
+	text, err := m.MarshalText()
+	if err != nil {
+		return err
+	}
+	_, err = signpem.FromPublicPEMString(string(text), scheme)
+	return err
 }
 
 // GenerateNodes creates all the different types of nodes (gateways, service nodes, mixes, replicas)
