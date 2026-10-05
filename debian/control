@@ -1,0 +1,29 @@
+Source: katzenpost
+Section: net
+Priority: optional
+Maintainer: Katzenpost <packages@katzenpost.network>
+Build-Depends: debhelper-compat (= 13),
+               golang-any (>= 2:1.26~)
+Standards-Version: 4.7.2
+Homepage: https://katzenpost.network/
+Rules-Requires-Root: no
+
+Package: katzenpost
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Katzenpost mix network
+ Every katzenpost binary, each installed under a kp prefix so that no
+ generic name is claimed in /usr/bin: kpserver, kpdirauth, kpcourier and
+ kpreplica, the kpclientd client daemon, and the kpconfig, kpgenconfig,
+ kpgenkeypair, kpgeometry, kpsphinx, kpping, kpfetch, kpecho-plugin and
+ kphttp-proxy tools.
+ .
+ kpclientd gets a system and a user unit, and kpserver, kpauthority and
+ kpreplica are template units, so one host can run several of each. Every
+ unit ships disabled and unstarted.
+ .
+ An instance named foo reads /etc/katzenpost/<role>/foo.toml and keeps its
+ state in /var/lib/katzenpost/<role>/foo, mode 0700, so two instances
+ never share a directory. kpclientd.toml and thinclient.toml hold no
+ secrets and are conffiles; editing them points the client daemon at
+ another network.

@@ -50,3 +50,13 @@ __pycache__/
 *.pyc
 
 
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/katzenpost/
+debian/katzenpost.*.debhelper
+debian/katzenpost.debhelper.log
+debian/katzenpost.substvars
+obj-*/
+cmd/geometry/geometry
+cmd/kpconfig/kpconfig

@@ -1,0 +1,19 @@
+[Unit]
+Description=Katzenpost mix, gateway or service node %i
+Documentation=https://katzenpost.network/docs/admin_guide/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=katzenpost
+Group=katzenpost
+ExecStart=/usr/bin/kpserver -f /etc/katzenpost/server/%i.toml
+StateDirectory=katzenpost/server/%i
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=45min
+
+[Install]
+WantedBy=multi-user.target
