@@ -1750,7 +1750,7 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
 
-			identityPublicKey := loadNodeIdentityKey(s.s.cfg.Server.DataDir, node.IdentityPublicKeyPem, pkiSignatureScheme)
+			identityPublicKey := loadNodeIdentityKey(s.s.cfg.Server.DataDir, node.KeyFile(), pkiSignatureScheme)
 
 			id := hash.Sum256From(identityPublicKey)
 
@@ -2819,11 +2819,15 @@ func newState(s *Server) (*state, error) {
 	st.s.cfg.Server.PKISignatureScheme = s.cfg.Server.PKISignatureScheme
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
 
+	if s.cfg.DeprecatedIdentityPublicKeyPem() {
+		st.log.Warning("config: IdentityPublicKeyPem is deprecated, use IdentityPublicKeyFile")
+	}
+
 	// Initialize the authorized peer tables.
 	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Mixes {
-		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.IdentityPublicKeyPem, pkiSignatureScheme)
+		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.KeyFile(), pkiSignatureScheme)
 
 		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedMixes[pk] = v.Identifier
@@ -2831,7 +2835,7 @@ func newState(s *Server) (*state, error) {
 	}
 	st.authorizedGatewayNodes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.GatewayNodes {
-		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.IdentityPublicKeyPem, pkiSignatureScheme)
+		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.KeyFile(), pkiSignatureScheme)
 
 		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedGatewayNodes[pk] = v.Identifier
@@ -2839,7 +2843,7 @@ func newState(s *Server) (*state, error) {
 	}
 	st.authorizedServiceNodes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.ServiceNodes {
-		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.IdentityPublicKeyPem, pkiSignatureScheme)
+		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.KeyFile(), pkiSignatureScheme)
 
 		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedServiceNodes[pk] = v.Identifier
@@ -2847,7 +2851,7 @@ func newState(s *Server) (*state, error) {
 	}
 	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]*authorizedReplicaInfo)
 	for _, v := range st.s.cfg.StorageReplicas {
-		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.IdentityPublicKeyPem, pkiSignatureScheme)
+		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.KeyFile(), pkiSignatureScheme)
 
 		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedReplicaNodes[pk] = &authorizedReplicaInfo{
