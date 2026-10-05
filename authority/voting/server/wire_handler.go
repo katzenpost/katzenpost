@@ -899,14 +899,12 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	pk := [hash.HashSize]byte{}
 	copy(pk[:], creds.AdditionalData[:hash.HashSize])
 
-	_, isMix := a.s.state.authorizedMixes[pk]
-	_, isGatewayNode := a.s.state.authorizedGatewayNodes[pk]
-	_, isServiceNode := a.s.state.authorizedServiceNodes[pk]
-	_, isReplicaNode := a.s.state.authorizedReplicaNodes[pk]
+	isMix := a.s.state.isNodePeer(pk)
+	isReplicaNode := a.s.state.isReplicaPeer(pk)
 	_, isAuthority := a.s.state.authorizedAuthorities[pk]
 
 	switch {
-	case isMix || isGatewayNode || isServiceNode:
+	case isMix:
 		a.isMix = true // Gateways and service nodes and mixes are all mixes.
 		return true
 	case isAuthority:

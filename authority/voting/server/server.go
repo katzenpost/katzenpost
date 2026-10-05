@@ -223,6 +223,19 @@ func (s *Server) RotateLog() {
 	s.log.Notice("Log rotated.")
 }
 
+func (s *Server) ReloadNodes(cfg *config.Config) error {
+	return s.state.reloadNodes(cfg)
+}
+
+func (s *Server) ReloadNodesFromFile(path string) error {
+	cfg, err := config.LoadFile(path, false)
+	if err != nil {
+		s.log.Errorf("Node reload failed, keeping the current node set: %v", err)
+		return err
+	}
+	return s.ReloadNodes(cfg)
+}
+
 // Wait waits till the server is terminated for any reason.
 func (s *Server) Wait() {
 	<-s.haltedCh
