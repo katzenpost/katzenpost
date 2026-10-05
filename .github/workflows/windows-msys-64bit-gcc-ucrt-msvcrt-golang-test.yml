@@ -12,6 +12,8 @@ jobs:
       HIGHCTIDH_PORTABLE: 1
       CGO_ENABLED: 1
       GODEBUG: cgocheck=1
+      GOEXPERIMENT: nogreenteagc
+      GOTRACEBACK: crash
       CGO_LDFLAGS: "-Wl,--no-as-needed -Wl,-allow-multiple-definition"
     strategy:
       matrix:
@@ -70,6 +72,8 @@ jobs:
          bash --version
          ${{ matrix.CC }} -v
          go version
+         go env GOEXPERIMENT GOAMD64
+         wmic cpu get name || true
 
       - name: Generate mixnet configuration
         shell: msys2 {0}
