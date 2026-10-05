@@ -142,7 +142,7 @@ type state struct {
 	votes              map[uint64]map[[publicKeyHashSize]byte]*pki.Document
 	certificates       map[uint64]map[[publicKeyHashSize]byte]*pki.Document
 	signatures         map[uint64]map[[publicKeyHashSize]byte]*cert.Signature
-	priorSRV           [][]byte
+	weeklySRV          [][]byte
 	reveals            map[uint64]map[[publicKeyHashSize]byte][]byte
 	commits            map[uint64]map[[publicKeyHashSize]byte][]byte
 	verifiers          map[[publicKeyHashSize]byte]sign.PublicKey
@@ -475,7 +475,7 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	if d, ok := s.documents[s.votingEpoch-1]; ok {
 		s.log.Debugf("getVote: Restoring genesisEpoch %d from document cache for epoch %d", d.GenesisEpoch, s.votingEpoch-1)
 		s.genesisEpoch = d.GenesisEpoch
-		s.priorSRV = d.PriorSharedRandom
+		s.weeklySRV = d.WeeklySharedRandom
 		d.PKISignatureScheme = s.s.cfg.Server.PKISignatureScheme
 		s.log.Debugf("getVote: Using prior SRV values from previous consensus")
 	} else {
@@ -643,11 +643,11 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	// if there are no prior SRV values, copy the current srv twice
-	if len(s.priorSRV) == 0 || epoch == s.genesisEpoch {
-		s.priorSRV = [][]byte{srv, srv}
+	if len(s.weeklySRV) == 0 || epoch == s.genesisEpoch {
+		s.weeklySRV = [][]byte{srv, srv}
 	} else if epoch%epochtime.WeekOfEpochs == 0 {
 		// rotate the weekly epochs if it is time to do so.
-		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
+		s.weeklySRV = [][]byte{srv, s.weeklySRV[0]}
 	}
 	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
@@ -881,7 +881,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		ConfiguredReplicaIDs:          configuredReplicaIDs,
 		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
 		SharedRandomValue:             srv,
-		PriorSharedRandom:             s.priorSRV,
+		WeeklySharedRandom:            s.weeklySRV,
 		SphinxGeometryHash:            s.geo.Hash(),
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
 		MinClientVersion:              params.Notice.MinClientVersion,
@@ -3098,7 +3098,7 @@ func newState(s *Server) (*state, error) {
 	st.reveals = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 	st.signatures = make(map[uint64]map[[publicKeyHashSize]byte]*cert.Signature)
 	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
-	st.priorSRV = make([][]byte, 0)
+	st.weeklySRV = make([][]byte, 0)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
