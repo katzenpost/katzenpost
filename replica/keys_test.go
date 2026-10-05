@@ -27,9 +27,7 @@ func TestEnvelopeKeys(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
-	dname, err := os.MkdirTemp("", "replca.testState")
-	require.NoError(t, err)
-	defer os.RemoveAll(dname)
+	dname := t.TempDir()
 
 	replicaScheme := nikeschemes.ByName("CTIDH512-X25519")
 	keys := &EnvelopeKeys{
@@ -89,9 +87,7 @@ func TestNewEnvelopeKeysLoadsPreviousEpochFromDisk(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
-	dname, err := os.MkdirTemp("", "replica.prevepoch-startup")
-	require.NoError(t, err)
-	defer os.RemoveAll(dname)
+	dname := t.TempDir()
 
 	replicaScheme := nikeschemes.ByName("CTIDH512-X25519")
 	epoch, _, _ := replicaCommon.ReplicaNow()
@@ -126,9 +122,7 @@ func TestEnsureKeyRefusesPastEpochs(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
-	dname, err := os.MkdirTemp("", "replica.ensurekey-past")
-	require.NoError(t, err)
-	defer os.RemoveAll(dname)
+	dname := t.TempDir()
 
 	replicaScheme := nikeschemes.ByName("CTIDH512-X25519")
 	keys := &EnvelopeKeys{

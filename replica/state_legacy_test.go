@@ -13,9 +13,7 @@ import (
 )
 
 func TestCleanupLegacyDatabaseRemovesMigratedDatabase(t *testing.T) {
-	dataDir, err := os.MkdirTemp("", "replica-legacy-remove-*")
-	require.NoError(t, err)
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	// First boot is a fresh install: the marker is recorded, with no
 	// legacy database to remove.
@@ -36,14 +34,12 @@ func TestCleanupLegacyDatabaseRemovesMigratedDatabase(t *testing.T) {
 	st2.initDB()
 	defer st2.Close()
 
-	_, err = os.Stat(legacy)
+	_, err := os.Stat(legacy)
 	require.ErrorIs(t, err, os.ErrNotExist, "migrated legacy database must be removed on boot")
 }
 
 func TestCleanupLegacyDatabaseRefusesUnmigrated(t *testing.T) {
-	dataDir, err := os.MkdirTemp("", "replica-legacy-refuse-*")
-	require.NoError(t, err)
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	legacy := filepath.Join(dataDir, "replica.db")
 	require.NoError(t, os.WriteFile(legacy, []byte("rocksdb data"), 0600))
@@ -53,6 +49,7 @@ func TestCleanupLegacyDatabaseRefusesUnmigrated(t *testing.T) {
 
 	// Open the Pebble databases without running initDB (initDB would
 	// panic on the refusal), then drive the cleanup directly.
+	var err error
 	st.db, err = pebble.Open(st.boxesDBPath(), &pebble.Options{})
 	require.NoError(t, err)
 	st.metaDB, err = pebble.Open(st.metadataDBPath(), &pebble.Options{})
@@ -72,9 +69,7 @@ func TestCleanupLegacyDatabaseRefusesUnmigrated(t *testing.T) {
 }
 
 func TestCleanupLegacyDatabaseFreshInstallWritesMarker(t *testing.T) {
-	dataDir, err := os.MkdirTemp("", "replica-legacy-fresh-*")
-	require.NoError(t, err)
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	st := newTestState(t, dataDir)
 	st.initDB()
