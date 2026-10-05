@@ -10,8 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
-
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
@@ -534,7 +533,7 @@ func (c *incomingConn) readRepair(readReply *pigeonhole.ReplicaReadReply, holder
 	cmds := commands.NewStorageReplicaCommands(c.l.server.cfg.SphinxGeometry, scheme)
 	write := buildRepairWrite(readReply, cmds)
 	for _, holder := range holders {
-		idHash := blake2b.Sum256(holder.IdentityKey)
+		idHash := hash.Sum256(holder.IdentityKey)
 		c.log.Noticef("Read-repair: replicating box %x to %s, which reported it missing", write.BoxID[:8], holder.Name)
 		c.l.server.connector.DispatchCommand(write, &idHash)
 	}
@@ -616,7 +615,7 @@ func (c *incomingConn) proxyToShard(targetShard *pki.ReplicaDescriptor, replicaE
 	if timeout <= 0 {
 		return nil, nil, nil, errProxySweepBudgetExhausted
 	}
-	idHash := blake2b.Sum256(targetShard.IdentityKey)
+	idHash := hash.Sum256(targetShard.IdentityKey)
 	reply, err := c.sendProxyRequestSync(replicaMessage, &idHash, targetShard, mkemPrivateKey, targetEnvelopeKey, scheme, timeout)
 	if err != nil {
 		return nil, nil, nil, err
