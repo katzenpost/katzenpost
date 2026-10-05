@@ -432,6 +432,11 @@ type Server struct {
 	// compose-runtime's embedded DNS. Onion addresses are always
 	// permitted.
 	AllowHostnameAddresses bool
+
+	IdentityPrivateKeyFile string `toml:",omitempty"`
+	IdentityPublicKeyFile  string `toml:",omitempty"`
+	LinkPrivateKeyFile     string `toml:",omitempty"`
+	LinkPublicKeyFile      string `toml:",omitempty"`
 }
 
 // applyRetryDefaults sets default values for retry configuration

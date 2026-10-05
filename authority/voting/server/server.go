@@ -489,8 +489,8 @@ func New(cfg *config.Config) (*Server, error) {
 	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
 
 	// Initialize the authority identity key.
-	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
-	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
+	identityPrivateKeyFile := s.cfg.Server.IdentityPrivateKeyPath()
+	identityPublicKeyFile := s.cfg.Server.IdentityPublicKeyPath()
 
 	var err error
 
@@ -527,8 +527,8 @@ func New(cfg *config.Config) (*Server, error) {
 	if scheme == nil {
 		return nil, errors.New("KEM scheme not found in registry")
 	}
-	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
+	linkPrivateKeyFile := s.cfg.Server.LinkPrivateKeyPath()
+	linkPublicKeyFile := s.cfg.Server.LinkPublicKeyPath()
 
 	var linkPrivateKey kem.PrivateKey
 
