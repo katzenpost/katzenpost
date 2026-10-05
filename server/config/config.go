@@ -158,10 +158,10 @@ type Server struct {
 	// the directory would silently have no effect.
 	PersistMixKeysOnShutdownDir string
 
-	IdentityPrivateKeyFile string
-	IdentityPublicKeyFile  string
-	LinkPrivateKeyFile     string
-	LinkPublicKeyFile      string
+	IdentityPrivateKeyFile string `toml:",omitempty"`
+	IdentityPublicKeyFile  string `toml:",omitempty"`
+	LinkPrivateKeyFile     string `toml:",omitempty"`
+	LinkPublicKeyFile      string `toml:",omitempty"`
 }
 
 func (sCfg *Server) validate() error {
