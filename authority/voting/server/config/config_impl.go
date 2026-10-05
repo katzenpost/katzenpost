@@ -369,7 +369,7 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	// if our own identity is not in cfg.Authorities return error
 	selfInAuthorities := false
 
-	ourPubKeyFile := filepath.Join(cfg.Server.DataDir, "identity.public.pem")
+	ourPubKeyFile := cfg.Server.IdentityPublicKeyPath()
 	pemData, err := os.ReadFile(ourPubKeyFile)
 	if err != nil {
 		return err
