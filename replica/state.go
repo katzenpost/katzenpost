@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/cockroachdb/pebble"
-	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -580,7 +580,7 @@ func (s *state) Rebalance(trigger string) error {
 				return err
 			}
 			for _, shard := range remoteShards {
-				idHash := blake2b.Sum256(shard.IdentityKey)
+				idHash := hash.Sum256(shard.IdentityKey)
 				s.server.connector.DispatchCommand(writeCmd, &idHash)
 			}
 		}

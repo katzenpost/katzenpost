@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -122,7 +121,7 @@ func (p *PKIWorker) Start() {
 func replicaMap(doc *pki.Document) map[[32]byte]*pki.ReplicaDescriptor {
 	newReplicas := make(map[[32]byte]*pki.ReplicaDescriptor)
 	for _, replica := range doc.StorageReplicas {
-		replicaIdHash := blake2b.Sum256(replica.IdentityKey)
+		replicaIdHash := hash.Sum256(replica.IdentityKey)
 		newReplicas[replicaIdHash] = replica
 	}
 	return newReplicas

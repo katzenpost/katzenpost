@@ -3064,8 +3064,8 @@ func sortNodesByPublicKey(nodes []*pki.MixDescriptor) {
 }
 
 func sha256b64(raw []byte) string {
-	hash := blake2b.Sum256(raw)
-	return base64.StdEncoding.EncodeToString(hash[:])
+	h := hash.Sum256(raw)
+	return base64.StdEncoding.EncodeToString(h[:])
 }
 
 // validate the topology
