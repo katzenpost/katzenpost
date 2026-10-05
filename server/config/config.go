@@ -18,6 +18,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
@@ -758,6 +759,12 @@ type Config struct {
 	SphinxGeometry *geo.Geometry
 
 	Debug *Debug
+
+	hash [32]byte
+}
+
+func (cfg *Config) Hash() [32]byte {
+	return cfg.hash
 }
 
 // FixupAndValidate applies defaults to config entries and validates the
@@ -878,6 +885,7 @@ func Load(b []byte) (*Config, error) {
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}
+	cfg.hash = sha256.Sum256(b)
 
 	return cfg, nil
 }

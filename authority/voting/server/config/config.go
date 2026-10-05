@@ -478,6 +478,12 @@ type Config struct {
 	Topology        *Topology
 
 	SphinxGeometry *geo.Geometry
+
+	hash [32]byte
+}
+
+func (cfg *Config) Hash() [32]byte {
+	return cfg.hash
 }
 
 // Layer holds a slice of Nodes
