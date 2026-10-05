@@ -327,6 +327,10 @@ type Debug struct {
 	// should only be used for testing.
 	DisableRateLimit bool
 
+	DisableServicePreDelay bool
+
+	ServicePreDelayQueueSize int
+
 	MaxClientConns *int
 
 	MaxPeerConns *int
