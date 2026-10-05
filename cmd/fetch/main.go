@@ -48,6 +48,7 @@ type Config struct {
 	MinReplicas  int
 	RequireReady bool
 	ReadyTimeout time.Duration
+	Format       string
 }
 
 // newRootCommand creates the root cobra command
@@ -95,6 +96,8 @@ and inspecting the current state of the mixnet topology.`,
 		"wait until every mix, storage replica, and courier reports ready on its metrics endpoint before printing the document")
 	cmd.Flags().DurationVar(&cfg.ReadyTimeout, "ready-timeout", 8*time.Minute,
 		"maximum time to wait for the whole network to report ready before failing with per-node diagnostics")
+	cmd.Flags().StringVar(&cfg.Format, "format", "",
+		"output format: text or json (default: the full document dump)")
 
 	return cmd
 }
@@ -106,6 +109,9 @@ func main() {
 
 // runFetch fetches network documents from directory authorities
 func runFetch(cfg Config) error {
+	if cfg.Format != "" && cfg.Format != "text" && cfg.Format != "json" {
+		return fmt.Errorf("unknown format %q, want text or json", cfg.Format)
+	}
 	thinCfg, err := thin.LoadFile(cfg.ConfigFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config file: %v", err)
@@ -150,8 +156,7 @@ func runFetch(cfg Config) error {
 		if err := waitForReady(cfg, logger, doc); err != nil {
 			return err
 		}
-		printDocument(doc, signerNames)
-		return nil
+		return printDocument(doc, signerNames, cfg.Format)
 	}
 
 	if cfg.RequireReady {
@@ -186,8 +191,7 @@ func waitRequireReady(client *thin.ThinClient, logger *logging.Logger, cfg Confi
 			if err := waitForReady(cfg, logger, doc); err != nil {
 				return err
 			}
-			printDocument(doc, signerNames)
-			return nil
+			return printDocument(doc, signerNames, cfg.Format)
 		}
 		if time.Since(lastProgressLog) >= 4*time.Second {
 			reason := err
@@ -231,8 +235,7 @@ func waitForDocument(client *thin.ThinClient, logger *logging.Logger, cfg Config
 			if err := waitForReady(cfg, logger, doc); err != nil {
 				return err
 			}
-			printDocument(doc, signerNames)
-			return nil
+			return printDocument(doc, signerNames, cfg.Format)
 		case <-client.HaltCh():
 			return fmt.Errorf("connection closed before receiving PKI document")
 		}
@@ -293,9 +296,18 @@ func fetchSignedDocument(client *thin.ThinClient, epoch uint64) (*cpki.Document,
 
 // printDocument prints the document followed by the directory authorities that
 // signed it, by name where the fingerprint is known and by fingerprint otherwise.
-func printDocument(doc *cpki.Document, signerNames map[[32]byte]string) {
-	fmt.Printf("%v", doc)
-	printSigners(doc, doc.Epoch, signerNames)
+func printDocument(doc *cpki.Document, signerNames map[[32]byte]string, format string) error {
+	if format == "" {
+		fmt.Printf("%v", doc)
+		printSigners(doc, doc.Epoch, signerNames)
+		return nil
+	}
+	out, err := formatDocument(doc, format, signerNames)
+	if err != nil {
+		return err
+	}
+	fmt.Print(out)
+	return nil
 }
 
 // printSigners reports, in deterministic order, every directory authority that
@@ -306,11 +318,7 @@ func printDocument(doc *cpki.Document, signerNames map[[32]byte]string) {
 func printSigners(doc *cpki.Document, epoch uint64, signerNames map[[32]byte]string) {
 	labels := make([]string, 0, len(doc.Signatures))
 	for fp := range doc.Signatures {
-		if name := signerNames[fp]; name != "" {
-			labels = append(labels, fmt.Sprintf("%s (%x)", name, fp[:]))
-		} else {
-			labels = append(labels, fmt.Sprintf("%x", fp[:]))
-		}
+		labels = append(labels, signerLabel(signerNames[fp], fp, true))
 	}
 	sort.Strings(labels)
 
