@@ -19,7 +19,9 @@ package outgoing
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"strings"
@@ -352,7 +354,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			he.WithPeerName(c.dst.Name)
 		}
 
-		c.log.Errorf(
+		logf := c.log.Errorf
+		if refusedBeforeHandshake(err) {
+			logf = c.log.Debugf
+		}
+		logf(
 			"Handshake failed peer=%s identity_hash=%x descriptor_addrs=%s local=%s remote=%s after=%v timeout=%v: %v",
 			c.dst.Name,
 			peerIdentityHash[:],
@@ -507,4 +513,10 @@ func newOutgoingConn(co *connector, dst *cpki.MixDescriptor, geo *geo.Geometry, 
 	// the connection map.
 
 	return c
+}
+
+func refusedBeforeHandshake(err error) bool {
+	he, ok := wire.GetHandshakeError(err)
+	return ok && he.IsInitiator && he.State == wire.HandshakeStateMsg2Receive && he.MessageSize == 0 &&
+		(errors.Is(he.UnderlyingError, io.EOF) || isConnReset(he.UnderlyingError))
 }
