@@ -192,7 +192,7 @@ func generateDocument(t *testing.T, config *DocumentConfig) *pki.Document {
 		StorageReplicas:               replicas,
 		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
 		SharedRandomValue:             srv,
-		PriorSharedRandom:             oldhashes,
+		WeeklySharedRandom:            oldhashes,
 		SphinxGeometryHash:            geohash,
 		PKISignatureScheme:            config.PKIScheme.Name(),
 	}

@@ -82,7 +82,7 @@ func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme
 		Topology:           topology,
 		StorageReplicas:    []*cpki.ReplicaDescriptor{},
 		SharedRandomValue:  srv,
-		PriorSharedRandom:  oldhashes,
+		WeeklySharedRandom: oldhashes,
 		SphinxGeometryHash: geo.Hash(),
 		PKISignatureScheme: pkiScheme.Name(),
 
