@@ -2426,7 +2426,7 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 
 	doc, err := s.doParseDocument(vote.Payload)
 	if err != nil {
-		s.log.Errorf("Vote from %s failed signature verification.", s.authorityNames[pk])
+		s.log.Errorf("Vote from %s failed to parse: %v", s.authorityNames[pk], err)
 		instrument.VoteReceived("not_signed")
 		resp.ErrorCode = commands.VoteNotSigned
 		return &resp
