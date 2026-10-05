@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/hash"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 
@@ -44,5 +46,9 @@ func TestNewGeneratesAndUsesItsLinkKey(t *testing.T) {
 	require.NoError(t, err)
 	logged, err := os.ReadFile(logFile)
 	require.NoError(t, err)
-	require.Contains(t, string(logged), fmt.Sprintf("Authority link public key hash is: %x", sha256.Sum256(blob)))
+	b2 := hash.Sum256(blob)
+	s2 := sha256.Sum256(blob)
+	line := string(logged)
+	require.True(t, strings.Contains(line, fmt.Sprintf("Authority link public key hash is: %x", b2[:])) ||
+		strings.Contains(line, fmt.Sprintf("Authority link public key hash is: %x", s2[:])), line)
 }
