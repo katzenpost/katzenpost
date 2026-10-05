@@ -155,34 +155,52 @@ func rejectPigeonholeGeometry(md toml.MetaData) error {
 	return nil
 }
 
+func gatewayString(data map[string]interface{}, key string) (string, error) {
+	v, ok := data[key].(string)
+	if !ok || v == "" {
+		return "", fmt.Errorf("config: Gateway %s must be a non-empty string", key)
+	}
+	return v, nil
+}
+
 func (p *Gateway) UnmarshalTOML(v interface{}) error {
 	data, _ := v.(map[string]interface{})
-	p.Name = data["Name"].(string)
 	var err error
-
-	if data["PKISignatureScheme"].(string) == "" {
-		panic("PKISignatureScheme is an empty string")
+	if p.Name, err = gatewayString(data, "Name"); err != nil {
+		return err
 	}
 
-	sigScheme := signSchemes.ByName(data["PKISignatureScheme"].(string))
+	name, err := gatewayString(data, "PKISignatureScheme")
+	if err != nil {
+		return err
+	}
+	sigScheme := signSchemes.ByName(name)
 	if sigScheme == nil {
-		panic("pki signature scheme is nil")
+		return fmt.Errorf("config: Gateway PKISignatureScheme %q is unknown", name)
 	}
 
-	p.IdentityKey, err = signpem.FromPublicPEMString(data["IdentityKey"].(string), sigScheme)
+	idKey, err := gatewayString(data, "IdentityKey")
+	if err != nil {
+		return err
+	}
+	p.IdentityKey, err = signpem.FromPublicPEMString(idKey, sigScheme)
 	if err != nil {
 		return err
 	}
 
-	if data["WireKEMScheme"].(string) == "" {
-		return errors.New("WireKEMScheme is empty string")
+	name, err = gatewayString(data, "WireKEMScheme")
+	if err != nil {
+		return err
 	}
-
-	kemscheme := schemes.ByName(data["WireKEMScheme"].(string))
+	kemscheme := schemes.ByName(name)
 	if kemscheme == nil {
 		return errors.New("WireKEMScheme is nil")
 	}
-	linkKey, err := kempem.FromPublicPEMString(data["LinkKey"].(string), kemscheme)
+	link, err := gatewayString(data, "LinkKey")
+	if err != nil {
+		return err
+	}
+	linkKey, err := kempem.FromPublicPEMString(link, kemscheme)
 	if err != nil {
 		return err
 	}
