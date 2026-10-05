@@ -134,6 +134,7 @@ type state struct {
 	// stale; it is pruned alongside documents.
 	serializedDocsMu sync.Mutex
 	serializedDocs   map[uint64][]byte
+	servedDocs       atomic.Pointer[map[uint64][]byte]
 
 	descriptors        map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor
 	replicaDescriptors map[uint64]map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor
@@ -753,6 +754,7 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 			s.serializedDocs = make(map[uint64][]byte)
 		}
 		s.serializedDocs[epoch] = signedConsensus
+		s.publishServedDocs()
 		s.serializedDocsMu.Unlock()
 		return ourConsensus, nil
 	} else {
@@ -1858,6 +1860,7 @@ func (s *state) pruneDocuments() {
 			delete(s.serializedDocs, e)
 		}
 	}
+	s.publishServedDocs()
 	s.serializedDocsMu.Unlock()
 	for e := range s.descriptors {
 		if e < cmpEpoch {
@@ -2613,6 +2616,12 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	var generationDeadline = 7 * (epochtime.Period / 8)
 
+	if m := s.servedDocs.Load(); m != nil {
+		if b, ok := (*m)[epoch]; ok {
+			return b, nil
+		}
+	}
+
 	s.RLock()
 	defer s.RUnlock()
 
@@ -2631,6 +2640,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 				return nil, err
 			}
 			s.serializedDocs[epoch] = b
+			s.publishServedDocs()
 		}
 		s.serializedDocsMu.Unlock()
 		return b, nil
@@ -2664,6 +2674,14 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	}
 
 	// NOTREACHED
+}
+
+func (s *state) publishServedDocs() {
+	m := make(map[uint64][]byte, len(s.serializedDocs))
+	for e, b := range s.serializedDocs {
+		m[e] = b
+	}
+	s.servedDocs.Store(&m)
 }
 
 func (s *state) restorePersistence() error {
