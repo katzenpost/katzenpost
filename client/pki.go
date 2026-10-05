@@ -560,9 +560,14 @@ func newPKI(c *Client) *pki {
 	}
 
 	// Save cached documents
-	d := c.cfg.CachedDocument
-	if d != nil {
-		p.docs.Store(d.Epoch, d)
+	if d := c.cfg.CachedDocument; d != nil {
+		doc := *d
+		doc.Signatures = nil
+		if blob, err := ccbor.Marshal(&doc); err == nil {
+			p.docs.Store(doc.Epoch, &CachedDoc{Doc: &doc, Blob: blob})
+		} else {
+			p.log.Errorf("Failed to encode the configured cached document: %v", err)
+		}
 	}
 	return p
 }
