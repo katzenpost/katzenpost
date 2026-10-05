@@ -157,6 +157,11 @@ type Server struct {
 	// enabling PersistMixKeysOnShutdown is a configuration error, since
 	// the directory would silently have no effect.
 	PersistMixKeysOnShutdownDir string
+
+	IdentityPrivateKeyFile string
+	IdentityPublicKeyFile  string
+	LinkPrivateKeyFile     string
+	LinkPublicKeyFile      string
 }
 
 func (sCfg *Server) validate() error {
