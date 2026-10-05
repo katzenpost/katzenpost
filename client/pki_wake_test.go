@@ -51,3 +51,19 @@ func TestDisconnectDoesNotWakePKI(t *testing.T) {
 	conn.onConnStatusChange(errors.New("gone"))
 	require.False(t, pkiWoken(conn.client.pki))
 }
+
+func TestConnectWithoutPKIStillConnects(t *testing.T) {
+	conn := newTestConnection(t)
+	require.Nil(t, conn.client.pki)
+	conn.onConnStatusChange(nil)
+	require.True(t, conn.isConnected.Load())
+}
+
+func TestConnectWithAPendingWakeDoesNotBlock(t *testing.T) {
+	conn := newWakeTestConnection(t)
+	conn.client.ForceFetchPKI()
+	conn.onConnStatusChange(nil)
+	require.True(t, conn.isConnected.Load())
+	require.True(t, pkiWoken(conn.client.pki))
+	require.False(t, pkiWoken(conn.client.pki))
+}
