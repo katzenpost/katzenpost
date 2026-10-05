@@ -21,6 +21,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/url"
@@ -418,6 +419,7 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	if forceGenOnly {
 		cfg.Debug.GenerateOnly = true
 	}
+	cfg.hash = sha256.Sum256(b)
 
 	return cfg, nil
 }

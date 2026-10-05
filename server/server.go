@@ -381,7 +381,7 @@ func New(cfg *config.Config) (*Server, error) {
 	} else {
 		s.log.Warningf("AEZv5 implementation IS NOT hardware accelerated.")
 	}
-	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.logConfigIdentity()
 	s.log.Noticef("Sphinx Geometry: %s", cfg.SphinxGeometry.Display())
 	logStartupStep("version and hardware checks")
 
@@ -725,4 +725,10 @@ func (g *serverGlue) Decoy() glue.Decoy {
 
 func (g *serverGlue) ReshadowCryptoWorkers() {
 	g.s.reshadowCryptoWorkers()
+}
+
+func (s *Server) logConfigIdentity() {
+	h := s.cfg.Hash()
+	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Config hash: %x", h[:])
 }
