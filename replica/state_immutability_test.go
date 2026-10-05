@@ -5,7 +5,6 @@ package replica
 
 import (
 	"errors"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -31,9 +30,7 @@ import (
 func setupImmutabilityTestState(t *testing.T) *state {
 	t.Helper()
 
-	dname, err := os.MkdirTemp("", "replica.immutability")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.RemoveAll(dname) })
+	dname := t.TempDir()
 
 	nike := ecdh.Scheme(rand.Reader)
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, 1234, true, 5)
