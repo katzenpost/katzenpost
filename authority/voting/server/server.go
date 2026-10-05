@@ -458,6 +458,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	s.log.Noticef("Katzenpost directory authority version: %s", kpcommon.Version())
+	s.logConfigIdentity()
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
@@ -695,4 +696,10 @@ func New(cfg *config.Config) (*Server, error) {
 
 	isOk = true
 	return s, nil
+}
+
+func (s *Server) logConfigIdentity() {
+	h := s.cfg.Hash()
+	s.log.Noticef("Authority identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Config hash: %x", h[:])
 }
