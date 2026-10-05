@@ -117,6 +117,7 @@ type state struct {
 
 	db *bolt.DB
 
+	nodesMu                sync.RWMutex
 	reverseHash            map[[publicKeyHashSize]byte]sign.PublicKey
 	authorizedMixes        map[[publicKeyHashSize]byte]string
 	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
@@ -1293,6 +1294,8 @@ func (s *state) PeerName(identityKeyHash []byte) string {
 	var pk [publicKeyHashSize]byte
 	copy(pk[:], identityKeyHash)
 
+	s.nodesMu.RLock()
+	defer s.nodesMu.RUnlock()
 	// Check mixes
 	if name, ok := s.authorizedMixes[pk]; ok {
 		return name
@@ -1793,7 +1796,10 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
 
-			identityPublicKey := loadNodeIdentityKey(s.s.cfg.Server.DataDir, node.KeyFile(), pkiSignatureScheme)
+			identityPublicKey, err := loadNodeIdentityKey(s.s.cfg.Server.DataDir, node.KeyFile(), pkiSignatureScheme)
+			if err != nil {
+				panic(err)
+			}
 
 			id := hash.Sum256From(identityPublicKey)
 
@@ -1962,7 +1968,9 @@ func staleEpochKeys(bkt *bolt.Bucket, cmpEpoch uint64) [][]byte {
 // replica running with a ReplicaID that does not match its pinned identity key.
 func (s *state) replicaAuthorizationError(desc *pki.ReplicaDescriptor) error {
 	pk := hash.Sum256(desc.IdentityKey)
+	s.nodesMu.RLock()
 	replicaInfo, ok := s.authorizedReplicaNodes[pk]
+	s.nodesMu.RUnlock()
 	if !ok {
 		return fmt.Errorf("identity key hash %x is not pinned in this authority's StorageReplicas configuration", pk)
 	}
@@ -1995,6 +2003,8 @@ func (s *state) descriptorAuthorizationError(desc *pki.MixDescriptor) error {
 	pk := hash.Sum256(desc.IdentityKey)
 	var role string
 	var authorized map[[publicKeyHashSize]byte]string
+	s.nodesMu.RLock()
+	defer s.nodesMu.RUnlock()
 	switch {
 	case desc.IsGatewayNode && !desc.IsServiceNode:
 		role, authorized = "gateway", s.authorizedGatewayNodes
@@ -2013,6 +2023,97 @@ func (s *state) descriptorAuthorizationError(desc *pki.MixDescriptor) error {
 		return fmt.Errorf("%s name mismatch: authority pins %q for this identity key, descriptor announces %q", role, pinned, desc.Name)
 	}
 	return nil
+}
+
+type nodeTables struct {
+	mixes    map[[publicKeyHashSize]byte]string
+	gateways map[[publicKeyHashSize]byte]string
+	services map[[publicKeyHashSize]byte]string
+	replicas map[[publicKeyHashSize]byte]*authorizedReplicaInfo
+	keys     map[[publicKeyHashSize]byte]sign.PublicKey
+}
+
+func (s *state) loadNodeTables(cfg *config.Config) (*nodeTables, error) {
+	scheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+	t := &nodeTables{
+		mixes:    make(map[[publicKeyHashSize]byte]string),
+		gateways: make(map[[publicKeyHashSize]byte]string),
+		services: make(map[[publicKeyHashSize]byte]string),
+		replicas: make(map[[publicKeyHashSize]byte]*authorizedReplicaInfo),
+		keys:     make(map[[publicKeyHashSize]byte]sign.PublicKey),
+	}
+	load := func(path string) ([publicKeyHashSize]byte, error) {
+		pub, err := loadNodeIdentityKey(s.s.cfg.Server.DataDir, path, scheme)
+		if err != nil {
+			return [publicKeyHashSize]byte{}, err
+		}
+		pk := hash.Sum256From(pub)
+		t.keys[pk] = pub
+		return pk, nil
+	}
+	for _, n := range []struct {
+		nodes []*config.Node
+		into  map[[publicKeyHashSize]byte]string
+	}{{cfg.Mixes, t.mixes}, {cfg.GatewayNodes, t.gateways}, {cfg.ServiceNodes, t.services}} {
+		for _, v := range n.nodes {
+			pk, err := load(v.KeyFile())
+			if err != nil {
+				return nil, err
+			}
+			n.into[pk] = v.Identifier
+		}
+	}
+	for _, v := range cfg.StorageReplicas {
+		pk, err := load(v.KeyFile())
+		if err != nil {
+			return nil, err
+		}
+		t.replicas[pk] = &authorizedReplicaInfo{Identifier: v.Identifier, ReplicaID: v.ReplicaID}
+	}
+	for _, v := range s.s.cfg.Authorities {
+		t.keys[hash.Sum256From(v.IdentityPublicKey)] = v.IdentityPublicKey
+	}
+	if s.s.identityPublicKey != nil {
+		t.keys[hash.Sum256From(s.s.identityPublicKey)] = s.s.identityPublicKey
+	}
+	return t, nil
+}
+
+func (s *state) setNodeTables(t *nodeTables) {
+	s.Lock()
+	s.nodesMu.Lock()
+	s.authorizedMixes, s.authorizedGatewayNodes, s.authorizedServiceNodes = t.mixes, t.gateways, t.services
+	s.authorizedReplicaNodes, s.reverseHash = t.replicas, t.keys
+	s.nodesMu.Unlock()
+	s.Unlock()
+}
+
+func (s *state) reloadNodes(cfg *config.Config) error {
+	t, err := s.loadNodeTables(cfg)
+	if err != nil {
+		s.log.Errorf("Node reload failed, keeping the current node set: %v", err)
+		return err
+	}
+	s.setNodeTables(t)
+	s.log.Noticef("Reloaded nodes: %d mixes, %d gateways, %d service nodes, %d replicas",
+		len(t.mixes), len(t.gateways), len(t.services), len(t.replicas))
+	return nil
+}
+
+func (s *state) isNodePeer(pk [publicKeyHashSize]byte) bool {
+	s.nodesMu.RLock()
+	defer s.nodesMu.RUnlock()
+	_, isMix := s.authorizedMixes[pk]
+	_, isGateway := s.authorizedGatewayNodes[pk]
+	_, isService := s.authorizedServiceNodes[pk]
+	return isMix || isGateway || isService
+}
+
+func (s *state) isReplicaPeer(pk [publicKeyHashSize]byte) bool {
+	s.nodesMu.RLock()
+	defer s.nodesMu.RUnlock()
+	_, ok := s.authorizedReplicaNodes[pk]
+	return ok
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
@@ -2954,49 +3055,15 @@ func newState(s *Server) (*state, error) {
 	st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 	st.s.cfg.Server.PKISignatureScheme = s.cfg.Server.PKISignatureScheme
-	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
-
 	if s.cfg.DeprecatedIdentityPublicKeyPem() {
 		st.log.Warning("config: IdentityPublicKeyPem is deprecated, use IdentityPublicKeyFile")
 	}
 
-	// Initialize the authorized peer tables.
-	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-	st.authorizedMixes = make(map[[publicKeyHashSize]byte]string)
-	for _, v := range st.s.cfg.Mixes {
-		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.KeyFile(), pkiSignatureScheme)
-
-		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedMixes[pk] = v.Identifier
-		st.reverseHash[pk] = identityPublicKey
+	nodes, err := st.loadNodeTables(s.cfg)
+	if err != nil {
+		panic(err)
 	}
-	st.authorizedGatewayNodes = make(map[[publicKeyHashSize]byte]string)
-	for _, v := range st.s.cfg.GatewayNodes {
-		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.KeyFile(), pkiSignatureScheme)
-
-		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedGatewayNodes[pk] = v.Identifier
-		st.reverseHash[pk] = identityPublicKey
-	}
-	st.authorizedServiceNodes = make(map[[publicKeyHashSize]byte]string)
-	for _, v := range st.s.cfg.ServiceNodes {
-		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.KeyFile(), pkiSignatureScheme)
-
-		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedServiceNodes[pk] = v.Identifier
-		st.reverseHash[pk] = identityPublicKey
-	}
-	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]*authorizedReplicaInfo)
-	for _, v := range st.s.cfg.StorageReplicas {
-		identityPublicKey := loadNodeIdentityKey(s.cfg.Server.DataDir, v.KeyFile(), pkiSignatureScheme)
-
-		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedReplicaNodes[pk] = &authorizedReplicaInfo{
-			Identifier: v.Identifier,
-			ReplicaID:  v.ReplicaID,
-		}
-		st.reverseHash[pk] = identityPublicKey
-	}
+	st.setNodeTables(nodes)
 
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]kem.PublicKey)
@@ -3005,10 +3072,8 @@ func newState(s *Server) (*state, error) {
 		pk := hash.Sum256From(v.IdentityPublicKey)
 		st.authorizedAuthorities[pk] = true
 		st.authorityLinkKeys[pk] = v.LinkPublicKey
-		st.reverseHash[pk] = v.IdentityPublicKey
 		st.authorityNames[pk] = v.Identifier
 	}
-	st.reverseHash[hash.Sum256From(st.s.identityPublicKey)] = st.s.identityPublicKey
 
 	st.documents = make(map[uint64]*pki.Document)
 	st.serializedDocs = make(map[uint64][]byte)
@@ -3024,7 +3089,6 @@ func newState(s *Server) (*state, error) {
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
-	var err error
 	if st.db, err = bolt.Open(dbPath, 0600, nil); err != nil {
 		return nil, err
 	}
@@ -3226,13 +3290,9 @@ func (s *state) reveal(epoch uint64) []byte {
 	return signed
 }
 
-func loadNodeIdentityKey(dataDir, path string, scheme sign.Scheme) sign.PublicKey {
+func loadNodeIdentityKey(dataDir, path string, scheme sign.Scheme) (sign.PublicKey, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(dataDir, path)
 	}
-	k, err := signpem.FromPublicPEMFile(path, scheme)
-	if err != nil {
-		panic(err)
-	}
-	return k
+	return signpem.FromPublicPEMFile(path, scheme)
 }
