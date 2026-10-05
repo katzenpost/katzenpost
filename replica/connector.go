@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -328,7 +327,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 		co.log.Errorf("REPLICATION: Failed to marshal identity key: %v", err)
 		return
 	}
-	myIdHash := blake2b.Sum256(myIdBytes)
+	myIdHash := hash.Sum256(myIdBytes)
 	co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
 
 	// Get ALL shards for this BoxID (not just remote ones)
@@ -354,7 +353,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	totalTargets := 0
 
 	for _, desc := range allShards {
-		idHash := blake2b.Sum256(desc.IdentityKey)
+		idHash := hash.Sum256(desc.IdentityKey)
 
 		// Skip self - we already wrote locally
 		if hmac.Equal(idHash[:], myIdHash[:]) {
