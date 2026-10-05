@@ -332,9 +332,7 @@ func (p *pki) worker() {
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
-				if err == cpki.ErrDocumentGone {
-					p.setFailedFetch(epoch, err)
-				}
+				p.noteFetchFailure(epoch, err)
 				continue
 			}
 
@@ -557,6 +555,12 @@ func (p *pki) setFailedFetch(epoch uint64, err error) {
 	defer p.Unlock()
 
 	p.failedFetches[epoch] = err
+}
+
+func (p *pki) noteFetchFailure(epoch uint64, err error) {
+	if errors.Is(err, cpki.ErrDocumentGone) {
+		p.setFailedFetch(epoch, err)
+	}
 }
 
 func (p *pki) pruneFailures() {
