@@ -842,10 +842,12 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.StorageReplicaNode, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
 	replicas := []*vConfig.StorageReplicaNode{}
 	for _, replicaCfg := range s.ReplicaNodeConfigs {
+		keyFile := filepath.Join("../", replicaCfg.Identifier, IdentityPublicKeyFile)
 		node := &vConfig.StorageReplicaNode{
-			Identifier:           replicaCfg.Identifier,
-			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, IdentityPublicKeyFile),
-			ReplicaID:            replicaCfg.ReplicaID,
+			Identifier:            replicaCfg.Identifier,
+			IdentityPublicKeyFile: keyFile,
+			IdentityPublicKeyPem:  keyFile,
+			ReplicaID:             replicaCfg.ReplicaID,
 		}
 		replicas = append(replicas, node)
 	}
@@ -854,9 +856,11 @@ func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.StorageReplicaNode, []*vCo
 	gateways := []*vConfig.Node{}
 	serviceNodes := []*vConfig.Node{}
 	for _, nodeCfg := range s.NodeConfigs {
+		keyFile := filepath.Join("../", nodeCfg.Server.Identifier, IdentityPublicKeyFile)
 		node := &vConfig.Node{
-			Identifier:           nodeCfg.Server.Identifier,
-			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, IdentityPublicKeyFile),
+			Identifier:            nodeCfg.Server.Identifier,
+			IdentityPublicKeyFile: keyFile,
+			IdentityPublicKeyPem:  keyFile,
 		}
 		if nodeCfg.Server.IsGatewayNode {
 			gateways = append(gateways, node)
