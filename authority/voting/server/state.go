@@ -707,6 +707,13 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	return consensusOfOne, nil
 }
 
+func (s *state) authorityName(pk [publicKeyHashSize]byte) string {
+	if name, ok := s.authorityNames[pk]; ok {
+		return name
+	}
+	return fmt.Sprintf("%x", pk)
+}
+
 // getThresholdConsensus returns a *pki.Document iff a threshold consensus is reached or error
 func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	// range over the certificates we have collected and see if we can collect enough signatures to make a consensus
@@ -719,11 +726,11 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, fmt.Errorf("We have no view of consensus!")
 	}
 	for pk, signature := range s.signatures[epoch] {
-		s.log.Debugf("Checking signature from %x on our certificates", pk)
+		s.log.Debugf("Checking signature from %s on our certificates", s.authorityName(pk))
 		v := s.reverseHash[pk]
 		err := ourConsensus.AddSignature(v, *signature)
 		if err != nil {
-			s.log.Errorf("Failed to AddSignature from %x on our consensus: %s", pk, err)
+			s.log.Errorf("Failed to AddSignature from %s on our consensus: %s", s.authorityName(pk), err)
 		}
 	}
 	// now see if we managed to get a threshold number of signatures
@@ -1633,7 +1640,7 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 	if len(commits) < s.threshold {
 		s.log.Errorf("Insufficient commits for epoch %d to make consensus", epoch)
 		for id, _ := range commits {
-			s.log.Errorf("Have commits for epoch %d from %x", epoch, id)
+			s.log.Errorf("Have commits for epoch %d from %s", epoch, s.authorityName(id))
 		}
 		return nil, errors.New("Insuffiient commits to make threshold vote")
 	}
@@ -2605,7 +2612,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	// Store the parsed descriptor
 	s.replicaDescriptors[epoch][pk] = desc
 
-	s.log.Noticef("Node %x: Successfully submitted replica descriptor for epoch %v.", pk, epoch)
+	s.log.Noticef("Node %s: Successfully submitted replica descriptor for epoch %v.", desc.Name, epoch)
 	s.onUpdate()
 	return nil
 }
@@ -2690,7 +2697,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	// Store the parsed descriptor
 	s.descriptors[epoch][pk] = desc
 
-	s.log.Noticef("Node %x: Successfully submitted descriptor for epoch %v.", pk, epoch)
+	s.log.Noticef("Node %s: Successfully submitted descriptor for epoch %v.", desc.Name, epoch)
 	s.onUpdate()
 	return nil
 }
