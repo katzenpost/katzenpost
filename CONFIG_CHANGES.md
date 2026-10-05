@@ -130,6 +130,13 @@ No TOML-visible changes. The Go type of `LinkPublicKey` was wrapped in
 a new `LinkPublicKey` struct so that BurntSushi/toml can serialise it
 back to PEM via `MarshalText`; the on-disk encoding is unchanged.
 
+### Defaults
+
+- `[Server]` `PeerRetryMaxAttempts` no longer defaults to `20`. Unset (`0`)
+  means vote, reveal, cert and signature sends retry until the phase
+  deadline, and background consensus fetches stop after `20` attempts; a
+  positive value caps both.
+
 ### Removed fields
 
 None.

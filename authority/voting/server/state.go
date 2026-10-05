@@ -24,6 +24,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"path/filepath"
 	"slices"
@@ -1069,37 +1070,50 @@ func (s *state) peerRetryDelay(attempt int) time.Duration {
 
 // sendCommandToPeerWithDeadline sends with retry but respects deadline.
 func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd commands.Command, deadline time.Time) (commands.Command, error) {
+	return s.sendCommandToPeerUntil(peer, cmd, deadline, s.maxPeerAttempts(math.MaxInt))
+}
+
+func (s *state) maxPeerAttempts(unset int) int {
+	if n := s.s.cfg.Server.PeerRetryMaxAttempts; n > 0 {
+		return n
+	}
+	return unset
+}
+
+func tooEarly(resp commands.Command) bool {
+	switch r := resp.(type) {
+	case *commands.CertStatus:
+		return r.ErrorCode == commands.CertTooEarly
+	case *commands.VoteStatus:
+		return r.ErrorCode == commands.VoteTooEarly
+	case *commands.RevealStatus:
+		return r.ErrorCode == commands.RevealTooEarly
+	case *commands.SigStatus:
+		return r.ErrorCode == commands.SigTooEarly
+	}
+	return false
+}
+
+func (s *state) sendCommandToPeerUntil(peer *config.Authority, cmd commands.Command, deadline time.Time, maxAttempts int) (commands.Command, error) {
 	addrs := s.filterPeerAddresses(peer.Addresses)
 	if len(addrs) == 0 {
 		return nil, fmt.Errorf("peer %s: no usable addresses", peer.Identifier)
 	}
 
-	maxAttempts := s.s.cfg.Server.PeerRetryMaxAttempts
-	var lastErr error
+	var lastResp commands.Command
+	lastErr := fmt.Errorf("peer %s: deadline exceeded", peer.Identifier)
 
-	for attempt := 0; attempt <= maxAttempts; attempt++ {
-		if time.Now().After(deadline) {
-			s.log.Warningf("peer %s: deadline exceeded after %d attempts", peer.Identifier, attempt)
-			if lastErr != nil {
-				return nil, lastErr
-			}
-			return nil, fmt.Errorf("peer %s: deadline exceeded", peer.Identifier)
-		}
-
+	for attempt := 0; attempt <= maxAttempts && time.Now().Before(deadline); attempt++ {
 		if attempt > 0 {
-			delay := s.peerRetryDelay(attempt - 1)
-			remaining := time.Until(deadline)
-			if delay > remaining {
-				delay = remaining
-			}
+			delay := min(s.peerRetryDelay(attempt-1), time.Until(deadline))
 			if delay > 0 {
-				s.log.Debugf("peer %s: retry %d/%d after %v", peer.Identifier, attempt, maxAttempts, delay)
+				s.log.Debugf("peer %s: retry %d after %v", peer.Identifier, attempt, delay)
 				time.Sleep(delay)
 			}
 		}
 
 		resp, err := s.doSendCommand(peer, cmd, addrs)
-		if err == nil {
+		if err == nil && !tooEarly(resp) {
 			if attempt > 0 {
 				s.log.Noticef("peer %s: succeeded after %d retries", peer.Identifier, attempt)
 			}
@@ -1107,16 +1121,19 @@ func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd comman
 			instrument.PeerConnected(peer.Identifier, true)
 			return resp, nil
 		}
-		lastErr = err
-
-		if !retry.IsTransientError(err) {
+		if err != nil && !retry.IsTransientError(err) {
 			s.log.Debugf("peer %s: permanent error: %v", peer.Identifier, err)
 			instrument.PeerSendAttempt(peer.Identifier, "permanent_error")
 			instrument.PeerConnected(peer.Identifier, false)
 			return nil, err
 		}
+		lastResp, lastErr = resp, err
 		instrument.PeerSendAttempt(peer.Identifier, "transient_error")
-		s.log.Warningf("peer %s: attempt %d/%d failed: %v", peer.Identifier, attempt+1, maxAttempts+1, err)
+		if err != nil {
+			s.log.Warningf("peer %s: attempt %d failed: %v", peer.Identifier, attempt+1, err)
+		} else {
+			s.log.Debugf("peer %s: attempt %d too early", peer.Identifier, attempt+1)
+		}
 	}
 	// All retries exhausted; mark the peer disconnected and report
 	// the final outcome as deadline-exceeded so the rate panel can
@@ -1124,6 +1141,9 @@ func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd comman
 	// up entirely".
 	instrument.PeerSendAttempt(peer.Identifier, "deadline_exceeded")
 	instrument.PeerConnected(peer.Identifier, false)
+	if lastErr == nil {
+		return lastResp, nil
+	}
 	return nil, lastErr
 }
 
@@ -3069,7 +3089,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 			if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 				continue
 			}
-			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
+			resp, err := s.sendCommandToPeerUntil(peer, cmd, deadline, s.maxPeerAttempts(retry.DefaultMaxAttempts))
 			if err != nil {
 				s.log.Debugf("backgroundFetchConsensus: %s: %v", peer.Identifier, err)
 				continue
