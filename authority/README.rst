@@ -1,8 +1,4 @@
 
-
-.. image:: https://travis-ci.org/katzenpost/authority.svg?branch=master
-  :target: https://travis-ci.org/katzenpost/authority
-
 .. image:: https://godoc.org/github.com/katzenpost/katzenpost/authority?status.svg
   :target: https://godoc.org/github.com/katzenpost/katzenpost/authority
 
@@ -10,22 +6,18 @@
 Katzenpost Directory Authority
 ==============================
 
-Katzenpost has two directory authority servers; a voting and nonvoting server.
-The voting server's design is specified in the **"Katzenpost Mix Network Public Key Infrastructure Specification"** https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst
+The voting directory authority is specified in the Katzenpost PKI
+specification: https://katzenpost.network/docs/specs/pki/
 
 
 Building
 --------
 
-Requires golang 1.11 or later. Dependencies pinned using go-modules.
-For more info about go-modules, see: https://github.com/golang/go/wiki/Modules
-
-Build the mix server like this:
+See "Building Katzenpost" in the top-level README.md. From the repository
+root, build the directory authority like this:
 ::
 
-  export GO111MODULE=on
-  cd cmd/voting # (or cmd/nonvoting)
-  go build
+  make dirauth
 
 
 license

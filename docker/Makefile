@@ -54,9 +54,11 @@ no_courier_replica_decoy?=false
 no_mixdecoy?=true
 no_gatewaydecoy?=true
 no_metrics?=true
+transport?=tcp
 pyroscope_dirauth?=false
 pyroscope_kpclientd?=false
 kpclientd_metrics?=false
+cover?=false
 epoch_duration?=2m
 # session_grace_period sets how long kpclientd preserves per-app
 # state after a thin-client connection drops without thin_close.
@@ -201,6 +203,10 @@ roundtrip_size?=65536
 # independently. The presence flags below are emitted only when true
 # (their cobra defaults are false); --noMixDecoy/--noGatewayDecoy
 # default true in cobra, so they are always passed explicitly.
+ifeq ($(cover),true)
+  coverFlag=--cover
+  cover_flags=-cover -coverpkg=github.com/katzenpost/katzenpost/...
+endif
 ifeq ($(no_decoy),true)
   noDecoyFlag=--noDecoy
 endif
@@ -259,12 +265,13 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--noMixDecoy=$(no_mixdecoy) --noGatewayDecoy=$(no_gatewaydecoy) \
 	$(noDecoyFlag) $(noClientDecoyFlag) $(noCourierReplicaDecoyFlag) $(noMetricsFlag) \
 	--epochDuration "$(epoch_duration)" --sessionGracePeriod $(or $(session_grace_period),0) \
+	--transport $(transport) \
 	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
 	--proxyWorkerCount $(proxyWorkerCount) --proxyRequestTimeout $(proxyRequestTimeout) \
 	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
-	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
+	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level) $(coverFlag)
 
 # Pumba network chaos. Off by default; invoke `make pumba-latency` or
 # `make pumba-loss` to start a sidecar that applies `tc netem` qdiscs in
@@ -369,6 +376,7 @@ endif
 docker_args_common=-v $(abspath $(go_mod_cache)):/go/ \
 	-v $(abspath $(go_build_cache)):/gocache/ \
 	-e GOCACHE=/gocache -e GOPATH=/go --pids-limit 4096
+docker_tty=$(shell [ -t 0 ] && echo -t)
 docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost $(docker_args_common)
 
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
@@ -711,13 +719,13 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 			$(sh) -c 'go get -d -u ./... && go mod tidy'
 
 $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/server ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/server.$(distro)'
+		$(docker_run_sh) 'cd cmd/server ; go build -trimpath $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/server.$(distro)'
 
 $(net_name)/courier.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/courier ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/courier.$(distro)'
+		$(docker_run_sh) 'cd cmd/courier ; go build -trimpath $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/courier.$(distro)'
 
 $(net_name)/replica.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/replica ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/replica.$(distro)'
+		$(docker_run_sh) 'cd cmd/replica ; go build -trimpath $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/replica.$(distro)'
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/http-proxy-client; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/proxy_client.$(distro)'
@@ -729,7 +737,7 @@ $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_di
 		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/echo_server.$(distro)'
 
 $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath -ldflags ${ldflags} -o /$(net_name)/dirauth.$(distro)'
+		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/dirauth.$(distro)'
 
 $(net_name)/fetch.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/fetch && go build -trimpath -ldflags ${ldflags} -o /$(net_name)/fetch.$(distro)'
@@ -744,7 +752,7 @@ $(net_name)/cp-bench.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd tools/chaos/cmd/cp-bench && go build -ldflags ${ldflags} -o /$(net_name)/cp-bench.$(distro)'
 
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) -ldflags ${ldflags} -o /$(net_name)/kpclientd.$(distro)'
+		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build $(kpclientd_tags_flag) $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/kpclientd.$(distro)'
 
 # clean-images must remove images and stamps for every distro a user could
 # have named, not just the ones in DISTROS. Discover them from the on-disk
@@ -810,6 +818,11 @@ clean-caches:
 	$(if $(strip $(cache_dir)),,$(error cache_dir is empty))
 	[ ! -d $(cache_dir) ] || $(docker) run --rm -v $(abspath $(cache_dir)):/cache docker.io/alpine:latest sh -c 'rm -rfv /cache/*'
 
+.PHONY: cover-report
+cover-report:
+	go tool covdata percent -i=$$(ls -d $(net_name)/coverage/*/ | paste -sd, -)
+	go tool covdata textfmt -i=$$(ls -d $(net_name)/coverage/*/ | paste -sd, -) -o $(net_name)/coverage.out
+
 clean-local-dryrun:
 	git clean -n -x $(net_name)
 
@@ -827,7 +840,7 @@ clean: stop-all
 	-$(docker) images|grep katzenpost|cat
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
-	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -i $(docker_tty) -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings) $(ping_args)
 
 # parallel-load knobs. Override on the make command line:

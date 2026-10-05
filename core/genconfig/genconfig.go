@@ -109,6 +109,14 @@ func (s *Katzenpost) thinClientDialAddress() string {
 	return fmt.Sprintf("localhost:%d", s.BasePort+kpclientdPublishedPortOffset)
 }
 
+func (s *Katzenpost) coverDir(service string) string {
+	if !s.Cover {
+		return ""
+	}
+	os.MkdirAll(filepath.Join(s.OutDir, "coverage", service), 0755)
+	return s.BaseDir + "/coverage/" + service
+}
+
 // kpclientdMetricsPort returns the in-bridge port kpclientd serves its
 // /metrics endpoint on. It is derived from base_port so the client.toml
 // listener address and the prometheus scrape target stay in lockstep.
@@ -116,11 +124,13 @@ func (s *Katzenpost) kpclientdMetricsPort() uint16 {
 	return s.BasePort + kpclientdMetricsPortOffset
 }
 
-// peerAddr returns the tcp:// URL another container should dial to reach the
-// named service on the bridge network. Both endpoints resolve the hostname
-// through the compose runtime's embedded DNS to the service's bridge IP.
-func peerAddr(identifier string, port uint16) string {
-	return fmt.Sprintf("tcp://%s:%d", identifier, port)
+func (s *Katzenpost) peerAddr(identifier string, port uint16) string {
+	scheme := "tcp"
+	if s.Transport == "quic" || (s.Transport == "alternate" && s.peerCount%2 == 1) {
+		scheme = "quic"
+	}
+	s.peerCount++
+	return fmt.Sprintf("%s://%s:%d", scheme, identifier, port)
 }
 
 // metricsScrapeAddr returns the host:port form a service writes into
@@ -179,9 +189,11 @@ type Config struct {
 	NoMixDecoy               bool
 	NoGatewayDecoy           bool
 	NoMetrics                bool
+	Transport                string
 	PyroscopeDirauth         bool
 	PyroscopeKpclientd       bool
 	KpclientdMetricsAddress  string
+	Cover                    bool
 	DialTimeout              int
 	MaxPKIDelay              int
 	PollingIntvl             int
@@ -243,9 +255,12 @@ type Katzenpost struct {
 	NoMixDecoy              bool
 	NoGatewayDecoy          bool
 	NoMetrics               bool
+	Transport               string
+	peerCount               int
 	PyroscopeDirauth        bool
 	PyroscopeKpclientd      bool
 	KpclientdMetricsAddress string
+	Cover                   bool
 	EpochDuration           string
 	DebugConfig             *cConfig.Debug
 	SchedulerSlack          int
@@ -538,7 +553,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
 
-	cfg.Addresses = []string{peerAddr(cfg.Identifier, s.LastPort)}
+	cfg.Addresses = []string{s.peerAddr(cfg.Identifier, s.LastPort)}
 	s.LastPort++
 
 	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastPort)
@@ -609,8 +624,9 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// by net.Listen) point at the service's own hostname. Inside the
 	// container that resolves to the private bridge IP via /etc/hosts,
 	// so we never bind to 0.0.0.0.
-	cfg.Server.Addresses = []string{peerAddr(n, s.LastPort)}
-	cfg.Server.BindAddresses = []string{peerAddr(n, s.LastPort)}
+	addr := s.peerAddr(n, s.LastPort)
+	cfg.Server.Addresses = []string{addr}
+	cfg.Server.BindAddresses = []string{addr}
 	s.LastPort += 2
 	cfg.Server.DataDir = filepath.Join(s.BaseDir, n)
 
@@ -790,7 +806,7 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
 			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 			Identifier:             authIdentifier,
-			Addresses:              []string{peerAddr(authIdentifier, s.LastPort)},
+			Addresses:              []string{s.peerAddr(authIdentifier, s.LastPort)},
 			DataDir:                filepath.Join(s.BaseDir, authIdentifier),
 		}
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
@@ -957,6 +973,12 @@ func ValidateConfig(cfg *Config) error {
 		return fmt.Errorf("invalid wire KEM scheme")
 	}
 
+	switch cfg.Transport {
+	case "", "tcp", "quic", "alternate":
+	default:
+		return fmt.Errorf("transport must be tcp, quic or alternate, not %q", cfg.Transport)
+	}
+
 	return nil
 }
 
@@ -992,6 +1014,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.NoMixDecoy = cfg.NoMixDecoy
 	s.NoGatewayDecoy = cfg.NoGatewayDecoy
 	s.NoMetrics = cfg.NoMetrics
+	s.Transport = cfg.Transport
 	s.PyroscopeDirauth = cfg.PyroscopeDirauth
 	s.PyroscopeKpclientd = cfg.PyroscopeKpclientd
 	s.KpclientdMetricsAddress = cfg.KpclientdMetricsAddress
@@ -1005,6 +1028,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.ProxyRequestTimeout = cfg.ProxyRequestTimeout
 	s.SessionGracePeriod = cfg.SessionGracePeriod
 	s.PersistMixKeysOnShutdownDir = cfg.PersistMixKeysOnShutdownDir
+	s.Cover = cfg.Cover
 
 	return s
 }
@@ -2592,6 +2616,9 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		var envVars []string
 		if s.EpochDuration != "" {
 			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
+		}
+		if d := s.coverDir(serviceName); d != "" {
+			envVars = append(envVars, "GOCOVERDIR="+d)
 		}
 		if s.PyroscopeDirauth && strings.HasPrefix(serviceName, "auth") {
 			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040")

@@ -110,6 +110,8 @@ performance optimization and security requirements.`,
 		"user forward payload length in bytes for Sphinx packets")
 
 	// Traffic and timing flags
+	cmd.Flags().StringVar(&cfg.Transport, "transport", "tcp",
+		"peer address scheme: tcp, quic, or alternate (every other node QUIC-only)")
 	cmd.Flags().StringVar(&cfg.EpochDuration, "epochDuration", "",
 		"set KATZENPOST_EPOCH_DURATION env var in docker-compose services (e.g., 2m)")
 	cmd.Flags().BoolVar(&cfg.NoDecoy, "noDecoy", false,
@@ -124,6 +126,8 @@ performance optimization and security requirements.`,
 		"disable decoy traffic generation for gateway nodes (independent of --noMixDecoy)")
 	cmd.Flags().BoolVar(&cfg.NoMetrics, "noMetrics", false,
 		"disable prometheus and grafana containers in docker-compose")
+	cmd.Flags().BoolVar(&cfg.Cover, "cover", false,
+		"set GOCOVERDIR per service for binaries built with -cover")
 	cmd.Flags().BoolVar(&cfg.PyroscopeDirauth, "pyroscopeDirauth", false,
 		"enable pyroscope profiling of the directory authorities")
 	cmd.Flags().BoolVar(&cfg.PyroscopeKpclientd, "pyroscopeKpclientd", false,
