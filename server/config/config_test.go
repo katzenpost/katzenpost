@@ -17,6 +17,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -109,6 +110,7 @@ Level = "DEBUG"
 
 	cfg, err := Load([]byte(config))
 	require.NoError(err)
+	require.Equal(sha256.Sum256([]byte(config)), cfg.Hash())
 
 	require.True(cfg.Management.Enable)
 	if cfg.Management.Path == "" {
