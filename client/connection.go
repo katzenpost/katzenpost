@@ -797,6 +797,9 @@ func (c *connection) onConnStatusChange(err error) {
 
 	if err == nil {
 		c.isConnected.Store(true)
+		if c.client.pki != nil {
+			c.client.ForceFetchPKI()
+		}
 		instrument.GatewayConnected(true)
 		c.log.Noticef("Connected to gateway %s.", c.gatewayLabel())
 	} else {
