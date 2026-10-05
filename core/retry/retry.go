@@ -151,6 +151,14 @@ func FilterUsableAddresses(addresses []string, hasIPv4, hasIPv6, disableIPv4, di
 	return filtered
 }
 
+func FilterByLocalAddresses(local, addrs []string) []string {
+	hasIPv4, hasIPv6 := DetectAddressCapabilities(local)
+	if !hasIPv4 && !hasIPv6 {
+		return addrs
+	}
+	return FilterUsableAddresses(addrs, hasIPv4, hasIPv6, false, false)
+}
+
 // extractHostFromAddress extracts the host portion from an address.  It
 // handles URLs.
 func extractHostFromAddress(addr string) string {

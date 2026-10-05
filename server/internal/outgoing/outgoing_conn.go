@@ -213,12 +213,7 @@ func (c *outgoingConn) worker() {
 		}
 
 		// Flatten the lists of addresses to Dial to.
-		var dstAddrs []string
-		for _, t := range cpki.InternalTransports {
-			if v, ok := c.dst.Addresses[t]; ok {
-				dstAddrs = append(dstAddrs, v...)
-			}
-		}
+		dstAddrs := dialAddresses(c.co.glue.Config().Server.Addresses, c.dst)
 		if len(dstAddrs) == 0 {
 			// Should *NEVER* happen because descriptors currently MUST have
 			// at least once `tcp4` address to be considered valid.
