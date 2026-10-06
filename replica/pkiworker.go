@@ -43,7 +43,7 @@ type PKIWorker struct {
 
 	descAddrMap        map[string][]string
 	lastPublishedEpoch uint64
-	rejectedEpoch      uint64
+	failedPostEpoch    uint64
 }
 
 // newPKIWorker creates a PKIWorker with the default voting client

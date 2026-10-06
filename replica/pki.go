@@ -298,7 +298,7 @@ func (p *PKIWorker) updateTimer(timer *time.Timer) {
 	// yet been published.
 	if elapsed < uploadDeadline && p.lastPublishedEpoch <= currentEpoch {
 		interval := time.Second
-		if p.rejectedEpoch == currentEpoch+1 {
+		if p.failedPostEpoch == currentEpoch+1 {
 			interval = descriptorRepostInterval()
 		}
 		remainingUpload := uploadDeadline - elapsed
@@ -481,7 +481,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			strconv.QuoteToASCII(err.Error()),
 		)
-		p.rejectedEpoch = doPublishEpoch
+		p.failedPostEpoch = doPublishEpoch
 		return err
 
 	default:
@@ -491,6 +491,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			strconv.QuoteToASCII(err.Error()),
 		)
+		p.failedPostEpoch = doPublishEpoch
 		return err
 	}
 }
