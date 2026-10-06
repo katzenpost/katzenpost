@@ -3,6 +3,7 @@
 package periodtest
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -21,6 +22,9 @@ func Run(t *testing.T, check func(t *testing.T, p time.Duration)) {
 	if text := os.Getenv(childEnv); text != "" {
 		p, err := time.ParseDuration(text)
 		if err != nil {
+			t.Fatal(err)
+		}
+		if err := epochtime.Configure(p, io.Discard); err != nil {
 			t.Fatal(err)
 		}
 		if got := epochtime.Period(); got != p {
