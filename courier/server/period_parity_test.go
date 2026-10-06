@@ -19,10 +19,10 @@ func TestPeriodDerivedParity(t *testing.T) {
 			got         time.Duration
 			long, short time.Duration
 		}{
-			{"PublishDeadline", PublishDeadline, 750 * time.Second, 75 * time.Second},
-			{"mixServerCacheDelay", mixServerCacheDelay, 75 * time.Second, 7500 * time.Millisecond},
-			{"nextFetchTill", nextFetchTill, 375 * time.Second, 37500 * time.Millisecond},
-			{"recheckInterval", recheckInterval, 37500 * time.Millisecond, 3750 * time.Millisecond},
+			{"PublishDeadline", PublishDeadline(), 750 * time.Second, 75 * time.Second},
+			{"mixServerCacheDelay", mixServerCacheDelay(), 75 * time.Second, 7500 * time.Millisecond},
+			{"nextFetchTill", nextFetchTill(), 375 * time.Second, 37500 * time.Millisecond},
+			{"recheckInterval", recheckInterval(), 37500 * time.Millisecond, 3750 * time.Millisecond},
 		} {
 			want := c.short
 			if long {

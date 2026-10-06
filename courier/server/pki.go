@@ -29,12 +29,15 @@ import (
 
 const NumPKIDocsToFetch = 3
 
-var (
-	PublishDeadline     = vServer.PublishConsensusDeadline()
-	mixServerCacheDelay = epochtime.Period() / 16
-	nextFetchTill       = epochtime.Period() - (PublishDeadline + mixServerCacheDelay)
-	recheckInterval     = epochtime.Period() / 32
-)
+func PublishDeadline() time.Duration { return vServer.PublishConsensusDeadline() }
+
+func mixServerCacheDelay() time.Duration { return epochtime.Period() / 16 }
+
+func nextFetchTill() time.Duration {
+	return epochtime.Period() - (PublishDeadline() + mixServerCacheDelay())
+}
+
+func recheckInterval() time.Duration { return epochtime.Period() / 32 }
 
 type PKIWorker struct {
 	worker.Worker
