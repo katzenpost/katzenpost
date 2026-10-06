@@ -36,6 +36,8 @@ type listener struct {
 	connsLock *sync.RWMutex
 	conns     map[[AppIDLength]byte]*incomingConn // appID -> *incomingConn
 
+	connCount atomic.Int32
+
 	// connOrder is the round-robin rotation order for the scheduler. It
 	// mirrors the set of keys in conns; maintained under connsLock so the
 	// scheduler can iterate deterministically. rrCursor advances through
@@ -133,6 +135,19 @@ func (l *listener) updatePKIDocWorker() {
 
 const acceptRetryDelay = 5 * time.Millisecond
 
+const maxThinClientConns = 64
+
+type slotConn struct {
+	net.Conn
+	l       *listener
+	release sync.Once
+}
+
+func (c *slotConn) Close() error {
+	c.release.Do(func() { c.l.connCount.Add(-1) })
+	return c.Conn.Close()
+}
+
 func (l *listener) worker() {
 	addr := l.listener.Addr()
 	l.log.Infof("Listening on: %v", addr)
@@ -159,6 +174,12 @@ func (l *listener) worker() {
 			}
 			continue
 		}
+		if l.connCount.Add(1) > maxThinClientConns {
+			l.connCount.Add(-1)
+			l.log.Warningf("Refusing a thin-client connection: %d connections already open", maxThinClientConns)
+			conn.Close()
+			continue
+		}
 		// Disable Nagle so small CBOR command frames between the thin
 		// client and kpclientd do not wait on a coalesce timer;
 		// harmless on Unix-domain accepts (cast fails silently).
@@ -166,7 +187,7 @@ func (l *listener) worker() {
 			tcpConn.SetNoDelay(true)
 		}
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
-		l.onNewConn(conn)
+		l.onNewConn(&slotConn{Conn: conn, l: l})
 	}
 	// NOTREACHED
 }
