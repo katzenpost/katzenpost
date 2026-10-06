@@ -111,7 +111,9 @@ performance optimization and security requirements.`,
 
 	// Traffic and timing flags
 	cmd.Flags().StringVar(&cfg.EpochDuration, "epochDuration", "",
-		"EpochDuration written into every generated config (e.g., 2m; empty means 20m), also exported as KATZENPOST_EPOCH_DURATION in docker-compose services for older binaries")
+		"EpochDuration written into every generated config (e.g., 2m; empty means 20m); also exported as KATZENPOST_EPOCH_DURATION to the docker-compose services that --nodeVersions puts on older releases")
+	cmd.Flags().StringToStringVar(&cfg.NodeVersions, "nodeVersions", nil,
+		"release each node runs, as node=vX.Y.Z or node=current; nodes on releases that predate a config key also get its older environment variable in docker-compose")
 	cmd.Flags().BoolVar(&cfg.NoDecoy, "noDecoy", false,
 		"disable decoy traffic for clients, couriers, and replicas (master override)")
 	cmd.Flags().BoolVar(&cfg.NoClientDecoy, "noClientDecoy", false,

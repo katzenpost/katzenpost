@@ -12,10 +12,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -108,6 +111,49 @@ const (
 // thinClientDialAddress returns the host-side address thin clients use to
 // reach kpclientd through the docker port publish. The daemon listens on
 // base_port+2000 inside the bridge, same as the published host port.
+const CurrentVersion = "current"
+
+var releaseTag = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)$`)
+
+var olderReleaseSettings = []struct {
+	key, firstRelease, env string
+	value                  func(*Katzenpost) string
+}{
+	{"EpochDuration", "", epochtime.EnvironmentVariable, func(s *Katzenpost) string { return s.epochDuration().String() }},
+}
+
+func releaseAtLeast(version, release string) bool {
+	if version == CurrentVersion {
+		return true
+	}
+	v, r := releaseTag.FindStringSubmatch(version), releaseTag.FindStringSubmatch(release)
+	if v == nil || r == nil {
+		return false
+	}
+	for i := 1; i <= 3; i++ {
+		a, _ := strconv.Atoi(v[i])
+		b, _ := strconv.Atoi(r[i])
+		if a != b {
+			return a > b
+		}
+	}
+	return true
+}
+
+func (s *Katzenpost) olderReleaseEnv(node string) []string {
+	version, ok := s.NodeVersions[node]
+	if !ok {
+		return nil
+	}
+	var env []string
+	for _, k := range olderReleaseSettings {
+		if !releaseAtLeast(version, k.firstRelease) {
+			env = append(env, k.env+"="+k.value(s))
+		}
+	}
+	return env
+}
+
 func (s *Katzenpost) epochDuration() *time.Duration {
 	d, err := time.ParseDuration(s.EpochDuration)
 	if err != nil {
@@ -184,6 +230,7 @@ type Config struct {
 	UserForwardPayloadLength int
 	PkiSignatureScheme       string
 	EpochDuration            string
+	NodeVersions             map[string]string
 	NoDecoy                  bool
 	NoClientDecoy            bool
 	NoCourierReplicaDecoy    bool
@@ -258,6 +305,7 @@ type Katzenpost struct {
 	PyroscopeKpclientd      bool
 	KpclientdMetricsAddress string
 	EpochDuration           string
+	NodeVersions            map[string]string
 	DebugConfig             *cConfig.Debug
 	SchedulerSlack          int
 	SchedulerMaxBurst       int
@@ -962,6 +1010,11 @@ func RunGenConfig(cfg Config) error {
 
 // ValidateConfig validates the parsed configuration and returns any errors
 func ValidateConfig(cfg *Config) error {
+	for node, version := range cfg.NodeVersions {
+		if version != CurrentVersion && !releaseTag.MatchString(version) {
+			return fmt.Errorf("node %s: version %q is neither %q nor a release tag vX.Y.Z", node, version, CurrentVersion)
+		}
+	}
 	if cfg.EpochDuration != "" {
 		d, err := time.ParseDuration(cfg.EpochDuration)
 		if err != nil {
@@ -1025,6 +1078,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.PyroscopeKpclientd = cfg.PyroscopeKpclientd
 	s.KpclientdMetricsAddress = cfg.KpclientdMetricsAddress
 	s.EpochDuration = cfg.EpochDuration
+	s.NodeVersions = cfg.NodeVersions
 	s.SchedulerSlack = cfg.SchedulerSlack
 	s.SchedulerMaxBurst = cfg.SchedulerMaxBurst
 	s.SendSlack = cfg.SendSlack
@@ -2636,12 +2690,15 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		log.Fatal(err)
 	}
 
+	unplaced := map[string]bool{}
+	for node := range s.NodeVersions {
+		unplaced[node] = true
+	}
+
 	// writeEnv emits the environment block for a service.
 	writeEnv := func(serviceName string) {
-		var envVars []string
-		if s.EpochDuration != "" {
-			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
-		}
+		envVars := s.olderReleaseEnv(serviceName)
+		delete(unplaced, serviceName)
 		if s.PyroscopeDirauth && strings.HasPrefix(serviceName, "auth") {
 			envVars = append(envVars, "PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040")
 			envVars = append(envVars, "PYROSCOPE_APP_NAME=katzenpost-dirauth")
@@ -2817,5 +2874,8 @@ services:
 	writeEnv("kpclientd")
 	Write(f, `
 `)
+	if len(unplaced) > 0 {
+		return fmt.Errorf("node versions given for %v, which are not services of this network", slices.Sorted(maps.Keys(unplaced)))
+	}
 	return nil
 }
