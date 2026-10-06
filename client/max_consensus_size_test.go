@@ -13,6 +13,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/log"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
 func clientConfigWithMaxConsensusSize(t *testing.T, size int) ([]byte, error) {
@@ -43,6 +44,17 @@ func TestClientUsesConfiguredMaxConsensusSize(t *testing.T) {
 
 func TestClientRejectsNegativeMaxConsensusSize(t *testing.T) {
 	b, err := clientConfigWithMaxConsensusSize(t, -1)
+	require.NoError(t, err)
+	_, err = config.Load(b)
+	require.Error(t, err)
+}
+
+func TestClientRejectsMaxConsensusSizeAboveTheCeiling(t *testing.T) {
+	b, err := clientConfigWithMaxConsensusSize(t, cpki.MaxConsensusCeiling)
+	require.NoError(t, err)
+	_, err = config.Load(b)
+	require.NoError(t, err)
+	b, err = clientConfigWithMaxConsensusSize(t, cpki.MaxConsensusCeiling+1)
 	require.NoError(t, err)
 	_, err = config.Load(b)
 	require.Error(t, err)
