@@ -2253,7 +2253,11 @@ func (s *state) verifyCertUpload(certificate *commands.Cert, peerIdentityKeyHash
 		return nil, commands.CertTooEarly
 	}
 	if s.state == stateAcceptSignature {
-		s.log.Errorf("Certificate from %s received after the consensus was built (%s)", s.authorityNames[pk], s.clockView())
+		if _, ok := s.certificates[s.votingEpoch][pk]; ok {
+			s.log.Errorf("Another Cert received from peer %s", s.authorityNames[pk])
+			return nil, commands.CertAlreadyReceived
+		}
+		s.log.Errorf("Certificate from %s received after the certificate phase closed (%s)", s.authorityNames[pk], s.clockView())
 		return nil, commands.CertTooLate
 	}
 
@@ -2386,7 +2390,12 @@ func (s *state) onRevealUpload(reveal *commands.Reveal, peerIdentityKeyHash []by
 		return &resp
 	}
 	if s.certificateBuilt() {
-		s.log.Errorf("Reveal from %s received after the certificate was built (%s)", s.authorityNames[pk], s.clockView())
+		if _, ok := s.reveals[s.votingEpoch][pk]; ok {
+			s.log.Errorf("Reveal from %s already received", s.authorityNames[pk])
+			resp.ErrorCode = commands.RevealAlreadyReceived
+			return &resp
+		}
+		s.log.Errorf("Reveal from %s received after the reveal phase closed (%s)", s.authorityNames[pk], s.clockView())
 		resp.ErrorCode = commands.RevealTooLate
 		return &resp
 	}
@@ -2480,12 +2489,6 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 		resp.ErrorCode = commands.VoteTooEarly
 		return &resp
 	}
-	if s.state == stateAcceptSignature {
-		s.log.Errorf("Vote from %s received after the consensus was built (%s)", s.authorityNames[pk], s.clockView())
-		instrument.VoteReceived("too_late")
-		resp.ErrorCode = commands.VoteTooLate
-		return &resp
-	}
 
 	// haven't received a vote yet for this epoch
 	if _, ok := s.votes[s.votingEpoch]; !ok {
@@ -2503,6 +2506,12 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 		s.log.Errorf("Vote from %s already received", s.authorityNames[pk])
 		instrument.VoteReceived("already_received")
 		resp.ErrorCode = commands.VoteAlreadyReceived
+		return &resp
+	}
+	if s.state == stateAcceptSignature {
+		s.log.Errorf("Vote from %s received after the certificate phase closed (%s)", s.authorityNames[pk], s.clockView())
+		instrument.VoteReceived("too_late")
+		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
 
