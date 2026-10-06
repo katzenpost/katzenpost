@@ -245,7 +245,7 @@ func (s *state) handshakeOutboundSession(session *wire.Session, conn net.Conn, p
 		if he, ok := wire.GetHandshakeError(err); ok {
 			he.WithPeerName(peer.Identifier)
 		}
-		s.log.Debugf("peer %s: handshake failure details:\n%s", peer.Identifier, wire.GetDebugError(err))
+		s.log.Debugf("peer %s: Failed session handshake after=%v timeout=%v state=%s classification=%s: %v", peer.Identifier, handshakeElapsed, handshakeTimeout, st, classifyAuthorityHandshakeFailure(err), err)
 		session.Close()
 		return err
 	}
