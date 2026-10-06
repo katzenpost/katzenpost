@@ -926,6 +926,12 @@ func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, hand
 	require.NoError(t, err)
 	id := hash.Sum256From(idPubKey)
 
+	u, err := url.Parse(gwAddr)
+	require.NoError(t, err)
+	l, err := net.Listen("tcp", u.Host)
+	require.NoError(t, err)
+	gwAddr = u.Scheme + "://" + l.Addr().String()
+
 	clientCfg := &config.Config{
 		Listen: &transport.ListenConfig{
 			Tcp: &transport.TcpListenConfig{Address: "127.0.0.1:0"},
@@ -956,10 +962,6 @@ func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, hand
 	}
 
 	go func() {
-		u, err := url.Parse(gwAddr)
-		require.NoError(t, err)
-		l, err := net.Listen("tcp", u.Host)
-		require.NoError(t, err)
 		defer l.Close()
 
 		conn, err := l.Accept()
