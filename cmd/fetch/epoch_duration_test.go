@@ -23,11 +23,15 @@ import (
 const fetchPeriodChild = "FETCH_EPOCH_PERIOD_CHILD"
 
 func runFetchPeriodChild(t *testing.T) bool {
+	return runFetchPeriodChildWithEnv(t, "")
+}
+
+func runFetchPeriodChildWithEnv(t *testing.T, env string) bool {
 	if os.Getenv(fetchPeriodChild) != "" {
 		return true
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
-	cmd.Env = append(os.Environ(), fetchPeriodChild+"=1", epochtime.EnvironmentVariable+"=")
+	cmd.Env = append(os.Environ(), fetchPeriodChild+"=1", epochtime.EnvironmentVariable+"="+env)
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 	return false
@@ -90,4 +94,13 @@ func TestFetchDefaultsTheEpochPeriodTo20m(t *testing.T) {
 	cfg.ReadyTimeout = time.Second
 	require.Error(t, waitForReady(cfg, logging.MustGetLogger("fetch"), doc))
 	require.Equal(t, 20*time.Minute, epochtime.Period())
+}
+
+func TestFetchFallsBackToTheEnvironmentWhenNoNodeConfigSetsThePeriod(t *testing.T) {
+	if !runFetchPeriodChildWithEnv(t, "2m") {
+		return
+	}
+	cfg, doc := readinessNet(t, map[string]string{"mix1": "", "mix2": ""})
+	require.NoError(t, waitForReady(cfg, logging.MustGetLogger("fetch"), doc))
+	require.Equal(t, 2*time.Minute, epochtime.Period())
 }
