@@ -32,7 +32,7 @@ func TestPeerMessagesForAClosedPhaseAreTooLate(t *testing.T) {
 
 	st.state = stateAcceptCert
 	require.EqualValues(t, commands.RevealTooLate, reveal())
-	require.EqualValues(t, commands.VoteTooLate, vote())
+	require.EqualValues(t, commands.VoteNotSigned, vote())
 	require.EqualValues(t, commands.CertNotSigned, certificate())
 
 	st.state = stateAcceptSignature
