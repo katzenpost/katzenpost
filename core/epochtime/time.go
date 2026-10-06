@@ -36,8 +36,11 @@ func Period() time.Duration {
 // Epoch is the Katzenpost epoch expressed in UTC.
 var Epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
 
-// WeekOfEpochs is the number of epochs in a week
-func WeekOfEpochs() uint64 { return uint64(time.Duration(time.Hour*24*7) / Period()) }
+const weekOfEpochs = 504
+
+// WeekOfEpochs is the number of epochs between weekly shared random
+// rotations: a week of 20-minute epochs, at every period.
+func WeekOfEpochs() uint64 { return weekOfEpochs }
 
 // Now returns the current Katzenpost epoch, time since the start of the
 // current epoch, and time till the next epoch.
