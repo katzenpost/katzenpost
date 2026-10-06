@@ -30,7 +30,7 @@ import (
 const NumPKIDocsToFetch = 3
 
 var (
-	PublishDeadline     = vServer.PublishConsensusDeadline
+	PublishDeadline     = vServer.PublishConsensusDeadline()
 	mixServerCacheDelay = epochtime.Period() / 16
 	nextFetchTill       = epochtime.Period() - (PublishDeadline + mixServerCacheDelay)
 	recheckInterval     = epochtime.Period() / 32

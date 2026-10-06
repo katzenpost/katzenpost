@@ -19,11 +19,11 @@ func TestPeriodDerivedParity(t *testing.T) {
 			got         time.Duration
 			long, short time.Duration
 		}{
-			{"MixPublishDeadline", MixPublishDeadline, 150 * time.Second, 15 * time.Second},
-			{"AuthorityVoteDeadline", AuthorityVoteDeadline, 300 * time.Second, 30 * time.Second},
-			{"AuthorityRevealDeadline", AuthorityRevealDeadline, 450 * time.Second, 45 * time.Second},
-			{"AuthorityCertDeadline", AuthorityCertDeadline, 600 * time.Second, 60 * time.Second},
-			{"PublishConsensusDeadline", PublishConsensusDeadline, 750 * time.Second, 75 * time.Second},
+			{"MixPublishDeadline", MixPublishDeadline(), 150 * time.Second, 15 * time.Second},
+			{"AuthorityVoteDeadline", AuthorityVoteDeadline(), 300 * time.Second, 30 * time.Second},
+			{"AuthorityRevealDeadline", AuthorityRevealDeadline(), 450 * time.Second, 45 * time.Second},
+			{"AuthorityCertDeadline", AuthorityCertDeadline(), 600 * time.Second, 60 * time.Second},
+			{"PublishConsensusDeadline", PublishConsensusDeadline(), 750 * time.Second, 75 * time.Second},
 		} {
 			want := c.short
 			if long {

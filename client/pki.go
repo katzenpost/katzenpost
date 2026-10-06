@@ -27,7 +27,7 @@ var (
 	errGetConsensusCanceled = errors.New("client/pki: consensus fetch canceled")
 	errConsensusNotFound    = errors.New("client/pki: consensus not ready yet")
 	errBadConsensus         = errors.New("client/pki: consensus from gateway failed to decode")
-	PublishDeadline         = vServer.PublishConsensusDeadline
+	PublishDeadline         = vServer.PublishConsensusDeadline()
 	mixServerCacheDelay     = epochtime.Period() / 16
 	nextFetchTill           = epochtime.Period() - (PublishDeadline + mixServerCacheDelay)
 	recheckInterval         = epochtime.Period() / 16

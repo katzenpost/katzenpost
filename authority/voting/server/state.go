@@ -76,15 +76,20 @@ const (
 	publicKeyHashSize = 32
 )
 
+func MixPublishDeadline() time.Duration { return epochtime.Period() / 8 }
+
+func AuthorityVoteDeadline() time.Duration { return MixPublishDeadline() + epochtime.Period()/8 }
+
+func AuthorityRevealDeadline() time.Duration { return AuthorityVoteDeadline() + epochtime.Period()/8 }
+
+func AuthorityCertDeadline() time.Duration { return AuthorityRevealDeadline() + epochtime.Period()/8 }
+
+func PublishConsensusDeadline() time.Duration { return AuthorityCertDeadline() + epochtime.Period()/8 }
+
 var (
-	MixPublishDeadline       = epochtime.Period() / 8
-	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period()/8
-	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period()/8
-	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period()/8
-	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period()/8
-	errGone                  = errors.New("authority: Requested epoch will never get a Document")
-	errNotYet                = errors.New("authority: Document is not ready yet")
-	errInvalidTopology       = errors.New("authority: Invalid Topology")
+	errGone            = errors.New("authority: Requested epoch will never get a Document")
+	errNotYet          = errors.New("authority: Document is not ready yet")
+	errInvalidTopology = errors.New("authority: Invalid Topology")
 )
 
 type descriptor struct {
@@ -153,6 +158,8 @@ type state struct {
 	// dialContextFn overrides the dialer for outbound peer connections; nil
 	// uses a default net.Dialer. Set in tests to inject a transport.
 	dialContextFn func(ctx context.Context, network, addr string) (net.Conn, error)
+
+	phaseDeadlineFn func(targetDeadline time.Duration) time.Time
 
 	updateCh chan interface{}
 
@@ -251,8 +258,8 @@ func (s *state) fsm() <-chan time.Time {
 		s.backgroundFetchConsensus(epoch - 1)
 		s.log.Debugf("FSM: Fetching consensus for current epoch %d", epoch)
 		s.backgroundFetchConsensus(epoch)
-		if elapsed > MixPublishDeadline {
-			s.log.Errorf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline, nextEpoch)
+		if elapsed > MixPublishDeadline() {
+			s.log.Errorf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline(), nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.setState(stateBootstrap)
@@ -260,7 +267,7 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			s.votingEpoch = epoch + 1
 			s.setState(stateAcceptDescriptor)
-			sleep = MixPublishDeadline - elapsed
+			sleep = MixPublishDeadline() - elapsed
 			if sleep < 0 {
 				sleep = 0
 			}
@@ -290,7 +297,7 @@ func (s *state) fsm() <-chan time.Time {
 		}
 		s.setState(stateAcceptVote)
 		_, nowelapsed, _ := epochtime.Now()
-		sleep = AuthorityVoteDeadline - nowelapsed
+		sleep = AuthorityVoteDeadline() - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until vote deadline", s.state, sleep)
 	case stateAcceptVote:
 		s.log.Noticef("FSM: Entering stateAcceptVote for epoch %d", s.votingEpoch)
@@ -305,7 +312,7 @@ func (s *state) fsm() <-chan time.Time {
 		s.sendRevealToAuthorities(signed, s.votingEpoch)
 		s.setState(stateAcceptReveal)
 		_, nowelapsed, _ := epochtime.Now()
-		sleep = AuthorityRevealDeadline - nowelapsed
+		sleep = AuthorityRevealDeadline() - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until reveal deadline", s.state, sleep)
 	case stateAcceptReveal:
 		s.log.Noticef("FSM: Entering stateAcceptReveal for epoch %d", s.votingEpoch)
@@ -330,7 +337,7 @@ func (s *state) fsm() <-chan time.Time {
 		}
 		s.setState(stateAcceptCert)
 		_, nowelapsed, _ := epochtime.Now()
-		sleep = AuthorityCertDeadline - nowelapsed
+		sleep = AuthorityCertDeadline() - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until cert deadline", s.state, sleep)
 	case stateAcceptCert:
 		s.log.Noticef("FSM: Entering stateAcceptCert for epoch %d", s.votingEpoch)
@@ -394,7 +401,7 @@ func (s *state) fsm() <-chan time.Time {
 		}
 		s.setState(stateAcceptSignature)
 		_, nowelapsed, _ := epochtime.Now()
-		sleep = PublishConsensusDeadline - nowelapsed
+		sleep = PublishConsensusDeadline() - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until consensus deadline", s.state, sleep)
 	case stateAcceptSignature:
 		s.log.Noticef("FSM: Entering stateAcceptSignature for epoch %d", s.votingEpoch)
@@ -411,7 +418,7 @@ func (s *state) fsm() <-chan time.Time {
 		if err == nil {
 			s.log.Noticef("FSM: SUCCESS! Achieved threshold consensus for epoch %d: %v", s.votingEpoch, consensus)
 			s.setState(stateAcceptDescriptor)
-			sleep = MixPublishDeadline + nextEpoch
+			sleep = MixPublishDeadline() + nextEpoch
 			s.votingEpoch++
 			s.log.Noticef("FSM: Consensus successful, transitioning to %s state for next voting epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		} else {
@@ -1240,6 +1247,9 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 
 // phaseDeadline returns the deadline for the current FSM phase.
 func (s *state) phaseDeadline(targetDeadline time.Duration) time.Time {
+	if s.phaseDeadlineFn != nil {
+		return s.phaseDeadlineFn(targetDeadline)
+	}
 	_, elapsed, _ := epochtime.Now()
 	remaining := targetDeadline - elapsed
 	if remaining < 0 {
@@ -1275,17 +1285,17 @@ func (s *state) PhaseInfo() (phase string, timeRemaining time.Duration) {
 	var deadline time.Duration
 	switch phase {
 	case stateBootstrap, stateAcceptDescriptor:
-		deadline = MixPublishDeadline
+		deadline = MixPublishDeadline()
 	case stateAcceptVote:
-		deadline = AuthorityVoteDeadline
+		deadline = AuthorityVoteDeadline()
 	case stateAcceptReveal:
-		deadline = AuthorityRevealDeadline
+		deadline = AuthorityRevealDeadline()
 	case stateAcceptCert:
-		deadline = AuthorityCertDeadline
+		deadline = AuthorityCertDeadline()
 	case stateAcceptSignature:
-		deadline = PublishConsensusDeadline
+		deadline = PublishConsensusDeadline()
 	default:
-		deadline = MixPublishDeadline
+		deadline = MixPublishDeadline()
 	}
 
 	timeRemaining = deadline - elapsed
@@ -1340,7 +1350,7 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 		PublicKey: s.s.IdentityKey(),
 		Payload:   cert,
 	}
-	deadline := s.phaseDeadline(AuthorityCertDeadline)
+	deadline := s.phaseDeadline(AuthorityCertDeadline())
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
@@ -1388,7 +1398,7 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 		PublicKey: s.s.IdentityKey(),
 		Payload:   vote,
 	}
-	deadline := s.phaseDeadline(AuthorityVoteDeadline)
+	deadline := s.phaseDeadline(AuthorityVoteDeadline())
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
@@ -1428,7 +1438,7 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 		PublicKey: s.s.IdentityKey(),
 		Payload:   reveal,
 	}
-	deadline := s.phaseDeadline(AuthorityRevealDeadline)
+	deadline := s.phaseDeadline(AuthorityRevealDeadline())
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
@@ -1475,7 +1485,7 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 		PublicKey: s.s.IdentityKey(),
 		Payload:   sig,
 	}
-	deadline := s.phaseDeadline(PublishConsensusDeadline)
+	deadline := s.phaseDeadline(PublishConsensusDeadline())
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
@@ -2569,9 +2579,9 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	// Phase 1: Check under read lock if we should proceed
 	s.RLock()
 	_, elapsed, _ := epochtime.Now()
-	if elapsed > MixPublishDeadline {
+	if elapsed > MixPublishDeadline() {
 		s.log.Warningf("Replica %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
-			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+			desc.Name, epoch, elapsed, MixPublishDeadline(), elapsed-MixPublishDeadline())
 	}
 
 	// Check for redundant uploads.
@@ -2658,9 +2668,9 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	// Phase 1: Check under read lock if we should proceed
 	s.RLock()
 	_, elapsed, _ := epochtime.Now()
-	if elapsed > MixPublishDeadline {
+	if elapsed > MixPublishDeadline() {
 		s.log.Warningf("Node %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
-			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+			desc.Name, epoch, elapsed, MixPublishDeadline(), elapsed-MixPublishDeadline())
 	}
 
 	// Check for redundant uploads.
@@ -3058,10 +3068,10 @@ func newState(s *Server) (*state, error) {
 	// set voting schedule at runtime
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period())
-	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline)
-	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
-	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
-	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
+	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline())
+	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline())
+	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline())
+	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline())
 	st.log.Debugf("Retry config: attempts=%d base=%v max=%v jitter=%v",
 		s.cfg.Server.PeerRetryMaxAttempts, s.cfg.Server.PeerRetryBaseDelay,
 		s.cfg.Server.PeerRetryMaxDelay, s.cfg.Server.PeerRetryJitter)

@@ -56,7 +56,7 @@ var (
 	errSphinxGeometryMismatch = errors.New("pki: document Sphinx geometry does not match the local configuration")
 	recheckInterval           = epochtime.Period() / 16
 	pkiEarlyConnectSlack      = epochtime.Period() / 8
-	PublishDeadline           = vServer.MixPublishDeadline
+	PublishDeadline           = vServer.MixPublishDeadline()
 	nextFetchTill             = epochtime.Period() - PublishDeadline
 
 	// descriptorUploadSafety is the wall-clock margin we leave
@@ -461,7 +461,7 @@ func (p *pki) updateTimer(timer *time.Timer) {
 	}
 
 	// It is after the consensus publication deadline.
-	if elapsed > vServer.PublishConsensusDeadline {
+	if elapsed > vServer.PublishConsensusDeadline() {
 		p.log.Debugf("After deadline for next epoch publication")
 		if p.entryForEpoch(now+1) == nil {
 			p.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval)
@@ -479,7 +479,7 @@ func (p *pki) updateTimer(timer *time.Timer) {
 			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval)
 			timer.Reset(recheckInterval)
 		} else {
-			interval := vServer.PublishConsensusDeadline - elapsed
+			interval := vServer.PublishConsensusDeadline() - elapsed
 			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, interval)
 			timer.Reset(interval)
 		}

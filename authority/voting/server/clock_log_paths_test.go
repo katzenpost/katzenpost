@@ -162,34 +162,30 @@ func clockLogSender(t *testing.T, code uint8) (*state, string) {
 	return sender, p
 }
 
-func clockLogShortDeadline(t *testing.T, d *time.Duration) {
-	old := *d
-	_, elapsed, _ := epochtime.Now()
-	*d = elapsed + 5*time.Second + 600*time.Millisecond
-	t.Cleanup(func() { *d = old })
+func clockLogShortDeadline(s *state) {
+	s.phaseDeadlineFn = func(time.Duration) time.Time { return time.Now().Add(600 * time.Millisecond) }
 }
 
 func TestSendRejectionsCarryLocalClock(t *testing.T) {
 	cases := []struct {
-		name     string
-		code     uint8
-		deadline *time.Duration
-		send     func(s *state)
-		line     string
+		name string
+		code uint8
+		send func(s *state)
+		line string
 	}{
-		{"cert late", commands.CertTooLate, &AuthorityCertDeadline, func(s *state) { s.sendCertToAuthorities([]byte("c"), 1) }, `Cert rejected \(too late\) by responder `},
-		{"cert early", commands.CertTooEarly, &AuthorityCertDeadline, func(s *state) { s.sendCertToAuthorities([]byte("c"), 1) }, `Cert rejected \(too early\) by responder `},
-		{"vote late", commands.VoteTooLate, &AuthorityVoteDeadline, func(s *state) { s.sendVoteToAuthorities([]byte("v"), 1) }, `Vote rejected \(too late\) by responder `},
-		{"vote early", commands.VoteTooEarly, &AuthorityVoteDeadline, func(s *state) { s.sendVoteToAuthorities([]byte("v"), 1) }, `Vote rejected \(too early\) by responder `},
-		{"reveal late", commands.RevealTooLate, &AuthorityRevealDeadline, func(s *state) { s.sendRevealToAuthorities([]byte("r"), 1) }, `Reveal rejected \(too late\) by responder `},
-		{"reveal early", commands.RevealTooEarly, &AuthorityRevealDeadline, func(s *state) { s.sendRevealToAuthorities([]byte("r"), 1) }, `Reveal rejected \(too early\) by responder `},
-		{"sig late", commands.SigTooLate, &PublishConsensusDeadline, func(s *state) { s.sendSigToAuthorities([]byte("s"), 1) }, `Signature rejected \(too late\) by responder `},
-		{"sig early", commands.SigTooEarly, &PublishConsensusDeadline, func(s *state) { s.sendSigToAuthorities([]byte("s"), 1) }, `Signature rejected \(too early\) by responder `},
+		{"cert late", commands.CertTooLate, func(s *state) { s.sendCertToAuthorities([]byte("c"), 1) }, `Cert rejected \(too late\) by responder `},
+		{"cert early", commands.CertTooEarly, func(s *state) { s.sendCertToAuthorities([]byte("c"), 1) }, `Cert rejected \(too early\) by responder `},
+		{"vote late", commands.VoteTooLate, func(s *state) { s.sendVoteToAuthorities([]byte("v"), 1) }, `Vote rejected \(too late\) by responder `},
+		{"vote early", commands.VoteTooEarly, func(s *state) { s.sendVoteToAuthorities([]byte("v"), 1) }, `Vote rejected \(too early\) by responder `},
+		{"reveal late", commands.RevealTooLate, func(s *state) { s.sendRevealToAuthorities([]byte("r"), 1) }, `Reveal rejected \(too late\) by responder `},
+		{"reveal early", commands.RevealTooEarly, func(s *state) { s.sendRevealToAuthorities([]byte("r"), 1) }, `Reveal rejected \(too early\) by responder `},
+		{"sig late", commands.SigTooLate, func(s *state) { s.sendSigToAuthorities([]byte("s"), 1) }, `Signature rejected \(too late\) by responder `},
+		{"sig early", commands.SigTooEarly, func(s *state) { s.sendSigToAuthorities([]byte("s"), 1) }, `Signature rejected \(too early\) by responder `},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			clockLogShortDeadline(t, c.deadline)
 			sender, p := clockLogSender(t, c.code)
+			clockLogShortDeadline(sender)
 			sender.Lock()
 			c.send(sender)
 			sender.Unlock()
