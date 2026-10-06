@@ -552,9 +552,8 @@ func lenSyncMap(m *sync.Map) int {
 
 // TestNextPKIWakeup pins the event-driven schedule the worker uses to
 // avoid waking up every recheckInterval just to find both epochs still
-// cached. With both now and now+1 in hand the worker should sleep across
-// the boundary plus the gateway publish-and-cache window so the new
-// now+1 is ready on the next wake; while waiting for now+1 to become
+// cached. With both now and now+1 in hand the worker should wake at the
+// boundary, where now+1 becomes the current document; while waiting for now+1 to become
 // fetchable it should sleep until the nextFetchTill threshold; in
 // outright failure cases (no current doc, or past the threshold with
 // next still missing) it falls back to recheckInterval polling.
@@ -589,11 +588,11 @@ func TestNextPKIWakeup(t *testing.T) {
 			want:     recheckInterval(),
 		},
 		{
-			name:     "both cached: sleep across boundary plus publish+cache window",
+			name:     "both cached: wake at the boundary",
 			till:     period / 4,
 			haveNow:  true,
 			haveNext: true,
-			want:     period/4 + PublishDeadline() + mixServerCacheDelay(),
+			want:     period / 4,
 		},
 	}
 	for _, tc := range cases {
