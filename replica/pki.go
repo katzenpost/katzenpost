@@ -309,20 +309,6 @@ func (p *PKIWorker) updateTimer(timer *time.Timer) {
 		return
 	}
 
-	// Once the upload window is closed, do not spin inside the same epoch just
-	// to log another skipped descriptor upload. Wake at the next epoch boundary,
-	// where the next upload window opens.
-	if elapsed >= uploadDeadline {
-		interval := till
-		if interval < time.Second {
-			interval = time.Second
-		}
-
-		p.GetLogger().Debugf("REPLICA PKI WORKER: upload window closed, reset to next epoch in %v", interval)
-		timer.Reset(interval)
-		return
-	}
-
 	p.UpdateTimer(timer)
 }
 
