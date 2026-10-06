@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -501,14 +500,10 @@ func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
 	c.log.Warningf("replica/incoming: authenticateCourier(): Courier authentication failed")
 	c.log.Debugf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key_hash=%x",
 		shortLinkKeyHash(creds.PublicKey))
-	c.log.Warningf("replica/incoming: authenticateCourier(): Available service nodes with courier capability:")
+	c.log.Debugf("replica/incoming: authenticateCourier(): Available service nodes with courier capability:")
 	for _, desc := range doc.ServiceNodes {
 		if desc.Kaetzchen != nil {
-			rawLinkKey, err := desc.GetRawCourierLinkKey()
-			if err == nil {
-				c.log.Warningf("replica/incoming: authenticateCourier():   - name=%s, link_key=%s",
-					desc.Name, strings.TrimSpace(rawLinkKey))
-			}
+			c.log.Debugf("replica/incoming: authenticateCourier():   - name=%s", desc.Name)
 		}
 	}
 	return false
@@ -531,16 +526,16 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 		}
 	}
 	if !isReplica {
-		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: node ID %x not found in replica list", nodeID)
-		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: node_id=%x, link_key=%s",
-			nodeID, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: node ID not found in replica list")
+		c.log.Debugf("replica/incoming: authenticateReplica(): Remote Peer Credentials: node_id=%x, link_key_hash=%x",
+			nodeID[:8], shortLinkKeyHash(creds.PublicKey))
 
 		// Log available replicas for debugging
-		c.log.Warningf("replica/incoming: authenticateReplica(): Available replicas:")
+		c.log.Debugf("replica/incoming: authenticateReplica(): Available replicas:")
 		allReplicas := c.l.server.PKIWorker.replicas.Copy()
 		for replicaID, replica := range allReplicas {
-			c.log.Warningf("replica/incoming: authenticateReplica():   - name=%s, node_id=%x, link_key=%x",
-				replica.Name, replicaID[:], replica.LinkKey)
+			c.log.Debugf("replica/incoming: authenticateReplica():   - name=%s, node_id=%x",
+				replica.Name, replicaID[:8])
 		}
 		return false
 	}
@@ -553,11 +548,8 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 	}
 	if !hmac.Equal(replicaDesc.LinkKey, blob) {
 		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: link key mismatch for replica '%s'", replicaDesc.Name)
-		c.log.Warningf("replica/incoming: authenticateReplica(): Expected link key: %x", replicaDesc.LinkKey)
-		c.log.Warningf("replica/incoming: authenticateReplica(): Received link key: %s",
-			strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
-		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: name=%s, node_id=%x",
-			replicaDesc.Name, nodeID)
+		c.log.Debugf("replica/incoming: authenticateReplica(): Remote Peer Credentials: name=%s, node_id=%x, link_key_hash=%x",
+			replicaDesc.Name, nodeID[:8], shortLinkKeyHash(creds.PublicKey))
 		return false
 	}
 

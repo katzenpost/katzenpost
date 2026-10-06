@@ -29,11 +29,9 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
-	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
-	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -131,14 +129,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
-			peerName, found := getPeerName()
-			if found {
-				c.log.Warningf("server/incoming: IsPeerValid(): Client '%s' no longer in user db", peerName)
-			} else {
-				c.log.Warningf("server/incoming: IsPeerValid(): Client no longer in user db (identity_hash=%x not in current PKI)", creds.AdditionalData)
-			}
-			c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-				peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+			c.log.Warningf("server/incoming: IsPeerValid(): Client no longer in user db")
 			handshakeinstrument.IncomingPeerValidationFailure("client_dropped_from_userdb")
 			c.canSend = false
 			return false
@@ -201,12 +192,12 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			return false
 		}
 		if found {
-			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s' (link_key_hash=%x)", peerName, hash.Sum256(blob))
+			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s'", peerName)
 		} else {
-			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for unknown peer (identity_hash=%x not in current PKI, link_key_hash=%x)", creds.AdditionalData, hash.Sum256(blob))
+			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for unknown peer")
 		}
-		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+		linkKeyHash := hash.Sum256(blob)
+		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, link_key_hash=%x", peerName, linkKeyHash[:8])
 		handshakeinstrument.IncomingPeerValidationFailure("unknown_mix")
 	}
 
