@@ -671,7 +671,7 @@ $(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
 	@echo '    Network = "tcp"'                          >> $@
 
 wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	@deadline=$$(( $$(date +%s) + $(wait_seconds) )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} -e KATZENPOST_EPOCH_DURATION=$(epoch_duration) $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	@deadline=$$(( $$(date +%s) + $(wait_seconds) )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready --ready-timeout $${left}s; do \
 	  echo "wait: the client daemon is not accepting connections yet; retrying"; sleep 5; done
 

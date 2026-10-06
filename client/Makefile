@@ -1,4 +1,3 @@
-epoch_duration?=2m
 ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid="
 dockertest_race?=-race
 dockertest_timeout?=1h
@@ -19,9 +18,7 @@ cache_abs=$(if $(filter /%,$(cache_dir)),$(cache_dir),$(abspath ../docker/$(cach
 docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_abs)/go:/go/ -e GORACE=history_size=7 -e GOCACHE=/go/cache
 
 test:
-	KATZENPOST_EPOCH_DURATION=$(epoch_duration) go test -v -race -timeout 0 -ldflags ${ldflags} .
-
-docker_args += -e KATZENPOST_EPOCH_DURATION=$(epoch_duration)
+	go test -v -race -timeout 0 -ldflags ${ldflags} .
 
 lint:
 	golint ./...
