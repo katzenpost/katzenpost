@@ -12,11 +12,17 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func genNetwork(t *testing.T, epochDuration string) (string, error) {
+	return genNetworkWith(t, epochDuration, nil)
+}
+
+func genNetworkWith(t *testing.T, epochDuration string, nodeVersions map[string]string) (string, error) {
 	dir := t.TempDir()
 	return dir, RunGenConfig(Config{
+		NodeVersions:             nodeVersions,
 		NrLayers:                 NrLayers,
 		NrNodes:                  NrNodes,
 		NrGateways:               NrGateways,
@@ -95,5 +101,72 @@ func TestGenConfigRefusesAnInvalidEpochDuration(t *testing.T) {
 	for _, flag := range []string{"90s", "2m0.5s", "soon"} {
 		_, err := genNetwork(t, flag)
 		require.Error(t, err, flag)
+	}
+}
+
+func composeEnvironment(t *testing.T, dir string) map[string][]string {
+	b, err := os.ReadFile(filepath.Join(dir, "docker-compose.yml"))
+	require.NoError(t, err)
+	var compose struct {
+		Services map[string]struct {
+			Environment []string
+		}
+	}
+	require.NoError(t, yaml.Unmarshal(b, &compose))
+	env := map[string][]string{}
+	for name, svc := range compose.Services {
+		env[name] = svc.Environment
+	}
+	return env
+}
+
+func TestComposeExportsEpochDurationOnlyToOlderReleases(t *testing.T) {
+	older := map[string]bool{"auth2": true, "replica1": true, "mix3": true}
+	dir, err := genNetworkWith(t, "2m", map[string]string{
+		"auth2": "v0.0.104", "replica1": "v0.0.103", "mix3": "v0.0.104",
+		"mix1": "current", "auth1": "current",
+	})
+	require.NoError(t, err)
+	env := composeEnvironment(t, dir)
+	require.Contains(t, env, "kpclientd")
+	for name, vars := range env {
+		var exported []string
+		for _, v := range vars {
+			if strings.HasPrefix(v, "KATZENPOST_EPOCH_DURATION=") {
+				exported = append(exported, v)
+			}
+		}
+		if older[name] {
+			require.Equal(t, []string{"KATZENPOST_EPOCH_DURATION=2m0s"}, exported, name)
+		} else {
+			require.Empty(t, exported, name)
+		}
+	}
+	for name, d := range generatedEpochDurations(t, dir) {
+		if filepath.Base(name) != "thinclient.toml" {
+			require.Equal(t, 2*time.Minute, *d, name)
+		}
+	}
+}
+
+func TestComposeExportsNoEpochDurationWhenEveryNodeRunsThisBuild(t *testing.T) {
+	dir, err := genNetwork(t, "2m")
+	require.NoError(t, err)
+	for name, vars := range composeEnvironment(t, dir) {
+		for _, v := range vars {
+			require.False(t, strings.HasPrefix(v, "KATZENPOST_EPOCH_DURATION="), name)
+		}
+	}
+}
+
+func TestGenConfigRefusesNodeVersionsItCannotPlace(t *testing.T) {
+	for _, versions := range []map[string]string{
+		{"auth2": "main"},
+		{"auth2": "d02de7a54"},
+		{"auth2": "v0.0"},
+		{"auth9": "v0.0.104"},
+	} {
+		_, err := genNetworkWith(t, "2m", versions)
+		require.Error(t, err, versions)
 	}
 }
