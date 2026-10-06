@@ -77,6 +77,8 @@ func nextFetchTill() time.Duration { return epochtime.Period() - PublishDeadline
 // their descriptor uploads timed out.
 func descriptorUploadSafety() time.Duration { return PublishDeadline() / 6 }
 
+func descriptorRepostInterval() time.Duration { return epochtime.Period() / 96 }
+
 var (
 	errNotCached              = errors.New("pki: requested epoch document not in cache")
 	errSphinxGeometryMismatch = errors.New("pki: document Sphinx geometry does not match the local configuration")
@@ -461,6 +463,13 @@ func (p *pki) updateTimer(timer *time.Timer) {
 		return
 	}
 
+	if uploadDeadline := PublishDeadline() - descriptorUploadSafety(); elapsed < uploadDeadline && p.lastPublishedEpoch <= now {
+		interval := min(descriptorRepostInterval(), uploadDeadline-elapsed)
+		p.log.Debugf("descriptor for %v not posted yet, reset to %v", now+1, interval)
+		timer.Reset(interval)
+		return
+	}
+
 	// It is after the consensus publication deadline.
 	if elapsed > vServer.PublishConsensusDeadline() {
 		p.log.Debugf("After deadline for next epoch publication")
@@ -801,16 +810,13 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		)
 		p.lastPublishedEpoch = doPublishEpoch
 	case cpki.ErrInvalidPostEpoch:
-		// Treat this class (conflict/late descriptor) as a permanent rejection
-		// and suppress further uploads for this epoch.
 		p.log.Errorf(
-			"❌ DESCRIPTOR UPLOAD: Authority permanently rejected %s node %s upload for epoch %d; advancing past this epoch: %s",
+			"DESCRIPTOR UPLOAD: Authorities rejected %s node %s upload for epoch %d; reposting while the upload window is open: %s",
 			nodeType,
 			strconv.QuoteToASCII(desc.Name),
 			doPublishEpoch,
 			strconv.QuoteToASCII(err.Error()),
 		)
-		p.lastPublishedEpoch = doPublishEpoch
 	default:
 		p.log.Errorf(
 			"❌ DESCRIPTOR UPLOAD: Failed to upload %s node %s descriptor for epoch %d: %s",
