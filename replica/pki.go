@@ -60,6 +60,8 @@ const (
 // left for a separate change so this commit stays focused.
 func descriptorUploadSafety() time.Duration { return PublishDeadline() / 6 }
 
+func descriptorRepostInterval() time.Duration { return epochtime.Period() / 96 }
+
 type postReplicaAcceptedAuthoritiesProvider interface {
 	LastPostReplicaAcceptedAuthorities(epoch uint64) []string
 }
@@ -296,6 +298,9 @@ func (p *PKIWorker) updateTimer(timer *time.Timer) {
 	// yet been published.
 	if elapsed < uploadDeadline && p.lastPublishedEpoch <= currentEpoch {
 		interval := time.Second
+		if p.rejectedEpoch == currentEpoch+1 {
+			interval = descriptorRepostInterval()
+		}
 		remainingUpload := uploadDeadline - elapsed
 		if remainingUpload < interval {
 			interval = remainingUpload
@@ -470,17 +475,13 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return nil
 
 	case errors.Is(err, cpki.ErrInvalidPostEpoch):
-		// Treat this class, such as conflict or late descriptor, as a permanent
-		// rejection and suppress further uploads for this target epoch.
 		p.GetLogger().Warningf(
-			"REPLICA DESCRIPTOR UPLOAD: authority permanently rejected replica descriptor %s upload for epoch %d; advancing past this epoch: %s",
+			"REPLICA DESCRIPTOR UPLOAD: authorities rejected replica descriptor %s upload for epoch %d; reposting while the upload window is open: %s",
 			strconv.QuoteToASCII(desc.Name),
 			doPublishEpoch,
 			strconv.QuoteToASCII(err.Error()),
 		)
-		if doPublishEpoch > p.lastPublishedEpoch {
-			p.lastPublishedEpoch = doPublishEpoch
-		}
+		p.rejectedEpoch = doPublishEpoch
 		return err
 
 	default:
