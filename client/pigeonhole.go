@@ -228,7 +228,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
-	d.log.Debugf("encryptWrite: MessageBoxIndex Idx64=%d, CurBlindingFactor=%x", messageBoxIndex.Idx64, messageBoxIndex.CurBlindingFactor)
+	d.log.Debugf("encryptWrite: MessageBoxIndex Idx64=%d", messageBoxIndex.Idx64)
 
 	pos, err := writeCap.PositionAt(messageBoxIndex)
 	if err != nil {
