@@ -534,7 +534,7 @@ func TestPKIClockSkew(t *testing.T) {
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
 
-	skew := int64(1234)
+	skew := int64(123)
 	p.setClockSkew(skew)
 	skewDuration := c.ClockSkew()
 	expected := time.Duration(skew) * time.Second
