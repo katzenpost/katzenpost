@@ -44,7 +44,20 @@ always the same as "the file fails to parse".
   and at the top level of `replica.toml`, `courier.toml` and
   `client.toml` (kpclientd, and full-mode ping). Not in
   `thinclient.toml`. It must be whole seconds from `2m` to `7d`; any
-  other value, including `"0s"`, refuses the config.
+  other value, including `"0s"`, refuses the config. Why these bounds:
+  - `2m`: the authority's voting phases are each `P/8` wide and a
+    sender stops `5s` before each phase deadline, so at `2m` a phase is
+    `15s` with `10s` to deliver to every peer; the consumers' fetch pass
+    is bounded by `P/8` as well. Shorter epochs leave too little of
+    that smallest budget for a dial, a PQ handshake and a reply.
+  - `7d`: the storage replicas rotate envelope keys on a fixed 7-day
+    replica epoch, and a replica descriptor advertises the keys of the
+    previous, current and next replica epoch. An epoch longer than the
+    replica epoch could span more replica rotations than one
+    descriptor covers.
+  - Whole seconds: the handshake carries time to the second, and every
+    deadline derived from the period is computed from it, so a
+    fractional period has no meaning on the wire.
 - The process chooses its epoch once at startup: `EpochDuration` if
   set; refusal to start if `KATZENPOST_EPOCH_DURATION` is also set to
   a different value; `KATZENPOST_EPOCH_DURATION` alone, with a
