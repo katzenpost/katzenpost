@@ -468,9 +468,14 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 
 	c.log.Warningf("replica/incoming: IsPeerValid(): Authentication failed, invalid AdditionalData length")
-	c.log.Warningf("replica/incoming: IsPeerValid(): Remote Peer Credentials: ad_length=%d (expected: 0 or %d), link_key=%s",
-		len(creds.AdditionalData), sConstants.NodeIDLength, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+	c.log.Debugf("replica/incoming: IsPeerValid(): Remote Peer Credentials: ad_length=%d (expected: 0 or %d), link_key_hash=%x",
+		len(creds.AdditionalData), sConstants.NodeIDLength, shortLinkKeyHash(creds.PublicKey))
 	return false
+}
+
+func shortLinkKeyHash(k kem.PublicKey) []byte {
+	h := hash.Sum256From(k)
+	return h[:8]
 }
 
 // authenticateCourier handles authentication for courier connections
@@ -478,8 +483,8 @@ func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
 	doc := c.findPKIDocument()
 	if doc == nil {
 		c.log.Warningf("replica/incoming: authenticateCourier(): No PKI document available")
-		c.log.Warningf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key=%s",
-			strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Debugf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key_hash=%x",
+			shortLinkKeyHash(creds.PublicKey))
 		return false
 	}
 
@@ -494,8 +499,8 @@ func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
 	}
 
 	c.log.Warningf("replica/incoming: authenticateCourier(): Courier authentication failed")
-	c.log.Warningf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key=%s",
-		strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+	c.log.Debugf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key_hash=%x",
+		shortLinkKeyHash(creds.PublicKey))
 	c.log.Warningf("replica/incoming: authenticateCourier(): Available service nodes with courier capability:")
 	for _, desc := range doc.ServiceNodes {
 		if desc.Kaetzchen != nil {

@@ -308,14 +308,12 @@ func (c *incomingConn) worker() {
 	if err != nil {
 		c.log.Debugf("Session failure: %s", err)
 	}
-	blob, err := creds.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
 	if c.fromMix {
+		blob, err := creds.PublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
 		c.log.Debugf("Peer: '%x' (%x)", creds.AdditionalData, hash.Sum256(blob))
-	} else {
-		c.log.Debugf("User: '%x', Key: '%x'", creds.AdditionalData, hash.Sum256(blob))
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though
@@ -741,7 +739,6 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	if c.fromClient && c.sendTokenIncr != 0 {
 		// Update the token bucket for the time that we were idle.
 		deltaT := time.Now().Sub(c.sendTokenLast)
-		c.log.Debugf("Rate limit: DeltaT: %v Tokens: %v", deltaT, c.sendTokens)
 		incrCount := uint64(deltaT / c.sendTokenIncr)
 		if incrCount > 0 {
 			c.sendTokenLast = c.sendTokenLast.Add(c.sendTokenIncr * time.Duration(incrCount))
@@ -762,7 +759,6 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 			return nil
 		}
 		c.sendTokens--
-		c.log.Debugf("Rate limit: Remaining tokens: %v", c.sendTokens)
 	}
 
 	c.log.Debugf("Handing off packet: %v", pkt.ID)
