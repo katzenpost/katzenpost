@@ -2943,13 +2943,9 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				epochBytes := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
-					_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
-					if err != nil {
-						s.log.Errorf("Failed to verify threshold on restored document")
-						break
-					}
-					doc, err := s.doParseDocument(rawDoc)
-					if err != nil {
+					if _, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc); err != nil {
+						s.log.Errorf("Failed to verify threshold on restored document for epoch %v: %v", epoch, err)
+					} else if doc, err := s.doParseDocument(rawDoc); err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else if doc.Epoch != epoch {
 						s.log.Errorf("Persisted document has unexpected epoch: %v", doc.Epoch)
