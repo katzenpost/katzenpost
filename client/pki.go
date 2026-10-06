@@ -23,14 +23,20 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
+func PublishDeadline() time.Duration { return vServer.PublishConsensusDeadline() }
+
+func mixServerCacheDelay() time.Duration { return epochtime.Period() / 16 }
+
+func nextFetchTill() time.Duration {
+	return epochtime.Period() - (PublishDeadline() + mixServerCacheDelay())
+}
+
+func recheckInterval() time.Duration { return epochtime.Period() / 16 }
+
 var (
 	errGetConsensusCanceled = errors.New("client/pki: consensus fetch canceled")
 	errConsensusNotFound    = errors.New("client/pki: consensus not ready yet")
 	errBadConsensus         = errors.New("client/pki: consensus from gateway failed to decode")
-	PublishDeadline         = vServer.PublishConsensusDeadline()
-	mixServerCacheDelay     = epochtime.Period() / 16
-	nextFetchTill           = epochtime.Period() - (PublishDeadline + mixServerCacheDelay)
-	recheckInterval         = epochtime.Period() / 16
 
 	// waitForCurrentDocumentAttempts caps the number of synchronous
 	// updateDocument retries WaitForCurrentDocument performs before
@@ -307,7 +313,7 @@ func (p *pki) worker() {
 		epochs := make([]uint64, 0, 2)
 		now, _, till := epochtime.FromUnix(p.skewedUnixTime())
 		epochs = append(epochs, now)
-		if till < nextFetchTill {
+		if till < nextFetchTill() {
 			epochs = append(epochs, now+1)
 		}
 		// Fetch the documents that we are missing.
@@ -402,15 +408,15 @@ func (p *pki) worker() {
 // poll at recheckInterval.
 func nextPKIWakeup(till time.Duration, haveNow, haveNext bool) time.Duration {
 	if !haveNow {
-		return recheckInterval
+		return recheckInterval()
 	}
 	if !haveNext {
-		if till > nextFetchTill {
-			return till - nextFetchTill
+		if till > nextFetchTill() {
+			return till - nextFetchTill()
 		}
-		return recheckInterval
+		return recheckInterval()
 	}
-	return till + PublishDeadline + mixServerCacheDelay
+	return till + PublishDeadline() + mixServerCacheDelay()
 }
 
 func (p *pki) updateDocument(epoch uint64) error {

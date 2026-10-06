@@ -572,28 +572,28 @@ func TestNextPKIWakeup(t *testing.T) {
 			till:     period / 2,
 			haveNow:  false,
 			haveNext: false,
-			want:     recheckInterval,
+			want:     recheckInterval(),
 		},
 		{
 			name:     "have current, next not yet fetchable: sleep until threshold",
 			till:     period - period/8,
 			haveNow:  true,
 			haveNext: false,
-			want:     (period - period/8) - nextFetchTill,
+			want:     (period - period/8) - nextFetchTill(),
 		},
 		{
 			name:     "have current, past threshold with next missing: poll",
 			till:     period / 32,
 			haveNow:  true,
 			haveNext: false,
-			want:     recheckInterval,
+			want:     recheckInterval(),
 		},
 		{
 			name:     "both cached: sleep across boundary plus publish+cache window",
 			till:     period / 4,
 			haveNow:  true,
 			haveNext: true,
-			want:     period/4 + PublishDeadline + mixServerCacheDelay,
+			want:     period/4 + PublishDeadline() + mixServerCacheDelay(),
 		},
 	}
 	for _, tc := range cases {
