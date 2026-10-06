@@ -314,9 +314,12 @@ Notes
 * The network runs with a 2-minute epoch (``epoch_duration=2m``), so PKI,
   topology, and mix keys churn fast enough to exercise the system in a dev
   loop. genconfig writes it into every generated config as
-  ``EpochDuration``; the containers also get ``KATZENPOST_EPOCH_DURATION``
-  for older reference binaries in the interop gate, which do not read the
-  config key.
+  ``EpochDuration``. Only containers that the interop gate runs on an older
+  release, which does not read the key, get ``KATZENPOST_EPOCH_DURATION``
+  instead (genconfig ``--nodeVersions``, resolved from ``release_refs``), and
+  so does ``fetch`` in ``make wait``, which has no config key.
+* kpclientd logs to ``client/kpclientd.log`` and ``run-ping`` appends to
+  ``ping.log`` in the network directory, next to the node logs.
 * ``make wait`` waits until every node — gateway, mixes, servicenodes
   (with their courier plugins), and storage replicas — reports ready
   against the current consensus, i.e. each node's live per-epoch keys

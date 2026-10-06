@@ -260,7 +260,8 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--nike "$(nike)" --kem "$(kem)" \
 	--noMixDecoy=$(no_mixdecoy) --noGatewayDecoy=$(no_gatewaydecoy) \
 	$(noDecoyFlag) $(noClientDecoyFlag) $(noCourierReplicaDecoyFlag) $(noMetricsFlag) \
-	--epochDuration "$(epoch_duration)" --sessionGracePeriod $(or $(session_grace_period),0) \
+	--epochDuration "$(epoch_duration)" $(if $(node_versions),--nodeVersions $(node_versions)) \
+	--sessionGracePeriod $(or $(session_grace_period),0) \
 	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
@@ -381,8 +382,6 @@ ifeq ($(docker),podman)
 else
   docker_compose= DOCKER_USER=$(docker_user) $(docker_compose_v1_or_v2)
 endif
-
-docker_args += -e KATZENPOST_EPOCH_DURATION=$(epoch_duration)
 
 # Recursive `$(MAKE)` invocations inherit these instead of re-deriving
 # them from a hardcoded argument list.
@@ -672,7 +671,7 @@ $(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
 	@echo '    Network = "tcp"'                          >> $@
 
 wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
-	@deadline=$$(( $$(date +%s) + $(wait_seconds) )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	@deadline=$$(( $$(date +%s) + $(wait_seconds) )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} -e KATZENPOST_EPOCH_DURATION=$(epoch_duration) $(mount_net_name) --rm  katzenpost-$(distro)_base \
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready --ready-timeout $${left}s; do \
 	  echo "wait: the client daemon is not accepting connections yet; retrying"; sleep 5; done
 
@@ -1033,7 +1032,13 @@ interop-gate: interop-ref-binaries
 	      replica*) echo "  $$s:"; echo "    command: /$(net_name)/replica.$(distro).$$v -f /$(net_name)/$$s/replica.toml";; \
 	      *)        echo "  $$s:"; echo "    command: /$(net_name)/server.$(distro).$$v -f /$(net_name)/$$s/katzenpost.toml";; \
 	    esac; done; } > $(net_name)/docker-compose.override.yml
-	$(MAKE) start
+	@nv=; for pair in $(strip $(interop_swaps)); do s=$${pair%%=*}; v=$${pair#*=}; \
+	  case $$v in v[0-9]*.[0-9]*.[0-9]*) r=$$v;; \
+	  *) if git -C .. cat-file -e "$$v:core/epochtime/configure.go" 2>/dev/null; then r=current; \
+	     else r=$$(git -C .. describe --tags --abbrev=0 --match 'v*.*.*' "$$v") || exit 1; fi;; esac; \
+	  nv="$$nv$${nv:+,}$$s=$$r"; done; \
+	echo "interop-gate: node versions: $${nv:-every node runs this build}"; \
+	$(MAKE) start node_versions="$$nv"
 	@deadline=$$(( $$(date +%s) + $(wait_seconds) )); poll=$$(( $(epoch_seconds) / 4 )); \
 	  [ $$poll -gt 0 ] || poll=1; ok=0; \
 	  while left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ]; do \

@@ -55,7 +55,8 @@ always the same as "the file fails to parse".
 - genconfig writes `EpochDuration` into every generated component
   config from `--epochDuration` (`20m` when empty). Older releases
   ignore the key (lenient decoding, see above) and still read the
-  variable, which the docker harness keeps exporting for them.
+  variable; with `--nodeVersions node=vX.Y.Z,...` genconfig exports it
+  in docker-compose only to the nodes on such releases.
 - Every authority, node and client of one network must agree on the
   period; nothing about it is carried in the PKI document.
 
