@@ -217,7 +217,7 @@ func (p *pki) skewedUnixTime() int64 {
 	p.clockSkewLock.RLock()
 	defer p.clockSkewLock.RUnlock()
 
-	return time.Now().Unix() + p.clockSkew
+	return time.Now().Unix() - p.clockSkew
 }
 
 func (p *pki) GetDocumentByEpoch(epoch uint64) *cpki.Document {
