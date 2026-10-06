@@ -126,11 +126,22 @@ func (co *connector) worker() {
 		// Start outgoing connections as needed, based on the PKI documents
 		// and current time.
 		co.spawnNewConns()
+		if !timerFired {
+			co.reauthConns()
+		}
 
 		timer.Reset(resweepInterval)
 	}
 
 	// NOTREACHED
+}
+
+func (co *connector) reauthConns() {
+	co.RLock()
+	defer co.RUnlock()
+	for _, c := range co.conns {
+		c.requestReauth()
+	}
 }
 
 func (co *connector) spawnNewConns() {

@@ -271,7 +271,7 @@ func (p *pki) worker() {
 	// Note: The worker's start is delayed till after the Server's connector
 	// is initialized, so that force updating the outgoing connection table
 	// is guaranteed to work.
-	var lastUpdateEpoch, lastMuSafetyCap uint64
+	var lastUpdateEpoch, lastReauthEpoch, lastMuSafetyCap uint64
 	var lastLambdaP, lastLambdaL float64
 
 	for {
@@ -294,6 +294,11 @@ func (p *pki) worker() {
 				return
 			case <-timer.C:
 			}
+		}
+
+		if now, _, _ := epochtime.Now(); now != lastReauthEpoch && p.entryForEpoch(now) != nil {
+			p.glue.Connector().ForceUpdate()
+			lastReauthEpoch = now
 		}
 
 		// Check to see if we need to publish the descriptor, and do so, along
@@ -386,6 +391,7 @@ func (p *pki) worker() {
 		// epoch.
 		if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
 			if ent := p.entryForEpoch(now); ent != nil {
+
 				if newMuSafetyCap := ent.MuSafetyCap(); newMuSafetyCap != lastMuSafetyCap {
 					p.log.Debugf("Updating scheduler per-hop deadline for epoch %v: %v ms", now, newMuSafetyCap)
 					p.glue.Scheduler().OnNewMixMaxDelay(newMuSafetyCap)
