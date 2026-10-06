@@ -325,10 +325,11 @@ func (p *pki) worker() {
 		}
 		// Fetch the documents that we are missing.
 		didUpdate := false
-		force := p.refetch.Swap(false) || now != p.refetchEpoch
+		reconnected := p.refetch.Swap(false)
+		epochChanged := now != p.refetchEpoch
 		p.refetchEpoch = now
 		for _, epoch := range epochs {
-			if _, ok := p.docs.Load(epoch); ok && !force {
+			if d, ok := p.docs.Load(epoch); ok && !reconnected && (!epochChanged || d.(*CachedDoc).RawSignedBlob != nil) {
 				continue
 			}
 
