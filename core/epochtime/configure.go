@@ -77,7 +77,7 @@ func resolvePeriod(configured time.Duration, env string) (time.Duration, bool, e
 		return 0, false, fmt.Errorf("epochtime: %s=%q: %v", EnvironmentVariable, env, err)
 	}
 	if err := ValidatePeriod(fromEnv); err != nil {
-		return 0, false, err
+		return 0, false, fmt.Errorf("epochtime: %s=%q: %v", EnvironmentVariable, env, err)
 	}
 	return fromEnv, true, nil
 }

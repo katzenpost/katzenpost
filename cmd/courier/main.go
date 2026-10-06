@@ -11,6 +11,7 @@ import (
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/courier/server"
 	"github.com/katzenpost/katzenpost/courier/server/config"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -50,6 +51,13 @@ func normalizeLegacyArgs(cmd *cobra.Command, args []string) []string {
 func runCourier(cmdCfg courierConfig) {
 	cfg, err := config.LoadFile(cmdCfg.configFile)
 	if err != nil {
+		if cmdCfg.validateOnly {
+			fmt.Fprintf(os.Stderr, "configuration file '%v' is invalid: %v\n", cmdCfg.configFile, err)
+			os.Exit(1)
+		}
+		cborplugin.FailStartup("courier", err)
+	}
+	if err := epochtime.Configure(cfg.EpochDuration, os.Stderr); err != nil {
 		if cmdCfg.validateOnly {
 			fmt.Fprintf(os.Stderr, "configuration file '%v' is invalid: %v\n", cmdCfg.configFile, err)
 			os.Exit(1)

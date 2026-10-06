@@ -112,6 +112,9 @@ func runFetch(cfg Config) error {
 	if cfg.Format != "" && cfg.Format != "text" && cfg.Format != "json" {
 		return fmt.Errorf("unknown format %q, want text or json", cfg.Format)
 	}
+	if err := epochtime.Configure(nil, os.Stderr); err != nil {
+		return err
+	}
 	thinCfg, err := thin.LoadFile(cfg.ConfigFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config file: %v", err)

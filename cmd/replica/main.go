@@ -15,6 +15,7 @@ import (
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
 	"github.com/katzenpost/katzenpost/core/compat"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/replica"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
@@ -136,6 +137,9 @@ func runReplicaServer(cfg Config) error {
 	replicaCfg, err := config.LoadFile(cfg.ConfigFile, cfg.GenOnly)
 	if err != nil {
 		return fmt.Errorf("failed to load server config file '%v': %v", cfg.ConfigFile, err)
+	}
+	if err := epochtime.Configure(replicaCfg.EpochDuration, os.Stderr); err != nil {
+		return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
 	}
 	if cfg.ValidateOnly {
 		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {
