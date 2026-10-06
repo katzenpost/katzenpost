@@ -420,6 +420,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		&& ../cmd/genconfig/genconfig $(genconfig_args) \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--dockerImage katzenpost-$(distro)_base'
+	sed -i '/^\[Logging\]/,/^\[/s|^\( *File = \)""$$|\1"/$(net_name)/client/kpclientd.log"|' $(net_name)/client/client.toml
 
 # Generate configuration files only (without docker containers)
 # This is useful for tests that depend on config files existing (e.g., client/testdata symlinks)
@@ -488,10 +489,10 @@ client-restart:
 
 client-logs:
 	@echo "Tailing kpclientd daemon logs (Ctrl+C to exit)..."
-	cd $(net_name) && $(docker_compose) logs -f --tail 20 kpclientd
+	tail -n 20 -f $(net_name)/client/kpclientd.log
 
 client-logs-snapshot:
-	cd $(net_name) && $(docker_compose) logs --tail 200 kpclientd
+	tail -n 200 $(net_name)/client/kpclientd.log
 
 courier-restart:
 	@echo "Stopping courier plugins via thwack management interface..."
@@ -831,8 +832,10 @@ clean: stop-all
 	-$(docker) images|grep katzenpost|cat
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
-	FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings) $(ping_args)
+	( FORCE_COLOR=1 TERM=xterm-256color COLORTERM=truecolor $(docker) run --network=host -it -e FORCE_COLOR=1 -e TERM=xterm-256color -e COLORTERM=truecolor -e CLICOLOR_FORCE=1 ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+        /$(net_name)/ping.$(distro) --thin -c /$(net_name)/client/thinclient.toml -s echo --print-diff -n $(npings) $(ping_args) 2>&1; \
+	  echo $$? > $(net_name)/ping.rc ) | tee -a $(net_name)/ping.log; \
+	exit $$(cat $(net_name)/ping.rc)
 
 # parallel-load knobs. Override on the make command line:
 #   make run-parallel-load clients=8 duration=5m
@@ -999,23 +1002,30 @@ docker_run_ref_sh=$(docker) run --user ${docker_user} --rm --volume $$src:/go/ka
 interop-ref-binaries: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	@set -e; for ref in $(release_refs); do \
 	  refdir=$(cache_dir)/refbins/$$ref; mkdir -p $$refdir; \
-	  ( flock 9; \
+	  ( set -e; step="lock $$refdir.lock"; src=; \
+	  trap 'rc=$$?; [ -z "$$src" ] || rm -rf "$$src" "$$src.tar"; [ $$rc = 0 ] || echo "interop-ref-binaries: $$ref: $$step failed (exit $$rc)" >&2' EXIT; \
+	  flock 9; \
 	  if [ -x $$refdir/server.$(distro).$$ref ] && [ -x $$refdir/dirauth.$(distro).$$ref ] && [ -x $$refdir/replica.$(distro).$$ref ]; then \
+	    step="copy cached binaries from $$refdir"; \
 	    rm -f $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref; \
 	    cp $$refdir/dirauth.$(distro).$$ref $$refdir/replica.$(distro).$$ref $$refdir/server.$(distro).$$ref $(net_name)/; \
 	  else \
-	    src=$$(mktemp -d); git -C .. archive $$ref | tar -x -C $$src; \
-	    rev=$$(git -C .. rev-list -n 1 $$ref); \
+	    step="mktemp"; src=$$(mktemp -d); \
+	    step="git archive $$ref"; git -C .. archive -o $$src.tar $$ref; \
+	    step="unpack $$ref"; tar -x -C $$src -f $$src.tar; rm -f $$src.tar; \
+	    step="git rev-list $$ref"; rev=$$(git -C .. rev-list -n 1 $$ref); \
 	    for cmd in dirauth replica server; do \
+	      step="build $$cmd at $$ref"; echo "interop-ref-binaries: $$step"; \
 	      $(docker_run_ref_sh) "cd cmd/$$cmd && go build -trimpath -ldflags '$(ldflags_body) -X github.com/carlmjohnson/versioninfo.Revision=$$rev' -o /$(net_name)/$$cmd.$(distro).$$ref"; \
 	    done; rm -rf $$src; \
+	    step="cache binaries in $$refdir"; \
 	    cp $(net_name)/dirauth.$(distro).$$ref $(net_name)/replica.$(distro).$$ref $(net_name)/server.$(distro).$$ref $$refdir/; \
 	  fi ) 9>$$refdir.lock; \
 	done
 
 interop-gate: interop-ref-binaries
 	$(MAKE) stop
-	rm -f $(docker_compose_yml) $(net_name)/*/katzenpost.log
+	rm -f $(docker_compose_yml) $(net_name)/*/katzenpost.log $(net_name)/client/kpclientd.log $(net_name)/ping.log
 	@[ -z "$(strip $(interop_swaps))" ] || { echo "services:"; \
 	  for pair in $(interop_swaps); do s=$${pair%%=*}; v=$${pair#*=}; \
 	    case $$s in \
