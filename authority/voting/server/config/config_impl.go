@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -161,6 +162,9 @@ func (sCfg *Server) keyPath(p string) string {
 }
 
 func (sCfg *Server) validate() error {
+	if err := epochtime.ValidateConfigured(sCfg.EpochDuration); err != nil {
+		return fmt.Errorf("config: Server: EpochDuration: %v", err)
+	}
 	// Set timeout defaults if not specified
 	if sCfg.DialTimeoutSec == 0 {
 		sCfg.DialTimeoutSec = 30

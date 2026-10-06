@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"time"
 
 	"github.com/katzenpost/katzenpost/common/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -43,6 +45,8 @@ type Config struct {
 
 	// PKIScheme is the signature scheme used by the PKI.
 	PKIScheme string
+
+	EpochDuration *time.Duration
 
 	// EnvelopeNIKEScheme is the NIKE replica scheme for message envelopes.
 	EnvelopeScheme string
@@ -89,6 +93,9 @@ type Config struct {
 }
 
 func (c *Config) FixupAndValidate() error {
+	if err := epochtime.ValidateConfigured(c.EpochDuration); err != nil {
+		return fmt.Errorf("config: EpochDuration: %v", err)
+	}
 	if c.PKI == nil {
 		return errors.New("config: No PKI block was present")
 	}

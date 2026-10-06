@@ -199,6 +199,8 @@ type Config struct {
 	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
 	PKISignatureScheme string
 
+	EpochDuration *time.Duration
+
 	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
 	WireKEMScheme string
 

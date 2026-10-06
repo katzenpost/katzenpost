@@ -19,6 +19,7 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
@@ -42,6 +43,9 @@ func (c *Config) PigeonholeGeometry() *pigeonholeGeo.Geometry {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if err := epochtime.ValidateConfigured(c.EpochDuration); err != nil {
+		return fmt.Errorf("config: EpochDuration: %v", err)
+	}
 	if c.WireKEMScheme == "" {
 		return errors.New("WireKEMScheme is empty string")
 	}

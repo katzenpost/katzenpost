@@ -23,8 +23,22 @@ func ValidatePeriod(p time.Duration) error {
 	return nil
 }
 
-func Configure(configured time.Duration, warn io.Writer) error {
-	return configure(&period, configured, os.Getenv(EnvironmentVariable), warn)
+func ValidateConfigured(configured *time.Duration) error {
+	if configured == nil {
+		return nil
+	}
+	return ValidatePeriod(*configured)
+}
+
+func Configure(configured *time.Duration, warn io.Writer) error {
+	if err := ValidateConfigured(configured); err != nil {
+		return err
+	}
+	var p time.Duration
+	if configured != nil {
+		p = *configured
+	}
+	return configure(&period, p, os.Getenv(EnvironmentVariable), warn)
 }
 
 func configure(v *atomic.Int64, configured time.Duration, env string, warn io.Writer) error {

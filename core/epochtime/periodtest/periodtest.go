@@ -24,7 +24,7 @@ func Run(t *testing.T, check func(t *testing.T, p time.Duration)) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := epochtime.Configure(p, io.Discard); err != nil {
+		if err := epochtime.Configure(&p, io.Discard); err != nil {
 			t.Fatal(err)
 		}
 		if got := epochtime.Period(); got != p {

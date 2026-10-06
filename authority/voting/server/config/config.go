@@ -337,6 +337,8 @@ type Server struct {
 	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 
+	EpochDuration *time.Duration
+
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
 	Addresses []string

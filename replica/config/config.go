@@ -9,11 +9,13 @@ import (
 	"net"
 	"net/url"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/net/idna"
 
 	"github.com/katzenpost/katzenpost/common/config"
 	"github.com/katzenpost/katzenpost/core/connlimit"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -65,6 +67,8 @@ type Config struct {
 
 	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
+
+	EpochDuration *time.Duration
 
 	// ReplicaNIKEScheme specifies the cryptographic signature scheme
 	ReplicaNIKEScheme string
@@ -373,6 +377,9 @@ func (c *Config) ApplyRuntimeDefaults(numCPU int, saturatedOpsPerSec float64) {
 
 // validateRequiredFields validates that all required configuration fields are set
 func (c *Config) validateRequiredFields() error {
+	if err := epochtime.ValidateConfigured(c.EpochDuration); err != nil {
+		return fmt.Errorf("config: EpochDuration: %v", err)
+	}
 	if c.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
 	}

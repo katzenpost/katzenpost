@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
@@ -36,6 +37,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/connlimit"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -84,6 +86,8 @@ type Server struct {
 
 	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
+
+	EpochDuration *time.Duration
 
 	// Addresses are the IP listener addresses that the server will advertise
 	// in the PKI and bind to for incoming connections unless BindAddresses is specified.
@@ -166,6 +170,9 @@ type Server struct {
 }
 
 func (sCfg *Server) validate() error {
+	if err := epochtime.ValidateConfigured(sCfg.EpochDuration); err != nil {
+		return fmt.Errorf("config: Server: EpochDuration: %v", err)
+	}
 	if sCfg.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
 	}
