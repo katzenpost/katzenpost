@@ -39,6 +39,7 @@ import (
 	thinTransport "github.com/katzenpost/katzenpost/client/thin/transport"
 	clientTransport "github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/common/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
@@ -107,6 +108,14 @@ const (
 // thinClientDialAddress returns the host-side address thin clients use to
 // reach kpclientd through the docker port publish. The daemon listens on
 // base_port+2000 inside the bridge, same as the published host port.
+func (s *Katzenpost) epochDuration() *time.Duration {
+	d, err := time.ParseDuration(s.EpochDuration)
+	if err != nil {
+		d = epochtime.DefaultPeriod
+	}
+	return &d
+}
+
 func (s *Katzenpost) thinClientDialAddress() string {
 	return fmt.Sprintf("localhost:%d", s.BasePort+kpclientdPublishedPortOffset)
 }
@@ -397,6 +406,7 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	cfg.Logging = &cConfig.Logging{File: "", Level: DebugLogLevel}
 
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
+	cfg.EpochDuration = s.epochDuration()
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.SphinxGeometry = s.SphinxGeometry
 	// The Pigeonhole geometry is not written into the client config; the
@@ -511,6 +521,7 @@ func (s *Katzenpost) GenCourierConfig(datadir string, serviceNodeName string) *c
 		Logging:                &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
 		WireKEMScheme:          s.WireKEMScheme,
 		PKIScheme:              s.PkiSignatureScheme.Name(),
+		EpochDuration:          s.epochDuration(),
 		EnvelopeScheme:         s.ReplicaNIKEScheme.Name(),
 		DataDir:                datadir,
 		SphinxGeometry:         s.SphinxGeometry,
@@ -536,6 +547,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.ReplicaNIKEScheme = s.ReplicaNIKEScheme.Name()
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
+	cfg.EpochDuration = s.epochDuration()
 	// Docker-mixnet replicas address dirauths and peers by container
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
@@ -605,6 +617,7 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.WireKEM = s.WireKEMScheme
 	cfg.Server.PKISignatureScheme = s.PkiSignatureScheme.Name()
+	cfg.Server.EpochDuration = s.epochDuration()
 	cfg.Server.Identifier = n
 	// Both the advertise address (Addresses, used by peers via the
 	// embedded bridge DNS) and the bind address (BindAddresses, used
@@ -790,6 +803,7 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.Server = &vConfig.Server{
 			WireKEMScheme:          s.WireKEMScheme,
 			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
+			EpochDuration:          s.epochDuration(),
 			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 			Identifier:             authIdentifier,
 			Addresses:              []string{peerAddr(authIdentifier, s.LastPort)},
@@ -948,6 +962,15 @@ func RunGenConfig(cfg Config) error {
 
 // ValidateConfig validates the parsed configuration and returns any errors
 func ValidateConfig(cfg *Config) error {
+	if cfg.EpochDuration != "" {
+		d, err := time.ParseDuration(cfg.EpochDuration)
+		if err != nil {
+			return fmt.Errorf("epoch duration: %v", err)
+		}
+		if err := epochtime.ValidatePeriod(d); err != nil {
+			return err
+		}
+	}
 	if cfg.Wirekem == "" {
 		return fmt.Errorf("wire KEM must be set")
 	}
