@@ -168,9 +168,10 @@ func (c *connection) gatewayLabel() string {
 }
 
 type getConsensusCtx struct {
-	replyCh chan interface{}
-	epoch   uint64
-	doneFn  func(error)
+	replyCh   chan interface{}
+	epoch     uint64
+	doneFn    func(error)
+	abandoned atomic.Bool
 }
 
 type connSendCtx struct {
@@ -593,7 +594,12 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			heartbeat.Reset(heartbeatInterval)
 			continue
 		case ctx := <-c.getConsensusCh:
-			if consensusCtx != nil {
+			if consensusCtx != nil && consensusCtx.abandoned.Load() {
+				c.log.Debugf("Abandoned GetConsensus for epoch %v still unanswered; closing connection.", consensusCtx.epoch)
+				ctx.doneFn(ErrNotConnected)
+				wireErr = newProtocolError("gateway did not answer an abandoned GetConsensus")
+				return
+			} else if consensusCtx != nil {
 				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
 			} else {
 				consensusCtx = ctx
@@ -864,14 +870,16 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 	errCh := make(chan error, 1)
 	replyCh := make(chan interface{}, 1)
 
-	select {
-	case c.getConsensusCh <- &getConsensusCtx{
+	request := &getConsensusCtx{
 		replyCh: replyCh,
 		epoch:   epoch,
 		doneFn: func(err error) {
 			errCh <- err
 		},
-	}:
+	}
+
+	select {
+	case c.getConsensusCh <- request:
 	case <-ctx.Done():
 		// Canceled mid-fetch.
 		return nil, errGetConsensusCanceled
@@ -889,7 +897,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 			return nil, err
 		}
 	case <-ctx.Done():
-		// Canceled mid-fetch.
+		request.abandoned.Store(true)
 		return nil, errGetConsensusCanceled
 	}
 
@@ -907,7 +915,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 			panic("BUG: Worker returned invalid Consensus response")
 		}
 	case <-ctx.Done():
-		// Canceled mid-fetch.
+		request.abandoned.Store(true)
 		return nil, errGetConsensusCanceled
 	}
 
