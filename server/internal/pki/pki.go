@@ -860,7 +860,7 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 		now, _, till := epochtime.Now()
 
 		// Cache is valid if we're in the same epoch and slack window hasn't changed.
-		cacheValid := c.now == now || (till < pkiEarlyConnectSlack() && c.now == now+1)
+		cacheValid := c.now == now && (c.till < pkiEarlyConnectSlack()) == (till < pkiEarlyConnectSlack())
 		if cacheValid && len(c.docs) > 0 {
 			return c.docs, c.nowDoc, c.now, c.till
 		}
