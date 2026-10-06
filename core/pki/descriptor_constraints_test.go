@@ -83,3 +83,17 @@ func TestReplicaDescriptorRejectsEmptyKeys(t *testing.T) {
 		require.Error(t, IsReplicaDescriptorWellFormed(d, epoch))
 	})
 }
+
+func TestDescriptorRejectsNil(t *testing.T) {
+	const epoch = 7
+	err := IsDescriptorWellFormed(nil, epoch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil descriptor")
+}
+
+func TestReplicaDescriptorRejectsNil(t *testing.T) {
+	const epoch = 7
+	err := IsReplicaDescriptorWellFormed(nil, epoch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil descriptor")
+}

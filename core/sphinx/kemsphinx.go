@@ -141,13 +141,12 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 		if err != nil {
 			return nil, nil, fmt.Errorf("KEMSphinx: encapsulate: %s", err)
 		}
-		defer utils.ExplicitBzero(sharedSecret)
-
 		// set the second arg (NIKE interface object) to nil
 		// so we don't need to generate blinding factors
 		// for KEMSphinx.
 		keys[i] = crypto.KDF(sharedSecret, nil)
 		defer keys[i].Reset()
+		utils.ExplicitBzero(sharedSecret)
 	}
 
 	// Derive the routing_information keystream and encrypted padding for each
@@ -256,12 +255,17 @@ func (s *Sphinx) unwrapKem(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 		return nil, nil, nil, errors.New("KEMSphinx: invalid packet, unknown version")
 	}
 
-	var sharedSecret []byte
-	defer utils.ExplicitBzero(sharedSecret)
+	var (
+		sharedSecret []byte
+		err          error
+	)
+	defer func() {
+		utils.ExplicitBzero(sharedSecret)
+	}()
 
 	// Calculate the hop's shared secret, and replay_tag.
 	kemCiphertext := pkt[geOff:riOff]
-	sharedSecret, err := privKey.Scheme().Decapsulate(privKey, kemCiphertext)
+	sharedSecret, err = privKey.Scheme().Decapsulate(privKey, kemCiphertext)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("KEMSphinx: failed to decrypt KEM: %s", err)
 	}
@@ -273,6 +277,7 @@ func (s *Sphinx) unwrapKem(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	// because we do not derive blinding factors for KEMSphinx!
 	keys := crypto.KDF(sharedSecret, nil)
 	defer keys.Reset()
+	utils.ExplicitBzero(sharedSecret)
 
 	// Validate the Sphinx Packet Header.
 	m := crypto.NewMAC(&keys.HeaderMAC)

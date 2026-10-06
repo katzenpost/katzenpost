@@ -76,3 +76,27 @@ func TestSharedRandomVerifyShortCommit(t *testing.T) {
 	reveal := make([]byte, SharedRandomLength)
 	require.False(srv.Verify(reveal))
 }
+
+func TestSharedRandomSetCommitClearsStaleCommit(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	srv := new(SharedRandom)
+	_, err := srv.Commit(1234)
+	require.NoError(err)
+	reveal := append([]byte(nil), srv.Reveal()...)
+
+	// An invalid or nil SetCommit must clear the old commitment
+	srv.SetCommit(nil)
+	require.Nil(srv.GetCommit())
+	require.False(srv.Verify(reveal))
+
+	srv2 := new(SharedRandom)
+	_, err = srv2.Commit(1234)
+	require.NoError(err)
+	reveal2 := append([]byte(nil), srv2.Reveal()...)
+
+	// Short commit must clear the old commitment
+	srv2.SetCommit([]byte{1, 2, 3})
+	require.Nil(srv2.GetCommit())
+	require.False(srv2.Verify(reveal2))
+}
