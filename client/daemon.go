@@ -270,7 +270,7 @@ func (d *Daemon) Start() error {
 		case <-d.HaltCh():
 			return
 		case <-time.After(20 * time.Second):
-			d.log.Debugf("Timeout sending to gcSurbIDCh for SURB ID %x", surbID[:])
+			d.log.Debug("Timeout sending to gcSurbIDCh")
 			return
 		}
 	})
@@ -298,7 +298,7 @@ func (d *Daemon) Start() error {
 		case <-d.HaltCh():
 			return
 		case <-time.After(15 * time.Second):
-			d.log.Debugf("Timeout sending to gcReplyCh for message ID %x", myGcReply.id[:])
+			d.log.Debug("Timeout sending to gcReplyCh")
 			return
 		}
 	})
@@ -364,15 +364,6 @@ func isLocalRequest(r *Request) bool {
 		r.VoucherDeriveStream != nil
 }
 
-// requestAppID returns the request's application ID bytes for logging,
-// or nil if unavailable.
-func requestAppID(request *Request) []byte {
-	if request != nil && request.AppID != nil {
-		return request.AppID[:]
-	}
-	return nil
-}
-
 // recoverDispatch contains a panicking request handler. A single thin
 // client must never be able to crash the daemon for every other
 // connected client (security audit finding C1): a handler bug or a
@@ -380,8 +371,7 @@ func requestAppID(request *Request) []byte {
 // the process.
 func (d *Daemon) recoverDispatch(what string, request *Request) {
 	if r := recover(); r != nil {
-		d.log.Errorf("%s: recovered from panic (appID %x): %v\n%s",
-			what, requestAppID(request), r, debug.Stack())
+		d.log.Errorf("%s: recovered from panic: %v\n%s", what, r, debug.Stack())
 	}
 }
 
@@ -425,8 +415,7 @@ func (d *Daemon) dispatchLocal(request *Request) {
 	case request.VoucherDeriveStream != nil:
 		d.voucherDeriveStream(request)
 	default:
-		d.log.Errorf("dispatchLocal: dropping request with no recognised local variant (appID %x)",
-			requestAppID(request))
+		d.log.Error("dispatchLocal: dropping request with no recognised local variant")
 	}
 }
 
@@ -447,8 +436,7 @@ func (d *Daemon) dispatchMixnet(request *Request) {
 	case request.StartResendingCopyCommand != nil:
 		d.startResendingCopyCommand(request)
 	default:
-		d.log.Errorf("dispatchMixnet: dropping request with no recognised mixnet variant (appID %x)",
-			requestAppID(request))
+		d.log.Error("dispatchMixnet: dropping request with no recognised mixnet variant")
 	}
 }
 
@@ -469,7 +457,7 @@ func (d *Daemon) ingressWorker() {
 				if d.listener.queueReplyForDisconnected(mygcreply.appID, response) {
 					continue
 				}
-				d.log.Errorf("no connection associated with AppID %x", mygcreply.appID[:])
+				d.log.Error("no connection associated with the reply's AppID")
 				continue
 			}
 			err := conn.sendResponse(response)
@@ -563,7 +551,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		if d.listener.queueReplyForDisconnected(desc.appID, response) {
 			return
 		}
-		d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+		d.log.Error("no connection associated with the reply's AppID")
 		return
 	}
 	conn.sendResponse(response)
@@ -840,7 +828,7 @@ func (d *Daemon) rescheduleARQAfterComposeFailure(arqMessage *ARQMessage) {
 	if hadOld {
 		if _, tracked := d.arqSurbIDMap[*arqMessage.SURBID]; !tracked {
 			d.replyLock.Unlock()
-			d.log.Debugf("rescheduleARQAfterComposeFailure: SURB ID %x was removed, not resurrecting it", arqMessage.SURBID[:])
+			d.log.Debug("rescheduleARQAfterComposeFailure: SURB ID was removed, not resurrecting it")
 			return
 		}
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
@@ -879,11 +867,11 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	message, ok := d.arqSurbIDMap[*surbID]
 	d.replyLock.Unlock()
 	if !ok {
-		d.log.Debugf("enqueueResend: SURB ID %x not in arqSurbIDMap, dropping", surbID[:])
+		d.log.Debug("enqueueResend: SURB ID not in arqSurbIDMap, dropping")
 		return
 	}
 	if d.listener == nil {
-		d.log.Debugf("enqueueResend: listener nil, dropping SURB ID %x", surbID[:])
+		d.log.Debug("enqueueResend: listener nil, dropping")
 		return
 	}
 	conn := d.listener.getConnection(message.AppID)
@@ -895,7 +883,7 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		// cleanup deletes this entry and cancels its timer, so the next
 		// fire finds it absent and stops re-arming.
 		retryAt := time.Now().Add(arqRearmBackoff)
-		d.log.Debugf("enqueueResend: no live connection for AppID %x, re-arming SURB ID %x at %v", message.AppID[:], surbID[:], retryAt)
+		d.log.Debugf("enqueueResend: no live connection for the AppID, re-arming at %v", retryAt)
 		if d.arqTimerQueue != nil {
 			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
 		}
@@ -905,7 +893,7 @@ func (d *Daemon) enqueueResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	case conn.resendCh <- surbID:
 	default:
 		retryAt := time.Now().Add(resendQueueFullBackoff)
-		d.log.Debugf("enqueueResend: resendCh full for AppID %x, re-arming SURB ID %x at %v", message.AppID[:], surbID[:], retryAt)
+		d.log.Debugf("enqueueResend: resendCh full, re-arming at %v", retryAt)
 		if d.arqTimerQueue != nil {
 			d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
 		}
@@ -923,7 +911,7 @@ func (d *Daemon) rearmARQRetry(arqMessage *ARQMessage) {
 		return
 	}
 	retryAt := time.Now().Add(arqRearmBackoff)
-	d.log.Debugf("rearmARQRetry: re-arming SURB ID %x at %v", surbID[:], retryAt)
+	d.log.Debugf("rearmARQRetry: re-arming at %v", retryAt)
 	d.arqTimerQueue.Push(uint64(retryAt.UnixNano()), surbID)
 }
 
@@ -935,7 +923,7 @@ func (d *Daemon) rearmOrphanedResend(surbID *[sphinxConstants.SURBIDLength]byte)
 	message, ok := d.arqSurbIDMap[*surbID]
 	d.replyLock.Unlock()
 	if !ok {
-		d.log.Debugf("rearmOrphanedResend: SURB ID %x no longer tracked, dropping", surbID[:])
+		d.log.Debug("rearmOrphanedResend: SURB ID no longer tracked, dropping")
 		return
 	}
 	d.rearmARQRetry(message)
@@ -1011,14 +999,14 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	// it means that HandleAck was already called with the
 	// given SURB ID.
 	if !ok {
-		d.log.Warningf("SURB ID %x NOT FOUND. Aborting resend.", surbID[:])
+		d.log.Warning("SURB ID NOT FOUND. Aborting resend.")
 		d.replyLock.Unlock()
 		return
 	}
 
 	// Check if the listener exists (could be nil during shutdown or testing)
 	if d.listener == nil {
-		d.log.Debugf("ARQ resend: listener is nil, cleaning up SURB ID %x", surbID[:])
+		d.log.Debug("ARQ resend: listener is nil, cleaning up")
 		delete(d.arqSurbIDMap, *surbID)
 		if message.EnvelopeHash != nil {
 			delete(d.arqEnvelopeHashMap, *message.EnvelopeHash)
@@ -1029,14 +1017,14 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 
 	incomingConn := d.listener.getConnection(message.AppID)
 	if incomingConn == nil {
-		d.log.Debugf("ARQ resend: no connection for AppID %x, re-arming SURB ID %x", message.AppID[:], surbID[:])
+		d.log.Debug("ARQ resend: no connection for the AppID, re-arming")
 		d.replyLock.Unlock()
 		d.rearmARQRetry(message)
 		return
 	}
 
 	// Pigeonhole ARQ: retry forever (no MaxRetransmissions check)
-	d.log.Debugf("Pigeonhole ARQ resend (attempt %d) for EnvelopeHash %x", message.Retransmissions+1, message.EnvelopeHash[:])
+	d.log.Debugf("Pigeonhole ARQ resend (attempt %d)", message.Retransmissions+1)
 
 	// Reuse the same courier for retries so the courier's dedup cache stays consistent.
 	// Switching couriers can cause a different courier to see BoxAlreadyExists (for writes)
@@ -1068,11 +1056,11 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 
 	// Check arqTimerQueue is not nil before pushing
 	if d.arqTimerQueue == nil {
-		d.log.Debugf("ARQ resend: arqTimerQueue is nil, skipping timer push for SURB ID %x", newsurbID[:])
+		d.log.Debug("ARQ resend: arqTimerQueue is nil, skipping timer push")
 		return
 	}
 
-	d.log.Debugf("ARQ resend scheduled for SURB ID %x", newsurbID[:])
+	d.log.Debug("ARQ resend scheduled")
 	myRtt := message.SentAt.Add(message.ReplyETA)
 	myRtt = myRtt.Add(RoundTripTimeSlop)
 	priority := uint64(myRtt.UnixNano())
@@ -1130,7 +1118,7 @@ func (d *Daemon) metricsSampler() {
 func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 	t0 := time.Now()
 	defer func() { instrument.CleanupForAppIDDuration(time.Since(t0)) }()
-	d.log.Infof("cleanupForAppID: cleaning up state for App ID %x", appID[:])
+	d.log.Debug("cleanupForAppID: cleaning up state for a disconnected application")
 
 	cleanedARQ := 0
 	cleanedReplies := 0
@@ -1196,10 +1184,10 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 	}
 
 	if cleanedARQ == 0 && cleanedReplies == 0 && cleanedDecoys == 0 {
-		d.log.Debugf("cleanupForAppID: no state found for App ID %x", appID[:])
+		d.log.Debug("cleanupForAppID: no state found")
 		return
 	}
 
-	d.log.Infof("cleanupForAppID: cleaned %d ARQ, %d replies, %d decoys for App ID %x",
-		cleanedARQ, cleanedReplies, cleanedDecoys, appID[:])
+	d.log.Debugf("cleanupForAppID: cleaned %d ARQ, %d replies, %d decoys",
+		cleanedARQ, cleanedReplies, cleanedDecoys)
 }

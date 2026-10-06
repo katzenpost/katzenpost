@@ -152,21 +152,6 @@ func (c *connection) getGateway() *[32]byte {
 	return c.gateway
 }
 
-// gatewayLabel returns a human-readable identifier for the gateway this
-// connection is bound to: its configured name where known, otherwise the
-// identity-key fingerprint, so connection-status logs name the peer. It is
-// read from the connect worker's descriptor, which is set before any
-// connection-status change is reported.
-func (c *connection) gatewayLabel() string {
-	if c.descriptor != nil && c.descriptor.Name != "" {
-		return fmt.Sprintf("%q", c.descriptor.Name)
-	}
-	if gw := c.getGateway(); gw != nil {
-		return fmt.Sprintf("%x", gw[:])
-	}
-	return "(unknown)"
-}
-
 type getConsensusCtx struct {
 	replyCh   chan interface{}
 	epoch     uint64
@@ -347,7 +332,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			}
 			return
 		}
-		c.log.Debugf("doConnect, got descriptor %v", c.descriptor)
+		c.log.Debug("doConnect, got the gateway descriptor")
 
 		// Build the list of candidate addresses, in decreasing order of
 		// preference, by transport.
@@ -812,9 +797,9 @@ func (c *connection) onConnStatusChange(err error) {
 			c.client.pki.onConnected()
 		}
 		instrument.GatewayConnected(true)
-		c.log.Noticef("Connected to gateway %s.", c.gatewayLabel())
+		c.log.Notice("Connected to gateway.")
 	} else {
-		c.log.Infof("Lost connection to gateway %s: %s", c.gatewayLabel(), err.Error())
+		c.log.Infof("Lost connection to gateway: %s", err.Error())
 		c.isConnected.Store(false)
 		instrument.GatewayConnected(false)
 		// Force drain the channels used to poke the loop.

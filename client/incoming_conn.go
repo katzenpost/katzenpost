@@ -340,7 +340,7 @@ func (c *incomingConn) worker() {
 				continue
 			}
 			c.listener.openBroadcastGate(c)
-			c.log.Infof("Received Request from peer application.")
+			c.log.Debug("Received Request from peer application.")
 			if isLocalRequest(rawReq) && c.listener.localDispatch != nil {
 				// Local-only operations (key generation, envelope prep,
 				// box-index arithmetic, ARQ cancellation) do no mixnet
@@ -381,7 +381,7 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 	}
 
 	c.log = l.logBackend.GetLogger("client/incomingConn")
-	c.log.Debugf("New incoming connection. Remote addr: %v assigned App ID: %x", conn.RemoteAddr(), appid[:])
+	c.log.Debug("New incoming connection.")
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to
