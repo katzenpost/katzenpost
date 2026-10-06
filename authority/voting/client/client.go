@@ -128,6 +128,8 @@ type Config struct {
 	// use. Raise it for a network larger than the allowance.
 	MaxConsensusSize int
 
+	MaxConsensusSizeSetting string
+
 	LocalAddresses []string
 }
 
@@ -517,11 +519,19 @@ func (p *connector) roundTrip(ctx context.Context, s *wire.Session, cmd commands
 		// before it has fetched a consensus. A network that has grown past that
 		// allowance, or an operator-set MaxConsensusSize that is too small,
 		// rejects every legitimate reply as oversized with no other signal.
-		p.log.Warningf(
-			"%s: reply exceeded our MaxConsensusSize ceiling (%d bytes); "+
-				"if the network has grown, set MaxConsensusSize explicitly",
-			cmd, p.cfg.MaxConsensusSize,
-		)
+		if p.cfg.MaxConsensusSizeSetting != "" {
+			p.log.Warningf(
+				"%s: reply exceeded our consensus size ceiling (%d bytes); "+
+					"if the network has grown, raise %s",
+				cmd, p.cfg.MaxConsensusSize, p.cfg.MaxConsensusSizeSetting,
+			)
+		} else {
+			p.log.Warningf(
+				"%s: reply exceeded our consensus size ceiling (%d bytes); "+
+					"this component derives it and has no setting to raise it",
+				cmd, p.cfg.MaxConsensusSize,
+			)
+		}
 	}
 	return resp, err
 }

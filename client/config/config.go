@@ -275,4 +275,6 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // VotingAuthority is a voting authority peer public configuration: key material, connection info etc.
 type VotingAuthority struct {
 	Peers []*vServerConfig.Authority
+
+	MaxConsensusSize int
 }

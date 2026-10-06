@@ -116,6 +116,9 @@ func (c *Config) FixupAndValidate() error {
 		}
 	}
 	if c.VotingAuthority != nil {
+		if c.VotingAuthority.MaxConsensusSize < 0 {
+			return errors.New("config: VotingAuthority.MaxConsensusSize must not be negative")
+		}
 		for _, peer := range c.VotingAuthority.Peers {
 			if err := utils.RejectDNSAddrs(peer.Addresses, c.AllowHostnameAddresses); err != nil {
 				return fmt.Errorf("config: VotingAuthority peer %q: %w", peer.Identifier, err)

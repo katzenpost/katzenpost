@@ -23,4 +23,5 @@ func TestPKIClientConfigUsesConfiguredMaxConsensusSize(t *testing.T) {
 	cfg.Debug = &config.Debug{}
 	c := pkiClientConfig(&clientConfigGlue{cfg: cfg}, kemschemes.ByName("Xwing"), signschemes.ByName(testSchemeName))
 	require.Equal(t, size, c.MaxConsensusSize)
+	require.Equal(t, "PKI.Voting.MaxConsensusSize", c.MaxConsensusSizeSetting)
 }

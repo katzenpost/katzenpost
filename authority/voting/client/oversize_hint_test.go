@@ -97,3 +97,10 @@ func TestOversizedReplyWarningNamesNoAbsentSetting(t *testing.T) {
 	require.Contains(t, out, "reply exceeded")
 	require.NotContains(t, out, "set MaxConsensusSize explicitly")
 }
+
+func TestOversizedReplyWarningNamesConfiguredSetting(t *testing.T) {
+	out := oversizedFetchLog(t, 41510, func(cfg *Config) {
+		cfg.MaxConsensusSizeSetting = "PKI.Voting.MaxConsensusSize"
+	})
+	require.Contains(t, out, "reply exceeded our consensus size ceiling (65536 bytes); if the network has grown, raise PKI.Voting.MaxConsensusSize")
+}

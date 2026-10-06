@@ -714,11 +714,16 @@ func (pCfg *PKI) validate(datadir string) error {
 // Voting is a set of Authorities that vote on a threshold consensus PKI
 type Voting struct {
 	Authorities []*config.Authority
+
+	MaxConsensusSize int
 }
 
 func (vCfg *Voting) validate(datadir string) error {
 	if vCfg.Authorities == nil {
 		return errors.New("Authorities is nil")
+	}
+	if vCfg.MaxConsensusSize < 0 {
+		return errors.New("PKI.Voting.MaxConsensusSize must not be negative")
 	}
 	for _, auth := range vCfg.Authorities {
 		err := auth.Validate()
