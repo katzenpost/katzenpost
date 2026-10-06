@@ -134,6 +134,9 @@ type state struct {
 	authorityNames         map[[publicKeyHashSize]byte]string
 	fixedTopology          [][][publicKeyHashSize]byte
 
+	missingCurrentWarned atomic.Uint64
+	missingNextWarned    atomic.Uint64
+
 	documents   map[uint64]*pki.Document
 	myconsensus map[uint64]*pki.Document
 
@@ -261,7 +264,7 @@ func (s *state) fsm() <-chan time.Time {
 		s.log.Debugf("FSM: Fetching consensus for current epoch %d", epoch)
 		s.backgroundFetchConsensus(epoch)
 		if elapsed > MixPublishDeadline() {
-			s.log.Errorf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline(), nextEpoch)
+			s.log.Warningf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline(), nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.setState(stateBootstrap)
@@ -2789,6 +2792,14 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	return nil
 }
 
+func (s *state) logMissingDocument(warned *atomic.Uint64, now uint64, format string, args ...interface{}) {
+	if warned.Swap(now+1) != now+1 {
+		s.log.Warningf(format, args...)
+		return
+	}
+	s.log.Debugf(format, args...)
+}
+
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	var generationDeadline = 7 * (epochtime.Period() / 8)
 
@@ -2828,13 +2839,13 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	case now:
 		// We missed the deadline to publish a descriptor for the current
 		// epoch, so we will never be able to service this request.
-		s.log.Errorf("No document for current epoch %v generated and never will be", now)
+		s.logMissingDocument(&s.missingCurrentWarned, now, "No document for current epoch %v generated and never will be", now)
 		return nil, errGone
 	case now + 1:
 		// If it's past the time by which we should have generated a document
 		// then we will never be able to service this.
 		if elapsed > generationDeadline {
-			s.log.Errorf("No document for next epoch %v and it's already past 7/8 of previous epoch", now+1)
+			s.logMissingDocument(&s.missingNextWarned, now, "No document for next epoch %v and it's already past 7/8 of previous epoch", now+1)
 			return nil, errGone
 		}
 		return nil, errNotYet
