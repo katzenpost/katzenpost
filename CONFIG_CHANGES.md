@@ -54,7 +54,10 @@ always the same as "the file fails to parse".
   disagree); when none of them sets it, the variable or `20m` as
   above.
 - The variable is no longer read at package init: a program that
-  never calls `epochtime.Configure` runs at `20m`.
+  never calls `epochtime.Configure` runs at `20m`. `client.New` (and so
+  `client.NewDaemon`'s `Start`) calls it with the client config's
+  `EpochDuration`; a second call with the same period is a no-op and a
+  different one is refused.
 - genconfig writes `EpochDuration` into every generated component
   config from `--epochDuration` (`20m` when empty). Older releases
   ignore the key (lenient decoding, see above) and still read the
