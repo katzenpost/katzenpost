@@ -738,8 +738,10 @@ func TestPKIFailedFetchesCachesConsensusGone(t *testing.T) {
 	p.pruneFailures(epoch)
 	require.Contains(t, p.failedFetches, epoch)
 
-	// pruneFailures should remove it once the epoch advances.
 	p.pruneFailures(epoch + 1)
+	require.Contains(t, p.failedFetches, epoch)
+
+	p.pruneFailures(epoch + 2)
 	require.NotContains(t, p.failedFetches, epoch)
 }
 

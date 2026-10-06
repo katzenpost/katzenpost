@@ -366,7 +366,9 @@ func (p *pki) worker() {
 		// retention window; once a real current consensus exists the
 		// loop fetches it as usual and the fallback stops being reached.
 		if _, ok := p.docs.Load(now); !ok {
-			if _, ok := p.docs.Load(now - 1); !ok {
+			if _, failed := p.failedFetches[now-1]; failed {
+				p.log.Debugf("Skipping fallback fetch for epoch %v: %v", now-1, p.failedFetches[now-1])
+			} else if _, ok := p.docs.Load(now - 1); !ok {
 				p.log.Debugf("current epoch %d has no document (likely unserved), fetching previous epoch %d", now, now-1)
 				if err := p.updateDocument(now - 1); err != nil {
 					if err == cpki.ErrDocumentGone {
@@ -551,7 +553,7 @@ func (p *pki) pruneDocuments(now uint64) {
 
 func (p *pki) pruneFailures(now uint64) {
 	for epoch := range p.failedFetches {
-		if epoch < now || epoch > now+1 {
+		if epoch+1 < now || epoch > now+1 {
 			delete(p.failedFetches, epoch)
 		}
 	}
