@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"time"
@@ -160,8 +161,10 @@ func (d *Daemon) encryptRead(request *Request) {
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
+	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
+	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to serialize envelope descriptor: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
@@ -324,8 +327,10 @@ func (d *Daemon) encryptWrite(request *Request) {
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
+	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
+	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to serialize envelope descriptor: %v", err)
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
@@ -448,6 +453,7 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 		return nil, fmt.Errorf("failed to encapsulate: %w", err)
 	}
 	senderPubkey := mkemPrivateKey.Public().Bytes()
+	mkemPrivateKey.Reset()
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
 		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
@@ -1252,6 +1258,12 @@ func (d *Daemon) logBoxIDForRequest(req *thin.StartResendingEncryptedMessage, is
 
 func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	req := request.StartResendingEncryptedMessage
+	tracked := false
+	defer func() {
+		if !tracked {
+			utils.ExplicitBzero(req.EnvelopeDescriptor)
+		}
+	}()
 	if err := validateStartResendingRequest(req); err != nil {
 		d.log.Errorf("startResendingEncryptedMessage: %v", err)
 		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
@@ -1301,7 +1313,9 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	if err := d.arqSend(message, *req.EnvelopeHash); err != nil {
 		d.log.Errorf("startResendingEncryptedMessage: %s", err)
 		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
+		return
 	}
+	tracked = true
 }
 
 func (d *Daemon) sendStartResendingEncryptedMessageError(request *Request, errorCode uint8) {
@@ -1337,6 +1351,7 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 	var arqMessage *ARQMessage
 	if ok && surbID != nil {
 		arqMessage = d.arqSurbIDMap[*surbID]
+		arqMessage.wipeEnvelopeDescriptor()
 		delete(d.arqSurbIDMap, *surbID)
 		delete(d.arqEnvelopeHashMap, *req.EnvelopeHash)
 		if arqMessage != nil {
@@ -1389,6 +1404,20 @@ func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, erro
 	})
 }
 
+func (m *ARQMessage) wipeEnvelopeDescriptor() {
+	if m != nil {
+		utils.ExplicitBzero(m.EnvelopeDescriptor)
+	}
+}
+
+func (d *Daemon) wipeHeldEnvelopeDescriptors() {
+	d.lockReply()
+	defer d.replyLock.Unlock()
+	for _, m := range d.arqSurbIDMap {
+		m.wipeEnvelopeDescriptor()
+	}
+}
+
 func (d *Daemon) claimARQTerminal(arqMessage *ARQMessage) bool {
 	d.lockReply()
 	defer d.replyLock.Unlock()
@@ -1407,6 +1436,9 @@ func (d *Daemon) claimARQTerminal(arqMessage *ARQMessage) bool {
 	}
 	if claimed && arqMessage.SURBID != nil && d.arqTimerQueue != nil {
 		d.arqTimerQueue.Cancel(arqMessage.SURBID)
+	}
+	if claimed {
+		arqMessage.wipeEnvelopeDescriptor()
 	}
 	return claimed
 }
@@ -2081,8 +2113,13 @@ func classifyWriteReply(reply *pigeonhole.ReplicaWriteReply) ([]byte, error) {
 func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.CourierEnvelopeReply) ([]byte, error) {
 	d.log.Debugf("decryptPigeonholeReply: Starting decryption, env.Payload length: %d", len(env.Payload))
 
+	d.lockReply()
+	descriptor := bytes.Clone(arqMessage.EnvelopeDescriptor)
+	d.replyLock.Unlock()
+	defer utils.ExplicitBzero(descriptor)
+
 	// Deserialize the EnvelopeDescriptor
-	envelopeDesc, err := EnvelopeDescriptorFromBytes(arqMessage.EnvelopeDescriptor)
+	envelopeDesc, err := EnvelopeDescriptorFromBytes(descriptor)
 	if err != nil {
 		d.log.Errorf("decryptPigeonholeReply: Failed to deserialize EnvelopeDescriptor: %v", err)
 		return nil, err
@@ -2091,11 +2128,13 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 
 	// Reconstruct the NIKE private key
 	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
+	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("decryptPigeonholeReply: Failed to unmarshal private key: %v", err)
 		return nil, err
 	}
 	d.log.Debugf("decryptPigeonholeReply: Private key reconstructed")
+	defer privateKey.Reset()
 
 	// Reuse the existing decryptMKEMEnvelope function
 	innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)

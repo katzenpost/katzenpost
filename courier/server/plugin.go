@@ -1354,6 +1354,7 @@ func (e *Courier) tryReadFromShardReplica(
 	if err != nil {
 		return nil, 0, fmt.Errorf("encapsulate: %w", err)
 	}
+	defer mkemPrivateKey.Reset()
 	computeElapsed := time.Since(encapStart)
 
 	query := &commands.ReplicaMessage{
@@ -1535,6 +1536,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 				Ciphertext:         mkemCiphertext.Envelope,
 			}
 		}
+		mkemPrivateKey.Reset()
 		envHash := messages[0].EnvelopeHash()
 		if !e.dispatchTombstone(envHash, usableReplicaIDs, messages) {
 			e.log.Warningf("writeTombstonesToTempChannel: exhausted retries for tombstone of box %x (%d usable shards) — box remains in replica storage",

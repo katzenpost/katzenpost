@@ -229,6 +229,7 @@ func (d *Daemon) halt() {
 	clientStart := time.Now()
 	d.log.Debug("Stopping client")
 	d.client.Shutdown()
+	d.wipeHeldEnvelopeDescriptors()
 	d.log.Infof("Client stopped in %v", time.Since(clientStart))
 
 	d.log.Infof("Daemon shutdown complete in %v", time.Since(shutdownStart))
@@ -1043,6 +1044,7 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		if message.EnvelopeHash != nil {
 			delete(d.arqEnvelopeHashMap, *message.EnvelopeHash)
 		}
+		message.wipeEnvelopeDescriptor()
 		d.replyLock.Unlock()
 		return
 	}
@@ -1168,6 +1170,7 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 		var envHashesToDrop [][32]byte
 		for surbID, message := range d.arqSurbIDMap {
 			if message.AppID != nil && *message.AppID == *appID {
+				message.wipeEnvelopeDescriptor()
 				if message.EnvelopeHash != nil {
 					envHashesToDrop = append(envHashesToDrop, *message.EnvelopeHash)
 				}
