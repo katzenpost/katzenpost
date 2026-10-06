@@ -57,7 +57,7 @@ func pkiEarlyConnectSlack() time.Duration { return epochtime.Period() / 8 }
 
 func PublishDeadline() time.Duration { return vServer.MixPublishDeadline() }
 
-func nextFetchTill() time.Duration { return epochtime.Period() - PublishDeadline() }
+func nextFetchTill() time.Duration { return epochtime.Period() - vServer.PublishConsensusDeadline() }
 
 // descriptorUploadSafety is the wall-clock margin we leave
 // before MixPublishDeadline so a slow upload still finishes
