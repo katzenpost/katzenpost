@@ -122,6 +122,9 @@ func TestPKIWorkerRefetchesCachedDocumentOnEpochChange(t *testing.T) {
 	require.Equal(t, 1, g.count(epoch))
 	require.Equal(t, 1, g.count(epoch+1))
 
+	for _, e := range []uint64{epoch + 1, epoch + 2} {
+		p.docs.Store(e, &CachedDoc{Doc: &cpki.Document{Epoch: e, SphinxGeometryHash: p.c.cfg.SphinxGeometry.Hash()}})
+	}
 	g.reset()
 	p.clockSkewLock.Lock()
 	p.clockSkew -= int64(period / time.Second)
