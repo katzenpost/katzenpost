@@ -2635,6 +2635,10 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 		return nil
 	}
 
+	if s.documents[epoch] != nil {
+		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
+	}
+
 	// Store the parsed descriptor
 	s.replicaDescriptors[epoch][pk] = desc
 
@@ -2718,6 +2722,10 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	if _, ok := s.descriptors[epoch][pk]; ok {
 		// Another goroutine already added it, that's fine
 		return nil
+	}
+
+	if s.documents[epoch] != nil {
+		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
 	}
 
 	// Store the parsed descriptor
