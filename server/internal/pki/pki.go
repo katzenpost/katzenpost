@@ -51,31 +51,35 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+func recheckInterval() time.Duration { return epochtime.Period() / 16 }
+
+func pkiEarlyConnectSlack() time.Duration { return epochtime.Period() / 8 }
+
+func PublishDeadline() time.Duration { return vServer.MixPublishDeadline() }
+
+func nextFetchTill() time.Duration { return epochtime.Period() - PublishDeadline() }
+
+// descriptorUploadSafety is the wall-clock margin we leave
+// before MixPublishDeadline so a slow upload still finishes
+// inside the descriptor-accept window. The hardcoded 10 s was
+// fine for production 20-minute epochs (140 s upload budget)
+// but broken under warped 2-minute epochs (5 s budget, too
+// tight for a PQ-Noise handshake under chaos). Proportional
+// safety keeps the trade-off uniform across epoch regimes;
+// see the matching change in replica/pki.go (commit 4c1d9c85)
+// for the full derivation and the surfacing chaos scenario
+// (asymmetric_replica_latency).
+//
+// This is the SAME bug as the replica's hardcoded constant
+// but on the mix-server side: surfaced by
+// epoch_transition_latency at 80 ms / 25 ms, which caused
+// mix1, mix2, and gateway1 to drop out of consensus when
+// their descriptor uploads timed out.
+func descriptorUploadSafety() time.Duration { return PublishDeadline() / 6 }
+
 var (
 	errNotCached              = errors.New("pki: requested epoch document not in cache")
 	errSphinxGeometryMismatch = errors.New("pki: document Sphinx geometry does not match the local configuration")
-	recheckInterval           = epochtime.Period() / 16
-	pkiEarlyConnectSlack      = epochtime.Period() / 8
-	PublishDeadline           = vServer.MixPublishDeadline()
-	nextFetchTill             = epochtime.Period() - PublishDeadline
-
-	// descriptorUploadSafety is the wall-clock margin we leave
-	// before MixPublishDeadline so a slow upload still finishes
-	// inside the descriptor-accept window. The hardcoded 10 s was
-	// fine for production 20-minute epochs (140 s upload budget)
-	// but broken under warped 2-minute epochs (5 s budget, too
-	// tight for a PQ-Noise handshake under chaos). Proportional
-	// safety keeps the trade-off uniform across epoch regimes;
-	// see the matching change in replica/pki.go (commit 4c1d9c85)
-	// for the full derivation and the surfacing chaos scenario
-	// (asymmetric_replica_latency).
-	//
-	// This is the SAME bug as the replica's hardcoded constant
-	// but on the mix-server side: surfaced by
-	// epoch_transition_latency at 80 ms / 25 ms, which caused
-	// mix1, mix2, and gateway1 to drop out of consensus when
-	// their descriptor uploads timed out.
-	descriptorUploadSafety = PublishDeadline / 6
 )
 
 // authDocsCache holds a snapshot of documents for authentication.
@@ -205,7 +209,7 @@ func (p *pki) updateAuthDocsCache() {
 
 	epochs := make([]uint64, 0, constants.NumMixKeys+1)
 	start := now
-	if till < pkiEarlyConnectSlack {
+	if till < pkiEarlyConnectSlack() {
 		start = now + 1
 	}
 	for epoch := start; epoch > now-constants.NumMixKeys; epoch-- {
@@ -445,7 +449,7 @@ func (p *pki) updateTimer(timer *time.Timer) {
 	// consensus document is cached; otherwise the node (and any clients
 	// that depend on it, like kpclientd) won't see the document until
 	// the next epoch boundary.
-	if elapsed >= PublishDeadline-descriptorUploadSafety {
+	if elapsed >= PublishDeadline()-descriptorUploadSafety() {
 		if p.entryForEpoch(now) != nil {
 			interval := till
 			if interval < time.Second {
@@ -454,8 +458,8 @@ func (p *pki) updateTimer(timer *time.Timer) {
 			p.log.Debugf("descriptor upload window closed and document cached, reset to next epoch in %v", interval)
 			timer.Reset(interval)
 		} else {
-			p.log.Debugf("descriptor upload window closed but no document for %v yet, reset to %v", now, recheckInterval)
-			timer.Reset(recheckInterval)
+			p.log.Debugf("descriptor upload window closed but no document for %v yet, reset to %v", now, recheckInterval())
+			timer.Reset(recheckInterval())
 		}
 		return
 	}
@@ -464,8 +468,8 @@ func (p *pki) updateTimer(timer *time.Timer) {
 	if elapsed > vServer.PublishConsensusDeadline() {
 		p.log.Debugf("After deadline for next epoch publication")
 		if p.entryForEpoch(now+1) == nil {
-			p.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval)
-			timer.Reset(recheckInterval)
+			p.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval())
+			timer.Reset(recheckInterval())
 		} else {
 			interval := till
 			p.log.Debugf("document cached for %v, reset to %v", now+1, interval)
@@ -476,8 +480,8 @@ func (p *pki) updateTimer(timer *time.Timer) {
 
 		// No document for current epoch.
 		if p.entryForEpoch(now) == nil {
-			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval)
-			timer.Reset(recheckInterval)
+			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval())
+			timer.Reset(recheckInterval())
 		} else {
 			interval := vServer.PublishConsensusDeadline() - elapsed
 			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, interval)
@@ -623,9 +627,9 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 	currentEpoch, elapsed, till := epochtime.Now()
 
-	uploadDeadline := PublishDeadline - descriptorUploadSafety
+	uploadDeadline := PublishDeadline() - descriptorUploadSafety()
 	if uploadDeadline < 0 {
-		uploadDeadline = PublishDeadline
+		uploadDeadline = PublishDeadline()
 	}
 
 	doPublishEpoch := currentEpoch + 1
@@ -644,8 +648,8 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
-			PublishDeadline,
-			descriptorUploadSafety,
+			PublishDeadline(),
+			descriptorUploadSafety(),
 			till,
 		)
 		return nil
@@ -658,8 +662,8 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
-			PublishDeadline,
-			descriptorUploadSafety,
+			PublishDeadline(),
+			descriptorUploadSafety(),
 			till,
 		)
 		return nil
@@ -670,8 +674,8 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		doPublishEpoch,
 		currentEpoch,
 		elapsed,
-		PublishDeadline,
-		descriptorUploadSafety,
+		PublishDeadline(),
+		descriptorUploadSafety(),
 		budget,
 	)
 
@@ -840,7 +844,7 @@ func (p *pki) documentsToFetch() []uint64 {
 
 	now, _, till := epochtime.Now()
 	start := now
-	if till < nextFetchTill {
+	if till < nextFetchTill() {
 		start = now + 1
 	}
 
@@ -865,7 +869,7 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 		now, _, till := epochtime.Now()
 
 		// Cache is valid if we're in the same epoch and slack window hasn't changed.
-		cacheValid := c.now == now || (till < pkiEarlyConnectSlack && c.now == now+1)
+		cacheValid := c.now == now || (till < pkiEarlyConnectSlack() && c.now == now+1)
 		if cacheValid && len(c.docs) > 0 {
 			return c.docs, c.nowDoc, c.now, c.till
 		}
@@ -880,7 +884,7 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 	now, _, till := epochtime.Now()
 	epochs := make([]uint64, 0, constants.NumMixKeys+1)
 	start := now
-	if till < pkiEarlyConnectSlack {
+	if till < pkiEarlyConnectSlack() {
 		// Allow connections to new nodes 30 mins in advance of an epoch
 		// transition.
 		start = now + 1

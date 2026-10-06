@@ -19,11 +19,11 @@ func TestPeriodDerivedParity(t *testing.T) {
 			got         time.Duration
 			long, short time.Duration
 		}{
-			{"recheckInterval", recheckInterval, 75 * time.Second, 7500 * time.Millisecond},
-			{"pkiEarlyConnectSlack", pkiEarlyConnectSlack, 150 * time.Second, 15 * time.Second},
-			{"PublishDeadline", PublishDeadline, 150 * time.Second, 15 * time.Second},
-			{"nextFetchTill", nextFetchTill, 1050 * time.Second, 105 * time.Second},
-			{"descriptorUploadSafety", descriptorUploadSafety, 25 * time.Second, 2500 * time.Millisecond},
+			{"recheckInterval", recheckInterval(), 75 * time.Second, 7500 * time.Millisecond},
+			{"pkiEarlyConnectSlack", pkiEarlyConnectSlack(), 150 * time.Second, 15 * time.Second},
+			{"PublishDeadline", PublishDeadline(), 150 * time.Second, 15 * time.Second},
+			{"nextFetchTill", nextFetchTill(), 1050 * time.Second, 105 * time.Second},
+			{"descriptorUploadSafety", descriptorUploadSafety(), 25 * time.Second, 2500 * time.Millisecond},
 		} {
 			want := c.short
 			if long {
