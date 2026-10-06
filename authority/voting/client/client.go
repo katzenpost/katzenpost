@@ -940,6 +940,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 	linkKey kem.PrivateKey,
 	signingKey sign.PublicKey,
 	cmd commands.Command,
+	priorAccepters map[string]bool,
 ) postSummary {
 	threshold := (len(p.cfg.Authorities) / 2) + 1
 
@@ -1036,6 +1037,10 @@ func (p *connector) postDescriptorWithCompletionRounds(
 			state := states[result.peer.Identifier]
 			if state == nil {
 				continue
+			}
+			if result.kind == postAttemptConflict && result.errorCode == commands.DescriptorConflict && priorAccepters[result.peer.Identifier] {
+				result.kind = postAttemptAccepted
+				result.err = nil
 			}
 
 			switch result.kind {
@@ -1186,6 +1191,48 @@ type Client struct {
 	lastPostReplicaEpoch               uint64
 	lastPostReplicaAcceptedAuthorities []string
 	lastPostReplicaConflictAuthorities []string
+
+	postAcceptersMu sync.Mutex
+	postAccepters   map[postAcceptKey]map[string]bool
+}
+
+type postAcceptKey struct {
+	epoch      uint64
+	descriptor [hash.HashSize]byte
+}
+
+func (c *Client) priorPostAccepters(key postAcceptKey) map[string]bool {
+	c.postAcceptersMu.Lock()
+	defer c.postAcceptersMu.Unlock()
+
+	prior := make(map[string]bool, len(c.postAccepters[key]))
+	for id := range c.postAccepters[key] {
+		prior[id] = true
+	}
+	return prior
+}
+
+func (c *Client) recordPostAccepters(key postAcceptKey, accepted []string) {
+	c.postAcceptersMu.Lock()
+	defer c.postAcceptersMu.Unlock()
+
+	if c.postAccepters == nil {
+		c.postAccepters = make(map[postAcceptKey]map[string]bool)
+	}
+	for k := range c.postAccepters {
+		if k.epoch+1 < key.epoch {
+			delete(c.postAccepters, k)
+		}
+	}
+	if len(accepted) == 0 {
+		return
+	}
+	if c.postAccepters[key] == nil {
+		c.postAccepters[key] = make(map[string]bool, len(accepted))
+	}
+	for _, id := range accepted {
+		c.postAccepters[key][id] = true
+	}
 }
 
 func cloneStrings(in []string) []string {
@@ -1244,6 +1291,12 @@ func (c *Client) Post(
 		return err
 	}
 
+	descBlob, err := d.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	acceptKey := postAcceptKey{epoch: epoch, descriptor: hash.Sum256(descBlob)}
+
 	signedUpload := &pki.SignedUpload{
 		MixDescriptor: d,
 		LoopStats:     loopstats,
@@ -1267,7 +1320,8 @@ func (c *Client) Post(
 		Payload: []byte(signed),
 	}
 
-	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd)
+	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd, c.priorPostAccepters(acceptKey))
+	c.recordPostAccepters(acceptKey, summary.acceptedAuthorities)
 	threshold := (len(c.cfg.Authorities) / 2) + 1
 
 	if summary.successes >= threshold {
@@ -1327,6 +1381,12 @@ func (c *Client) PostReplica(
 		return err
 	}
 
+	descBlob, err := d.Marshal()
+	if err != nil {
+		return err
+	}
+	acceptKey := postAcceptKey{epoch: epoch, descriptor: hash.Sum256(descBlob)}
+
 	signedUpload := &pki.SignedReplicaUpload{ReplicaDescriptor: d}
 	blob, err := signedUpload.Marshal()
 	if err != nil {
@@ -1347,7 +1407,8 @@ func (c *Client) PostReplica(
 		Payload: []byte(signed),
 	}
 
-	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd)
+	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd, c.priorPostAccepters(acceptKey))
+	c.recordPostAccepters(acceptKey, summary.acceptedAuthorities)
 	threshold := (len(c.cfg.Authorities) / 2) + 1
 
 	if summary.successes >= threshold {
