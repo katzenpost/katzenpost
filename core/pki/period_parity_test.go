@@ -23,6 +23,7 @@ func TestPeriodDerivedParity(t *testing.T) {
 			{"mixServerCacheDelay", mixServerCacheDelay(), 75 * time.Second, 7500 * time.Millisecond},
 			{"nextFetchTill", nextFetchTill(), 375 * time.Second, 37500 * time.Millisecond},
 			{"recheckInterval", recheckInterval(), 37500 * time.Millisecond, 3750 * time.Millisecond},
+			{"FetchTimeout", FetchTimeout(), 150 * time.Second, 15 * time.Second},
 		} {
 			want := c.short
 			if long {
