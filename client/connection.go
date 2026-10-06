@@ -712,6 +712,9 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 					dechunker = cpki.NewDechunker(c.client.maxConsensusSize)
 				} else {
 					err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
+					if err == nil && cmd.ChunkNum == 0 && cmd.ChunkTotal > 1 && len(cmd.Payload) < w.GetCommands().MaxMessageLenServerToClient {
+						err = fmt.Errorf("consensus chunk of %d bytes is below our chunk size %d", len(cmd.Payload), w.GetCommands().MaxMessageLenServerToClient)
+					}
 					if err != nil {
 						// A chunk-stream error (e.g. EOF when the
 						// connection closes mid-fetch, or a chunk
