@@ -38,7 +38,7 @@ func Period() time.Duration {
 var Epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
 
 // WeekOfEpochs is the number of epochs in a week
-var WeekOfEpochs = uint64(time.Duration(time.Hour*24*7) / Period())
+func WeekOfEpochs() uint64 { return uint64(time.Duration(time.Hour*24*7) / Period()) }
 
 // Now returns the current Katzenpost epoch, time since the start of the
 // current epoch, and time till the next epoch.

@@ -14,7 +14,7 @@ import (
 
 func nextWeekBoundaryEpoch() uint64 {
 	now, _, _ := epochtime.Now()
-	return (now+5)/epochtime.WeekOfEpochs*epochtime.WeekOfEpochs + epochtime.WeekOfEpochs
+	return (now+5)/epochtime.WeekOfEpochs()*epochtime.WeekOfEpochs() + epochtime.WeekOfEpochs()
 }
 
 func priorDocument(epoch uint64) (*pki.Document, [][]byte) {

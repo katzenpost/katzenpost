@@ -650,7 +650,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	// if there are no prior SRV values, copy the current srv twice
 	if len(s.weeklySRV) == 0 || epoch == s.genesisEpoch {
 		s.weeklySRV = [][]byte{srv, srv}
-	} else if epoch%epochtime.WeekOfEpochs == 0 {
+	} else if epoch%epochtime.WeekOfEpochs() == 0 {
 		// rotate the weekly epochs if it is time to do so.
 		s.weeklySRV = [][]byte{srv, s.weeklySRV[0]}
 	}

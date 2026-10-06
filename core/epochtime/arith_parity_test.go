@@ -43,12 +43,12 @@ func TestWeekOfEpochsAtDefaultParity(t *testing.T) {
 	if epochtime.Period() != 20*time.Minute {
 		t.Skip("period is not the default")
 	}
-	require.Equal(t, uint64(504), epochtime.WeekOfEpochs)
+	require.Equal(t, uint64(504), epochtime.WeekOfEpochs())
 }
 
 func TestWeekOfEpochsFollowsPeriod(t *testing.T) {
 	periodtest.Run(t, func(t *testing.T, p time.Duration) {
 		want := map[time.Duration]uint64{20 * time.Minute: 504, 2 * time.Minute: 5040}[p]
-		require.Equal(t, want, epochtime.WeekOfEpochs)
+		require.Equal(t, want, epochtime.WeekOfEpochs())
 	})
 }
