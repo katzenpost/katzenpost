@@ -4,6 +4,8 @@ package client
 
 import (
 	"fmt"
+	"io"
+	stdlog "log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +21,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := genconfigtest.Generate(dir, ""); err != nil {
+	stdlog.SetOutput(io.Discard)
+	err = genconfigtest.Generate(dir, "")
+	stdlog.SetOutput(os.Stderr)
+	if err != nil {
 		os.RemoveAll(dir)
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
