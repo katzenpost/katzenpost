@@ -49,7 +49,10 @@ always the same as "the file fails to parse".
   set; refusal to start if `KATZENPOST_EPOCH_DURATION` is also set to
   a different value; `KATZENPOST_EPOCH_DURATION` alone, with a
   deprecation warning on stderr; otherwise `20m`. `fetch` has no
-  config key and uses the variable or `20m`.
+  config key of its own: with `--require-ready` it reads
+  `EpochDuration` from the node configs it probes (refusing if they
+  disagree); when none of them sets it, the variable or `20m` as
+  above.
 - The variable is no longer read at package init: a program that
   never calls `epochtime.Configure` runs at `20m`.
 - genconfig writes `EpochDuration` into every generated component

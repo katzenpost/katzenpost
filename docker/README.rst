@@ -316,8 +316,9 @@ Notes
   loop. genconfig writes it into every generated config as
   ``EpochDuration``. Only containers that the interop gate runs on an older
   release, which does not read the key, get ``KATZENPOST_EPOCH_DURATION``
-  instead (genconfig ``--nodeVersions``, resolved from ``release_refs``), and
-  so does ``fetch`` in ``make wait``, which has no config key.
+  instead (genconfig ``--nodeVersions``, resolved from ``release_refs``).
+  ``fetch`` in ``make wait`` gets no variable; it reads the period from the
+  node configs it probes.
 * kpclientd logs to ``client/kpclientd.log`` and ``run-ping`` appends to
   ``ping.log`` in the network directory, next to the node logs.
 * ``make wait`` waits until every node — gateway, mixes, servicenodes

@@ -374,7 +374,7 @@ func waitForReady(cfg Config, logger *logging.Logger, doc *cpki.Document) error 
 	if err != nil {
 		return err
 	}
-	if err := epochtime.Configure(&period, os.Stderr); err != nil {
+	if err := epochtime.Configure(period, os.Stderr); err != nil {
 		return err
 	}
 	fmt.Printf("waiting for the network to report ready (%d node(s), up to %v)...\n", len(probes), cfg.ReadyTimeout)
@@ -648,21 +648,26 @@ func metricsAddrFromFile(path, key string) (string, string, error) {
 	}
 }
 
-func epochPeriod(probes []*probe) (time.Duration, error) {
+func epochPeriod(probes []*probe) (*time.Duration, error) {
 	period := epochtime.DefaultPeriod
+	set := false
 	for i, p := range probes {
 		d := epochtime.DefaultPeriod
 		if p.epochDuration != "" {
 			v, err := time.ParseDuration(p.epochDuration)
 			if err != nil {
-				return 0, fmt.Errorf("%s %q: EpochDuration %q: %w", p.kind, p.name, p.epochDuration, err)
+				return nil, fmt.Errorf("%s %q: EpochDuration %q: %w", p.kind, p.name, p.epochDuration, err)
 			}
 			d = v
+			set = true
 		}
 		if i > 0 && d != period {
-			return 0, fmt.Errorf("%s %q: EpochDuration %v disagrees with %v", p.kind, p.name, d, period)
+			return nil, fmt.Errorf("%s %q: EpochDuration %v disagrees with %v", p.kind, p.name, d, period)
 		}
 		period = d
 	}
-	return period, nil
+	if !set {
+		return nil, nil
+	}
+	return &period, nil
 }
