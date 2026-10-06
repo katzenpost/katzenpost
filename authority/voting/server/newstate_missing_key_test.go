@@ -24,9 +24,10 @@ func TestNewStateRefusesMissingNodeKey(t *testing.T) {
 				Server: &config.Server{DataDir: t.TempDir(), PKISignatureScheme: name},
 				Mixes:  []*config.Node{{Identifier: "ghost", IdentityPublicKeyPem: "ghost.public.pem"}},
 			}
-			require.Panics(t, func() {
-				newState(&Server{cfg: cfg, logBackend: logBackend, identityPublicKey: ownPub})
+			require.NotPanics(t, func() {
+				_, err = newState(&Server{cfg: cfg, logBackend: logBackend, identityPublicKey: ownPub})
 			})
+			require.Error(t, err)
 		})
 	}
 }
