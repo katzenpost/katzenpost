@@ -2201,6 +2201,10 @@ func (s *state) dupVote(vote commands.Vote) bool {
 }
 
 // a certificate is a vote that has a full set of sharedrandom commit and reveals as seen by the peer
+func (s *state) certificateBuilt() bool {
+	return s.state == stateAcceptCert || s.state == stateAcceptSignature
+}
+
 func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
@@ -2247,6 +2251,10 @@ func (s *state) verifyCertUpload(certificate *commands.Cert, peerIdentityKeyHash
 	if certificate.Epoch > s.votingEpoch {
 		s.log.Errorf("Certificate from %s received too early: %d > %d (%s)", s.authorityNames[pk], certificate.Epoch, s.votingEpoch, s.clockView())
 		return nil, commands.CertTooEarly
+	}
+	if s.state == stateAcceptSignature {
+		s.log.Errorf("Certificate from %s received after the consensus was built (%s)", s.authorityNames[pk], s.clockView())
+		return nil, commands.CertTooLate
 	}
 
 	// ensure certificate.PublicKey verifies the payload (ie Vote has a signature from this peer)
@@ -2377,6 +2385,11 @@ func (s *state) onRevealUpload(reveal *commands.Reveal, peerIdentityKeyHash []by
 		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
 	}
+	if s.certificateBuilt() {
+		s.log.Errorf("Reveal from %s received after the certificate was built (%s)", s.authorityNames[pk], s.clockView())
+		resp.ErrorCode = commands.RevealTooLate
+		return &resp
+	}
 
 	// haven't received a commit yet for this epoch
 	if _, ok := s.commits[s.votingEpoch]; !ok {
@@ -2465,6 +2478,12 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 		s.log.Errorf("Vote from %s received too early: %d > %d (%s)", s.authorityNames[pk], vote.Epoch, s.votingEpoch, s.clockView())
 		instrument.VoteReceived("too_early")
 		resp.ErrorCode = commands.VoteTooEarly
+		return &resp
+	}
+	if s.certificateBuilt() {
+		s.log.Errorf("Vote from %s received after the certificate was built (%s)", s.authorityNames[pk], s.clockView())
+		instrument.VoteReceived("too_late")
+		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
 
