@@ -60,8 +60,12 @@ func oversizedFetchLog(t *testing.T, base int, tune func(*Config)) string {
 		}
 		s.SendCommand(context.Background(), &commands.Consensus{ErrorCode: commands.ConsensusOk, Payload: make([]byte, 256*1024)})
 	}
+	dialled := make(chan string, 64)
 	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
-		require.Equal(t, u.Host, address)
+		select {
+		case dialled <- address:
+		default:
+		}
 		cc, sc := net.Pipe()
 		go serve(sc)
 		return cc, nil
@@ -87,6 +91,10 @@ func oversizedFetchLog(t *testing.T, base int, tune func(*Config)) string {
 	epoch, _, _ := epochtime.Now()
 	_, _, err = c.GetPKIDocumentForEpoch(ctx, epoch)
 	require.Error(t, err)
+	require.NotZero(t, len(dialled))
+	for len(dialled) > 0 {
+		require.Equal(t, u.Host, <-dialled)
+	}
 	b, err := os.ReadFile(p)
 	require.NoError(t, err)
 	return string(b)
