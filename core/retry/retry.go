@@ -153,10 +153,28 @@ func FilterUsableAddresses(addresses []string, hasIPv4, hasIPv6, disableIPv4, di
 
 func FilterByLocalAddresses(local, addrs []string) []string {
 	hasIPv4, hasIPv6 := DetectAddressCapabilities(local)
-	if !hasIPv4 && !hasIPv6 {
+	if (!hasIPv4 && !hasIPv6) || listensDualStack(local) {
 		return addrs
 	}
 	return FilterUsableAddresses(addrs, hasIPv4, hasIPv6, false, false)
+}
+
+func listensDualStack(local []string) bool {
+	if !wildcardIsDualStack {
+		return false
+	}
+	for _, addr := range local {
+		ip := net.ParseIP(extractHostFromAddress(addr))
+		if ip == nil || !ip.IsUnspecified() {
+			continue
+		}
+		u, err := url.Parse(addr)
+		if err == nil && (strings.HasSuffix(u.Scheme, "4") || strings.HasSuffix(u.Scheme, "6")) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // extractHostFromAddress extracts the host portion from an address.  It
