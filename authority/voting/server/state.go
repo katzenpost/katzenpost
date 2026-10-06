@@ -3172,7 +3172,7 @@ func newState(s *Server) (*state, error) {
 
 	nodes, err := st.loadNodeTables(s.cfg)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	st.setNodeTables(nodes)
 	if st.fixedTopology, err = loadFixedTopology(s.cfg); err != nil {
