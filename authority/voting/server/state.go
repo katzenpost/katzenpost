@@ -2620,6 +2620,15 @@ var (
 	errLateUpload            = errors.New("Late descriptor upload")
 )
 
+func (s *state) voteCut(epoch uint64) bool {
+	votes, ok := s.votes[epoch]
+	if !ok {
+		return false
+	}
+	_, ok = votes[s.identityPubKeyHash()]
+	return ok
+}
+
 func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
 	s.uploadMu.Lock()
 	defer s.uploadMu.Unlock()
@@ -2661,7 +2670,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	}
 
 	// Check if document already exists (late upload)
-	if s.documents[epoch] != nil {
+	if s.documents[epoch] != nil || s.voteCut(epoch) {
 		s.RUnlock()
 		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
 	}
@@ -2697,7 +2706,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 		return nil
 	}
 
-	if s.documents[epoch] != nil {
+	if s.documents[epoch] != nil || s.voteCut(epoch) {
 		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
 	}
 
@@ -2750,7 +2759,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	}
 
 	// Check if document already exists (late upload)
-	if s.documents[epoch] != nil {
+	if s.documents[epoch] != nil || s.voteCut(epoch) {
 		s.RUnlock()
 		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
 	}
@@ -2786,7 +2795,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		return nil
 	}
 
-	if s.documents[epoch] != nil {
+	if s.documents[epoch] != nil || s.voteCut(epoch) {
 		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
 	}
 
