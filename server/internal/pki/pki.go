@@ -63,7 +63,7 @@ func nextFetchTill() time.Duration { return epochtime.Period() - PublishDeadline
 // before MixPublishDeadline so a slow upload still finishes
 // inside the descriptor-accept window. The hardcoded 10 s was
 // fine for production 20-minute epochs (140 s upload budget)
-// but broken under warped 2-minute epochs (5 s budget, too
+// but broken under 2-minute epochs (5 s budget, too
 // tight for a PQ-Noise handshake under chaos). Proportional
 // safety keeps the trade-off uniform across epoch regimes;
 // see the matching change in replica/pki.go (commit 4c1d9c85)

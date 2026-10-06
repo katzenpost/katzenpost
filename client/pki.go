@@ -143,7 +143,7 @@ func (c *Client) RawSignedDocumentByEpoch(epoch uint64) []byte {
 // synchronous fetches separated by waitForCurrentDocumentRetryDelay.
 // A transient ErrNoDocument or "consensus not ready" reply from the
 // gateway is normal around an epoch boundary, particularly under
-// short (warped) epoch durations, and typically clears within a
+// short (2-minute) epoch durations, and typically clears within a
 // second or two. Without the retry every caller of CurrentDocument
 // would observe nil during that window and the daemon would return
 // ThinClientErrorInternalError to its thin client.

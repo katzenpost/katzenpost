@@ -4,7 +4,7 @@
 # katzenpost component (mix, gateway, service node, replica,
 # kpclientd) and keep it on long enough for the dirauth FSM to cross
 # multiple epoch boundaries. The duration is calibrated to span at
-# least four warped 2-minute epochs (10 minutes / 2 minutes = 5
+# least four 2-minute epochs (10 minutes / 2 minutes = 5
 # rollovers).
 #
 # What this scenario tries to surface:

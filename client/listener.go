@@ -177,7 +177,7 @@ func (l *listener) worker() {
 // daemon's pki.currentDocument() already falls back to the previous
 // epoch's document when the current epoch's is not yet cached, so a
 // nil return here only happens at daemon cold-start or when fetches
-// have failed for more than one epoch. Thirty seconds covers warped
+// have failed for more than one epoch. Thirty seconds covers 2-minute
 // (test) and standard epoch lengths while still surfacing a real
 // outage by returning nil and letting the thin client log the
 // "no PKI document available yet" notice.

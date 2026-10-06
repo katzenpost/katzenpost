@@ -5,7 +5,7 @@
 # during the pause. No traffic should be able to traverse layer 2
 # while it sits paused; ARQ on the client side should retransmit
 # after the deadline, finding the next epoch's PKI doc has the same
-# mix2 (because the warped epoch is short and dirauths still
+# mix2 (because the 2-minute epoch is short and dirauths still
 # publish mix2 as participating, however non-responsive).
 #
 # This is the scenario for the availability-under-degradation bug
