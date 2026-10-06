@@ -183,9 +183,9 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 			if blinded == nil {
 				return nil, nil, errors.New("sphinx: degenerate blinded key")
 			}
-			defer blinded.Reset()
 			utils.ExplicitBzero(sharedSecret)
 			sharedSecret = blinded.Bytes()
+			blinded.Reset()
 		}
 		keys[i] = crypto.KDF(sharedSecret, s.nike)
 		defer keys[i].Reset()
