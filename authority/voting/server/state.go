@@ -2480,8 +2480,8 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 		resp.ErrorCode = commands.VoteTooEarly
 		return &resp
 	}
-	if s.certificateBuilt() {
-		s.log.Errorf("Vote from %s received after the certificate was built (%s)", s.authorityNames[pk], s.clockView())
+	if s.state == stateAcceptSignature {
+		s.log.Errorf("Vote from %s received after the consensus was built (%s)", s.authorityNames[pk], s.clockView())
 		instrument.VoteReceived("too_late")
 		resp.ErrorCode = commands.VoteTooLate
 		return &resp
