@@ -31,9 +31,6 @@ func Chunk(blob []byte, chunkSize int) ([][]byte, error) {
 	}
 	compressedRawDoc := buf.Bytes()
 	docSize := len(compressedRawDoc)
-	if docSize == 0 {
-		return [][]byte{}, nil
-	}
 	total := docSize / chunkSize
 	size := chunkSize * total
 	if size < docSize {
@@ -56,31 +53,25 @@ func Chunk(blob []byte, chunkSize int) ([][]byte, error) {
 	return chunks, nil
 }
 
-const (
-	// MaxChunks is the maximum number of chunks allowed for a consensus document.
-	MaxChunks = 1024
-	// MaxCompressedConsensusBytes is the maximum total size of compressed chunks (16 MiB).
-	MaxCompressedConsensusBytes = 16 * 1024 * 1024
-	// MaxDecompressedConsensusBytes is the maximum allowed size for decompressed consensus (32 MiB).
-	MaxDecompressedConsensusBytes = 32 * 1024 * 1024
-)
-
 type Dechunker struct {
 	ChunkNum   int
 	ChunkTotal int
 	Chunks     *bytes.Buffer
 	Output     []byte
+
+	maxConsensusSize int
 }
 
-func NewDechunker() *Dechunker {
+func NewDechunker(maxConsensusSize int) *Dechunker {
 	return &Dechunker{
-		Chunks: new(bytes.Buffer),
-		Output: []byte{},
+		Chunks:           new(bytes.Buffer),
+		Output:           []byte{},
+		maxConsensusSize: maxConsensusSize,
 	}
 }
 
 func (d *Dechunker) Consume(payload []byte, num, total int) error {
-	if total <= 0 || total > MaxChunks || num < 0 || num >= total {
+	if total <= 0 || total > d.maxConsensusSize || num < 0 || num >= total {
 		return errors.New("invalid chunk index or total")
 	}
 	if d.ChunkNum == 0 && d.ChunkTotal == 0 {
@@ -91,7 +82,7 @@ func (d *Dechunker) Consume(payload []byte, num, total int) error {
 	if num != d.ChunkNum {
 		return errors.New("unexpected chunk sequence")
 	}
-	if len(payload) > MaxCompressedConsensusBytes-d.Chunks.Len() {
+	if len(payload) > d.maxConsensusSize-d.Chunks.Len() {
 		return errors.New("compressed consensus too large")
 	}
 	d.Chunks.Write(payload)
@@ -104,12 +95,12 @@ func (d *Dechunker) Consume(payload []byte, num, total int) error {
 		}
 		defer zr.Close()
 		var acc bytes.Buffer
-		lr := io.LimitReader(zr, int64(MaxDecompressedConsensusBytes)+1)
+		lr := io.LimitReader(zr, int64(d.maxConsensusSize)+1)
 		n, err := io.Copy(&acc, lr)
 		if err != nil {
 			return err
 		}
-		if n > int64(MaxDecompressedConsensusBytes) {
+		if n > int64(d.maxConsensusSize) {
 			return errors.New("decompressed consensus exceeds maximum allowed size")
 		}
 		d.Output = acc.Bytes()

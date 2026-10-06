@@ -39,9 +39,10 @@ type Client struct {
 
 	conn *connection
 
-	sphinx        *sphinx.Sphinx
-	geo           *geo.Geometry
-	wireKEMScheme kem.Scheme
+	sphinx           *sphinx.Sphinx
+	geo              *geo.Geometry
+	wireKEMScheme    kem.Scheme
+	maxConsensusSize int
 
 	PKIClient cpki.Deserializer
 
@@ -120,6 +121,7 @@ func (c *Client) Start() error {
 	if err != nil {
 		return err
 	}
+	c.maxConsensusSize = pkiClientConfig.MaxConsensusSize
 	c.Lock()
 	c.pki = newPKI(c)
 	c.Unlock()

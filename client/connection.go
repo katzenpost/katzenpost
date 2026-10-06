@@ -520,7 +520,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 
 	var wireErr error
 
-	dechunker := cpki.NewDechunker()
+	dechunker := cpki.NewDechunker(c.client.maxConsensusSize)
 
 	closeConnCh := make(chan error, 1)
 	forceCloseConn := func(err error) {
@@ -711,7 +711,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 					default:
 					}
 					consensusCtx = nil
-					dechunker = cpki.NewDechunker()
+					dechunker = cpki.NewDechunker(c.client.maxConsensusSize)
 				} else {
 					err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
 					if err != nil {
@@ -740,7 +740,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 						default:
 						}
 						consensusCtx = nil
-						dechunker = cpki.NewDechunker()
+						dechunker = cpki.NewDechunker(c.client.maxConsensusSize)
 					}
 				}
 			} else {
