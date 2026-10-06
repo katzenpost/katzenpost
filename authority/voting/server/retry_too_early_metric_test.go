@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/authority/voting/server/instrument"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -39,8 +38,8 @@ func peerConnectedGauge(t *testing.T, peer string) float64 {
 func TestSendToPeerTooEarlyExhaustionKeepsPeerConnected(t *testing.T) {
 	sender := retryTestSender(t)
 	instrument.StartPrometheusListener("", sender.log)
-	peer := &config.Authority{Identifier: "responder-too-early-metric", Addresses: retryTestPeer().Addresses}
-	certResponder(t, sender, func(int32) uint8 { return commands.CertTooEarly })
+	_, peer := certResponder(t, sender, func(int32) uint8 { return commands.CertTooEarly })
+	peer.Identifier = "responder-too-early-metric"
 	instrument.PeerConnected(peer.Identifier, true)
 	resp, err := sender.sendCommandToPeerWithDeadline(peer, retryTestCert(sender), time.Now().Add(300*time.Millisecond))
 	require.NoError(t, err)

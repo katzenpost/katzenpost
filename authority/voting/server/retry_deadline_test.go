@@ -31,7 +31,7 @@ func retryTestSender(t *testing.T) *state {
 	return sender
 }
 
-func certResponder(t *testing.T, sender *state, codes func(n int32) uint8) *int32 {
+func certResponder(t *testing.T, sender *state, codes func(n int32) uint8) (*int32, *config.Authority) {
 	_, respID, respLink := mkAuthState(t, "responder", "Xwing")
 	rh := hash.Sum256From(respID)
 	sender.authorizedAuthorities[rh] = true
@@ -72,7 +72,10 @@ func certResponder(t *testing.T, sender *state, codes func(n int32) uint8) *int3
 		}()
 		return cli, nil
 	}
-	return &n
+	peer := retryTestPeer()
+	peer.IdentityPublicKey = respID
+	peer.LinkPublicKey = config.LinkPublicKey{PublicKey: respLink.Public()}
+	return &n, peer
 }
 
 func retryTestPeer() *config.Authority {
@@ -85,13 +88,13 @@ func retryTestCert(sender *state) *commands.Cert {
 
 func TestSendToPeerRetriesTooEarly(t *testing.T) {
 	sender := retryTestSender(t)
-	n := certResponder(t, sender, func(n int32) uint8 {
+	n, peer := certResponder(t, sender, func(n int32) uint8 {
 		if n <= 2 {
 			return commands.CertTooEarly
 		}
 		return commands.CertOk
 	})
-	resp, err := sender.sendCommandToPeerWithDeadline(retryTestPeer(), retryTestCert(sender), time.Now().Add(10*time.Second))
+	resp, err := sender.sendCommandToPeerWithDeadline(peer, retryTestCert(sender), time.Now().Add(10*time.Second))
 	require.NoError(t, err)
 	require.Equal(t, uint8(commands.CertOk), resp.(*commands.CertStatus).ErrorCode)
 	require.Equal(t, int32(3), atomic.LoadInt32(n))
@@ -99,9 +102,9 @@ func TestSendToPeerRetriesTooEarly(t *testing.T) {
 
 func TestSendToPeerTooEarlyUntilDeadline(t *testing.T) {
 	sender := retryTestSender(t)
-	n := certResponder(t, sender, func(int32) uint8 { return commands.CertTooEarly })
+	n, peer := certResponder(t, sender, func(int32) uint8 { return commands.CertTooEarly })
 	start := time.Now()
-	resp, err := sender.sendCommandToPeerWithDeadline(retryTestPeer(), retryTestCert(sender), start.Add(300*time.Millisecond))
+	resp, err := sender.sendCommandToPeerWithDeadline(peer, retryTestCert(sender), start.Add(300*time.Millisecond))
 	require.NoError(t, err)
 	require.Equal(t, uint8(commands.CertTooEarly), resp.(*commands.CertStatus).ErrorCode)
 	require.Greater(t, atomic.LoadInt32(n), int32(1))
@@ -110,8 +113,8 @@ func TestSendToPeerTooEarlyUntilDeadline(t *testing.T) {
 
 func TestSendToPeerTooLateNotRetried(t *testing.T) {
 	sender := retryTestSender(t)
-	n := certResponder(t, sender, func(int32) uint8 { return commands.CertTooLate })
-	resp, err := sender.sendCommandToPeerWithDeadline(retryTestPeer(), retryTestCert(sender), time.Now().Add(10*time.Second))
+	n, peer := certResponder(t, sender, func(int32) uint8 { return commands.CertTooLate })
+	resp, err := sender.sendCommandToPeerWithDeadline(peer, retryTestCert(sender), time.Now().Add(10*time.Second))
 	require.NoError(t, err)
 	require.Equal(t, uint8(commands.CertTooLate), resp.(*commands.CertStatus).ErrorCode)
 	require.Equal(t, int32(1), atomic.LoadInt32(n))

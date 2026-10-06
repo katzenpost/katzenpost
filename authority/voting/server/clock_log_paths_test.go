@@ -124,6 +124,7 @@ func clockLogSender(t *testing.T, code uint8) (*state, string) {
 	sender.s.cfg.Authorities = []*config.Authority{{
 		Identifier:        "responder",
 		IdentityPublicKey: respID,
+		LinkPublicKey:     config.LinkPublicKey{PublicKey: respLink.Public()},
 		Addresses:         []string{"tcp://127.0.0.1:1"},
 	}}
 	respCfg := &wire.SessionConfig{
