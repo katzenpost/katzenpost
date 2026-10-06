@@ -30,7 +30,7 @@ func genNetworkWith(t *testing.T, epochDuration string, nodeVersions map[string]
 		NrStorageNodes:           NrStorageNodes,
 		Voting:                   true,
 		NrVoting:                 NrAuthorities,
-		BaseDir:                  "/conf",
+		BaseDir:                  t.TempDir(),
 		OutDir:                   dir,
 		BasePort:                 30000,
 		BindAddr:                 BindAddr,

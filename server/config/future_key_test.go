@@ -44,7 +44,7 @@ func serverTOML(t *testing.T, serverKeys string) string {
   PKISignatureScheme = "%s"
   Identifier = "mix1"
   Addresses = [ "tcp4://127.0.0.1:29483" ]
-  DataDir = "%s"
+  DataDir = '%s'
 
 [Logging]
   Level = "DEBUG"
