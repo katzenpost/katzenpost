@@ -57,7 +57,7 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 			ReplicaDecoy: decoyReply,
 		}, true
 	case *commands.ReplicaWrite:
-		c.log.Debugf("Processing ReplicaWrite command for BoxID: %x", cmd.BoxID)
+		c.log.Debug("Processing ReplicaWrite command")
 		trunnelWrite := pigeonhole.WireCommandToTrunnelReplicaWrite(cmd)
 		resp := c.handleReplicaWrite(trunnelWrite)
 		respWire := pigeonhole.TrunnelReplicaWriteReplyToWireCommand(resp, cmd.Cmds)
@@ -189,7 +189,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	switch {
 	case msg.ReadMsg != nil:
 		myCmd := msg.ReadMsg
-		c.log.Debugf("REPLICA_HANDLER: Processing decrypted ReplicaRead command for BoxID: %x", myCmd.BoxID)
+		c.log.Debug("REPLICA_HANDLER: Processing decrypted ReplicaRead command")
 
 		// Check if this replica is in the shard for this BoxID
 		// Only shard members should read locally - intermediate replicas must proxy
@@ -200,7 +200,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 
 		if len(shards) == 0 {
-			c.log.Errorf("handleReplicaMessage read failed, zero shards available for BoxID: %x", myCmd.BoxID)
+			c.log.Error("handleReplicaMessage read failed, zero shards available")
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0)
 		}
 
@@ -228,9 +228,9 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		// the other holder (or the client retries once views converge).
 		if isShard || c.peerIsReplica {
 			if isShard {
-				c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x - reading locally", myCmd.BoxID)
+				c.log.Debug("REPLICA_HANDLER: This replica IS a shard - reading locally")
 			} else {
-				c.log.Debugf("REPLICA_HANDLER: Proxied read from a replica peer for BoxID %x - reading locally, not re-proxying", myCmd.BoxID)
+				c.log.Debug("REPLICA_HANDLER: Proxied read from a replica peer - reading locally, not re-proxying")
 			}
 			readReply := c.handleReplicaRead(myCmd)
 			// Always encrypt the reply (success or error) so the client can decrypt and see the error code
@@ -249,23 +249,23 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
 			}
 			if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
-				c.log.Debugf("REPLICA_HANDLER: Found data locally for BoxID %x", myCmd.BoxID)
+				c.log.Debug("REPLICA_HANDLER: Found data locally")
 			} else {
-				c.log.Debugf("REPLICA_HANDLER: data not found locally for BoxID %x (error code: %d)", myCmd.BoxID, readReply.ErrorCode)
+				c.log.Debugf("REPLICA_HANDLER: data not found locally (error code: %d)", readReply.ErrorCode)
 			}
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID)
 		}
 
 		// This replica is NOT in the shard - proxy to the correct replica
-		c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
+		c.log.Debug("REPLICA_HANDLER: This replica is NOT a shard - PROXYING read request to appropriate shard")
 		// Release before parking on the proxy path (it has its own pool).
 		releaseDecap()
 		reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
-		c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
+		c.log.Debug("REPLICA_HANDLER: Successfully completed proxy read request")
 		return reply
 	case msg.WriteMsg != nil:
 		myCmd := msg.WriteMsg
-		c.log.Debugf("Processing decrypted ReplicaWrite command for BoxID: %x", myCmd.BoxID)
+		c.log.Debug("Processing decrypted ReplicaWrite command")
 
 		// Check if this replica is in the shard for this BoxID
 		// Intermediate replicas must NOT write locally - only shard members store data
@@ -291,7 +291,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 
 		if isShard {
 			// This replica is in the shard - write locally
-			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x - writing locally", myCmd.BoxID)
+			c.log.Debug("REPLICA_HANDLER: This replica IS a shard - writing locally")
 			writeReply := c.handleReplicaWrite(myCmd)
 
 			// If write succeeded, trigger replication to other K-1 shard replicas
@@ -299,7 +299,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			// to avoid infinite loops between shard replicas
 			if writeReply.ErrorCode == pigeonhole.ReplicaSuccess {
 				wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, nil)
-				c.log.Debugf("REPLICA_HANDLER: Dispatching replication for BoxID %x to other shards", myCmd.BoxID)
+				c.log.Debug("REPLICA_HANDLER: Dispatching replication to other shards")
 				c.l.server.connector.DispatchReplication(wireWrite)
 			}
 
@@ -323,7 +323,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 
 		// This replica is NOT in the shard - proxy the write to a shard replica
 		// The receiving shard will handle replication to other K-1 shards
-		c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - proxying write to shard", myCmd.BoxID)
+		c.log.Debug("REPLICA_HANDLER: This replica is NOT a shard - proxying write to shard")
 		// Release before parking on the proxy path (it has its own pool).
 		releaseDecap()
 		return c.proxyWriteRequest(myCmd, senderpubkey, envelopeHash)
@@ -334,14 +334,14 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 }
 
 func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *pigeonhole.ReplicaReadReply {
-	c.log.Debugf("Handling replica read request for BoxID: %x", replicaRead.BoxID)
+	c.log.Debug("Handling replica read request")
 	resp, err := c.l.server.state.stateHandleReplicaRead(replicaRead)
 
 	switch {
 	case err == nil:
 		if len(resp.Payload) == 0 {
 			// Tombstone: box exists but payload was intentionally deleted
-			c.log.Debugf("Replica read found tombstone for BoxID: %x", replicaRead.BoxID)
+			c.log.Debug("Replica read found tombstone")
 			return &pigeonhole.ReplicaReadReply{
 				BoxID:     resp.BoxID,
 				Signature: resp.Signature,
@@ -399,7 +399,7 @@ func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *p
 }
 
 func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
-	c.log.Debugf("Handling replica write request for BoxID: %x", replicaWrite.BoxID)
+	c.log.Debug("Handling replica write request")
 
 	// Check if this is a tombstone (empty payload)
 	isTombstone := replicaWrite.PayloadLen == 0 || len(replicaWrite.Payload) == 0
@@ -470,7 +470,7 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 // an empty payload used to delete previously stored messages. This selectively
 // breaks unlinkability guarantees to allow users to delete messages after sending them.
 func (c *incomingConn) handleTombstone(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
-	c.log.Debugf("Processing tombstone for BoxID: %x", replicaWrite.BoxID)
+	c.log.Debug("Processing tombstone")
 
 	// Verify the signature against an empty payload
 	s := ed25519.Scheme()
@@ -498,7 +498,7 @@ func (c *incomingConn) handleTombstone(replicaWrite *pigeonhole.ReplicaWrite) *p
 		}
 	}
 
-	c.log.Debugf("Tombstone processed successfully for BoxID: %x", replicaWrite.BoxID)
+	c.log.Debug("Tombstone processed successfully")
 	return &pigeonhole.ReplicaWriteReply{
 		ErrorCode: pigeonhole.ReplicaSuccess,
 	}
@@ -534,7 +534,7 @@ func (c *incomingConn) readRepair(readReply *pigeonhole.ReplicaReadReply, holder
 	write := buildRepairWrite(readReply, cmds)
 	for _, holder := range holders {
 		idHash := hash.Sum256(holder.IdentityKey)
-		c.log.Noticef("Read-repair: replicating box %x to %s, which reported it missing", write.BoxID[:8], holder.Name)
+		c.log.Noticef("Read-repair: replicating box to %s, which reported it missing", holder.Name)
 		c.l.server.connector.DispatchCommand(write, &idHash)
 	}
 }
@@ -841,7 +841,7 @@ func (c *incomingConn) proxyReadSweep(shards []*pki.ReplicaDescriptor, first int
 			c.log.Debugf("proxyReadRequest: %s answered authoritatively with error code %d", candidate.Name, readReply.ErrorCode)
 			return result
 		case pigeonhole.ReplicaErrorBoxIDNotFound:
-			c.log.Noticef("proxyReadRequest: %s does not hold box %x, trying the next holder", candidate.Name, readReply.BoxID[:8])
+			c.log.Noticef("proxyReadRequest: %s does not hold the box, trying the next holder", candidate.Name)
 			result.missingBox = append(result.missingBox, candidate)
 		default:
 			c.log.Warningf("proxyReadRequest: %s answered with error code %d, trying the next holder", candidate.Name, readReply.ErrorCode)
@@ -859,7 +859,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	c.log.Debugf("PROXY_REQUEST: Starting proxy for BoxID: %x", replicaRead.BoxID)
+	c.log.Debug("PROXY_REQUEST: Starting proxy")
 
 	// Get PKI document
 	doc := c.l.server.PKIWorker.LastCachedPKIDocument()
@@ -964,7 +964,7 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
 
-	c.log.Debugf("proxyWriteRequest: Starting proxy for BoxID: %x", replicaWrite.BoxID)
+	c.log.Debug("proxyWriteRequest: Starting proxy")
 
 	// Get PKI document
 	doc := c.l.server.PKIWorker.LastCachedPKIDocument()
