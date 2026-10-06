@@ -116,3 +116,30 @@ func TestPKIWorkerFetchesWithoutCache(t *testing.T) {
 	require.Eventually(t, func() bool { return p.GetDocumentByEpoch(epoch) != nil }, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, 1, g.count(epoch))
 }
+
+func TestPKIWorkerKeepsVerifiedDocumentsAcrossTheBoundary(t *testing.T) {
+	epoch, _, _ := epochtime.Now()
+	p, g := newRefetchPKI(t, true)
+	for _, e := range []uint64{epoch, epoch + 1, epoch + 2} {
+		p.docs.Store(e, &CachedDoc{
+			Doc:           &cpki.Document{Epoch: e, SphinxGeometryHash: p.c.cfg.SphinxGeometry.Hash()},
+			Blob:          []byte("doc"),
+			RawSignedBlob: []byte("signed"),
+		})
+	}
+	p.Go(p.worker)
+	p.forceUpdateCh <- true
+	time.Sleep(200 * time.Millisecond)
+	g.reset()
+
+	p.clockSkewLock.Lock()
+	p.clockSkew = -int64(epochtime.Period().Seconds())
+	p.clockSkewLock.Unlock()
+	p.forceUpdateCh <- true
+	time.Sleep(300 * time.Millisecond)
+	require.Zero(t, g.count(epoch+1))
+	require.Zero(t, g.count(epoch+2))
+
+	p.onConnected()
+	require.Eventually(t, func() bool { return g.count(epoch+1) >= 1 }, 5*time.Second, 10*time.Millisecond)
+}
