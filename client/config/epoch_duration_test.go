@@ -14,7 +14,7 @@ import (
 )
 
 func TestEpochDuration(t *testing.T) {
-	b, err := os.ReadFile("../testdata/client.toml")
+	b, err := os.ReadFile(TestClientTOML)
 	require.NoError(t, err)
 	b = regexp.MustCompile(`(?m)^EpochDuration = .*\n`).ReplaceAll(b, nil)
 	periodtest.CheckConfig(t, func(line string) (*time.Duration, error) {

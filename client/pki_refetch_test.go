@@ -54,7 +54,7 @@ func (c *epochPKIClient) Deserialize(raw []byte) (*cpki.Document, error) {
 }
 
 func newRefetchPKI(t *testing.T, timeSync bool, cached ...uint64) (*pki, *countingConsensusGetter) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 	cfg.Callbacks = &config.Callbacks{}
 	cfg.Debug.EnableTimeSync = timeSync

@@ -15,7 +15,7 @@ import (
 )
 
 func TestPKIWorkerDoesNotCacheBadReply(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 	cfg.Callbacks = &config.Callbacks{}
 

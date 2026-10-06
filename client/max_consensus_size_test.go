@@ -17,7 +17,7 @@ import (
 )
 
 func clientConfigWithMaxConsensusSize(t *testing.T, size int) ([]byte, error) {
-	b, err := os.ReadFile("testdata/client.toml")
+	b, err := os.ReadFile(testClientTOML)
 	require.NoError(t, err)
 	s := regexp.MustCompile(`(?m)^[ \t]*MaxConsensusSize = .*\n`).ReplaceAllString(string(b), "")
 	require.Contains(t, s, "[VotingAuthority]\n")

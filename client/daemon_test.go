@@ -28,7 +28,7 @@ func getFreePort() (int, error) {
 }
 
 func TestDaemonStartStop(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	// Use a dynamic port to avoid conflicts
@@ -48,7 +48,7 @@ func TestDaemonStartStop(t *testing.T) {
 }
 
 func TestDaemonStartsWithoutConsensus(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -69,7 +69,7 @@ func TestDaemonStartsWithoutConsensus(t *testing.T) {
 }
 
 func TestListenerAcceptsConnectionWithoutPKIDoc(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	cfg.Listen.Tcp.Address = "127.0.0.1:0"

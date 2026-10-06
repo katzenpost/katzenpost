@@ -23,7 +23,14 @@ const (
 func Network(t *testing.T, epochDuration string) string {
 	t.Helper()
 	dir := t.TempDir()
-	err := genconfig.RunGenConfig(genconfig.Config{
+	if err := Generate(dir, epochDuration); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func Generate(dir, epochDuration string) error {
+	return genconfig.RunGenConfig(genconfig.Config{
 		NrLayers:                 genconfig.NrLayers,
 		NrNodes:                  genconfig.NrNodes,
 		NrGateways:               genconfig.NrGateways,
@@ -48,10 +55,6 @@ func Network(t *testing.T, epochDuration string) string {
 		LM:                       0.2,
 		LR:                       0.0005,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return dir
 }
 
 func CheckEpochWiring(t *testing.T, rel string, observePeriod bool, run func(path string) error) {
