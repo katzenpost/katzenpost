@@ -175,7 +175,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 			pubkey := s.nike.NewEmptyPublicKey()
 			err = pubkey.FromBytes(sharedSecret)
 			if err != nil {
-				panic(err)
+				return nil, nil, fmt.Errorf("sphinx: failed to load hop secret: %s", err)
 			}
 
 			blinded := s.nike.Blind(pubkey, keys[j].BlindingFactor)
