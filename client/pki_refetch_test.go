@@ -94,18 +94,44 @@ func TestPKIWorkerRefetchesCachedDocumentOnReconnect(t *testing.T) {
 	require.Eventually(t, func() bool { return g.count(epoch) >= 1 }, 5*time.Second, 10*time.Millisecond)
 }
 
-func TestPKIWorkerRefetchesCachedDocumentOnEpochChange(t *testing.T) {
-	epoch, _, _ := epochtime.Now()
-	p, g := newRefetchPKI(t, true, epoch, epoch+1, epoch+2)
-	p.Go(p.worker)
-	require.Eventually(t, func() bool { return g.count(epoch) >= 1 }, 5*time.Second, 10*time.Millisecond)
+func waitPKIPass(t *testing.T, passes <-chan uint64) uint64 {
+	t.Helper()
+	select {
+	case e := <-passes:
+		return e
+	case <-time.After(5 * time.Second):
+		t.Fatal("the PKI worker did not finish a pass")
+		return 0
+	}
+}
 
+func TestPKIWorkerRefetchesCachedDocumentOnEpochChange(t *testing.T) {
+	period := epochtime.Period()
+	_, elapsed, _ := epochtime.Now()
+	p, g := newRefetchPKI(t, true)
+	p.clockSkew = -int64(((period - elapsed) + (period - nextFetchTill()/2)) / time.Second)
+	epoch, _, till := epochtime.FromUnix(p.skewedUnixTime())
+	require.Less(t, till, nextFetchTill())
+	for _, e := range []uint64{epoch, epoch + 1, epoch + 2} {
+		p.docs.Store(e, &CachedDoc{Doc: &cpki.Document{Epoch: e, SphinxGeometryHash: p.c.cfg.SphinxGeometry.Hash()}})
+	}
+	passes := make(chan uint64, 4)
+	p.c.cfg.Callbacks.OnDocumentFn = func(d *cpki.Document) { passes <- d.Epoch }
+	p.Go(p.worker)
+	require.Equal(t, epoch, waitPKIPass(t, passes))
+	require.Equal(t, 1, g.count(epoch))
+	require.Equal(t, 1, g.count(epoch+1))
+
+	for _, e := range []uint64{epoch + 1, epoch + 2} {
+		p.docs.Store(e, &CachedDoc{Doc: &cpki.Document{Epoch: e, SphinxGeometryHash: p.c.cfg.SphinxGeometry.Hash()}})
+	}
 	g.reset()
 	p.clockSkewLock.Lock()
-	p.clockSkew = -int64(epochtime.Period().Seconds())
+	p.clockSkew -= int64(period / time.Second)
 	p.clockSkewLock.Unlock()
 	p.forceUpdateCh <- true
-	require.Eventually(t, func() bool { return g.count(epoch+1) >= 1 }, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, epoch+1, waitPKIPass(t, passes))
+	require.Equal(t, 1, g.count(epoch+1))
 }
 
 func TestPKIWorkerFetchesWithoutCache(t *testing.T) {
