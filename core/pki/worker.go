@@ -31,8 +31,8 @@ func recheckInterval() time.Duration { return epochtime.Period() / 32 }
 // valid reply in seconds, so this comfortably exceeds the normal case; it
 // exists only to cap the pathological case where an unreachable or retrying
 // authority would otherwise stall the cycle forever and wedge the worker
-// behind the current epoch. A package var so tests can shrink it.
-var FetchTimeout = 3 * time.Minute
+// behind the current epoch.
+func FetchTimeout() time.Duration { return min(3*time.Minute, epochtime.Period()/8) }
 
 // WorkerBase provides common PKI worker functionality shared between courier and replica
 type WorkerBase struct {
@@ -251,7 +251,7 @@ func (w *WorkerBase) FetchDocuments(pkiCtx context.Context, isCanceled func() bo
 	// worker forever, leaving it stuck behind the current epoch (with stale
 	// replica descriptors) until the process restarts. The deadline
 	// guarantees the loop reaches epochtime.Now() again and advances.
-	ctx, cancel := context.WithTimeout(pkiCtx, FetchTimeout)
+	ctx, cancel := context.WithTimeout(pkiCtx, FetchTimeout())
 	defer cancel()
 
 	return w.fetcher.FetchDocuments(

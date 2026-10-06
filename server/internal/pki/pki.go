@@ -317,7 +317,7 @@ func (p *pki) worker() {
 		// epoch, serving stale descriptors until an operator restart. Mirrors
 		// core/pki.WorkerBase.FetchDocuments.
 		var didUpdate bool
-		fetchCtx, cancelFetch := context.WithTimeout(pkiCtx, cpki.FetchTimeout)
+		fetchCtx, cancelFetch := context.WithTimeout(pkiCtx, cpki.FetchTimeout())
 		for _, epoch := range p.documentsToFetch() {
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document

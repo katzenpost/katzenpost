@@ -149,7 +149,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 	// Fetch the PKI document directly from the client (like replica does).
 	// Bound it: an unreachable/retrying dirauth must not block this call
 	// indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), pki.FetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), pki.FetchTimeout())
 	defer cancel()
 	d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(ctx, epoch)
 	if err != nil {
