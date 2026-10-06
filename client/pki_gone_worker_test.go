@@ -75,3 +75,12 @@ func TestPKIWorkerRetriesBadReply(t *testing.T) {
 	require.NotContains(t, p.failedFetches, epoch)
 	require.GreaterOrEqual(t, getter.count(epoch), 2)
 }
+
+func TestPKIWorkerFallbackHonoursGonePreviousEpoch(t *testing.T) {
+	getter := &goneWorkerGetter{
+		mockConsensusGetter: mockConsensusGetter{errorCode: commands.ConsensusGone},
+		calls:               make(map[uint64]int),
+	}
+	_, epoch := runPKIWorkerPasses(t, new(mockPKIClient), getter)
+	require.Equal(t, 1, getter.count(epoch-1))
+}
