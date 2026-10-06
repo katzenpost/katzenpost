@@ -22,7 +22,7 @@ func TestPeriodDerivedParity(t *testing.T) {
 			{"recheckInterval", recheckInterval(), 75 * time.Second, 7500 * time.Millisecond},
 			{"pkiEarlyConnectSlack", pkiEarlyConnectSlack(), 150 * time.Second, 15 * time.Second},
 			{"PublishDeadline", PublishDeadline(), 150 * time.Second, 15 * time.Second},
-			{"nextFetchTill", nextFetchTill(), 1050 * time.Second, 105 * time.Second},
+			{"nextFetchTill", nextFetchTill(), 450 * time.Second, 45 * time.Second},
 			{"descriptorUploadSafety", descriptorUploadSafety(), 25 * time.Second, 2500 * time.Millisecond},
 			{"descriptorRepostInterval", descriptorRepostInterval(), 12500 * time.Millisecond, 1250 * time.Millisecond},
 		} {
