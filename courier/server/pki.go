@@ -17,7 +17,6 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
-	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -28,16 +27,6 @@ import (
 )
 
 const NumPKIDocsToFetch = 3
-
-func PublishDeadline() time.Duration { return vServer.PublishConsensusDeadline() }
-
-func mixServerCacheDelay() time.Duration { return epochtime.Period() / 16 }
-
-func nextFetchTill() time.Duration {
-	return epochtime.Period() - (PublishDeadline() + mixServerCacheDelay())
-}
-
-func recheckInterval() time.Duration { return epochtime.Period() / 32 }
 
 type PKIWorker struct {
 	worker.Worker
