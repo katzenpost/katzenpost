@@ -56,7 +56,6 @@ func isQUICConn(conn net.Conn) bool {
 var firstCommandTimeout = 5 * time.Second
 
 func (s *Server) onConn(conn net.Conn) {
-	rAddr := conn.RemoteAddr()
 	lAddr := conn.LocalAddr()
 
 	// Disable Nagle so the responder's finalisation NoOp does not wait
@@ -71,9 +70,8 @@ func (s *Server) onConn(conn net.Conn) {
 	acceptedAt := time.Now()
 
 	s.log.Debugf(
-		"Accepted new connection: local=%v remote=%v phase_at_accept=%s remaining_at_accept=%v",
+		"Accepted new connection: local=%v phase_at_accept=%s remaining_at_accept=%v",
 		lAddr,
-		rAddr,
 		phaseAtAccept,
 		remainingAtAccept,
 	)
@@ -105,10 +103,8 @@ func (s *Server) onConn(conn net.Conn) {
 	if err != nil {
 		phaseNow, remainingNow := s.state.PhaseInfo()
 		s.log.Debugf(
-			"Peer %v: Failed to initialize session local=%v remote=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v elapsed=%v: %v",
-			rAddr,
+			"Failed to initialize session local=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v elapsed=%v: %v",
 			lAddr,
-			rAddr,
 			phaseAtAccept,
 			remainingAtAccept,
 			phaseNow,
@@ -137,10 +133,8 @@ func (s *Server) onConn(conn net.Conn) {
 	handshakeStart := time.Now()
 
 	s.log.Debugf(
-		"Peer %v: Starting responder handshake local=%v remote=%v phase_at_accept=%s remaining_at_accept=%v timeout=%v",
-		rAddr,
-		conn.LocalAddr(),
-		conn.RemoteAddr(),
+		"Starting responder handshake local=%v phase_at_accept=%s remaining_at_accept=%v timeout=%v",
+		lAddr,
 		phaseAtAccept,
 		remainingAtAccept,
 		handshakeTimeout,
@@ -170,10 +164,9 @@ func (s *Server) onConn(conn net.Conn) {
 
 		if wire.IsNoHandshakeBytesError(err) {
 			s.log.Debugf(
-				"Peer %s: TCP connection closed before Noise handshake bytes local=%v remote=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
+				"Peer %s: TCP connection closed before Noise handshake bytes local=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
 				peerID,
-				conn.LocalAddr(),
-				conn.RemoteAddr(),
+				lAddr,
 				elapsed,
 				handshakeTimeout,
 				phaseAtAccept,
@@ -198,9 +191,6 @@ func (s *Server) onConn(conn net.Conn) {
 			classification,
 			err,
 		)
-
-		// Log detailed debug info (contains IPs, keys) at debug level only.
-		s.log.Debugf("Peer %s: handshake failure details:\n%s", peerID, wire.GetDebugError(err))
 		return
 	}
 
@@ -214,10 +204,9 @@ func (s *Server) onConn(conn net.Conn) {
 
 	phaseAfterHandshake, remainingAfterHandshake := s.state.PhaseInfo()
 	s.log.Debugf(
-		"Peer %s: Handshake completed local=%v remote=%v in=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v",
+		"Peer %s: Handshake completed local=%v in=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v",
 		peerID,
-		conn.LocalAddr(),
-		conn.RemoteAddr(),
+		lAddr,
 		handshakeDuration,
 		phaseAtAccept,
 		remainingAtAccept,
@@ -251,10 +240,9 @@ func (s *Server) onConn(conn net.Conn) {
 	if err != nil {
 		phaseNow, remainingNow := s.state.PhaseInfo()
 		s.log.Debugf(
-			"Peer %s: Failed to receive command local=%v remote=%v after_handshake=%v recv_elapsed=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
+			"Peer %s: Failed to receive command local=%v after_handshake=%v recv_elapsed=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
 			peerID,
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
+			lAddr,
 			handshakeDuration,
 			time.Since(recvStart),
 			phaseAtAccept,
@@ -273,14 +261,13 @@ func (s *Server) onConn(conn net.Conn) {
 	// Log timing for all commands
 	phaseAfterRecv, remainingAfterRecv := s.state.PhaseInfo()
 	s.log.Debugf(
-		"Peer %s: Received %T in=%v handshake=%v total=%v local=%v remote=%v phase_now=%s remaining_now=%v",
+		"Peer %s: Received %T in=%v handshake=%v total=%v local=%v phase_now=%s remaining_now=%v",
 		peerID,
 		cmd,
 		recvDuration,
 		handshakeDuration,
 		handshakeDuration+recvDuration,
-		conn.LocalAddr(),
-		conn.RemoteAddr(),
+		lAddr,
 		phaseAfterRecv,
 		remainingAfterRecv,
 	)
@@ -320,12 +307,11 @@ func (s *Server) onConn(conn net.Conn) {
 
 		sendStart := time.Now()
 		s.log.Debugf(
-			"Peer %s: Sending response command=%T response=%T local=%v remote=%v timeout=%v phase_now=%s remaining_now=%v total_since_accept=%v",
+			"Peer %s: Sending response command=%T response=%T local=%v timeout=%v phase_now=%s remaining_now=%v total_since_accept=%v",
 			peerID,
 			cmd,
 			resp,
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
+			lAddr,
 			responseTimeout,
 			phaseAfterHandler,
 			remainingAfterHandler,
@@ -354,12 +340,11 @@ func (s *Server) onConn(conn net.Conn) {
 
 		phaseAfterSend, remainingAfterSend := s.state.PhaseInfo()
 		s.log.Debugf(
-			"Peer %s: Sent response command=%T response=%T local=%v remote=%v send_elapsed=%v total_since_accept=%v phase_now=%s remaining_now=%v",
+			"Peer %s: Sent response command=%T response=%T local=%v send_elapsed=%v total_since_accept=%v phase_now=%s remaining_now=%v",
 			peerID,
 			cmd,
 			resp,
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
+			lAddr,
 			time.Since(sendStart),
 			time.Since(acceptedAt),
 			phaseAfterSend,
