@@ -42,3 +42,45 @@ func Run(t *testing.T, check func(t *testing.T, p time.Duration)) {
 		}
 	}
 }
+
+type ConfigCase struct {
+	Line  string
+	Want  time.Duration
+	Fails bool
+}
+
+var ConfigCases = []ConfigCase{
+	{"", 0, false},
+	{`EpochDuration = "3m"`, 3 * time.Minute, false},
+	{`EpochDuration = "20m"`, 20 * time.Minute, false},
+	{`EpochDuration = "2m"`, 2 * time.Minute, false},
+	{`EpochDuration = "0s"`, 0, true},
+	{`EpochDuration = "90s"`, 0, true},
+	{`EpochDuration = "2m0.5s"`, 0, true},
+	{`EpochDuration = "-3m"`, 0, true},
+	{`EpochDuration = "169h"`, 0, true},
+	{`EpochDuration = "soon"`, 0, true},
+}
+
+func CheckConfig(t *testing.T, load func(line string) (*time.Duration, error)) {
+	t.Helper()
+	for _, c := range ConfigCases {
+		got, err := load(c.Line)
+		if c.Fails {
+			if err == nil {
+				t.Errorf("%q: loaded, want an error", c.Line)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%q: %v", c.Line, err)
+			continue
+		}
+		switch {
+		case c.Line == "" && got != nil:
+			t.Errorf("absent: got %v, want nil", *got)
+		case c.Line != "" && (got == nil || *got != c.Want):
+			t.Errorf("%q: got %v, want %v", c.Line, got, c.Want)
+		}
+	}
+}
