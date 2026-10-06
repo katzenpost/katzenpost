@@ -268,6 +268,7 @@ func TestOfflineDialAndChannelOperations(t *testing.T) {
 	// Test that Dial() succeeds even when daemon reports not connected
 	err = thin.Dial()
 	require.NoError(t, err, "Dial should succeed even when daemon is not connected to mixnet")
+	defer thin.Close()
 
 	// Verify offline mode state
 	require.False(t, thin.IsConnected(), "Should not be connected to mixnet")

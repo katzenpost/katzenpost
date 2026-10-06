@@ -661,6 +661,9 @@ type SessionTokenReply struct {
 }
 
 func (r *SessionTokenReply) String() string {
+	if r == nil {
+		return "<nil>"
+	}
 	return fmt.Sprintf("SessionTokenReply{Resumed: %v}", r.Resumed)
 }
 
