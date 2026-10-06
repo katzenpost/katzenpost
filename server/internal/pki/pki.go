@@ -449,18 +449,9 @@ func (p *pki) updateTimer(timer *time.Timer) {
 	// consensus document is cached; otherwise the node (and any clients
 	// that depend on it, like kpclientd) won't see the document until
 	// the next epoch boundary.
-	if elapsed >= PublishDeadline()-descriptorUploadSafety() {
-		if p.entryForEpoch(now) != nil {
-			interval := till
-			if interval < time.Second {
-				interval = time.Second
-			}
-			p.log.Debugf("descriptor upload window closed and document cached, reset to next epoch in %v", interval)
-			timer.Reset(interval)
-		} else {
-			p.log.Debugf("descriptor upload window closed but no document for %v yet, reset to %v", now, recheckInterval())
-			timer.Reset(recheckInterval())
-		}
+	if elapsed >= PublishDeadline()-descriptorUploadSafety() && p.entryForEpoch(now) == nil {
+		p.log.Debugf("descriptor upload window closed but no document for %v yet, reset to %v", now, recheckInterval())
+		timer.Reset(recheckInterval())
 		return
 	}
 
