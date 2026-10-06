@@ -429,7 +429,7 @@ func (s *Sphinx) unwrapNike(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte
 	if nextNode != nil {
 		err := groupElement.Blind(keys.BlindingFactor)
 		if err != nil {
-			panic(err)
+			return nil, replayTag[:], nil, fmt.Errorf("sphinx: failed to blind group element: %s", err)
 		}
 		if utils.CtIsZero(groupElement.Bytes()) {
 			return nil, replayTag[:], nil, errors.New("sphinx: degenerate blinded group element")
