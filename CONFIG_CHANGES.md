@@ -432,7 +432,9 @@ The client TOML had the most substantial reshape, driven by the
 ### `[Debug]`
 
 - **Added** `EnableTimeSync` (bool). Use skewed remote provider time
-  instead of system time when available.
+  instead of system time when available. A skew larger than one
+  authority phase, `P/8` (150 s at `20m`), is refused with a warning
+  and the previous skew is kept.
 
 ### `[VotingAuthority]`
 
