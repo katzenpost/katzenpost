@@ -378,6 +378,16 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		replicaPkMap[tmp] = v
 	}
 
+	if cfg.Topology != nil {
+		for i, layer := range cfg.Topology.Layers {
+			for _, v := range layer.Nodes {
+				if _, err := signpem.FromPublicPEMFile(cfg.Server.keyPath(v.KeyFile()), pkiSignatureScheme); err != nil {
+					return fmt.Errorf("config: Topology: layer %d: %w", i, err)
+				}
+			}
+		}
+	}
+
 	// if our own identity is not in cfg.Authorities return error
 	selfInAuthorities := false
 
