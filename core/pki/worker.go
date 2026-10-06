@@ -16,7 +16,7 @@ import (
 const NumPKIDocsToFetch = 3
 
 // PublishConsensusDeadline is when the authority publishes the consensus
-func PublishConsensusDeadline() time.Duration { return epochtime.Period() - (epochtime.Period() / 8) }
+func PublishConsensusDeadline() time.Duration { return 5 * (epochtime.Period() / 8) }
 
 func mixServerCacheDelay() time.Duration { return epochtime.Period() / 16 }
 
