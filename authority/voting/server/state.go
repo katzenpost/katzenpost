@@ -131,6 +131,7 @@ type state struct {
 	authorizedAuthorities  map[[publicKeyHashSize]byte]bool
 	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
 	authorityNames         map[[publicKeyHashSize]byte]string
+	fixedTopology          [][][publicKeyHashSize]byte
 
 	documents   map[uint64]*pki.Document
 	myconsensus map[uint64]*pki.Document
@@ -1798,20 +1799,10 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 		nodeMap[id] = v
 	}
 
-	pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
-
 	// range over the keys in the configuration file and collect the descriptors for each layer
-	topology := make([][]*pki.MixDescriptor, len(s.s.cfg.Topology.Layers))
-	for strata, layer := range s.s.cfg.Topology.Layers {
-		for _, node := range layer.Nodes {
-
-			identityPublicKey, err := loadNodeIdentityKey(s.s.cfg.Server.DataDir, node.KeyFile(), pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-
-			id := hash.Sum256From(identityPublicKey)
-
+	topology := make([][]*pki.MixDescriptor, len(s.fixedTopology))
+	for strata, layer := range s.fixedTopology {
+		for _, id := range layer {
 			// if the listed node is in the current descriptor set, place it in the layer
 			if n, ok := nodeMap[id]; ok {
 				topology[strata] = append(topology[strata], n)
@@ -1819,6 +1810,24 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 		}
 	}
 	return topology
+}
+
+func loadFixedTopology(cfg *config.Config) ([][][publicKeyHashSize]byte, error) {
+	if cfg.Topology == nil {
+		return nil, nil
+	}
+	scheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
+	layers := make([][][publicKeyHashSize]byte, len(cfg.Topology.Layers))
+	for strata, layer := range cfg.Topology.Layers {
+		for _, node := range layer.Nodes {
+			pub, err := loadNodeIdentityKey(cfg.Server.DataDir, node.KeyFile(), scheme)
+			if err != nil {
+				return nil, fmt.Errorf("topology layer %d: %w", strata, err)
+			}
+			layers[strata] = append(layers[strata], hash.Sum256From(pub))
+		}
+	}
+	return layers, nil
 }
 
 func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor, srv []byte) [][]*pki.MixDescriptor {
@@ -3092,6 +3101,9 @@ func newState(s *Server) (*state, error) {
 		panic(err)
 	}
 	st.setNodeTables(nodes)
+	if st.fixedTopology, err = loadFixedTopology(s.cfg); err != nil {
+		return nil, err
+	}
 
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]kem.PublicKey)

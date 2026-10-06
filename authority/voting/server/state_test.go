@@ -221,6 +221,8 @@ func buildScenarioStates(t *testing.T, authNum int, votingEpoch uint64, prior *p
 	// set topology for all authorities
 	for i := 0; i < authNum; i++ {
 		authCfgs[i].Topology = &topology
+		stateAuthority[i].fixedTopology, err = loadFixedTopology(authCfgs[i])
+		require.NoError(err)
 	}
 
 	// generate gateways
@@ -1035,6 +1037,8 @@ func TestReplicaDescriptorConsensus(t *testing.T) {
 
 	for i := 0; i < authNum; i++ {
 		authCfgs[i].Topology = &topology
+		stateAuthority[i].fixedTopology, err = loadFixedTopology(authCfgs[i])
+		require.NoError(err)
 	}
 
 	// Generate gateways
@@ -1507,6 +1511,8 @@ func TestConfiguredReplicaIdentityKeys(t *testing.T) {
 	}
 	for i := 0; i < authNum; i++ {
 		authCfgs[i].Topology = &topology
+		stateAuthority[i].fixedTopology, err = loadFixedTopology(authCfgs[i])
+		require.NoError(err)
 	}
 
 	for i := 0; i < m; i++ {
@@ -1813,6 +1819,8 @@ func TestNoReplicasAchieveConsensus(t *testing.T) {
 	}
 	for i := 0; i < authNum; i++ {
 		authCfgs[i].Topology = &topology
+		stateAuthority[i].fixedTopology, err = loadFixedTopology(authCfgs[i])
+		require.NoError(err)
 	}
 	for i := 0; i < m; i++ {
 		idKey, c, err := genGatewayConfig(fmt.Sprintf("gateway-%d", i), votingPKI, port)
@@ -2199,6 +2207,8 @@ func TestMultipleEnvelopeKeysPerReplica(t *testing.T) {
 	}
 	for i := 0; i < authNum; i++ {
 		authCfgs[i].Topology = &topology
+		stateAuthority[i].fixedTopology, err = loadFixedTopology(authCfgs[i])
+		require.NoError(err)
 	}
 	for i := 0; i < m; i++ {
 		idKey, c, err := genGatewayConfig(fmt.Sprintf("gateway-%d", i), votingPKI, port)
@@ -2583,6 +2593,8 @@ func TestEmptyEnvelopeKeysWithConfiguredReplicas(t *testing.T) {
 	}
 	for i := 0; i < authNum; i++ {
 		authCfgs[i].Topology = &topology
+		stateAuthority[i].fixedTopology, err = loadFixedTopology(authCfgs[i])
+		require.NoError(err)
 	}
 	for i := 0; i < m; i++ {
 		idKey, c, err := genGatewayConfig(fmt.Sprintf("gateway-%d", i), votingPKI, port)
@@ -2869,6 +2881,8 @@ func TestEnvelopeKeyPartitionResolvedByMajority(t *testing.T) {
 	}
 	for i := 0; i < authNum; i++ {
 		authCfgs[i].Topology = &topology
+		stateAuthority[i].fixedTopology, err = loadFixedTopology(authCfgs[i])
+		require.NoError(err)
 	}
 	for i := 0; i < m; i++ {
 		idKey, c, err := genGatewayConfig(fmt.Sprintf("gateway-%d", i), votingPKI, port)
@@ -3224,6 +3238,9 @@ func TestConsensusIdenticalAfterAuthorityRestart(t *testing.T) {
 			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
 		st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
+		var err error
+		st.fixedTopology, err = loadFixedTopology(cfg)
+		require.NoError(err)
 
 		s := &Server{
 			cfg:                cfg,
