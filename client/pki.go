@@ -410,8 +410,8 @@ func (p *pki) worker() {
 //	haveNow   the current epoch's document is cached.
 //	haveNext  the next epoch's document is cached.
 //
-// With both cached, sleep across the boundary plus the publish-and-cache
-// window so the new now+1 is ready when we wake. With only the current
+// With both cached, wake at the boundary, where now+1 becomes the current
+// document. With only the current
 // cached, sleep until we cross the nextFetchTill threshold (or fall back
 // to recheckInterval if we are already past it). With no current doc,
 // poll at recheckInterval.
@@ -425,7 +425,7 @@ func nextPKIWakeup(till time.Duration, haveNow, haveNext bool) time.Duration {
 		}
 		return recheckInterval()
 	}
-	return till + PublishDeadline() + mixServerCacheDelay()
+	return till
 }
 
 func (p *pki) updateDocument(epoch uint64) error {
