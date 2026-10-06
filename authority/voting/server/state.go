@@ -35,6 +35,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
@@ -2115,7 +2116,39 @@ func (s *state) reloadNodes(cfg *config.Config) error {
 	s.setNodeTables(t)
 	s.log.Noticef("Reloaded nodes: %d mixes, %d gateways, %d service nodes, %d replicas",
 		len(t.mixes), len(t.gateways), len(t.services), len(t.replicas))
+	if ignored := changedStartupSections(s.s.cfg, cfg); len(ignored) > 0 {
+		s.log.Warningf("Reload changed config sections that are ignored until restart: %s", strings.Join(ignored, ", "))
+	}
 	return nil
+}
+
+func changedStartupSections(running, reloaded *config.Config) []string {
+	sections := []struct {
+		name string
+		a, b interface{}
+	}{
+		{"Server", running.Server, reloaded.Server},
+		{"Authorities", running.Authorities, reloaded.Authorities},
+		{"Logging", running.Logging, reloaded.Logging},
+		{"Parameters", running.Parameters, reloaded.Parameters},
+		{"Debug", running.Debug, reloaded.Debug},
+		{"Topology", running.Topology, reloaded.Topology},
+		{"SphinxGeometry", running.SphinxGeometry, reloaded.SphinxGeometry},
+	}
+	var changed []string
+	for _, c := range sections {
+		if !sameTOML(c.a, c.b) {
+			changed = append(changed, c.name)
+		}
+	}
+	return changed
+}
+
+func sameTOML(a, b interface{}) bool {
+	var x, y bytes.Buffer
+	ea := toml.NewEncoder(&x).Encode(map[string]interface{}{"s": a})
+	eb := toml.NewEncoder(&y).Encode(map[string]interface{}{"s": b})
+	return (ea == nil) == (eb == nil) && bytes.Equal(x.Bytes(), y.Bytes())
 }
 
 func (s *state) isNodePeer(pk [publicKeyHashSize]byte) bool {
