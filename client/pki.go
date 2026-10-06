@@ -33,6 +33,8 @@ func nextFetchTill() time.Duration {
 
 func recheckInterval() time.Duration { return epochtime.Period() / 16 }
 
+func maxClockSkew() time.Duration { return epochtime.Period() / 8 }
+
 var (
 	errGetConsensusCanceled = errors.New("client/pki: consensus fetch canceled")
 	errConsensusNotFound    = errors.New("client/pki: consensus not ready yet")
@@ -189,6 +191,10 @@ func (c *Client) WaitForCurrentDocument() {
 }
 
 func (p *pki) setClockSkew(skew int64) {
+	if limit := int64(maxClockSkew() / time.Second); skew > limit || skew < -limit {
+		p.log.Warningf("Refusing a clock skew of %v sec from the gateway handshake: the limit is %v", skew, maxClockSkew())
+		return
+	}
 	p.log.Debugf("New clock skew: %v sec", skew)
 	p.clockSkewLock.Lock()
 	p.clockSkew = skew
