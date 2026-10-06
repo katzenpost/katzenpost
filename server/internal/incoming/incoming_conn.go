@@ -253,9 +253,8 @@ func (c *incomingConn) worker() {
 
 		if wire.IsNoHandshakeBytesError(err) {
 			c.log.Debugf(
-				"TCP connection closed before Noise handshake bytes local=%v remote=%v after=%v timeout=%v: %v",
+				"TCP connection closed before Noise handshake bytes local=%v after=%v timeout=%v: %v",
 				c.c.LocalAddr(),
-				c.c.RemoteAddr(),
 				handshakeElapsed,
 				timeoutMs,
 				err,
@@ -264,23 +263,19 @@ func (c *incomingConn) worker() {
 		}
 
 		c.log.Errorf(
-			"Handshake failed local=%v remote=%v after=%v timeout=%v: %v",
+			"Handshake failed local=%v after=%v timeout=%v: %v",
 			c.c.LocalAddr(),
-			c.c.RemoteAddr(),
 			handshakeElapsed,
 			timeoutMs,
 			err,
 		)
-		// Log detailed debug info (contains IPs, keys) at debug level only
-		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("incoming", "success", handshakeElapsed)
 	c.log.Debugf(
-		"Handshake completed local=%v remote=%v in %v",
+		"Handshake completed local=%v in %v",
 		c.c.LocalAddr(),
-		c.c.RemoteAddr(),
 		handshakeElapsed,
 	)
 	c.l.onInitializedConn(c)
@@ -778,7 +773,7 @@ func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 	}
 	c.log = l.glue.LogBackend().GetLogger(fmt.Sprintf("incoming:%d", c.id))
 
-	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
+	c.log.Debug("New incoming connection")
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to

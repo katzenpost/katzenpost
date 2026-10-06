@@ -263,11 +263,6 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 		localAddr = c.c.LocalAddr().String()
 	}
 
-	remoteAddr := "<unknown>"
-	if c.c.RemoteAddr() != nil {
-		remoteAddr = c.c.RemoteAddr().String()
-	}
-
 	handshakeStart := time.Now()
 	if err := session.Initialize(context.Background(), c.c); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
@@ -282,9 +277,8 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 
 		if wire.IsNoHandshakeBytesError(err) {
 			c.log.Debugf(
-				"TCP connection closed before Noise handshake bytes local=%s remote=%s after=%v timeout=%v: %v",
+				"TCP connection closed before Noise handshake bytes local=%s after=%v timeout=%v: %v",
 				localAddr,
-				remoteAddr,
 				handshakeElapsed,
 				timeoutMs,
 				err,
@@ -293,22 +287,19 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 		}
 
 		c.log.Errorf(
-			"Handshake failed local=%s remote=%s after=%v timeout=%v: %v",
+			"Handshake failed local=%s after=%v timeout=%v: %v",
 			localAddr,
-			remoteAddr,
 			handshakeElapsed,
 			timeoutMs,
 			err,
 		)
-		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return nil, err
 	}
 	handshakeinstrument.HandshakeDuration("incoming", "success", time.Since(handshakeStart))
 
 	c.log.Debugf(
-		"Handshake completed local=%s remote=%s in %v",
+		"Handshake completed local=%s in %v",
 		localAddr,
-		remoteAddr,
 		time.Since(handshakeStart),
 	)
 
@@ -316,7 +307,7 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 
 	creds, err := session.PeerCredentials()
 	if err != nil {
-		c.log.Debugf("Session failure local=%s remote=%s: %s", localAddr, remoteAddr, err)
+		c.log.Debugf("Session failure local=%s: %s", localAddr, err)
 		return nil, err
 	}
 
@@ -446,7 +437,7 @@ func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 		geo:               geo,
 	}
 	c.log = l.server.logBackend.GetLogger(fmt.Sprintf("replica incoming:%d", c.id))
-	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
+	c.log.Debug("New incoming connection")
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to

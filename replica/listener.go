@@ -79,7 +79,7 @@ func (l *Listener) worker() {
 		isPeer := l.server.peerSet.Contains(connlimit.AddrIP(conn.RemoteAddr()))
 		token, ok := l.server.connLimiter.TryAcquire(conn.RemoteAddr(), isPeer)
 		if !ok {
-			l.log.Debugf("Refusing connection from %v: connection cap reached (peer=%v)", conn.RemoteAddr(), isPeer)
+			l.log.Debugf("Refusing connection: connection cap reached (peer=%v)", isPeer)
 			conn.Close()
 			continue
 		}
@@ -95,7 +95,7 @@ func (l *Listener) worker() {
 			tcpConn.SetNoDelay(true)
 		}
 
-		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
+		l.log.Debug("Accepted new connection")
 
 		l.onNewConn(conn, token)
 	}
