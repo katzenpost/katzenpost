@@ -12,22 +12,17 @@ import (
 )
 
 func TestPeriodDefault(t *testing.T) {
-	if os.Getenv("KATZENPOST_EPOCH_DURATION") != "" {
-		t.Skip("KATZENPOST_EPOCH_DURATION is set")
-	}
 	require.Equal(t, 20*time.Minute, Period())
 }
 
-func TestPeriodFromEnvironment(t *testing.T) {
-	if want := os.Getenv("EPOCHTIME_WANT_PERIOD"); want != "" {
-		d, err := time.ParseDuration(want)
-		require.NoError(t, err)
-		require.Equal(t, d, Period())
+func TestEnvironmentAloneDoesNotSetThePeriod(t *testing.T) {
+	if os.Getenv("EPOCHTIME_CHILD") != "" {
+		require.Equal(t, 20*time.Minute, Period())
 		return
 	}
-	for _, d := range []string{"2m", "90s", "20m"} {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestPeriodFromEnvironment$")
-		cmd.Env = append(os.Environ(), "KATZENPOST_EPOCH_DURATION="+d, "EPOCHTIME_WANT_PERIOD="+d)
+	for _, d := range []string{"2m", "90s", "soon"} {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestEnvironmentAloneDoesNotSetThePeriod$", "-test.count=1")
+		cmd.Env = append(os.Environ(), EnvironmentVariable+"="+d, "EPOCHTIME_CHILD=1")
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err, string(out))
 	}
