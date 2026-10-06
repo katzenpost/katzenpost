@@ -15,7 +15,8 @@ image=localhost/katzenpost-$(distro)_base
 endif
 cache_dir?=cache
 cache_abs=$(if $(filter /%,$(cache_dir)),$(cache_dir),$(abspath ../docker/$(cache_dir)))
-docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_abs)/go:/go/ -e GORACE=history_size=7 -e GOCACHE=/go/cache
+docker_tty=$(shell [ -t 0 ] && echo -t)
+docker_args=--init -i $(docker_tty) --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_abs)/go:/go/ -e GORACE=history_size=7 -e GOCACHE=/go/cache
 
 test:
 	go test -v -race -timeout 0 -ldflags ${ldflags} .
