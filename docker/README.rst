@@ -311,9 +311,12 @@ waits on or fails because of the public network.
 
 Notes
 
-* The network runs with a 2-minute epoch (``epoch_duration=2m``, passed to
-  every container as ``KATZENPOST_EPOCH_DURATION``), so PKI, topology, and
-  mix keys churn fast enough to exercise the system in a dev loop.
+* The network runs with a 2-minute epoch (``epoch_duration=2m``), so PKI,
+  topology, and mix keys churn fast enough to exercise the system in a dev
+  loop. genconfig writes it into every generated config as
+  ``EpochDuration``; the containers also get ``KATZENPOST_EPOCH_DURATION``
+  for older reference binaries in the interop gate, which do not read the
+  config key.
 * ``make wait`` waits until every node — gateway, mixes, servicenodes
   (with their courier plugins), and storage replicas — reports ready
   against the current consensus, i.e. each node's live per-epoch keys

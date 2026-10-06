@@ -37,6 +37,28 @@ where they occur:
 previous behaviour or to satisfy a new requirement", which is not
 always the same as "the file fails to parse".
 
+## Epoch duration (every component)
+
+- **Added** `EpochDuration` (Go duration string, e.g. `"20m"` or
+  `"2m"`): in `[Server]` of `authority.toml` and `katzenpost.toml`,
+  and at the top level of `replica.toml`, `courier.toml` and
+  `client.toml` (kpclientd, and full-mode ping). Not in
+  `thinclient.toml`. It must be whole seconds from `2m` to `7d`; any
+  other value, including `"0s"`, refuses the config.
+- The process chooses its epoch once at startup: `EpochDuration` if
+  set; refusal to start if `KATZENPOST_EPOCH_DURATION` is also set to
+  a different value; `KATZENPOST_EPOCH_DURATION` alone, with a
+  deprecation warning on stderr; otherwise `20m`. `fetch` has no
+  config key and uses the variable or `20m`.
+- The variable is no longer read at package init: a program that
+  never calls `epochtime.Configure` runs at `20m`.
+- genconfig writes `EpochDuration` into every generated component
+  config from `--epochDuration` (`20m` when empty). Older releases
+  ignore the key (lenient decoding, see above) and still read the
+  variable, which the docker harness keeps exporting for them.
+- Every authority, node and client of one network must agree on the
+  period; nothing about it is carried in the PKI document.
+
 ## Directory authority (`authority.toml`)
 
 Source: `authority/voting/server/config/config.go`.

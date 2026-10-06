@@ -54,8 +54,7 @@ This means that the service will accept proxy requests for localhost:4242 (and
 only localhost:4242). You can use a wildcard "*", but this will allow any
 client to make http requests to any host.
 
-To build the proxy client, use the makefile. Set KATZENPOST_EPOCH_DURATION
-(for example 2m) at run time to match a testnet with short epochs.
+To build the proxy client, use the makefile.
 ::
 
    cd katzenpost/proxy
