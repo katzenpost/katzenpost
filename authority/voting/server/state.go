@@ -1125,7 +1125,8 @@ func (s *state) sendCommandToPeerUntil(peer *config.Authority, cmd commands.Comm
 	var lastResp commands.Command
 	lastErr := fmt.Errorf("peer %s: deadline exceeded", peer.Identifier)
 
-	for attempt := 0; attempt <= maxAttempts && time.Now().Before(deadline); attempt++ {
+	attempt := 0
+	for ; attempt <= maxAttempts && time.Now().Before(deadline); attempt++ {
 		if attempt > 0 {
 			delay := min(s.peerRetryDelay(attempt-1), time.Until(deadline))
 			if delay > 0 {
@@ -1150,12 +1151,17 @@ func (s *state) sendCommandToPeerUntil(peer *config.Authority, cmd commands.Comm
 			return nil, err
 		}
 		lastResp, lastErr = resp, err
-		instrument.PeerSendAttempt(peer.Identifier, "transient_error")
 		if err != nil {
+			instrument.PeerSendAttempt(peer.Identifier, "transient_error")
 			s.log.Warningf("peer %s: attempt %d failed: %v", peer.Identifier, attempt+1, err)
 		} else {
+			instrument.PeerSendAttempt(peer.Identifier, "too_early")
 			s.log.Debugf("peer %s: attempt %d too early", peer.Identifier, attempt+1)
 		}
+	}
+	if attempt == 0 {
+		instrument.PeerSendAttempt(peer.Identifier, "not_attempted")
+		return nil, lastErr
 	}
 	// All retries exhausted; mark the peer disconnected unless its last
 	// reply arrived (TooEarly), and report

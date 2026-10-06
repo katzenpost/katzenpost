@@ -63,7 +63,7 @@ var (
 	peerSendAttempt = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "katzenpost_dirauth_peer_send_attempt_total",
-			Help: "Number of attempts to send a command to a peer dirauth, labelled by peer identifier and result (ok, permanent_error, transient_error, deadline_exceeded).",
+			Help: "Number of attempts to send a command to a peer dirauth, labelled by peer identifier and result (ok, permanent_error, transient_error, too_early, deadline_exceeded, not_attempted).",
 		},
 		[]string{"peer", "result"},
 	)
