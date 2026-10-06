@@ -87,11 +87,11 @@ func TestChunkingSequenceAndBounds(t *testing.T) {
 	require.Error(t, err)
 
 	d = NewDechunker(4)
-	err = d.Consume([]byte("data"), 0, 5)
+	err = d.Consume([]byte("data"), 0, 9)
 	require.Error(t, err)
 
 	d = NewDechunker(4)
-	err = d.Consume([]byte("data"), 0, 4)
+	err = d.Consume([]byte("data"), 0, 8)
 	require.NoError(t, err)
 }
 
@@ -132,11 +132,12 @@ func TestDechunkerRejectsDecompressedOverCeiling(t *testing.T) {
 
 func TestDechunkerRejectsCompressedOverCeilingMidStream(t *testing.T) {
 	const ceiling = 1024
-	doc := make([]byte, 4*ceiling)
-	_, err := rand.Reader.Read(doc)
-	require.NoError(t, err)
-	chunks, err := Chunk(doc, 256)
-	require.NoError(t, err)
+	chunks := make([][]byte, 5)
+	for i := range chunks {
+		chunks[i] = make([]byte, 256)
+		_, err := rand.Reader.Read(chunks[i])
+		require.NoError(t, err)
+	}
 
 	d := NewDechunker(ceiling)
 	consumed, err := consumeAll(d, chunks)

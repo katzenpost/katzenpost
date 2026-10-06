@@ -53,6 +53,16 @@ func Chunk(blob []byte, chunkSize int) ([][]byte, error) {
 	return chunks, nil
 }
 
+const (
+	gzipFramingOverhead        = 10 + 8
+	deflateStoredBlockOverhead = 5
+	deflateBlockGranularity    = 1 << 14
+)
+
+func maxCompressedConsensusSize(maxConsensusSize int) int {
+	return maxConsensusSize + gzipFramingOverhead + deflateStoredBlockOverhead*(maxConsensusSize/deflateBlockGranularity+2)
+}
+
 type Dechunker struct {
 	ChunkNum   int
 	ChunkTotal int
@@ -60,6 +70,7 @@ type Dechunker struct {
 	Output     []byte
 
 	maxConsensusSize int
+	chunkSize        int
 }
 
 func NewDechunker(maxConsensusSize int) *Dechunker {
@@ -71,24 +82,37 @@ func NewDechunker(maxConsensusSize int) *Dechunker {
 }
 
 func (d *Dechunker) Consume(payload []byte, num, total int) error {
-	if total <= 0 || total > d.maxConsensusSize || num < 0 || num >= total {
+	limit := maxCompressedConsensusSize(d.maxConsensusSize)
+	if d.maxConsensusSize <= 0 || total <= 0 || total > limit || num < 0 || num >= total {
 		return errors.New("invalid chunk index or total")
 	}
-	if d.ChunkNum == 0 && d.ChunkTotal == 0 {
-		d.ChunkTotal = total
-	} else if total != d.ChunkTotal {
+	if d.ChunkNum != 0 && total != d.ChunkTotal {
 		return errors.New("Receive invalid Consensus2.ChunkTotal")
 	}
 	if num != d.ChunkNum {
 		return errors.New("unexpected chunk sequence")
 	}
-	if len(payload) > d.maxConsensusSize-d.Chunks.Len() {
+	if len(payload) == 0 {
+		return errors.New("empty consensus chunk")
+	}
+	chunkSize := d.chunkSize
+	if num == 0 {
+		chunkSize = len(payload)
+		if total > (limit+chunkSize-1)/chunkSize {
+			return errors.New("too many consensus chunks")
+		}
+	}
+	if len(payload) > chunkSize || (num != total-1 && len(payload) != chunkSize) {
+		return errors.New("consensus chunk size mismatch")
+	}
+	if len(payload) > limit-d.Chunks.Len() {
 		return errors.New("compressed consensus too large")
 	}
+	d.ChunkTotal = total
+	d.chunkSize = chunkSize
 	d.Chunks.Write(payload)
 	d.ChunkNum++
-	if int(num) == (d.ChunkTotal - 1) {
-		// last chunk
+	if num == total-1 {
 		zr, err := gzip.NewReader(d.Chunks)
 		if err != nil {
 			return err
