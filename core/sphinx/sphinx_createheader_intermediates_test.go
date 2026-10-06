@@ -17,15 +17,27 @@ type intermediateKeyRecorder struct {
 	nike.Scheme
 	secretPublicKeys  []nike.PublicKey
 	blindedPublicKeys []nike.PublicKey
+	liveBlinded       int
+}
+
+func (s *intermediateKeyRecorder) countLiveBlinded() {
+	for _, key := range s.blindedPublicKeys {
+		b := key.Bytes()
+		if !bytes.Equal(b, make([]byte, len(b))) {
+			s.liveBlinded++
+		}
+	}
 }
 
 func (s *intermediateKeyRecorder) NewEmptyPublicKey() nike.PublicKey {
+	s.countLiveBlinded()
 	pubkey := s.Scheme.NewEmptyPublicKey()
 	s.secretPublicKeys = append(s.secretPublicKeys, pubkey)
 	return pubkey
 }
 
 func (s *intermediateKeyRecorder) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) nike.PublicKey {
+	s.countLiveBlinded()
 	blinded := s.Scheme.Blind(groupMember, blindingFactor)
 	if blinded != nil {
 		s.blindedPublicKeys = append(s.blindedPublicKeys, blinded)
@@ -57,4 +69,5 @@ func TestCreateHeaderResetsIntermediateKeys(t *testing.T) {
 	require.Len(t, recorder.blindedPublicKeys, intermediates)
 	requireIntermediateKeysReset(t, recorder.secretPublicKeys)
 	requireIntermediateKeysReset(t, recorder.blindedPublicKeys)
+	require.Zero(t, recorder.liveBlinded, "a blinded intermediate key outlived its last use")
 }
