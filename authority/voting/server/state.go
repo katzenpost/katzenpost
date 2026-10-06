@@ -1145,12 +1145,13 @@ func (s *state) sendCommandToPeerUntil(peer *config.Authority, cmd commands.Comm
 			s.log.Debugf("peer %s: attempt %d too early", peer.Identifier, attempt+1)
 		}
 	}
-	// All retries exhausted; mark the peer disconnected and report
+	// All retries exhausted; mark the peer disconnected unless its last
+	// reply arrived (TooEarly), and report
 	// the final outcome as deadline-exceeded so the rate panel can
 	// distinguish "transient flake we recovered from" from "we gave
 	// up entirely".
 	instrument.PeerSendAttempt(peer.Identifier, "deadline_exceeded")
-	instrument.PeerConnected(peer.Identifier, false)
+	instrument.PeerConnected(peer.Identifier, lastErr == nil)
 	if lastErr == nil {
 		return lastResp, nil
 	}
