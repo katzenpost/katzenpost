@@ -192,7 +192,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 		utils.ExplicitBzero(sharedSecret)
 		err = clientPublicKey.Blind(keys[i-1].BlindingFactor)
 		if err != nil {
-			panic(err)
+			return nil, nil, fmt.Errorf("sphinx: failed to blind client public key: %s", err)
 		}
 		if utils.CtIsZero(clientPublicKey.Bytes()) {
 			return nil, nil, errors.New("sphinx: degenerate blinded key")
