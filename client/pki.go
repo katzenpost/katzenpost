@@ -193,9 +193,16 @@ func (p *pki) setClockSkew(skew int64) {
 	p.clockSkewLock.Lock()
 	p.clockSkew = skew
 	p.clockSkewLock.Unlock()
-	p.refetch.Store(true)
 
 	// Wake up the worker if able to.
+	select {
+	case p.forceUpdateCh <- true:
+	default:
+	}
+}
+
+func (p *pki) onConnected() {
+	p.refetch.Store(true)
 	select {
 	case p.forceUpdateCh <- true:
 	default:

@@ -90,7 +90,7 @@ func TestPKIWorkerRefetchesCachedDocumentOnReconnect(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	require.Zero(t, g.count(epoch))
 
-	p.setClockSkew(0)
+	p.onConnected()
 	require.Eventually(t, func() bool { return g.count(epoch) >= 1 }, 5*time.Second, 10*time.Millisecond)
 }
 
