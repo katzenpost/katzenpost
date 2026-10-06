@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -122,7 +124,7 @@ func (s *state) dialAndHandshakePeer(peer *config.Authority, addrs []string) (*w
 		return nil, nil, err
 	}
 
-	session, err := s.newOutboundSession(conn, handshakeTimeout, responseTimeout)
+	session, err := s.newOutboundSession(conn, peer, handshakeTimeout, responseTimeout)
 	if err != nil {
 		conn.Close()
 		return nil, nil, err
@@ -170,7 +172,7 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 
 // newOutboundSession builds an outbound wire session to be handshaked over
 // conn, closing conn if the configured KEM scheme is unregistered.
-func (s *state) newOutboundSession(conn net.Conn, handshakeTimeout, responseTimeout time.Duration) (*wire.Session, error) {
+func (s *state) newOutboundSession(conn net.Conn, peer *config.Authority, handshakeTimeout, responseTimeout time.Duration) (*wire.Session, error) {
 	identityHash := hash.Sum256From(s.s.identityPublicKey)
 	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
 	if kemscheme == nil {
@@ -181,7 +183,7 @@ func (s *state) newOutboundSession(conn net.Conn, handshakeTimeout, responseTime
 		KEMScheme:          kemscheme,
 		PKISignatureScheme: signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme),
 		Geometry:           s.geo,
-		Authenticator:      s,
+		Authenticator:      s.newOutboundAuthenticator(peer),
 		AdditionalData:     identityHash[:],
 		AuthenticationKey:  s.s.linkKey,
 		RandomReader:       rand.Reader,
@@ -191,6 +193,38 @@ func (s *state) newOutboundSession(conn net.Conn, handshakeTimeout, responseTime
 		MaxMessageSize:     s.s.maxMessageSize,
 	}
 	return wire.NewPKISession(cfg, true)
+}
+
+type outboundAuthenticator struct {
+	name         string
+	identityHash []byte
+	linkKey      kem.PublicKey
+	s            *state
+}
+
+func (s *state) newOutboundAuthenticator(peer *config.Authority) *outboundAuthenticator {
+	a := &outboundAuthenticator{name: peer.Identifier, linkKey: peer.LinkPublicKey.PublicKey, s: s}
+	if peer.IdentityPublicKey != nil {
+		h := hash.Sum256From(peer.IdentityPublicKey)
+		a.identityHash = h[:]
+	}
+	return a
+}
+
+func (a *outboundAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
+	if !a.s.IsPeerValid(creds) || len(a.identityHash) != publicKeyHashSize {
+		a.s.log.Warningf("peer %s: rejecting responder, identity is not an authorized authority", a.name)
+		return false
+	}
+	if !hmac.Equal(a.identityHash, creds.AdditionalData[:publicKeyHashSize]) {
+		a.s.log.Warningf("peer %s: rejecting responder, identity is not the dialled authority", a.name)
+		return false
+	}
+	if a.linkKey == nil || creds.PublicKey == nil || !a.linkKey.Equal(creds.PublicKey) {
+		a.s.log.Warningf("peer %s: rejecting responder, link key mismatch", a.name)
+		return false
+	}
+	return true
 }
 
 // handshakeOutboundSession completes the wire handshake on session over
