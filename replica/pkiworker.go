@@ -29,9 +29,7 @@ import (
 
 const PKIDocNum = 3
 
-var (
-	PublishDeadline = vServer.MixPublishDeadline()
-)
+func PublishDeadline() time.Duration { return vServer.MixPublishDeadline() }
 
 type PKIWorker struct {
 	worker.Worker

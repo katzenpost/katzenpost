@@ -19,9 +19,9 @@ func TestPeriodDerivedParity(t *testing.T) {
 			got         time.Duration
 			long, short time.Duration
 		}{
-			{"PublishDeadline", PublishDeadline, 150 * time.Second, 15 * time.Second},
-			{"descriptorUploadSafety", descriptorUploadSafety, 25 * time.Second, 2500 * time.Millisecond},
-			{"retryTTL", retryTTL, 60 * time.Minute, 6 * time.Minute},
+			{"PublishDeadline", PublishDeadline(), 150 * time.Second, 15 * time.Second},
+			{"descriptorUploadSafety", descriptorUploadSafety(), 25 * time.Second, 2500 * time.Millisecond},
+			{"retryTTL", retryTTL(), 60 * time.Minute, 6 * time.Minute},
 		} {
 			want := c.short
 			if long {

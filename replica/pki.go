@@ -58,7 +58,7 @@ const (
 // chose. A more durable fix would lengthen the warped epoch or
 // allow descriptor uploads to span an epoch boundary; that is
 // left for a separate change so this commit stays focused.
-var descriptorUploadSafety = PublishDeadline / 6
+func descriptorUploadSafety() time.Duration { return PublishDeadline() / 6 }
 
 type postReplicaAcceptedAuthoritiesProvider interface {
 	LastPostReplicaAcceptedAuthorities(epoch uint64) []string
@@ -275,9 +275,9 @@ func (p *PKIWorker) updateEpochTracking(lastUpdateEpoch uint64) uint64 {
 func (p *PKIWorker) updateTimer(timer *time.Timer) {
 	currentEpoch, elapsed, till := epochtime.Now()
 
-	uploadDeadline := PublishDeadline - descriptorUploadSafety
+	uploadDeadline := PublishDeadline() - descriptorUploadSafety()
 	if uploadDeadline < 0 {
-		uploadDeadline = PublishDeadline
+		uploadDeadline = PublishDeadline()
 	}
 
 	p.GetLogger().Debugf(
@@ -285,8 +285,8 @@ func (p *PKIWorker) updateTimer(timer *time.Timer) {
 		currentEpoch,
 		elapsed,
 		till,
-		PublishDeadline,
-		descriptorUploadSafety,
+		PublishDeadline(),
+		descriptorUploadSafety(),
 		p.lastPublishedEpoch,
 	)
 
@@ -351,9 +351,9 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return nil
 	}
 
-	uploadDeadline := PublishDeadline - descriptorUploadSafety
+	uploadDeadline := PublishDeadline() - descriptorUploadSafety()
 	if uploadDeadline < 0 {
-		uploadDeadline = PublishDeadline
+		uploadDeadline = PublishDeadline()
 	}
 
 	if elapsed >= uploadDeadline {
@@ -362,8 +362,8 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
-			PublishDeadline,
-			descriptorUploadSafety,
+			PublishDeadline(),
+			descriptorUploadSafety(),
 			till,
 		)
 		return nil
@@ -376,8 +376,8 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
-			PublishDeadline,
-			descriptorUploadSafety,
+			PublishDeadline(),
+			descriptorUploadSafety(),
 			till,
 		)
 		return nil
@@ -388,8 +388,8 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		doPublishEpoch,
 		currentEpoch,
 		elapsed,
-		PublishDeadline,
-		descriptorUploadSafety,
+		PublishDeadline(),
+		descriptorUploadSafety(),
 		budget,
 		"prepublishing next epoch while descriptor upload window remains open",
 	)

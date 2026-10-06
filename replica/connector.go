@@ -72,7 +72,7 @@ var (
 	maxRetryQueuePerPeer = 2000
 	// retryTTL is how long a pending retry may live before it is pruned.
 	// Longer outages should be healed by Rebalance, not this queue.
-	retryTTL = 3 * epochtime.Period()
+	retryTTL = func() time.Duration { return 3 * epochtime.Period() }
 )
 
 func (co *Connector) Halt() {
@@ -234,7 +234,7 @@ func (co *Connector) pruneRetryQueueLocked() {
 	now := time.Now()
 	j := 0
 	for i, rc := range co.retryQueue {
-		if now.Sub(rc.firstSeen) > retryTTL {
+		if now.Sub(rc.firstSeen) > retryTTL() {
 			co.log.Warningf("Dropping expired retry: peer %x ident %x age %s attempts %d", rc.idHash[:8], rc.ident[:8], now.Sub(rc.firstSeen), rc.attempts)
 			instrument.RetryQueueDropped("ttl")
 			continue

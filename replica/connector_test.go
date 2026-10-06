@@ -152,7 +152,7 @@ func TestQueueForRetryAcceptsReplicaMessage(t *testing.T) {
 
 func TestPruneRetryQueueDropsExpired(t *testing.T) {
 	orig := retryTTL
-	retryTTL = 50 * time.Millisecond
+	retryTTL = func() time.Duration { return 50 * time.Millisecond }
 	defer func() { retryTTL = orig }()
 
 	co := newTestConnector(t)
