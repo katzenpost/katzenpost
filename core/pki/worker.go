@@ -15,13 +15,16 @@ import (
 
 const NumPKIDocsToFetch = 3
 
-var (
-	// PublishConsensusDeadline is when the authority publishes the consensus
-	PublishConsensusDeadline = epochtime.Period() - (epochtime.Period() / 8)
-	mixServerCacheDelay      = epochtime.Period() / 16
-	nextFetchTill            = epochtime.Period() - (PublishConsensusDeadline + mixServerCacheDelay)
-	recheckInterval          = epochtime.Period() / 32
-)
+// PublishConsensusDeadline is when the authority publishes the consensus
+func PublishConsensusDeadline() time.Duration { return epochtime.Period() - (epochtime.Period() / 8) }
+
+func mixServerCacheDelay() time.Duration { return epochtime.Period() / 16 }
+
+func nextFetchTill() time.Duration {
+	return epochtime.Period() - (PublishConsensusDeadline() + mixServerCacheDelay())
+}
+
+func recheckInterval() time.Duration { return epochtime.Period() / 32 }
 
 // FetchTimeout bounds a single fetch cycle (every epoch in DocumentsToFetch).
 // A healthy consensus fetch races all authorities and returns on the first
@@ -61,7 +64,7 @@ func (w *WorkerBase) DocumentsToFetch() []uint64 {
 	ret := make([]uint64, 0, NumPKIDocsToFetch+1)
 	now, _, till := epochtime.Now()
 	start := now
-	if till < nextFetchTill {
+	if till < nextFetchTill() {
 		start = now + 1
 	}
 
@@ -211,11 +214,11 @@ func (w *WorkerBase) UpdateTimer(timer *time.Timer) {
 	w.log.Debugf("pki woke %v into epoch %v with %v remaining", elapsed, now, till)
 
 	// it's after the consensus publication deadline
-	if elapsed > PublishConsensusDeadline {
+	if elapsed > PublishConsensusDeadline() {
 		w.log.Debugf("After deadline for next epoch publication")
 		if w.EntryForEpoch(now+1) == nil {
-			w.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval)
-			timer.Reset(recheckInterval)
+			w.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval())
+			timer.Reset(recheckInterval())
 		} else {
 			interval := till
 			w.log.Debugf("document cached for %v, reset to %v", now+1, interval)
@@ -225,11 +228,11 @@ func (w *WorkerBase) UpdateTimer(timer *time.Timer) {
 		w.log.Debugf("Not yet time for next epoch publication")
 		// no document for current epoch
 		if w.EntryForEpoch(now) == nil {
-			w.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval)
-			timer.Reset(recheckInterval)
+			w.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval())
+			timer.Reset(recheckInterval())
 		} else {
-			interval := PublishConsensusDeadline - elapsed
-			w.log.Debugf("Document cached for current epoch %v, reset to %v", now, recheckInterval)
+			interval := PublishConsensusDeadline() - elapsed
+			w.log.Debugf("Document cached for current epoch %v, reset to %v", now, recheckInterval())
 			timer.Reset(interval)
 		}
 	}
