@@ -1,4 +1,4 @@
-.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-report interop-matrix interop-combo client-check
+.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-env-check interop-report interop-matrix interop-combo client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -1051,7 +1051,7 @@ interop-gate: interop-ref-binaries
 	     else r=$$(git -C .. describe --tags --abbrev=0 --match 'v*.*.*' "$$v") || exit 1; fi;; esac; \
 	  nv="$$nv$${nv:+,}$$s=$$r"; done; \
 	echo "interop-gate: node versions: $${nv:-every node runs this build}"; \
-	$(MAKE) start node_versions="$$nv"
+	$(MAKE) start node_versions="$$nv" && $(MAKE) -s interop-env-check node_versions="$$nv"
 	@deadline=$$(( $$(date +%s) + $(wait_seconds) )); poll=$$(( $(epoch_seconds) / 4 )); \
 	  [ $$poll -gt 0 ] || poll=1; ok=0; \
 	  while left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ]; do \
@@ -1067,6 +1067,14 @@ interop-gate: interop-ref-binaries
 	  grep -q " rev $$(git -C .. rev-list -n 1 $$v)" $(net_name)/$$s/*.log \
 	  || { echo "swap verify failed: $$s is not running $$v" >&2; exit 1; }; done
 	$(MAKE) run-ping || (sleep 10; $(MAKE) run-ping) || (sleep 10; $(MAKE) run-ping)
+
+interop-env-check:
+	@[ -f $(docker_compose_yml) ] || { echo "interop-gate: $(docker_compose_yml) is missing" >&2; exit 1; }; \
+	want=$$(for pair in $$(printf '%s' "$(node_versions)" | tr , ' '); do [ "$${pair#*=}" = current ] || echo "$${pair%%=*}"; done | sort); \
+	got=$$(awk '/^  [A-Za-z0-9_-]+:$$/ { svc = substr($$1, 1, length($$1) - 1) } /^ +- KATZENPOST_EPOCH_DURATION=/ { print svc }' $(docker_compose_yml) | sort -u); \
+	[ "$$want" = "$$got" ] \
+	|| { echo "interop-gate: KATZENPOST_EPOCH_DURATION is on [$$(printf '%s' "$$got" | tr '\n' ' ')] in $(docker_compose_yml), want exactly [$$(printf '%s' "$$want" | tr '\n' ' ')]" >&2; exit 1; }; \
+	echo "interop-gate: KATZENPOST_EPOCH_DURATION on exactly the older-release services: $$(printf '%s' "$${want:-none}" | tr '\n' ' ')"
 
 interop-report:
 	@ver() { for pair in $(strip $(interop_swaps)); do [ "$${pair%%=*}" = "$$1" ] && { echo $${pair#*=}; return; }; done; echo HEAD; }; \

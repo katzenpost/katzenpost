@@ -284,7 +284,9 @@ was probed against a healthy mixnet-alpine and passed as of this writing
   plugins are launched by path from the same tree. Swap verification reads the
   ``rev`` each daemon logs at startup, present since v0.0.93. The swap is a
   ``docker-compose.override.yml`` on the swapped services' ``command`` only;
-  ``make stop`` removes it.
+  ``make stop`` removes it. After start the gate fails unless the generated
+  ``docker-compose.yml`` sets ``KATZENPOST_EPOCH_DURATION`` on exactly the
+  services resolved to an older release (``make interop-env-check``).
 * ``make interop-combo combo=<name>`` -- run one of the eight named upgrade
   combinations through ``interop-gate``, and reject any other name; the eight are
   ``authorities-mixed``, ``authorities-old``, ``authorities-old-n1``,
