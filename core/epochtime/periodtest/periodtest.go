@@ -23,8 +23,8 @@ func Run(t *testing.T, check func(t *testing.T, p time.Duration)) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := epochtime.Period; got != p {
-			t.Fatalf("epochtime.Period is %v, want %v", got, p)
+		if got := epochtime.Period(); got != p {
+			t.Fatalf("epochtime.Period() is %v, want %v", got, p)
 		}
 		check(t, p)
 		return

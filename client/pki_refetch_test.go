@@ -102,7 +102,7 @@ func TestPKIWorkerRefetchesCachedDocumentOnEpochChange(t *testing.T) {
 
 	g.reset()
 	p.clockSkewLock.Lock()
-	p.clockSkew = int64(epochtime.Period.Seconds())
+	p.clockSkew = int64(epochtime.Period().Seconds())
 	p.clockSkewLock.Unlock()
 	p.forceUpdateCh <- true
 	require.Eventually(t, func() bool { return g.count(epoch+1) >= 1 }, 5*time.Second, 10*time.Millisecond)

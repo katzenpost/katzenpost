@@ -110,7 +110,7 @@ func (d *decoy) gc(epoch uint64) {
 }
 
 func (d *decoy) gcWorker() {
-	timer := time.NewTimer(epochtime.Period)
+	timer := time.NewTimer(epochtime.Period())
 	defer timer.Stop()
 
 	for {
@@ -132,7 +132,7 @@ func (d *decoy) gcWorker() {
 			case <-timer.C:
 			}
 		}
-		timer.Reset(epochtime.Period)
+		timer.Reset(epochtime.Period())
 	}
 }
 
@@ -419,7 +419,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			return
 		}
 
-		if deltaT := then.Sub(now); deltaT < epochtime.Period*2 {
+		if deltaT := then.Sub(now); deltaT < epochtime.Period()*2 {
 			zeroBytes := make([]byte, d.geo.UserForwardPayloadLength)
 			payload := make([]byte, 2, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
 			payload[0] = 1 // Packet has a SURB.

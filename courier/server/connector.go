@@ -114,8 +114,8 @@ func (co *Connector) worker() {
 	co.log.Debug("Connector worker thread started.")
 
 	var (
-		initialSpawnDelay = epochtime.Period / 64
-		resweepInterval   = epochtime.Period / 8
+		initialSpawnDelay = epochtime.Period() / 64
+		resweepInterval   = epochtime.Period() / 8
 	)
 
 	co.log.Debugf("initialSpawnDelay is %v", initialSpawnDelay)

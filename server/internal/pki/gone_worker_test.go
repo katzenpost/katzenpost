@@ -65,7 +65,7 @@ func TestWorkerCachesOnlyWrappedGoneFromFetch(t *testing.T) {
 	p.StartWorker()
 	defer p.Halt()
 
-	deadline := time.Now().Add(epochtime.Period/64 + 30*time.Second)
+	deadline := time.Now().Add(epochtime.Period()/64 + 30*time.Second)
 	for {
 		var gone, other int
 		for epoch := range f.seen() {

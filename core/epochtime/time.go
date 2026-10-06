@@ -19,18 +19,26 @@ package epochtime
 
 import (
 	"os"
+	"sync/atomic"
 	"time"
 )
 
-// Period is the default duration of a Katzenpost epoch
-// if no environment variable is set.
-var Period = 20 * time.Minute
+const DefaultPeriod = 20 * time.Minute
+
+var period atomic.Int64
+
+func Period() time.Duration {
+	if p := period.Load(); p != 0 {
+		return time.Duration(p)
+	}
+	return DefaultPeriod
+}
 
 // Epoch is the Katzenpost epoch expressed in UTC.
 var Epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
 
 // WeekOfEpochs is the number of epochs in a week
-var WeekOfEpochs = uint64(time.Duration(time.Hour*24*7) / Period)
+var WeekOfEpochs = uint64(time.Duration(time.Hour*24*7) / Period())
 
 // Now returns the current Katzenpost epoch, time since the start of the
 // current epoch, and time till the next epoch.
@@ -41,8 +49,9 @@ func Now() (current uint64, elapsed, till time.Duration) {
 // IsInEpoch returns true iff the epoch e contains the time t, measured in the
 // number of seconds since the UNIX epoch.
 func IsInEpoch(e uint64, t uint64) bool {
-	deltaStart := time.Duration(e) * Period
-	deltaEnd := time.Duration(e+1) * Period
+	p := Period()
+	deltaStart := time.Duration(e) * p
+	deltaEnd := time.Duration(e+1) * p
 
 	startTime := Epoch.Add(deltaStart)
 	endTime := Epoch.Add(deltaEnd)
@@ -67,11 +76,12 @@ func getEpoch(t time.Time) (current uint64, elapsed, till time.Duration) {
 		panic("epochtime: BUG: time appears to predate the epoch")
 	}
 
-	current = uint64(fromEpoch / Period)
+	p := Period()
+	current = uint64(fromEpoch / p)
 
-	base := Epoch.Add(time.Duration(current) * Period)
+	base := Epoch.Add(time.Duration(current) * p)
 	elapsed = t.Sub(base)
-	till = base.Add(Period).Sub(t)
+	till = base.Add(p).Sub(t)
 	return
 }
 
@@ -85,5 +95,5 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	Period = duration
+	period.Store(int64(duration))
 }

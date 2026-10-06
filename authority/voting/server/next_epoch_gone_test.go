@@ -29,11 +29,11 @@ func documentForNextEpochAt(t *testing.T, elapsed time.Duration) error {
 }
 
 func TestDocumentForNextEpochIsGoneJustPastGenerationDeadline(t *testing.T) {
-	generationDeadline := 7 * (epochtime.Period / 8)
+	generationDeadline := 7 * (epochtime.Period() / 8)
 	require.ErrorIs(t, documentForNextEpochAt(t, generationDeadline+time.Second), errGone)
 }
 
 func TestDocumentForNextEpochIsNotYetJustBeforeGenerationDeadline(t *testing.T) {
-	generationDeadline := 7 * (epochtime.Period / 8)
+	generationDeadline := 7 * (epochtime.Period() / 8)
 	require.ErrorIs(t, documentForNextEpochAt(t, generationDeadline-time.Second), errNotYet)
 }

@@ -21,7 +21,7 @@ import (
 // maxPathSelectionAttempts bounds how many times ComposeSphinxPacket and
 // ComposeSphinxPacketForQuery will re-roll path selection when selection
 // straddles an epoch boundary or returns a path whose total delay exceeds
-// 2 × epochtime.Period. Without this cap a pathological PKI document
+// 2 x epochtime.Period(). Without this cap a pathological PKI document
 // could spin either loop at full CPU per outbound packet until shutdown.
 // 32 is well clear of the handful of retries a healthy epoch rollover
 // typically needs, while remaining a small, diagnosable ceiling.
@@ -200,7 +200,7 @@ func (c *Client) ComposeSphinxPacketWithRoute(request *Request) (pkt []byte, sur
 		// It is possible, but unlikely that a series of delays exceeding
 		// the PKI publication imposted limitations will be selected.  When
 		// that happens, the path selection must be redone.
-		if then.Sub(now) < epochtime.Period*2 {
+		if then.Sub(now) < epochtime.Period()*2 {
 			rt := c.routeNames(fwdPath, revPath)
 			if withSURB {
 				payload := make([]byte, 2, 2+c.geo.SURBLength+len(requestPayload))
@@ -408,7 +408,7 @@ func (c *Client) ComposeSphinxPacketForQueryWithRoute(request *thin.SendChannelQ
 		// It is possible, but unlikely that a series of delays exceeding
 		// the PKI publication imposted limitations will be selected.  When
 		// that happens, the path selection must be redone.
-		if then.Sub(now) < epochtime.Period*2 {
+		if then.Sub(now) < epochtime.Period()*2 {
 			rt := c.routeNames(fwdPath, revPath)
 			payload := make([]byte, 2, 2+c.geo.SURBLength+len(request.Payload))
 			payload[0] = 1 // Packet has a SURB.

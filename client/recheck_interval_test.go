@@ -11,5 +11,5 @@ import (
 )
 
 func TestRecheckIntervalFollowsPeriod(t *testing.T) {
-	require.Equal(t, epochtime.Period/16, recheckInterval)
+	require.Equal(t, epochtime.Period()/16, recheckInterval)
 }

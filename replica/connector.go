@@ -72,7 +72,7 @@ var (
 	maxRetryQueuePerPeer = 2000
 	// retryTTL is how long a pending retry may live before it is pruned.
 	// Longer outages should be healed by Rebalance, not this queue.
-	retryTTL = 3 * epochtime.Period
+	retryTTL = 3 * epochtime.Period()
 )
 
 func (co *Connector) Halt() {
@@ -393,7 +393,7 @@ func (co *Connector) worker() {
 	log := co.server.LogBackend().GetLogger("replica connectorWorker")
 
 	var (
-		resweepInterval = epochtime.Period / 8
+		resweepInterval = epochtime.Period() / 8
 	)
 
 	log.Debug("Starting connector worker")

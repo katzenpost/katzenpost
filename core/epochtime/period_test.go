@@ -15,14 +15,14 @@ func TestPeriodDefault(t *testing.T) {
 	if os.Getenv("KATZENPOST_EPOCH_DURATION") != "" {
 		t.Skip("KATZENPOST_EPOCH_DURATION is set")
 	}
-	require.Equal(t, 20*time.Minute, Period)
+	require.Equal(t, 20*time.Minute, Period())
 }
 
 func TestPeriodFromEnvironment(t *testing.T) {
 	if want := os.Getenv("EPOCHTIME_WANT_PERIOD"); want != "" {
 		d, err := time.ParseDuration(want)
 		require.NoError(t, err)
-		require.Equal(t, d, Period)
+		require.Equal(t, d, Period())
 		return
 	}
 	for _, d := range []string{"2m", "90s", "20m"} {

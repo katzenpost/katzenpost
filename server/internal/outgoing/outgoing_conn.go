@@ -144,8 +144,8 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 
 func (c *outgoingConn) worker() {
 	var (
-		retryIncrement = epochtime.Period / 64
-		maxRetryDelay  = epochtime.Period / 8
+		retryIncrement = epochtime.Period() / 64
+		maxRetryDelay  = epochtime.Period() / 8
 	)
 
 	defer func() {

@@ -31,9 +31,9 @@ const NumPKIDocsToFetch = 3
 
 var (
 	PublishDeadline     = vServer.PublishConsensusDeadline
-	mixServerCacheDelay = epochtime.Period / 16
-	nextFetchTill       = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	recheckInterval     = epochtime.Period / 32
+	mixServerCacheDelay = epochtime.Period() / 16
+	nextFetchTill       = epochtime.Period() - (PublishDeadline + mixServerCacheDelay)
+	recheckInterval     = epochtime.Period() / 32
 )
 
 type PKIWorker struct {
@@ -175,7 +175,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 }
 
 func (p *PKIWorker) worker() {
-	var initialSpawnDelay = epochtime.Period / 64
+	var initialSpawnDelay = epochtime.Period() / 64
 	timer := time.NewTimer(initialSpawnDelay)
 	defer timer.Stop()
 

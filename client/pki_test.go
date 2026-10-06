@@ -559,7 +559,7 @@ func lenSyncMap(m *sync.Map) int {
 // outright failure cases (no current doc, or past the threshold with
 // next still missing) it falls back to recheckInterval polling.
 func TestNextPKIWakeup(t *testing.T) {
-	period := epochtime.Period
+	period := epochtime.Period()
 	cases := []struct {
 		name     string
 		till     time.Duration

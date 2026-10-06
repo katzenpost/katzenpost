@@ -102,8 +102,8 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 
 func (co *connector) worker() {
 	var (
-		initialSpawnDelay = epochtime.Period / 64
-		resweepInterval   = epochtime.Period / 8
+		initialSpawnDelay = epochtime.Period() / 64
+		resweepInterval   = epochtime.Period() / 8
 	)
 
 	timer := time.NewTimer(initialSpawnDelay)

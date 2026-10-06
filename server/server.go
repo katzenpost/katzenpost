@@ -193,7 +193,7 @@ func (s *Server) waitForConsensusExit() {
 
 	lastEpoch := s.shutdownPKI.StopAdvertising()
 	currentEpoch, _, till := epochtime.Now()
-	wait := consensusExitWait(lastEpoch, currentEpoch, till, epochtime.Period)
+	wait := consensusExitWait(lastEpoch, currentEpoch, till, epochtime.Period())
 	if wait <= 0 {
 		s.log.Noticef("Consensus withdrawal complete: node is not advertised in epoch %d.", currentEpoch)
 		return

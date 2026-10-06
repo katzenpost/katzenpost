@@ -54,10 +54,10 @@ import (
 var (
 	errNotCached              = errors.New("pki: requested epoch document not in cache")
 	errSphinxGeometryMismatch = errors.New("pki: document Sphinx geometry does not match the local configuration")
-	recheckInterval           = epochtime.Period / 16
-	pkiEarlyConnectSlack      = epochtime.Period / 8
+	recheckInterval           = epochtime.Period() / 16
+	pkiEarlyConnectSlack      = epochtime.Period() / 8
 	PublishDeadline           = vServer.MixPublishDeadline
-	nextFetchTill             = epochtime.Period - PublishDeadline
+	nextFetchTill             = epochtime.Period() - PublishDeadline
 
 	// descriptorUploadSafety is the wall-clock margin we leave
 	// before MixPublishDeadline so a slow upload still finishes
@@ -232,7 +232,7 @@ func (p *pki) updateAuthDocsCache() {
 }
 
 func (p *pki) worker() {
-	var initialSpawnDelay = epochtime.Period / 64
+	var initialSpawnDelay = epochtime.Period() / 64
 	timer := time.NewTimer(initialSpawnDelay)
 
 	defer func() {
@@ -947,7 +947,7 @@ func (p *pki) authenticateConnectionWithDocs(c *wire.PeerCredentials, isOutgoing
 	if c == nil {
 		return nil, false, false
 	}
-	var earlySendSlack = epochtime.Period / 8
+	var earlySendSlack = epochtime.Period() / 8
 
 	dirStr := "Incoming"
 	if isOutgoing {

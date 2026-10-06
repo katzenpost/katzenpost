@@ -40,7 +40,7 @@ func TestEpochArithmeticParity(t *testing.T) {
 }
 
 func TestWeekOfEpochsAtDefaultParity(t *testing.T) {
-	if epochtime.Period != 20*time.Minute {
+	if epochtime.Period() != 20*time.Minute {
 		t.Skip("period is not the default")
 	}
 	require.Equal(t, uint64(504), epochtime.WeekOfEpochs)

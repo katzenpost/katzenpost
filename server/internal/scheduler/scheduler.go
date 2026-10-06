@@ -77,7 +77,7 @@ func (sch *scheduler) OnPacket(pkt *packet.Packet) {
 }
 
 func (sch *scheduler) worker() {
-	var absoluteMaxDelay = epochtime.Period * constants.NumMixKeys
+	var absoluteMaxDelay = epochtime.Period() * constants.NumMixKeys
 
 	timerSlack := time.Duration(sch.glue.Config().Debug.SchedulerSlack) * time.Millisecond
 	timer := time.NewTimer(math.MaxInt64)

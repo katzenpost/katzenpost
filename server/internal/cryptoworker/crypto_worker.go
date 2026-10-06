@@ -246,7 +246,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 
 		// Check and adjust the delay for queue dwell time.
 		pkt.Delay = time.Duration(pkt.NodeDelay.Delay) * time.Millisecond
-		if pkt.Delay > constants.NumMixKeys*epochtime.Period {
+		if pkt.Delay > constants.NumMixKeys*epochtime.Period() {
 			w.log.Debugf("Dropping packet: %v (Delay1 %v is past what is possible)", pkt.ID, pkt.Delay)
 			instrument.PacketsDropped()
 			instrument.PacketsDroppedByReason("delay_impossible")

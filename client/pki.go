@@ -28,9 +28,9 @@ var (
 	errConsensusNotFound    = errors.New("client/pki: consensus not ready yet")
 	errBadConsensus         = errors.New("client/pki: consensus from gateway failed to decode")
 	PublishDeadline         = vServer.PublishConsensusDeadline
-	mixServerCacheDelay     = epochtime.Period / 16
-	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	recheckInterval         = epochtime.Period / 16
+	mixServerCacheDelay     = epochtime.Period() / 16
+	nextFetchTill           = epochtime.Period() - (PublishDeadline + mixServerCacheDelay)
+	recheckInterval         = epochtime.Period() / 16
 
 	// waitForCurrentDocumentAttempts caps the number of synchronous
 	// updateDocument retries WaitForCurrentDocument performs before

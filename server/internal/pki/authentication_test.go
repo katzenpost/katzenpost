@@ -132,7 +132,7 @@ func (f *authFixture) snapshot(t *testing.T, now uint64, till time.Duration, out
 	var offsets []int
 	if reachable {
 		start := 0
-		if till < epochtime.Period/8 {
+		if till < epochtime.Period()/8 {
 			start = 1
 		}
 		for off := start; off >= -(constants.NumMixKeys - 1); off-- {
@@ -176,7 +176,7 @@ func (f *authFixture) snapshot(t *testing.T, now uint64, till time.Duration, out
 func TestAuthenticateConnectionEpochsAndKeys(t *testing.T) {
 	f := newAuthFixture(t)
 	const now = uint64(100)
-	slack := epochtime.Period / 8
+	slack := epochtime.Period() / 8
 	cases := []authCase{
 		{name: "no documents"},
 		{name: "unknown identity", docs: []document{{0, -1, 0}}},

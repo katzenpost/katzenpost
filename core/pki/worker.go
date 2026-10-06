@@ -17,10 +17,10 @@ const NumPKIDocsToFetch = 3
 
 var (
 	// PublishConsensusDeadline is when the authority publishes the consensus
-	PublishConsensusDeadline = epochtime.Period - (epochtime.Period / 8)
-	mixServerCacheDelay      = epochtime.Period / 16
-	nextFetchTill            = epochtime.Period - (PublishConsensusDeadline + mixServerCacheDelay)
-	recheckInterval          = epochtime.Period / 32
+	PublishConsensusDeadline = epochtime.Period() - (epochtime.Period() / 8)
+	mixServerCacheDelay      = epochtime.Period() / 16
+	nextFetchTill            = epochtime.Period() - (PublishConsensusDeadline + mixServerCacheDelay)
+	recheckInterval          = epochtime.Period() / 32
 )
 
 // FetchTimeout bounds a single fetch cycle (every epoch in DocumentsToFetch).

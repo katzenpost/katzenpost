@@ -77,11 +77,11 @@ const (
 )
 
 var (
-	MixPublishDeadline       = epochtime.Period / 8
-	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8
-	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
-	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period/8
-	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period/8
+	MixPublishDeadline       = epochtime.Period() / 8
+	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period()/8
+	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period()/8
+	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period()/8
+	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period()/8
 	errGone                  = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet                = errors.New("authority: Document is not ready yet")
 	errInvalidTopology       = errors.New("authority: Invalid Topology")
@@ -2738,7 +2738,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	var generationDeadline = 7 * (epochtime.Period / 8)
+	var generationDeadline = 7 * (epochtime.Period() / 8)
 
 	if m := s.servedDocs.Load(); m != nil {
 		if b, ok := (*m)[epoch]; ok {
@@ -3057,7 +3057,7 @@ func newState(s *Server) (*state, error) {
 
 	// set voting schedule at runtime
 
-	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
+	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period())
 	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline)
 	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
 	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
