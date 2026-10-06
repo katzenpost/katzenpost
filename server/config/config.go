@@ -725,6 +725,9 @@ func (vCfg *Voting) validate(datadir string) error {
 	if vCfg.MaxConsensusSize < 0 {
 		return errors.New("PKI.Voting.MaxConsensusSize must not be negative")
 	}
+	if vCfg.MaxConsensusSize > pki.MaxConsensusCeiling {
+		return fmt.Errorf("PKI.Voting.MaxConsensusSize must not exceed %d", pki.MaxConsensusCeiling)
+	}
 	for _, auth := range vCfg.Authorities {
 		err := auth.Validate()
 		if err != nil {

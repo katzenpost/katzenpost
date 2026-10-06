@@ -188,6 +188,14 @@ Source: `server/config/config.go`.
   This option and `PersistMixKeysOnShutdown` are mutually exclusive; enabling
   both is a configuration error.
 
+### `[PKI.Voting]`
+
+- **Added** `MaxConsensusSize` (int, bytes; default `0`, derived from
+  the PKI schemes and the authority count). The send and receive
+  ceiling of the PKI session and of consensus reassembly. Negative
+  values, and values above `500000000` (`pki.MaxConsensusCeiling`, the
+  wire layer's largest message), refuse the config.
+
 ### `[Server.Gateway]`
 
 - **Removed** `[Gateway.UserDB]` table (and its `[Gateway.UserDB.Bolt]`
@@ -412,6 +420,14 @@ The client TOML had the most substantial reshape, driven by the
 
 - **Added** `EnableTimeSync` (bool). Use skewed remote provider time
   instead of system time when available.
+
+### `[VotingAuthority]`
+
+- **Added** `MaxConsensusSize` (int, bytes; default `0`, derived from
+  the PKI schemes and the authority count). The send and receive
+  ceiling of the PKI session and of consensus reassembly. Negative
+  values, and values above `500000000` (`pki.MaxConsensusCeiling`, the
+  wire layer's largest message), refuse the config.
 
 ### `[[VotingAuthority.Peers]]` and the new `[[PinnedGateways.Gateways]]`
 

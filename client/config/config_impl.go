@@ -119,6 +119,9 @@ func (c *Config) FixupAndValidate() error {
 		if c.VotingAuthority.MaxConsensusSize < 0 {
 			return errors.New("config: VotingAuthority.MaxConsensusSize must not be negative")
 		}
+		if c.VotingAuthority.MaxConsensusSize > cpki.MaxConsensusCeiling {
+			return fmt.Errorf("config: VotingAuthority.MaxConsensusSize must not exceed %d", cpki.MaxConsensusCeiling)
+		}
 		for _, peer := range c.VotingAuthority.Peers {
 			if err := utils.RejectDNSAddrs(peer.Addresses, c.AllowHostnameAddresses); err != nil {
 				return fmt.Errorf("config: VotingAuthority peer %q: %w", peer.Identifier, err)
