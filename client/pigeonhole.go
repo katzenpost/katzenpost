@@ -20,6 +20,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -1338,6 +1339,9 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 		arqMessage = d.arqSurbIDMap[*surbID]
 		delete(d.arqSurbIDMap, *surbID)
 		delete(d.arqEnvelopeHashMap, *req.EnvelopeHash)
+		if arqMessage != nil {
+			utils.ExplicitBzero(arqMessage.SURBDecryptionKeys)
+		}
 	}
 	d.replyLock.Unlock()
 
@@ -1480,8 +1484,11 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		d.log.Debugf("handlePigeonholeARQReply: AppID %x is away inside its grace period, handling the reply for its return", arqMessage.AppID[:])
 	}
 
-	// Decrypt the SURB payload
-	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, arqMessage.SURBDecryptionKeys)
+	d.lockReply()
+	surbKeys := arqMessage.SURBDecryptionKeys
+	arqMessage.SURBDecryptionKeys = nil
+	d.replyLock.Unlock()
+	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, surbKeys)
 	if err != nil {
 		d.log.Errorf("handlePigeonholeARQReply: SURB payload decryption error, re-arming: %s", err)
 		d.rearmARQRetry(arqMessage)
@@ -1850,6 +1857,9 @@ func (d *Daemon) cancelResendingCopyCommand(request *Request) {
 		arqMessage = d.arqSurbIDMap[*surbID]
 		delete(d.arqSurbIDMap, *surbID)
 		delete(d.arqEnvelopeHashMap, *req.WriteCapHash)
+		if arqMessage != nil {
+			utils.ExplicitBzero(arqMessage.SURBDecryptionKeys)
+		}
 	}
 	d.replyLock.Unlock()
 
