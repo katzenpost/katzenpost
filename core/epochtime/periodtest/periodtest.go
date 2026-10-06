@@ -35,7 +35,7 @@ func Run(t *testing.T, check func(t *testing.T, p time.Duration)) {
 	}
 	for _, p := range Periods {
 		cmd := exec.Command(os.Args[0], "-test.run=^"+regexp.QuoteMeta(t.Name())+"$", "-test.count=1")
-		cmd.Env = append(os.Environ(), childEnv+"="+p.String(), "KATZENPOST_EPOCH_DURATION="+p.String())
+		cmd.Env = append(os.Environ(), childEnv+"="+p.String(), epochtime.EnvironmentVariable+"=")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("period %v: %v\n%s", p, err, out)

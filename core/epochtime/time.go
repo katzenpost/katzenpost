@@ -18,7 +18,6 @@
 package epochtime
 
 import (
-	"os"
 	"sync/atomic"
 	"time"
 )
@@ -83,17 +82,4 @@ func getEpoch(t time.Time) (current uint64, elapsed, till time.Duration) {
 	elapsed = t.Sub(base)
 	till = base.Add(p).Sub(t)
 	return
-}
-
-func init() {
-	durationText := os.Getenv("KATZENPOST_EPOCH_DURATION")
-	if durationText == "" {
-		return
-	}
-
-	duration, err := time.ParseDuration(durationText)
-	if err != nil {
-		panic(err)
-	}
-	period.Store(int64(duration))
 }
