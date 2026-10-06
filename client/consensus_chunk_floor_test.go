@@ -23,7 +23,7 @@ func TestConsensusChunksBelowOurChunkSizeCloseTheLink(t *testing.T) {
 	env := newTestGatewayEnv(t)
 	const chunkSize = 64
 	sent := make(chan int, 1)
-	clientCfg := setupTestGatewayFull(t, "tcp://127.0.0.1:12381", env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
+	clientCfg := setupTestGatewayFull(t, "tcp://127.0.0.1:0", env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
 		req, ok := cmd.(*commands.GetConsensus2)
 		if !ok {
 			return true

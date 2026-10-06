@@ -16,7 +16,7 @@ import (
 
 func TestAbandonedGetConsensusDoesNotWedgeTheLink(t *testing.T) {
 	env := newTestGatewayEnv(t)
-	clientCfg := setupTestGatewayFull(t, "tcp://127.0.0.1:12377", env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
+	clientCfg := setupTestGatewayFull(t, "tcp://127.0.0.1:0", env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
 		return true
 	})
 	setupClientCallbacks(clientCfg)
