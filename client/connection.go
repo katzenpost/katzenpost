@@ -573,12 +573,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 	var consensusCtx *getConsensusCtx
 	defer func() {
 		if consensusCtx != nil {
-			select {
-			case <-c.HaltCh():
-			case <-cmdCloseCh:
-			case consensusCtx.replyCh <- ErrNotConnected:
-			default:
-			}
+			c.deliverConsensusReply(consensusCtx, ErrNotConnected)
 		}
 	}()
 
@@ -706,10 +701,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				// Check for error responses from the gateway.
 				if cmd.ErrorCode != commands.ConsensusOk {
 					c.log.Debugf("Received Consensus2 error code: %v for epoch %v", cmd.ErrorCode, consensusCtx.epoch)
-					select {
-					case consensusCtx.replyCh <- cmd:
-					default:
-					}
+					c.deliverConsensusReply(consensusCtx, cmd)
 					consensusCtx = nil
 					dechunker = cpki.NewDechunker(c.client.maxConsensusSize)
 				} else {
@@ -735,10 +727,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 						// last chunk
 						cmd.Payload = make([]byte, len(dechunker.Output))
 						copy(cmd.Payload, dechunker.Output)
-						select {
-						case consensusCtx.replyCh <- cmd:
-						default:
-						}
+						c.deliverConsensusReply(consensusCtx, cmd)
 						consensusCtx = nil
 						dechunker = cpki.NewDechunker(c.client.maxConsensusSize)
 					}
@@ -754,6 +743,13 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			wireErr = newProtocolError("received unknown command: %T", cmd)
 			return
 		}
+	}
+}
+
+func (c *connection) deliverConsensusReply(consensusCtx *getConsensusCtx, reply interface{}) {
+	select {
+	case consensusCtx.replyCh <- reply:
+	case <-c.HaltCh():
 	}
 }
 
