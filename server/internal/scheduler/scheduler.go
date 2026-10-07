@@ -16,6 +16,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
+	"github.com/katzenpost/katzenpost/server/internal/maxdelay"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
@@ -83,7 +84,9 @@ func (sch *scheduler) worker() {
 	timer := time.NewTimer(math.MaxInt64)
 	defer timer.Stop()
 
-	maxDelay := absoluteMaxDelay
+	fallback := sch.glue.Config().Debug.MixMaxDelayFallback
+	maxDelay, fromConsensus := maxdelay.Effective(0, fallback, absoluteMaxDelay)
+	sch.log.Infof("Per-hop max delay %v from %v.", maxDelay, maxdelay.Source(fromConsensus))
 	for {
 		var timerFired bool
 		// The vast majority of the time the scheduler will be idle waiting on
@@ -139,15 +142,11 @@ func (sch *scheduler) worker() {
 			}
 			sch.q.BulkEnqueue(toEnqueue)
 		case newMaxDelay := <-sch.maxDelayCh:
-			pkiMaxDelay := time.Duration(newMaxDelay) * time.Millisecond
-			if pkiMaxDelay > absoluteMaxDelay || pkiMaxDelay == 0 {
-				// There is a maximum sensible delay, regardless of what the
-				// document happens to specify.
-				maxDelay = absoluteMaxDelay
-			} else {
-				maxDelay = pkiMaxDelay
+			newLimit, newFromConsensus := maxdelay.Effective(newMaxDelay, fallback, absoluteMaxDelay)
+			if newLimit != maxDelay || newFromConsensus != fromConsensus {
+				sch.log.Infof("Per-hop max delay %v from %v, consensus MixMaxDelay %v ms.", newLimit, maxdelay.Source(newFromConsensus), newMaxDelay)
 			}
-			sch.log.Debugf("New PKI MixMaxDelay %v, using %v.", pkiMaxDelay, maxDelay)
+			maxDelay, fromConsensus = newLimit, newFromConsensus
 		case <-timer.C:
 			// Packet delay probably passed, packet dispatch handled as
 			// part of rescheduling the timer.
