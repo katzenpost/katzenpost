@@ -229,7 +229,6 @@ func (d *Daemon) halt() {
 	clientStart := time.Now()
 	d.log.Debug("Stopping client")
 	d.client.Shutdown()
-	d.wipeHeldEnvelopeDescriptors()
 	d.log.Infof("Client stopped in %v", time.Since(clientStart))
 
 	d.log.Infof("Daemon shutdown complete in %v", time.Since(shutdownStart))
@@ -246,6 +245,7 @@ func (d *Daemon) wipeHeldSURBKeys() {
 	}
 	for _, message := range d.arqSurbIDMap {
 		utils.ExplicitBzero(message.SURBDecryptionKeys)
+		message.wipeEnvelopeDescriptor()
 	}
 }
 
