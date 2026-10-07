@@ -4,7 +4,11 @@ package scheduler
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -53,10 +57,11 @@ func (g *maxDelayGlue) LogBackend() *log.Backend  { return g.logBE }
 func (g *maxDelayGlue) Connector() glue.Connector { return g.conn }
 
 type maxDelayHarness struct {
-	sch    glue.Scheduler
-	conn   *hopRecorder
-	geo    *geo.Geometry
-	nextID atomic.Uint64
+	sch     glue.Scheduler
+	conn    *hopRecorder
+	geo     *geo.Geometry
+	logPath string
+	nextID  atomic.Uint64
 }
 
 func newMaxDelayHarness(t *testing.T) *maxDelayHarness {
@@ -79,14 +84,24 @@ func newMaxDelayHarnessWith(t *testing.T, adjust func(*config.Config)) *maxDelay
 	require.NoError(t, cfg.FixupAndValidate())
 	adjust(cfg)
 
-	logBE, err := log.New("", "INFO", false)
+	logPath := filepath.Join(t.TempDir(), "scheduler.log")
+	logBE, err := log.New(logPath, "INFO", false)
 	require.NoError(t, err)
+	t.Cleanup(func() { logBE.Close() })
 
 	conn := &hopRecorder{seen: make(chan [sConstants.NodeIDLength]byte, 16)}
 	sch, err := New(&maxDelayGlue{cfg: cfg, logBE: logBE, conn: conn})
 	require.NoError(t, err)
 	t.Cleanup(sch.Halt)
-	return &maxDelayHarness{sch: sch, conn: conn, geo: g}
+	return &maxDelayHarness{sch: sch, conn: conn, geo: g, logPath: logPath}
+}
+
+func (h *maxDelayHarness) logged(t *testing.T) string {
+	t.Helper()
+	h.accepts(t, 0)
+	b, err := os.ReadFile(h.logPath)
+	require.NoError(t, err)
+	return string(b)
 }
 
 func (h *maxDelayHarness) send(t *testing.T, delay time.Duration) [sConstants.NodeIDLength]byte {
@@ -180,4 +195,54 @@ func TestSchedulerMaxDelayConsensusAboveCeiling(t *testing.T) {
 	h.sch.OnNewMixMaxDelay(math.MaxUint64)
 	h.requireAccepts(t, ceiling)
 	h.requireDrops(t, ceiling+time.Millisecond)
+}
+
+func schedulerCeiling() time.Duration {
+	_, elapsed, till := epochtime.Now()
+	return (elapsed + till) * constants.NumMixKeys
+}
+
+func TestSchedulerLogsBuiltinMaxDelayAtStartup(t *testing.T) {
+	for _, fallback := range []int{0, 27632} {
+		h := newMaxDelayHarnessWith(t, func(cfg *config.Config) { cfg.Debug.MixMaxDelayFallback = fallback })
+		logged := h.logged(t)
+		want := fmt.Sprintf("INFO scheduler: Per-hop max delay built-in 27.632s (SafetyCap of Mu 0.001), configured fallback %d ms, ceiling %v.", fallback, schedulerCeiling())
+		require.Contains(t, logged, want)
+		require.NotContains(t, logged, "WARN")
+	}
+}
+
+func TestSchedulerWarnsOnWildFallback(t *testing.T) {
+	for _, tc := range []struct {
+		fallback int
+		wild     bool
+	}{
+		{6907, true},
+		{6908, false},
+		{110528, false},
+		{110529, true},
+	} {
+		h := newMaxDelayHarnessWith(t, func(cfg *config.Config) { cfg.Debug.MixMaxDelayFallback = tc.fallback })
+		logged := h.logged(t)
+		want := fmt.Sprintf("WARN scheduler: Configured MixMaxDelayFallback %d ms differs from the built-in 27.632s by more than a factor of 4.", tc.fallback)
+		if tc.wild {
+			require.Equal(t, 1, strings.Count(logged, want), "fallback %d", tc.fallback)
+		} else {
+			require.NotContains(t, logged, "WARN", "fallback %d", tc.fallback)
+		}
+	}
+}
+
+func TestSchedulerWarnsOnWildConsensusOncePerChange(t *testing.T) {
+	h := newMaxDelayHarness(t)
+	for _, ms := range []uint64{5000, 5000, 90000, 0, 6908, 110528, 5000, math.MaxUint64, math.MaxUint64} {
+		h.sch.OnNewMixMaxDelay(ms)
+	}
+	logged := h.logged(t)
+	warn := func(ms uint64) string {
+		return fmt.Sprintf("WARN scheduler: Consensus MixMaxDelay %d ms differs from the built-in 27.632s by more than a factor of 4.", ms)
+	}
+	require.Equal(t, 2, strings.Count(logged, warn(5000)))
+	require.Equal(t, 1, strings.Count(logged, warn(math.MaxUint64)))
+	require.Equal(t, 3, strings.Count(logged, "WARN"))
 }
