@@ -544,6 +544,38 @@ func ParseDocument(b []byte) (*Document, error) {
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
+	if err := isDocumentWellFormed(d, verifiers); err != nil {
+		return err
+	}
+	return hasUsableTopology(d)
+}
+
+// IsVoteWellFormed is IsDocumentWellFormed without the requirement that the
+// document describe a usable network: a vote lists only the descriptors its
+// authority received, which may be a partial view.
+func IsVoteWellFormed(d *Document, verifiers []sign.PublicKey) error {
+	return isDocumentWellFormed(d, verifiers)
+}
+
+func hasUsableTopology(d *Document) error {
+	if len(d.Topology) == 0 {
+		return fmt.Errorf("Document contains no Topology")
+	}
+	for layer, nodes := range d.Topology {
+		if len(nodes) == 0 {
+			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
+		}
+	}
+	if len(d.GatewayNodes) == 0 {
+		return fmt.Errorf("Document contains no Gateway Nodes")
+	}
+	if len(d.ServiceNodes) == 0 {
+		return fmt.Errorf("Document contains no Service Nodes")
+	}
+	return nil
+}
+
+func isDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 	// Ensure the document is well formed.
 	if d.Version != DocumentVersion {
 		return fmt.Errorf("Invalid Document Version: '%v'", d.Version)
@@ -616,14 +648,8 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 			}
 		}
 	}
-	if len(d.Topology) == 0 {
-		return fmt.Errorf("Document contains no Topology")
-	}
 	pks := make(map[[hash.HashSize]byte]bool)
-	for layer, nodes := range d.Topology {
-		if len(nodes) == 0 {
-			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
-		}
+	for _, nodes := range d.Topology {
 		for _, desc := range nodes {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 				return err
@@ -635,13 +661,6 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 			pks[pk] = true
 		}
 	}
-	if len(d.GatewayNodes) == 0 {
-		return fmt.Errorf("Document contains no Gateway Nodes")
-	}
-	if len(d.ServiceNodes) == 0 {
-		return fmt.Errorf("Document contains no Service Nodes")
-	}
-
 	for _, desc := range d.GatewayNodes {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err

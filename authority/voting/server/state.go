@@ -2541,7 +2541,7 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 	}
 
 	// Verify the document is well formed and has valid structure/descriptors
-	if err := pki.IsDocumentWellFormed(doc, s.getVerifiers()); err != nil {
+	if err := pki.IsVoteWellFormed(doc, s.getVerifiers()); err != nil {
 		s.log.Errorf("Vote from %s is not well-formed: %v", s.authorityNames[pk], err)
 		instrument.VoteReceived("malformed")
 		resp.ErrorCode = commands.VoteMalformed
@@ -2557,7 +2557,7 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 	}
 
 	// extract commit from document and verify that it was signed by this peer
-	// IsDocumentWellFormed has already verified that any commit is for
+	// IsVoteWellFormed has already verified that any commit is for
 	// this Epoch and is signed by a known verifier
 	commit, ok := doc.SharedRandomCommit[pk]
 	if !ok {

@@ -36,7 +36,7 @@ func TestVoteWellFormednessAndDeduplication(t *testing.T) {
 			v.Signatures = nil
 			_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, v)
 			require.NoError(t, err)
-			require.Error(t, pki.IsDocumentWellFormed(v, target.getVerifiers()))
+			require.Error(t, pki.IsVoteWellFormed(v, target.getVerifiers()))
 		}
 		if s == target {
 			continue
@@ -52,6 +52,37 @@ func TestVoteWellFormednessAndDeduplication(t *testing.T) {
 			require.EqualValues(t, commands.VoteOk, resp.ErrorCode)
 		}
 	}
+	for _, s := range states {
+		close(s.s.haltedCh)
+		s.db.Close()
+	}
+}
+
+func TestPartialViewVoteIsAccepted(t *testing.T) {
+	epoch, _, _ := epochtime.Now()
+	epoch += 2
+	states, _ := buildScenarioStates(t, 3, epoch, nil)
+	for _, s := range states {
+		s.genesisEpoch = epoch
+		s.votingEpoch = epoch
+		s.state = stateAcceptVote
+	}
+	from, target := states[0], states[1]
+	v, err := from.getVote(epoch)
+	require.NoError(t, err)
+	// An authority that missed every gateway and service node upload.
+	v.GatewayNodes = nil
+	v.ServiceNodes = nil
+	v.Signatures = nil
+	_, err = pki.SignDocument(from.s.identityPrivateKey, from.s.identityPublicKey, v)
+	require.NoError(t, err)
+	require.Error(t, pki.IsDocumentWellFormed(v, target.getVerifiers()))
+
+	raw, err := v.MarshalCertificate()
+	require.NoError(t, err)
+	pk := hash.Sum256From(from.s.identityPublicKey)
+	resp := target.onVoteUpload(&commands.Vote{Epoch: epoch, PublicKey: from.s.identityPublicKey, Payload: raw}, pk[:]).(*commands.VoteStatus)
+	require.EqualValues(t, commands.VoteOk, resp.ErrorCode)
 	for _, s := range states {
 		close(s.s.haltedCh)
 		s.db.Close()
