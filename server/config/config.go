@@ -34,11 +34,11 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/server/internal/maxdelay"
 )
 
 const (
@@ -63,13 +63,11 @@ const (
 	defaultSpoolDB           = "spool.db"
 	defaultManagementSocket  = "management_sock"
 
-	defaultMixMaxDelayFallbackMu = 0.001
-
 	// BackendBolt is a BoltDB based backend.
 	BackendBolt = "bolt"
 )
 
-var defaultMixMaxDelayFallback = int(common.SafetyCap(defaultMixMaxDelayFallbackMu))
+var defaultMixMaxDelayFallback = int(maxdelay.BuiltinMs())
 
 var defaultLogging = Logging{
 	Disable: false,

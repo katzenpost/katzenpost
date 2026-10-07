@@ -2,15 +2,28 @@
 
 package maxdelay
 
-import "time"
+import (
+	"time"
+
+	"github.com/katzenpost/katzenpost/common"
+)
+
+const BuiltinMu = 0.001
+
+func BuiltinMs() uint64 {
+	return common.SafetyCap(BuiltinMu)
+}
 
 func Effective(consensusMs uint64, fallbackMs int, ceiling time.Duration) (limit time.Duration, fromConsensus bool) {
 	fromConsensus = consensusMs != 0
 	ms := consensusMs
-	if !fromConsensus && fallbackMs > 0 {
-		ms = uint64(fallbackMs)
+	if !fromConsensus {
+		ms = BuiltinMs()
+		if fallbackMs > 0 {
+			ms = uint64(fallbackMs)
+		}
 	}
-	if ms == 0 || ms > uint64(ceiling/time.Millisecond) {
+	if ms > uint64(ceiling/time.Millisecond) {
 		return ceiling, fromConsensus
 	}
 	return time.Duration(ms) * time.Millisecond, fromConsensus
