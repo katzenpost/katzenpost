@@ -26,7 +26,12 @@ import (
 
 func mkAuthState(t *testing.T, name, wireKEM string) (st *state, idPub sign.PublicKey, linkPriv kem.PrivateKey) {
 	t.Helper()
-	idScheme := signschemes.ByName("Ed25519")
+	return mkAuthStateScheme(t, name, wireKEM, "Ed25519")
+}
+
+func mkAuthStateScheme(t *testing.T, name, wireKEM, sigScheme string) (st *state, idPub sign.PublicKey, linkPriv kem.PrivateKey) {
+	t.Helper()
+	idScheme := signschemes.ByName(sigScheme)
 	kemScheme := kemschemes.ByName(wireKEM)
 	require.NotNil(t, idScheme)
 	require.NotNil(t, kemScheme)
@@ -103,7 +108,7 @@ func TestDoSendCommandReusesConnection(t *testing.T) {
 		return cli, nil
 	}
 
-	peer := &config.Authority{Identifier: "responder", Addresses: []string{"tcp://127.0.0.1:1"}}
+	peer := &config.Authority{Identifier: "responder", IdentityPublicKey: respID, LinkPublicKey: config.LinkPublicKey{PublicKey: respLink.Public()}, Addresses: []string{"tcp://127.0.0.1:1"}}
 	epoch, _, _ := epochtime.Now()
 
 	for i := 0; i < 3; i++ {

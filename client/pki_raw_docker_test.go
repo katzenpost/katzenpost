@@ -6,6 +6,7 @@
 package client
 
 import (
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
@@ -156,6 +158,7 @@ func verifyAgainstDirauths(t *testing.T, raw []byte, epoch uint64) {
 
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
+	require.NoError(t, epochtime.Configure(cfg.EpochDuration, io.Discard))
 	require.NotNil(t, cfg.VotingAuthority, "client config must list dirauth peers")
 	require.NotEmpty(t, cfg.VotingAuthority.Peers)
 

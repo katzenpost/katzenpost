@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
 	"github.com/katzenpost/katzenpost/core/compat"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
 // Config holds the command line configuration
@@ -118,6 +119,9 @@ func runAuthority(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to load config file '%v': %v", cfg.ConfigFile, err)
 	}
+	if err := epochtime.Configure(authorityCfg.Server.EpochDuration, os.Stderr); err != nil {
+		return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
+	}
 	if cfg.ValidateOnly {
 		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {
 			return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
@@ -132,6 +136,9 @@ func runAuthority(cfg Config) error {
 
 	rotateCh := make(chan os.Signal, 1)
 	signal.Notify(rotateCh, syscall.SIGHUP)
+
+	reloadCh := make(chan os.Signal, 1)
+	notifyReload(reloadCh)
 
 	// Start up the authority.
 	svr, err := server.New(authorityCfg)
@@ -150,10 +157,9 @@ func runAuthority(cfg Config) error {
 	}()
 
 	// Rotate server logs upon SIGHUP.
-	go func() {
-		<-rotateCh
-		svr.RotateLog()
-	}()
+	go common.RotateOnSignal(rotateCh, svr.RotateLog)
+
+	go reloadOnSignal(reloadCh, func() { svr.ReloadNodesFromFile(cfg.ConfigFile) })
 
 	// Wait for the authority to explode or be terminated.
 	svr.Wait()

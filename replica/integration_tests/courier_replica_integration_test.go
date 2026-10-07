@@ -1189,7 +1189,7 @@ func TestReplicaReplyPaddingIndistinguishable(t *testing.T) {
 
 func waitForReplicaSessions(t *testing.T, replicas []*replica.Server) {
 	want := len(replicas) - 1
-	budget := epochtime.Period/4 + 2*time.Minute
+	budget := epochtime.Period()/4 + 2*time.Minute
 	deadline := time.Now().Add(budget)
 	for {
 		missing := 0

@@ -19,7 +19,7 @@ func TestConsensusBytesIdenticalAcrossAuthorities(t *testing.T) {
 	require.NoError(t, err)
 	for i := 1; i < len(docs); i++ {
 		require.Equal(t, docs[0].SharedRandomValue, docs[i].SharedRandomValue, "authority %d SRV differs", i)
-		require.Equal(t, docs[0].PriorSharedRandom, docs[i].PriorSharedRandom, "authority %d prior SRV differs", i)
+		require.Equal(t, docs[0].WeeklySharedRandom, docs[i].WeeklySharedRandom, "authority %d prior SRV differs", i)
 		raw, err := docs[i].MarshalCertificate()
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(first, raw), "authority %d signed different bytes", i)

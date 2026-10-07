@@ -8,7 +8,8 @@ import (
 	"sort"
 
 	"github.com/cockroachdb/pebble"
-	"golang.org/x/crypto/blake2b"
+
+	"github.com/katzenpost/hpqc/hash"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/replica/instrument"
@@ -30,11 +31,11 @@ var lastRebalanceReplicasKey = []byte("last_rebalance_replicas")
 // fingerprints.
 func replicaSetFingerprint(doc *pki.Document) [32]byte {
 	if doc == nil || len(doc.StorageReplicas) == 0 {
-		return blake2b.Sum256(nil)
+		return hash.Sum256(nil)
 	}
 	hashes := make([][32]byte, 0, len(doc.StorageReplicas))
 	for _, replica := range doc.StorageReplicas {
-		hashes = append(hashes, blake2b.Sum256(replica.IdentityKey))
+		hashes = append(hashes, hash.Sum256(replica.IdentityKey))
 	}
 	sort.Slice(hashes, func(i, j int) bool {
 		for k := 0; k < 32; k++ {
@@ -48,7 +49,7 @@ func replicaSetFingerprint(doc *pki.Document) [32]byte {
 	for _, h := range hashes {
 		concatenated = append(concatenated, h[:]...)
 	}
-	return blake2b.Sum256(concatenated)
+	return hash.Sum256(concatenated)
 }
 
 // loadLastRebalanceFingerprint returns the persisted fingerprint, an

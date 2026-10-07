@@ -19,7 +19,9 @@ package outgoing
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"strings"
@@ -54,8 +56,9 @@ type outgoingConn struct {
 	co     *connector
 	log    *logging.Logger
 
-	dst *cpki.MixDescriptor
-	ch  chan *packet.Packet
+	dst      *cpki.MixDescriptor
+	ch       chan *packet.Packet
+	reauthCh chan struct{}
 
 	id         uint64
 	retryDelay time.Duration
@@ -117,6 +120,26 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return isValid
 }
 
+func (c *outgoingConn) reauthenticate(w *wire.Session) bool {
+	creds, err := w.PeerCredentials()
+	if err != nil {
+		c.log.Debugf("Session fail: %s", err)
+		return false
+	}
+	if !c.IsPeerValid(creds) {
+		c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+		return false
+	}
+	return true
+}
+
+func (c *outgoingConn) requestReauth() {
+	select {
+	case c.reauthCh <- struct{}{}:
+	default:
+	}
+}
+
 func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 	select {
 	case c.ch <- pkt:
@@ -142,8 +165,8 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 
 func (c *outgoingConn) worker() {
 	var (
-		retryIncrement = epochtime.Period / 64
-		maxRetryDelay  = epochtime.Period / 8
+		retryIncrement = epochtime.Period() / 64
+		maxRetryDelay  = epochtime.Period() / 8
 	)
 
 	defer func() {
@@ -211,12 +234,7 @@ func (c *outgoingConn) worker() {
 		}
 
 		// Flatten the lists of addresses to Dial to.
-		var dstAddrs []string
-		for _, t := range cpki.InternalTransports {
-			if v, ok := c.dst.Addresses[t]; ok {
-				dstAddrs = append(dstAddrs, v...)
-			}
-		}
+		dstAddrs := dialAddresses(c.co.glue.Config().Server.Addresses, c.dst)
 		if len(dstAddrs) == 0 {
 			// Should *NEVER* happen because descriptors currently MUST have
 			// at least once `tcp4` address to be considered valid.
@@ -352,7 +370,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			he.WithPeerName(c.dst.Name)
 		}
 
-		c.log.Errorf(
+		logf := c.log.Errorf
+		if refusedBeforeHandshake(err) {
+			logf = c.log.Debugf
+		}
+		logf(
 			"Handshake failed peer=%s identity_hash=%x descriptor_addrs=%s local=%s remote=%s after=%v timeout=%v: %v",
 			c.dst.Name,
 			peerIdentityHash[:],
@@ -436,13 +458,12 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		case <-reauth.C:
 			// Each outgoing connection has a periodic 1/15 Hz timer to wake up
 			// and re-authenticate to handle the PKI document(s) changing.
-			creds, err := w.PeerCredentials()
-			if err != nil {
-				c.log.Debugf("Session fail: %s", err)
+			if !c.reauthenticate(w) {
 				return
 			}
-			if !c.IsPeerValid(creds) {
-				c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+			continue
+		case <-c.reauthCh:
+			if !c.reauthenticate(w) {
 				return
 			}
 			continue
@@ -491,12 +512,13 @@ func newOutgoingConn(co *connector, dst *cpki.MixDescriptor, geo *geo.Geometry, 
 	const maxQueueSize = 64 // TODO/perf: Tune this.
 
 	c := &outgoingConn{
-		scheme: scheme,
-		geo:    geo,
-		co:     co,
-		dst:    dst,
-		ch:     make(chan *packet.Packet, maxQueueSize),
-		id:     atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
+		scheme:   scheme,
+		geo:      geo,
+		co:       co,
+		dst:      dst,
+		ch:       make(chan *packet.Packet, maxQueueSize),
+		reauthCh: make(chan struct{}, 1),
+		id:       atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
 	c.log = co.glue.LogBackend().GetLogger(fmt.Sprintf("outgoing:%d", c.id))
 
@@ -507,4 +529,10 @@ func newOutgoingConn(co *connector, dst *cpki.MixDescriptor, geo *geo.Geometry, 
 	// the connection map.
 
 	return c
+}
+
+func refusedBeforeHandshake(err error) bool {
+	he, ok := wire.GetHandshakeError(err)
+	return ok && he.IsInitiator && he.State == wire.HandshakeStateMsg2Receive && he.MessageSize == 0 &&
+		(errors.Is(he.UnderlyingError, io.EOF) || isConnReset(he.UnderlyingError))
 }

@@ -48,6 +48,7 @@ type Config struct {
 	MinReplicas  int
 	RequireReady bool
 	ReadyTimeout time.Duration
+	Format       string
 }
 
 // newRootCommand creates the root cobra command
@@ -95,6 +96,8 @@ and inspecting the current state of the mixnet topology.`,
 		"wait until every mix, storage replica, and courier reports ready on its metrics endpoint before printing the document")
 	cmd.Flags().DurationVar(&cfg.ReadyTimeout, "ready-timeout", 8*time.Minute,
 		"maximum time to wait for the whole network to report ready before failing with per-node diagnostics")
+	cmd.Flags().StringVar(&cfg.Format, "format", "",
+		"output format: text or json (default: the full document dump)")
 
 	return cmd
 }
@@ -106,6 +109,9 @@ func main() {
 
 // runFetch fetches network documents from directory authorities
 func runFetch(cfg Config) error {
+	if cfg.Format != "" && cfg.Format != "text" && cfg.Format != "json" {
+		return fmt.Errorf("unknown format %q, want text or json", cfg.Format)
+	}
 	thinCfg, err := thin.LoadFile(cfg.ConfigFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config file: %v", err)
@@ -150,8 +156,7 @@ func runFetch(cfg Config) error {
 		if err := waitForReady(cfg, logger, doc); err != nil {
 			return err
 		}
-		printDocument(doc, signerNames)
-		return nil
+		return printDocument(doc, signerNames, cfg.Format)
 	}
 
 	if cfg.RequireReady {
@@ -186,8 +191,7 @@ func waitRequireReady(client *thin.ThinClient, logger *logging.Logger, cfg Confi
 			if err := waitForReady(cfg, logger, doc); err != nil {
 				return err
 			}
-			printDocument(doc, signerNames)
-			return nil
+			return printDocument(doc, signerNames, cfg.Format)
 		}
 		if time.Since(lastProgressLog) >= 4*time.Second {
 			reason := err
@@ -231,8 +235,7 @@ func waitForDocument(client *thin.ThinClient, logger *logging.Logger, cfg Config
 			if err := waitForReady(cfg, logger, doc); err != nil {
 				return err
 			}
-			printDocument(doc, signerNames)
-			return nil
+			return printDocument(doc, signerNames, cfg.Format)
 		case <-client.HaltCh():
 			return fmt.Errorf("connection closed before receiving PKI document")
 		}
@@ -293,9 +296,18 @@ func fetchSignedDocument(client *thin.ThinClient, epoch uint64) (*cpki.Document,
 
 // printDocument prints the document followed by the directory authorities that
 // signed it, by name where the fingerprint is known and by fingerprint otherwise.
-func printDocument(doc *cpki.Document, signerNames map[[32]byte]string) {
-	fmt.Printf("%v", doc)
-	printSigners(doc, doc.Epoch, signerNames)
+func printDocument(doc *cpki.Document, signerNames map[[32]byte]string, format string) error {
+	if format == "" {
+		fmt.Printf("%v", doc)
+		printSigners(doc, doc.Epoch, signerNames)
+		return nil
+	}
+	out, err := formatDocument(doc, format, signerNames)
+	if err != nil {
+		return err
+	}
+	fmt.Print(out)
+	return nil
 }
 
 // printSigners reports, in deterministic order, every directory authority that
@@ -306,11 +318,7 @@ func printDocument(doc *cpki.Document, signerNames map[[32]byte]string) {
 func printSigners(doc *cpki.Document, epoch uint64, signerNames map[[32]byte]string) {
 	labels := make([]string, 0, len(doc.Signatures))
 	for fp := range doc.Signatures {
-		if name := signerNames[fp]; name != "" {
-			labels = append(labels, fmt.Sprintf("%s (%x)", name, fp[:]))
-		} else {
-			labels = append(labels, fmt.Sprintf("%x", fp[:]))
-		}
+		labels = append(labels, signerLabel(signerNames[fp], fp, true))
 	}
 	sort.Strings(labels)
 
@@ -341,11 +349,12 @@ func hasEnoughReplicas(doc *cpki.Document, min int) bool {
 
 // probe describes one node whose metrics endpoint we poll for readiness.
 type probe struct {
-	name  string
-	kind  string // "mix", "replica", "courier"
-	addr  string
-	ready string
-	epoch string
+	name          string
+	kind          string // "mix", "replica", "courier"
+	addr          string
+	ready         string
+	epochDuration string
+	epoch         string
 }
 
 // waitForReady blocks until every node in the document reports ready on its
@@ -359,6 +368,13 @@ func waitForReady(cfg Config, logger *logging.Logger, doc *cpki.Document) error 
 	}
 	probes, err := discoverProbes(cfg.ConfigFile, doc)
 	if err != nil {
+		return err
+	}
+	period, err := epochPeriod(probes)
+	if err != nil {
+		return err
+	}
+	if err := epochtime.Configure(period, os.Stderr); err != nil {
 		return err
 	}
 	fmt.Printf("waiting for the network to report ready (%d node(s), up to %v)...\n", len(probes), cfg.ReadyTimeout)
@@ -527,11 +543,11 @@ func discoverProbes(configFile string, doc *cpki.Document) ([]*probe, error) {
 		}
 	}
 	for _, desc := range doc.StorageReplicas {
-		addr, err := metricsAddrFromFile(filepath.Join(netRoot, desc.Name, "replica.toml"), "MetricsAddress")
+		addr, epochDuration, err := metricsAddrFromFile(filepath.Join(netRoot, desc.Name, "replica.toml"), "MetricsAddress")
 		if err != nil {
 			return nil, fmt.Errorf("replica %q: %w", desc.Name, err)
 		}
-		add(&probe{name: desc.Name, kind: "replica", addr: addr,
+		add(&probe{name: desc.Name, kind: "replica", addr: addr, epochDuration: epochDuration,
 			ready: "katzenpost_replica_ready", epoch: "katzenpost_replica_current_epoch"})
 	}
 	return probes, nil
@@ -539,11 +555,11 @@ func discoverProbes(configFile string, doc *cpki.Document) ([]*probe, error) {
 
 // serverProbe discovers the [Server] MetricsAddress for a mix node.
 func serverProbe(netRoot string, desc *cpki.MixDescriptor) (*probe, error) {
-	addr, err := metricsAddrFromFile(filepath.Join(netRoot, desc.Name, "katzenpost.toml"), "Server.MetricsAddress")
+	addr, epochDuration, err := metricsAddrFromFile(filepath.Join(netRoot, desc.Name, "katzenpost.toml"), "Server.MetricsAddress")
 	if err != nil {
 		return nil, fmt.Errorf("mix %q: %w", desc.Name, err)
 	}
-	return &probe{name: desc.Name, kind: "mix", addr: addr,
+	return &probe{name: desc.Name, kind: "mix", addr: addr, epochDuration: epochDuration,
 		ready: "katzenpost_node_ready", epoch: "katzenpost_node_current_epoch"}, nil
 }
 
@@ -575,11 +591,11 @@ func courierProbes(netRoot string, desc *cpki.MixDescriptor) ([]*probe, error) {
 			continue
 		}
 		courierCfg := resolveNetPath(netRoot, k.Config.C)
-		addr, err := metricsAddrFromFile(courierCfg, "MetricsAddress")
+		addr, epochDuration, err := metricsAddrFromFile(courierCfg, "MetricsAddress")
 		if err != nil {
 			return nil, fmt.Errorf("courier of %q: %w", desc.Name, err)
 		}
-		probes = append(probes, &probe{name: desc.Name, kind: "courier", addr: addr,
+		probes = append(probes, &probe{name: desc.Name, kind: "courier", addr: addr, epochDuration: epochDuration,
 			ready: "katzenpost_courier_ready", epoch: "katzenpost_courier_current_epoch"})
 	}
 	return probes, nil
@@ -602,28 +618,56 @@ func resolveNetPath(netRoot, p string) string {
 	return p
 }
 
-// metricsAddrFromFile extracts a metrics address from a TOML config. The key
-// is either "MetricsAddress" (top-level) or "Server.MetricsAddress".
-func metricsAddrFromFile(path, key string) (string, error) {
+// metricsAddrFromFile extracts a metrics address and the EpochDuration (empty
+// when absent) from a TOML config. The key is either "MetricsAddress"
+// (top-level) or "Server.MetricsAddress", and EpochDuration is read from the
+// same section.
+func metricsAddrFromFile(path, key string) (string, string, error) {
 	var c struct {
 		Server struct {
 			MetricsAddress string `toml:"MetricsAddress"`
+			EpochDuration  string `toml:"EpochDuration"`
 		} `toml:"Server"`
 		MetricsAddress string `toml:"MetricsAddress"`
+		EpochDuration  string `toml:"EpochDuration"`
 	}
 	if _, err := toml.DecodeFile(path, &c); err != nil {
-		return "", fmt.Errorf("parse %q: %w", path, err)
+		return "", "", fmt.Errorf("parse %q: %w", path, err)
 	}
 	switch key {
 	case "Server.MetricsAddress":
 		if c.Server.MetricsAddress == "" {
-			return "", fmt.Errorf("%q: missing [Server] MetricsAddress", path)
+			return "", "", fmt.Errorf("%q: missing [Server] MetricsAddress", path)
 		}
-		return c.Server.MetricsAddress, nil
+		return c.Server.MetricsAddress, c.Server.EpochDuration, nil
 	default:
 		if c.MetricsAddress == "" {
-			return "", fmt.Errorf("%q: missing MetricsAddress", path)
+			return "", "", fmt.Errorf("%q: missing MetricsAddress", path)
 		}
-		return c.MetricsAddress, nil
+		return c.MetricsAddress, c.EpochDuration, nil
 	}
+}
+
+func epochPeriod(probes []*probe) (*time.Duration, error) {
+	period := epochtime.DefaultPeriod
+	set := false
+	for i, p := range probes {
+		d := epochtime.DefaultPeriod
+		if p.epochDuration != "" {
+			v, err := time.ParseDuration(p.epochDuration)
+			if err != nil {
+				return nil, fmt.Errorf("%s %q: EpochDuration %q: %w", p.kind, p.name, p.epochDuration, err)
+			}
+			d = v
+			set = true
+		}
+		if i > 0 && d != period {
+			return nil, fmt.Errorf("%s %q: EpochDuration %v disagrees with %v", p.kind, p.name, d, period)
+		}
+		period = d
+	}
+	if !set {
+		return nil, nil
+	}
+	return &period, nil
 }

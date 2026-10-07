@@ -24,6 +24,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"path/filepath"
 	"slices"
@@ -34,6 +35,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
@@ -75,15 +77,20 @@ const (
 	publicKeyHashSize = 32
 )
 
+func MixPublishDeadline() time.Duration { return epochtime.Period() / 8 }
+
+func AuthorityVoteDeadline() time.Duration { return MixPublishDeadline() + epochtime.Period()/8 }
+
+func AuthorityRevealDeadline() time.Duration { return AuthorityVoteDeadline() + epochtime.Period()/8 }
+
+func AuthorityCertDeadline() time.Duration { return AuthorityRevealDeadline() + epochtime.Period()/8 }
+
+func PublishConsensusDeadline() time.Duration { return AuthorityCertDeadline() + epochtime.Period()/8 }
+
 var (
-	MixPublishDeadline       = epochtime.Period / 8
-	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8
-	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
-	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period/8
-	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period/8
-	errGone                  = errors.New("authority: Requested epoch will never get a Document")
-	errNotYet                = errors.New("authority: Document is not ready yet")
-	errInvalidTopology       = errors.New("authority: Invalid Topology")
+	errGone            = errors.New("authority: Requested epoch will never get a Document")
+	errNotYet          = errors.New("authority: Document is not ready yet")
+	errInvalidTopology = errors.New("authority: Invalid Topology")
 )
 
 type descriptor struct {
@@ -106,6 +113,8 @@ type state struct {
 	sync.RWMutex
 	worker.Worker
 
+	uploadMu sync.Mutex
+
 	s   *Server
 	geo *geo.Geometry
 	log *logging.Logger
@@ -114,6 +123,7 @@ type state struct {
 
 	db *bolt.DB
 
+	nodesMu                sync.RWMutex
 	reverseHash            map[[publicKeyHashSize]byte]sign.PublicKey
 	authorizedMixes        map[[publicKeyHashSize]byte]string
 	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
@@ -122,6 +132,10 @@ type state struct {
 	authorizedAuthorities  map[[publicKeyHashSize]byte]bool
 	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
 	authorityNames         map[[publicKeyHashSize]byte]string
+	fixedTopology          [][][publicKeyHashSize]byte
+
+	missingCurrentWarned atomic.Uint64
+	missingNextWarned    atomic.Uint64
 
 	documents   map[uint64]*pki.Document
 	myconsensus map[uint64]*pki.Document
@@ -131,13 +145,14 @@ type state struct {
 	// stale; it is pruned alongside documents.
 	serializedDocsMu sync.Mutex
 	serializedDocs   map[uint64][]byte
+	servedDocs       atomic.Pointer[map[uint64][]byte]
 
 	descriptors        map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor
 	replicaDescriptors map[uint64]map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor
 	votes              map[uint64]map[[publicKeyHashSize]byte]*pki.Document
 	certificates       map[uint64]map[[publicKeyHashSize]byte]*pki.Document
 	signatures         map[uint64]map[[publicKeyHashSize]byte]*cert.Signature
-	priorSRV           [][]byte
+	weeklySRV          [][]byte
 	reveals            map[uint64]map[[publicKeyHashSize]byte][]byte
 	commits            map[uint64]map[[publicKeyHashSize]byte][]byte
 	verifiers          map[[publicKeyHashSize]byte]sign.PublicKey
@@ -148,6 +163,8 @@ type state struct {
 	// dialContextFn overrides the dialer for outbound peer connections; nil
 	// uses a default net.Dialer. Set in tests to inject a transport.
 	dialContextFn func(ctx context.Context, network, addr string) (net.Conn, error)
+
+	phaseDeadlineFn func(targetDeadline time.Duration) time.Time
 
 	updateCh chan interface{}
 
@@ -246,8 +263,8 @@ func (s *state) fsm() <-chan time.Time {
 		s.backgroundFetchConsensus(epoch - 1)
 		s.log.Debugf("FSM: Fetching consensus for current epoch %d", epoch)
 		s.backgroundFetchConsensus(epoch)
-		if elapsed > MixPublishDeadline {
-			s.log.Errorf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline, nextEpoch)
+		if elapsed > MixPublishDeadline() {
+			s.log.Warningf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline(), nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.setState(stateBootstrap)
@@ -255,7 +272,7 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			s.votingEpoch = epoch + 1
 			s.setState(stateAcceptDescriptor)
-			sleep = MixPublishDeadline - elapsed
+			sleep = MixPublishDeadline() - elapsed
 			if sleep < 0 {
 				sleep = 0
 			}
@@ -285,7 +302,7 @@ func (s *state) fsm() <-chan time.Time {
 		}
 		s.setState(stateAcceptVote)
 		_, nowelapsed, _ := epochtime.Now()
-		sleep = AuthorityVoteDeadline - nowelapsed
+		sleep = AuthorityVoteDeadline() - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until vote deadline", s.state, sleep)
 	case stateAcceptVote:
 		s.log.Noticef("FSM: Entering stateAcceptVote for epoch %d", s.votingEpoch)
@@ -300,7 +317,7 @@ func (s *state) fsm() <-chan time.Time {
 		s.sendRevealToAuthorities(signed, s.votingEpoch)
 		s.setState(stateAcceptReveal)
 		_, nowelapsed, _ := epochtime.Now()
-		sleep = AuthorityRevealDeadline - nowelapsed
+		sleep = AuthorityRevealDeadline() - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until reveal deadline", s.state, sleep)
 	case stateAcceptReveal:
 		s.log.Noticef("FSM: Entering stateAcceptReveal for epoch %d", s.votingEpoch)
@@ -325,7 +342,7 @@ func (s *state) fsm() <-chan time.Time {
 		}
 		s.setState(stateAcceptCert)
 		_, nowelapsed, _ := epochtime.Now()
-		sleep = AuthorityCertDeadline - nowelapsed
+		sleep = AuthorityCertDeadline() - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until cert deadline", s.state, sleep)
 	case stateAcceptCert:
 		s.log.Noticef("FSM: Entering stateAcceptCert for epoch %d", s.votingEpoch)
@@ -389,7 +406,7 @@ func (s *state) fsm() <-chan time.Time {
 		}
 		s.setState(stateAcceptSignature)
 		_, nowelapsed, _ := epochtime.Now()
-		sleep = PublishConsensusDeadline - nowelapsed
+		sleep = PublishConsensusDeadline() - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until consensus deadline", s.state, sleep)
 	case stateAcceptSignature:
 		s.log.Noticef("FSM: Entering stateAcceptSignature for epoch %d", s.votingEpoch)
@@ -406,7 +423,7 @@ func (s *state) fsm() <-chan time.Time {
 		if err == nil {
 			s.log.Noticef("FSM: SUCCESS! Achieved threshold consensus for epoch %d: %v", s.votingEpoch, consensus)
 			s.setState(stateAcceptDescriptor)
-			sleep = MixPublishDeadline + nextEpoch
+			sleep = MixPublishDeadline() + nextEpoch
 			s.votingEpoch++
 			s.log.Noticef("FSM: Consensus successful, transitioning to %s state for next voting epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		} else {
@@ -470,7 +487,7 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	if d, ok := s.documents[s.votingEpoch-1]; ok {
 		s.log.Debugf("getVote: Restoring genesisEpoch %d from document cache for epoch %d", d.GenesisEpoch, s.votingEpoch-1)
 		s.genesisEpoch = d.GenesisEpoch
-		s.priorSRV = d.PriorSharedRandom
+		s.weeklySRV = d.WeeklySharedRandom
 		d.PKISignatureScheme = s.s.cfg.Server.PKISignatureScheme
 		s.log.Debugf("getVote: Using prior SRV values from previous consensus")
 	} else {
@@ -636,11 +653,11 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	// if there are no prior SRV values, copy the current srv twice
-	if len(s.priorSRV) == 0 || epoch == s.genesisEpoch {
-		s.priorSRV = [][]byte{srv, srv}
-	} else if epoch%epochtime.WeekOfEpochs == 0 {
+	if len(s.weeklySRV) == 0 || epoch == s.genesisEpoch {
+		s.weeklySRV = [][]byte{srv, srv}
+	} else if epoch%epochtime.WeekOfEpochs() == 0 {
 		// rotate the weekly epochs if it is time to do so.
-		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
+		s.weeklySRV = [][]byte{srv, s.weeklySRV[0]}
 	}
 	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
@@ -702,6 +719,13 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	return consensusOfOne, nil
 }
 
+func (s *state) authorityName(pk [publicKeyHashSize]byte) string {
+	if name, ok := s.authorityNames[pk]; ok {
+		return name
+	}
+	return fmt.Sprintf("%x", pk)
+}
+
 // getThresholdConsensus returns a *pki.Document iff a threshold consensus is reached or error
 func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	// range over the certificates we have collected and see if we can collect enough signatures to make a consensus
@@ -714,11 +738,11 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, fmt.Errorf("We have no view of consensus!")
 	}
 	for pk, signature := range s.signatures[epoch] {
-		s.log.Debugf("Checking signature from %x on our certificates", pk)
+		s.log.Debugf("Checking signature from %s on our certificates", s.authorityName(pk))
 		v := s.reverseHash[pk]
 		err := ourConsensus.AddSignature(v, *signature)
 		if err != nil {
-			s.log.Errorf("Failed to AddSignature from %x on our consensus: %s", pk, err)
+			s.log.Errorf("Failed to AddSignature from %s on our consensus: %s", s.authorityName(pk), err)
 		}
 	}
 	// now see if we managed to get a threshold number of signatures
@@ -748,6 +772,7 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 			s.serializedDocs = make(map[uint64][]byte)
 		}
 		s.serializedDocs[epoch] = signedConsensus
+		s.publishServedDocs()
 		s.serializedDocsMu.Unlock()
 		return ourConsensus, nil
 	} else {
@@ -866,7 +891,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		ConfiguredReplicaIDs:          configuredReplicaIDs,
 		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
 		SharedRandomValue:             srv,
-		PriorSharedRandom:             s.priorSRV,
+		WeeklySharedRandom:            s.weeklySRV,
 		SphinxGeometryHash:            s.geo.Hash(),
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
 	}
@@ -1067,37 +1092,51 @@ func (s *state) peerRetryDelay(attempt int) time.Duration {
 
 // sendCommandToPeerWithDeadline sends with retry but respects deadline.
 func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd commands.Command, deadline time.Time) (commands.Command, error) {
+	return s.sendCommandToPeerUntil(peer, cmd, deadline, s.maxPeerAttempts(math.MaxInt))
+}
+
+func (s *state) maxPeerAttempts(unset int) int {
+	if n := s.s.cfg.Server.PeerRetryMaxAttempts; n > 0 {
+		return n
+	}
+	return unset
+}
+
+func tooEarly(resp commands.Command) bool {
+	switch r := resp.(type) {
+	case *commands.CertStatus:
+		return r.ErrorCode == commands.CertTooEarly
+	case *commands.VoteStatus:
+		return r.ErrorCode == commands.VoteTooEarly
+	case *commands.RevealStatus:
+		return r.ErrorCode == commands.RevealTooEarly
+	case *commands.SigStatus:
+		return r.ErrorCode == commands.SigTooEarly
+	}
+	return false
+}
+
+func (s *state) sendCommandToPeerUntil(peer *config.Authority, cmd commands.Command, deadline time.Time, maxAttempts int) (commands.Command, error) {
 	addrs := s.filterPeerAddresses(peer.Addresses)
 	if len(addrs) == 0 {
 		return nil, fmt.Errorf("peer %s: no usable addresses", peer.Identifier)
 	}
 
-	maxAttempts := s.s.cfg.Server.PeerRetryMaxAttempts
-	var lastErr error
+	var lastResp commands.Command
+	lastErr := fmt.Errorf("peer %s: deadline exceeded", peer.Identifier)
 
-	for attempt := 0; attempt <= maxAttempts; attempt++ {
-		if time.Now().After(deadline) {
-			s.log.Warningf("peer %s: deadline exceeded after %d attempts", peer.Identifier, attempt)
-			if lastErr != nil {
-				return nil, lastErr
-			}
-			return nil, fmt.Errorf("peer %s: deadline exceeded", peer.Identifier)
-		}
-
+	attempt := 0
+	for ; attempt <= maxAttempts && time.Now().Before(deadline); attempt++ {
 		if attempt > 0 {
-			delay := s.peerRetryDelay(attempt - 1)
-			remaining := time.Until(deadline)
-			if delay > remaining {
-				delay = remaining
-			}
+			delay := min(s.peerRetryDelay(attempt-1), time.Until(deadline))
 			if delay > 0 {
-				s.log.Debugf("peer %s: retry %d/%d after %v", peer.Identifier, attempt, maxAttempts, delay)
+				s.log.Debugf("peer %s: retry %d after %v", peer.Identifier, attempt, delay)
 				time.Sleep(delay)
 			}
 		}
 
 		resp, err := s.doSendCommand(peer, cmd, addrs)
-		if err == nil {
+		if err == nil && !tooEarly(resp) {
 			if attempt > 0 {
 				s.log.Noticef("peer %s: succeeded after %d retries", peer.Identifier, attempt)
 			}
@@ -1105,23 +1144,35 @@ func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd comman
 			instrument.PeerConnected(peer.Identifier, true)
 			return resp, nil
 		}
-		lastErr = err
-
-		if !retry.IsTransientError(err) {
+		if err != nil && !retry.IsTransientError(err) {
 			s.log.Debugf("peer %s: permanent error: %v", peer.Identifier, err)
 			instrument.PeerSendAttempt(peer.Identifier, "permanent_error")
 			instrument.PeerConnected(peer.Identifier, false)
 			return nil, err
 		}
-		instrument.PeerSendAttempt(peer.Identifier, "transient_error")
-		s.log.Warningf("peer %s: attempt %d/%d failed: %v", peer.Identifier, attempt+1, maxAttempts+1, err)
+		lastResp, lastErr = resp, err
+		if err != nil {
+			instrument.PeerSendAttempt(peer.Identifier, "transient_error")
+			s.log.Warningf("peer %s: attempt %d failed: %v", peer.Identifier, attempt+1, err)
+		} else {
+			instrument.PeerSendAttempt(peer.Identifier, "too_early")
+			s.log.Debugf("peer %s: attempt %d too early", peer.Identifier, attempt+1)
+		}
 	}
-	// All retries exhausted; mark the peer disconnected and report
+	if attempt == 0 {
+		instrument.PeerSendAttempt(peer.Identifier, "not_attempted")
+		return nil, lastErr
+	}
+	// All retries exhausted; mark the peer disconnected unless its last
+	// reply arrived (TooEarly), and report
 	// the final outcome as deadline-exceeded so the rate panel can
 	// distinguish "transient flake we recovered from" from "we gave
 	// up entirely".
 	instrument.PeerSendAttempt(peer.Identifier, "deadline_exceeded")
-	instrument.PeerConnected(peer.Identifier, false)
+	instrument.PeerConnected(peer.Identifier, lastErr == nil)
+	if lastErr == nil {
+		return lastResp, nil
+	}
 	return nil, lastErr
 }
 
@@ -1207,6 +1258,9 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 
 // phaseDeadline returns the deadline for the current FSM phase.
 func (s *state) phaseDeadline(targetDeadline time.Duration) time.Time {
+	if s.phaseDeadlineFn != nil {
+		return s.phaseDeadlineFn(targetDeadline)
+	}
 	_, elapsed, _ := epochtime.Now()
 	remaining := targetDeadline - elapsed
 	if remaining < 0 {
@@ -1217,6 +1271,12 @@ func (s *state) phaseDeadline(targetDeadline time.Duration) time.Time {
 		remaining -= buffer
 	}
 	return time.Now().Add(remaining)
+}
+
+func (s *state) clockView() string {
+	epoch, elapsed, _ := epochtime.Now()
+	phase, _ := s.PhaseInfo()
+	return fmt.Sprintf("local epoch=%d elapsed=%v phase=%s", epoch, elapsed.Round(time.Millisecond), phase)
 }
 
 // PhaseInfo returns the current phase name and time remaining until the next phase.
@@ -1236,17 +1296,17 @@ func (s *state) PhaseInfo() (phase string, timeRemaining time.Duration) {
 	var deadline time.Duration
 	switch phase {
 	case stateBootstrap, stateAcceptDescriptor:
-		deadline = MixPublishDeadline
+		deadline = MixPublishDeadline()
 	case stateAcceptVote:
-		deadline = AuthorityVoteDeadline
+		deadline = AuthorityVoteDeadline()
 	case stateAcceptReveal:
-		deadline = AuthorityRevealDeadline
+		deadline = AuthorityRevealDeadline()
 	case stateAcceptCert:
-		deadline = AuthorityCertDeadline
+		deadline = AuthorityCertDeadline()
 	case stateAcceptSignature:
-		deadline = PublishConsensusDeadline
+		deadline = PublishConsensusDeadline()
 	default:
-		deadline = MixPublishDeadline
+		deadline = MixPublishDeadline()
 	}
 
 	timeRemaining = deadline - elapsed
@@ -1265,6 +1325,8 @@ func (s *state) PeerName(identityKeyHash []byte) string {
 	var pk [publicKeyHashSize]byte
 	copy(pk[:], identityKeyHash)
 
+	s.nodesMu.RLock()
+	defer s.nodesMu.RUnlock()
 	// Check mixes
 	if name, ok := s.authorizedMixes[pk]; ok {
 		return name
@@ -1299,7 +1361,7 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 		PublicKey: s.s.IdentityKey(),
 		Payload:   cert,
 	}
-	deadline := s.phaseDeadline(AuthorityCertDeadline)
+	deadline := s.phaseDeadline(AuthorityCertDeadline())
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
@@ -1320,9 +1382,9 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 			case commands.CertOk:
 				s.log.Debugf("Cert accepted by %s", peer.Identifier)
 			case commands.CertTooLate:
-				s.log.Warningf("Cert rejected (too late) by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (too late) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.CertTooEarly:
-				s.log.Warningf("Cert rejected (too early) by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (too early) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.CertAlreadyReceived:
 				s.log.Debugf("Cert already received by %s", peer.Identifier)
 			case commands.CertNotAuthorized:
@@ -1347,7 +1409,7 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 		PublicKey: s.s.IdentityKey(),
 		Payload:   vote,
 	}
-	deadline := s.phaseDeadline(AuthorityVoteDeadline)
+	deadline := s.phaseDeadline(AuthorityVoteDeadline())
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
@@ -1368,9 +1430,9 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 			case commands.VoteOk:
 				s.log.Debugf("Vote accepted by %s", peer.Identifier)
 			case commands.VoteTooLate:
-				s.log.Warningf("Vote rejected (too late) by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (too late) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.VoteTooEarly:
-				s.log.Warningf("Vote rejected (too early) by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (too early) by %s (%s)", peer.Identifier, s.clockView())
 			default:
 				s.log.Warningf("Vote rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
@@ -1387,7 +1449,7 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 		PublicKey: s.s.IdentityKey(),
 		Payload:   reveal,
 	}
-	deadline := s.phaseDeadline(AuthorityRevealDeadline)
+	deadline := s.phaseDeadline(AuthorityRevealDeadline())
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
@@ -1408,9 +1470,9 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 			case commands.RevealOk:
 				s.log.Debugf("Reveal accepted by %s", peer.Identifier)
 			case commands.RevealTooLate:
-				s.log.Warningf("Reveal rejected (too late) by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (too late) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.RevealTooEarly:
-				s.log.Warningf("Reveal rejected (too early) by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (too early) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.RevealAlreadyReceived:
 				s.log.Debugf("Reveal already received by %s", peer.Identifier)
 			case commands.RevealNotAuthorized:
@@ -1434,7 +1496,7 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 		PublicKey: s.s.IdentityKey(),
 		Payload:   sig,
 	}
-	deadline := s.phaseDeadline(PublishConsensusDeadline)
+	deadline := s.phaseDeadline(PublishConsensusDeadline())
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
@@ -1455,9 +1517,9 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 			case commands.SigOk:
 				s.log.Debugf("Signature accepted by %s", peer.Identifier)
 			case commands.SigTooLate:
-				s.log.Warningf("Signature rejected (too late) by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (too late) by %s (%s)", peer.Identifier, s.clockView())
 			case commands.SigTooEarly:
-				s.log.Warningf("Signature rejected (too early) by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (too early) by %s (%s)", peer.Identifier, s.clockView())
 			default:
 				s.log.Warningf("Signature rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
@@ -1479,9 +1541,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	}
 
 	nodes := make([]*pki.MixDescriptor, 0)
-	mixTally := make(map[string][]*pki.Document)
-	mixParams := make(map[string][]*pki.Document)
-	replicaTally := make(map[string][]*pki.Document)
+	mixTally := make(map[string]map[[publicKeyHashSize]byte]struct{})
+	mixParams := make(map[string]map[[publicKeyHashSize]byte]struct{})
+	replicaTally := make(map[string]map[[publicKeyHashSize]byte]struct{})
 	replicaNodes := make([]*pki.ReplicaDescriptor, 0)
 	for id, vote := range s.votes[epoch] {
 		// serialize the vote parameters and tally these as well.
@@ -1491,9 +1553,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			continue
 		}
 		if _, ok := mixParams[bs]; !ok {
-			mixParams[bs] = make([]*pki.Document, 0)
+			mixParams[bs] = make(map[[publicKeyHashSize]byte]struct{})
 		}
-		mixParams[bs] = append(mixParams[bs], vote)
+		mixParams[bs][id] = struct{}{}
 
 		// include edge nodes in the tally.
 		for _, desc := range vote.GatewayNodes {
@@ -1504,9 +1566,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 			k := string(rawDesc)
 			if _, ok := mixTally[k]; !ok {
-				mixTally[k] = make([]*pki.Document, 0)
+				mixTally[k] = make(map[[publicKeyHashSize]byte]struct{})
 			}
-			mixTally[k] = append(mixTally[k], vote)
+			mixTally[k][id] = struct{}{}
 		}
 		for _, desc := range vote.ServiceNodes {
 			rawDesc, err := desc.MarshalBinary()
@@ -1516,9 +1578,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 			k := string(rawDesc)
 			if _, ok := mixTally[k]; !ok {
-				mixTally[k] = make([]*pki.Document, 0)
+				mixTally[k] = make(map[[publicKeyHashSize]byte]struct{})
 			}
-			mixTally[k] = append(mixTally[k], vote)
+			mixTally[k][id] = struct{}{}
 		}
 		// include the rest of the mixes in the tally.
 		for _, l := range vote.Topology {
@@ -1531,9 +1593,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 
 				k := string(rawDesc)
 				if _, ok := mixTally[k]; !ok {
-					mixTally[k] = make([]*pki.Document, 0)
+					mixTally[k] = make(map[[publicKeyHashSize]byte]struct{})
 				}
-				mixTally[k] = append(mixTally[k], vote)
+				mixTally[k][id] = struct{}{}
 			}
 		}
 		for _, desc := range vote.StorageReplicas {
@@ -1544,14 +1606,14 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 			k := string(rawDesc)
 			if _, ok := replicaTally[k]; !ok {
-				replicaTally[k] = make([]*pki.Document, 0)
+				replicaTally[k] = make(map[[publicKeyHashSize]byte]struct{})
 			}
-			replicaTally[k] = append(replicaTally[k], vote)
+			replicaTally[k][id] = struct{}{}
 		}
 	}
 	// include mixes that have a threshold of votes
-	for rawDesc, votes := range mixTally {
-		if len(votes) >= s.threshold {
+	for rawDesc, authorities := range mixTally {
+		if len(authorities) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			desc := new(pki.MixDescriptor)
 			err := desc.UnmarshalBinary([]byte(rawDesc))
@@ -1564,8 +1626,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 		}
 	}
-	for rawDesc, votes := range replicaTally {
-		if len(votes) >= s.threshold {
+	for rawDesc, authorities := range replicaTally {
+		if len(authorities) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			desc := new(pki.ReplicaDescriptor)
 			err := desc.Unmarshal([]byte(rawDesc))
@@ -1582,18 +1644,18 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	sortReplicaNodesByPublicKey(replicaNodes)
 
 	// include parameters that have a threshold of votes
-	for bs, votes := range mixParams {
+	for bs, authorities := range mixParams {
 		params, err := votedParametersFromKey(bs)
 		if err != nil {
 			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%x", err, bs)
 			continue
 		}
 
-		if len(votes) >= s.threshold {
+		if len(authorities) >= s.threshold {
 			sortNodesByPublicKey(nodes)
 			// successful tally
 			return nodes, replicaNodes, params, nil
-		} else if len(votes) >= s.dissenters {
+		} else if len(authorities) >= s.dissenters {
 			s.log.Errorf("tallyVotes: failed threshold with params: %v", params)
 			continue
 		}
@@ -1606,7 +1668,7 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 	if len(commits) < s.threshold {
 		s.log.Errorf("Insufficient commits for epoch %d to make consensus", epoch)
 		for id, _ := range commits {
-			s.log.Errorf("Have commits for epoch %d from %x", epoch, id)
+			s.log.Errorf("Have commits for epoch %d from %s", epoch, s.authorityName(id))
 		}
 		return nil, errors.New("Insuffiient commits to make threshold vote")
 	}
@@ -1631,7 +1693,11 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 	srv.Write(epochToBytes(epoch))
 
 	sort.Slice(sortedreveals, func(i, j int) bool {
-		return string(sortedreveals[i].Digest) > string(sortedreveals[j].Digest)
+		a, b := sortedreveals[i], sortedreveals[j]
+		if cmp := bytes.Compare(a.Digest, b.Digest); cmp != 0 {
+			return cmp > 0
+		}
+		return bytes.Compare(a.PublicKey[:], b.PublicKey[:]) < 0
 	})
 
 	for _, reveal := range sortedreveals {
@@ -1743,30 +1809,10 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 		nodeMap[id] = v
 	}
 
-	pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
-
 	// range over the keys in the configuration file and collect the descriptors for each layer
-	topology := make([][]*pki.MixDescriptor, len(s.s.cfg.Topology.Layers))
-	for strata, layer := range s.s.cfg.Topology.Layers {
-		for _, node := range layer.Nodes {
-
-			var identityPublicKey sign.PublicKey
-			var err error
-			if filepath.IsAbs(node.IdentityPublicKeyPem) {
-				identityPublicKey, err = signpem.FromPublicPEMFile(node.IdentityPublicKeyPem, pkiSignatureScheme)
-				if err != nil {
-					panic(err)
-				}
-			} else {
-				pemFilePath := filepath.Join(s.s.cfg.Server.DataDir, node.IdentityPublicKeyPem)
-				identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-				if err != nil {
-					panic(err)
-				}
-			}
-
-			id := hash.Sum256From(identityPublicKey)
-
+	topology := make([][]*pki.MixDescriptor, len(s.fixedTopology))
+	for strata, layer := range s.fixedTopology {
+		for _, id := range layer {
 			// if the listed node is in the current descriptor set, place it in the layer
 			if n, ok := nodeMap[id]; ok {
 				topology[strata] = append(topology[strata], n)
@@ -1774,6 +1820,24 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 		}
 	}
 	return topology
+}
+
+func loadFixedTopology(cfg *config.Config) ([][][publicKeyHashSize]byte, error) {
+	if cfg.Topology == nil {
+		return nil, nil
+	}
+	scheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
+	layers := make([][][publicKeyHashSize]byte, len(cfg.Topology.Layers))
+	for strata, layer := range cfg.Topology.Layers {
+		for _, node := range layer.Nodes {
+			pub, err := loadNodeIdentityKey(cfg.Server.DataDir, node.KeyFile(), scheme)
+			if err != nil {
+				return nil, fmt.Errorf("topology layer %d: %w", strata, err)
+			}
+			layers[strata] = append(layers[strata], hash.Sum256From(pub))
+		}
+	}
+	return layers, nil
 }
 
 func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor, srv []byte) [][]*pki.MixDescriptor {
@@ -1830,6 +1894,7 @@ func (s *state) pruneDocuments() {
 			delete(s.serializedDocs, e)
 		}
 	}
+	s.publishServedDocs()
 	s.serializedDocsMu.Unlock()
 	for e := range s.descriptors {
 		if e < cmpEpoch {
@@ -1931,7 +1996,9 @@ func staleEpochKeys(bkt *bolt.Bucket, cmpEpoch uint64) [][]byte {
 // replica running with a ReplicaID that does not match its pinned identity key.
 func (s *state) replicaAuthorizationError(desc *pki.ReplicaDescriptor) error {
 	pk := hash.Sum256(desc.IdentityKey)
+	s.nodesMu.RLock()
 	replicaInfo, ok := s.authorizedReplicaNodes[pk]
+	s.nodesMu.RUnlock()
 	if !ok {
 		return fmt.Errorf("identity key hash %x is not pinned in this authority's StorageReplicas configuration", pk)
 	}
@@ -1964,6 +2031,8 @@ func (s *state) descriptorAuthorizationError(desc *pki.MixDescriptor) error {
 	pk := hash.Sum256(desc.IdentityKey)
 	var role string
 	var authorized map[[publicKeyHashSize]byte]string
+	s.nodesMu.RLock()
+	defer s.nodesMu.RUnlock()
 	switch {
 	case desc.IsGatewayNode && !desc.IsServiceNode:
 		role, authorized = "gateway", s.authorizedGatewayNodes
@@ -1982,6 +2051,134 @@ func (s *state) descriptorAuthorizationError(desc *pki.MixDescriptor) error {
 		return fmt.Errorf("%s name mismatch: authority pins %q for this identity key, descriptor announces %q", role, pinned, desc.Name)
 	}
 	return nil
+}
+
+type nodeTables struct {
+	mixes    map[[publicKeyHashSize]byte]string
+	gateways map[[publicKeyHashSize]byte]string
+	services map[[publicKeyHashSize]byte]string
+	replicas map[[publicKeyHashSize]byte]*authorizedReplicaInfo
+	keys     map[[publicKeyHashSize]byte]sign.PublicKey
+}
+
+func (s *state) loadNodeTables(cfg *config.Config) (*nodeTables, error) {
+	scheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+	t := &nodeTables{
+		mixes:    make(map[[publicKeyHashSize]byte]string),
+		gateways: make(map[[publicKeyHashSize]byte]string),
+		services: make(map[[publicKeyHashSize]byte]string),
+		replicas: make(map[[publicKeyHashSize]byte]*authorizedReplicaInfo),
+		keys:     make(map[[publicKeyHashSize]byte]sign.PublicKey),
+	}
+	load := func(path string) ([publicKeyHashSize]byte, error) {
+		pub, err := loadNodeIdentityKey(s.s.cfg.Server.DataDir, path, scheme)
+		if err != nil {
+			return [publicKeyHashSize]byte{}, err
+		}
+		pk := hash.Sum256From(pub)
+		t.keys[pk] = pub
+		return pk, nil
+	}
+	for _, n := range []struct {
+		nodes []*config.Node
+		into  map[[publicKeyHashSize]byte]string
+	}{{cfg.Mixes, t.mixes}, {cfg.GatewayNodes, t.gateways}, {cfg.ServiceNodes, t.services}} {
+		for _, v := range n.nodes {
+			pk, err := load(v.KeyFile())
+			if err != nil {
+				return nil, err
+			}
+			n.into[pk] = v.Identifier
+		}
+	}
+	for _, v := range cfg.StorageReplicas {
+		pk, err := load(v.KeyFile())
+		if err != nil {
+			return nil, err
+		}
+		t.replicas[pk] = &authorizedReplicaInfo{Identifier: v.Identifier, ReplicaID: v.ReplicaID}
+	}
+	for _, v := range s.s.cfg.Authorities {
+		t.keys[hash.Sum256From(v.IdentityPublicKey)] = v.IdentityPublicKey
+	}
+	if s.s.identityPublicKey != nil {
+		t.keys[hash.Sum256From(s.s.identityPublicKey)] = s.s.identityPublicKey
+	}
+	return t, nil
+}
+
+func (s *state) setNodeTables(t *nodeTables) {
+	s.Lock()
+	s.nodesMu.Lock()
+	s.authorizedMixes, s.authorizedGatewayNodes, s.authorizedServiceNodes = t.mixes, t.gateways, t.services
+	s.authorizedReplicaNodes, s.reverseHash = t.replicas, t.keys
+	s.nodesMu.Unlock()
+	s.Unlock()
+}
+
+func (s *state) reloadNodes(cfg *config.Config) error {
+	// Debug is read only at startup, so the running minimums apply.
+	err := checkNodeCounts(cfg, s.s.cfg.Debug)
+	var t *nodeTables
+	if err == nil {
+		t, err = s.loadNodeTables(cfg)
+	}
+	if err != nil {
+		s.log.Errorf("Node reload failed, keeping the current node set: %v", err)
+		return err
+	}
+	s.setNodeTables(t)
+	s.log.Noticef("Reloaded nodes: %d mixes, %d gateways, %d service nodes, %d replicas",
+		len(t.mixes), len(t.gateways), len(t.services), len(t.replicas))
+	if ignored := changedStartupSections(s.s.cfg, cfg); len(ignored) > 0 {
+		s.log.Warningf("Reload changed config sections that are ignored until restart: %s", strings.Join(ignored, ", "))
+	}
+	return nil
+}
+
+func changedStartupSections(running, reloaded *config.Config) []string {
+	sections := []struct {
+		name string
+		a, b interface{}
+	}{
+		{"Server", running.Server, reloaded.Server},
+		{"Authorities", running.Authorities, reloaded.Authorities},
+		{"Logging", running.Logging, reloaded.Logging},
+		{"Parameters", running.Parameters, reloaded.Parameters},
+		{"Debug", running.Debug, reloaded.Debug},
+		{"Topology", running.Topology, reloaded.Topology},
+		{"SphinxGeometry", running.SphinxGeometry, reloaded.SphinxGeometry},
+	}
+	var changed []string
+	for _, c := range sections {
+		if !sameTOML(c.a, c.b) {
+			changed = append(changed, c.name)
+		}
+	}
+	return changed
+}
+
+func sameTOML(a, b interface{}) bool {
+	var x, y bytes.Buffer
+	ea := toml.NewEncoder(&x).Encode(map[string]interface{}{"s": a})
+	eb := toml.NewEncoder(&y).Encode(map[string]interface{}{"s": b})
+	return (ea == nil) == (eb == nil) && bytes.Equal(x.Bytes(), y.Bytes())
+}
+
+func (s *state) isNodePeer(pk [publicKeyHashSize]byte) bool {
+	s.nodesMu.RLock()
+	defer s.nodesMu.RUnlock()
+	_, isMix := s.authorizedMixes[pk]
+	_, isGateway := s.authorizedGatewayNodes[pk]
+	_, isService := s.authorizedServiceNodes[pk]
+	return isMix || isGateway || isService
+}
+
+func (s *state) isReplicaPeer(pk [publicKeyHashSize]byte) bool {
+	s.nodesMu.RLock()
+	defer s.nodesMu.RUnlock()
+	_, ok := s.authorizedReplicaNodes[pk]
+	return ok
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
@@ -2009,6 +2206,10 @@ func (s *state) dupVote(vote commands.Vote) bool {
 }
 
 // a certificate is a vote that has a full set of sharedrandom commit and reveals as seen by the peer
+func (s *state) certificateBuilt() bool {
+	return s.state == stateAcceptCert || s.state == stateAcceptSignature
+}
+
 func (s *state) onCertUpload(certificate *commands.Cert, peerIdentityKeyHash []byte) commands.Command {
 	s.Lock()
 	defer s.Unlock()
@@ -2049,12 +2250,20 @@ func (s *state) verifyCertUpload(certificate *commands.Cert, peerIdentityKeyHash
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if certificate.Epoch < s.votingEpoch {
-		s.log.Errorf("Certificate from %s received too late: %d < %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
+		s.log.Errorf("Certificate from %s received too late: %d < %d (%s)", s.authorityNames[pk], certificate.Epoch, s.votingEpoch, s.clockView())
 		return nil, commands.CertTooLate
 	}
 	if certificate.Epoch > s.votingEpoch {
-		s.log.Errorf("Certificate from %s received too early: %d > %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
+		s.log.Errorf("Certificate from %s received too early: %d > %d (%s)", s.authorityNames[pk], certificate.Epoch, s.votingEpoch, s.clockView())
 		return nil, commands.CertTooEarly
+	}
+	if s.state == stateAcceptSignature {
+		if _, ok := s.certificates[s.votingEpoch][pk]; ok {
+			s.log.Errorf("Another Cert received from peer %s", s.authorityNames[pk])
+			return nil, commands.CertAlreadyReceived
+		}
+		s.log.Errorf("Certificate from %s received after the certificate phase closed (%s)", s.authorityNames[pk], s.clockView())
+		return nil, commands.CertTooLate
 	}
 
 	// ensure certificate.PublicKey verifies the payload (ie Vote has a signature from this peer)
@@ -2174,15 +2383,25 @@ func (s *state) onRevealUpload(reveal *commands.Reveal, peerIdentityKeyHash []by
 	e := epochFromBytes(certified[:8])
 	// received too late
 	if e < s.votingEpoch {
-		s.log.Errorf("Reveal from %s received too late: %d < %d", s.authorityNames[pk], e, s.votingEpoch)
+		s.log.Errorf("Reveal from %s received too late: %d < %d (%s)", s.authorityNames[pk], e, s.votingEpoch, s.clockView())
 		resp.ErrorCode = commands.RevealTooLate
 		return &resp
 	}
 
 	// received too early
 	if e > s.votingEpoch {
-		s.log.Errorf("Reveal from %s received too early: %d > %d", s.authorityNames[pk], e, s.votingEpoch)
+		s.log.Errorf("Reveal from %s received too early: %d > %d (%s)", s.authorityNames[pk], e, s.votingEpoch, s.clockView())
 		resp.ErrorCode = commands.RevealTooEarly
+		return &resp
+	}
+	if s.certificateBuilt() {
+		if _, ok := s.reveals[s.votingEpoch][pk]; ok {
+			s.log.Errorf("Reveal from %s already received", s.authorityNames[pk])
+			resp.ErrorCode = commands.RevealAlreadyReceived
+			return &resp
+		}
+		s.log.Errorf("Reveal from %s received after the reveal phase closed (%s)", s.authorityNames[pk], s.clockView())
+		resp.ErrorCode = commands.RevealTooLate
 		return &resp
 	}
 
@@ -2264,13 +2483,13 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if vote.Epoch < s.votingEpoch {
-		s.log.Errorf("Vote from %s received too late: %d < %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		s.log.Errorf("Vote from %s received too late: %d < %d (%s)", s.authorityNames[pk], vote.Epoch, s.votingEpoch, s.clockView())
 		instrument.VoteReceived("too_late")
 		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
 	if vote.Epoch > s.votingEpoch {
-		s.log.Errorf("Vote from %s received too early: %d > %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
+		s.log.Errorf("Vote from %s received too early: %d > %d (%s)", s.authorityNames[pk], vote.Epoch, s.votingEpoch, s.clockView())
 		instrument.VoteReceived("too_early")
 		resp.ErrorCode = commands.VoteTooEarly
 		return &resp
@@ -2294,6 +2513,12 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 		resp.ErrorCode = commands.VoteAlreadyReceived
 		return &resp
 	}
+	if s.state == stateAcceptSignature {
+		s.log.Errorf("Vote from %s received after the certificate phase closed (%s)", s.authorityNames[pk], s.clockView())
+		instrument.VoteReceived("too_late")
+		resp.ErrorCode = commands.VoteTooLate
+		return &resp
+	}
 
 	// ensure vote.PublicKey verifies the payload (ie Vote has a signature from this peer)
 	_, err := cert.Verify(vote.PublicKey, vote.Payload)
@@ -2306,7 +2531,7 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 
 	doc, err := s.doParseDocument(vote.Payload)
 	if err != nil {
-		s.log.Errorf("Vote from %s failed signature verification.", s.authorityNames[pk])
+		s.log.Errorf("Vote from %s failed to parse: %v", s.authorityNames[pk], err)
 		instrument.VoteReceived("not_signed")
 		resp.ErrorCode = commands.VoteNotSigned
 		return &resp
@@ -2320,8 +2545,24 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 		return &resp
 	}
 
+	// Verify the document is well formed and has valid structure/descriptors
+	if err := pki.IsVoteWellFormed(doc, s.getVerifiers()); err != nil {
+		s.log.Errorf("Vote from %s is not well-formed: %v", s.authorityNames[pk], err)
+		instrument.VoteReceived("malformed")
+		resp.ErrorCode = commands.VoteMalformed
+		return &resp
+	}
+
+	// A Vote must carry exactly 1 commit and 0 reveals
+	if len(doc.SharedRandomCommit) != 1 || len(doc.SharedRandomReveal) != 0 {
+		s.log.Errorf("Vote from %s carries invalid SharedRandom commit/reveal count", s.authorityNames[pk])
+		instrument.VoteReceived("malformed")
+		resp.ErrorCode = commands.VoteMalformed
+		return &resp
+	}
+
 	// extract commit from document and verify that it was signed by this peer
-	// IsDocumentWellFormed has already verified that any commit is for
+	// IsVoteWellFormed has already verified that any commit is for
 	// this Epoch and is signed by a known verifier
 	commit, ok := doc.SharedRandomCommit[pk]
 	if !ok {
@@ -2364,12 +2605,12 @@ func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) comma
 		return &resp
 	}
 	if sig.Epoch < s.votingEpoch {
-		s.log.Errorf("Signature from %s received too late: %d < %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
+		s.log.Errorf("Signature from %s received too late: %d < %d (%s)", s.authorityNames[pk], sig.Epoch, s.votingEpoch, s.clockView())
 		resp.ErrorCode = commands.SigTooLate
 		return &resp
 	}
 	if sig.Epoch > s.votingEpoch {
-		s.log.Errorf("Signature from %s received too early: %d > %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
+		s.log.Errorf("Signature from %s received too early: %d > %d (%s)", s.authorityNames[pk], sig.Epoch, s.votingEpoch, s.clockView())
 		resp.ErrorCode = commands.SigTooEarly
 		return &resp
 	}
@@ -2407,16 +2648,33 @@ func (s *state) onSigUpload(sig *commands.Sig, peerIdentityKeyHash []byte) comma
 	}
 }
 
+var (
+	errConflictingDescriptor = errors.New("Conflicting descriptor")
+	errLateUpload            = errors.New("Late descriptor upload")
+)
+
+func (s *state) voteCut(epoch uint64) bool {
+	votes, ok := s.votes[epoch]
+	if !ok {
+		return false
+	}
+	_, ok = votes[s.identityPubKeyHash()]
+	return ok
+}
+
 func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
+	s.uploadMu.Lock()
+	defer s.uploadMu.Unlock()
+
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
 	// Phase 1: Check under read lock if we should proceed
 	s.RLock()
 	_, elapsed, _ := epochtime.Now()
-	if elapsed > MixPublishDeadline {
+	if elapsed > MixPublishDeadline() {
 		s.log.Warningf("Replica %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
-			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+			desc.Name, epoch, elapsed, MixPublishDeadline(), elapsed-MixPublishDeadline())
 	}
 
 	// Check for redundant uploads.
@@ -2429,9 +2687,14 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 				s.RUnlock()
 				return err
 			}
-			if !hmac.Equal(serialized, rawDesc) {
+			uploaded, err := desc.Marshal()
+			if err != nil {
 				s.RUnlock()
-				return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
+				return err
+			}
+			if !hmac.Equal(serialized, uploaded) {
+				s.RUnlock()
+				return fmt.Errorf("state: node %s (%x): %w for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), errConflictingDescriptor, epoch)
 			}
 			// Redundant uploads that don't change are harmless.
 			s.RUnlock()
@@ -2440,9 +2703,9 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	}
 
 	// Check if document already exists (late upload)
-	if s.documents[epoch] != nil {
+	if s.documents[epoch] != nil || s.voteCut(epoch) {
 		s.RUnlock()
-		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
+		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
 	}
 	s.RUnlock()
 
@@ -2476,24 +2739,31 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 		return nil
 	}
 
+	if s.documents[epoch] != nil || s.voteCut(epoch) {
+		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
+	}
+
 	// Store the parsed descriptor
 	s.replicaDescriptors[epoch][pk] = desc
 
-	s.log.Noticef("Node %x: Successfully submitted replica descriptor for epoch %v.", pk, epoch)
+	s.log.Noticef("Node %s: Successfully submitted replica descriptor for epoch %v.", desc.Name, epoch)
 	s.onUpdate()
 	return nil
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
+	s.uploadMu.Lock()
+	defer s.uploadMu.Unlock()
+
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
 	// Phase 1: Check under read lock if we should proceed
 	s.RLock()
 	_, elapsed, _ := epochtime.Now()
-	if elapsed > MixPublishDeadline {
+	if elapsed > MixPublishDeadline() {
 		s.log.Warningf("Node %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
-			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+			desc.Name, epoch, elapsed, MixPublishDeadline(), elapsed-MixPublishDeadline())
 	}
 
 	// Check for redundant uploads.
@@ -2506,9 +2776,14 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 				s.RUnlock()
 				return err
 			}
-			if !hmac.Equal(serialized, rawDesc) {
+			uploaded, err := desc.MarshalBinary()
+			if err != nil {
 				s.RUnlock()
-				return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
+				return err
+			}
+			if !hmac.Equal(serialized, uploaded) {
+				s.RUnlock()
+				return fmt.Errorf("state: node %s (%x): %w for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), errConflictingDescriptor, epoch)
 			}
 			// Redundant uploads that don't change are harmless.
 			s.RUnlock()
@@ -2517,9 +2792,9 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	}
 
 	// Check if document already exists (late upload)
-	if s.documents[epoch] != nil {
+	if s.documents[epoch] != nil || s.voteCut(epoch) {
 		s.RUnlock()
-		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
+		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
 	}
 	s.RUnlock()
 
@@ -2553,16 +2828,34 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		return nil
 	}
 
+	if s.documents[epoch] != nil || s.voteCut(epoch) {
+		return fmt.Errorf("state: Node %v: %w for for epoch %v", desc.IdentityKey, errLateUpload, epoch)
+	}
+
 	// Store the parsed descriptor
 	s.descriptors[epoch][pk] = desc
 
-	s.log.Noticef("Node %x: Successfully submitted descriptor for epoch %v.", pk, epoch)
+	s.log.Noticef("Node %s: Successfully submitted descriptor for epoch %v.", desc.Name, epoch)
 	s.onUpdate()
 	return nil
 }
 
+func (s *state) logMissingDocument(warned *atomic.Uint64, now uint64, format string, args ...interface{}) {
+	if warned.Swap(now+1) != now+1 {
+		s.log.Warningf(format, args...)
+		return
+	}
+	s.log.Debugf(format, args...)
+}
+
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	var generationDeadline = 7 * (epochtime.Period / 8)
+	var generationDeadline = 7 * (epochtime.Period() / 8)
+
+	if m := s.servedDocs.Load(); m != nil {
+		if b, ok := (*m)[epoch]; ok {
+			return b, nil
+		}
+	}
 
 	s.RLock()
 	defer s.RUnlock()
@@ -2582,6 +2875,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 				return nil, err
 			}
 			s.serializedDocs[epoch] = b
+			s.publishServedDocs()
 		}
 		s.serializedDocsMu.Unlock()
 		return b, nil
@@ -2593,13 +2887,13 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	case now:
 		// We missed the deadline to publish a descriptor for the current
 		// epoch, so we will never be able to service this request.
-		s.log.Errorf("No document for current epoch %v generated and never will be", now)
+		s.logMissingDocument(&s.missingCurrentWarned, now, "No document for current epoch %v generated and never will be", now)
 		return nil, errGone
 	case now + 1:
 		// If it's past the time by which we should have generated a document
 		// then we will never be able to service this.
 		if elapsed > generationDeadline {
-			s.log.Errorf("No document for next epoch %v and it's already past 7/8 of previous epoch", now+1)
+			s.logMissingDocument(&s.missingNextWarned, now, "No document for next epoch %v and it's already past 7/8 of previous epoch", now+1)
 			return nil, errGone
 		}
 		return nil, errNotYet
@@ -2617,10 +2911,20 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	// NOTREACHED
 }
 
+func (s *state) publishServedDocs() {
+	m := make(map[uint64][]byte, len(s.serializedDocs))
+	for e, b := range s.serializedDocs {
+		m[e] = b
+	}
+	s.servedDocs.Store(&m)
+}
+
 func (s *state) restorePersistence() error {
 	const (
 		metadataBucket = "metadata"
 		versionKey     = "version"
+		schemaKey      = "schema"
+		schemaVersion  = 1
 	)
 
 	return s.db.Update(func(tx *bolt.Tx) error {
@@ -2642,6 +2946,14 @@ func (s *state) restorePersistence() error {
 			return err
 		}
 
+		if v := bkt.Get([]byte(schemaKey)); v == nil {
+			if err := bkt.Put([]byte(schemaKey), []byte{schemaVersion}); err != nil {
+				return err
+			}
+		} else if !bytes.Equal(v, []byte{schemaVersion}) {
+			return fmt.Errorf("state: persistence schema %x, want %x", v, schemaVersion)
+		}
+
 		if b := bkt.Get([]byte(versionKey)); b != nil {
 			// The database was previously initialised; restore persisted state.
 			// Figure out which epochs to restore for.
@@ -2661,8 +2973,7 @@ func (s *state) restorePersistence() error {
 					if len(wantHash) != publicKeyHashSize {
 						panic("stored hash should be 32 bytes")
 					}
-					desc := new(pki.ReplicaDescriptor)
-					err := desc.Unmarshal(rawDesc)
+					desc, err := s.restoredReplicaDescriptor(rawDesc)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
@@ -2691,13 +3002,9 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				epochBytes := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
-					_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
-					if err != nil {
-						s.log.Errorf("Failed to verify threshold on restored document")
-						break
-					}
-					doc, err := s.doParseDocument(rawDoc)
-					if err != nil {
+					if _, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc); err != nil {
+						s.log.Errorf("Failed to verify threshold on restored document for epoch %v: %v", epoch, err)
+					} else if doc, err := s.doParseDocument(rawDoc); err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else if doc.Epoch != epoch {
 						s.log.Errorf("Persisted document has unexpected epoch: %v", doc.Epoch)
@@ -2718,8 +3025,7 @@ func (s *state) restorePersistence() error {
 					if len(wantHash) != publicKeyHashSize {
 						panic("stored hash should be 32 bytes")
 					}
-					desc := new(pki.MixDescriptor)
-					err := desc.UnmarshalBinary(rawDesc)
+					desc, err := s.restoredMixDescriptor(rawDesc)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
@@ -2749,6 +3055,50 @@ func (s *state) restorePersistence() error {
 
 		return bkt.Put([]byte(versionKey), []byte(kpcommon.Version()))
 	})
+}
+
+func (s *state) uploaderKey(id []byte) (sign.PublicKey, error) {
+	scheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+	if len(id) != scheme.PublicKeySize() {
+		return nil, fmt.Errorf("identity key length %d, want %d", len(id), scheme.PublicKeySize())
+	}
+	return scheme.UnmarshalBinaryPublicKey(id)
+}
+
+func (s *state) restoredMixDescriptor(raw []byte) (*pki.MixDescriptor, error) {
+	up := new(pki.SignedUpload)
+	if err := up.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	if up.MixDescriptor == nil {
+		return nil, errors.New("no descriptor in upload")
+	}
+	pub, err := s.uploaderKey(up.MixDescriptor.IdentityKey)
+	if err != nil {
+		return nil, err
+	}
+	if !up.Verify(pub) {
+		return nil, errors.New("invalid upload signature")
+	}
+	return up.MixDescriptor, nil
+}
+
+func (s *state) restoredReplicaDescriptor(raw []byte) (*pki.ReplicaDescriptor, error) {
+	up := new(pki.SignedReplicaUpload)
+	if err := up.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	if up.ReplicaDescriptor == nil {
+		return nil, errors.New("no descriptor in upload")
+	}
+	pub, err := s.uploaderKey(up.ReplicaDescriptor.IdentityKey)
+	if err != nil {
+		return nil, err
+	}
+	if !up.Verify(pub) {
+		return nil, errors.New("invalid upload signature")
+	}
+	return up.ReplicaDescriptor, nil
 }
 
 func votingThresholds(votingSetSize int) (threshold, dissenters int) {
@@ -2814,11 +3164,11 @@ func newState(s *Server) (*state, error) {
 
 	// set voting schedule at runtime
 
-	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
-	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline)
-	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
-	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
-	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
+	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period())
+	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline())
+	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline())
+	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline())
+	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline())
 	st.log.Debugf("Retry config: attempts=%d base=%v max=%v jitter=%v",
 		s.cfg.Server.PeerRetryMaxAttempts, s.cfg.Server.PeerRetryBaseDelay,
 		s.cfg.Server.PeerRetryMaxDelay, s.cfg.Server.PeerRetryJitter)
@@ -2830,99 +3180,17 @@ func newState(s *Server) (*state, error) {
 	st.threshold, st.dissenters = votingThresholds(len(st.verifiers))
 
 	st.s.cfg.Server.PKISignatureScheme = s.cfg.Server.PKISignatureScheme
-	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
-
-	// Initialize the authorized peer tables.
-	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-	st.authorizedMixes = make(map[[publicKeyHashSize]byte]string)
-	for _, v := range st.s.cfg.Mixes {
-		var identityPublicKey sign.PublicKey
-		var err error
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		}
-
-		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedMixes[pk] = v.Identifier
-		st.reverseHash[pk] = identityPublicKey
+	if s.cfg.DeprecatedIdentityPublicKeyPem() {
+		st.log.Warning("config: IdentityPublicKeyPem is deprecated, use IdentityPublicKeyFile")
 	}
-	st.authorizedGatewayNodes = make(map[[publicKeyHashSize]byte]string)
-	for _, v := range st.s.cfg.GatewayNodes {
-		var identityPublicKey sign.PublicKey
-		var err error
 
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		}
-
-		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedGatewayNodes[pk] = v.Identifier
-		st.reverseHash[pk] = identityPublicKey
+	nodes, err := st.loadNodeTables(s.cfg)
+	if err != nil {
+		return nil, err
 	}
-	st.authorizedServiceNodes = make(map[[publicKeyHashSize]byte]string)
-	for _, v := range st.s.cfg.ServiceNodes {
-		var identityPublicKey sign.PublicKey
-		var err error
-
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		}
-
-		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedServiceNodes[pk] = v.Identifier
-		st.reverseHash[pk] = identityPublicKey
-	}
-	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]*authorizedReplicaInfo)
-	for _, v := range st.s.cfg.StorageReplicas {
-		var identityPublicKey sign.PublicKey
-		var err error
-
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-			if err != nil {
-				panic(err)
-			}
-		}
-
-		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedReplicaNodes[pk] = &authorizedReplicaInfo{
-			Identifier: v.Identifier,
-			ReplicaID:  v.ReplicaID,
-		}
-		st.reverseHash[pk] = identityPublicKey
+	st.setNodeTables(nodes)
+	if st.fixedTopology, err = loadFixedTopology(s.cfg); err != nil {
+		return nil, err
 	}
 
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
@@ -2932,10 +3200,8 @@ func newState(s *Server) (*state, error) {
 		pk := hash.Sum256From(v.IdentityPublicKey)
 		st.authorizedAuthorities[pk] = true
 		st.authorityLinkKeys[pk] = v.LinkPublicKey
-		st.reverseHash[pk] = v.IdentityPublicKey
 		st.authorityNames[pk] = v.Identifier
 	}
-	st.reverseHash[hash.Sum256From(st.s.identityPublicKey)] = st.s.identityPublicKey
 
 	st.documents = make(map[uint64]*pki.Document)
 	st.serializedDocs = make(map[uint64][]byte)
@@ -2947,11 +3213,10 @@ func newState(s *Server) (*state, error) {
 	st.reveals = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 	st.signatures = make(map[uint64]map[[publicKeyHashSize]byte]*cert.Signature)
 	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
-	st.priorSRV = make([][]byte, 0)
+	st.weeklySRV = make([][]byte, 0)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
-	var err error
 	if st.db, err = bolt.Open(dbPath, 0600, nil); err != nil {
 		return nil, err
 	}
@@ -2994,7 +3259,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 			if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 				continue
 			}
-			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
+			resp, err := s.sendCommandToPeerUntil(peer, cmd, deadline, s.maxPeerAttempts(retry.DefaultMaxAttempts))
 			if err != nil {
 				s.log.Debugf("backgroundFetchConsensus: %s: %v", peer.Identifier, err)
 				continue
@@ -3064,8 +3329,8 @@ func sortNodesByPublicKey(nodes []*pki.MixDescriptor) {
 }
 
 func sha256b64(raw []byte) string {
-	hash := blake2b.Sum256(raw)
-	return base64.StdEncoding.EncodeToString(hash[:])
+	h := hash.Sum256(raw)
+	return base64.StdEncoding.EncodeToString(h[:])
 }
 
 // validate the topology
@@ -3151,4 +3416,11 @@ func (s *state) reveal(epoch uint64) []byte {
 	}
 	s.log.Debugf("reveal: Successfully retrieved reveal for epoch %d", epoch)
 	return signed
+}
+
+func loadNodeIdentityKey(dataDir, path string, scheme sign.Scheme) (sign.PublicKey, error) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dataDir, path)
+	}
+	return signpem.FromPublicPEMFile(path, scheme)
 }

@@ -29,11 +29,9 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
-	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
-	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -131,14 +129,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
-			peerName, found := getPeerName()
-			if found {
-				c.log.Warningf("server/incoming: IsPeerValid(): Client '%s' no longer in user db", peerName)
-			} else {
-				c.log.Warningf("server/incoming: IsPeerValid(): Client no longer in user db (identity_hash=%x not in current PKI)", creds.AdditionalData)
-			}
-			c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-				peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+			c.log.Warningf("server/incoming: IsPeerValid(): Client no longer in user db")
 			handshakeinstrument.IncomingPeerValidationFailure("client_dropped_from_userdb")
 			c.canSend = false
 			return false
@@ -201,12 +192,12 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			return false
 		}
 		if found {
-			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s' (link_key_hash=%x)", peerName, hash.Sum256(blob))
+			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s'", peerName)
 		} else {
-			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for unknown peer (identity_hash=%x not in current PKI, link_key_hash=%x)", creds.AdditionalData, hash.Sum256(blob))
+			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for unknown peer")
 		}
-		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+		linkKeyHash := hash.Sum256(blob)
+		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, link_key_hash=%x", peerName, linkKeyHash[:8])
 		handshakeinstrument.IncomingPeerValidationFailure("unknown_mix")
 	}
 
@@ -262,9 +253,8 @@ func (c *incomingConn) worker() {
 
 		if wire.IsNoHandshakeBytesError(err) {
 			c.log.Debugf(
-				"TCP connection closed before Noise handshake bytes local=%v remote=%v after=%v timeout=%v: %v",
+				"TCP connection closed before Noise handshake bytes local=%v after=%v timeout=%v: %v",
 				c.c.LocalAddr(),
-				c.c.RemoteAddr(),
 				handshakeElapsed,
 				timeoutMs,
 				err,
@@ -273,23 +263,19 @@ func (c *incomingConn) worker() {
 		}
 
 		c.log.Errorf(
-			"Handshake failed local=%v remote=%v after=%v timeout=%v: %v",
+			"Handshake failed local=%v after=%v timeout=%v: %v",
 			c.c.LocalAddr(),
-			c.c.RemoteAddr(),
 			handshakeElapsed,
 			timeoutMs,
 			err,
 		)
-		// Log detailed debug info (contains IPs, keys) at debug level only
-		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("incoming", "success", handshakeElapsed)
 	c.log.Debugf(
-		"Handshake completed local=%v remote=%v in %v",
+		"Handshake completed local=%v in %v",
 		c.c.LocalAddr(),
-		c.c.RemoteAddr(),
 		handshakeElapsed,
 	)
 	c.l.onInitializedConn(c)
@@ -308,14 +294,12 @@ func (c *incomingConn) worker() {
 	if err != nil {
 		c.log.Debugf("Session failure: %s", err)
 	}
-	blob, err := creds.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
 	if c.fromMix {
+		blob, err := creds.PublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
 		c.log.Debugf("Peer: '%x' (%x)", creds.AdditionalData, hash.Sum256(blob))
-	} else {
-		c.log.Debugf("User: '%x', Key: '%x'", creds.AdditionalData, hash.Sum256(blob))
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though
@@ -741,7 +725,6 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	if c.fromClient && c.sendTokenIncr != 0 {
 		// Update the token bucket for the time that we were idle.
 		deltaT := time.Now().Sub(c.sendTokenLast)
-		c.log.Debugf("Rate limit: DeltaT: %v Tokens: %v", deltaT, c.sendTokens)
 		incrCount := uint64(deltaT / c.sendTokenIncr)
 		if incrCount > 0 {
 			c.sendTokenLast = c.sendTokenLast.Add(c.sendTokenIncr * time.Duration(incrCount))
@@ -762,7 +745,6 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 			return nil
 		}
 		c.sendTokens--
-		c.log.Debugf("Rate limit: Remaining tokens: %v", c.sendTokens)
 	}
 
 	c.log.Debugf("Handing off packet: %v", pkt.ID)
@@ -791,7 +773,7 @@ func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 	}
 	c.log = l.glue.LogBackend().GetLogger(fmt.Sprintf("incoming:%d", c.id))
 
-	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
+	c.log.Debug("New incoming connection")
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to

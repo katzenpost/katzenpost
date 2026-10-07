@@ -8,8 +8,7 @@ import (
 	"errors"
 	"slices"
 
-	"golang.org/x/crypto/blake2b"
-
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -55,14 +54,14 @@ func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	hashes := [2][32]byte{maxHash, maxHash}
 	keys := [2][]byte{nil, nil}
 	for _, key := range serverIdKeys {
-		hash := blake2b.Sum256(append(key[:], boxID[:32]...))
-		if slices.Compare(hashes[1][:], hash[:]) == -1 {
-			continue // hash[:] > largest kept hashes[1]
+		h := hash.Sum256(append(key[:], boxID[:32]...))
+		if slices.Compare(hashes[1][:], h[:]) == -1 {
+			continue
 		}
-		cmpidx := (slices.Compare(hashes[0][:], hash[:]) & 2) >> 1
+		cmpidx := (slices.Compare(hashes[0][:], h[:]) & 2) >> 1
 		hashes[1-cmpidx] = hashes[0]
 		keys[1-cmpidx] = keys[0]
-		hashes[cmpidx] = hash
+		hashes[cmpidx] = h
 		keys[cmpidx] = key[:]
 	}
 	return keys[:]
@@ -77,10 +76,10 @@ type serverDesc struct {
 func Shard(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	servers := make([]*serverDesc, 0, len(serverIdKeys))
 	for _, key := range serverIdKeys {
-		hash := blake2b.Sum256(append(key, boxID[:]...))
+		h := hash.Sum256(append(key, boxID[:]...))
 		d := &serverDesc{
 			key:  key,
-			hash: &hash,
+			hash: &h,
 		}
 		servers = append(servers, d)
 	}
@@ -111,7 +110,7 @@ func GetShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, er
 	shards := make([]*pki.ReplicaDescriptor, 0, K)
 	for _, key := range orderedKeys {
 		// Hash the identity key to look up the descriptor
-		keyHash := blake2b.Sum256(key)
+		keyHash := hash.Sum256(key)
 		desc, err := doc.GetReplicaNodeByKeyHash(&keyHash)
 		if err != nil {
 			// Replica is offline/not in document, skip it

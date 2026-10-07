@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/spf13/cobra"
 )
 
@@ -186,10 +187,21 @@ func initializeThinClient(configFile string, logPath string, logLevel string) *t
 }
 
 // initializeFullClient sets up full daemon mode
-func initializeFullClient(configFile string, logPath string, logLevel string) (*thin.ThinClient, *client.Daemon) {
+func loadFullConfig(configFile string) (*config.Config, error) {
 	cfg, err := config.LoadFile(configFile)
 	if err != nil {
-		panic(fmt.Errorf("failed to open config: %s", err))
+		return nil, fmt.Errorf("failed to open config: %s", err)
+	}
+	if err := epochtime.Configure(cfg.EpochDuration, os.Stderr); err != nil {
+		return nil, fmt.Errorf("config file '%v': %v", configFile, err)
+	}
+	return cfg, nil
+}
+
+func initializeFullClient(configFile string, logPath string, logLevel string) (*thin.ThinClient, *client.Daemon) {
+	cfg, err := loadFullConfig(configFile)
+	if err != nil {
+		panic(err)
 	}
 
 	// Override logging configuration to use our log file

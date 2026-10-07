@@ -133,7 +133,7 @@ func TestDocument(t *testing.T) {
 	require.Equal(doc.LambdaL, ddoc.LambdaL, "ParseDocument(): LambdaL")
 	require.Equal(doc.LambdaM, ddoc.LambdaM, "ParseDocument(): LambdaM")
 	require.Equal(doc.SharedRandomValue, ddoc.SharedRandomValue, "ParseDocument(): SharedRandomValue")
-	require.Equal(doc.PriorSharedRandom, ddoc.PriorSharedRandom, "ParseDocument(): PriorSharedRandom")
+	require.Equal(doc.WeeklySharedRandom, ddoc.WeeklySharedRandom, "ParseDocument(): WeeklySharedRandom")
 	require.Equal(doc.SharedRandomCommit, ddoc.SharedRandomCommit, "ParseDocument(): SharedRandomCommit")
 	require.Equal(doc.SharedRandomReveal, ddoc.SharedRandomReveal, "ParseDocument(): SharedRandomReveal")
 	require.Equal(doc.Version, ddoc.Version, "ParseDocument(): Version")

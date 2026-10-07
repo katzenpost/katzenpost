@@ -37,6 +37,48 @@ where they occur:
 previous behaviour or to satisfy a new requirement", which is not
 always the same as "the file fails to parse".
 
+## Epoch duration (every component)
+
+- **Added** `EpochDuration` (Go duration string, e.g. `"20m"` or
+  `"2m"`): in `[Server]` of `authority.toml` and `katzenpost.toml`,
+  and at the top level of `replica.toml`, `courier.toml` and
+  `client.toml` (kpclientd, and full-mode ping). Not in
+  `thinclient.toml`. It must be whole seconds from `2m` to `7d`; any
+  other value, including `"0s"`, refuses the config. Why these bounds:
+  - `2m`: the authority's voting phases are each `P/8` wide and a
+    sender stops `5s` before each phase deadline, so at `2m` a phase is
+    `15s` with `10s` to deliver to every peer; the consumers' fetch pass
+    is bounded by `P/8` as well. Shorter epochs leave too little of
+    that smallest budget for a dial, a PQ handshake and a reply.
+  - `7d`: the storage replicas rotate envelope keys on a fixed 7-day
+    replica epoch, and a replica descriptor advertises the keys of the
+    previous, current and next replica epoch. An epoch longer than the
+    replica epoch could span more replica rotations than one
+    descriptor covers.
+  - Whole seconds: the handshake carries time to the second, and every
+    deadline derived from the period is computed from it, so a
+    fractional period has no meaning on the wire.
+- The process chooses its epoch once at startup: `EpochDuration` if
+  set; refusal to start if `KATZENPOST_EPOCH_DURATION` is also set to
+  a different value; `KATZENPOST_EPOCH_DURATION` alone, with a
+  deprecation warning on stderr; otherwise `20m`. `fetch` has no
+  config key of its own: with `--require-ready` it reads
+  `EpochDuration` from the node configs it probes (refusing if they
+  disagree); when none of them sets it, the variable or `20m` as
+  above.
+- The variable is no longer read at package init: a program that
+  never calls `epochtime.Configure` runs at `20m`. `client.New` (and so
+  `client.NewDaemon`'s `Start`) calls it with the client config's
+  `EpochDuration`; a second call with the same period is a no-op and a
+  different one is refused.
+- genconfig writes `EpochDuration` into every generated component
+  config from `--epochDuration` (`20m` when empty). Older releases
+  ignore the key (lenient decoding, see above) and still read the
+  variable; with `--nodeVersions node=vX.Y.Z,...` genconfig exports it
+  in docker-compose only to the nodes on such releases.
+- Every authority, node and client of one network must agree on the
+  period; nothing about it is carried in the PKI document.
+
 ## Directory authority (`authority.toml`)
 
 Source: `authority/voting/server/config/config.go`.
@@ -130,6 +172,13 @@ No TOML-visible changes. The Go type of `LinkPublicKey` was wrapped in
 a new `LinkPublicKey` struct so that BurntSushi/toml can serialise it
 back to PEM via `MarshalText`; the on-disk encoding is unchanged.
 
+### Defaults
+
+- `[Server]` `PeerRetryMaxAttempts` no longer defaults to `20`. Unset (`0`)
+  means vote, reveal, cert and signature sends retry until the phase
+  deadline, and background consensus fetches stop after `20` attempts; a
+  positive value caps both.
+
 ### Removed fields
 
 None.
@@ -151,6 +200,14 @@ Source: `server/config/config.go`.
   systemd `TimeoutStopSec` comfortably above 40 minutes, for example `45min`.
   This option and `PersistMixKeysOnShutdown` are mutually exclusive; enabling
   both is a configuration error.
+
+### `[PKI.Voting]`
+
+- **Added** `MaxConsensusSize` (int, bytes; default `0`, derived from
+  the PKI schemes and the authority count). The send and receive
+  ceiling of the PKI session and of consensus reassembly. Negative
+  values, and values above `500000000` (`pki.MaxConsensusCeiling`, the
+  wire layer's largest message), refuse the config.
 
 ### `[Server.Gateway]`
 
@@ -375,7 +432,17 @@ The client TOML had the most substantial reshape, driven by the
 ### `[Debug]`
 
 - **Added** `EnableTimeSync` (bool). Use skewed remote provider time
-  instead of system time when available.
+  instead of system time when available. A skew larger than one
+  authority phase, `P/8` (150 s at `20m`), is refused with a warning
+  and the previous skew is kept.
+
+### `[VotingAuthority]`
+
+- **Added** `MaxConsensusSize` (int, bytes; default `0`, derived from
+  the PKI schemes and the authority count). The send and receive
+  ceiling of the PKI session and of consensus reassembly. Negative
+  values, and values above `500000000` (`pki.MaxConsensusCeiling`, the
+  wire layer's largest message), refuse the config.
 
 ### `[[VotingAuthority.Peers]]` and the new `[[PinnedGateways.Gateways]]`
 

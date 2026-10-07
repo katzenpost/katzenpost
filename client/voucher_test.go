@@ -28,7 +28,7 @@ func newVoucherTestDaemon(t *testing.T) (*Daemon, *[AppIDLength]byte, chan *Resp
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 	port, err := getFreePort()
 	require.NoError(t, err)

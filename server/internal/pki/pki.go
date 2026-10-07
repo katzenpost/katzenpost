@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
@@ -50,31 +51,37 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+func recheckInterval() time.Duration { return epochtime.Period() / 16 }
+
+func pkiEarlyConnectSlack() time.Duration { return epochtime.Period() / 8 }
+
+func PublishDeadline() time.Duration { return vServer.MixPublishDeadline() }
+
+func nextFetchTill() time.Duration { return epochtime.Period() - vServer.PublishConsensusDeadline() }
+
+// descriptorUploadSafety is the wall-clock margin we leave
+// before MixPublishDeadline so a slow upload still finishes
+// inside the descriptor-accept window. The hardcoded 10 s was
+// fine for production 20-minute epochs (140 s upload budget)
+// but broken under 2-minute epochs (5 s budget, too
+// tight for a PQ-Noise handshake under chaos). Proportional
+// safety keeps the trade-off uniform across epoch regimes;
+// see the matching change in replica/pki.go (commit 4c1d9c85)
+// for the full derivation and the surfacing chaos scenario
+// (asymmetric_replica_latency).
+//
+// This is the SAME bug as the replica's hardcoded constant
+// but on the mix-server side: surfaced by
+// epoch_transition_latency at 80 ms / 25 ms, which caused
+// mix1, mix2, and gateway1 to drop out of consensus when
+// their descriptor uploads timed out.
+func descriptorUploadSafety() time.Duration { return PublishDeadline() / 6 }
+
+func descriptorRepostInterval() time.Duration { return epochtime.Period() / 96 }
+
 var (
 	errNotCached              = errors.New("pki: requested epoch document not in cache")
 	errSphinxGeometryMismatch = errors.New("pki: document Sphinx geometry does not match the local configuration")
-	recheckInterval           = epochtime.Period / 16
-	pkiEarlyConnectSlack      = epochtime.Period / 8
-	PublishDeadline           = vServer.MixPublishDeadline
-	nextFetchTill             = epochtime.Period - PublishDeadline
-
-	// descriptorUploadSafety is the wall-clock margin we leave
-	// before MixPublishDeadline so a slow upload still finishes
-	// inside the descriptor-accept window. The hardcoded 10 s was
-	// fine for production 20-minute epochs (140 s upload budget)
-	// but broken under warped 2-minute epochs (5 s budget, too
-	// tight for a PQ-Noise handshake under chaos). Proportional
-	// safety keeps the trade-off uniform across epoch regimes;
-	// see the matching change in replica/pki.go (commit 4c1d9c85)
-	// for the full derivation and the surfacing chaos scenario
-	// (asymmetric_replica_latency).
-	//
-	// This is the SAME bug as the replica's hardcoded constant
-	// but on the mix-server side: surfaced by
-	// epoch_transition_latency at 80 ms / 25 ms, which caused
-	// mix1, mix2, and gateway1 to drop out of consensus when
-	// their descriptor uploads timed out.
-	descriptorUploadSafety = PublishDeadline / 6
 )
 
 // authDocsCache holds a snapshot of documents for authentication.
@@ -204,7 +211,7 @@ func (p *pki) updateAuthDocsCache() {
 
 	epochs := make([]uint64, 0, constants.NumMixKeys+1)
 	start := now
-	if till < pkiEarlyConnectSlack {
+	if till < pkiEarlyConnectSlack() {
 		start = now + 1
 	}
 	for epoch := start; epoch > now-constants.NumMixKeys; epoch-- {
@@ -231,7 +238,7 @@ func (p *pki) updateAuthDocsCache() {
 }
 
 func (p *pki) worker() {
-	var initialSpawnDelay = epochtime.Period / 64
+	var initialSpawnDelay = epochtime.Period() / 64
 	timer := time.NewTimer(initialSpawnDelay)
 
 	defer func() {
@@ -266,7 +273,7 @@ func (p *pki) worker() {
 	// Note: The worker's start is delayed till after the Server's connector
 	// is initialized, so that force updating the outgoing connection table
 	// is guaranteed to work.
-	var lastUpdateEpoch, lastMuSafetyCap uint64
+	var lastUpdateEpoch, lastReauthEpoch, lastMuSafetyCap uint64
 	var lastLambdaP, lastLambdaL float64
 
 	for {
@@ -291,6 +298,11 @@ func (p *pki) worker() {
 			}
 		}
 
+		if now, _, _ := epochtime.Now(); now != lastReauthEpoch && p.entryForEpoch(now) != nil {
+			p.glue.Connector().ForceUpdate()
+			lastReauthEpoch = now
+		}
+
 		// Check to see if we need to publish the descriptor, and do so, along
 		// with all the key rotation bits.
 		err := p.publishDescriptorIfNeeded(pkiCtx)
@@ -312,7 +324,7 @@ func (p *pki) worker() {
 		// epoch, serving stale descriptors until an operator restart. Mirrors
 		// core/pki.WorkerBase.FetchDocuments.
 		var didUpdate bool
-		fetchCtx, cancelFetch := context.WithTimeout(pkiCtx, cpki.FetchTimeout)
+		fetchCtx, cancelFetch := context.WithTimeout(pkiCtx, cpki.FetchTimeout())
 		for _, epoch := range p.documentsToFetch() {
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
@@ -332,9 +344,7 @@ func (p *pki) worker() {
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
-				if err == cpki.ErrDocumentGone {
-					p.setFailedFetch(epoch, err)
-				}
+				p.noteFetchFailure(epoch, err)
 				continue
 			}
 
@@ -383,6 +393,7 @@ func (p *pki) worker() {
 		// epoch.
 		if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
 			if ent := p.entryForEpoch(now); ent != nil {
+
 				if newMuSafetyCap := ent.MuSafetyCap(); newMuSafetyCap != lastMuSafetyCap {
 					p.log.Debugf("Updating scheduler per-hop deadline for epoch %v: %v ms", now, newMuSafetyCap)
 					p.glue.Scheduler().OnNewMixMaxDelay(newMuSafetyCap)
@@ -446,27 +457,25 @@ func (p *pki) updateTimer(timer *time.Timer) {
 	// consensus document is cached; otherwise the node (and any clients
 	// that depend on it, like kpclientd) won't see the document until
 	// the next epoch boundary.
-	if elapsed >= PublishDeadline-descriptorUploadSafety {
-		if p.entryForEpoch(now) != nil {
-			interval := till
-			if interval < time.Second {
-				interval = time.Second
-			}
-			p.log.Debugf("descriptor upload window closed and document cached, reset to next epoch in %v", interval)
-			timer.Reset(interval)
-		} else {
-			p.log.Debugf("descriptor upload window closed but no document for %v yet, reset to %v", now, recheckInterval)
-			timer.Reset(recheckInterval)
-		}
+	if elapsed >= PublishDeadline()-descriptorUploadSafety() && p.entryForEpoch(now) == nil {
+		p.log.Debugf("descriptor upload window closed but no document for %v yet, reset to %v", now, recheckInterval())
+		timer.Reset(recheckInterval())
+		return
+	}
+
+	if uploadDeadline := PublishDeadline() - descriptorUploadSafety(); elapsed < uploadDeadline && p.lastPublishedEpoch <= now {
+		interval := min(descriptorRepostInterval(), uploadDeadline-elapsed)
+		p.log.Debugf("descriptor for %v not posted yet, reset to %v", now+1, interval)
+		timer.Reset(interval)
 		return
 	}
 
 	// It is after the consensus publication deadline.
-	if elapsed > vServer.PublishConsensusDeadline {
+	if elapsed > vServer.PublishConsensusDeadline() {
 		p.log.Debugf("After deadline for next epoch publication")
 		if p.entryForEpoch(now+1) == nil {
-			p.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval)
-			timer.Reset(recheckInterval)
+			p.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval())
+			timer.Reset(recheckInterval())
 		} else {
 			interval := till
 			p.log.Debugf("document cached for %v, reset to %v", now+1, interval)
@@ -477,10 +486,10 @@ func (p *pki) updateTimer(timer *time.Timer) {
 
 		// No document for current epoch.
 		if p.entryForEpoch(now) == nil {
-			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval)
-			timer.Reset(recheckInterval)
+			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval())
+			timer.Reset(recheckInterval())
 		} else {
-			interval := vServer.PublishConsensusDeadline - elapsed
+			interval := vServer.PublishConsensusDeadline() - elapsed
 			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, interval)
 			timer.Reset(interval)
 		}
@@ -559,6 +568,12 @@ func (p *pki) setFailedFetch(epoch uint64, err error) {
 	p.failedFetches[epoch] = err
 }
 
+func (p *pki) noteFetchFailure(epoch uint64, err error) {
+	if errors.Is(err, cpki.ErrDocumentGone) {
+		p.setFailedFetch(epoch, err)
+	}
+}
+
 func (p *pki) pruneFailures() {
 	p.Lock()
 	defer p.Unlock()
@@ -618,9 +633,9 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 	currentEpoch, elapsed, till := epochtime.Now()
 
-	uploadDeadline := PublishDeadline - descriptorUploadSafety
+	uploadDeadline := PublishDeadline() - descriptorUploadSafety()
 	if uploadDeadline < 0 {
-		uploadDeadline = PublishDeadline
+		uploadDeadline = PublishDeadline()
 	}
 
 	doPublishEpoch := currentEpoch + 1
@@ -639,8 +654,8 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
-			PublishDeadline,
-			descriptorUploadSafety,
+			PublishDeadline(),
+			descriptorUploadSafety(),
 			till,
 		)
 		return nil
@@ -653,8 +668,8 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
-			PublishDeadline,
-			descriptorUploadSafety,
+			PublishDeadline(),
+			descriptorUploadSafety(),
 			till,
 		)
 		return nil
@@ -665,8 +680,8 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		doPublishEpoch,
 		currentEpoch,
 		elapsed,
-		PublishDeadline,
-		descriptorUploadSafety,
+		PublishDeadline(),
+		descriptorUploadSafety(),
 		budget,
 	)
 
@@ -795,16 +810,13 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		)
 		p.lastPublishedEpoch = doPublishEpoch
 	case cpki.ErrInvalidPostEpoch:
-		// Treat this class (conflict/late descriptor) as a permanent rejection
-		// and suppress further uploads for this epoch.
 		p.log.Errorf(
-			"❌ DESCRIPTOR UPLOAD: Authority permanently rejected %s node %s upload for epoch %d; advancing past this epoch: %s",
+			"DESCRIPTOR UPLOAD: Authorities rejected %s node %s upload for epoch %d; reposting while the upload window is open: %s",
 			nodeType,
 			strconv.QuoteToASCII(desc.Name),
 			doPublishEpoch,
 			strconv.QuoteToASCII(err.Error()),
 		)
-		p.lastPublishedEpoch = doPublishEpoch
 	default:
 		p.log.Errorf(
 			"❌ DESCRIPTOR UPLOAD: Failed to upload %s node %s descriptor for epoch %d: %s",
@@ -835,7 +847,7 @@ func (p *pki) documentsToFetch() []uint64 {
 
 	now, _, till := epochtime.Now()
 	start := now
-	if till < nextFetchTill {
+	if till < nextFetchTill() {
 		start = now + 1
 	}
 
@@ -860,7 +872,7 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 		now, _, till := epochtime.Now()
 
 		// Cache is valid if we're in the same epoch and slack window hasn't changed.
-		cacheValid := c.now == now || (till < pkiEarlyConnectSlack && c.now == now+1)
+		cacheValid := c.now == now && (c.till < pkiEarlyConnectSlack()) == (till < pkiEarlyConnectSlack())
 		if cacheValid && len(c.docs) > 0 {
 			return c.docs, c.nowDoc, c.now, c.till
 		}
@@ -875,7 +887,7 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 	now, _, till := epochtime.Now()
 	epochs := make([]uint64, 0, constants.NumMixKeys+1)
 	start := now
-	if till < pkiEarlyConnectSlack {
+	if till < pkiEarlyConnectSlack() {
 		// Allow connections to new nodes 30 mins in advance of an epoch
 		// transition.
 		start = now + 1
@@ -942,7 +954,7 @@ func (p *pki) authenticateConnectionWithDocs(c *wire.PeerCredentials, isOutgoing
 	if c == nil {
 		return nil, false, false
 	}
-	var earlySendSlack = epochtime.Period / 8
+	var earlySendSlack = epochtime.Period() / 8
 
 	dirStr := "Incoming"
 	if isOutgoing {
@@ -1125,6 +1137,23 @@ func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 	return val, nil
 }
 
+func pkiClientConfig(g glue.Glue, kemscheme kem.Scheme, pkiSignatureScheme sign.Scheme) *vClient.Config {
+	return &vClient.Config{
+		KEMScheme:           kemscheme,
+		PKISignatureScheme:  pkiSignatureScheme,
+		LinkKey:             g.LinkKey(),
+		LogBackend:          g.LogBackend(),
+		Authorities:         g.Config().PKI.Voting.Authorities,
+		Geo:                 g.Config().SphinxGeometry,
+		DialTimeoutSec:      g.Config().Debug.ConnectTimeout / 1000,
+		HandshakeTimeoutSec: g.Config().Debug.HandshakeTimeout / 1000,
+		LocalAddresses:      g.Config().Server.Addresses,
+
+		MaxConsensusSize:        g.Config().PKI.Voting.MaxConsensusSize,
+		MaxConsensusSizeSetting: "PKI.Voting.MaxConsensusSize",
+	}
+}
+
 // New returns a new pki.
 func New(glue glue.Glue) (glue.PKI, error) {
 	p := &pki{
@@ -1154,20 +1183,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		return nil, errors.New("pki signature scheme not found in registry")
 	}
 
-	pkiCfg := &vClient.Config{
-		KEMScheme:          kemscheme,
-		PKISignatureScheme: pkiSignatureScheme,
-		LinkKey:            glue.LinkKey(),
-		LogBackend:         glue.LogBackend(),
-		Authorities:        glue.Config().PKI.Voting.Authorities,
-		Geo:                glue.Config().SphinxGeometry,
-
-		// Convert milliseconds to seconds for PKI client timeouts.
-		DialTimeoutSec:      glue.Config().Debug.ConnectTimeout / 1000,
-		HandshakeTimeoutSec: glue.Config().Debug.HandshakeTimeout / 1000,
-	}
-
-	p.impl, err = vClient.New(pkiCfg)
+	p.impl, err = vClient.New(pkiClientConfig(glue, kemscheme, pkiSignatureScheme))
 	if err != nil {
 		return nil, err
 	}

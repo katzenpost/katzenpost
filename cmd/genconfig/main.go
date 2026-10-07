@@ -113,7 +113,9 @@ performance optimization and security requirements.`,
 	cmd.Flags().StringVar(&cfg.Transport, "transport", "tcp",
 		"peer address scheme: tcp, quic, or alternate (every other node QUIC-only)")
 	cmd.Flags().StringVar(&cfg.EpochDuration, "epochDuration", "",
-		"set KATZENPOST_EPOCH_DURATION env var in docker-compose services (e.g., 2m)")
+		"EpochDuration written into every generated config (e.g., 2m; empty means 20m); also exported as KATZENPOST_EPOCH_DURATION to the docker-compose services that --nodeVersions puts on older releases")
+	cmd.Flags().StringToStringVar(&cfg.NodeVersions, "nodeVersions", nil,
+		"release each node runs, as node=vX.Y.Z or node=current; nodes on releases that predate a config key also get its older environment variable in docker-compose")
 	cmd.Flags().BoolVar(&cfg.NoDecoy, "noDecoy", false,
 		"disable decoy traffic for clients, couriers, and replicas (master override)")
 	cmd.Flags().BoolVar(&cfg.NoClientDecoy, "noClientDecoy", false,

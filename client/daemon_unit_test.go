@@ -20,7 +20,7 @@ import (
 )
 
 func TestNewDaemon(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	d, err := NewDaemon(cfg)
@@ -39,7 +39,7 @@ func TestNewDaemon(t *testing.T) {
 }
 
 func TestNewDaemonInitLoggingRelativePath(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	// Set a relative path which should fail validation
@@ -84,7 +84,7 @@ func TestProxyRepliesHalted(t *testing.T) {
 }
 
 func TestOnDocument(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -207,7 +207,7 @@ func TestCleanupForAppIDNoState(t *testing.T) {
 }
 
 func TestDaemonStartStopMultiple(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()

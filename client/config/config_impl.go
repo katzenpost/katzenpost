@@ -19,6 +19,7 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
@@ -42,6 +43,9 @@ func (c *Config) PigeonholeGeometry() *pigeonholeGeo.Geometry {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if err := epochtime.ValidateConfigured(c.EpochDuration); err != nil {
+		return fmt.Errorf("config: EpochDuration: %v", err)
+	}
 	if c.WireKEMScheme == "" {
 		return errors.New("WireKEMScheme is empty string")
 	}
@@ -112,6 +116,12 @@ func (c *Config) FixupAndValidate() error {
 		}
 	}
 	if c.VotingAuthority != nil {
+		if c.VotingAuthority.MaxConsensusSize < 0 {
+			return errors.New("config: VotingAuthority.MaxConsensusSize must not be negative")
+		}
+		if c.VotingAuthority.MaxConsensusSize > cpki.MaxConsensusCeiling {
+			return fmt.Errorf("config: VotingAuthority.MaxConsensusSize must not exceed %d", cpki.MaxConsensusCeiling)
+		}
 		for _, peer := range c.VotingAuthority.Peers {
 			if err := utils.RejectDNSAddrs(peer.Addresses, c.AllowHostnameAddresses); err != nil {
 				return fmt.Errorf("config: VotingAuthority peer %q: %w", peer.Identifier, err)
@@ -155,34 +165,52 @@ func rejectPigeonholeGeometry(md toml.MetaData) error {
 	return nil
 }
 
+func gatewayString(data map[string]interface{}, key string) (string, error) {
+	v, ok := data[key].(string)
+	if !ok || v == "" {
+		return "", fmt.Errorf("config: Gateway %s must be a non-empty string", key)
+	}
+	return v, nil
+}
+
 func (p *Gateway) UnmarshalTOML(v interface{}) error {
 	data, _ := v.(map[string]interface{})
-	p.Name = data["Name"].(string)
 	var err error
-
-	if data["PKISignatureScheme"].(string) == "" {
-		panic("PKISignatureScheme is an empty string")
+	if p.Name, err = gatewayString(data, "Name"); err != nil {
+		return err
 	}
 
-	sigScheme := signSchemes.ByName(data["PKISignatureScheme"].(string))
+	name, err := gatewayString(data, "PKISignatureScheme")
+	if err != nil {
+		return err
+	}
+	sigScheme := signSchemes.ByName(name)
 	if sigScheme == nil {
-		panic("pki signature scheme is nil")
+		return fmt.Errorf("config: Gateway PKISignatureScheme %q is unknown", name)
 	}
 
-	p.IdentityKey, err = signpem.FromPublicPEMString(data["IdentityKey"].(string), sigScheme)
+	idKey, err := gatewayString(data, "IdentityKey")
+	if err != nil {
+		return err
+	}
+	p.IdentityKey, err = signpem.FromPublicPEMString(idKey, sigScheme)
 	if err != nil {
 		return err
 	}
 
-	if data["WireKEMScheme"].(string) == "" {
-		return errors.New("WireKEMScheme is empty string")
+	name, err = gatewayString(data, "WireKEMScheme")
+	if err != nil {
+		return err
 	}
-
-	kemscheme := schemes.ByName(data["WireKEMScheme"].(string))
+	kemscheme := schemes.ByName(name)
 	if kemscheme == nil {
 		return errors.New("WireKEMScheme is nil")
 	}
-	linkKey, err := kempem.FromPublicPEMString(data["LinkKey"].(string), kemscheme)
+	link, err := gatewayString(data, "LinkKey")
+	if err != nil {
+		return err
+	}
+	linkKey, err := kempem.FromPublicPEMString(link, kemscheme)
 	if err != nil {
 		return err
 	}

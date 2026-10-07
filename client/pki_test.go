@@ -66,7 +66,7 @@ func (c *mockPKIClient) Deserialize(raw []byte) (*cpki.Document, error) {
 }
 
 func NoTestClientPKIStartStop(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -87,7 +87,7 @@ func NoTestClientPKIStartStop(t *testing.T) {
 }
 
 func TestPKIGetDocument(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -123,7 +123,7 @@ func TestPKIGetDocument(t *testing.T) {
 }
 
 func TestPKIUpdateDocumentBadSphinxHash(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -157,7 +157,7 @@ func TestPKIUpdateDocumentBadSphinxHash(t *testing.T) {
 }
 
 func TestPKIUpdateDocument(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -197,7 +197,7 @@ func TestPKIUpdateDocument(t *testing.T) {
 }
 
 func TestPKIWaitForDocument(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -236,7 +236,7 @@ func TestPKIWaitForDocument(t *testing.T) {
 // nil. Returning nil here is what surfaced to thin clients as a hard
 // ThinClientErrorInternalError.
 func TestPKICurrentDocumentFallsBackToPreviousEpoch(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -277,7 +277,7 @@ func TestPKICurrentDocumentFallsBackToPreviousEpoch(t *testing.T) {
 // GetPKIDocumentRaw(0)) keep getting an answer across a skipped consensus
 // epoch instead of returning nil.
 func TestPKICurrentRawSignedDocumentFallsBackToPreviousEpoch(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -318,7 +318,7 @@ func TestPKICurrentRawSignedDocumentFallsBackToPreviousEpoch(t *testing.T) {
 // window), the worker caches the previous epoch so the daemon keeps serving
 // a document to thin clients for the duration of the gap.
 func TestPKIWorkerFetchesPreviousEpochWhenCurrentUnserved(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -374,7 +374,7 @@ func TestPKIWorkerFetchesPreviousEpochWhenCurrentUnserved(t *testing.T) {
 // serve it as the last valid document while the current epoch's
 // consensus is briefly uncached.
 func TestPKIPruneRetainsPreviousEpoch(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -428,7 +428,7 @@ func (m *transientFailureConsensusGetter) GetConsensus(ctx context.Context, epoc
 }
 
 func TestPKIWaitForDocumentRetriesTransientFailure(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -471,7 +471,7 @@ func TestPKIWaitForDocumentRetriesTransientFailure(t *testing.T) {
 // the thin client GetPKIDocument request can return it with the
 // directory authority signatures intact.
 func TestPKIRawSignedDocumentRetained(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -507,7 +507,7 @@ func TestPKIRawSignedDocumentRetained(t *testing.T) {
 }
 
 func TestPKIClockSkew(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -534,7 +534,7 @@ func TestPKIClockSkew(t *testing.T) {
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
 
-	skew := int64(1234)
+	skew := int64(123)
 	p.setClockSkew(skew)
 	skewDuration := c.ClockSkew()
 	expected := time.Duration(skew) * time.Second
@@ -552,14 +552,13 @@ func lenSyncMap(m *sync.Map) int {
 
 // TestNextPKIWakeup pins the event-driven schedule the worker uses to
 // avoid waking up every recheckInterval just to find both epochs still
-// cached. With both now and now+1 in hand the worker should sleep across
-// the boundary plus the gateway publish-and-cache window so the new
-// now+1 is ready on the next wake; while waiting for now+1 to become
+// cached. With both now and now+1 in hand the worker should wake at the
+// boundary, where now+1 becomes the current document; while waiting for now+1 to become
 // fetchable it should sleep until the nextFetchTill threshold; in
 // outright failure cases (no current doc, or past the threshold with
 // next still missing) it falls back to recheckInterval polling.
 func TestNextPKIWakeup(t *testing.T) {
-	period := epochtime.Period
+	period := epochtime.Period()
 	cases := []struct {
 		name     string
 		till     time.Duration
@@ -572,28 +571,28 @@ func TestNextPKIWakeup(t *testing.T) {
 			till:     period / 2,
 			haveNow:  false,
 			haveNext: false,
-			want:     recheckInterval,
+			want:     recheckInterval(),
 		},
 		{
 			name:     "have current, next not yet fetchable: sleep until threshold",
 			till:     period - period/8,
 			haveNow:  true,
 			haveNext: false,
-			want:     (period - period/8) - nextFetchTill,
+			want:     (period - period/8) - nextFetchTill(),
 		},
 		{
 			name:     "have current, past threshold with next missing: poll",
 			till:     period / 32,
 			haveNow:  true,
 			haveNext: false,
-			want:     recheckInterval,
+			want:     recheckInterval(),
 		},
 		{
-			name:     "both cached: sleep across boundary plus publish+cache window",
+			name:     "both cached: wake at the boundary",
 			till:     period / 4,
 			haveNow:  true,
 			haveNext: true,
-			want:     period/4 + PublishDeadline + mixServerCacheDelay,
+			want:     period / 4,
 		},
 	}
 	for _, tc := range cases {
@@ -605,7 +604,7 @@ func TestNextPKIWakeup(t *testing.T) {
 }
 
 func TestPKICachedDoc(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -668,7 +667,7 @@ func TestPKICachedDoc(t *testing.T) {
 }
 
 func TestPKIGetDocumentConsensusGone(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -686,12 +685,12 @@ func TestPKIGetDocumentConsensusGone(t *testing.T) {
 	ctx := context.TODO()
 
 	_, _, doc, err := p.getDocument(ctx, epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.ErrorIs(t, err, cpki.ErrDocumentGone)
 	require.Nil(t, doc)
 }
 
 func TestPKIGetDocumentConsensusNotFound(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -714,7 +713,7 @@ func TestPKIGetDocumentConsensusNotFound(t *testing.T) {
 }
 
 func TestPKIFailedFetchesCachesConsensusGone(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -730,24 +729,23 @@ func TestPKIFailedFetchesCachesConsensusGone(t *testing.T) {
 
 	epoch, _, _ := epochtime.Now()
 
-	// Simulate what the worker loop does: fetch, then cache ErrNoDocument.
 	err = p.updateDocument(epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
-
-	// Worker caches ErrNoDocument errors.
+	require.ErrorIs(t, err, cpki.ErrDocumentGone)
 	p.failedFetches[epoch] = err
 
 	// pruneFailures should keep the entry for the current epoch.
 	p.pruneFailures(epoch)
 	require.Contains(t, p.failedFetches, epoch)
 
-	// pruneFailures should remove it once the epoch advances.
 	p.pruneFailures(epoch + 1)
+	require.Contains(t, p.failedFetches, epoch)
+
+	p.pruneFailures(epoch + 2)
 	require.NotContains(t, p.failedFetches, epoch)
 }
 
 func TestPKIFailedFetchesDoesNotCacheConsensusNotFound(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -763,20 +761,13 @@ func TestPKIFailedFetchesDoesNotCacheConsensusNotFound(t *testing.T) {
 
 	epoch, _, _ := epochtime.Now()
 
-	// ConsensusNotFound returns errConsensusNotFound, not ErrNoDocument.
-	// The worker loop only caches ErrNoDocument, so this should not be cached.
 	err = p.updateDocument(epoch)
 	require.ErrorIs(t, err, errConsensusNotFound)
-
-	// Simulate the worker's switch: only ErrNoDocument is cached.
-	if err == cpki.ErrNoDocument {
-		p.failedFetches[epoch] = err
-	}
-	require.NotContains(t, p.failedFetches, epoch)
+	require.NotErrorIs(t, err, cpki.ErrDocumentGone)
 }
 
 func TestPKIRecoveryAfterConsensusGone(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
@@ -800,9 +791,8 @@ func TestPKIRecoveryAfterConsensusGone(t *testing.T) {
 	p := newPKI(c)
 	p.consensusGetter = mock
 
-	// Current epoch is gone — worker would cache this.
 	err = p.updateDocument(epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.ErrorIs(t, err, cpki.ErrDocumentGone)
 	p.failedFetches[epoch] = err
 
 	// Next epoch should succeed (mock returns ConsensusOk by default).
@@ -820,7 +810,7 @@ func TestPKIRecoveryAfterConsensusGone(t *testing.T) {
 }
 
 func TestPKIGetDocumentNilConsensusGetter(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -844,7 +834,7 @@ func TestPKIGetDocumentNilConsensusGetter(t *testing.T) {
 }
 
 func TestPKIGetDocumentGetConsensusError(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -868,7 +858,7 @@ func TestPKIGetDocumentGetConsensusError(t *testing.T) {
 }
 
 func TestPKIGetDocumentUnknownErrorCode(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -892,7 +882,7 @@ func TestPKIGetDocumentUnknownErrorCode(t *testing.T) {
 }
 
 func TestPKIGetDocumentDeserializeFails(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -910,12 +900,14 @@ func TestPKIGetDocumentDeserializeFails(t *testing.T) {
 	ctx := context.TODO()
 
 	_, _, doc, err := p.getDocument(ctx, epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, cpki.ErrNoDocument)
+	require.NotErrorIs(t, err, cpki.ErrDocumentGone)
 	require.Nil(t, doc)
 }
 
 func TestPKIGetDocumentDeserializeReturnsNil(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -934,12 +926,14 @@ func TestPKIGetDocumentDeserializeReturnsNil(t *testing.T) {
 	ctx := context.TODO()
 
 	_, _, doc, err := p.getDocument(ctx, epoch)
-	require.ErrorIs(t, err, cpki.ErrNoDocument)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, cpki.ErrNoDocument)
+	require.NotErrorIs(t, err, cpki.ErrDocumentGone)
 	require.Nil(t, doc)
 }
 
 func TestPKIGetDocumentEpochMismatch(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	logbackend, err := log.New("", "debug", false)
@@ -978,7 +972,7 @@ func (m *mockEpochAwareConsensusGetter) GetConsensus(ctx context.Context, epoch 
 }
 
 func TestPKIWorkerForceUpdate(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 	cfg.Callbacks = &config.Callbacks{}
 
@@ -1019,7 +1013,7 @@ func TestPKIWorkerForceUpdate(t *testing.T) {
 }
 
 func TestPKIWorkerOnDocumentCallback(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	epoch, _, _ := epochtime.Now()
@@ -1066,7 +1060,7 @@ func TestPKIWorkerOnDocumentCallback(t *testing.T) {
 }
 
 func TestPKIWorkerOnDocumentCallbackOnlyOnce(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	epoch, _, _ := epochtime.Now()
@@ -1113,7 +1107,7 @@ func TestPKIWorkerOnDocumentCallbackOnlyOnce(t *testing.T) {
 }
 
 func TestPKIWorkerFailedFetchSkipped(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 	cfg.Callbacks = &config.Callbacks{}
 

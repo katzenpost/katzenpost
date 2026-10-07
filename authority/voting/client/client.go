@@ -41,7 +41,6 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/retry"
@@ -59,6 +58,7 @@ var defaultDialer = &net.Dialer{}
 
 // authorityAuthenticator implements the PeerAuthenticator interface.
 type authorityAuthenticator struct {
+	name              string
 	IdentityPublicKey sign.PublicKey
 	LinkPublicKey     kem.PublicKey
 	log               *logging.Logger
@@ -72,11 +72,15 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 	identityHash := hash.Sum256From(a.IdentityPublicKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
-		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
+		a.log.Warningf("authority %q: identity key hash mismatch (expected=%x, received=%x)", a.name, identityHash[:], creds.AdditionalData[:hash.HashSize])
 		return false
 	}
-	if !a.LinkPublicKey.Equal(creds.PublicKey) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch")
+	if creds.PublicKey == nil || !a.LinkPublicKey.Equal(creds.PublicKey) {
+		var got [hash.HashSize]byte
+		if creds.PublicKey != nil {
+			got = hash.Sum256From(creds.PublicKey)
+		}
+		a.log.Warningf("authority %q: link key mismatch (expected=%x, received=%x)", a.name, hash.Sum256From(a.LinkPublicKey), got)
 		return false
 	}
 	return true
@@ -123,6 +127,10 @@ type Config struct {
 	// allowance (deriveMaxMessageSize), so it scales with the primitives in
 	// use. Raise it for a network larger than the allowance.
 	MaxConsensusSize int
+
+	MaxConsensusSizeSetting string
+
+	LocalAddresses []string
 }
 
 // clientNodeAllowance and clientReplicaAllowance bound the topology the client
@@ -280,6 +288,10 @@ func (p *connector) initSession(
 	signingKey sign.PublicKey,
 	peer *config.Authority,
 ) (*connection, error) {
+	usable := *peer
+	usable.Addresses = retry.FilterByLocalAddresses(p.cfg.LocalAddresses, peer.Addresses)
+	peer = &usable
+
 	var conn net.Conn
 	var err error
 	var connectedURL string
@@ -341,6 +353,7 @@ func (p *connector) initSession(
 	}
 
 	peerAuthenticator := &authorityAuthenticator{
+		name:              peer.Identifier,
 		IdentityPublicKey: peer.IdentityPublicKey,
 		LinkPublicKey:     peer.LinkPublicKey,
 		log:               p.log,
@@ -506,70 +519,21 @@ func (p *connector) roundTrip(ctx context.Context, s *wire.Session, cmd commands
 		// before it has fetched a consensus. A network that has grown past that
 		// allowance, or an operator-set MaxConsensusSize that is too small,
 		// rejects every legitimate reply as oversized with no other signal.
-		p.log.Warningf(
-			"%s: reply exceeded our MaxConsensusSize ceiling (%d bytes); "+
-				"if the network has grown, set MaxConsensusSize explicitly",
-			cmd, p.cfg.MaxConsensusSize,
-		)
+		if p.cfg.MaxConsensusSizeSetting != "" {
+			p.log.Warningf(
+				"%s: reply exceeded our consensus size ceiling (%d bytes); "+
+					"if the network has grown, raise %s",
+				cmd, p.cfg.MaxConsensusSize, p.cfg.MaxConsensusSizeSetting,
+			)
+		} else {
+			p.log.Warningf(
+				"%s: reply exceeded our consensus size ceiling (%d bytes); "+
+					"this component derives it and has no setting to raise it",
+				cmd, p.cfg.MaxConsensusSize,
+			)
+		}
 	}
 	return resp, err
-}
-
-type PeerResponse struct {
-	Peer     *config.Authority
-	Response commands.Command
-	Error    error
-}
-
-func (p *connector) allPeersRoundTrip(
-	ctx context.Context,
-	linkKey kem.PrivateKey,
-	signingKey sign.PublicKey,
-	cmd commands.Command,
-) ([]PeerResponse, error) {
-	p.log.Debugf("allPeersRoundTrip: contacting %d authorities in parallel", len(p.cfg.Authorities))
-
-	responseCh := make(chan PeerResponse, len(p.cfg.Authorities))
-	var w worker.Worker
-
-	for _, peer := range p.cfg.Authorities {
-		peer := peer
-		w.Go(func() {
-			ictx, cancelFn := context.WithCancel(ctx)
-			defer cancelFn()
-
-			conn, err := p.initSessionWithRetry(ictx, linkKey, signingKey, peer)
-			if err != nil {
-				p.log.Errorf("allPeersRoundTrip: %s: %v", peer.Identifier, err)
-				responseCh <- PeerResponse{Peer: peer, Error: err}
-				return
-			}
-			defer conn.Close()
-
-			resp, err := p.roundTrip(ictx, conn.session, cmd)
-			if err != nil {
-				p.log.Errorf("allPeersRoundTrip: %s round trip failed: %v", peer.Identifier, err)
-				responseCh <- PeerResponse{Peer: peer, Error: err}
-				return
-			}
-
-			responseCh <- PeerResponse{Peer: peer, Response: resp}
-		})
-	}
-
-	w.Wait()
-	close(responseCh)
-
-	peerResponses := []PeerResponse{}
-	for resp := range responseCh {
-		peerResponses = append(peerResponses, resp)
-	}
-
-	if len(peerResponses) == 0 {
-		return nil, errors.New("allPeersRoundTrip: got zero responses")
-	}
-
-	return peerResponses, nil
 }
 
 type postAttemptKind int
@@ -596,6 +560,7 @@ type postPeerState struct {
 	accepted      bool
 	conflict      bool
 	lastErr       error
+	lastKind      postAttemptKind
 	attempts      int
 	nextAttemptAt time.Time
 }
@@ -659,8 +624,8 @@ func descriptorStatusIsOK(code uint8) bool {
 	return code == commands.DescriptorOk || strings.EqualFold(descriptorStatusText(code), "Ok")
 }
 
-func descriptorStatusIsConflict(code uint8) bool {
-	return strings.EqualFold(descriptorStatusText(code), "Conflict")
+func descriptorStatusIsRejection(code uint8) bool {
+	return code == commands.DescriptorConflict || code == commands.DescriptorInvalid || code == commands.DescriptorForbidden
 }
 
 func (p *connector) postAuthorityOnce(
@@ -743,7 +708,7 @@ func (p *connector) postAuthorityOnce(
 			elapsed:    elapsed,
 			statusText: statusText,
 		}
-	case descriptorStatusIsConflict(status.ErrorCode):
+	case descriptorStatusIsRejection(status.ErrorCode):
 		return postAttemptResult{
 			peer:       peer,
 			round:      round,
@@ -754,6 +719,9 @@ func (p *connector) postAuthorityOnce(
 			statusText: statusText,
 		}
 	default:
+		if status.ErrorCode == commands.DescriptorInternalError {
+			p.log.Warningf("post authority %s reported an internal error", peer.Identifier)
+		}
 		return postAttemptResult{
 			peer:       peer,
 			round:      round,
@@ -814,10 +782,7 @@ func updatePostSummary(states map[string]*postPeerState) postSummary {
 			}
 
 		case state.lastErr != nil:
-			msg := state.lastErr.Error()
-			if strings.Contains(msg, "unexpected reply") ||
-				strings.EqualFold(msg, "Ok") ||
-				strings.Contains(msg, "Descriptor") {
+			if state.lastKind == postAttemptSemantic {
 				summary.semanticErrors++
 			} else {
 				summary.transportErrors++
@@ -922,7 +887,7 @@ func logPostAttemptResult(
 	switch result.kind {
 	case postAttemptAccepted:
 		log.Noticef(
-			"Post(%d): %s accepted by %s after %v successes=%d/%d conflicts=%d pending=%d",
+			"Post(%d): %s accepted by %s after %v successes=%d/%d rejections=%d pending=%d",
 			epoch,
 			roundLabel,
 			strconv.QuoteToASCII(result.peer.Identifier),
@@ -934,9 +899,10 @@ func logPostAttemptResult(
 		)
 	case postAttemptConflict:
 		log.Warningf(
-			"Post(%d): %s conflict from %s after %v successes=%d/%d conflicts=%d/%d pending=%d",
+			"Post(%d): %s rejected (%s) by %s after %v successes=%d/%d rejections=%d/%d pending=%d",
 			epoch,
 			roundLabel,
+			result.statusText,
 			strconv.QuoteToASCII(result.peer.Identifier),
 			result.elapsed,
 			summary.successes,
@@ -974,6 +940,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 	linkKey kem.PrivateKey,
 	signingKey sign.PublicKey,
 	cmd commands.Command,
+	priorAccepters map[string]bool,
 ) postSummary {
 	threshold := (len(p.cfg.Authorities) / 2) + 1
 
@@ -998,7 +965,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 		if len(targets) == 0 {
 			p.log.Noticef(
-				"Post(%d): descriptor upload complete successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
+				"Post(%d): descriptor upload complete successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d",
 				epoch,
 				summary.successes,
 				threshold,
@@ -1071,6 +1038,10 @@ func (p *connector) postDescriptorWithCompletionRounds(
 			if state == nil {
 				continue
 			}
+			if result.kind == postAttemptConflict && result.errorCode == commands.DescriptorConflict && priorAccepters[result.peer.Identifier] {
+				result.kind = postAttemptAccepted
+				result.err = nil
+			}
 
 			switch result.kind {
 			case postAttemptAccepted:
@@ -1085,6 +1056,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 			case postAttemptSemantic, postAttemptTransport:
 				state.lastErr = result.err
+				state.lastKind = result.kind
 				state.attempts++
 
 				delay := descriptorPostRetryDelay(p.cfg, state.attempts)
@@ -1117,7 +1089,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 			if summary.conflicts >= threshold {
 				p.log.Warningf(
-					"Post(%d): conflict quorum reached conflicts=%d/%d successes=%d/%d transport_errors=%d semantic_errors=%d",
+					"Post(%d): rejection quorum reached rejections=%d/%d successes=%d/%d transport_errors=%d semantic_errors=%d",
 					epoch,
 					summary.conflicts,
 					threshold,
@@ -1135,7 +1107,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 			pending := len(peersNeedingCompletion(states))
 			if summary.successes+pending < threshold {
 				p.log.Warningf(
-					"Post(%d): quorum impossible successes=%d/%d conflicts=%d/%d pending=%d",
+					"Post(%d): quorum impossible successes=%d/%d rejections=%d/%d pending=%d",
 					epoch,
 					summary.successes,
 					threshold,
@@ -1160,7 +1132,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 
 	summary := updatePostSummary(states)
 	p.log.Noticef(
-		"Post(%d): descriptor upload fanout stopped successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
+		"Post(%d): descriptor upload fanout stopped successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d",
 		epoch,
 		summary.successes,
 		threshold,
@@ -1219,6 +1191,48 @@ type Client struct {
 	lastPostReplicaEpoch               uint64
 	lastPostReplicaAcceptedAuthorities []string
 	lastPostReplicaConflictAuthorities []string
+
+	postAcceptersMu sync.Mutex
+	postAccepters   map[postAcceptKey]map[string]bool
+}
+
+type postAcceptKey struct {
+	epoch      uint64
+	descriptor [hash.HashSize]byte
+}
+
+func (c *Client) priorPostAccepters(key postAcceptKey) map[string]bool {
+	c.postAcceptersMu.Lock()
+	defer c.postAcceptersMu.Unlock()
+
+	prior := make(map[string]bool, len(c.postAccepters[key]))
+	for id := range c.postAccepters[key] {
+		prior[id] = true
+	}
+	return prior
+}
+
+func (c *Client) recordPostAccepters(key postAcceptKey, accepted []string) {
+	c.postAcceptersMu.Lock()
+	defer c.postAcceptersMu.Unlock()
+
+	if c.postAccepters == nil {
+		c.postAccepters = make(map[postAcceptKey]map[string]bool)
+	}
+	for k := range c.postAccepters {
+		if k.epoch+1 < key.epoch {
+			delete(c.postAccepters, k)
+		}
+	}
+	if len(accepted) == 0 {
+		return
+	}
+	if c.postAccepters[key] == nil {
+		c.postAccepters[key] = make(map[string]bool, len(accepted))
+	}
+	for _, id := range accepted {
+		c.postAccepters[key][id] = true
+	}
 }
 
 func cloneStrings(in []string) []string {
@@ -1277,6 +1291,12 @@ func (c *Client) Post(
 		return err
 	}
 
+	descBlob, err := d.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	acceptKey := postAcceptKey{epoch: epoch, descriptor: hash.Sum256(descBlob)}
+
 	signedUpload := &pki.SignedUpload{
 		MixDescriptor: d,
 		LoopStats:     loopstats,
@@ -1300,13 +1320,14 @@ func (c *Client) Post(
 		Payload: []byte(signed),
 	}
 
-	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd)
+	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd, c.priorPostAccepters(acceptKey))
+	c.recordPostAccepters(acceptKey, summary.acceptedAuthorities)
 	threshold := (len(c.cfg.Authorities) / 2) + 1
 
 	if summary.successes >= threshold {
 		if len(summary.errs) > 0 {
 			c.log.Warningf(
-				"Post(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+				"Post(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
 				epoch,
 				summary.successes,
 				threshold,
@@ -1322,7 +1343,7 @@ func (c *Client) Post(
 
 	if summary.conflicts >= threshold {
 		c.log.Warningf(
-			"Post(%d): conflict quorum for descriptor upload: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+			"Post(%d): rejection quorum for descriptor upload: successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
 			epoch,
 			summary.successes,
 			threshold,
@@ -1336,7 +1357,7 @@ func (c *Client) Post(
 	}
 
 	return fmt.Errorf(
-		"Post(%d) failed: %d/%d successes, %d/%d conflicts, transport_errors=%d semantic_errors=%d, errors: %v",
+		"Post(%d) failed: %d/%d successes, %d/%d rejections, transport_errors=%d semantic_errors=%d, errors: %v",
 		epoch,
 		summary.successes,
 		threshold,
@@ -1360,6 +1381,12 @@ func (c *Client) PostReplica(
 		return err
 	}
 
+	descBlob, err := d.Marshal()
+	if err != nil {
+		return err
+	}
+	acceptKey := postAcceptKey{epoch: epoch, descriptor: hash.Sum256(descBlob)}
+
 	signedUpload := &pki.SignedReplicaUpload{ReplicaDescriptor: d}
 	blob, err := signedUpload.Marshal()
 	if err != nil {
@@ -1380,7 +1407,8 @@ func (c *Client) PostReplica(
 		Payload: []byte(signed),
 	}
 
-	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd)
+	summary := c.pool.postDescriptorWithCompletionRounds(ctx, epoch, c.cfg.LinkKey, signingPublicKey, cmd, c.priorPostAccepters(acceptKey))
+	c.recordPostAccepters(acceptKey, summary.acceptedAuthorities)
 	threshold := (len(c.cfg.Authorities) / 2) + 1
 
 	if summary.successes >= threshold {
@@ -1397,7 +1425,7 @@ func (c *Client) PostReplica(
 		}
 
 		c.log.Noticef(
-			"PostReplica(%d): replica descriptor upload succeeded accepted_by=%v conflicts_from=%v successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d",
+			"PostReplica(%d): replica descriptor upload succeeded accepted_by=%v rejections_from=%v successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d",
 			epoch,
 			acceptedAuthorities,
 			conflictAuthorities,
@@ -1411,7 +1439,7 @@ func (c *Client) PostReplica(
 
 		if len(summary.errs) > 0 {
 			c.log.Warningf(
-				"PostReplica(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+				"PostReplica(%d): quorum succeeded with non-fatal authority errors: successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
 				epoch,
 				summary.successes,
 				threshold,
@@ -1428,7 +1456,7 @@ func (c *Client) PostReplica(
 	if summary.conflicts >= threshold {
 		c.rememberLastPostReplicaSummary(epoch, summary)
 		c.log.Warningf(
-			"PostReplica(%d): conflict quorum for replica descriptor upload: successes=%d/%d conflicts=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
+			"PostReplica(%d): rejection quorum for replica descriptor upload: successes=%d/%d rejections=%d/%d transport_errors=%d semantic_errors=%d errors=%v",
 			epoch,
 			summary.successes,
 			threshold,
@@ -1443,7 +1471,7 @@ func (c *Client) PostReplica(
 
 	c.rememberLastPostReplicaSummary(epoch, summary)
 	return fmt.Errorf(
-		"PostReplica(%d) failed: %d/%d successes, %d/%d conflicts, transport_errors=%d semantic_errors=%d, errors: %v",
+		"PostReplica(%d) failed: %d/%d successes, %d/%d rejections, transport_errors=%d semantic_errors=%d, errors: %v",
 		epoch,
 		summary.successes,
 		threshold,
@@ -1462,6 +1490,7 @@ type fetchResult struct {
 	doc    *pki.Document
 	rawDoc []byte
 	sigs   int
+	gone   bool
 	err    error
 }
 
@@ -1512,9 +1541,13 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 		close(results)
 	}()
 
+	gone := 0
 	for res := range results {
 		if res.err != nil {
 			c.log.Errorf("Get: %s: %v", res.peer, res.err)
+			if res.gone {
+				gone++
+			}
 			continue
 		}
 		c.log.Noticef("Get: retrieved valid consensus from %s for epoch %d (%d sigs)", res.peer, epoch, res.sigs)
@@ -1533,8 +1566,7 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 		return res.doc, res.rawDoc, nil
 	}
 
-	e, _, _ := epochtime.Now()
-	if epoch <= e {
+	if gone > len(c.verifiers)-c.threshold {
 		return nil, nil, pki.ErrDocumentGone
 	}
 
@@ -1558,6 +1590,7 @@ func (c *Client) fetchAndValidate(ctx context.Context, auth *config.Authority, l
 		return res
 	}
 	if r.ErrorCode != commands.ConsensusOk {
+		res.gone = r.ErrorCode == commands.ConsensusGone
 		res.err = fmt.Errorf("consensus error code %d", r.ErrorCode)
 		return res
 	}

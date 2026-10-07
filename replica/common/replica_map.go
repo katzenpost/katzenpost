@@ -7,7 +7,7 @@ package common
 import (
 	"sync"
 
-	"golang.org/x/crypto/blake2b"
+	"github.com/katzenpost/hpqc/hash"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 )
@@ -51,7 +51,7 @@ func (r *ReplicaMap) Copy() map[[32]byte]*pki.ReplicaDescriptor {
 func (r *ReplicaMap) UpdateFromPKIDoc(doc *pki.Document) {
 	newReplicas := make(map[[32]byte]*pki.ReplicaDescriptor)
 	for _, replica := range doc.StorageReplicas {
-		replicaIdHash := blake2b.Sum256(replica.IdentityKey)
+		replicaIdHash := hash.Sum256(replica.IdentityKey)
 		newReplicas[replicaIdHash] = replica
 	}
 	r.Replace(newReplicas)

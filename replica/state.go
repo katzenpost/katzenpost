@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/cockroachdb/pebble"
-	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -321,7 +321,7 @@ func (s *state) initDB() {
 }
 
 func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pigeonhole.Box, error) {
-	s.log.Debugf("state: Starting replica read for BoxID: %x", replicaRead.BoxID)
+	s.log.Debug("state: Starting replica read")
 
 	// Check if database is still open
 	if s.db == nil {
@@ -352,12 +352,12 @@ func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pi
 		s.log.Debugf("state: Successfully handled replica read at epoch %d, returning box with %d bytes payload", ep, len(box.Payload))
 		return box, nil
 	}
-	s.log.Debugf("state: No data found for BoxID: %x", replicaRead.BoxID)
+	s.log.Debug("state: No data found")
 	return nil, ErrBoxIDNotFound
 }
 
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
-	s.log.Debugf("state: Starting replica write for BoxID: %x", replicaWrite.BoxID)
+	s.log.Debug("state: Starting replica write")
 
 	// Check if database is still open
 	if s.db == nil {
@@ -372,7 +372,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	// recover. ReplicaErrorStorageFull is a terminal code, so the
 	// client stops rather than retrying into a wall.
 	if s.storageFull.Load() {
-		s.log.Warningf("state: rejecting write for BoxID %x: storage full", replicaWrite.BoxID)
+		s.log.Warning("state: rejecting write: storage full")
 		return ErrStorageFull
 	}
 
@@ -395,7 +395,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 			if errors.Is(err, pebble.ErrNotFound) {
 				continue
 			}
-			s.log.Errorf("state: Failed to check existing entry for BoxID %x: %s", replicaWrite.BoxID, err)
+			s.log.Errorf("state: Failed to check existing entry: %s", err)
 			return fmt.Errorf("failed to check existing entry: %w", err)
 		}
 		// existing is borrowed until closer.Close(); BoxFromBytes copies,
@@ -405,10 +405,10 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		if perr == nil &&
 			bytes.Equal(storedBox.Payload, replicaWrite.Payload) &&
 			storedBox.Signature == *replicaWrite.Signature {
-			s.log.Debugf("state: BoxID %x idempotent write at epoch %d (matching payload+signature)", replicaWrite.BoxID, ep)
+			s.log.Debugf("state: idempotent write at epoch %d (matching payload+signature)", ep)
 			return nil
 		}
-		s.log.Debugf("state: BoxID %x already exists at epoch %d with differing data, rejecting write", replicaWrite.BoxID, ep)
+		s.log.Debugf("state: the box already exists at epoch %d with differing data, rejecting write", ep)
 		return ErrBoxAlreadyExists
 	}
 
@@ -431,7 +431,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 // Tombstones are BACAP messages with empty payloads that overwrite previously stored messages.
 // This allows readers to verify the tombstone was intentionally created by the writer.
 func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) error {
-	s.log.Debugf("state: Processing tombstone for BoxID: %x", boxID)
+	s.log.Debug("state: Processing tombstone")
 
 	// Check if database is still open
 	if s.db == nil {
@@ -455,13 +455,13 @@ func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) err
 	copy(box.Signature[:], signature[:])
 
 	cur := currentReplicaEpoch()
-	s.log.Debugf("state: Writing tombstone to database for BoxID: %x at replica epoch %d", boxID, cur)
+	s.log.Debugf("state: Writing tombstone to database at replica epoch %d", cur)
 	if err := s.db.Set(boxKey(cur, box.BoxID[:]), box.Bytes(), nil); err != nil {
-		s.log.Errorf("state: Failed to write tombstone for BoxID %x to database: %s", boxID, err)
+		s.log.Errorf("state: Failed to write tombstone to database: %s", err)
 		return err
 	}
 
-	s.log.Debugf("state: Successfully stored tombstone for BoxID: %x", boxID)
+	s.log.Debug("state: Successfully stored tombstone")
 	return nil
 }
 
@@ -491,22 +491,22 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 		Signature: signature,
 		Payload:   box.Payload,
 	}
-	s.log.Debugf("state: Successfully converted blob to ReplicaWrite with BoxID: %x", box.BoxID)
+	s.log.Debug("state: Successfully converted blob to ReplicaWrite")
 	return ret, nil
 }
 
 func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) {
-	s.log.Debugf("state: Getting remote shards for BoxID: %x", boxID)
+	s.log.Debug("state: Getting remote shards")
 	doc := s.server.PKIWorker.LastCachedPKIDocument()
 
 	// Check if PKI document has storage replicas
 	if doc == nil {
-		s.log.Debugf("state: No PKI document available yet, skipping remote shards for BoxID: %x", boxID)
+		s.log.Debug("state: No PKI document available yet, skipping remote shards")
 		return []*pki.ReplicaDescriptor{}, nil
 	}
 
 	if doc.StorageReplicas == nil || len(doc.StorageReplicas) == 0 {
-		s.log.Debugf("state: No storage replicas in PKI document yet, skipping remote shards for BoxID: %x", boxID)
+		s.log.Debug("state: No storage replicas in PKI document yet, skipping remote shards")
 		return []*pki.ReplicaDescriptor{}, nil
 	}
 
@@ -514,7 +514,7 @@ func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) 
 	copy(boxIDar[:], boxID)
 	shards, err := replicaCommon.GetRemoteShards(s.server.identityPublicKey, boxIDar, doc)
 	if err != nil {
-		s.log.Errorf("state: GetShards for boxID %x has failed: %s", boxID, err)
+		s.log.Errorf("state: GetShards has failed: %s", err)
 		return nil, err
 	}
 	s.log.Debugf("state: Found %d remote shards", len(shards))
@@ -580,7 +580,7 @@ func (s *state) Rebalance(trigger string) error {
 				return err
 			}
 			for _, shard := range remoteShards {
-				idHash := blake2b.Sum256(shard.IdentityKey)
+				idHash := hash.Sum256(shard.IdentityKey)
 				s.server.connector.DispatchCommand(writeCmd, &idHash)
 			}
 		}

@@ -7,7 +7,7 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	cfg, err := LoadFile("../testdata/client.toml")
+	cfg, err := LoadFile(TestClientTOML)
 	require.NoError(t, err)
 
 	t.Logf("cfg %v", cfg)

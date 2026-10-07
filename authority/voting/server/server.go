@@ -18,7 +18,6 @@
 package server
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -221,6 +220,34 @@ func (s *Server) RotateLog() {
 		s.reportFatal(fmt.Errorf("failed to rotate log file, shutting down server"))
 	}
 	s.log.Notice("Log rotated.")
+}
+
+// checkNodeCounts ensures that there are enough mixes and providers
+// whitelisted to form a topology, assuming all of them post a descriptor.
+func checkNodeCounts(cfg *config.Config, debug *config.Debug) error {
+	if len(cfg.GatewayNodes) < 1 {
+		return fmt.Errorf("server: No GatewayNodes specified in the config")
+	}
+	if len(cfg.ServiceNodes) < 1 {
+		return fmt.Errorf("server: No ServiceNodes specified in the config")
+	}
+	if len(cfg.Mixes) < debug.Layers*debug.MinNodesPerLayer {
+		return fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), debug.Layers*debug.MinNodesPerLayer)
+	}
+	return nil
+}
+
+func (s *Server) ReloadNodes(cfg *config.Config) error {
+	return s.state.reloadNodes(cfg)
+}
+
+func (s *Server) ReloadNodesFromFile(path string) error {
+	cfg, err := config.LoadFile(path, false)
+	if err != nil {
+		s.log.Errorf("Node reload failed, keeping the current node set: %v", err)
+		return err
+	}
+	return s.ReloadNodes(cfg)
 }
 
 // Wait waits till the server is terminated for any reason.
@@ -458,6 +485,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	s.log.Noticef("Katzenpost directory authority version: %s", kpcommon.Version())
+	s.logConfigIdentity()
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
@@ -489,8 +517,8 @@ func New(cfg *config.Config) (*Server, error) {
 	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
 
 	// Initialize the authority identity key.
-	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
-	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
+	identityPrivateKeyFile := s.cfg.Server.IdentityPrivateKeyPath()
+	identityPublicKeyFile := s.cfg.Server.IdentityPublicKeyPath()
 
 	var err error
 
@@ -527,8 +555,8 @@ func New(cfg *config.Config) (*Server, error) {
 	if scheme == nil {
 		return nil, errors.New("KEM scheme not found in registry")
 	}
-	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
+	linkPrivateKeyFile := s.cfg.Server.LinkPrivateKeyPath()
+	linkPublicKeyFile := s.cfg.Server.LinkPublicKeyPath()
 
 	var linkPrivateKey kem.PrivateKey
 
@@ -546,7 +574,8 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+		var linkPublicKey kem.PublicKey
+		linkPublicKey, linkPrivateKey, err = scheme.GenerateKeyPair()
 		if err != nil {
 			return nil, err
 		}
@@ -560,7 +589,7 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	} else {
-		panic("Improbable: Only found one link PEM file.")
+		return nil, fmt.Errorf("%s and %s must either both exist or not exist", linkPrivateKeyFile, linkPublicKeyFile)
 	}
 
 	s.linkKey = linkPrivateKey
@@ -569,22 +598,15 @@ func New(cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.log.Noticef("Authority link public key hash is: %x", sha256.Sum256(linkBlob))
+	linkPubKeyHash := hash.Sum256(linkBlob)
+	s.log.Noticef("Authority link public key hash is: %x", linkPubKeyHash[:])
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
 	}
 
-	// Ensure that there are enough mixes and providers whitelisted to form
-	// a topology, assuming all of them post a descriptor.
-	if len(cfg.GatewayNodes) < 1 {
-		return nil, fmt.Errorf("server: No GatewayNodes specified in the config")
-	}
-	if len(cfg.ServiceNodes) < 1 {
-		return nil, fmt.Errorf("server: No ServiceNodes specified in the config")
-	}
-	if len(cfg.Mixes) < cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer {
-		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)
+	if err := checkNodeCounts(cfg, cfg.Debug); err != nil {
+		return nil, err
 	}
 
 	// Log the per-role authorized counts so an operator can compare them
@@ -695,4 +717,10 @@ func New(cfg *config.Config) (*Server, error) {
 
 	isOk = true
 	return s, nil
+}
+
+func (s *Server) logConfigIdentity() {
+	h := s.cfg.Hash()
+	s.log.Noticef("Authority identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Config hash: %x", h[:])
 }

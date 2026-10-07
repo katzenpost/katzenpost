@@ -28,6 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
 	"github.com/katzenpost/katzenpost/core/compat"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/server"
 	"github.com/katzenpost/katzenpost/server/config"
 )
@@ -151,6 +152,9 @@ func runServer(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to load config file '%v': %v", cfg.ConfigFile, err)
 	}
+	if err := epochtime.Configure(serverCfg.Server.EpochDuration, os.Stderr); err != nil {
+		return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
+	}
 	if cfg.ValidateOnly {
 		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {
 			return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
@@ -191,10 +195,7 @@ func runServer(cfg Config) error {
 	}()
 
 	// Rotate server logs upon SIGHUP.
-	go func() {
-		<-rotateCh
-		svr.RotateLog()
-	}()
+	go common.RotateOnSignal(rotateCh, svr.RotateLog)
 
 	// Wait for the server to explode or be terminated.
 	svr.Wait()

@@ -284,15 +284,17 @@ was probed against a healthy mixnet-alpine and passed as of this writing
   plugins are launched by path from the same tree. Swap verification reads the
   ``rev`` each daemon logs at startup, present since v0.0.93. The swap is a
   ``docker-compose.override.yml`` on the swapped services' ``command`` only;
-  ``make stop`` removes it.
+  ``make stop`` removes it. After start the gate fails unless the generated
+  ``docker-compose.yml`` sets ``KATZENPOST_EPOCH_DURATION`` on exactly the
+  services resolved to an older release (``make interop-env-check``).
 * ``make interop-combo combo=<name>`` -- run one of the eight named upgrade
   combinations through ``interop-gate``, and reject any other name; the eight are
   ``authorities-mixed``, ``authorities-old``, ``authorities-old-n1``,
   ``nodes-mixed``, ``nodes-old``, ``nodes-old-n1``, ``everything-mixed`` and
   ``everything-mixed-n1``. ``make interop-matrix`` runs twelve combinations in
   turn.
-* ``make client-check`` -- run the working-tree client with ``warped=false``
-  against the live namenlos network, using only the public
+* ``make client-check`` -- run the working-tree client with the default
+  20-minute epoch against the live namenlos network, using only the public
   ``client-configs/namenlos.toml``.
 
 Each gate runs on its own ``net_name`` and port band (section 3), so several can
@@ -311,10 +313,16 @@ waits on or fails because of the public network.
 
 Notes
 
-* ``warped`` defaults to ``true``: the network runs with a 2-minute warped
-  epoch (``epoch_duration=2m``), so PKI, topology, and mix keys churn fast
-  enough to exercise the system in a dev loop. The old explicit
-  ``warped=true`` incantation is no longer needed.
+* The network runs with a 2-minute epoch (``epoch_duration=2m``), so PKI,
+  topology, and mix keys churn fast enough to exercise the system in a dev
+  loop. genconfig writes it into every generated config as
+  ``EpochDuration``. Only containers that the interop gate runs on an older
+  release, which does not read the key, get ``KATZENPOST_EPOCH_DURATION``
+  instead (genconfig ``--nodeVersions``, resolved from ``release_refs``).
+  ``fetch`` in ``make wait`` gets no variable; it reads the period from the
+  node configs it probes.
+* kpclientd logs to ``client/kpclientd.log`` and ``run-ping`` appends to
+  ``ping.log`` in the network directory, next to the node logs.
 * ``make wait`` waits until every node — gateway, mixes, servicenodes
   (with their courier plugins), and storage replicas — reports ready
   against the current consensus, i.e. each node's live per-epoch keys

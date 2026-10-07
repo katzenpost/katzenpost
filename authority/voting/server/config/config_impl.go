@@ -21,6 +21,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/url"
@@ -34,6 +35,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -152,7 +154,17 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 }
 
 // Validate parses and checks the Server configuration.
+func (sCfg *Server) keyPath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(sCfg.DataDir, p)
+}
+
 func (sCfg *Server) validate() error {
+	if err := epochtime.ValidateConfigured(sCfg.EpochDuration); err != nil {
+		return fmt.Errorf("config: Server: EpochDuration: %v", err)
+	}
 	// Set timeout defaults if not specified
 	if sCfg.DialTimeoutSec == 0 {
 		sCfg.DialTimeoutSec = 30
@@ -324,14 +336,14 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		}
 		idMap[v.Identifier] = v
 
-		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), pkiSignatureScheme)
+		identityKey, err = signpem.FromPublicPEMFile(cfg.Server.keyPath(v.KeyFile()), pkiSignatureScheme)
 		if err != nil {
 			return err
 		}
 
 		tmp := hash.Sum256From(identityKey)
 		if _, ok := pkMap[tmp]; ok {
-			return fmt.Errorf("config: Nodes: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
+			return fmt.Errorf("config: Nodes: identity key '%v' is present more than once", v.KeyFile())
 		}
 		pkMap[tmp] = v
 	}
@@ -354,22 +366,32 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		}
 		replicaIDSet[v.ReplicaID] = v
 
-		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), pkiSignatureScheme)
+		identityKey, err = signpem.FromPublicPEMFile(cfg.Server.keyPath(v.KeyFile()), pkiSignatureScheme)
 		if err != nil {
 			return err
 		}
 
 		tmp := hash.Sum256From(identityKey)
 		if _, ok := replicaPkMap[tmp]; ok {
-			return fmt.Errorf("config: Storage Replica Node: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
+			return fmt.Errorf("config: Storage Replica Node: identity key '%v' is present more than once", v.KeyFile())
 		}
 		replicaPkMap[tmp] = v
+	}
+
+	if cfg.Topology != nil {
+		for i, layer := range cfg.Topology.Layers {
+			for _, v := range layer.Nodes {
+				if _, err := signpem.FromPublicPEMFile(cfg.Server.keyPath(v.KeyFile()), pkiSignatureScheme); err != nil {
+					return fmt.Errorf("config: Topology: layer %d: %w", i, err)
+				}
+			}
+		}
 	}
 
 	// if our own identity is not in cfg.Authorities return error
 	selfInAuthorities := false
 
-	ourPubKeyFile := filepath.Join(cfg.Server.DataDir, "identity.public.pem")
+	ourPubKeyFile := cfg.Server.IdentityPublicKeyPath()
 	pemData, err := os.ReadFile(ourPubKeyFile)
 	if err != nil {
 		return err
@@ -411,6 +433,7 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	if forceGenOnly {
 		cfg.Debug.GenerateOnly = true
 	}
+	cfg.hash = sha256.Sum256(b)
 
 	return cfg, nil
 }

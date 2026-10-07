@@ -17,7 +17,6 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
-	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -28,13 +27,6 @@ import (
 )
 
 const NumPKIDocsToFetch = 3
-
-var (
-	PublishDeadline     = vServer.PublishConsensusDeadline
-	mixServerCacheDelay = epochtime.Period / 16
-	nextFetchTill       = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	recheckInterval     = epochtime.Period / 32
-)
 
 type PKIWorker struct {
 	worker.Worker
@@ -157,7 +149,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 	// Fetch the PKI document directly from the client (like replica does).
 	// Bound it: an unreachable/retrying dirauth must not block this call
 	// indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), pki.FetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), pki.FetchTimeout())
 	defer cancel()
 	d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(ctx, epoch)
 	if err != nil {
@@ -175,7 +167,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 }
 
 func (p *PKIWorker) worker() {
-	var initialSpawnDelay = epochtime.Period / 64
+	var initialSpawnDelay = epochtime.Period() / 64
 	timer := time.NewTimer(initialSpawnDelay)
 	defer timer.Stop()
 

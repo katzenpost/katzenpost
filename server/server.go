@@ -193,7 +193,7 @@ func (s *Server) waitForConsensusExit() {
 
 	lastEpoch := s.shutdownPKI.StopAdvertising()
 	currentEpoch, _, till := epochtime.Now()
-	wait := consensusExitWait(lastEpoch, currentEpoch, till, epochtime.Period)
+	wait := consensusExitWait(lastEpoch, currentEpoch, till, epochtime.Period())
 	if wait <= 0 {
 		s.log.Noticef("Consensus withdrawal complete: node is not advertised in epoch %d.", currentEpoch)
 		return
@@ -381,13 +381,13 @@ func New(cfg *config.Config) (*Server, error) {
 	} else {
 		s.log.Warningf("AEZv5 implementation IS NOT hardware accelerated.")
 	}
-	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.logConfigIdentity()
 	s.log.Noticef("Sphinx Geometry: %s", cfg.SphinxGeometry.Display())
 	logStartupStep("version and hardware checks")
 
 	// Initialize the server identity and link keys.
-	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
-	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
+	identityPrivateKeyFile := s.cfg.Server.IdentityPrivateKeyPath()
+	identityPublicKeyFile := s.cfg.Server.IdentityPublicKeyPath()
 
 	var err error
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
@@ -422,8 +422,8 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
 	logStartupStep("identity key initialization")
 
-	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
+	linkPrivateKeyFile := s.cfg.Server.LinkPrivateKeyPath()
+	linkPublicKeyFile := s.cfg.Server.LinkPublicKeyPath()
 	scheme := schemes.ByName(cfg.Server.WireKEM)
 	if scheme == nil {
 		panic("KEM scheme not found")
@@ -458,7 +458,7 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	} else {
-		panic("Improbable: Only found one link PEM file.")
+		return nil, fmt.Errorf("%s and %s must either both exist or not exist", linkPrivateKeyFile, linkPublicKeyFile)
 	}
 
 	s.linkKey = linkPrivateKey
@@ -725,4 +725,10 @@ func (g *serverGlue) Decoy() glue.Decoy {
 
 func (g *serverGlue) ReshadowCryptoWorkers() {
 	g.s.reshadowCryptoWorkers()
+}
+
+func (s *Server) logConfigIdentity() {
+	h := s.cfg.Hash()
+	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Config hash: %x", h[:])
 }

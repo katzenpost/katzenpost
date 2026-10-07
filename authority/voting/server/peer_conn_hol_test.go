@@ -64,7 +64,7 @@ func TestDoSendCommandNoCrossPhaseHeadOfLineBlock(t *testing.T) {
 		return cli, nil
 	}
 
-	peer := &config.Authority{Identifier: "responder", Addresses: []string{"tcp://127.0.0.1:1"}}
+	peer := &config.Authority{Identifier: "responder", IdentityPublicKey: respID, LinkPublicKey: config.LinkPublicKey{PublicKey: respLink.Public()}, Addresses: []string{"tcp://127.0.0.1:1"}}
 
 	// Simulate a slow send already in flight in an earlier phase: hold the
 	// per-peer lock for the whole test.

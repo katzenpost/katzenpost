@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -264,11 +263,6 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 		localAddr = c.c.LocalAddr().String()
 	}
 
-	remoteAddr := "<unknown>"
-	if c.c.RemoteAddr() != nil {
-		remoteAddr = c.c.RemoteAddr().String()
-	}
-
 	handshakeStart := time.Now()
 	if err := session.Initialize(context.Background(), c.c); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
@@ -283,9 +277,8 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 
 		if wire.IsNoHandshakeBytesError(err) {
 			c.log.Debugf(
-				"TCP connection closed before Noise handshake bytes local=%s remote=%s after=%v timeout=%v: %v",
+				"TCP connection closed before Noise handshake bytes local=%s after=%v timeout=%v: %v",
 				localAddr,
-				remoteAddr,
 				handshakeElapsed,
 				timeoutMs,
 				err,
@@ -294,22 +287,19 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 		}
 
 		c.log.Errorf(
-			"Handshake failed local=%s remote=%s after=%v timeout=%v: %v",
+			"Handshake failed local=%s after=%v timeout=%v: %v",
 			localAddr,
-			remoteAddr,
 			handshakeElapsed,
 			timeoutMs,
 			err,
 		)
-		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return nil, err
 	}
 	handshakeinstrument.HandshakeDuration("incoming", "success", time.Since(handshakeStart))
 
 	c.log.Debugf(
-		"Handshake completed local=%s remote=%s in %v",
+		"Handshake completed local=%s in %v",
 		localAddr,
-		remoteAddr,
 		time.Since(handshakeStart),
 	)
 
@@ -317,7 +307,7 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 
 	creds, err := session.PeerCredentials()
 	if err != nil {
-		c.log.Debugf("Session failure local=%s remote=%s: %s", localAddr, remoteAddr, err)
+		c.log.Debugf("Session failure local=%s: %s", localAddr, err)
 		return nil, err
 	}
 
@@ -447,7 +437,7 @@ func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 		geo:               geo,
 	}
 	c.log = l.server.logBackend.GetLogger(fmt.Sprintf("replica incoming:%d", c.id))
-	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
+	c.log.Debug("New incoming connection")
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to
@@ -468,9 +458,14 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 
 	c.log.Warningf("replica/incoming: IsPeerValid(): Authentication failed, invalid AdditionalData length")
-	c.log.Warningf("replica/incoming: IsPeerValid(): Remote Peer Credentials: ad_length=%d (expected: 0 or %d), link_key=%s",
-		len(creds.AdditionalData), sConstants.NodeIDLength, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+	c.log.Debugf("replica/incoming: IsPeerValid(): Remote Peer Credentials: ad_length=%d (expected: 0 or %d), link_key_hash=%x",
+		len(creds.AdditionalData), sConstants.NodeIDLength, shortLinkKeyHash(creds.PublicKey))
 	return false
+}
+
+func shortLinkKeyHash(k kem.PublicKey) []byte {
+	h := hash.Sum256From(k)
+	return h[:8]
 }
 
 // authenticateCourier handles authentication for courier connections
@@ -478,8 +473,8 @@ func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
 	doc := c.findPKIDocument()
 	if doc == nil {
 		c.log.Warningf("replica/incoming: authenticateCourier(): No PKI document available")
-		c.log.Warningf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key=%s",
-			strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Debugf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key_hash=%x",
+			shortLinkKeyHash(creds.PublicKey))
 		return false
 	}
 
@@ -494,16 +489,12 @@ func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
 	}
 
 	c.log.Warningf("replica/incoming: authenticateCourier(): Courier authentication failed")
-	c.log.Warningf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key=%s",
-		strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
-	c.log.Warningf("replica/incoming: authenticateCourier(): Available service nodes with courier capability:")
+	c.log.Debugf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key_hash=%x",
+		shortLinkKeyHash(creds.PublicKey))
+	c.log.Debugf("replica/incoming: authenticateCourier(): Available service nodes with courier capability:")
 	for _, desc := range doc.ServiceNodes {
 		if desc.Kaetzchen != nil {
-			rawLinkKey, err := desc.GetRawCourierLinkKey()
-			if err == nil {
-				c.log.Warningf("replica/incoming: authenticateCourier():   - name=%s, link_key=%s",
-					desc.Name, strings.TrimSpace(rawLinkKey))
-			}
+			c.log.Debugf("replica/incoming: authenticateCourier():   - name=%s", desc.Name)
 		}
 	}
 	return false
@@ -526,16 +517,16 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 		}
 	}
 	if !isReplica {
-		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: node ID %x not found in replica list", nodeID)
-		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: node_id=%x, link_key=%s",
-			nodeID, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: node ID not found in replica list")
+		c.log.Debugf("replica/incoming: authenticateReplica(): Remote Peer Credentials: node_id=%x, link_key_hash=%x",
+			nodeID[:8], shortLinkKeyHash(creds.PublicKey))
 
 		// Log available replicas for debugging
-		c.log.Warningf("replica/incoming: authenticateReplica(): Available replicas:")
+		c.log.Debugf("replica/incoming: authenticateReplica(): Available replicas:")
 		allReplicas := c.l.server.PKIWorker.replicas.Copy()
 		for replicaID, replica := range allReplicas {
-			c.log.Warningf("replica/incoming: authenticateReplica():   - name=%s, node_id=%x, link_key=%x",
-				replica.Name, replicaID[:], replica.LinkKey)
+			c.log.Debugf("replica/incoming: authenticateReplica():   - name=%s, node_id=%x",
+				replica.Name, replicaID[:8])
 		}
 		return false
 	}
@@ -548,11 +539,8 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 	}
 	if !hmac.Equal(replicaDesc.LinkKey, blob) {
 		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: link key mismatch for replica '%s'", replicaDesc.Name)
-		c.log.Warningf("replica/incoming: authenticateReplica(): Expected link key: %x", replicaDesc.LinkKey)
-		c.log.Warningf("replica/incoming: authenticateReplica(): Received link key: %s",
-			strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
-		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: name=%s, node_id=%x",
-			replicaDesc.Name, nodeID)
+		c.log.Debugf("replica/incoming: authenticateReplica(): Remote Peer Credentials: name=%s, node_id=%x, link_key_hash=%x",
+			replicaDesc.Name, nodeID[:8], shortLinkKeyHash(creds.PublicKey))
 		return false
 	}
 

@@ -17,6 +17,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/instrument"
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/tomlstrict"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
 // Config holds the command line configuration
@@ -89,6 +90,9 @@ func runClientDaemon(cfg Config) error {
 	clientCfg, err := config.LoadFile(cfg.ConfigFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config file: %v", err)
+	}
+	if err := epochtime.Configure(clientCfg.EpochDuration, os.Stderr); err != nil {
+		return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
 	}
 	if cfg.ValidateOnly {
 		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {

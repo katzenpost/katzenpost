@@ -38,7 +38,7 @@ func TestDaemonNewKeypair_Success(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -109,7 +109,7 @@ func TestDaemonNewKeypair_InvalidSeed(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -292,7 +292,7 @@ func TestDaemonEncryptRead_Success(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -384,7 +384,7 @@ func TestDaemonEncryptRead_NilReadCap(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -447,7 +447,7 @@ func TestDaemonEncryptWrite_Success(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -541,7 +541,7 @@ func TestDaemonEncryptWrite_NilWriteCap(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -678,7 +678,7 @@ func TestArqDoResendWithNilConnection(t *testing.T) {
 	d.logbackend = logBackend
 	d.log = logBackend.GetLogger("test")
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -744,7 +744,7 @@ func TestArqDoResendWithHighRetryCountAndNilConnection(t *testing.T) {
 	d.logbackend = logBackend
 	d.log = logBackend.GetLogger("test")
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -801,7 +801,7 @@ func TestRaceConditionARQResendAfterDisconnect(t *testing.T) {
 	d.logbackend = logBackend
 	d.log = logBackend.GetLogger("test")
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -901,7 +901,7 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(err)
 
 	port, err := getFreePort()
@@ -1100,7 +1100,7 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(err)
 
 	port, err := getFreePort()
@@ -1306,7 +1306,7 @@ func TestARQSuccessWritePayload(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(err)
 
 	port, err := getFreePort()
@@ -1599,7 +1599,7 @@ func TestStartResendingEncryptedMessage_ValidationErrors(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -1795,7 +1795,7 @@ func TestCancelResendingEncryptedMessage(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -1990,7 +1990,7 @@ func TestCancelResendingDuringARQRetry(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -2100,7 +2100,7 @@ func setupDaemonWithMockConn(t *testing.T) (*Daemon, *[AppIDLength]byte, chan *R
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	port, err := getFreePort()
@@ -2417,7 +2417,7 @@ func TestCreateCourierEnvelopesFromPayloads_EmptyDestinations(t *testing.T) {
 func TestClientQueryPaddingIndistinguishable(t *testing.T) {
 	doc := createMockPKIDocument(t)
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 	geo := cfg.PigeonholeGeometry()
 

@@ -199,6 +199,8 @@ type Config struct {
 	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
 	PKISignatureScheme string
 
+	EpochDuration *time.Duration
+
 	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
 	WireKEMScheme string
 
@@ -273,4 +275,6 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // VotingAuthority is a voting authority peer public configuration: key material, connection info etc.
 type VotingAuthority struct {
 	Peers []*vServerConfig.Authority
+
+	MaxConsensusSize int
 }

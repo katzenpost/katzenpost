@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -22,15 +23,22 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
+func PublishDeadline() time.Duration { return vServer.PublishConsensusDeadline() }
+
+func mixServerCacheDelay() time.Duration { return epochtime.Period() / 16 }
+
+func nextFetchTill() time.Duration {
+	return epochtime.Period() - (PublishDeadline() + mixServerCacheDelay())
+}
+
+func recheckInterval() time.Duration { return epochtime.Period() / 16 }
+
+func maxClockSkew() time.Duration { return epochtime.Period() / 8 }
+
 var (
 	errGetConsensusCanceled = errors.New("client/pki: consensus fetch canceled")
 	errConsensusNotFound    = errors.New("client/pki: consensus not ready yet")
-	PublishDeadline         = vServer.PublishConsensusDeadline
-	mixServerCacheDelay     = epochtime.Period / 16
-	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	recheckInterval         = epochtime.Period / 16
-	// WarpedEpoch is a build time flag that accelerates the recheckInterval
-	WarpedEpoch = "false"
+	errBadConsensus         = errors.New("client/pki: consensus from gateway failed to decode")
 
 	// waitForCurrentDocumentAttempts caps the number of synchronous
 	// updateDocument retries WaitForCurrentDocument performs before
@@ -87,6 +95,9 @@ type pki struct {
 	clockSkew     int64
 
 	forceUpdateCh chan interface{}
+
+	refetch      atomic.Bool
+	refetchEpoch uint64
 }
 
 // ClockSkew returns the current best guess difference between the client's
@@ -134,7 +145,7 @@ func (c *Client) RawSignedDocumentByEpoch(epoch uint64) []byte {
 // synchronous fetches separated by waitForCurrentDocumentRetryDelay.
 // A transient ErrNoDocument or "consensus not ready" reply from the
 // gateway is normal around an epoch boundary, particularly under
-// short (warped) epoch durations, and typically clears within a
+// short (2-minute) epoch durations, and typically clears within a
 // second or two. Without the retry every caller of CurrentDocument
 // would observe nil during that window and the daemon would return
 // ThinClientErrorInternalError to its thin client.
@@ -180,12 +191,24 @@ func (c *Client) WaitForCurrentDocument() {
 }
 
 func (p *pki) setClockSkew(skew int64) {
+	if limit := int64(maxClockSkew() / time.Second); skew > limit || skew < -limit {
+		p.log.Warningf("Refusing a clock skew of %v sec from the gateway handshake: the limit is %v", skew, maxClockSkew())
+		return
+	}
 	p.log.Debugf("New clock skew: %v sec", skew)
 	p.clockSkewLock.Lock()
 	p.clockSkew = skew
 	p.clockSkewLock.Unlock()
 
 	// Wake up the worker if able to.
+	select {
+	case p.forceUpdateCh <- true:
+	default:
+	}
+}
+
+func (p *pki) onConnected() {
+	p.refetch.Store(true)
 	select {
 	case p.forceUpdateCh <- true:
 	default:
@@ -200,7 +223,7 @@ func (p *pki) skewedUnixTime() int64 {
 	p.clockSkewLock.RLock()
 	defer p.clockSkewLock.RUnlock()
 
-	return time.Now().Unix() + p.clockSkew
+	return time.Now().Unix() - p.clockSkew
 }
 
 func (p *pki) GetDocumentByEpoch(epoch uint64) *cpki.Document {
@@ -303,13 +326,16 @@ func (p *pki) worker() {
 		epochs := make([]uint64, 0, 2)
 		now, _, till := epochtime.FromUnix(p.skewedUnixTime())
 		epochs = append(epochs, now)
-		if till < nextFetchTill {
+		if till < nextFetchTill() {
 			epochs = append(epochs, now+1)
 		}
 		// Fetch the documents that we are missing.
 		didUpdate := false
+		reconnected := p.refetch.Swap(false)
+		epochChanged := now != p.refetchEpoch
+		p.refetchEpoch = now
 		for _, epoch := range epochs {
-			if _, ok := p.docs.Load(epoch); ok {
+			if d, ok := p.docs.Load(epoch); ok && !reconnected && (!epochChanged || d.(*CachedDoc).RawSignedBlob != nil) {
 				continue
 			}
 
@@ -323,10 +349,8 @@ func (p *pki) worker() {
 			// we shouldn't do this before we are connected:
 			err := p.updateDocument(epoch)
 			if err != nil {
-				switch err {
-				case cpki.ErrNoDocument:
+				if err == cpki.ErrDocumentGone {
 					p.failedFetches[epoch] = err
-				default:
 				}
 				// Other errors (including a deadline-expired
 				// errGetConsensusCanceled or a transient
@@ -349,7 +373,9 @@ func (p *pki) worker() {
 		// retention window; once a real current consensus exists the
 		// loop fetches it as usual and the fallback stops being reached.
 		if _, ok := p.docs.Load(now); !ok {
-			if _, ok := p.docs.Load(now - 1); !ok {
+			if _, failed := p.failedFetches[now-1]; failed {
+				p.log.Debugf("Skipping fallback fetch for epoch %v: %v", now-1, p.failedFetches[now-1])
+			} else if _, ok := p.docs.Load(now - 1); !ok {
 				p.log.Debugf("current epoch %d has no document (likely unserved), fetching previous epoch %d", now, now-1)
 				if err := p.updateDocument(now - 1); err != nil {
 					if err == cpki.ErrDocumentGone {
@@ -391,22 +417,22 @@ func (p *pki) worker() {
 //	haveNow   the current epoch's document is cached.
 //	haveNext  the next epoch's document is cached.
 //
-// With both cached, sleep across the boundary plus the publish-and-cache
-// window so the new now+1 is ready when we wake. With only the current
+// With both cached, wake at the boundary, where now+1 becomes the current
+// document. With only the current
 // cached, sleep until we cross the nextFetchTill threshold (or fall back
 // to recheckInterval if we are already past it). With no current doc,
 // poll at recheckInterval.
 func nextPKIWakeup(till time.Duration, haveNow, haveNext bool) time.Duration {
 	if !haveNow {
-		return recheckInterval
+		return recheckInterval()
 	}
 	if !haveNext {
-		if till > nextFetchTill {
-			return till - nextFetchTill
+		if till > nextFetchTill() {
+			return till - nextFetchTill()
 		}
-		return recheckInterval
+		return recheckInterval()
 	}
-	return till + PublishDeadline + mixServerCacheDelay
+	return till
 }
 
 func (p *pki) updateDocument(epoch uint64) error {
@@ -472,7 +498,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, []byte, *c
 	switch resp.ErrorCode {
 	case commands.ConsensusOk:
 	case commands.ConsensusGone:
-		return nil, nil, nil, cpki.ErrNoDocument
+		return nil, nil, nil, cpki.ErrDocumentGone
 	case commands.ConsensusNotFound:
 		return nil, nil, nil, errConsensusNotFound
 	default:
@@ -485,11 +511,11 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, []byte, *c
 	d, err = p.c.PKIClient.Deserialize(resp.Payload)
 	if err != nil {
 		p.log.Errorf("Failed to deserialize consensus received from Gateway: %v", err)
-		return nil, nil, nil, cpki.ErrNoDocument
+		return nil, nil, nil, errBadConsensus
 	}
 	if d == nil {
 		p.log.Error("Failed to deserialize consensus received from Gateway")
-		return nil, nil, nil, cpki.ErrNoDocument
+		return nil, nil, nil, errBadConsensus
 	}
 
 	if d.Epoch != epoch {
@@ -534,7 +560,7 @@ func (p *pki) pruneDocuments(now uint64) {
 
 func (p *pki) pruneFailures(now uint64) {
 	for epoch := range p.failedFetches {
-		if epoch < now || epoch > now+1 {
+		if epoch+1 < now || epoch > now+1 {
 			delete(p.failedFetches, epoch)
 		}
 	}
@@ -554,9 +580,14 @@ func newPKI(c *Client) *pki {
 	}
 
 	// Save cached documents
-	d := c.cfg.CachedDocument
-	if d != nil {
-		p.docs.Store(d.Epoch, d)
+	if d := c.cfg.CachedDocument; d != nil {
+		doc := *d
+		doc.Signatures = nil
+		if blob, err := ccbor.Marshal(&doc); err == nil {
+			p.docs.Store(doc.Epoch, &CachedDoc{Doc: &doc, Blob: blob})
+		} else {
+			p.log.Errorf("Failed to encode the configured cached document: %v", err)
+		}
 	}
 	return p
 }

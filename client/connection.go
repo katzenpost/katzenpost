@@ -152,25 +152,11 @@ func (c *connection) getGateway() *[32]byte {
 	return c.gateway
 }
 
-// gatewayLabel returns a human-readable identifier for the gateway this
-// connection is bound to: its configured name where known, otherwise the
-// identity-key fingerprint, so connection-status logs name the peer. It is
-// read from the connect worker's descriptor, which is set before any
-// connection-status change is reported.
-func (c *connection) gatewayLabel() string {
-	if c.descriptor != nil && c.descriptor.Name != "" {
-		return fmt.Sprintf("%q", c.descriptor.Name)
-	}
-	if gw := c.getGateway(); gw != nil {
-		return fmt.Sprintf("%x", gw[:])
-	}
-	return "(unknown)"
-}
-
 type getConsensusCtx struct {
-	replyCh chan interface{}
-	epoch   uint64
-	doneFn  func(error)
+	replyCh   chan interface{}
+	epoch     uint64
+	doneFn    func(error)
+	abandoned atomic.Bool
 }
 
 type connSendCtx struct {
@@ -346,7 +332,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			}
 			return
 		}
-		c.log.Debugf("doConnect, got descriptor %v", c.descriptor)
+		c.log.Debug("doConnect, got the gateway descriptor")
 
 		// Build the list of candidate addresses, in decreasing order of
 		// preference, by transport.
@@ -520,7 +506,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 
 	var wireErr error
 
-	dechunker := cpki.NewDechunker()
+	dechunker := cpki.NewDechunker(c.client.maxConsensusSize)
 
 	closeConnCh := make(chan error, 1)
 	forceCloseConn := func(err error) {
@@ -531,6 +517,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 		}
 	}
 	cmdCloseCh := make(chan interface{})
+	defer close(cmdCloseCh)
 	defer func() {
 		if wireErr == nil {
 			// Set a default error if wireErr is nil during shutdown
@@ -551,6 +538,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				//read tcp 127.0.0.1:34688->127.0.0.1:30004: use of closed network connection
 				select {
 				case <-c.HaltCh():
+				case <-cmdCloseCh:
 				case cmdCh <- err:
 				}
 				return
@@ -571,10 +559,7 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 	var consensusCtx *getConsensusCtx
 	defer func() {
 		if consensusCtx != nil {
-			select {
-			case <-c.HaltCh():
-			case consensusCtx.replyCh <- ErrNotConnected:
-			}
+			c.deliverConsensusReply(consensusCtx, ErrNotConnected)
 		}
 	}()
 
@@ -594,7 +579,12 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			heartbeat.Reset(heartbeatInterval)
 			continue
 		case ctx := <-c.getConsensusCh:
-			if consensusCtx != nil {
+			if consensusCtx != nil && consensusCtx.abandoned.Load() {
+				c.log.Debugf("Abandoned GetConsensus for epoch %v still unanswered; closing connection.", consensusCtx.epoch)
+				ctx.doneFn(ErrNotConnected)
+				wireErr = newProtocolError("gateway did not answer an abandoned GetConsensus")
+				return
+			} else if consensusCtx != nil {
 				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
 			} else {
 				consensusCtx = ctx
@@ -702,15 +692,14 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 				// Check for error responses from the gateway.
 				if cmd.ErrorCode != commands.ConsensusOk {
 					c.log.Debugf("Received Consensus2 error code: %v for epoch %v", cmd.ErrorCode, consensusCtx.epoch)
-					consensusCtx.replyCh <- cmd
+					c.deliverConsensusReply(consensusCtx, cmd)
 					consensusCtx = nil
-					dechunker = cpki.NewDechunker()
+					dechunker = cpki.NewDechunker(c.client.maxConsensusSize)
 				} else {
-					if dechunker.ChunkNum == 0 {
-						dechunker.ChunkNum = int(cmd.ChunkNum)
-						dechunker.ChunkTotal = int(cmd.ChunkTotal)
-					}
 					err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
+					if err == nil && cmd.ChunkNum == 0 && cmd.ChunkTotal > 1 && len(cmd.Payload) < w.GetCommands().MaxMessageLenServerToClient {
+						err = fmt.Errorf("consensus chunk of %d bytes is below our chunk size %d", len(cmd.Payload), w.GetCommands().MaxMessageLenServerToClient)
+					}
 					if err != nil {
 						// A chunk-stream error (e.g. EOF when the
 						// connection closes mid-fetch, or a chunk
@@ -732,9 +721,9 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 						// last chunk
 						cmd.Payload = make([]byte, len(dechunker.Output))
 						copy(cmd.Payload, dechunker.Output)
-						consensusCtx.replyCh <- cmd
+						c.deliverConsensusReply(consensusCtx, cmd)
 						consensusCtx = nil
-						dechunker = cpki.NewDechunker()
+						dechunker = cpki.NewDechunker(c.client.maxConsensusSize)
 					}
 				}
 			} else {
@@ -748,6 +737,13 @@ func (c *connection) onWireConn(conn net.Conn, w *wire.Session) {
 			wireErr = newProtocolError("received unknown command: %T", cmd)
 			return
 		}
+	}
+}
+
+func (c *connection) deliverConsensusReply(consensusCtx *getConsensusCtx, reply interface{}) {
+	select {
+	case consensusCtx.replyCh <- reply:
+	case <-c.HaltCh():
 	}
 }
 
@@ -797,10 +793,13 @@ func (c *connection) onConnStatusChange(err error) {
 
 	if err == nil {
 		c.isConnected.Store(true)
+		if c.client.pki != nil {
+			c.client.pki.onConnected()
+		}
 		instrument.GatewayConnected(true)
-		c.log.Noticef("Connected to gateway %s.", c.gatewayLabel())
+		c.log.Notice("Connected to gateway.")
 	} else {
-		c.log.Infof("Lost connection to gateway %s: %s", c.gatewayLabel(), err.Error())
+		c.log.Infof("Lost connection to gateway: %s", err.Error())
 		c.isConnected.Store(false)
 		instrument.GatewayConnected(false)
 		// Force drain the channels used to poke the loop.
@@ -857,16 +856,18 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 	}
 
 	errCh := make(chan error, 1)
-	replyCh := make(chan interface{})
+	replyCh := make(chan interface{}, 1)
 
-	select {
-	case c.getConsensusCh <- &getConsensusCtx{
+	request := &getConsensusCtx{
 		replyCh: replyCh,
 		epoch:   epoch,
 		doneFn: func(err error) {
 			errCh <- err
 		},
-	}:
+	}
+
+	select {
+	case c.getConsensusCh <- request:
 	case <-ctx.Done():
 		// Canceled mid-fetch.
 		return nil, errGetConsensusCanceled
@@ -884,7 +885,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 			return nil, err
 		}
 	case <-ctx.Done():
-		// Canceled mid-fetch.
+		request.abandoned.Store(true)
 		return nil, errGetConsensusCanceled
 	}
 
@@ -902,7 +903,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 			panic("BUG: Worker returned invalid Consensus response")
 		}
 	case <-ctx.Done():
-		// Canceled mid-fetch.
+		request.abandoned.Store(true)
 		return nil, errGetConsensusCanceled
 	}
 

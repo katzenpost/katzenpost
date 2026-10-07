@@ -181,8 +181,8 @@ func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
 }
 
 func (c *outgoingConn) worker() {
-	retryIncrement := epochtime.Period / 64
-	maxRetryDelay := epochtime.Period / 8
+	retryIncrement := epochtime.Period() / 64
+	maxRetryDelay := epochtime.Period() / 8
 
 	defer func() {
 		c.log.Debugf("Halting connect worker.")

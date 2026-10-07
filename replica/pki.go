@@ -26,7 +26,7 @@ const (
 //
 // The previous hard-coded 10 s was tuned for the production
 // 20-minute epoch (MixPublishDeadline = 150 s → 140 s budget,
-// generous). Under warped 2-minute epochs (MixPublishDeadline =
+// generous). Under 2-minute epochs (MixPublishDeadline =
 // 15 s → 5 s budget) the budget became too tight: the dirauth
 // voting client's PQ-Noise handshake under chaos can run several
 // seconds, and a single failed attempt consumes the whole budget,
@@ -42,23 +42,25 @@ const (
 //
 // Proportional safety keeps the trade-off uniform across epoch
 // regimes. Empirically the 1/6 ratio (25 s safety on production,
-// 2.5 s safety on warped) gives the most upload-budget while
+// 2.5 s safety on 2 minutes) gives the most upload-budget while
 // still leaving enough margin for the dirauths to assemble the
 // descriptors into the document:
 //
-//	production (20 min) → MixPublishDeadline 150 s, safety 25 s,
+//	production (20 min) -> MixPublishDeadline 150 s, safety 25 s,
 //	                       upload budget 125 s
-//	warped (2 min)     → MixPublishDeadline 15 s, safety 2.5 s,
+//	2 minutes          -> MixPublishDeadline 15 s, safety 2.5 s,
 //	                       upload budget 12.5 s
 //
-// The warped budget is still tight under heavy chaos (the
+// The 2-minute budget is still tight under heavy chaos (the
 // asymmetric_replica_latency scenario at 300 ms / 100 ms jitter
 // can stretch a single dirauth handshake past 6 seconds), but at
 // least the constant scales with the epoch period the operator
-// chose. A more durable fix would lengthen the warped epoch or
+// chose. A more durable fix would lengthen the 2-minute epoch or
 // allow descriptor uploads to span an epoch boundary; that is
 // left for a separate change so this commit stays focused.
-var descriptorUploadSafety = PublishDeadline / 6
+func descriptorUploadSafety() time.Duration { return PublishDeadline() / 6 }
+
+func descriptorRepostInterval() time.Duration { return epochtime.Period() / 96 }
 
 type postReplicaAcceptedAuthoritiesProvider interface {
 	LastPostReplicaAcceptedAuthorities(epoch uint64) []string
@@ -275,9 +277,9 @@ func (p *PKIWorker) updateEpochTracking(lastUpdateEpoch uint64) uint64 {
 func (p *PKIWorker) updateTimer(timer *time.Timer) {
 	currentEpoch, elapsed, till := epochtime.Now()
 
-	uploadDeadline := PublishDeadline - descriptorUploadSafety
+	uploadDeadline := PublishDeadline() - descriptorUploadSafety()
 	if uploadDeadline < 0 {
-		uploadDeadline = PublishDeadline
+		uploadDeadline = PublishDeadline()
 	}
 
 	p.GetLogger().Debugf(
@@ -285,8 +287,8 @@ func (p *PKIWorker) updateTimer(timer *time.Timer) {
 		currentEpoch,
 		elapsed,
 		till,
-		PublishDeadline,
-		descriptorUploadSafety,
+		PublishDeadline(),
+		descriptorUploadSafety(),
 		p.lastPublishedEpoch,
 	)
 
@@ -296,6 +298,9 @@ func (p *PKIWorker) updateTimer(timer *time.Timer) {
 	// yet been published.
 	if elapsed < uploadDeadline && p.lastPublishedEpoch <= currentEpoch {
 		interval := time.Second
+		if p.failedPostEpoch == currentEpoch+1 {
+			interval = descriptorRepostInterval()
+		}
 		remainingUpload := uploadDeadline - elapsed
 		if remainingUpload < interval {
 			interval = remainingUpload
@@ -305,20 +310,6 @@ func (p *PKIWorker) updateTimer(timer *time.Timer) {
 		}
 
 		p.GetLogger().Debugf("REPLICA PKI WORKER: upload window open, reset to %v", interval)
-		timer.Reset(interval)
-		return
-	}
-
-	// Once the upload window is closed, do not spin inside the same epoch just
-	// to log another skipped descriptor upload. Wake at the next epoch boundary,
-	// where the next upload window opens.
-	if elapsed >= uploadDeadline {
-		interval := till
-		if interval < time.Second {
-			interval = time.Second
-		}
-
-		p.GetLogger().Debugf("REPLICA PKI WORKER: upload window closed, reset to next epoch in %v", interval)
 		timer.Reset(interval)
 		return
 	}
@@ -351,9 +342,9 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return nil
 	}
 
-	uploadDeadline := PublishDeadline - descriptorUploadSafety
+	uploadDeadline := PublishDeadline() - descriptorUploadSafety()
 	if uploadDeadline < 0 {
-		uploadDeadline = PublishDeadline
+		uploadDeadline = PublishDeadline()
 	}
 
 	if elapsed >= uploadDeadline {
@@ -362,8 +353,8 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
-			PublishDeadline,
-			descriptorUploadSafety,
+			PublishDeadline(),
+			descriptorUploadSafety(),
 			till,
 		)
 		return nil
@@ -376,8 +367,8 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			currentEpoch,
 			elapsed,
-			PublishDeadline,
-			descriptorUploadSafety,
+			PublishDeadline(),
+			descriptorUploadSafety(),
 			till,
 		)
 		return nil
@@ -388,8 +379,8 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		doPublishEpoch,
 		currentEpoch,
 		elapsed,
-		PublishDeadline,
-		descriptorUploadSafety,
+		PublishDeadline(),
+		descriptorUploadSafety(),
 		budget,
 		"prepublishing next epoch while descriptor upload window remains open",
 	)
@@ -484,17 +475,13 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return nil
 
 	case errors.Is(err, cpki.ErrInvalidPostEpoch):
-		// Treat this class, such as conflict or late descriptor, as a permanent
-		// rejection and suppress further uploads for this target epoch.
 		p.GetLogger().Warningf(
-			"REPLICA DESCRIPTOR UPLOAD: authority permanently rejected replica descriptor %s upload for epoch %d; advancing past this epoch: %s",
+			"REPLICA DESCRIPTOR UPLOAD: authorities rejected replica descriptor %s upload for epoch %d; reposting while the upload window is open: %s",
 			strconv.QuoteToASCII(desc.Name),
 			doPublishEpoch,
 			strconv.QuoteToASCII(err.Error()),
 		)
-		if doPublishEpoch > p.lastPublishedEpoch {
-			p.lastPublishedEpoch = doPublishEpoch
-		}
+		p.failedPostEpoch = doPublishEpoch
 		return err
 
 	default:
@@ -504,6 +491,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			doPublishEpoch,
 			strconv.QuoteToASCII(err.Error()),
 		)
+		p.failedPostEpoch = doPublishEpoch
 		return err
 	}
 }

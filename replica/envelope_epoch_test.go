@@ -4,7 +4,6 @@
 package replica
 
 import (
-	"os"
 	"sync"
 	"testing"
 
@@ -26,9 +25,7 @@ func envelopeKeysWithEpochs(t *testing.T, epochs []uint64) (*EnvelopeKeys, nike.
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
-	dname, err := os.MkdirTemp("", "replica.envelope-epoch")
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dname) })
+	dname := t.TempDir()
 
 	scheme := nikeschemes.ByName("CTIDH512-X25519")
 	keys := &EnvelopeKeys{

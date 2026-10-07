@@ -109,6 +109,9 @@ func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 // error iff there are any problems that would make it unusable as part of
 // a PKI Document.
 func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
+	if d == nil {
+		return errors.New("nil descriptor")
+	}
 	if d.Name == "" {
 		return fmt.Errorf("Descriptor missing Name")
 	}
@@ -266,6 +269,9 @@ func (d *ReplicaDescriptor) String() string {
 // error iff there are any problems that would make it unusable as part of
 // a PKI Document.
 func IsReplicaDescriptorWellFormed(d *ReplicaDescriptor, epoch uint64) error {
+	if d == nil {
+		return errors.New("nil descriptor")
+	}
 	if d.Name == "" {
 		return fmt.Errorf("ReplicaDescriptor missing Name")
 	}

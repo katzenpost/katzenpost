@@ -15,7 +15,7 @@ import (
 )
 
 func TestListenerBasic(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	// Use dynamic port to avoid conflicts

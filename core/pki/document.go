@@ -165,8 +165,7 @@ type Document struct {
 	// SharedRandomValue produced by voting process.
 	SharedRandomValue []byte
 
-	// PriorSharedRandom used by applications that need a longer lived SRV.
-	PriorSharedRandom [][]byte
+	WeeklySharedRandom [][]byte `cbor:"PriorSharedRandom"`
 
 	// SphinxGeometryHash is used to ensure all mixnet actors have the same
 	// Sphinx Geometry.
@@ -190,15 +189,15 @@ func (d *Document) String() string {
 	}
 	srv := base64.StdEncoding.EncodeToString(d.SharedRandomValue)
 	psrv := "["
-	for i, p := range d.PriorSharedRandom {
+	for i, p := range d.WeeklySharedRandom {
 		psrv += base64.StdEncoding.EncodeToString(p)
-		if i+1 < len(d.PriorSharedRandom) {
+		if i+1 < len(d.WeeklySharedRandom) {
 			psrv += ", "
 		}
 	}
 	psrv += "]"
 
-	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nMu: %v LambdaP: %v LambdaL: %v LambdaM: %v LambdaG: %v LambdaR: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.Mu, d.LambdaP, d.LambdaL, d.LambdaM, d.LambdaG, d.LambdaR, srv, psrv)
+	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nMu: %v LambdaP: %v LambdaL: %v LambdaM: %v LambdaG: %v LambdaR: %v\nSharedRandomValue: %v WeeklySharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.Mu, d.LambdaP, d.LambdaL, d.LambdaM, d.LambdaG, d.LambdaR, srv, psrv)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("  [%v]{", l)
 		s += fmt.Sprintf("%v", nodes)
@@ -548,6 +547,38 @@ func ParseDocument(b []byte) (*Document, error) {
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
+	if err := isDocumentWellFormed(d, verifiers); err != nil {
+		return err
+	}
+	return hasUsableTopology(d)
+}
+
+// IsVoteWellFormed is IsDocumentWellFormed without the requirement that the
+// document describe a usable network: a vote lists only the descriptors its
+// authority received, which may be a partial view.
+func IsVoteWellFormed(d *Document, verifiers []sign.PublicKey) error {
+	return isDocumentWellFormed(d, verifiers)
+}
+
+func hasUsableTopology(d *Document) error {
+	if len(d.Topology) == 0 {
+		return fmt.Errorf("Document contains no Topology")
+	}
+	for layer, nodes := range d.Topology {
+		if len(nodes) == 0 {
+			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
+		}
+	}
+	if len(d.GatewayNodes) == 0 {
+		return fmt.Errorf("Document contains no Gateway Nodes")
+	}
+	if len(d.ServiceNodes) == 0 {
+		return fmt.Errorf("Document contains no Service Nodes")
+	}
+	return nil
+}
+
+func isDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 	// Ensure the document is well formed.
 	if d.Version != DocumentVersion {
 		return fmt.Errorf("Invalid Document Version: '%v'", d.Version)
@@ -555,8 +586,8 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 	if d.GenesisEpoch == 0 {
 		return fmt.Errorf("Document has invalid GenesisEpoch")
 	}
-	if len(d.PriorSharedRandom) == 0 && d.GenesisEpoch != d.Epoch {
-		return fmt.Errorf("Document has invalid PriorSharedRandom")
+	if len(d.WeeklySharedRandom) == 0 && d.GenesisEpoch != d.Epoch {
+		return fmt.Errorf("Document has invalid WeeklySharedRandom")
 	}
 	// If there is a SharedRandomCommit, verify the Epoch contained in
 	// SharedRandomCommit matches the Epoch in the Document.
@@ -620,14 +651,8 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 			}
 		}
 	}
-	if len(d.Topology) == 0 {
-		return fmt.Errorf("Document contains no Topology")
-	}
 	pks := make(map[[hash.HashSize]byte]bool)
-	for layer, nodes := range d.Topology {
-		if len(nodes) == 0 {
-			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
-		}
+	for _, nodes := range d.Topology {
 		for _, desc := range nodes {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 				return err
@@ -639,13 +664,6 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 			pks[pk] = true
 		}
 	}
-	if len(d.GatewayNodes) == 0 {
-		return fmt.Errorf("Document contains no Gateway Nodes")
-	}
-	if len(d.ServiceNodes) == 0 {
-		return fmt.Errorf("Document contains no Service Nodes")
-	}
-
 	for _, desc := range d.GatewayNodes {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err

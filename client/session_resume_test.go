@@ -22,7 +22,7 @@ import (
 // newTestListener creates a listener for testing with a TCP listener on a free port.
 func newTestListener(t *testing.T, onDisconnect func(*[AppIDLength]byte)) *listener {
 	t.Helper()
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
 
 	cfg.Listen.Tcp.Address = "127.0.0.1:0"

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -39,9 +41,10 @@ type Client struct {
 
 	conn *connection
 
-	sphinx        *sphinx.Sphinx
-	geo           *geo.Geometry
-	wireKEMScheme kem.Scheme
+	sphinx           *sphinx.Sphinx
+	geo              *geo.Geometry
+	wireKEMScheme    kem.Scheme
+	maxConsensusSize int
 
 	PKIClient cpki.Deserializer
 
@@ -115,11 +118,15 @@ func (c *Client) Start() error {
 		Authorities:        c.cfg.VotingAuthority.Peers,
 		Geo:                c.cfg.SphinxGeometry,
 		DialContextFn:      nil,
+
+		MaxConsensusSize:        c.cfg.VotingAuthority.MaxConsensusSize,
+		MaxConsensusSizeSetting: "VotingAuthority.MaxConsensusSize",
 	}
 	c.PKIClient, err = client.New(pkiClientConfig)
 	if err != nil {
 		return err
 	}
+	c.maxConsensusSize = pkiClientConfig.MaxConsensusSize
 	c.Lock()
 	c.pki = newPKI(c)
 	c.Unlock()
@@ -131,6 +138,9 @@ func (c *Client) Start() error {
 // New creates a new Client with the provided configuration.
 func New(cfg *config.Config, logBackend *log.Backend) (*Client, error) {
 	if err := cfg.FixupAndValidate(); err != nil {
+		return nil, err
+	}
+	if err := epochtime.Configure(cfg.EpochDuration, os.Stderr); err != nil {
 		return nil, err
 	}
 

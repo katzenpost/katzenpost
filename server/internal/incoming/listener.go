@@ -128,7 +128,7 @@ func (l *listener) worker() {
 		// served from the previous document during the gap after an epoch
 		// rollover but before the new consensus has been fetched.
 		if !l.glue.PKI().HasUsableDocument() {
-			l.log.Debugf("Refusing connection from %v: no usable PKI document", conn.RemoteAddr())
+			l.log.Debug("Refusing connection: no usable PKI document")
 			conn.Close()
 			handshakeinstrument.IncomingRefusedNoPKIDoc()
 			continue
@@ -137,7 +137,7 @@ func (l *listener) worker() {
 		isPeer := l.peerSet.Contains(connlimit.AddrIP(conn.RemoteAddr()))
 		token, ok := l.connLimiter.TryAcquire(conn.RemoteAddr(), isPeer)
 		if !ok {
-			l.log.Debugf("Refusing connection from %v: connection cap reached (peer=%v)", conn.RemoteAddr(), isPeer)
+			l.log.Debugf("Refusing connection: connection cap reached (peer=%v)", isPeer)
 			conn.Close()
 			continue
 		}
@@ -152,7 +152,7 @@ func (l *listener) worker() {
 			tcpConn.SetNoDelay(true)
 		}
 
-		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
+		l.log.Debug("Accepted new connection")
 
 		l.onNewConn(conn, token)
 	}

@@ -18,6 +18,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
@@ -26,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
@@ -35,6 +37,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/connlimit"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -86,6 +89,8 @@ type Server struct {
 
 	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
+
+	EpochDuration *time.Duration
 
 	// Addresses are the IP listener addresses that the server will advertise
 	// in the PKI and bind to for incoming connections unless BindAddresses is specified.
@@ -160,9 +165,17 @@ type Server struct {
 	// enabling PersistMixKeysOnShutdown is a configuration error, since
 	// the directory would silently have no effect.
 	PersistMixKeysOnShutdownDir string
+
+	IdentityPrivateKeyFile string `toml:",omitempty"`
+	IdentityPublicKeyFile  string `toml:",omitempty"`
+	LinkPrivateKeyFile     string `toml:",omitempty"`
+	LinkPublicKeyFile      string `toml:",omitempty"`
 }
 
 func (sCfg *Server) validate() error {
+	if err := epochtime.ValidateConfigured(sCfg.EpochDuration); err != nil {
+		return fmt.Errorf("config: Server: EpochDuration: %v", err)
+	}
 	if sCfg.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
 	}
@@ -709,11 +722,19 @@ func (pCfg *PKI) validate(datadir string) error {
 // Voting is a set of Authorities that vote on a threshold consensus PKI
 type Voting struct {
 	Authorities []*config.Authority
+
+	MaxConsensusSize int
 }
 
 func (vCfg *Voting) validate(datadir string) error {
 	if vCfg.Authorities == nil {
 		return errors.New("Authorities is nil")
+	}
+	if vCfg.MaxConsensusSize < 0 {
+		return errors.New("PKI.Voting.MaxConsensusSize must not be negative")
+	}
+	if vCfg.MaxConsensusSize > pki.MaxConsensusCeiling {
+		return fmt.Errorf("PKI.Voting.MaxConsensusSize must not exceed %d", pki.MaxConsensusCeiling)
 	}
 	for _, auth := range vCfg.Authorities {
 		err := auth.Validate()
@@ -761,6 +782,12 @@ type Config struct {
 	SphinxGeometry *geo.Geometry
 
 	Debug *Debug
+
+	hash [32]byte
+}
+
+func (cfg *Config) Hash() [32]byte {
+	return cfg.hash
 }
 
 // FixupAndValidate applies defaults to config entries and validates the
@@ -881,6 +908,7 @@ func Load(b []byte) (*Config, error) {
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}
+	cfg.hash = sha256.Sum256(b)
 
 	return cfg, nil
 }

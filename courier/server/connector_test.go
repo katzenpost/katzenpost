@@ -36,8 +36,7 @@ var (
 )
 
 func TestConnector(t *testing.T) {
-	datadir, err := os.MkdirTemp("", "courier_connector_test_datadir")
-	require.NoError(t, err)
+	datadir := t.TempDir()
 
 	mkemNikeScheme := schemes.ByName("x25519")
 	mkemScheme := mkem.NewScheme(mkemNikeScheme)

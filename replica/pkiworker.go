@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -30,9 +29,7 @@ import (
 
 const PKIDocNum = 3
 
-var (
-	PublishDeadline = vServer.MixPublishDeadline
-)
+func PublishDeadline() time.Duration { return vServer.MixPublishDeadline() }
 
 type PKIWorker struct {
 	worker.Worker
@@ -46,6 +43,7 @@ type PKIWorker struct {
 
 	descAddrMap        map[string][]string
 	lastPublishedEpoch uint64
+	failedPostEpoch    uint64
 }
 
 // newPKIWorker creates a PKIWorker with the default voting client
@@ -68,6 +66,7 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 		// Convert milliseconds to seconds for PKI client timeouts
 		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
 		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,
+		LocalAddresses:      server.cfg.Addresses,
 	}
 
 	pkiClient, err := vClient.New(pkiCfg)
@@ -122,7 +121,7 @@ func (p *PKIWorker) Start() {
 func replicaMap(doc *pki.Document) map[[32]byte]*pki.ReplicaDescriptor {
 	newReplicas := make(map[[32]byte]*pki.ReplicaDescriptor)
 	for _, replica := range doc.StorageReplicas {
-		replicaIdHash := blake2b.Sum256(replica.IdentityKey)
+		replicaIdHash := hash.Sum256(replica.IdentityKey)
 		newReplicas[replicaIdHash] = replica
 	}
 	return newReplicas
@@ -223,7 +222,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 
 	// Fetch the PKI document. Bound it: an unreachable/retrying dirauth must
 	// not block this call indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), pki.FetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), pki.FetchTimeout())
 	defer cancel()
 	d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(ctx, epoch)
 	if err != nil {

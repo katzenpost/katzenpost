@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -73,7 +72,7 @@ var (
 	maxRetryQueuePerPeer = 2000
 	// retryTTL is how long a pending retry may live before it is pruned.
 	// Longer outages should be healed by Rebalance, not this queue.
-	retryTTL = 3 * epochtime.Period
+	retryTTL = func() time.Duration { return 3 * epochtime.Period() }
 )
 
 func (co *Connector) Halt() {
@@ -235,7 +234,7 @@ func (co *Connector) pruneRetryQueueLocked() {
 	now := time.Now()
 	j := 0
 	for i, rc := range co.retryQueue {
-		if now.Sub(rc.firstSeen) > retryTTL {
+		if now.Sub(rc.firstSeen) > retryTTL() {
 			co.log.Warningf("Dropping expired retry: peer %x ident %x age %s attempts %d", rc.idHash[:8], rc.ident[:8], now.Sub(rc.firstSeen), rc.attempts)
 			instrument.RetryQueueDropped("ttl")
 			continue
@@ -328,7 +327,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 		co.log.Errorf("REPLICATION: Failed to marshal identity key: %v", err)
 		return
 	}
-	myIdHash := blake2b.Sum256(myIdBytes)
+	myIdHash := hash.Sum256(myIdBytes)
 	co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
 
 	// Get ALL shards for this BoxID (not just remote ones)
@@ -354,7 +353,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	totalTargets := 0
 
 	for _, desc := range allShards {
-		idHash := blake2b.Sum256(desc.IdentityKey)
+		idHash := hash.Sum256(desc.IdentityKey)
 
 		// Skip self - we already wrote locally
 		if hmac.Equal(idHash[:], myIdHash[:]) {
@@ -394,7 +393,7 @@ func (co *Connector) worker() {
 	log := co.server.LogBackend().GetLogger("replica connectorWorker")
 
 	var (
-		resweepInterval = epochtime.Period / 8
+		resweepInterval = epochtime.Period() / 8
 	)
 
 	log.Debug("Starting connector worker")

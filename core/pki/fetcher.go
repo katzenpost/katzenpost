@@ -5,6 +5,7 @@ package pki
 
 import (
 	"context"
+	"errors"
 
 	"gopkg.in/op/go-logging.v1"
 )
@@ -72,7 +73,7 @@ func (f *DocumentFetcher) FetchDocuments(
 
 		if err != nil {
 			f.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
-			if err == ErrDocumentGone {
+			if errors.Is(err, ErrDocumentGone) {
 				setFailedFetch(epoch, err)
 			}
 		}

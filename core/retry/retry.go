@@ -18,6 +18,7 @@
 package retry
 
 import (
+	"errors"
 	"math"
 	"net"
 	"net/url"
@@ -93,16 +94,8 @@ func IsTransientError(err error) bool {
 		}
 	}
 
-	if netErr, ok := err.(net.Error); ok {
-		if netErr.Timeout() {
-			return true
-		}
-		if netErr.Temporary() {
-			return true
-		}
-	}
-
-	return false
+	var netErr net.Error
+	return errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary())
 }
 
 // DetectAddressCapabilities analyzes a list of addresses (which may be URLs)
@@ -156,6 +149,32 @@ func FilterUsableAddresses(addresses []string, hasIPv4, hasIPv6, disableIPv4, di
 		return addresses
 	}
 	return filtered
+}
+
+func FilterByLocalAddresses(local, addrs []string) []string {
+	hasIPv4, hasIPv6 := DetectAddressCapabilities(local)
+	if (!hasIPv4 && !hasIPv6) || listensDualStack(local) {
+		return addrs
+	}
+	return FilterUsableAddresses(addrs, hasIPv4, hasIPv6, false, false)
+}
+
+func listensDualStack(local []string) bool {
+	if !wildcardIsDualStack {
+		return false
+	}
+	for _, addr := range local {
+		ip := net.ParseIP(extractHostFromAddress(addr))
+		if ip == nil || !ip.IsUnspecified() {
+			continue
+		}
+		u, err := url.Parse(addr)
+		if err == nil && (strings.HasSuffix(u.Scheme, "4") || strings.HasSuffix(u.Scheme, "6")) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // extractHostFromAddress extracts the host portion from an address.  It

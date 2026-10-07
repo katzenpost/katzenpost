@@ -97,9 +97,7 @@ func TestCreateMixKey(t *testing.T) {
 func TestMixKeyPersistRoundtrip(t *testing.T) {
 	require := require.New(t)
 
-	dir, err := os.MkdirTemp("", "mixkey_persist")
-	require.NoError(err, "MkdirTemp()")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	mynike := x25519.Scheme(rand.Reader)
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
@@ -156,9 +154,7 @@ func TestLoadFailsWhenConsumeFails(t *testing.T) {
 	}
 	require := require.New(t)
 
-	dir, err := os.MkdirTemp("", "mixkey_consume")
-	require.NoError(err, "MkdirTemp()")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	mynike := x25519.Scheme(rand.Reader)
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
@@ -189,12 +185,7 @@ func TestLoadFailsWhenConsumeFails(t *testing.T) {
 }
 
 func BenchmarkMixKey(b *testing.B) {
-	var err error
-	tmpDir, err = os.MkdirTemp("", "mixkey_benchmarks")
-	if err != nil {
-		b.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir = b.TempDir()
 
 	b.Run("IsReplay (miss)", doBenchIsReplayMiss)
 	b.Run("IsReplay (hit)", doBenchIsReplayHit)

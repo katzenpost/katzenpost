@@ -17,9 +17,9 @@
 package config
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -103,12 +103,12 @@ Level = "DEBUG"
       Addresses = ["tcp://127.0.0.1:30001"]
 `
 
-	tempDir, err := os.MkdirTemp("", "server_config_test")
-	require.NoError(err)
+	tempDir := t.TempDir()
 	config := fmt.Sprintf(basicConfig, testingSchemeName, tempDir, testingSchemeName, strings.Replace(pem.ToPublicPEMString(linkPubKey), "\n", "\\n", -1))
 
 	cfg, err := Load([]byte(config))
 	require.NoError(err)
+	require.Equal(sha256.Sum256([]byte(config)), cfg.Hash())
 
 	require.True(cfg.Management.Enable)
 	if cfg.Management.Path == "" {

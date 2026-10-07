@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -55,7 +56,6 @@ func isQUICConn(conn net.Conn) bool {
 var firstCommandTimeout = 5 * time.Second
 
 func (s *Server) onConn(conn net.Conn) {
-	rAddr := conn.RemoteAddr()
 	lAddr := conn.LocalAddr()
 
 	// Disable Nagle so the responder's finalisation NoOp does not wait
@@ -70,9 +70,8 @@ func (s *Server) onConn(conn net.Conn) {
 	acceptedAt := time.Now()
 
 	s.log.Debugf(
-		"Accepted new connection: local=%v remote=%v phase_at_accept=%s remaining_at_accept=%v",
+		"Accepted new connection: local=%v phase_at_accept=%s remaining_at_accept=%v",
 		lAddr,
-		rAddr,
 		phaseAtAccept,
 		remainingAtAccept,
 	)
@@ -104,10 +103,8 @@ func (s *Server) onConn(conn net.Conn) {
 	if err != nil {
 		phaseNow, remainingNow := s.state.PhaseInfo()
 		s.log.Debugf(
-			"Peer %v: Failed to initialize session local=%v remote=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v elapsed=%v: %v",
-			rAddr,
+			"Failed to initialize session local=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v elapsed=%v: %v",
 			lAddr,
-			rAddr,
 			phaseAtAccept,
 			remainingAtAccept,
 			phaseNow,
@@ -136,10 +133,8 @@ func (s *Server) onConn(conn net.Conn) {
 	handshakeStart := time.Now()
 
 	s.log.Debugf(
-		"Peer %v: Starting responder handshake local=%v remote=%v phase_at_accept=%s remaining_at_accept=%v timeout=%v",
-		rAddr,
-		conn.LocalAddr(),
-		conn.RemoteAddr(),
+		"Starting responder handshake local=%v phase_at_accept=%s remaining_at_accept=%v timeout=%v",
+		lAddr,
 		phaseAtAccept,
 		remainingAtAccept,
 		handshakeTimeout,
@@ -147,7 +142,7 @@ func (s *Server) onConn(conn net.Conn) {
 
 	if err = wireConn.Initialize(context.Background(), conn); err != nil {
 		// Try to identify the peer from the handshake error.
-		peerID := rAddr.String()
+		peerID := "anonymous"
 		if he, ok := wire.GetHandshakeError(err); ok && he.PeerCredentials != nil {
 			if name := s.state.PeerName(he.PeerCredentials.AdditionalData); name != "" {
 				peerID = name
@@ -169,10 +164,9 @@ func (s *Server) onConn(conn net.Conn) {
 
 		if wire.IsNoHandshakeBytesError(err) {
 			s.log.Debugf(
-				"Peer %s: TCP connection closed before Noise handshake bytes local=%v remote=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
+				"Peer %s: TCP connection closed before Noise handshake bytes local=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
 				peerID,
-				conn.LocalAddr(),
-				conn.RemoteAddr(),
+				lAddr,
 				elapsed,
 				handshakeTimeout,
 				phaseAtAccept,
@@ -186,10 +180,8 @@ func (s *Server) onConn(conn net.Conn) {
 		}
 
 		s.log.Errorf(
-			"Peer %s: Failed session handshake local=%v remote=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
+			"Peer %s: Failed session handshake after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
 			peerID,
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
 			elapsed,
 			handshakeTimeout,
 			phaseAtAccept,
@@ -199,27 +191,22 @@ func (s *Server) onConn(conn net.Conn) {
 			classification,
 			err,
 		)
-
-		// Log detailed debug info (contains IPs, keys) at debug level only.
-		s.log.Debugf("Peer %s: handshake failure details:\n%s", peerID, wire.GetDebugError(err))
 		return
 	}
 
 	handshakeDuration := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("incoming", "success", handshakeDuration)
 
-	// Determine peer identifier for logging (name if known, otherwise IP)
 	peerID := auth.peerName
 	if peerID == "" {
-		peerID = rAddr.String()
+		peerID = "anonymous"
 	}
 
 	phaseAfterHandshake, remainingAfterHandshake := s.state.PhaseInfo()
 	s.log.Debugf(
-		"Peer %s: Handshake completed local=%v remote=%v in=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v",
+		"Peer %s: Handshake completed local=%v in=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v",
 		peerID,
-		conn.LocalAddr(),
-		conn.RemoteAddr(),
+		lAddr,
 		handshakeDuration,
 		phaseAtAccept,
 		remainingAtAccept,
@@ -253,10 +240,9 @@ func (s *Server) onConn(conn net.Conn) {
 	if err != nil {
 		phaseNow, remainingNow := s.state.PhaseInfo()
 		s.log.Debugf(
-			"Peer %s: Failed to receive command local=%v remote=%v after_handshake=%v recv_elapsed=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
+			"Peer %s: Failed to receive command local=%v after_handshake=%v recv_elapsed=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s: %v",
 			peerID,
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
+			lAddr,
 			handshakeDuration,
 			time.Since(recvStart),
 			phaseAtAccept,
@@ -275,14 +261,13 @@ func (s *Server) onConn(conn net.Conn) {
 	// Log timing for all commands
 	phaseAfterRecv, remainingAfterRecv := s.state.PhaseInfo()
 	s.log.Debugf(
-		"Peer %s: Received %T in=%v handshake=%v total=%v local=%v remote=%v phase_now=%s remaining_now=%v",
+		"Peer %s: Received %T in=%v handshake=%v total=%v local=%v phase_now=%s remaining_now=%v",
 		peerID,
 		cmd,
 		recvDuration,
 		handshakeDuration,
 		handshakeDuration+recvDuration,
-		conn.LocalAddr(),
-		conn.RemoteAddr(),
+		lAddr,
 		phaseAfterRecv,
 		remainingAfterRecv,
 	)
@@ -322,12 +307,11 @@ func (s *Server) onConn(conn net.Conn) {
 
 		sendStart := time.Now()
 		s.log.Debugf(
-			"Peer %s: Sending response command=%T response=%T local=%v remote=%v timeout=%v phase_now=%s remaining_now=%v total_since_accept=%v",
+			"Peer %s: Sending response command=%T response=%T local=%v timeout=%v phase_now=%s remaining_now=%v total_since_accept=%v",
 			peerID,
 			cmd,
 			resp,
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
+			lAddr,
 			responseTimeout,
 			phaseAfterHandler,
 			remainingAfterHandler,
@@ -337,12 +321,10 @@ func (s *Server) onConn(conn net.Conn) {
 		if err = wireConn.SendCommand(context.Background(), resp); err != nil {
 			phaseNow, remainingNow := s.state.PhaseInfo()
 			s.log.Warningf(
-				"Peer %s: Failed to send response command=%T response=%T local=%v remote=%v after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s total_since_accept=%v: %v",
+				"Peer %s: Failed to send response command=%T response=%T after=%v timeout=%v phase_at_accept=%s remaining_at_accept=%v phase_now=%s remaining_now=%v classification=%s total_since_accept=%v: %v",
 				peerID,
 				cmd,
 				resp,
-				conn.LocalAddr(),
-				conn.RemoteAddr(),
 				time.Since(sendStart),
 				responseTimeout,
 				phaseAtAccept,
@@ -358,12 +340,11 @@ func (s *Server) onConn(conn net.Conn) {
 
 		phaseAfterSend, remainingAfterSend := s.state.PhaseInfo()
 		s.log.Debugf(
-			"Peer %s: Sent response command=%T response=%T local=%v remote=%v send_elapsed=%v total_since_accept=%v phase_now=%s remaining_now=%v",
+			"Peer %s: Sent response command=%T response=%T local=%v send_elapsed=%v total_since_accept=%v phase_now=%s remaining_now=%v",
 			peerID,
 			cmd,
 			resp,
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
+			lAddr,
 			time.Since(sendStart),
 			time.Since(acceptedAt),
 			phaseAfterSend,
@@ -685,10 +666,13 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	// a nil, the authority "accepts" the replica descriptor.
 	err = s.state.onReplicaDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
 	if err != nil {
-		// This is either a internal server error or the peer is trying to
-		// retroactively modify their descriptor. This should disambituate
-		// the condition, but the latter is more likely.
-		s.log.Errorf("Peer %s: Rejected probably a conflict: %v", peerID, err)
+		if !errors.Is(err, errConflictingDescriptor) && !errors.Is(err, errLateUpload) {
+			s.log.Errorf("Peer %s: internal error storing replica descriptor for node %s: %v", peerID, strconv.QuoteToASCII(desc.Name), err)
+			instrument.DescriptorRejected("replica", "internal")
+			resp.ErrorCode = commands.DescriptorInternalError
+			return resp
+		}
+		s.log.Errorf("Peer %s: Rejected replica descriptor: %v", peerID, err)
 		instrument.DescriptorRejected("replica", "conflict")
 		resp.ErrorCode = commands.DescriptorConflict
 		return resp
@@ -826,10 +810,13 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	s.log.Debugf("onPostDescriptor: Submitting descriptor for node %s epoch %d to state worker from peer %s", strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(peerID))
 	err = s.state.onDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
 	if err != nil {
-		// This is either a internal server error or the peer is trying to
-		// retroactively modify their descriptor. This should disambituate
-		// the condition, but the latter is more likely.
-		s.log.Errorf("onPostDescriptor: DESCRIPTOR UPLOAD FAILED for node %s from peer %s: probably a conflict: %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+		if !errors.Is(err, errConflictingDescriptor) && !errors.Is(err, errLateUpload) {
+			s.log.Errorf("onPostDescriptor: internal error storing descriptor for node %s from peer %s: %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+			instrument.DescriptorRejected("mix", "internal")
+			resp.ErrorCode = commands.DescriptorInternalError
+			return resp
+		}
+		s.log.Errorf("onPostDescriptor: DESCRIPTOR UPLOAD FAILED for node %s from peer %s: %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
 		instrument.DescriptorRejected("mix", "conflict")
 		resp.ErrorCode = commands.DescriptorConflict
 		return resp
@@ -897,14 +884,12 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	pk := [hash.HashSize]byte{}
 	copy(pk[:], creds.AdditionalData[:hash.HashSize])
 
-	_, isMix := a.s.state.authorizedMixes[pk]
-	_, isGatewayNode := a.s.state.authorizedGatewayNodes[pk]
-	_, isServiceNode := a.s.state.authorizedServiceNodes[pk]
-	_, isReplicaNode := a.s.state.authorizedReplicaNodes[pk]
+	isMix := a.s.state.isNodePeer(pk)
+	isReplicaNode := a.s.state.isReplicaPeer(pk)
 	_, isAuthority := a.s.state.authorizedAuthorities[pk]
 
 	switch {
-	case isMix || isGatewayNode || isServiceNode:
+	case isMix:
 		a.isMix = true // Gateways and service nodes and mixes are all mixes.
 		return true
 	case isAuthority:

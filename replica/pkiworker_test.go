@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
@@ -654,7 +655,9 @@ func TestReplicaPublishDescriptorDoesNotSuppressTransientFailure(t *testing.T) {
 	require.Equal(t, uint64(0), pkiWorker.lastPublishedEpoch)
 }
 
-func TestReplicaPublishDescriptorSuppressesPermanentInvalidEpoch(t *testing.T) {
+func TestReplicaPublishDescriptorRepostsAfterInvalidEpoch(t *testing.T) {
+	const now = 1000
+	setReplicaEpochClock(t, now, time.Second)
 	mockClient := &mockReplicaPKIClient{
 		postErr: pki.ErrInvalidPostEpoch,
 	}
@@ -662,24 +665,22 @@ func TestReplicaPublishDescriptorSuppressesPermanentInvalidEpoch(t *testing.T) {
 	pkiWorker, cleanup := createPublishDescriptorTestWorker(t, mockClient)
 	defer cleanup()
 
-	currentEpoch, _, _ := epochtime.Now()
+	require.ErrorIs(t, pkiWorker.publishDescriptorIfNeeded(context.Background()), pki.ErrInvalidPostEpoch)
+	require.Equal(t, uint64(0), pkiWorker.lastPublishedEpoch)
 
-	err := pkiWorker.publishDescriptorIfNeeded(context.Background())
+	mockClient.mu.Lock()
+	mockClient.postErr = nil
+	mockClient.mu.Unlock()
 
+	require.NoError(t, pkiWorker.publishDescriptorIfNeeded(context.Background()))
 	epochs, descriptors := mockClient.posts()
-	if len(epochs) == 0 {
-		require.NoError(t, err)
-		require.Empty(t, descriptors)
-		require.Equal(t, uint64(0), pkiWorker.lastPublishedEpoch)
-		return
-	}
+	require.Equal(t, []uint64{now + 1, now + 1}, epochs)
+	require.Len(t, descriptors, 2)
+	require.Equal(t, uint64(now+1), pkiWorker.lastPublishedEpoch)
 
-	require.ErrorIs(t, err, pki.ErrInvalidPostEpoch)
-	require.Len(t, epochs, 1)
-	require.Len(t, descriptors, 1)
-	require.Equal(t, currentEpoch+1, epochs[0])
-	require.Equal(t, epochs[0], descriptors[0].Epoch)
-	require.Equal(t, epochs[0], pkiWorker.lastPublishedEpoch)
+	require.NoError(t, pkiWorker.publishDescriptorIfNeeded(context.Background()))
+	epochs, _ = mockClient.posts()
+	require.Len(t, epochs, 2)
 }
 
 func TestReplicaPublishDescriptorUsesBoundedUploadContext(t *testing.T) {

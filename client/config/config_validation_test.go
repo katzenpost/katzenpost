@@ -24,7 +24,7 @@ func validListen() *transport.ListenConfig {
 
 func loadTestConfig(t *testing.T) *Config {
 	t.Helper()
-	cfg, err := LoadFile("../testdata/client.toml")
+	cfg, err := LoadFile(TestClientTOML)
 	require.NoError(t, err)
 	return cfg
 }
@@ -33,7 +33,7 @@ func loadTestConfig(t *testing.T) *Config {
 // so we can test individual validation branches.
 func loadRawConfig(t *testing.T) *Config {
 	t.Helper()
-	b, err := os.ReadFile("../testdata/client.toml")
+	b, err := os.ReadFile(TestClientTOML)
 	require.NoError(t, err)
 	cfg := new(Config)
 	err = toml.Unmarshal(b, cfg)
@@ -202,7 +202,7 @@ func TestFixupAndValidate(t *testing.T) {
 
 func TestLoad(t *testing.T) {
 	t.Run("valid toml", func(t *testing.T) {
-		b, err := os.ReadFile("../testdata/client.toml")
+		b, err := os.ReadFile(TestClientTOML)
 		require.NoError(t, err)
 		cfg, err := Load(b)
 		require.NoError(t, err)
@@ -220,7 +220,7 @@ func TestLoad(t *testing.T) {
 	})
 
 	t.Run("a [PigeonholeGeometry] table is rejected", func(t *testing.T) {
-		b, err := os.ReadFile("../testdata/client.toml")
+		b, err := os.ReadFile(TestClientTOML)
 		require.NoError(t, err)
 		withTable := append(b, []byte("\n[PigeonholeGeometry]\n  MaxPlaintextPayloadLength = 1549\n")...)
 		_, err = Load(withTable)
@@ -231,7 +231,7 @@ func TestLoad(t *testing.T) {
 
 func TestLoadFile(t *testing.T) {
 	t.Run("valid file", func(t *testing.T) {
-		cfg, err := LoadFile("../testdata/client.toml")
+		cfg, err := LoadFile(TestClientTOML)
 		require.NoError(t, err)
 		require.NotNil(t, cfg)
 	})
@@ -351,7 +351,7 @@ func TestUnmarshalTOML(t *testing.T) {
 		require.NotEmpty(t, gw.Addresses)
 	})
 
-	t.Run("empty PKISignatureScheme panics", func(t *testing.T) {
+	t.Run("empty PKISignatureScheme errors", func(t *testing.T) {
 		data := map[string]interface{}{
 			"Name":               "test",
 			"PKISignatureScheme": "",
@@ -361,12 +361,10 @@ func TestUnmarshalTOML(t *testing.T) {
 			"Addresses":          []interface{}{"tcp://127.0.0.1:1234"},
 		}
 		gw := &Gateway{}
-		require.Panics(t, func() {
-			gw.UnmarshalTOML(data)
-		})
+		require.Error(t, gw.UnmarshalTOML(data))
 	})
 
-	t.Run("invalid PKISignatureScheme panics", func(t *testing.T) {
+	t.Run("invalid PKISignatureScheme errors", func(t *testing.T) {
 		data := map[string]interface{}{
 			"Name":               "test",
 			"PKISignatureScheme": "nonexistent-scheme",
@@ -376,9 +374,7 @@ func TestUnmarshalTOML(t *testing.T) {
 			"Addresses":          []interface{}{"tcp://127.0.0.1:1234"},
 		}
 		gw := &Gateway{}
-		require.Panics(t, func() {
-			gw.UnmarshalTOML(data)
-		})
+		require.Error(t, gw.UnmarshalTOML(data))
 	})
 
 	t.Run("bad IdentityKey PEM", func(t *testing.T) {
@@ -400,7 +396,7 @@ func TestUnmarshalTOML(t *testing.T) {
 		cfg := loadTestConfig(t)
 		gw0 := cfg.PinnedGateways.Gateways[0]
 		// Re-read raw TOML to get the PEM string
-		b, err := os.ReadFile("../testdata/client.toml")
+		b, err := os.ReadFile(TestClientTOML)
 		require.NoError(t, err)
 
 		// Parse raw to get the identity key PEM
@@ -454,7 +450,7 @@ func TestUnmarshalTOML(t *testing.T) {
 
 	t.Run("Addresses not a slice", func(t *testing.T) {
 		// We need valid IdentityKey and LinkKey. Read from test config TOML.
-		b, err := os.ReadFile("../testdata/client.toml")
+		b, err := os.ReadFile(TestClientTOML)
 		require.NoError(t, err)
 		raw := make(map[string]interface{})
 		err = toml.Unmarshal(b, &raw)
@@ -478,7 +474,7 @@ func TestUnmarshalTOML(t *testing.T) {
 	})
 
 	t.Run("Addresses with invalid scheme", func(t *testing.T) {
-		b, err := os.ReadFile("../testdata/client.toml")
+		b, err := os.ReadFile(TestClientTOML)
 		require.NoError(t, err)
 		raw := make(map[string]interface{})
 		err = toml.Unmarshal(b, &raw)

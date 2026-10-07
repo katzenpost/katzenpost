@@ -23,8 +23,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"golang.org/x/crypto/blake2b"
-
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 )
 
@@ -50,9 +49,9 @@ func (s *SharedRandom) Commit(epoch uint64) ([]byte, error) {
 	s.reveal = make([]byte, SharedRandomLength)
 	binary.BigEndian.PutUint64(s.reveal, epoch)
 	binary.BigEndian.PutUint64(s.commit, epoch)
-	reveal := blake2b.Sum256(rn)
+	reveal := hash.Sum256(rn)
 	copy(s.reveal[8:], reveal[:])
-	commit := blake2b.Sum256(s.reveal)
+	commit := hash.Sum256(s.reveal)
 	copy(s.commit[8:], commit[:])
 	return s.commit, nil
 }
@@ -62,14 +61,17 @@ func (s *SharedRandom) GetCommit() []byte {
 	return s.commit
 }
 
-// SetCommit sets the commit value. A commit shorter than SharedRandomLength is
-// ignored rather than panicking on the epoch slice; a later Verify then fails.
+// SetCommit sets the commit value. If rawCommit is not exactly SharedRandomLength,
+// any existing commitment is cleared so stale state is never retained.
 func (s *SharedRandom) SetCommit(rawCommit []byte) {
-	if len(rawCommit) < SharedRandomLength {
+	if len(rawCommit) != SharedRandomLength {
+		s.commit = nil
+		s.epoch = 0
 		return
 	}
 	s.epoch = binary.BigEndian.Uint64(rawCommit[0:8])
-	s.commit = rawCommit
+	s.commit = make([]byte, SharedRandomLength)
+	copy(s.commit, rawCommit)
 }
 
 // GetEpoch returns the epoch value
@@ -86,7 +88,7 @@ func (s *SharedRandom) Verify(reveal []byte) bool {
 		return false
 	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
-	allegedCommit := blake2b.Sum256(reveal)
+	allegedCommit := hash.Sum256(reveal)
 	if epoch == s.epoch {
 		if hmac.Equal(s.commit[8:], allegedCommit[:]) {
 			return true

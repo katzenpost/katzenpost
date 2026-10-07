@@ -54,13 +54,11 @@ This means that the service will accept proxy requests for localhost:4242 (and
 only localhost:4242). You can use a wildcard "*", but this will allow any
 client to make http requests to any host.
 
-To build the proxy client, use the makefile. Note that the build flag
-'warped=true' is used with the testnet in order to shorten the bootstrap time
-and is not used in production, so it is not the default value in the Makefile.
+To build the proxy client, use the makefile.
 ::
 
    cd katzenpost/proxy
-   make warped=true clean client/client
+   make clean client/client
 
 You'll now have a binary client/client (relative to this path). The CLI help:
 ::

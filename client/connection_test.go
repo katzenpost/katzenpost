@@ -82,7 +82,7 @@ func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme
 		Topology:           topology,
 		StorageReplicas:    []*cpki.ReplicaDescriptor{},
 		SharedRandomValue:  srv,
-		PriorSharedRandom:  oldhashes,
+		WeeklySharedRandom: oldhashes,
 		SphinxGeometryHash: geo.Hash(),
 		PKISignatureScheme: pkiScheme.Name(),
 
@@ -142,6 +142,12 @@ func setupTestGateway(t *testing.T, gwAddr string, handler func(t *testing.T, wi
 
 	nikeScheme := schemes.ByName("x25519")
 	g := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 2000, false, 5)
+
+	u, err := url.Parse(gwAddr)
+	require.NoError(t, err)
+	l, err := net.Listen("tcp", u.Host)
+	require.NoError(t, err)
+	gwAddr = u.Scheme + "://" + l.Addr().String()
 
 	clientCfg := &config.Config{
 		Listen: &transport.ListenConfig{
@@ -205,11 +211,6 @@ func setupTestGateway(t *testing.T, gwAddr string, handler func(t *testing.T, wi
 	}
 
 	go func() {
-		u, err := url.Parse(gwAddr)
-		require.NoError(t, err)
-
-		l, err := net.Listen("tcp", u.Host)
-		require.NoError(t, err)
 		defer l.Close()
 
 		conn, err := l.Accept()
@@ -265,7 +266,7 @@ func setupClientCallbacks(cfg *config.Config) {
 }
 
 func TestConnectionConsensusGoneSurvives(t *testing.T) {
-	gwAddr := "tcp://127.0.0.1:12346"
+	gwAddr := "tcp://127.0.0.1:0"
 	requestCount := 0
 
 	pkiSchemeName := "ed25519"
@@ -402,7 +403,9 @@ func TestConnection(t *testing.T) {
 	nikeScheme := schemes.ByName("x25519")
 	g := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 2000, false, 5)
 
-	gwAddr := "tcp://127.0.0.1:1234"
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	gwAddr := "tcp://" + l.Addr().String()
 
 	replicaScheme := schemes.ByName("x25519")
 	sphinxNikeScheme := schemes.ByName("x25519")
@@ -472,12 +475,7 @@ func TestConnection(t *testing.T) {
 	}
 
 	go func() {
-		u, err := url.Parse(gwAddr)
-		require.NoError(t, err)
-
-		t.Logf("listening on %s", u.Host)
-		l, err := net.Listen("tcp", u.Host)
-		require.NoError(t, err)
+		t.Logf("listening on %s", l.Addr())
 
 		conn, err := l.Accept()
 		require.NoError(t, err)
@@ -926,6 +924,12 @@ func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, hand
 	require.NoError(t, err)
 	id := hash.Sum256From(idPubKey)
 
+	u, err := url.Parse(gwAddr)
+	require.NoError(t, err)
+	l, err := net.Listen("tcp", u.Host)
+	require.NoError(t, err)
+	gwAddr = u.Scheme + "://" + l.Addr().String()
+
 	clientCfg := &config.Config{
 		Listen: &transport.ListenConfig{
 			Tcp: &transport.TcpListenConfig{Address: "127.0.0.1:0"},
@@ -956,10 +960,6 @@ func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, hand
 	}
 
 	go func() {
-		u, err := url.Parse(gwAddr)
-		require.NoError(t, err)
-		l, err := net.Listen("tcp", u.Host)
-		require.NoError(t, err)
 		defer l.Close()
 
 		conn, err := l.Accept()
@@ -998,7 +998,7 @@ func setupTestGatewayFull(t *testing.T, gwAddr string, env *testGatewayEnv, hand
 
 func TestOnWireConnMultiChunkConsensus(t *testing.T) {
 	env := newTestGatewayEnv(t)
-	gwAddr := "tcp://127.0.0.1:12350"
+	gwAddr := "tcp://127.0.0.1:0"
 
 	clientCfg := setupTestGatewayFull(t, gwAddr, env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
 		switch mycmd := cmd.(type) {
@@ -1028,7 +1028,7 @@ func TestOnWireConnMultiChunkConsensus(t *testing.T) {
 
 func TestOnWireConnDisconnectCommand(t *testing.T) {
 	env := newTestGatewayEnv(t)
-	gwAddr := "tcp://127.0.0.1:12351"
+	gwAddr := "tcp://127.0.0.1:0"
 	gotConsensus := false
 
 	clientCfg := setupTestGatewayFull(t, gwAddr, env, func(t *testing.T, wireConn *wire.Session, cmds *commands.Commands, cmd commands.Command) bool {
@@ -1066,7 +1066,7 @@ func TestOnWireConnDisconnectCommand(t *testing.T) {
 
 func TestOnWireConnMessageCallback(t *testing.T) {
 	env := newTestGatewayEnv(t)
-	gwAddr := "tcp://127.0.0.1:12352"
+	gwAddr := "tcp://127.0.0.1:0"
 	pushed := false
 
 	ackCh := make(chan []byte, 1)
@@ -1256,4 +1256,39 @@ func TestIsPeerValidIdentityMismatch(t *testing.T) {
 		AdditionalData: wrongHash,
 	}
 	require.False(t, conn.IsPeerValid(creds))
+}
+
+func TestGetConsensusCanceledNoDeadlock(t *testing.T) {
+	c := newTestConnection(t)
+	c.isConnected.Store(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.GetConsensus(ctx, 123)
+		done <- err
+	}()
+
+	request := <-c.getConsensusCh
+	request.doneFn(nil)
+	cancel()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, errGetConsensusCanceled)
+	case <-time.After(time.Second):
+		t.Fatal("GetConsensus did not cancel in time")
+	}
+
+	// Late reply must not block because replyCh is buffered
+	delivered := false
+	select {
+	case request.replyCh <- ErrNotConnected:
+		delivered = true
+	default:
+	}
+	require.True(t, delivered, "buffered replyCh must accept late reply without receiver")
+
+	c.Shutdown()
 }

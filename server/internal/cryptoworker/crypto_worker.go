@@ -64,7 +64,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 	// design gated the neighbour keys on a fixed 2-minute grace
 	// period and used an if/else if, which had two failure modes:
 	//
-	//   1. With warped 2-minute epochs the grace period equals the
+	//   1. With 2-minute epochs the grace period equals the
 	//      epoch period, so `elapsed < gracePeriod` is true almost
 	//      always; the `else if till < gracePeriod` branch is
 	//      unreachable and the next epoch's key is never accepted.
@@ -246,7 +246,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 
 		// Check and adjust the delay for queue dwell time.
 		pkt.Delay = time.Duration(pkt.NodeDelay.Delay) * time.Millisecond
-		if pkt.Delay > constants.NumMixKeys*epochtime.Period {
+		if pkt.Delay > constants.NumMixKeys*epochtime.Period() {
 			w.log.Debugf("Dropping packet: %v (Delay1 %v is past what is possible)", pkt.ID, pkt.Delay)
 			instrument.PacketsDropped()
 			instrument.PacketsDroppedByReason("delay_impossible")

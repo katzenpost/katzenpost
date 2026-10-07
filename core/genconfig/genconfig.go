@@ -7,13 +7,18 @@
 package genconfig
 
 import (
+	"encoding"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +42,7 @@ import (
 	thinTransport "github.com/katzenpost/katzenpost/client/thin/transport"
 	clientTransport "github.com/katzenpost/katzenpost/client/transport"
 	"github.com/katzenpost/katzenpost/common/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
@@ -105,6 +111,57 @@ const (
 // thinClientDialAddress returns the host-side address thin clients use to
 // reach kpclientd through the docker port publish. The daemon listens on
 // base_port+2000 inside the bridge, same as the published host port.
+const CurrentVersion = "current"
+
+var releaseTag = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)$`)
+
+var olderReleaseSettings = []struct {
+	key, firstRelease, env string
+	value                  func(*Katzenpost) string
+}{
+	{"EpochDuration", "", epochtime.EnvironmentVariable, func(s *Katzenpost) string { return s.epochDuration().String() }},
+}
+
+func releaseAtLeast(version, release string) bool {
+	if version == CurrentVersion {
+		return true
+	}
+	v, r := releaseTag.FindStringSubmatch(version), releaseTag.FindStringSubmatch(release)
+	if v == nil || r == nil {
+		return false
+	}
+	for i := 1; i <= 3; i++ {
+		a, _ := strconv.Atoi(v[i])
+		b, _ := strconv.Atoi(r[i])
+		if a != b {
+			return a > b
+		}
+	}
+	return true
+}
+
+func (s *Katzenpost) olderReleaseEnv(node string) []string {
+	version, ok := s.NodeVersions[node]
+	if !ok {
+		return nil
+	}
+	var env []string
+	for _, k := range olderReleaseSettings {
+		if !releaseAtLeast(version, k.firstRelease) {
+			env = append(env, k.env+"="+k.value(s))
+		}
+	}
+	return env
+}
+
+func (s *Katzenpost) epochDuration() *time.Duration {
+	d, err := time.ParseDuration(s.EpochDuration)
+	if err != nil {
+		d = epochtime.DefaultPeriod
+	}
+	return &d
+}
+
 func (s *Katzenpost) thinClientDialAddress() string {
 	return fmt.Sprintf("localhost:%d", s.BasePort+kpclientdPublishedPortOffset)
 }
@@ -183,6 +240,7 @@ type Config struct {
 	UserForwardPayloadLength int
 	PkiSignatureScheme       string
 	EpochDuration            string
+	NodeVersions             map[string]string
 	NoDecoy                  bool
 	NoClientDecoy            bool
 	NoCourierReplicaDecoy    bool
@@ -262,6 +320,7 @@ type Katzenpost struct {
 	KpclientdMetricsAddress string
 	Cover                   bool
 	EpochDuration           string
+	NodeVersions            map[string]string
 	DebugConfig             *cConfig.Debug
 	SchedulerSlack          int
 	SchedulerMaxBurst       int
@@ -410,6 +469,7 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	cfg.Logging = &cConfig.Logging{File: "", Level: DebugLogLevel}
 
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
+	cfg.EpochDuration = s.epochDuration()
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.SphinxGeometry = s.SphinxGeometry
 	// The Pigeonhole geometry is not written into the client config; the
@@ -524,6 +584,7 @@ func (s *Katzenpost) GenCourierConfig(datadir string, serviceNodeName string) *c
 		Logging:                &courierConfig.Logging{File: logPath, Level: DebugLogLevel},
 		WireKEMScheme:          s.WireKEMScheme,
 		PKIScheme:              s.PkiSignatureScheme.Name(),
+		EpochDuration:          s.epochDuration(),
 		EnvelopeScheme:         s.ReplicaNIKEScheme.Name(),
 		DataDir:                datadir,
 		SphinxGeometry:         s.SphinxGeometry,
@@ -549,6 +610,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.WireKEMScheme = s.WireKEMScheme
 	cfg.ReplicaNIKEScheme = s.ReplicaNIKEScheme.Name()
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
+	cfg.EpochDuration = s.epochDuration()
 	// Docker-mixnet replicas address dirauths and peers by container
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
@@ -619,6 +681,7 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.WireKEM = s.WireKEMScheme
 	cfg.Server.PKISignatureScheme = s.PkiSignatureScheme.Name()
+	cfg.Server.EpochDuration = s.epochDuration()
 	cfg.Server.Identifier = n
 	// Both the advertise address (Addresses, used by peers via the
 	// embedded bridge DNS) and the bind address (BindAddresses, used
@@ -805,6 +868,7 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.Server = &vConfig.Server{
 			WireKEMScheme:          s.WireKEMScheme,
 			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
+			EpochDuration:          s.epochDuration(),
 			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 			Identifier:             authIdentifier,
 			Addresses:              []string{s.peerAddr(authIdentifier, s.LastPort)},
@@ -859,10 +923,12 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.StorageReplicaNode, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
 	replicas := []*vConfig.StorageReplicaNode{}
 	for _, replicaCfg := range s.ReplicaNodeConfigs {
+		keyFile := filepath.Join("../", replicaCfg.Identifier, IdentityPublicKeyFile)
 		node := &vConfig.StorageReplicaNode{
-			Identifier:           replicaCfg.Identifier,
-			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, IdentityPublicKeyFile),
-			ReplicaID:            replicaCfg.ReplicaID,
+			Identifier:            replicaCfg.Identifier,
+			IdentityPublicKeyFile: keyFile,
+			IdentityPublicKeyPem:  keyFile,
+			ReplicaID:             replicaCfg.ReplicaID,
 		}
 		replicas = append(replicas, node)
 	}
@@ -871,9 +937,11 @@ func (s *Katzenpost) GenAuthorizedNodes() ([]*vConfig.StorageReplicaNode, []*vCo
 	gateways := []*vConfig.Node{}
 	serviceNodes := []*vConfig.Node{}
 	for _, nodeCfg := range s.NodeConfigs {
+		keyFile := filepath.Join("../", nodeCfg.Server.Identifier, IdentityPublicKeyFile)
 		node := &vConfig.Node{
-			Identifier:           nodeCfg.Server.Identifier,
-			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, IdentityPublicKeyFile),
+			Identifier:            nodeCfg.Server.Identifier,
+			IdentityPublicKeyFile: keyFile,
+			IdentityPublicKeyPem:  keyFile,
 		}
 		if nodeCfg.Server.IsGatewayNode {
 			gateways = append(gateways, node)
@@ -959,6 +1027,20 @@ func RunGenConfig(cfg Config) error {
 
 // ValidateConfig validates the parsed configuration and returns any errors
 func ValidateConfig(cfg *Config) error {
+	for node, version := range cfg.NodeVersions {
+		if version != CurrentVersion && !releaseTag.MatchString(version) {
+			return fmt.Errorf("node %s: version %q is neither %q nor a release tag vX.Y.Z", node, version, CurrentVersion)
+		}
+	}
+	if cfg.EpochDuration != "" {
+		d, err := time.ParseDuration(cfg.EpochDuration)
+		if err != nil {
+			return fmt.Errorf("epoch duration: %v", err)
+		}
+		if err := epochtime.ValidatePeriod(d); err != nil {
+			return err
+		}
+	}
 	if cfg.Wirekem == "" {
 		return fmt.Errorf("wire KEM must be set")
 	}
@@ -1020,6 +1102,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.PyroscopeKpclientd = cfg.PyroscopeKpclientd
 	s.KpclientdMetricsAddress = cfg.KpclientdMetricsAddress
 	s.EpochDuration = cfg.EpochDuration
+	s.NodeVersions = cfg.NodeVersions
 	s.SchedulerSlack = cfg.SchedulerSlack
 	s.SchedulerMaxBurst = cfg.SchedulerMaxBurst
 	s.SendSlack = cfg.SendSlack
@@ -1067,6 +1150,9 @@ func SetupGeometry(s *Katzenpost, cfg *Config) error {
 		if signScheme == nil {
 			return fmt.Errorf("failed to resolve pki signature scheme %s", cfg.PkiSignatureScheme)
 		}
+		if err := checkWritableKey(signScheme); err != nil {
+			return fmt.Errorf("pki signature scheme %s: keys cannot be written to a config: %w", cfg.PkiSignatureScheme, err)
+		}
 		s.PkiSignatureScheme = signScheme
 	}
 
@@ -1080,6 +1166,23 @@ func SetupGeometry(s *Katzenpost, cfg *Config) error {
 	}
 
 	return nil
+}
+
+func checkWritableKey(scheme sign.Scheme) error {
+	pub, _, err := scheme.GenerateKey()
+	if err != nil {
+		return err
+	}
+	m, ok := pub.(encoding.TextMarshaler)
+	if !ok {
+		return errors.New("public key has no text encoding")
+	}
+	text, err := m.MarshalText()
+	if err != nil {
+		return err
+	}
+	_, err = signpem.FromPublicPEMString(string(text), scheme)
+	return err
 }
 
 // GenerateNodes creates all the different types of nodes (gateways, service nodes, mixes, replicas)
@@ -2612,12 +2715,15 @@ func (s *Katzenpost) GenDockerCompose(dockerImage string) error {
 		log.Fatal(err)
 	}
 
+	unplaced := map[string]bool{}
+	for node := range s.NodeVersions {
+		unplaced[node] = true
+	}
+
 	// writeEnv emits the environment block for a service.
 	writeEnv := func(serviceName string) {
-		var envVars []string
-		if s.EpochDuration != "" {
-			envVars = append(envVars, fmt.Sprintf("KATZENPOST_EPOCH_DURATION=%s", s.EpochDuration))
-		}
+		envVars := s.olderReleaseEnv(serviceName)
+		delete(unplaced, serviceName)
 		if d := s.coverDir(serviceName); d != "" {
 			envVars = append(envVars, "GOCOVERDIR="+d)
 		}
@@ -2796,5 +2902,8 @@ services:
 	writeEnv("kpclientd")
 	Write(f, `
 `)
+	if len(unplaced) > 0 {
+		return fmt.Errorf("node versions given for %v, which are not services of this network", slices.Sorted(maps.Keys(unplaced)))
+	}
 	return nil
 }

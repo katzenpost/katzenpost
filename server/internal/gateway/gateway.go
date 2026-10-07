@@ -123,7 +123,7 @@ func (p *gateway) worker() {
 	var gcEphemeralClientGCTickerChan <-chan time.Time
 
 	if p.glue.Config().Gateway != nil {
-		ticker := time.NewTicker(epochtime.Period)
+		ticker := time.NewTicker(epochtime.Period())
 		gcEphemeralClientGCTickerChan = ticker.C
 		defer ticker.Stop()
 	}

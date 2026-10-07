@@ -102,8 +102,8 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 
 func (co *connector) worker() {
 	var (
-		initialSpawnDelay = epochtime.Period / 64
-		resweepInterval   = epochtime.Period / 8
+		initialSpawnDelay = epochtime.Period() / 64
+		resweepInterval   = epochtime.Period() / 8
 	)
 
 	timer := time.NewTimer(initialSpawnDelay)
@@ -126,11 +126,22 @@ func (co *connector) worker() {
 		// Start outgoing connections as needed, based on the PKI documents
 		// and current time.
 		co.spawnNewConns()
+		if !timerFired {
+			co.reauthConns()
+		}
 
 		timer.Reset(resweepInterval)
 	}
 
 	// NOTREACHED
+}
+
+func (co *connector) reauthConns() {
+	co.RLock()
+	defer co.RUnlock()
+	for _, c := range co.conns {
+		c.requestReauth()
+	}
 }
 
 func (co *connector) spawnNewConns() {
