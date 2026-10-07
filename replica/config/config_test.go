@@ -4,10 +4,14 @@
 package config
 
 import (
+	"bytes"
+	"fmt"
 	"math"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/katzenpost/common/config"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,6 +38,25 @@ func TestConfigDefaults(t *testing.T) {
 	require.Equal(t, config.DefaultConnectTimeout, c.ConnectTimeout)
 	require.Equal(t, config.DefaultHandshakeTimeout, c.HandshakeTimeout)
 	require.Equal(t, config.DefaultReauthInterval, c.ReauthInterval)
+}
+
+func TestReplyHandoffTimeout(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", fmt.Sprintf("ReplyHandoffTimeout = %d\n", wire.DefaultWriteTimeout.Milliseconds())},
+		{"ReplyHandoffTimeout = -1\n", fmt.Sprintf("ReplyHandoffTimeout = %d\n", wire.DefaultWriteTimeout.Milliseconds())},
+		{"ReplyHandoffTimeout = 1234\n", "ReplyHandoffTimeout = 1234\n"},
+	}
+	for _, tc := range cases {
+		c := new(Config)
+		require.NoError(t, config.LoadConfigFromBytes([]byte(tc.in), c))
+		c.SetDefaultTimeouts()
+		var b bytes.Buffer
+		require.NoError(t, toml.NewEncoder(&b).Encode(c))
+		require.Contains(t, b.String(), tc.want)
+	}
 }
 
 func TestApplyRuntimeDefaults(t *testing.T) {

@@ -13,7 +13,6 @@ import (
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/queue"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/pigeonhole"
@@ -90,14 +89,14 @@ type delayedReplyEmitter struct {
 	handoffTimeout time.Duration
 }
 
-func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, peerName string, jitterBound func() time.Duration) *delayedReplyEmitter {
+func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, peerName string, jitterBound func() time.Duration, handoffTimeout time.Duration) *delayedReplyEmitter {
 	e := &delayedReplyEmitter{
 		log:         logBackend.GetLogger("replica/delayedReplyEmitter"),
 		out:         out,
 		peerName:    peerName,
 		jitterBound: jitterBound,
 
-		handoffTimeout: wire.DefaultWriteTimeout,
+		handoffTimeout: handoffTimeout,
 	}
 	e.tq = queue.NewTimerQueue(func(v interface{}) {
 		req := v.(*senderRequest)

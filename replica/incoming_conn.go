@@ -140,7 +140,7 @@ func (c *incomingConn) worker() {
 	// bounded inbound queue and an explicit outbound queue: the
 	// TimerQueue inside the emitter is the only buffer.
 	outCh := make(chan *senderRequest, c.l.server.cfg.IncomingQueueSize)
-	emitter := newDelayedReplyEmitter(outCh, c.l.server.logBackend, fmt.Sprintf("%d", c.id), c.l.server.PKIWorker.ReplyJitterBound)
+	emitter := newDelayedReplyEmitter(outCh, c.l.server.logBackend, fmt.Sprintf("%d", c.id), c.l.server.PKIWorker.ReplyJitterBound, time.Duration(c.l.server.cfg.ReplyHandoffTimeout)*time.Millisecond)
 
 	// Channel to signal egress sender to drain and exit
 	egressDoneCh := make(chan struct{})
