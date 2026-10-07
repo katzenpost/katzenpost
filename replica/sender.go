@@ -5,6 +5,7 @@ package replica
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
@@ -12,6 +13,7 @@ import (
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/queue"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/pigeonhole"
@@ -83,6 +85,9 @@ type delayedReplyEmitter struct {
 	tq          *queue.TimerQueue
 	peerName    string
 	jitterBound func() time.Duration
+
+	outstanding    atomic.Int64
+	handoffTimeout time.Duration
 }
 
 func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, peerName string, jitterBound func() time.Duration) *delayedReplyEmitter {
@@ -91,13 +96,21 @@ func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, pe
 		out:         out,
 		peerName:    peerName,
 		jitterBound: jitterBound,
+
+		handoffTimeout: wire.DefaultWriteTimeout,
 	}
 	e.tq = queue.NewTimerQueue(func(v interface{}) {
 		req := v.(*senderRequest)
+		defer e.outstanding.Add(-1)
+		timer := time.NewTimer(e.handoffTimeout)
+		defer timer.Stop()
 		// Halt path: tq.HaltCh() closes when Halt() is called, which
 		// lets a stuck send exit promptly when the connection retires.
 		select {
 		case e.out <- req:
+		case <-timer.C:
+			instrument.DroppedByReason("reply_handoff_timeout")
+			return
 		case <-e.tq.HaltCh():
 			return
 		}
@@ -115,6 +128,11 @@ func newDelayedReplyEmitter(out chan *senderRequest, logBackend *log.Backend, pe
 // Enqueue schedules a reply for emission after a Uniform[0,
 // jitterBound()] delay. Safe for concurrent use.
 func (e *delayedReplyEmitter) Enqueue(reply *senderRequest) {
+	if e.outstanding.Add(1) > int64(cap(e.out)) {
+		e.outstanding.Add(-1)
+		instrument.DroppedByReason("reply_queue_full")
+		return
+	}
 	// The per-reply delay defends §5.4 unlinkability: an adversary
 	// must not be able to predict it. A time-seeded math/rand stream
 	// is reconstructable; draw an unbiased uniform sample from the
