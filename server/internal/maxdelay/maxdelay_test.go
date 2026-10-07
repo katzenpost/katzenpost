@@ -33,3 +33,20 @@ func TestEffectiveConsensusOverridesFallback(t *testing.T) {
 	require.True(t, fromConsensus)
 	require.Equal(t, 90*time.Second, limit)
 }
+
+func TestWild(t *testing.T) {
+	require.Equal(t, uint64(27632), BuiltinMs())
+	for ms, wild := range map[uint64]bool{
+		0:                true,
+		6907:             true,
+		6908:             false,
+		27632:            false,
+		110528:           false,
+		110529:           true,
+		^uint64(0):       true,
+		^uint64(0) / 4:   true,
+		^uint64(0)/4 + 1: true,
+	} {
+		require.Equal(t, wild, Wild(ms), "%d ms", ms)
+	}
+}

@@ -8,10 +8,22 @@ import (
 	"github.com/katzenpost/katzenpost/common"
 )
 
-const BuiltinMu = 0.001
+const (
+	BuiltinMu  = 0.001
+	WildFactor = 4
+)
 
 func BuiltinMs() uint64 {
 	return common.SafetyCap(BuiltinMu)
+}
+
+func Builtin() time.Duration {
+	return time.Duration(BuiltinMs()) * time.Millisecond
+}
+
+func Wild(ms uint64) bool {
+	builtin := BuiltinMs()
+	return ms > builtin*WildFactor || ms*WildFactor < builtin
 }
 
 func Effective(consensusMs uint64, fallbackMs int, ceiling time.Duration) (limit time.Duration, fromConsensus bool) {

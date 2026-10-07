@@ -86,7 +86,12 @@ func (sch *scheduler) worker() {
 
 	fallback := sch.glue.Config().Debug.MixMaxDelayFallback
 	maxDelay, fromConsensus := maxdelay.Effective(0, fallback, absoluteMaxDelay)
+	sch.log.Infof("Per-hop max delay built-in %v (SafetyCap of Mu %v), configured fallback %d ms, ceiling %v.", maxdelay.Builtin(), maxdelay.BuiltinMu, fallback, absoluteMaxDelay)
+	if fallback > 0 && maxdelay.Wild(uint64(fallback)) {
+		sch.log.Warningf("Configured MixMaxDelayFallback %d ms differs from the built-in %v by more than a factor of %d.", fallback, maxdelay.Builtin(), maxdelay.WildFactor)
+	}
 	sch.log.Infof("Per-hop max delay %v from %v.", maxDelay, maxdelay.Source(fromConsensus))
+	var consensusMs uint64
 	for {
 		var timerFired bool
 		// The vast majority of the time the scheduler will be idle waiting on
@@ -142,6 +147,10 @@ func (sch *scheduler) worker() {
 			}
 			sch.q.BulkEnqueue(toEnqueue)
 		case newMaxDelay := <-sch.maxDelayCh:
+			if newMaxDelay != consensusMs && newMaxDelay != 0 && maxdelay.Wild(newMaxDelay) {
+				sch.log.Warningf("Consensus MixMaxDelay %d ms differs from the built-in %v by more than a factor of %d.", newMaxDelay, maxdelay.Builtin(), maxdelay.WildFactor)
+			}
+			consensusMs = newMaxDelay
 			newLimit, newFromConsensus := maxdelay.Effective(newMaxDelay, fallback, absoluteMaxDelay)
 			if newLimit != maxDelay || newFromConsensus != fromConsensus {
 				sch.log.Infof("Per-hop max delay %v from %v, consensus MixMaxDelay %v ms.", newLimit, maxdelay.Source(newFromConsensus), newMaxDelay)
