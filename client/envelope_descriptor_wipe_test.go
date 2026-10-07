@@ -17,12 +17,6 @@ import (
 	"github.com/katzenpost/katzenpost/pigeonhole"
 )
 
-func requireEnvelopeDescriptorWiped(t *testing.T, desc []byte, msg string) {
-	t.Helper()
-	require.NotEmpty(t, desc)
-	require.True(t, bytes.Equal(make([]byte, len(desc)), desc), msg)
-}
-
 func trackDescriptorARQ(d *Daemon, appID *[AppIDLength]byte, n byte) *ARQMessage {
 	surbID := &[sphinxConstants.SURBIDLength]byte{n}
 	envHash := &[32]byte{n}
@@ -51,7 +45,7 @@ func TestCompletedARQWipesEnvelopeDescriptor(t *testing.T) {
 	require.NotNil(t, resp.StartResendingEncryptedMessageReply)
 	require.Empty(t, d.arqSurbIDMap)
 
-	requireEnvelopeDescriptorWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after its ARQ completed")
+	requireSURBKeyWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after its ARQ completed")
 }
 
 func TestCancelledARQWipesEnvelopeDescriptor(t *testing.T) {
@@ -68,7 +62,7 @@ func TestCancelledARQWipesEnvelopeDescriptor(t *testing.T) {
 	waitForResponse(t, responseCh)
 	waitForResponse(t, responseCh)
 
-	requireEnvelopeDescriptorWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after its ARQ was cancelled")
+	requireSURBKeyWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after its ARQ was cancelled")
 }
 
 func TestCleanupForAppIDWipesEnvelopeDescriptor(t *testing.T) {
@@ -78,7 +72,7 @@ func TestCleanupForAppIDWipesEnvelopeDescriptor(t *testing.T) {
 
 	d.cleanupForAppID(appID)
 
-	requireEnvelopeDescriptorWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after cleanupForAppID")
+	requireSURBKeyWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after cleanupForAppID")
 }
 
 func TestDroppedARQResendWipesEnvelopeDescriptor(t *testing.T) {
@@ -88,7 +82,7 @@ func TestDroppedARQResendWipesEnvelopeDescriptor(t *testing.T) {
 	d.arqDoResend(m.SURBID)
 
 	require.Empty(t, d.arqSurbIDMap)
-	requireEnvelopeDescriptorWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after the resend dropped its ARQ")
+	requireSURBKeyWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after the resend dropped its ARQ")
 }
 
 func TestRejectedStartResendingWipesEnvelopeDescriptor(t *testing.T) {
@@ -106,7 +100,7 @@ func TestRejectedStartResendingWipesEnvelopeDescriptor(t *testing.T) {
 	resp := waitForResponse(t, responseCh)
 	require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.StartResendingEncryptedMessageReply.ErrorCode)
 
-	requireEnvelopeDescriptorWiped(t, desc, "envelope descriptor left in memory after StartResendingEncryptedMessage was refused")
+	requireSURBKeyWiped(t, desc, "envelope descriptor left in memory after StartResendingEncryptedMessage was refused")
 }
 
 func TestShutdownWipesEnvelopeDescriptors(t *testing.T) {
@@ -125,5 +119,5 @@ func TestShutdownWipesEnvelopeDescriptors(t *testing.T) {
 
 	d.replyLock.Lock()
 	defer d.replyLock.Unlock()
-	requireEnvelopeDescriptorWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after Shutdown")
+	requireSURBKeyWiped(t, m.EnvelopeDescriptor, "envelope descriptor left in memory after Shutdown")
 }

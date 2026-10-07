@@ -17,6 +17,7 @@ import (
 
 func requireSURBKeyWiped(t *testing.T, key []byte, msg string) {
 	t.Helper()
+	require.NotEmpty(t, key)
 	require.Equal(t, make([]byte, len(key)), key, msg)
 }
 

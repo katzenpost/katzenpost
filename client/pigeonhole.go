@@ -1397,14 +1397,6 @@ func (m *ARQMessage) wipeEnvelopeDescriptor() {
 	}
 }
 
-func (d *Daemon) wipeHeldEnvelopeDescriptors() {
-	d.lockReply()
-	defer d.replyLock.Unlock()
-	for _, m := range d.arqSurbIDMap {
-		m.wipeEnvelopeDescriptor()
-	}
-}
-
 func (d *Daemon) claimARQTerminal(arqMessage *ARQMessage) bool {
 	d.lockReply()
 	defer d.replyLock.Unlock()
