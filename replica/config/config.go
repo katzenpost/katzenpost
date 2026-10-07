@@ -32,6 +32,8 @@ const (
 	// fewer than this many MiB remain available, so a runaway write
 	// rate cannot wedge the host on a full disk.
 	DefaultMinFreeStorageMiB = 500
+
+	DefaultReplyHandoffTimeout = 60 * 1000
 )
 
 // Type aliases for common configuration structures
@@ -85,6 +87,8 @@ type Config struct {
 	// HandshakeTimeout specifies the maximum time a connection can take for a
 	// link protocol handshake in milliseconds.
 	HandshakeTimeout int
+
+	ReplyHandoffTimeout int
 
 	// ReauthInterval specifies the interval at which a connection will be
 	// reauthenticated in milliseconds.
@@ -257,6 +261,9 @@ func (c *Config) SetDefaultTimeouts() {
 	}
 	if c.ConnectTimeout <= 0 {
 		c.ConnectTimeout = config.DefaultConnectTimeout
+	}
+	if c.ReplyHandoffTimeout <= 0 {
+		c.ReplyHandoffTimeout = DefaultReplyHandoffTimeout
 	}
 	if c.OutgoingQueueSize <= 0 {
 		c.OutgoingQueueSize = defaultOutgoingQueueSize

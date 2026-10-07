@@ -18,7 +18,7 @@ func TestDelayedReplyEmitterBoundsInFlight(t *testing.T) {
 
 	out := make(chan *senderRequest, 8)
 	before := runtime.NumGoroutine()
-	e := newDelayedReplyEmitter(out, logBackend, "test", func() time.Duration { return 0 })
+	e := newDelayedReplyEmitter(out, logBackend, "test", func() time.Duration { return 0 }, time.Minute)
 	defer e.Halt()
 
 	for i := 0; i < 500; i++ {
@@ -36,8 +36,7 @@ func TestDelayedReplyEmitterReleasesStuckReplies(t *testing.T) {
 	require.NoError(t, err)
 
 	out := make(chan *senderRequest, 8)
-	e := newDelayedReplyEmitter(out, logBackend, "test", func() time.Duration { return 0 })
-	e.handoffTimeout = 300 * time.Millisecond
+	e := newDelayedReplyEmitter(out, logBackend, "test", func() time.Duration { return 0 }, 300*time.Millisecond)
 	defer e.Halt()
 
 	for i := 0; i < 500; i++ {
