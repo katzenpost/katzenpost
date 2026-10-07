@@ -2117,7 +2117,12 @@ func (s *state) setNodeTables(t *nodeTables) {
 }
 
 func (s *state) reloadNodes(cfg *config.Config) error {
-	t, err := s.loadNodeTables(cfg)
+	// Debug is read only at startup, so the running minimums apply.
+	err := checkNodeCounts(cfg, s.s.cfg.Debug)
+	var t *nodeTables
+	if err == nil {
+		t, err = s.loadNodeTables(cfg)
+	}
 	if err != nil {
 		s.log.Errorf("Node reload failed, keeping the current node set: %v", err)
 		return err

@@ -57,7 +57,10 @@ func reloadTestServer(t *testing.T, dataDir string) (*Server, string) {
 	require.NoError(t, err)
 	t.Cleanup(func() { backend.Close() })
 	srv := &Server{
-		cfg:        &config.Config{Server: &config.Server{DataDir: dataDir, PKISignatureScheme: reloadScheme}},
+		cfg: &config.Config{
+			Server: &config.Server{DataDir: dataDir, PKISignatureScheme: reloadScheme},
+			Debug:  &config.Debug{Layers: 1, MinNodesPerLayer: 1},
+		},
 		logBackend: backend,
 		log:        backend.GetLogger("server"),
 	}
@@ -65,9 +68,11 @@ func reloadTestServer(t *testing.T, dataDir string) (*Server, string) {
 	return srv, logFile
 }
 
-func reloadConfig(dataDir string, mixes []*config.Node, replicas []*config.StorageReplicaNode) *config.Config {
+func reloadConfig(t *testing.T, dataDir string, mixes []*config.Node, replicas []*config.StorageReplicaNode) *config.Config {
 	return &config.Config{
 		Server:          &config.Server{DataDir: dataDir, PKISignatureScheme: reloadScheme},
+		GatewayNodes:    []*config.Node{newReloadNode(t, dataDir, "gateway").mix()},
+		ServiceNodes:    []*config.Node{newReloadNode(t, dataDir, "service").mix()},
 		Mixes:           mixes,
 		StorageReplicas: replicas,
 	}
@@ -81,7 +86,7 @@ func TestReloadNodesChangesAuthorizedSet(t *testing.T) {
 	srv, logFile := reloadTestServer(t, dataDir)
 	st := srv.state
 
-	require.NoError(t, srv.ReloadNodes(reloadConfig(dataDir, []*config.Node{a.mix()}, nil)))
+	require.NoError(t, srv.ReloadNodes(reloadConfig(t, dataDir, []*config.Node{a.mix()}, nil)))
 	require.NoError(t, st.descriptorAuthorizationError(a.desc(t)))
 	require.Error(t, st.descriptorAuthorizationError(b.desc(t)))
 	require.Equal(t, "mixA", st.PeerName(a.hash()))
@@ -92,14 +97,14 @@ func TestReloadNodesChangesAuthorizedSet(t *testing.T) {
 	require.Error(t, st.replicaAuthorizationError(replicaDesc))
 
 	replicas := []*config.StorageReplicaNode{{Identifier: "replica1", IdentityPublicKeyPem: r.pem, ReplicaID: 1}}
-	require.NoError(t, srv.ReloadNodes(reloadConfig(dataDir, []*config.Node{b.mix()}, replicas)))
+	require.NoError(t, srv.ReloadNodes(reloadConfig(t, dataDir, []*config.Node{b.mix()}, replicas)))
 	require.Error(t, st.descriptorAuthorizationError(a.desc(t)))
 	require.NoError(t, st.descriptorAuthorizationError(b.desc(t)))
 	require.NoError(t, st.replicaAuthorizationError(replicaDesc))
 	require.Equal(t, "", st.PeerName(a.hash()))
 	require.Equal(t, "mixB", st.PeerName(b.hash()))
 
-	bad := reloadConfig(dataDir, []*config.Node{a.mix(), {Identifier: "ghost", IdentityPublicKeyPem: "missing.pem"}}, nil)
+	bad := reloadConfig(t, dataDir, []*config.Node{a.mix(), {Identifier: "ghost", IdentityPublicKeyPem: "missing.pem"}}, nil)
 	require.Error(t, srv.ReloadNodes(bad))
 	require.Error(t, st.descriptorAuthorizationError(a.desc(t)))
 	require.NoError(t, st.descriptorAuthorizationError(b.desc(t)))
@@ -117,8 +122,8 @@ func TestReloadNodesConcurrentWithReaders(t *testing.T) {
 	b := newReloadNode(t, dataDir, "mixB")
 	srv, _ := reloadTestServer(t, dataDir)
 	st := srv.state
-	cfgA := reloadConfig(dataDir, []*config.Node{a.mix()}, nil)
-	cfgB := reloadConfig(dataDir, []*config.Node{b.mix()}, nil)
+	cfgA := reloadConfig(t, dataDir, []*config.Node{a.mix()}, nil)
+	cfgB := reloadConfig(t, dataDir, []*config.Node{b.mix()}, nil)
 	require.NoError(t, srv.ReloadNodes(cfgA))
 
 	var wg sync.WaitGroup
@@ -149,4 +154,27 @@ func TestReloadNodesConcurrentWithReaders(t *testing.T) {
 	close(stop)
 	wg.Wait()
 	require.NoError(t, st.descriptorAuthorizationError(b.desc(t)))
+}
+
+func TestReloadNodesRefusesTooFewNodes(t *testing.T) {
+	dataDir := t.TempDir()
+	a := newReloadNode(t, dataDir, "mixA")
+	b := newReloadNode(t, dataDir, "mixB")
+	srv, _ := reloadTestServer(t, dataDir)
+	st := srv.state
+	require.NoError(t, srv.ReloadNodes(reloadConfig(t, dataDir, []*config.Node{a.mix()}, nil)))
+
+	noGateway := reloadConfig(t, dataDir, []*config.Node{b.mix()}, nil)
+	noGateway.GatewayNodes = nil
+	require.Error(t, srv.ReloadNodes(noGateway))
+
+	noService := reloadConfig(t, dataDir, []*config.Node{b.mix()}, nil)
+	noService.ServiceNodes = nil
+	require.Error(t, srv.ReloadNodes(noService))
+
+	srv.cfg.Debug = &config.Debug{Layers: 2, MinNodesPerLayer: 1}
+	require.Error(t, srv.ReloadNodes(reloadConfig(t, dataDir, []*config.Node{b.mix()}, nil)))
+
+	require.NoError(t, st.descriptorAuthorizationError(a.desc(t)))
+	require.Error(t, st.descriptorAuthorizationError(b.desc(t)))
 }

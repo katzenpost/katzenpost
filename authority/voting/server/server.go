@@ -222,6 +222,21 @@ func (s *Server) RotateLog() {
 	s.log.Notice("Log rotated.")
 }
 
+// checkNodeCounts ensures that there are enough mixes and providers
+// whitelisted to form a topology, assuming all of them post a descriptor.
+func checkNodeCounts(cfg *config.Config, debug *config.Debug) error {
+	if len(cfg.GatewayNodes) < 1 {
+		return fmt.Errorf("server: No GatewayNodes specified in the config")
+	}
+	if len(cfg.ServiceNodes) < 1 {
+		return fmt.Errorf("server: No ServiceNodes specified in the config")
+	}
+	if len(cfg.Mixes) < debug.Layers*debug.MinNodesPerLayer {
+		return fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), debug.Layers*debug.MinNodesPerLayer)
+	}
+	return nil
+}
+
 func (s *Server) ReloadNodes(cfg *config.Config) error {
 	return s.state.reloadNodes(cfg)
 }
@@ -590,16 +605,8 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, ErrGenerateOnly
 	}
 
-	// Ensure that there are enough mixes and providers whitelisted to form
-	// a topology, assuming all of them post a descriptor.
-	if len(cfg.GatewayNodes) < 1 {
-		return nil, fmt.Errorf("server: No GatewayNodes specified in the config")
-	}
-	if len(cfg.ServiceNodes) < 1 {
-		return nil, fmt.Errorf("server: No ServiceNodes specified in the config")
-	}
-	if len(cfg.Mixes) < cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer {
-		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)
+	if err := checkNodeCounts(cfg, cfg.Debug); err != nil {
+		return nil, err
 	}
 
 	// Log the per-role authorized counts so an operator can compare them

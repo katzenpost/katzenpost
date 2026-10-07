@@ -39,6 +39,9 @@ func reloadFileFixture(t *testing.T) (*Server, *config.Config, string, string) {
 	for _, a := range cfg.Authorities {
 		a.WireKEMScheme = testingSchemeName
 	}
+	cfg.Debug = &config.Debug{Layers: 1, MinNodesPerLayer: 1}
+	cfg.GatewayNodes = []*config.Node{newReloadNode(t, cfg.Server.DataDir, "gateway").mix()}
+	cfg.ServiceNodes = []*config.Node{newReloadNode(t, cfg.Server.DataDir, "service").mix()}
 	srv, logFile := reloadTestServer(t, cfg.Server.DataDir)
 	srv.cfg = cfg
 	srv.identityPublicKey = keys[0].idPubKey
