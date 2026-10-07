@@ -287,13 +287,22 @@ func TestPhWrappersStopWhenTheClientHalts(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			tc, server := setupMockDaemon(t)
 			tc.setConnected(true)
+			stop := make(chan struct{})
+			exited := make(chan struct{})
+			defer func() {
+				close(stop)
+				server.Close()
+				<-exited
+			}()
 			go func() {
+				defer close(exited)
 				if _, err := readRequest(server); err != nil {
 					return
 				}
 				tc.Halt()
 				select {
 				case <-tc.drainRemove:
+				case <-stop:
 				case <-time.After(phDrainWait):
 				}
 			}()

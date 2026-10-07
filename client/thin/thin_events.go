@@ -56,6 +56,9 @@ type DaemonDisconnectedEvent struct {
 
 // String returns a string representation of the DaemonDisconnectedEvent.
 func (e *DaemonDisconnectedEvent) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.IsGraceful {
 		return "DaemonDisconnected: graceful shutdown"
 	}
@@ -100,6 +103,9 @@ type ConnectionStatusEvent struct {
 
 // String returns a string representation of the ConnectionStatusEvent.
 func (e *ConnectionStatusEvent) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if !e.IsConnected {
 		return fmt.Sprintf("ConnectionStatus: %v (%v)", e.IsConnected, e.Err)
 	}
@@ -131,6 +137,9 @@ type MessageReplyEvent struct {
 
 // String returns a string representation of the MessageReplyEvent.
 func (e *MessageReplyEvent) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	replyIndexStr := ""
 	if e.ReplyIndex != nil {
 		replyIndexStr = fmt.Sprintf(" replyIndex=%d", *e.ReplyIndex)
@@ -177,6 +186,9 @@ type MessageSentEvent struct {
 
 // String returns a string representation of a MessageSentEvent.
 func (e *MessageSentEvent) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.Err != "" {
 		return fmt.Sprintf("MessageSent: %x failed: %v", e.MessageID[:], e.Err)
 	}
@@ -192,6 +204,9 @@ type MessageIDGarbageCollected struct {
 
 // String returns a string representation of a MessageIDGarbageCollected.
 func (e *MessageIDGarbageCollected) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	return fmt.Sprintf("MessageIDGarbageCollected: %x", e.MessageID[:])
 }
 
@@ -203,6 +218,9 @@ type NewDocumentEvent struct {
 
 // String returns a string representation of a NewDocumentEvent.
 func (e *NewDocumentEvent) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	return fmt.Sprintf("PKI Document for epoch %d", e.Document.Epoch)
 }
 
@@ -215,6 +233,9 @@ type NewPKIDocumentEvent struct {
 
 // String returns a string representation of a NewDocumentEvent.
 func (e *NewPKIDocumentEvent) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	doc, err := cpki.ParseDocument(e.Payload)
 	if err != nil {
 		panic(err)
@@ -243,6 +264,9 @@ type NewKeypairReply struct {
 
 // String returns a string representation of the NewKeypairReply.
 func (e *NewKeypairReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("NewKeypairReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -277,6 +301,9 @@ type EncryptReadReply struct {
 
 // String returns a string representation of the EncryptReadReply.
 func (e *EncryptReadReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("EncryptReadReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -311,6 +338,9 @@ type EncryptWriteReply struct {
 
 // String returns a string representation of the EncryptWriteReply.
 func (e *EncryptWriteReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("EncryptWriteReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -341,6 +371,9 @@ type StartResendingEncryptedMessageReply struct {
 
 // String returns a string representation of the StartResendingEncryptedMessageReply.
 func (e *StartResendingEncryptedMessageReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("StartResendingEncryptedMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -359,6 +392,9 @@ type CancelResendingEncryptedMessageReply struct {
 
 // String returns a string representation of the CancelResendingEncryptedMessageReply.
 func (e *CancelResendingEncryptedMessageReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CancelResendingEncryptedMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -388,6 +424,9 @@ type StartResendingCopyCommandReply struct {
 
 // String returns a string representation of the StartResendingCopyCommandReply.
 func (e *StartResendingCopyCommandReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		if e.ReplicaErrorCode != 0 || e.FailedEnvelopeIndex != 0 {
 			return fmt.Sprintf("StartResendingCopyCommandReply (error: %s, replica error code: %d, failed envelope index: %d)",
@@ -410,6 +449,9 @@ type CancelResendingCopyCommandReply struct {
 
 // String returns a string representation of the CancelResendingCopyCommandReply.
 func (e *CancelResendingCopyCommandReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CancelResendingCopyCommandReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -431,6 +473,9 @@ type NextMessageBoxIndexReply struct {
 
 // String returns a string representation of the NextMessageBoxIndexReply.
 func (e *NextMessageBoxIndexReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("NextMessageBoxIndexReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -452,6 +497,9 @@ type GetMessageBoxIndexCounterReply struct {
 
 // String returns a string representation of the GetMessageBoxIndexCounterReply.
 func (e *GetMessageBoxIndexCounterReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("GetMessageBoxIndexCounterReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -485,6 +533,9 @@ type GetPKIDocumentReply struct {
 
 // String returns a string representation of the GetPKIDocumentReply.
 func (e *GetPKIDocumentReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("GetPKIDocumentReply: epoch=%d (error: %s)", e.Epoch, ThinClientErrorToString(e.ErrorCode))
 	}
@@ -510,6 +561,9 @@ type GetDirectoryAuthoritiesReply struct {
 
 // String returns a string representation of the GetDirectoryAuthoritiesReply.
 func (e *GetDirectoryAuthoritiesReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("GetDirectoryAuthoritiesReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -540,6 +594,9 @@ type CreateCourierEnvelopesFromPayloadReply struct {
 
 // String returns a string representation of the CreateCourierEnvelopesFromPayloadReply.
 func (e *CreateCourierEnvelopesFromPayloadReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
 	}
@@ -574,6 +631,9 @@ type CreateCourierEnvelopesFromPayloadsReply struct {
 
 // String returns a string representation of the CreateCourierEnvelopesFromPayloadsReply.
 func (e *CreateCourierEnvelopesFromPayloadsReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CreateCourierEnvelopesFromPayloadsReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
 	}
@@ -604,6 +664,9 @@ type CreateCourierEnvelopesFromTombstoneRangeReply struct {
 
 // String returns a string representation of the CreateCourierEnvelopesFromTombstoneRangeReply.
 func (e *CreateCourierEnvelopesFromTombstoneRangeReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CreateCourierEnvelopesFromTombstoneRangeReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
 	}
@@ -632,6 +695,9 @@ type VoucherMintReply struct {
 
 // String returns a string representation of the VoucherMintReply.
 func (e *VoucherMintReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("VoucherMintReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -654,6 +720,9 @@ type VoucherInductReply struct {
 
 // String returns a string representation of the VoucherInductReply.
 func (e *VoucherInductReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("VoucherInductReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -674,6 +743,9 @@ type VoucherOpenReply struct {
 
 // String returns a string representation of the VoucherOpenReply.
 func (e *VoucherOpenReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("VoucherOpenReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}
@@ -690,6 +762,9 @@ type VoucherDeriveStreamReply struct {
 
 // String returns a string representation of the VoucherDeriveStreamReply.
 func (e *VoucherDeriveStreamReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("VoucherDeriveStreamReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
 	}

@@ -565,6 +565,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	// Set timeout values explicitly to use common config defaults
 	cfg.ConnectTimeout = config.DefaultConnectTimeout
 	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
+	cfg.ReplyHandoffTimeout = rConfig.DefaultReplyHandoffTimeout
 	cfg.ReauthInterval = config.DefaultReauthInterval
 	cfg.DisableDecoyTraffic = s.NoCourierReplicaDecoy
 

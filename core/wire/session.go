@@ -745,26 +745,23 @@ func (s *Session) recvCommandImpl(ctx context.Context) (commands.Command, error)
 
 // Close terminates a session.
 func (s *Session) Close() {
-	// The Noise library doesn't have a way to explcitly clear cryptographic
-	// state.  Without an underlying crypto break, Rekey() is backtracking
-	// resistant.
+	atomic.StoreUint32(&s.state, stateInvalid)
+	if s.conn != nil {
+		s.conn.Close()
+	}
 	if s.tx != nil {
 		s.txKeyMutex.Lock()
-		s.tx.Rekey()
+		s.tx.Reset()
 		s.txKeyMutex.Unlock()
 	}
 	if s.rx != nil {
 		s.rxKeyMutex.Lock()
-		s.rx.Rekey()
+		s.rx.Reset()
 		s.rxKeyMutex.Unlock()
 	}
 
 	// FIXME XXX s.authenticationKEMKey.Reset()
 	s.authenticationKEMKey = nil
-	if s.conn != nil {
-		s.conn.Close()
-	}
-	atomic.StoreUint32(&s.state, stateInvalid)
 }
 
 // PeerCredentials returns the peer's credentials.  This call MUST only be

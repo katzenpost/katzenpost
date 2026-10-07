@@ -150,7 +150,7 @@ func setupSemaScopeTestServer(t *testing.T) *semaScopeTestEnv {
 	inConn.setSession(&MockSession{pk: keys.LinkPubKey, ad: make([]byte, 32)})
 
 	dummyOut := make(chan *senderRequest, 16)
-	emitter := newDelayedReplyEmitter(dummyOut, server.logBackend, "test", func() time.Duration { return fallbackReplyJitter })
+	emitter := newDelayedReplyEmitter(dummyOut, server.logBackend, "test", func() time.Duration { return fallbackReplyJitter }, time.Duration(server.cfg.ReplyHandoffTimeout)*time.Millisecond)
 
 	env := &semaScopeTestEnv{
 		server:      server,

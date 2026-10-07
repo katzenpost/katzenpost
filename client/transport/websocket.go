@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -134,7 +135,7 @@ func (c *WsListenConfig) Listen() (net.Listener, error) {
 	}
 	listener.addr = ln.Addr()
 	listener.ln = ln
-	listener.server = &http.Server{Handler: mux}
+	listener.server = &http.Server{Handler: mux, ReadHeaderTimeout: 30 * time.Second}
 	// run webserver in go-routine
 	go listener.server.Serve(ln)
 

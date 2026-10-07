@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 
@@ -74,8 +75,10 @@ type MKEMSelfCheckResult struct {
 // a structured result for callers that need to consume the numbers
 // directly, e.g. for ProxyWorkerCount recommendations.
 func runMKEMSelfCheck(log *logging.Logger) MKEMSelfCheckResult {
-	scheme := replicaCommon.MKEMNikeScheme
-	nikeScheme := replicaCommon.NikeScheme
+	return measureMKEM(log, replicaCommon.MKEMNikeScheme, replicaCommon.NikeScheme)
+}
+
+func measureMKEM(log *logging.Logger, scheme *mkem.Scheme, nikeScheme nike.Scheme) MKEMSelfCheckResult {
 	numCPU := runtime.NumCPU()
 
 	pubKey, privKey, err := nikeScheme.GenerateKeyPair()
@@ -83,6 +86,7 @@ func runMKEMSelfCheck(log *logging.Logger) MKEMSelfCheckResult {
 		log.Warningf("self-check: GenerateKeyPair failed (%v); skipping CTIDH self-check", err)
 		return MKEMSelfCheckResult{NumCPU: numCPU}
 	}
+	defer privKey.Reset()
 
 	payload := make([]byte, mkemSelfCheckPayload)
 	if _, err := rand.Reader.Read(payload); err != nil {
@@ -93,11 +97,12 @@ func runMKEMSelfCheck(log *logging.Logger) MKEMSelfCheckResult {
 	// Build a representative ciphertext once. Decapsulate is the hot
 	// path; Encapsulate happens at lower frequency on the reply side
 	// so we don't bench it.
-	_, ct, err := scheme.Encapsulate([]nike.PublicKey{pubKey}, payload)
+	ephemeralKey, ct, err := scheme.Encapsulate([]nike.PublicKey{pubKey}, payload)
 	if err != nil {
 		log.Warningf("self-check: Encapsulate failed (%v); skipping CTIDH self-check", err)
 		return MKEMSelfCheckResult{NumCPU: numCPU}
 	}
+	ephemeralKey.Reset()
 
 	// Solo mode: warm up, then time mkemSelfCheckIterations ops in one
 	// goroutine.

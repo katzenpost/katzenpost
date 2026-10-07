@@ -38,6 +38,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/server/internal/maxdelay"
 )
 
 const (
@@ -65,6 +66,8 @@ const (
 	// BackendBolt is a BoltDB based backend.
 	BackendBolt = "bolt"
 )
+
+var defaultMixMaxDelayFallback = int(maxdelay.BuiltinMs())
 
 var defaultLogging = Logging{
 	Disable: false,
@@ -266,6 +269,8 @@ type Debug struct {
 	// as unlimited.
 	SchedulerQueueSize int
 
+	MixMaxDelayFallback int
+
 	// SchedulerMaxBurst is the maximum number of packets that will be
 	// dispatched per scheduler wakeup event.
 	SchedulerMaxBurst int
@@ -347,6 +352,9 @@ func (dCfg *Debug) applyDefaults() {
 	}
 	if dCfg.ServiceDelay <= 0 {
 		dCfg.ServiceDelay = defaultServiceDelay
+	}
+	if dCfg.MixMaxDelayFallback <= 0 {
+		dCfg.MixMaxDelayFallback = defaultMixMaxDelayFallback
 	}
 	if dCfg.KaetzchenDelay <= 0 {
 		dCfg.KaetzchenDelay = defaultKaetzchenDelay

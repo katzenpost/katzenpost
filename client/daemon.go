@@ -31,6 +31,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/queue"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -222,6 +223,7 @@ func (d *Daemon) halt() {
 
 	timerWg.Wait()
 	d.log.Infof("All timer queues stopped in %v", time.Since(timerStart))
+	d.wipeHeldSURBKeys()
 
 	// Step 4: Stop client
 	clientStart := time.Now()
@@ -230,6 +232,21 @@ func (d *Daemon) halt() {
 	d.log.Infof("Client stopped in %v", time.Since(clientStart))
 
 	d.log.Infof("Daemon shutdown complete in %v", time.Since(shutdownStart))
+}
+
+func (d *Daemon) wipeHeldSURBKeys() {
+	d.lockReply()
+	defer d.replyLock.Unlock()
+	for _, desc := range d.replies {
+		utils.ExplicitBzero(desc.surbKey)
+	}
+	for _, desc := range d.decoys {
+		utils.ExplicitBzero(desc.surbKey)
+	}
+	for _, message := range d.arqSurbIDMap {
+		utils.ExplicitBzero(message.SURBDecryptionKeys)
+		message.wipeEnvelopeDescriptor()
+	}
 }
 
 func (d *Daemon) Start() error {
@@ -478,6 +495,8 @@ func (d *Daemon) ingressWorker() {
 			}
 		case surbID := <-d.gcSurbIDCh:
 			d.lockReply()
+			utils.ExplicitBzero(d.replies[*surbID].surbKey)
+			utils.ExplicitBzero(d.decoys[*surbID].surbKey)
 			delete(d.replies, *surbID)
 			delete(d.decoys, *surbID)
 			d.replyLock.Unlock()
@@ -981,6 +1000,7 @@ func (d *Daemon) rotateARQSurbIDLocked(
 	if hadOld {
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 	}
+	utils.ExplicitBzero(arqMessage.SURBDecryptionKeys)
 	arqMessage.SURBID = newSurbID
 	arqMessage.SURBDecryptionKeys = surbKey
 	arqMessage.ReplyETA = rtt
@@ -1020,9 +1040,11 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	if d.listener == nil {
 		d.log.Debugf("ARQ resend: listener is nil, cleaning up SURB ID %x", surbID[:])
 		delete(d.arqSurbIDMap, *surbID)
+		utils.ExplicitBzero(message.SURBDecryptionKeys)
 		if message.EnvelopeHash != nil {
 			delete(d.arqEnvelopeHashMap, *message.EnvelopeHash)
 		}
+		message.wipeEnvelopeDescriptor()
 		d.replyLock.Unlock()
 		return
 	}
@@ -1148,12 +1170,14 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 		var envHashesToDrop [][32]byte
 		for surbID, message := range d.arqSurbIDMap {
 			if message.AppID != nil && *message.AppID == *appID {
+				message.wipeEnvelopeDescriptor()
 				if message.EnvelopeHash != nil {
 					envHashesToDrop = append(envHashesToDrop, *message.EnvelopeHash)
 				}
 				if message.SURBID != nil {
 					arqSurbIDsToCancel = append(arqSurbIDsToCancel, message.SURBID)
 				}
+				utils.ExplicitBzero(message.SURBDecryptionKeys)
 				delete(d.arqSurbIDMap, surbID)
 				cleanedARQ++
 			}
@@ -1167,6 +1191,7 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 	if d.replies != nil {
 		for surbID, desc := range d.replies {
 			if desc.appID != nil && *desc.appID == *appID {
+				utils.ExplicitBzero(desc.surbKey)
 				delete(d.replies, surbID)
 				cleanedReplies++
 			}
@@ -1175,6 +1200,7 @@ func (d *Daemon) cleanupForAppID(appID *[AppIDLength]byte) {
 	if d.decoys != nil {
 		for surbID, desc := range d.decoys {
 			if desc.appID != nil && *desc.appID == *appID {
+				utils.ExplicitBzero(desc.surbKey)
 				delete(d.decoys, surbID)
 				cleanedDecoys++
 			}

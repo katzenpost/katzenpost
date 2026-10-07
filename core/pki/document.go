@@ -185,6 +185,9 @@ type document Document
 
 // String returns a string representation of a Document.
 func (d *Document) String() string {
+	if d == nil {
+		return "<nil>"
+	}
 	srv := base64.StdEncoding.EncodeToString(d.SharedRandomValue)
 	psrv := "["
 	for i, p := range d.PriorSharedRandom {

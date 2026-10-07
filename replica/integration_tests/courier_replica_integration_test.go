@@ -381,6 +381,7 @@ func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 		SphinxGeometry:      sphinxGeo,
 		Addresses:           []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
 		GenerateOnly:        false,
+		ReplyHandoffTimeout: 60000,
 		ConnectTimeout:      60000,  // 60 seconds
 		HandshakeTimeout:    30000,  // 30 seconds
 		ReauthInterval:      300000, // 5 minutes

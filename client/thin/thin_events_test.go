@@ -302,3 +302,41 @@ func TestEventInterface(t *testing.T) {
 	var _ Event = &CreateCourierEnvelopesFromPayloadsReply{}
 	var _ Event = &CreateCourierEnvelopesFromTombstoneRangeReply{}
 }
+
+func TestEventStringNilReceiver(t *testing.T) {
+	for _, s := range []fmt.Stringer{
+		(*SessionTokenReply)(nil),
+		(*DaemonDisconnectedEvent)(nil),
+		(*ConnectionStatusEvent)(nil),
+		(*MessageReplyEvent)(nil),
+		(*MessageSentEvent)(nil),
+		(*MessageIDGarbageCollected)(nil),
+		(*NewDocumentEvent)(nil),
+		(*NewPKIDocumentEvent)(nil),
+		(*NewKeypairReply)(nil),
+		(*EncryptReadReply)(nil),
+		(*EncryptWriteReply)(nil),
+		(*StartResendingEncryptedMessageReply)(nil),
+		(*CancelResendingEncryptedMessageReply)(nil),
+		(*StartResendingCopyCommandReply)(nil),
+		(*CancelResendingCopyCommandReply)(nil),
+		(*NextMessageBoxIndexReply)(nil),
+		(*GetMessageBoxIndexCounterReply)(nil),
+		(*GetPKIDocumentReply)(nil),
+		(*GetDirectoryAuthoritiesReply)(nil),
+		(*CreateCourierEnvelopesFromPayloadReply)(nil),
+		(*CreateCourierEnvelopesFromPayloadsReply)(nil),
+		(*CreateCourierEnvelopesFromTombstoneRangeReply)(nil),
+		(*VoucherMintReply)(nil),
+		(*VoucherInductReply)(nil),
+		(*VoucherOpenReply)(nil),
+		(*VoucherDeriveStreamReply)(nil),
+	} {
+		var out string
+		require.NotPanics(t, func() { out = s.String() }, "%T", s)
+		require.Equal(t, "<nil>", out, "%T", s)
+	}
+	var out string
+	require.NotPanics(t, func() { out = (*ShutdownEvent)(nil).String() })
+	require.Equal(t, "ShutdownEvent", out)
+}

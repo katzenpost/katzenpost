@@ -172,3 +172,10 @@ func TestDocument(t *testing.T) {
 		require.True(bytes.Equal(d, d2))
 	}
 }
+
+func TestDocumentStringNilReceiver(t *testing.T) {
+	var d *Document
+	var out string
+	require.NotPanics(t, func() { out = d.String() })
+	require.Equal(t, "<nil>", out)
+}

@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -125,7 +127,7 @@ func (d *Daemon) encryptRead(request *Request) {
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	d.log.Debugf("encryptRead: Idx64=%d, BoxID=%x", messageBoxIndex.Idx64, boxID)
+	d.log.Debugf("encryptRead: Idx64=%d", messageBoxIndex.Idx64)
 
 	// Create the ReplicaInnerMessage for a read operation
 	msg := &pigeonhole.ReplicaInnerMessage{
@@ -159,8 +161,10 @@ func (d *Daemon) encryptRead(request *Request) {
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
+	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
+	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to serialize envelope descriptor: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
@@ -227,7 +231,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
-	d.log.Debugf("encryptWrite: MessageBoxIndex Idx64=%d, CurBlindingFactor=%x", messageBoxIndex.Idx64, messageBoxIndex.CurBlindingFactor)
+	d.log.Debugf("encryptWrite: MessageBoxIndex Idx64=%d", messageBoxIndex.Idx64)
 
 	pos, err := writeCap.PositionAt(messageBoxIndex)
 	if err != nil {
@@ -270,7 +274,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		d.log.Debugf("encryptWrite: Generated tombstone BoxID: %x, Idx64=%d", writeRequest.BoxID, messageBoxIndex.Idx64)
+		d.log.Debugf("encryptWrite: Generated tombstone, Idx64=%d", messageBoxIndex.Idx64)
 	} else {
 		// Normal write path: validate size, pad, and encrypt
 
@@ -298,7 +302,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		d.log.Debugf("encryptWrite: Generated BoxID: %x, Idx64=%d", writeRequest.BoxID, messageBoxIndex.Idx64)
+		d.log.Debugf("encryptWrite: Generated write, Idx64=%d", messageBoxIndex.Idx64)
 	}
 
 	// Create the ReplicaInnerMessage for a write operation
@@ -323,8 +327,10 @@ func (d *Daemon) encryptWrite(request *Request) {
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
+	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
+	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to serialize envelope descriptor: %v", err)
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
@@ -447,6 +453,7 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 		return nil, fmt.Errorf("failed to encapsulate: %w", err)
 	}
 	senderPubkey := mkemPrivateKey.Public().Bytes()
+	mkemPrivateKey.Reset()
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
 		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
@@ -525,7 +532,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		d.log.Debugf("createCourierEnvelopesFromPayload: BoxID=%x", write.BoxID)
+		d.log.Debug("createCourierEnvelopesFromPayload: built an envelope")
 		envelopes = append(envelopes, envelope)
 	}
 
@@ -679,7 +686,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
 				return
 			}
-			d.log.Debugf("createCourierEnvelopesFromPayloads: dest=%d, Idx64=%d, BoxID=%x", destIdx, pos.Index().Idx64, write.BoxID)
+			d.log.Debugf("createCourierEnvelopesFromPayloads: dest=%d, Idx64=%d", destIdx, pos.Index().Idx64)
 
 			envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
 			if err != nil {
@@ -1225,32 +1232,25 @@ func (d *Daemon) arqSend(message *ARQMessage, envHashKey [32]byte) error {
 	return nil
 }
 
-// logBoxIDForRequest derives the box ID from the request's ReadCap/WriteCap
-// and MessageBoxIndex and emits a debug line. Pure diagnostic; never fails.
 func (d *Daemon) logBoxIDForRequest(req *thin.StartResendingEncryptedMessage, isRead bool) {
-	boxIDHex := "<unknown>"
 	idx64Str := "<unknown>"
 	if len(req.MessageBoxIndex) > 0 {
 		if mbi, err := bacap.NewEmptyMessageBoxIndexFromBytes(req.MessageBoxIndex); err == nil {
 			idx64Str = fmt.Sprintf("%d", mbi.Idx64)
-			switch {
-			case isRead && req.ReadCap != nil:
-				if boxID, err := req.ReadCap.DeriveBoxID(mbi); err == nil {
-					boxIDHex = fmt.Sprintf("%x", boxID.Bytes())
-				}
-			case !isRead && req.WriteCap != nil:
-				if boxID, err := req.WriteCap.DeriveBoxID(mbi); err == nil {
-					boxIDHex = fmt.Sprintf("%x", boxID.Bytes())
-				}
-			}
 		}
 	}
-	d.log.Debugf("startResendingEncryptedMessage: isRead=%v, Idx64=%s, boxID=%s, NoRetryOnBoxIDNotFound=%v, NoIdempotentBoxAlreadyExists=%v, EnvelopeHash=%x",
-		isRead, idx64Str, boxIDHex, req.NoRetryOnBoxIDNotFound, req.NoIdempotentBoxAlreadyExists, req.EnvelopeHash[:])
+	d.log.Debugf("startResendingEncryptedMessage: isRead=%v, Idx64=%s, NoRetryOnBoxIDNotFound=%v, NoIdempotentBoxAlreadyExists=%v",
+		isRead, idx64Str, req.NoRetryOnBoxIDNotFound, req.NoIdempotentBoxAlreadyExists)
 }
 
 func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	req := request.StartResendingEncryptedMessage
+	tracked := false
+	defer func() {
+		if !tracked {
+			utils.ExplicitBzero(req.EnvelopeDescriptor)
+		}
+	}()
 	if err := validateStartResendingRequest(req); err != nil {
 		d.log.Errorf("startResendingEncryptedMessage: %v", err)
 		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
@@ -1300,7 +1300,9 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	if err := d.arqSend(message, *req.EnvelopeHash); err != nil {
 		d.log.Errorf("startResendingEncryptedMessage: %s", err)
 		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
+		return
 	}
+	tracked = true
 }
 
 func (d *Daemon) sendStartResendingEncryptedMessageError(request *Request, errorCode uint8) {
@@ -1336,8 +1338,12 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 	var arqMessage *ARQMessage
 	if ok && surbID != nil {
 		arqMessage = d.arqSurbIDMap[*surbID]
+		arqMessage.wipeEnvelopeDescriptor()
 		delete(d.arqSurbIDMap, *surbID)
 		delete(d.arqEnvelopeHashMap, *req.EnvelopeHash)
+		if arqMessage != nil {
+			utils.ExplicitBzero(arqMessage.SURBDecryptionKeys)
+		}
 	}
 	d.replyLock.Unlock()
 
@@ -1348,7 +1354,7 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 	}
 
 	if !ok {
-		d.log.Debugf("cancelResendingEncryptedMessage: EnvelopeHash %x not found", req.EnvelopeHash[:])
+		d.log.Debug("cancelResendingEncryptedMessage: EnvelopeHash not found")
 		// Still send success - the message may have already completed
 	} else if arqMessage != nil {
 		// Send cancellation error to the original StartResendingEncryptedMessage call
@@ -1385,6 +1391,12 @@ func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, erro
 	})
 }
 
+func (m *ARQMessage) wipeEnvelopeDescriptor() {
+	if m != nil {
+		utils.ExplicitBzero(m.EnvelopeDescriptor)
+	}
+}
+
 func (d *Daemon) claimARQTerminal(arqMessage *ARQMessage) bool {
 	d.lockReply()
 	defer d.replyLock.Unlock()
@@ -1403,6 +1415,9 @@ func (d *Daemon) claimARQTerminal(arqMessage *ARQMessage) bool {
 	}
 	if claimed && arqMessage.SURBID != nil && d.arqTimerQueue != nil {
 		d.arqTimerQueue.Cancel(arqMessage.SURBID)
+	}
+	if claimed {
+		arqMessage.wipeEnvelopeDescriptor()
 	}
 	return claimed
 }
@@ -1480,8 +1495,11 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		d.log.Debugf("handlePigeonholeARQReply: AppID %x is away inside its grace period, handling the reply for its return", arqMessage.AppID[:])
 	}
 
-	// Decrypt the SURB payload
-	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, arqMessage.SURBDecryptionKeys)
+	d.lockReply()
+	surbKeys := arqMessage.SURBDecryptionKeys
+	arqMessage.SURBDecryptionKeys = nil
+	d.replyLock.Unlock()
+	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, surbKeys)
 	if err != nil {
 		d.log.Errorf("handlePigeonholeARQReply: SURB payload decryption error, re-arming: %s", err)
 		d.rearmARQRetry(arqMessage)
@@ -1533,8 +1551,8 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	thinErrorCode := courierEnvelopeErrorToThinError(courierEnvelopeReply.ErrorCode)
 
 	// Log all state for debugging
-	d.log.Debugf("handlePigeonholeARQReply: EnvelopeHash=%x, State=%d, ReplyType=%d, PayloadLen=%d, CourierErrorCode=%d, ThinErrorCode=%d, IsRead=%v",
-		arqMessage.EnvelopeHash[:], arqMessage.State, courierEnvelopeReply.ReplyType, courierEnvelopeReply.PayloadLen, courierEnvelopeReply.ErrorCode, thinErrorCode, arqMessage.IsRead)
+	d.log.Debugf("handlePigeonholeARQReply: State=%d, ReplyType=%d, PayloadLen=%d, CourierErrorCode=%d, ThinErrorCode=%d, IsRead=%v",
+		arqMessage.State, courierEnvelopeReply.ReplyType, courierEnvelopeReply.PayloadLen, courierEnvelopeReply.ErrorCode, thinErrorCode, arqMessage.IsRead)
 
 	// Use the pure FSM to determine the action
 	transition := computeARQStateTransition(
@@ -1619,8 +1637,8 @@ func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryR
 
 	copyCommandReply := courierQueryReply.CopyCommandReply
 
-	d.log.Debugf("handleCopyCommandARQReply: Received copy command reply, Status=%d, ErrorCode=%d, FailedEnvelopeIndex=%d, WriteCapHash=%x",
-		copyCommandReply.Status, copyCommandReply.ErrorCode, copyCommandReply.FailedEnvelopeIndex, arqMessage.EnvelopeHash[:])
+	d.log.Debugf("handleCopyCommandARQReply: Received copy command reply, Status=%d, ErrorCode=%d, FailedEnvelopeIndex=%d",
+		copyCommandReply.Status, copyCommandReply.ErrorCode, copyCommandReply.FailedEnvelopeIndex)
 
 	switch copyCommandReply.Status {
 	case pigeonhole.CopyStatusInProgress:
@@ -1719,7 +1737,7 @@ func (d *Daemon) scheduleCopyCommandPoll(arqMessage *ARQMessage) {
 	}
 	priority := uint64(time.Now().Add(CopyPollInterval).UnixNano())
 	d.arqTimerQueue.Push(priority, placeholder)
-	d.log.Debugf("scheduleCopyCommandPoll: next Copy poll scheduled in %v for WriteCapHash %x", CopyPollInterval, arqMessage.EnvelopeHash[:])
+	d.log.Debugf("scheduleCopyCommandPoll: next Copy poll scheduled in %v", CopyPollInterval)
 }
 
 // validateStartResendingCopyCommandRequest validates the fields of a StartResendingCopyCommand request.
@@ -1813,8 +1831,7 @@ func (d *Daemon) startResendingCopyCommand(request *Request) {
 		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	d.log.Debugf("startResendingCopyCommand: Sending copy command, QueryID=%x, WriteCapHash=%x",
-		req.QueryID[:], writeCapHash[:])
+	d.log.Debugf("startResendingCopyCommand: Sending copy command, QueryID=%x", req.QueryID[:])
 }
 
 func (d *Daemon) sendStartResendingCopyCommandError(request *Request, errorCode uint8) {
@@ -1850,6 +1867,9 @@ func (d *Daemon) cancelResendingCopyCommand(request *Request) {
 		arqMessage = d.arqSurbIDMap[*surbID]
 		delete(d.arqSurbIDMap, *surbID)
 		delete(d.arqEnvelopeHashMap, *req.WriteCapHash)
+		if arqMessage != nil {
+			utils.ExplicitBzero(arqMessage.SURBDecryptionKeys)
+		}
 	}
 	d.replyLock.Unlock()
 
@@ -1858,7 +1878,7 @@ func (d *Daemon) cancelResendingCopyCommand(request *Request) {
 	}
 
 	if !ok {
-		d.log.Debugf("cancelResendingCopyCommand: WriteCapHash %x not found", req.WriteCapHash[:])
+		d.log.Debug("cancelResendingCopyCommand: WriteCapHash not found")
 		// Still send success - the message may have already completed
 	} else if arqMessage != nil {
 		// Send cancellation error to the original StartResendingCopyCommand call
@@ -2071,8 +2091,13 @@ func classifyWriteReply(reply *pigeonhole.ReplicaWriteReply) ([]byte, error) {
 func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.CourierEnvelopeReply) ([]byte, error) {
 	d.log.Debugf("decryptPigeonholeReply: Starting decryption, env.Payload length: %d", len(env.Payload))
 
+	d.lockReply()
+	descriptor := bytes.Clone(arqMessage.EnvelopeDescriptor)
+	d.replyLock.Unlock()
+	defer utils.ExplicitBzero(descriptor)
+
 	// Deserialize the EnvelopeDescriptor
-	envelopeDesc, err := EnvelopeDescriptorFromBytes(arqMessage.EnvelopeDescriptor)
+	envelopeDesc, err := EnvelopeDescriptorFromBytes(descriptor)
 	if err != nil {
 		d.log.Errorf("decryptPigeonholeReply: Failed to deserialize EnvelopeDescriptor: %v", err)
 		return nil, err
@@ -2081,11 +2106,13 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 
 	// Reconstruct the NIKE private key
 	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
+	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("decryptPigeonholeReply: Failed to unmarshal private key: %v", err)
 		return nil, err
 	}
 	d.log.Debugf("decryptPigeonholeReply: Private key reconstructed")
+	defer privateKey.Reset()
 
 	// Reuse the existing decryptMKEMEnvelope function
 	innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
