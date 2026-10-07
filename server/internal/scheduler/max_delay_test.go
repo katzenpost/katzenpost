@@ -60,6 +60,10 @@ type maxDelayHarness struct {
 }
 
 func newMaxDelayHarness(t *testing.T) *maxDelayHarness {
+	return newMaxDelayHarnessWith(t, func(*config.Config) {})
+}
+
+func newMaxDelayHarnessWith(t *testing.T, adjust func(*config.Config)) *maxDelayHarness {
 	g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
 	cfg := &config.Config{
 		SphinxGeometry: g,
@@ -73,6 +77,7 @@ func newMaxDelayHarness(t *testing.T) *maxDelayHarness {
 		PKI: &config.PKI{Voting: &config.Voting{}},
 	}
 	require.NoError(t, cfg.FixupAndValidate())
+	adjust(cfg)
 
 	logBE, err := log.New("", "INFO", false)
 	require.NoError(t, err)
@@ -132,6 +137,18 @@ func TestSchedulerMaxDelayFallbackBeforeConsensus(t *testing.T) {
 	h.requireAccepts(t, 27632*time.Millisecond)
 	h.requireDrops(t, 27633*time.Millisecond)
 	h.requireDrops(t, time.Minute)
+}
+
+func TestSchedulerMaxDelayUnsetFallbackIsBuiltin(t *testing.T) {
+	for _, fallback := range []int{0, -1} {
+		h := newMaxDelayHarnessWith(t, func(cfg *config.Config) { cfg.Debug.MixMaxDelayFallback = fallback })
+		h.requireAccepts(t, 27632*time.Millisecond)
+		h.requireDrops(t, 27633*time.Millisecond)
+		h.sch.OnNewMixMaxDelay(5000)
+		h.sch.OnNewMixMaxDelay(0)
+		h.requireAccepts(t, 27632*time.Millisecond)
+		h.requireDrops(t, 27633*time.Millisecond)
+	}
 }
 
 func TestSchedulerMaxDelayFallbackOnZeroConsensus(t *testing.T) {
