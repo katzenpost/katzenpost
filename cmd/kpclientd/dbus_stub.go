@@ -2,8 +2,11 @@
 
 package main
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
-func ownBusName(string) (func() error, error) {
+func ownBusName(context.Context, string) (func() error, error) {
 	return nil, errors.New("dbus name ownership is unsupported on this platform")
 }
