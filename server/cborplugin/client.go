@@ -350,7 +350,7 @@ func (c *Client) offerHostSocket() (string, error) {
 func (c *Client) readPluginStdout(stdout io.Reader, firstLine chan<- string) {
 	r := bufio.NewReader(stdout)
 	line, err := r.ReadString('\n')
-	if l := strings.TrimRight(line, "\r\n"); l != "" {
+	if l := strings.TrimRight(line, "\r\n"); err == nil || l != "" {
 		c.log.Debugf("plugin stdout: %s", l)
 		firstLine <- l
 	}
@@ -380,7 +380,7 @@ func (c *Client) awaitSocket(command, hostSocket string, firstLine <-chan string
 			} else {
 				firstLine = nil
 			}
-			if hostSocket == "" && !filepath.IsAbs(candidate) {
+			if (ok || hostSocket == "") && !filepath.IsAbs(candidate) {
 				return fmt.Errorf("plugin %q printed %q instead of a socket path; stderr:\n%s", command, candidate, c.stderrTail.String())
 			}
 		case <-c.HaltCh():
