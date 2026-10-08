@@ -1,0 +1,161 @@
+name: docker quic testnet
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'quic/**'
+      - 'core/genconfig/**'
+      - 'cmd/genconfig/**'
+      - 'core/utils/addr.go'
+      - 'core/wire/session.go'
+      - 'core/pki/descriptor.go'
+      - 'core/pki/document.go'
+      - 'client/config/config_impl.go'
+      - 'client/connection.go'
+      - 'authority/voting/client/client.go'
+      - 'authority/voting/server/peer_conns.go'
+      - 'authority/voting/server/server.go'
+      - 'authority/voting/server/wire_handler.go'
+      - 'courier/server/outgoing_conn.go'
+      - 'replica/listener.go'
+      - 'replica/outgoing_conn.go'
+      - 'server/internal/incoming/listener.go'
+      - 'server/internal/outgoing/outgoing_conn.go'
+      - 'server/internal/pki/pki.go'
+      - 'cmd/http-proxy-client/**'
+      - 'cmd/http-proxy-server/**'
+      - 'docker/Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/docker-quic.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'quic/**'
+      - 'core/genconfig/**'
+      - 'cmd/genconfig/**'
+      - 'core/utils/addr.go'
+      - 'core/wire/session.go'
+      - 'core/pki/descriptor.go'
+      - 'core/pki/document.go'
+      - 'client/config/config_impl.go'
+      - 'client/connection.go'
+      - 'authority/voting/client/client.go'
+      - 'authority/voting/server/peer_conns.go'
+      - 'authority/voting/server/server.go'
+      - 'authority/voting/server/wire_handler.go'
+      - 'courier/server/outgoing_conn.go'
+      - 'replica/listener.go'
+      - 'replica/outgoing_conn.go'
+      - 'server/internal/incoming/listener.go'
+      - 'server/internal/outgoing/outgoing_conn.go'
+      - 'server/internal/pki/pki.go'
+      - 'cmd/http-proxy-client/**'
+      - 'cmd/http-proxy-server/**'
+      - 'docker/Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/docker-quic.yml'
+concurrency:
+  group: docker-quic-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+
+  test_e2e_client:
+    name: docker-quic (${{ matrix.transport }})
+    permissions:
+      contents: read
+      packages: write
+    env:
+      no_mixdecoy: true
+      no_decoy: true
+      epoch_duration: 2m
+      no_metrics: true
+      TRANSPORT: ${{ matrix.transport }}
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: [1.26.x]
+        os: [ubuntu-latest]
+        transport: [TCP+QUIC, QUIC]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install CA certificates
+        if: ${{ env.ACT }}
+        run: |
+          if [ -d /etc/ssl/certs ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+            echo "CA certificates already available"
+          else
+            apt update && apt install -y ca-certificates build-essential gcc g++ make
+            update-ca-certificates podman
+          fi
+        continue-on-error: true
+
+      - name: Configure podman socket
+        run: |
+          systemctl --user start podman.socket || true
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Check the TRANSPORT mapping
+        run: |
+          cd docker && make check-transport
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && make start wait
+
+      - name: Sleep for a few seconds to allow the mixnet to fully start
+        run: sleep 5
+
+      - name: Print selfcheck.toml from every daemon
+        if: always()
+        run: |
+          cd docker
+          shopt -s nullglob
+          found=0
+          for f in mixnet-alpine/*/selfcheck.toml; do
+            found=1
+            echo "=== $f ==="
+            cat "$f" || echo "(unreadable: $f)"
+            echo
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "no selfcheck.toml files were written; the mixnet may have failed to start"
+          fi
+
+      - name: run all docker integration tests in parallel
+        run: cd client && make dockertest-all
+
+      - name: Dump kpclientd logs on failure
+        if: failure()
+        run: |
+          cd docker && make client-logs-snapshot
+
+      - name: Dump replica logs on failure
+        if: failure()
+        run: |
+          cd docker && ls -la mixnet-alpine/replica1/ && \
+          for r in mixnet-alpine/replica*/; do echo "=== $r ===" && cat "${r}katzenpost.log" 2>&1 | tail -20 || echo "no log file"; done && \
+          cd mixnet-alpine && podman compose ps -a 2>&1 | head -30 && \
+          podman compose logs --tail 30 replica1 replica2 replica3 replica4 2>&1 | tail -100
+
+      - name: Stop the mixnet
+        if: always()
+        run: |
+          cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always() && !env.ACT
+        with:
+          name: quic-testnet-${{ github.run_id }}-${{ github.job }}-${{ matrix.transport }}
+          path: |
+            docker/mixnet-alpine/*/*.log
+            docker/mixnet-alpine/servicenode*/courier/courier.log
+            docker/mixnet-alpine/*/selfcheck.toml
