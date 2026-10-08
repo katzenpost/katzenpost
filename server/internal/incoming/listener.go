@@ -350,7 +350,7 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string, lim
 		}
 	case "quic":
 		l.log.Noticef("Starting listener on: %q", addr)
-		ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+		ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), common.Config())
 		if err != nil {
 			l.log.Errorf("Failed to start listener %q after %v: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration, and check that the address is assigned and the port is available.", addr, time.Since(listenStart), err)
 			return nil, err

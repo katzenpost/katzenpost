@@ -146,6 +146,12 @@ func (l *QuicListener) Close() error {
 	return l.Listener.Close()
 }
 
+const KeepAlivePeriod = 10 * time.Second
+
+func Config() *quic.Config {
+	return &quic.Config{KeepAlivePeriod: KeepAlivePeriod}
+}
+
 // Setup a bare-bones TLS config for the server
 func GenerateTLSConfig() *tls.Config {
 	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
@@ -201,7 +207,7 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			// so pick a common protocol rather than something fingerprintable.
 			NextProtos: []string{http3.NextProtoH3},
 		}
-		qconn, err := quic.DialAddr(ctx, u.Host, tlsConf, nil)
+		qconn, err := quic.DialAddr(ctx, u.Host, tlsConf, Config())
 		if err == nil {
 			// open a quic stream
 			stream, err := qconn.OpenStream()

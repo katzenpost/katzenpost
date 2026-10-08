@@ -245,7 +245,7 @@ func newListener(server *Server, id int, addr string) (*Listener, error) {
 				return nil, err
 			}
 		case "quic":
-			ql, err := quic.ListenAddr(u.Host, httpCommon.GenerateTLSConfig(), nil)
+			ql, err := quic.ListenAddr(u.Host, httpCommon.GenerateTLSConfig(), httpCommon.Config())
 			if err != nil {
 				l.log.Errorf("Failed to start Listener '%v': %v", addr, err)
 				return nil, err
