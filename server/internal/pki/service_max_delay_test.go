@@ -63,12 +63,17 @@ func (g *maxDelayGlue) IdentityPublicKey() sign.PublicKey { return g.idKey }
 func (g *maxDelayGlue) LinkKey() kem.PrivateKey           { return g.linkKey }
 func (g *maxDelayGlue) MixKeys() glue.MixKeys             { return &fakeMixKeys{} }
 func (g *maxDelayGlue) Scheduler() glue.Scheduler         { return g.scheduler }
-func (g *maxDelayGlue) ServiceNode() glue.ServiceNode     { return g.service }
-func (g *maxDelayGlue) Connector() glue.Connector         { return nopConnector{} }
-func (g *maxDelayGlue) Listeners() []glue.Listener        { return nil }
-func (g *maxDelayGlue) Decoy() glue.Decoy                 { return nopDecoy{} }
-func (g *maxDelayGlue) PeerConnSet() *connlimit.PeerSet   { return nil }
-func (g *maxDelayGlue) ReshadowCryptoWorkers()            {}
+func (g *maxDelayGlue) ServiceNode() glue.ServiceNode {
+	if !g.cfg.Server.IsServiceNode {
+		return nil
+	}
+	return g.service
+}
+func (g *maxDelayGlue) Connector() glue.Connector       { return nopConnector{} }
+func (g *maxDelayGlue) Listeners() []glue.Listener      { return nil }
+func (g *maxDelayGlue) Decoy() glue.Decoy               { return nopDecoy{} }
+func (g *maxDelayGlue) PeerConnSet() *connlimit.PeerSet { return nil }
+func (g *maxDelayGlue) ReshadowCryptoWorkers()          {}
 
 type docFetcher struct {
 	doc func(epoch uint64) *cpki.Document
