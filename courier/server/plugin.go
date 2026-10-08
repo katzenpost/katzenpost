@@ -657,14 +657,13 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		entry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
 		payload = entry.EnvelopeReply
 		e.log.Debugf("Found reply [len:%d err:%d] at requested index %d for %v", len(payload), entry.ErrorCode, courierMessage.ReplyIndex, envHash)
-		// If the payload at requested index is empty, try the other index
-		if len(payload) == 0 && cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
-			oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1]
-			if len(oentry.EnvelopeReply) > 0 {
-				e.log.Debugf("entry at idx %v is empty; using other index with [len:%d err:%d]", courierMessage.ReplyIndex, len(oentry.EnvelopeReply), oentry.ErrorCode)
-				courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
-				payload = oentry.EnvelopeReply
-			}
+		oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1]
+		otherServable := oentry != nil && len(oentry.EnvelopeReply) > 0
+		otherSupersedes := len(payload) == 0 || (entry.ErrorCode == pigeonhole.ReplicaErrorBoxIDNotFound && oentry != nil && oentry.ErrorCode == pigeonhole.ReplicaSuccess)
+		if otherServable && otherSupersedes {
+			e.log.Debugf("entry at idx %v is empty or box-not-found [len:%d err:%d]; using other index with [len:%d err:%d]", courierMessage.ReplyIndex, len(payload), entry.ErrorCode, len(oentry.EnvelopeReply), oentry.ErrorCode)
+			courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
+			payload = oentry.EnvelopeReply
 		}
 	} else {
 		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
