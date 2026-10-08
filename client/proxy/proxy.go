@@ -48,8 +48,6 @@ type Config struct {
 
 	// Password is the optional proxy password.
 	Password string
-
-	auth *proxy.Auth
 }
 
 // DialContextFn is a function that matches the Dialer.DialContext prototype.
@@ -74,14 +72,8 @@ func (cfg *Config) FixupAndValidate() error {
 		if uLen != 0 && pLen == 0 || uLen == 0 && pLen != 0 {
 			return fmt.Errorf("proxy/config: Both User and Password must be specified")
 		}
-		if uLen != 0 && pLen != 0 {
-			if cfg.Type == typeTorSocks5 {
-				return fmt.Errorf("proxy:config: Tor SOCKS5 conflicts with setting User/Password")
-			}
-			cfg.auth = &proxy.Auth{
-				User:     cfg.User,
-				Password: cfg.Password,
-			}
+		if uLen != 0 && cfg.Type == typeTorSocks5 {
+			return fmt.Errorf("proxy:config: Tor SOCKS5 conflicts with setting User/Password")
 		}
 
 		cfg.Network = strings.ToLower(cfg.Network)
@@ -123,9 +115,10 @@ func (cfg *Config) ToDialContext(tag string) DialContextFn {
 }
 
 func (cfg *Config) newContextSOCKS5(tag string) DialContextFn {
-	auth := cfg.auth
-	auth.User = cfg.User
-	auth.Password = cfg.Password
+	var auth *proxy.Auth
+	if cfg.User != "" {
+		auth = &proxy.Auth{User: cfg.User, Password: cfg.Password}
+	}
 	s := &contextSOCKS5{
 		proxyNet:  cfg.Network,
 		proxyAddr: cfg.Address,
