@@ -1747,7 +1747,9 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	topology := make([][]*pki.MixDescriptor, s.s.cfg.Debug.Layers)
 
 	// Assign nodes that still exist up to the target size.
-	for layer, nodes := range doc.Topology {
+	priorLayers := min(len(doc.Topology), len(topology))
+	for layer := 0; layer < priorLayers; layer++ {
+		nodes := doc.Topology[layer]
 		nodeIndexes := rng.Perm(len(nodes))
 
 		for _, idx := range nodeIndexes {
@@ -1779,7 +1781,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	// Fill out any layers that are under the target size, by
 	// randomly assigning from the pending list.
 	idx := 0
-	for layer := range doc.Topology {
+	for layer := 0; layer < priorLayers; layer++ {
 		for len(topology[layer]) < targetNodesPerLayer {
 			n := toAssign[assignIndexes[idx]]
 			topology[layer] = append(topology[layer], n)
