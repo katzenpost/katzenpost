@@ -214,12 +214,12 @@ func (s *Server) onConn(conn net.Conn) {
 	)
 
 	// Bound concurrent connections per authenticated peer identity so one peer
-	// cannot camp all of the MaxConcurrentConns accept slots. Only identified
-	// peers carry an identity hash; anonymous clients are not capped here. The
-	// global semaphore already bounds the total and stays before the handshake,
-	// so a handshake flood is still bounded; this check is necessarily after the
+	// cannot camp all of the MaxConcurrentConns accept slots. The global
+	// semaphore already bounds the total and stays before the handshake, so a
+	// handshake flood is still bounded; this check is necessarily after the
 	// handshake because the peer identity is only known once it completes.
-	if auth.isAuthority && len(auth.peerIdentityKeyHash) == hash.HashSize {
+	auth.isPinnedNode = (auth.isMix || auth.isReplica) && s.state.nodeLinkKeyPinned(auth.peerIdentityKeyHash, auth.peerLinkKey, auth.isReplica)
+	if (auth.isAuthority || auth.isPinnedNode) && len(auth.peerIdentityKeyHash) == hash.HashSize {
 		var peerSlotID [hash.HashSize]byte
 		copy(peerSlotID[:], auth.peerIdentityKeyHash)
 		if !s.acquirePeerSlot(peerSlotID) {
@@ -855,10 +855,11 @@ type wireAuthenticator struct {
 	peerIdentityKeyHash []byte
 	peerName            string
 
-	isClient    bool
-	isMix       bool
-	isReplica   bool
-	isAuthority bool
+	isClient     bool
+	isMix        bool
+	isReplica    bool
+	isAuthority  bool
+	isPinnedNode bool
 }
 
 // wireAuthenticatorSlowThreshold is the budget above which a single
