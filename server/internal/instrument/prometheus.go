@@ -93,6 +93,13 @@ var (
 			Help: "Number of total dropped kaetzchen requests",
 		},
 	)
+	kaetzchenResponsesDropped = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_kaetzchen_dropped_responses_total",
+			Help: "Number of dropped kaetzchen responses by capability",
+		},
+		[]string{"capability"},
+	)
 	kaetzchenRequestsFailed = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_kaetzchen_failed_requests_total",
@@ -304,6 +311,8 @@ func KaetzchenRequests() {
 func KaetzchenRequestsDropped(dropCounter uint64) {
 	kaetzchenRequestsDropped.Add(float64(dropCounter))
 }
+
+func KaetzchenResponsesDropped(capability string) {}
 
 // KaetzchenRequestsFailed increments the counter for the number of failed kaetzchen requests
 func KaetzchenRequestsFailed() {
