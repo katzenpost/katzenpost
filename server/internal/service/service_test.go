@@ -130,6 +130,8 @@ func newTestServiceNode(t *testing.T, debug config.Debug) (*serviceNode, *servic
 
 func TestServiceNodeHoldsKaetzchenRequestUntilDelay(t *testing.T) {
 	sn, g := newTestServiceNode(t, config.Debug{})
+	require.NotNil(t, sn.preDelay)
+	require.Equal(t, defaultPreDelayQueueSize, sn.preDelay.maxLen)
 
 	const delay = 400 * time.Millisecond
 	pkt := echoRequest(t, g.cfg.SphinxGeometry, delay)
@@ -148,4 +150,89 @@ func TestServiceNodeHoldsKaetzchenRequestUntilDelay(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("no echo reply")
 	}
+}
+
+func TestServiceNodeDisabledPreDelayRepliesAtOnce(t *testing.T) {
+	sn, g := newTestServiceNode(t, config.Debug{DisableServicePreDelay: true})
+	require.Nil(t, sn.preDelay)
+
+	const delay = 2 * time.Second
+	pkt := echoRequest(t, g.cfg.SphinxGeometry, delay)
+	recvAt := pkt.RecvAt
+	sn.OnPacket(pkt)
+
+	select {
+	case r := <-g.sched.ch:
+		require.Less(t, r.at.Sub(recvAt), delay/2)
+		require.Greater(t, r.pkt.Delay, delay/2)
+	case <-time.After(5 * time.Second):
+		t.Fatal("no echo reply")
+	}
+}
+
+func TestServiceNodeMixMaxDelayCapsHeldRequest(t *testing.T) {
+	sn, g := newTestServiceNode(t, config.Debug{})
+	sn.OnNewMixMaxDelay(100)
+
+	pkt := echoRequest(t, g.cfg.SphinxGeometry, time.Hour)
+	recvAt := pkt.RecvAt
+	sn.OnPacket(pkt)
+
+	select {
+	case r := <-g.sched.ch:
+		require.GreaterOrEqual(t, r.at.Sub(recvAt), 100*time.Millisecond)
+		require.Less(t, r.at.Sub(recvAt), 5*time.Second)
+	case <-time.After(5 * time.Second):
+		t.Fatal("no echo reply")
+	}
+}
+
+func TestServiceNodeDropsStaleRequestBeforeHolding(t *testing.T) {
+	sn, g := newTestServiceNode(t, config.Debug{})
+
+	pkt := echoRequest(t, g.cfg.SphinxGeometry, 0)
+	pkt.DispatchAt = pkt.DispatchAt.Add(-2 * time.Second)
+	sn.OnPacket(pkt)
+
+	select {
+	case <-g.sched.ch:
+		t.Fatal("a request past the service dwell time was answered")
+	case <-time.After(300 * time.Millisecond):
+	}
+	require.Zero(t, sn.preDelay.len())
+}
+
+func TestServiceNodePreDelayQueueSizeBoundsHeldRequests(t *testing.T) {
+	sn, g := newTestServiceNode(t, config.Debug{ServicePreDelayQueueSize: 1})
+	require.Equal(t, 1, sn.preDelay.maxLen)
+
+	sn.OnPacket(echoRequest(t, g.cfg.SphinxGeometry, time.Hour))
+	sn.OnPacket(echoRequest(t, g.cfg.SphinxGeometry, time.Hour))
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, 1, sn.preDelay.len())
+}
+
+func TestDropDelayedDisposes(t *testing.T) {
+	g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
+	pkt := echoRequest(t, g, 0)
+	dropDelayed(pkt)
+	require.Nil(t, pkt.Payload)
+	require.Nil(t, pkt.Recipient)
+}
+
+func TestReleaseDelayedHandsOffToWorker(t *testing.T) {
+	p := &serviceNode{readyCh: make(chan *packet.Packet, 1)}
+	pkt := &packet.Packet{ID: 7}
+	p.releaseDelayed(pkt)
+	require.Same(t, pkt, <-p.readyCh)
+}
+
+func TestReleaseDelayedAfterHaltDisposes(t *testing.T) {
+	g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
+	p := &serviceNode{readyCh: make(chan *packet.Packet)}
+	p.Worker.Halt()
+	pkt := echoRequest(t, g, 0)
+	p.releaseDelayed(pkt)
+	require.Nil(t, pkt.Payload)
+	require.Nil(t, pkt.Recipient)
 }
