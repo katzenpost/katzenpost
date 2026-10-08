@@ -1223,7 +1223,7 @@ func (d *Daemon) arqSend(message *ARQMessage, envHashKey [32]byte) error {
 	d.replyLock.Unlock()
 	instrument.SurbIDCreated()
 
-	priority := uint64(message.SentAt.Add(rtt).Add(RoundTripTimeSlop).UnixNano())
+	priority := uint64(arqResendAt(message.SentAt, rtt).UnixNano())
 	d.arqTimerQueue.Push(priority, surbID)
 
 	if err := d.client.SendPacket(pkt); err != nil {

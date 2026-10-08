@@ -1083,9 +1083,7 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 
 	d.log.Debug("ARQ resend scheduled")
-	myRtt := message.SentAt.Add(message.ReplyETA)
-	myRtt = myRtt.Add(RoundTripTimeSlop)
-	priority := uint64(myRtt.UnixNano())
+	priority := uint64(arqResendAt(message.SentAt, message.ReplyETA).UnixNano())
 	d.arqTimerQueue.Push(priority, newsurbID)
 
 	err = d.client.SendPacket(pkt)
