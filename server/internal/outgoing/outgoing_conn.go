@@ -43,7 +43,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/quic/common"
-	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
@@ -184,7 +183,7 @@ func (c *outgoingConn) worker() {
 	dialCtx, cancelFn := context.WithCancel(context.Background())
 	defer cancelFn()
 	dialer := net.Dialer{
-		KeepAlive: constants.KeepAliveInterval,
+		KeepAlive: common.KeepAlivePeriod,
 		Timeout:   time.Duration(c.co.glue.Config().Debug.ConnectTimeout) * time.Millisecond,
 	}
 	go func() {
