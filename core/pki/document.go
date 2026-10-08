@@ -592,9 +592,6 @@ func isDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 	if len(d.WeeklySharedRandom) == 0 && d.GenesisEpoch != d.Epoch {
 		return fmt.Errorf("Document has invalid WeeklySharedRandom")
 	}
-	if err := IsClientNoticeWellFormed(d.MinClientVersion, d.ClientNotice); err != nil {
-		return err
-	}
 	// If there is a SharedRandomCommit, verify the Epoch contained in
 	// SharedRandomCommit matches the Epoch in the Document.
 	vmap := make(map[[PublicKeyHashSize]byte]sign.PublicKey)
