@@ -32,6 +32,8 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // QuicConn wraps a conn and a single stream and implements net.Conn
@@ -146,10 +148,10 @@ func (l *QuicListener) Close() error {
 	return l.Listener.Close()
 }
 
-const KeepAlivePeriod = 10 * time.Second
+const KeepAlivePeriod = 3 * time.Minute
 
 func Config() *quic.Config {
-	return &quic.Config{KeepAlivePeriod: KeepAlivePeriod}
+	return &quic.Config{KeepAlivePeriod: KeepAlivePeriod, MaxIdleTimeout: wire.DefaultReadTimeout}
 }
 
 // Setup a bare-bones TLS config for the server
