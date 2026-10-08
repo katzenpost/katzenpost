@@ -337,7 +337,7 @@ func (k *MixKey) Persist(keyStoreDir string) error {
 	}
 	k.Lock()
 	defer k.Unlock()
-	return atomicWrite(keyPath(k.epoch, keyStoreDir), func(w io.Writer) error {
+	return writeKeyFile(keyPath(k.epoch, keyStoreDir), func(w io.Writer) error {
 		if _, err := w.Write(hdr); err != nil {
 			return err
 		}
@@ -349,6 +349,8 @@ func (k *MixKey) Persist(keyStoreDir string) error {
 func Remove(epoch uint64, keyStoreDir string) {
 	os.Remove(keyPath(epoch, keyStoreDir))
 }
+
+var writeKeyFile = atomicWrite
 
 func keyPath(epoch uint64, keyStoreDir string) string {
 	return filepath.Join(keyStoreDir, fmt.Sprintf("mixkey-%d.bin", epoch))
