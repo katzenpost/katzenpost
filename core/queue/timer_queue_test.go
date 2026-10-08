@@ -3,6 +3,7 @@
 package queue
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,5 +89,24 @@ func TestTimerQueueCancelDoesNotDispatchTheNextEarly(t *testing.T) {
 	case got := <-fired:
 		t.Fatalf("an entry due in an hour ran %v after start, its neighbour having been cancelled (is b: %v)", time.Since(start), got == b)
 	case <-time.After(time.Until(start.Add(time.Second))):
+	}
+}
+
+func TestTimerQueueHaltLeavesUnrunItemsPoppable(t *testing.T) {
+	t.Parallel()
+	for round := 0; round < 200; round++ {
+		var ran atomic.Int64
+		q := NewTimerQueue(func(interface{}) { ran.Add(1) })
+		q.EnqueueDirect(0, new(int))
+		q.Start()
+		q.Push(0, new(int))
+		q.Halt()
+
+		popped := 0
+		for q.Pop() != nil {
+			popped++
+		}
+		require.Equal(t, 2, int(ran.Load())+popped+q.PushChLen(),
+			"round %d: ran %d, popped %d, pending %d", round, ran.Load(), popped, q.PushChLen())
 	}
 }
