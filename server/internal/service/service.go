@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
@@ -17,6 +18,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
+	"github.com/katzenpost/katzenpost/server/internal/maxdelay"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/service/kaetzchen"
 )
@@ -33,7 +35,8 @@ type serviceNode struct {
 	ch      chan interface{}
 	readyCh chan *packet.Packet
 
-	preDelay *preDelay
+	preDelay             *preDelay
+	consensusMixMaxDelay atomic.Uint64
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
@@ -55,8 +58,14 @@ func (p *serviceNode) OnPacket(pkt *packet.Packet) {
 }
 
 func (p *serviceNode) OnNewMixMaxDelay(ms uint64) {
-	if p.preDelay != nil {
-		p.preDelay.setMaxDelay(ms)
+	if p.preDelay == nil {
+		return
+	}
+	if prev := p.consensusMixMaxDelay.Swap(ms); prev != ms && ms != 0 && maxdelay.Wild(ms) {
+		p.log.Warningf("Consensus MixMaxDelay %d ms differs from the built-in %v by more than a factor of %d.", ms, maxdelay.Builtin(), maxdelay.WildFactor)
+	}
+	if limit, fromConsensus, changed := p.preDelay.setMaxDelay(ms); changed {
+		p.log.Infof("Pre-delay max delay %v from %v, consensus MixMaxDelay %v ms.", limit, maxdelay.Source(fromConsensus), ms)
 	}
 }
 
@@ -135,7 +144,12 @@ func (p *serviceNode) worker() {
 				continue
 			}
 			if p.preDelay != nil {
-				p.preDelay.push(pkt)
+				if !p.preDelay.push(pkt) {
+					p.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.ID, pkt.Delay)
+					instrument.PacketsDropped()
+					instrument.PacketsDroppedByReason("service_predelay_delay_exceeds_max")
+					pkt.Dispose()
+				}
 				continue
 			}
 		case pkt = <-p.readyCh:
@@ -321,7 +335,14 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 		if size <= 0 {
 			size = defaultPreDelayQueueSize
 		}
-		p.preDelay = newPreDelay(p.releaseDelayed, size, dropDelayed)
+		fallback := cfg.Debug.MixMaxDelayFallback
+		p.preDelay = newPreDelay(p.releaseDelayed, size, dropDelayed, fallback)
+		p.log.Infof("Pre-delay max delay built-in %v (SafetyCap of Mu %v), configured fallback %d ms, ceiling %v.", maxdelay.Builtin(), maxdelay.BuiltinMu, fallback, preDelayCeiling())
+		if fallback > 0 && maxdelay.Wild(uint64(fallback)) {
+			p.log.Warningf("Configured MixMaxDelayFallback %d ms differs from the built-in %v by more than a factor of %d.", fallback, maxdelay.Builtin(), maxdelay.WildFactor)
+		}
+		limit, fromConsensus, _ := p.preDelay.setMaxDelay(0)
+		p.log.Infof("Pre-delay max delay %v from %v.", limit, maxdelay.Source(fromConsensus))
 	}
 
 	isOk := false

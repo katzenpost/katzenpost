@@ -3,12 +3,15 @@
 package service
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
@@ -53,7 +56,7 @@ func testPacket(id uint64, delay time.Duration) *packet.Packet {
 
 func TestPreDelayHoldsUntilDue(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+	d := newPreDelay(r.release, 0, nil, 0)
 	defer d.Halt()
 
 	pkt := testPacket(1, 300*time.Millisecond)
@@ -73,7 +76,7 @@ func TestPreDelayHoldsUntilDue(t *testing.T) {
 
 func TestPreDelayZeroDelayReleasesAtOnce(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+	d := newPreDelay(r.release, 0, nil, 0)
 	defer d.Halt()
 
 	d.push(testPacket(1, 0))
@@ -82,7 +85,7 @@ func TestPreDelayZeroDelayReleasesAtOnce(t *testing.T) {
 
 func TestPreDelayReleasesInDueOrder(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+	d := newPreDelay(r.release, 0, nil, 0)
 	defer d.Halt()
 
 	d.push(testPacket(1, 400*time.Millisecond))
@@ -103,7 +106,7 @@ func TestPreDelayReleasesInDueOrder(t *testing.T) {
 
 func TestPreDelayResetsDispatchAt(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+	d := newPreDelay(r.release, 0, nil, 0)
 	defer d.Halt()
 
 	pkt := testPacket(1, 200*time.Millisecond)
@@ -117,34 +120,63 @@ func TestPreDelayResetsDispatchAt(t *testing.T) {
 	require.WithinDuration(t, r.at[1], r.pkts[1].DispatchAt, 50*time.Millisecond)
 }
 
-func TestPreDelayClampsToMaxDelay(t *testing.T) {
-	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+func wantCeiling() time.Duration {
+	return epochtime.Period() * constants.NumMixKeys
+}
+
+func TestPreDelayRefusesOverMaxDelay(t *testing.T) {
+	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, 0)
 	defer d.Halt()
 	d.setMaxDelay(100)
 
-	pkt := testPacket(1, 10*time.Second)
-	d.push(pkt)
-	r.wait(t, 1, 2*time.Second)
-
-	r.Lock()
-	defer r.Unlock()
-	require.Equal(t, 100*time.Millisecond, r.pkts[1].Delay)
-	require.Less(t, r.at[1].Sub(pkt.RecvAt), time.Second)
+	d.push(testPacket(1, 101*time.Millisecond))
+	require.Zero(t, d.len(), "a delay over the consensus cap was held")
+	d.push(testPacket(2, 100*time.Millisecond))
+	require.Equal(t, 1, d.len())
 }
 
-func TestPreDelayNoCapUntilKnown(t *testing.T) {
-	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+func TestPreDelayCeilingWithoutCap(t *testing.T) {
+	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, math.MaxInt)
 	defer d.Halt()
 
-	pkt := testPacket(1, 300*time.Millisecond)
-	d.push(pkt)
-	r.wait(t, 1, 2*time.Second)
+	d.push(testPacket(1, wantCeiling()+time.Millisecond))
+	require.Zero(t, d.len(), "a delay over the ceiling was held before a consensus")
+	d.push(testPacket(2, wantCeiling()))
+	require.Equal(t, 1, d.len())
+}
 
-	r.Lock()
-	defer r.Unlock()
-	require.Equal(t, 300*time.Millisecond, r.pkts[1].Delay)
+func TestPreDelayUnsetFallbackIsBuiltin(t *testing.T) {
+	for _, fallback := range []int{0, -1} {
+		d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, fallback)
+		d.push(testPacket(1, 27633*time.Millisecond))
+		require.Zero(t, d.len(), "a delay over the built-in cap was held with fallback %d", fallback)
+		d.push(testPacket(2, 27632*time.Millisecond))
+		require.Equal(t, 1, d.len())
+		d.Halt()
+	}
+}
+
+func TestPreDelayZeroCapRestoresCeiling(t *testing.T) {
+	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, 0)
+	defer d.Halt()
+	d.setMaxDelay(100)
+	d.setMaxDelay(0)
+
+	d.push(testPacket(1, time.Second))
+	require.Equal(t, 1, d.len())
+	d.push(testPacket(2, wantCeiling()+time.Millisecond))
+	require.Equal(t, 1, d.len(), "a delay over the ceiling was held after a zero cap")
+}
+
+func TestPreDelayHugeCapIsCeiling(t *testing.T) {
+	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, 0)
+	defer d.Halt()
+	d.setMaxDelay(math.MaxUint64)
+
+	d.push(testPacket(1, wantCeiling()+time.Millisecond))
+	require.Zero(t, d.len(), "a delay over the ceiling was held under a MaxUint64 cap")
+	d.push(testPacket(2, wantCeiling()))
+	require.Equal(t, 1, d.len())
 }
 
 func TestPreDelayOverflowDropsRandomEntry(t *testing.T) {
@@ -157,9 +189,9 @@ func TestPreDelayOverflowDropsRandomEntry(t *testing.T) {
 			mu.Lock()
 			dropped = append(dropped, pkt.ID)
 			mu.Unlock()
-		})
+		}, 0)
 		for id := uint64(1); id <= capacity+2; id++ {
-			d.push(testPacket(id, time.Hour))
+			d.push(testPacket(id, 20*time.Second))
 		}
 		require.Equal(t, capacity, d.len())
 		mu.Lock()
@@ -182,30 +214,14 @@ func TestPreDelayHaltDropsPending(t *testing.T) {
 		mu.Lock()
 		dropped = append(dropped, pkt.ID)
 		mu.Unlock()
-	})
-	d.push(testPacket(1, time.Hour))
-	d.push(testPacket(2, time.Hour))
+	}, 0)
+	d.push(testPacket(1, 20*time.Second))
+	d.push(testPacket(2, 20*time.Second))
 	d.Halt()
 
 	mu.Lock()
 	defer mu.Unlock()
 	require.ElementsMatch(t, []uint64{1, 2}, dropped)
-}
-
-func TestServiceNodeOnNewMixMaxDelay(t *testing.T) {
-	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
-	defer d.Halt()
-	p := &serviceNode{preDelay: d}
-
-	p.OnNewMixMaxDelay(50)
-	pkt := testPacket(1, time.Hour)
-	d.push(pkt)
-	r.wait(t, 1, 2*time.Second)
-
-	r.Lock()
-	defer r.Unlock()
-	require.Equal(t, 50*time.Millisecond, r.pkts[1].Delay)
 }
 
 func TestServiceNodeOnNewMixMaxDelayDisabled(t *testing.T) {
