@@ -6,12 +6,15 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
@@ -695,4 +698,27 @@ func (a *attribution) reportOverTime(w io.Writer, obs []observation) {
 	}
 }
 
-func (a *attribution) reportEpochs(w io.Writer) {}
+func (a *attribution) reportEpochs(w io.Writer) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	sent := make(map[uint64]int)
+	ok := make(map[uint64]int)
+	for _, o := range a.obs {
+		if o.at.IsZero() {
+			continue
+		}
+		e, _, _ := epochtime.FromUnix(o.at.Unix())
+		sent[e]++
+		if o.ok {
+			ok[e]++
+		}
+	}
+	if len(sent) < 2 {
+		return
+	}
+	epochs := slices.Sorted(maps.Keys(sent))
+	fmt.Fprintf(w, "%s\n", headerStyle.Render("Success by epoch:"))
+	for _, e := range epochs {
+		fmt.Fprintf(w, "  epoch %d  %d/%d  %.1f%%\n", e, ok[e], sent[e], 100*float64(ok[e])/float64(sent[e]))
+	}
+}
