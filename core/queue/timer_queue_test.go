@@ -128,3 +128,35 @@ func TestTimerQueuePopReturnsAJustPushedEntry(t *testing.T) {
 	require.Nil(t, q.Pop())
 	require.Equal(t, 0, q.Len()+q.PushChLen())
 }
+
+func TestTimerQueueDispatchIsBounded(t *testing.T) {
+	t.Parallel()
+	const n = 50
+	var inFlight atomic.Int64
+	started := make(chan struct{}, n)
+	var q *TimerQueue
+	q = NewTimerQueue(func(interface{}) {
+		inFlight.Add(1)
+		defer inFlight.Add(-1)
+		started <- struct{}{}
+		<-q.HaltCh()
+	})
+	for i := 0; i < n; i++ {
+		q.Push(0, new(int))
+	}
+	q.Start()
+	t.Cleanup(q.Halt)
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no due entry was dispatched")
+	}
+	select {
+	case <-started:
+		t.Fatalf("a second action started while the first was still running, %d in flight", inFlight.Load())
+	case <-time.After(200 * time.Millisecond):
+	}
+	require.Equal(t, int64(1), inFlight.Load())
+	require.Equal(t, n-1, q.Len()+q.PushChLen(), "entries not yet run must stay queued")
+}
