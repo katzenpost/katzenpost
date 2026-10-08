@@ -15,6 +15,8 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/thin"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 type notReadyHandler struct {
@@ -128,5 +130,34 @@ func TestPigeonholeHandlersNoPKIDocumentServiceUnavailable(t *testing.T) {
 	}
 	for _, h := range append(envelopeBuildingHandlers, copyCommand) {
 		requireServiceUnavailable(t, h, clearDocs)
+	}
+}
+
+func TestPigeonholeHandlersReplicaKeysNotReadyServiceUnavailable(t *testing.T) {
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	docChanges := map[string]func(*cpki.Document){
+		"previousEpochKeyOnly": func(doc *cpki.Document) {
+			for _, r := range doc.StorageReplicas {
+				r.EnvelopeKeys = map[uint64][]byte{replicaEpoch - 1: r.EnvelopeKeys[replicaEpoch]}
+			}
+		},
+		"emptyKey": func(doc *cpki.Document) {
+			for _, r := range doc.StorageReplicas {
+				r.EnvelopeKeys[replicaEpoch] = []byte{}
+			}
+		},
+		"nilStorageReplicas": func(doc *cpki.Document) {
+			doc.StorageReplicas = nil
+		},
+	}
+	for name, change := range docChanges {
+		t.Run(name, func(t *testing.T) {
+			for _, h := range envelopeBuildingHandlers {
+				requireServiceUnavailable(t, h, func(d *Daemon) {
+					_, doc := d.client.CurrentDocument()
+					change(doc)
+				})
+			}
+		})
 	}
 }
