@@ -67,3 +67,31 @@ func TestCacheEntryNeedsRedispatch(t *testing.T) {
 	}
 	require.False(t, e.cacheEntryNeedsRedispatch(exhausted))
 }
+
+func TestCacheEntryRedispatchPacing(t *testing.T) {
+	t.Parallel()
+
+	e := &Courier{}
+	errReply := &commands.ReplicaMessageReply{ErrorCode: 9}
+	aged := func(n float64, attempts int, replies [2]*commands.ReplicaMessageReply) *CourierBookKeeping {
+		return &CourierBookKeeping{
+			CreatedAt:          time.Now().Add(-time.Duration(n * float64(redispatchGrace))),
+			RedispatchAttempts: attempts,
+			EnvelopeReplies:    replies,
+		}
+	}
+	errs := [2]*commands.ReplicaMessageReply{errReply, errReply}
+	silent := [2]*commands.ReplicaMessageReply{}
+
+	require.False(t, e.cacheEntryNeedsRedispatch(aged(0, 0, errs)))
+	require.False(t, e.cacheEntryNeedsRedispatch(aged(0.9, 0, errs)))
+	require.True(t, e.cacheEntryNeedsRedispatch(aged(1.1, 0, errs)))
+
+	require.False(t, e.cacheEntryNeedsRedispatch(aged(1.5, 1, silent)))
+	require.True(t, e.cacheEntryNeedsRedispatch(aged(2.5, 1, silent)))
+
+	last := maxRedispatchAttempts - 1
+	require.False(t, e.cacheEntryNeedsRedispatch(aged(float64(last)+0.9, last, errs)))
+	require.True(t, e.cacheEntryNeedsRedispatch(aged(float64(last)+1.1, last, errs)))
+	require.False(t, e.cacheEntryNeedsRedispatch(aged(100, maxRedispatchAttempts, errs)))
+}
