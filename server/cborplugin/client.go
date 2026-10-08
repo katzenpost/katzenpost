@@ -39,6 +39,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -228,6 +229,8 @@ type Client struct {
 
 	capability string
 	endpoint   string
+
+	Geometry *geo.Geometry
 }
 
 // New creates a new plugin client instance which represents the single execution
@@ -343,11 +346,16 @@ func (c *Client) offerHostSocket() (string, error) {
 		return "", err
 	}
 	c.hostDir = dir
+	geoEnv, err := hostGeometryEnv(c.Geometry)
+	if err != nil {
+		return "", err
+	}
+	c.cmd.Env = append(os.Environ(), geoEnv...)
 	hostSocket := filepath.Join(dir, "plugin.socket")
 	if len(hostSocket) > maxSocketPathLen {
 		return "", nil
 	}
-	c.cmd.Env = append(os.Environ(), PluginProtocolEnv+"="+PluginProtocol, PluginSocketEnv+"="+hostSocket)
+	c.cmd.Env = append(c.cmd.Env, PluginProtocolEnv+"="+PluginProtocol, PluginSocketEnv+"="+hostSocket)
 	return hostSocket, nil
 }
 
