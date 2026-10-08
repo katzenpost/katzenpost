@@ -26,7 +26,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/yawning/bloom"
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
 
@@ -50,6 +49,8 @@ const (
 	keyFileKindKem  = 1
 )
 
+var ErrReplayStateLost = errors.New("mixkey: persisted key has no usable replay filter")
+
 var dbOptions = &bolt.Options{
 	NoFreelistSync: true,
 }
@@ -63,7 +64,7 @@ type MixKey struct {
 	kemKeypair  kem.PrivateKey
 	epoch       uint64
 
-	f *bloom.Filter
+	f *replayFilter
 
 	log             *logging.Logger
 	saturatedLogged bool
@@ -336,7 +337,7 @@ func newKey(epoch uint64, g *geo.Geometry) (*MixKey, error) {
 		refCount: 1,
 	}
 
-	f, err := bloom.New(rand.Reader, 29, 0.001) // 64 MiB, 37,240,820 entries.
+	f, err := newReplayFilter(rand.Reader, 29, 0.001) // 64 MiB, 37,240,820 entries.
 	if err != nil {
 		return nil, err
 	}
