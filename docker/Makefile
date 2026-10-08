@@ -71,6 +71,7 @@ wait_seconds?=$(shell expr $(wait_epochs) \* $(epoch_seconds))
 # longer test scenarios. Empty means "use the daemon's compile-time
 # default" (currently 10 minutes).
 session_grace_period?=30s
+kpclientd_dbus_name?=
 mixes=7
 auths=6
 gateways=5
@@ -267,7 +268,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--noMixDecoy=$(no_mixdecoy) --noGatewayDecoy=$(no_gatewaydecoy) \
 	$(noDecoyFlag) $(noClientDecoyFlag) $(noCourierReplicaDecoyFlag) $(noMetricsFlag) \
 	--epochDuration "$(epoch_duration)" $(if $(node_versions),--nodeVersions $(node_versions)) \
-	--sessionGracePeriod $(or $(session_grace_period),0) \
+	--sessionGracePeriod $(or $(session_grace_period),0) --dbusName "$(kpclientd_dbus_name)" \
 	--transport $(transport) \
 	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
