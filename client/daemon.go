@@ -106,6 +106,8 @@ type Daemon struct {
 	secureRand *mrand.Rand
 
 	haltOnce sync.Once
+
+	loggedRates [2]float64
 }
 
 func NewDaemon(cfg *config.Config) (*Daemon, error) {
@@ -334,6 +336,7 @@ func (d *Daemon) Start() error {
 
 func (d *Daemon) onDocument(doc *cpki.Document) {
 	d.listener.updateFromPKIDoc(doc)
+	d.logBandwidth(doc, len(d.client.RawSignedDocumentByEpoch(doc.Epoch)))
 }
 
 func (d *Daemon) proxyReplies(surbID *[sphinxConstants.SURBIDLength]byte, ciphertext []byte) error {
