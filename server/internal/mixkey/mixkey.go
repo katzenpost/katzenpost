@@ -36,6 +36,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (
@@ -313,6 +314,7 @@ func (k *MixKey) Persist(keyStoreDir string) error {
 	switch {
 	case k.nikeKeypair != nil:
 		keyBytes = k.nikeKeypair.Bytes()
+		defer utils.ExplicitBzero(keyBytes)
 	case k.kemKeypair != nil:
 		kind = keyFileKindKem
 		var err error
