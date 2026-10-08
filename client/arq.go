@@ -19,6 +19,10 @@ const (
 	RoundTripTimeSlop = (20 * time.Second)
 )
 
+func arqResendAt(sentAt time.Time, eta time.Duration) time.Time {
+	return sentAt.Add(eta + RoundTripTimeSlop)
+}
+
 // ARQState represents the state of an ARQ message in the stop-and-wait protocol.
 type ARQState uint8
 
