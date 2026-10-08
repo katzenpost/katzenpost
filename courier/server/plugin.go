@@ -4,6 +4,7 @@
 package server
 
 import (
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"os"
@@ -287,6 +288,9 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 // StartPlugin starts the CBOR plugin service which listens for socket connections
 // from the service node.
 func (s *Server) StartPlugin() {
+	if err := checkHostGeometry(s.cfg.SphinxGeometry); err != nil {
+		cborplugin.FailStartup("courier", err)
+	}
 	socketFile, fromHost := cborplugin.HostSocketPath(filepath.Join(s.cfg.DataDir, fmt.Sprintf("%d.courier.socket", os.Getpid())))
 
 	scheme := schemes.ByName(s.cfg.EnvelopeScheme)
@@ -1660,5 +1664,15 @@ func (e *Courier) SetWriteFunc(writeFunc func(cborplugin.Command)) {
 }
 
 func checkHostGeometry(own *geo.Geometry) error {
+	h, err := cborplugin.HostInfo()
+	if err != nil {
+		return err
+	}
+	if h.Geometry != nil && !hmac.Equal(h.Geometry.Hash(), own.Hash()) {
+		return fmt.Errorf("host Sphinx geometry %x is not courier's %x", h.Geometry.Hash(), own.Hash())
+	}
+	if h.UserForwardPayloadLength != 0 && h.UserForwardPayloadLength != own.UserForwardPayloadLength {
+		return fmt.Errorf("host user forward payload length %d is not courier's %d", h.UserForwardPayloadLength, own.UserForwardPayloadLength)
+	}
 	return nil
 }
