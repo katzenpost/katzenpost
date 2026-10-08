@@ -19,14 +19,15 @@ package mixkey
 
 import (
 	"crypto/sha512"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 
-	"github.com/yawning/bloom"
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
 
@@ -42,13 +43,20 @@ const (
 	TagLength = sha512.Size256
 
 	// keyFileMagic identifies persisted mix key files.
-	keyFileMagic = "KMK1"
+	keyFileMagic = "KMK2"
 
 	// keyFileKindNike and keyFileKindKem identify the private key kind a
 	// persisted mix key file contains.
 	keyFileKindNike = 0
 	keyFileKindKem  = 1
+
+	legacyKeyFileMagic = "KMK1"
+	maxKeyFileKeySize  = 1 << 20
+	filterMLn2         = 29
+	filterFPRate       = 0.001
 )
+
+var ErrReplayStateLost = errors.New("mixkey: persisted key has no usable replay filter")
 
 var dbOptions = &bolt.Options{
 	NoFreelistSync: true,
@@ -63,7 +71,7 @@ type MixKey struct {
 	kemKeypair  kem.PrivateKey
 	epoch       uint64
 
-	f *bloom.Filter
+	f *replayFilter
 
 	log             *logging.Logger
 	saturatedLogged bool
@@ -215,29 +223,60 @@ func New(epoch uint64, g *geo.Geometry) (*MixKey, error) {
 // reported as an error so the daemon does not start with unexpected private
 // key material on the filesystem.
 func Load(epoch uint64, g *geo.Geometry, keyStoreDir string) (*MixKey, bool, error) {
-	blob, err := os.ReadFile(keyPath(epoch, keyStoreDir))
+	path := keyPath(epoch, keyStoreDir)
+	fd, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, false, nil
 		}
 		return nil, false, err
 	}
-
-	// Layout: magic, key kind, private key material.
-	if len(blob) < len(keyFileMagic)+1 {
-		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d is truncated", epoch)
+	k, lost, err := readKeyFile(fd, epoch, g)
+	fd.Close()
+	if lost {
+		if err := os.Remove(path); err != nil {
+			return nil, false, fmt.Errorf("%w: %v", ErrReplayStateLost, err)
+		}
+		return nil, false, ErrReplayStateLost
 	}
-	if string(blob[:len(keyFileMagic)]) != keyFileMagic {
-		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d has an invalid header", epoch)
-	}
-	kind := blob[len(keyFileMagic)]
-	keyBytes := blob[len(keyFileMagic)+1:]
-
-	k, err := newKey(epoch, g)
 	if err != nil {
 		return nil, false, err
 	}
+	if err := os.Remove(path); err != nil {
+		return nil, false, fmt.Errorf("mixkey: failed to consume persisted key file for epoch %d: %v", epoch, err)
+	}
+	return k, true, nil
+}
 
+func readKeyFile(fd io.Reader, epoch uint64, g *geo.Geometry) (*MixKey, bool, error) {
+	var hdr [len(keyFileMagic) + 1]byte
+	if _, err := io.ReadFull(fd, hdr[:]); err != nil {
+		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d is truncated", epoch)
+	}
+	switch string(hdr[:len(keyFileMagic)]) {
+	case keyFileMagic:
+	case legacyKeyFileMagic:
+		return nil, true, nil
+	default:
+		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d has an invalid header", epoch)
+	}
+	kind := hdr[len(keyFileMagic)]
+
+	var n [4]byte
+	if _, err := io.ReadFull(fd, n[:]); err != nil {
+		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d is truncated", epoch)
+	}
+	keyLen := binary.BigEndian.Uint32(n[:])
+	if keyLen > maxKeyFileKeySize {
+		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d has an oversized key", epoch)
+	}
+	keyBytes := make([]byte, keyLen)
+	if _, err := io.ReadFull(fd, keyBytes); err != nil {
+		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d is truncated", epoch)
+	}
+
+	k := &MixKey{epoch: epoch, refCount: 1}
+	var err error
 	nikeScheme, kemScheme := g.Scheme()
 	switch {
 	case nikeScheme != nil && kind == keyFileKindNike:
@@ -255,16 +294,13 @@ func Load(epoch uint64, g *geo.Geometry, keyStoreDir string) (*MixKey, bool, err
 		return nil, false, fmt.Errorf("mixkey: persisted key file for epoch %d was written for a different scheme", epoch)
 	}
 
-	// Consume the file so key material is on the filesystem only until the next
-	// clean shutdown. A key that cannot be consumed must not be used:
-	// silently leaving private key material on the filesystem (or
-	// continuing as if persistence were trustworthy) would defeat the
-	// purpose of the feature, so this is reported as a startup error.
-	if err := os.Remove(keyPath(epoch, keyStoreDir)); err != nil {
-		return nil, false, fmt.Errorf("mixkey: failed to consume persisted key file for epoch %d: %v", epoch, err)
+	if k.f, err = readReplayFilter(fd, filterMLn2, filterFPRate); err == nil {
+		if _, err := fd.Read(n[:1]); err == io.EOF {
+			return k, false, nil
+		}
 	}
-
-	return k, true, nil
+	k.forceClose()
+	return nil, true, nil
 }
 
 // Persist writes the private key material to the key store directory, keyed
@@ -288,15 +324,23 @@ func (k *MixKey) Persist(keyStoreDir string) error {
 		return errors.New("mixkey: cannot persist a key with no private key material")
 	}
 
-	blob := make([]byte, 0, len(keyFileMagic)+1+len(keyBytes))
-	blob = append(blob, keyFileMagic...)
-	blob = append(blob, kind)
-	blob = append(blob, keyBytes...)
+	hdr := make([]byte, 0, len(keyFileMagic)+5+len(keyBytes))
+	hdr = append(hdr, keyFileMagic...)
+	hdr = append(hdr, kind)
+	hdr = binary.BigEndian.AppendUint32(hdr, uint32(len(keyBytes)))
+	hdr = append(hdr, keyBytes...)
 
 	if err := os.MkdirAll(keyStoreDir, 0700); err != nil {
 		return err
 	}
-	return atomicWrite(keyPath(k.epoch, keyStoreDir), blob)
+	k.Lock()
+	defer k.Unlock()
+	return atomicWrite(keyPath(k.epoch, keyStoreDir), func(w io.Writer) error {
+		if _, err := w.Write(hdr); err != nil {
+			return err
+		}
+		return k.f.writeTo(w)
+	})
 }
 
 // Remove deletes the persisted key file for the given epoch, if present.
@@ -308,7 +352,7 @@ func keyPath(epoch uint64, keyStoreDir string) string {
 	return filepath.Join(keyStoreDir, fmt.Sprintf("mixkey-%d.bin", epoch))
 }
 
-func atomicWrite(path string, blob []byte) error {
+func atomicWrite(path string, write func(io.Writer) error) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".mixkey-*")
 	if err != nil {
 		return err
@@ -316,7 +360,7 @@ func atomicWrite(path string, blob []byte) error {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
-	if _, err := tmp.Write(blob); err != nil {
+	if err := write(tmp); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -336,7 +380,7 @@ func newKey(epoch uint64, g *geo.Geometry) (*MixKey, error) {
 		refCount: 1,
 	}
 
-	f, err := bloom.New(rand.Reader, 29, 0.001) // 64 MiB, 37,240,820 entries.
+	f, err := newReplayFilter(rand.Reader, filterMLn2, filterFPRate)
 	if err != nil {
 		return nil, err
 	}
