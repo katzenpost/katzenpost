@@ -27,8 +27,8 @@ func runHostSocketHelper() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Println("starting a plugin that takes the host's socket")
 	srv := NewServer(logBackend.GetLogger("helper"), socketFile, &RequestFactory{}, &echoServerPlugin{})
+	fmt.Println(socketFile)
 	srv.Accept()
 	srv.Wait()
 }

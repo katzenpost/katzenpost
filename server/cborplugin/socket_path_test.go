@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +45,32 @@ func TestClientFailsAtOnceWithoutASocketPath(t *testing.T) {
 			select {
 			case err := <-errCh:
 				client.cmd.Process.Kill()
+				if err == nil || !strings.Contains(err.Error(), line) {
+					t.Fatalf("Start = %v; want an error naming %s", err, line)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("Start still waiting on a plugin that printed no socket path")
+			}
+		})
+	}
+}
+
+func TestClientFailsAtOnceWithHostSocketOffered(t *testing.T) {
+	for behavior, line := range map[string]string{"junk_stdout": "plugin starting", "empty_stdout": `""`} {
+		t.Run(behavior, func(t *testing.T) {
+			t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+			t.Setenv("GO_HELPER_BEHAVIOR", behavior)
+			client := newTestClient(t)
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- client.Start(os.Args[0], []string{"-test.run=TestHelperProcess"})
+			}()
+			select {
+			case err := <-errCh:
+				client.cmd.Process.Kill()
+				if !slices.ContainsFunc(client.cmd.Env, func(e string) bool { return strings.HasPrefix(e, PluginSocketEnv+"=") }) {
+					t.Fatal("host offered no socket")
+				}
 				if err == nil || !strings.Contains(err.Error(), line) {
 					t.Fatalf("Start = %v; want an error naming %s", err, line)
 				}
