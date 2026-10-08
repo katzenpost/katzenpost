@@ -266,7 +266,7 @@ type ReplicaDescriptor struct {
 	// Epoch is the Epoch in which this descriptor was created
 	Epoch uint64
 
-	ContactInfo string `cbor:"-"`
+	ContactInfo string `cbor:"ContactInfo,omitempty"`
 
 	// IdentityKey is the node's identity (signing) key.
 	IdentityKey []byte
