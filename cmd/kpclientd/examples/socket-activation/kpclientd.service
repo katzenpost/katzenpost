@@ -1,0 +1,11 @@
+[Unit]
+Description=Katzenpost thin client daemon
+Documentation=https://katzenpost.network/
+Requires=kpclientd.socket
+After=kpclientd.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kpclientd -c %E/katzenpost/kpclientd.toml
+Restart=on-failure
+RestartSec=5s
