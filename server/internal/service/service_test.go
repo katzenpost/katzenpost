@@ -3,6 +3,11 @@
 package service
 
 import (
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,9 +45,10 @@ func (s *replyScheduler) OnPacket(pkt *packet.Packet) {
 }
 
 type serviceGlue struct {
-	cfg   *config.Config
-	log   *log.Backend
-	sched *replyScheduler
+	cfg     *config.Config
+	log     *log.Backend
+	logPath string
+	sched   *replyScheduler
 }
 
 func (g *serviceGlue) Config() *config.Config            { return g.cfg }
@@ -63,15 +69,18 @@ func (g *serviceGlue) PeerConnSet() *connlimit.PeerSet   { return nil }
 func (g *serviceGlue) ReshadowCryptoWorkers()            {}
 
 func newServiceGlue(t *testing.T, debug config.Debug) *serviceGlue {
-	backend, err := log.New("", "ERROR", false)
+	logPath := filepath.Join(t.TempDir(), "service.log")
+	backend, err := log.New(logPath, "INFO", false)
 	require.NoError(t, err)
+	t.Cleanup(func() { backend.Close() })
 	debug.NumServiceWorkers = 1
 	debug.NumKaetzchenWorkers = 1
 	debug.ServiceDelay = 1000
 	debug.KaetzchenDelay = 1000
 	return &serviceGlue{
-		log:   backend,
-		sched: &replyScheduler{ch: make(chan reply, 8)},
+		log:     backend,
+		logPath: logPath,
+		sched:   &replyScheduler{ch: make(chan reply, 8)},
 		cfg: &config.Config{
 			Server:     &config.Server{IsServiceNode: true},
 			Logging:    &config.Logging{},
@@ -211,6 +220,58 @@ func TestServiceNodeConsensusCapReplacesFallback(t *testing.T) {
 	sn.OnNewMixMaxDelay(0)
 	sendBehindMarker(t, sn, g, time.Second)
 	require.Equal(t, 1, sn.preDelay.len(), "a request over the fallback was held after a zero consensus value")
+}
+
+func (g *serviceGlue) logged(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(g.logPath)
+	require.NoError(t, err)
+	return string(b)
+}
+
+func TestServiceNodeLogsBuiltinMaxDelayAtStartup(t *testing.T) {
+	for _, fallback := range []int{0, 27632} {
+		_, g := newTestServiceNode(t, config.Debug{MixMaxDelayFallback: fallback})
+		logged := g.logged(t)
+		want := fmt.Sprintf("INFO provider: Pre-delay max delay built-in 27.632s (SafetyCap of Mu 0.001), configured fallback %d ms, ceiling %v.", fallback, wantCeiling())
+		require.Contains(t, logged, want)
+		require.NotContains(t, logged, "WARN")
+	}
+}
+
+func TestServiceNodeWarnsOnWildFallback(t *testing.T) {
+	for _, tc := range []struct {
+		fallback int
+		wild     bool
+	}{
+		{6907, true},
+		{6908, false},
+		{110528, false},
+		{110529, true},
+	} {
+		_, g := newTestServiceNode(t, config.Debug{MixMaxDelayFallback: tc.fallback})
+		logged := g.logged(t)
+		want := fmt.Sprintf("WARN provider: Configured MixMaxDelayFallback %d ms differs from the built-in 27.632s by more than a factor of 4.", tc.fallback)
+		if tc.wild {
+			require.Equal(t, 1, strings.Count(logged, want), "fallback %d", tc.fallback)
+		} else {
+			require.NotContains(t, logged, "WARN", "fallback %d", tc.fallback)
+		}
+	}
+}
+
+func TestServiceNodeWarnsOnWildConsensusOncePerChange(t *testing.T) {
+	sn, g := newTestServiceNode(t, config.Debug{})
+	for _, ms := range []uint64{5000, 5000, 90000, 0, 6908, 110528, 5000, math.MaxUint64, math.MaxUint64} {
+		sn.OnNewMixMaxDelay(ms)
+	}
+	logged := g.logged(t)
+	warn := func(ms uint64) string {
+		return fmt.Sprintf("WARN provider: Consensus MixMaxDelay %d ms differs from the built-in 27.632s by more than a factor of 4.", ms)
+	}
+	require.Equal(t, 2, strings.Count(logged, warn(5000)))
+	require.Equal(t, 1, strings.Count(logged, warn(math.MaxUint64)))
+	require.Equal(t, 3, strings.Count(logged, "WARN"))
 }
 
 func TestServiceNodeDropsStaleRequestBeforeHolding(t *testing.T) {
