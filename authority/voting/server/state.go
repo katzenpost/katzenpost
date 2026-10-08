@@ -1747,7 +1747,9 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	topology := make([][]*pki.MixDescriptor, s.s.cfg.Debug.Layers)
 
 	// Assign nodes that still exist up to the target size.
-	for layer, nodes := range doc.Topology {
+	priorLayers := min(len(doc.Topology), len(topology))
+	for layer := 0; layer < priorLayers; layer++ {
+		nodes := doc.Topology[layer]
 		nodeIndexes := rng.Perm(len(nodes))
 
 		for _, idx := range nodeIndexes {
@@ -1779,7 +1781,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	// Fill out any layers that are under the target size, by
 	// randomly assigning from the pending list.
 	idx := 0
-	for layer := range doc.Topology {
+	for layer := 0; layer < priorLayers; layer++ {
 		for len(topology[layer]) < targetNodesPerLayer {
 			n := toAssign[assignIndexes[idx]]
 			topology[layer] = append(topology[layer], n)
@@ -2576,7 +2578,11 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 	// save the vote
 	s.votes[s.votingEpoch][pk] = doc
 	// save the commit
-	s.commits[s.votingEpoch][pk] = commit
+	if s.state == stateAcceptVote || s.state == stateAcceptDescriptor {
+		s.commits[s.votingEpoch][pk] = commit
+	} else {
+		s.log.Warningf("Vote from %s accepted for descriptor tally, but SharedRandom commit ignored past vote phase (%s)", s.authorityNames[pk], s.state)
+	}
 	s.log.Noticef("Vote OK from: %s\n%s", s.authorityNames[pk], doc)
 	instrument.VoteReceived("ok")
 	resp.ErrorCode = commands.VoteOk

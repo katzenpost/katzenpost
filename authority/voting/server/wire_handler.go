@@ -220,7 +220,7 @@ func (s *Server) onConn(conn net.Conn) {
 	// global semaphore already bounds the total and stays before the handshake,
 	// so a handshake flood is still bounded; this check is necessarily after the
 	// handshake because the peer identity is only known once it completes.
-	if len(auth.peerIdentityKeyHash) == hash.HashSize {
+	if auth.isAuthority && len(auth.peerIdentityKeyHash) == hash.HashSize {
 		var peerSlotID [hash.HashSize]byte
 		copy(peerSlotID[:], auth.peerIdentityKeyHash)
 		if !s.acquirePeerSlot(peerSlotID) {
