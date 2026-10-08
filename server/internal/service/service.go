@@ -311,3 +311,7 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 	isOk = true
 	return p, nil
 }
+
+func mergeAdvertized(plugin, static map[string]map[string]interface{}, onClash func(capa, key string)) map[string]map[string]interface{} {
+	return nil
+}

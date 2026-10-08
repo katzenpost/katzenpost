@@ -434,3 +434,7 @@ func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) erro
 	})
 	return nil
 }
+
+func (k *CBORPluginWorker) AdvertisedData() map[string]map[string]interface{} {
+	return nil
+}
