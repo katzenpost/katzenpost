@@ -1,15 +1,18 @@
 package main
 
 import (
-	"regexp"
 	"testing"
+
+	"github.com/katzenpost/katzenpost/client/config"
 )
 
 func TestDefaultDBusNameIsValidWellKnownName(t *testing.T) {
-	// A dbus well-known name is two or more '.'-separated elements, each
-	// [A-Za-z_-][A-Za-z0-9_-]*.
-	re := regexp.MustCompile(`^[A-Za-z_-][A-Za-z0-9_-]*(\.[A-Za-z_-][A-Za-z0-9_-]*)+$`)
-	if !re.MatchString(defaultDBusName) {
-		t.Fatalf("defaultDBusName %q is not a valid dbus well-known name", defaultDBusName)
+	if err := config.ValidateDBusName(defaultDBusName); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"", "kpclientd", ".a.b", "a..b", "a.1b", ":1.5", "a b.c"} {
+		if err := config.ValidateDBusName(bad); err == nil {
+			t.Fatalf("%q accepted", bad)
+		}
 	}
 }
