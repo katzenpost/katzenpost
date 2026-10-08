@@ -31,3 +31,25 @@ func TestLoggingLevelInvalid(t *testing.T) {
 	l := &Logging{Level: "loud"}
 	require.Error(t, l.validate())
 }
+
+func TestLoggingEveryLevelAccepted(t *testing.T) {
+	for in, want := range map[string]string{
+		"ERROR":   "ERROR",
+		"warning": "WARNING",
+		"Notice":  "NOTICE",
+		"INFO":    "INFO",
+		"dEbUg":   "DEBUG",
+	} {
+		l := &Logging{Level: in}
+		require.NoError(t, l.validate(), in)
+		require.Equal(t, want, l.Level, in)
+	}
+}
+
+func TestLoggingInvalidLevelNamedAndKept(t *testing.T) {
+	for _, in := range []string{"loud", "TRACE", " INFO", "NOTICE\n"} {
+		l := &Logging{Level: in}
+		require.ErrorContains(t, l.validate(), "'"+in+"'", in)
+		require.Equal(t, in, l.Level, in)
+	}
+}
