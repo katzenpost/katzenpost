@@ -2,11 +2,13 @@
 
 package config
 
+import "github.com/katzenpost/katzenpost/core/pki"
+
 type Notice struct {
 	MinClientVersion string
 	ClientNotice     string
 }
 
 func (n *Notice) validate() error {
-	return nil
+	return pki.IsClientNoticeWellFormed(n.MinClientVersion, n.ClientNotice)
 }

@@ -178,8 +178,8 @@ type Document struct {
 	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 
-	MinClientVersion string `cbor:"-"`
-	ClientNotice     string `cbor:"-"`
+	MinClientVersion string `cbor:"MinClientVersion,omitempty"`
+	ClientNotice     string `cbor:"ClientNotice,omitempty"`
 }
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
@@ -591,6 +591,9 @@ func isDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 	}
 	if len(d.WeeklySharedRandom) == 0 && d.GenesisEpoch != d.Epoch {
 		return fmt.Errorf("Document has invalid WeeklySharedRandom")
+	}
+	if err := IsClientNoticeWellFormed(d.MinClientVersion, d.ClientNotice); err != nil {
+		return err
 	}
 	// If there is a SharedRandomCommit, verify the Epoch contained in
 	// SharedRandomCommit matches the Epoch in the Document.
