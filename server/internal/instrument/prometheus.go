@@ -240,6 +240,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(kaetzchenRequestsDropped)
 	prometheus.MustRegister(kaetzchenRequestsDuration)
 	prometheus.MustRegister(kaetzchenRequestsFailed)
+	prometheus.MustRegister(kaetzchenResponsesDropped)
 	prometheus.MustRegister(mixPacketsDropped)
 	prometheus.MustRegister(mixQueueSize)
 	prometheus.MustRegister(pkiDocs)
@@ -312,7 +313,9 @@ func KaetzchenRequestsDropped(dropCounter uint64) {
 	kaetzchenRequestsDropped.Add(float64(dropCounter))
 }
 
-func KaetzchenResponsesDropped(capability string) {}
+func KaetzchenResponsesDropped(capability string) {
+	kaetzchenResponsesDropped.With(prometheus.Labels{"capability": capability}).Inc()
+}
 
 // KaetzchenRequestsFailed increments the counter for the number of failed kaetzchen requests
 func KaetzchenRequestsFailed() {
