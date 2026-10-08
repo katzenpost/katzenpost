@@ -66,10 +66,8 @@ func setupThinClientWithConfig(tb testing.TB, configFile, logLevel string) *thin
 	}
 
 	client := thin.NewThinClient(cfg, logging)
-	tb.Log("thin client Dialing")
 	err = client.Dial()
 	require.NoError(tb, err)
-	tb.Log("thin client connected")
 
 	registerClientForShutdown(client)
 	return client
@@ -82,7 +80,6 @@ func setupThinClient(tb testing.TB) *thin.ThinClient {
 
 // validatePKIDocument gets and validates the PKI document from a thin client
 func validatePKIDocument(t *testing.T, client *thin.ThinClient) *cpki.Document {
-	t.Log("thin client getting PKI doc")
 	doc := client.PKIDocument()
 	require.NotNil(t, doc)
 	require.NotEqual(t, doc.LambdaP, 0.0)
@@ -176,21 +173,13 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 		}
 
 		switch v := event.(type) {
-		case *thin.MessageIDGarbageCollected:
-			t.Log("MessageIDGarbageCollected")
+		case *thin.MessageIDGarbageCollected, *thin.NewDocumentEvent, *thin.MessageSentEvent:
 		case *thin.ConnectionStatusEvent:
-			t.Log("ConnectionStatusEvent")
 			if !v.IsConnected {
 				return nil, fmt.Errorf("socket connection lost")
 			}
-		case *thin.NewDocumentEvent:
-			t.Log("NewDocumentEvent")
-		case *thin.MessageSentEvent:
-			t.Log("MessageSentEvent")
 		case *thin.MessageReplyEvent:
-			t.Log("MessageReplyEvent")
 			if v.SURBID == nil || !sent[string(v.SURBID[:])] {
-				t.Log("reply for an earlier SURB, ignoring")
 				continue
 			}
 			return v.Payload, nil
