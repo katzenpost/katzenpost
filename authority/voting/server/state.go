@@ -2578,7 +2578,11 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 	// save the vote
 	s.votes[s.votingEpoch][pk] = doc
 	// save the commit
-	s.commits[s.votingEpoch][pk] = commit
+	if s.state == stateAcceptVote || s.state == stateAcceptDescriptor {
+		s.commits[s.votingEpoch][pk] = commit
+	} else {
+		s.log.Warningf("Vote from %s accepted for descriptor tally, but SharedRandom commit ignored past vote phase (%s)", s.authorityNames[pk], s.state)
+	}
 	s.log.Noticef("Vote OK from: %s\n%s", s.authorityNames[pk], doc)
 	instrument.VoteReceived("ok")
 	resp.ErrorCode = commands.VoteOk
