@@ -44,13 +44,12 @@ func TestIsClientNoticeWellFormed(t *testing.T) {
 	require.Error(t, IsClientNoticeWellFormed("", "caf\xc3\xa9"))
 }
 
-func TestIsDocumentWellFormedChecksNotice(t *testing.T) {
+func TestIsDocumentWellFormedIgnoresNotice(t *testing.T) {
 	d := &Document{Version: DocumentVersion, Epoch: 1, GenesisEpoch: 1}
+	d.ClientNotice = strings.Repeat("n", 513) + "\n"
+	d.MinClientVersion = strings.Repeat("v", 33)
 	err := IsDocumentWellFormed(d, nil)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "ClientNotice")
-	d.ClientNotice = strings.Repeat("n", 513)
-	err = IsDocumentWellFormed(d, nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "ClientNotice")
+	require.NotContains(t, err.Error(), "MinClientVersion")
 }

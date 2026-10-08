@@ -14,7 +14,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
-func runNoticeRound(t *testing.T, notices []config.Notice) ([]*pki.Document, []error) {
+func exchangeNoticeVotes(t *testing.T, notices []config.Notice) ([]*state, uint64) {
 	epoch, _, _ := epochtime.Now()
 	epoch += 2
 	states, _ := buildScenarioStates(t, len(notices), epoch, nil)
@@ -34,6 +34,11 @@ func runNoticeRound(t *testing.T, notices []config.Notice) ([]*pki.Document, []e
 			}
 		}
 	}
+	return states, epoch
+}
+
+func runNoticeRound(t *testing.T, notices []config.Notice) ([]*pki.Document, []error) {
+	states, epoch := exchangeNoticeVotes(t, notices)
 	for i, s := range states {
 		s.state = stateAcceptReveal
 		r := s.reveal(epoch)
@@ -99,8 +104,11 @@ func TestConsensusCarriesAgreedNotice(t *testing.T) {
 }
 
 func TestMismatchedNoticesFormNoConsensus(t *testing.T) {
-	_, errs := runNoticeRound(t, []config.Notice{{ClientNotice: "a"}, {ClientNotice: "b"}, {ClientNotice: "c"}})
-	for _, err := range errs {
+	states, epoch := exchangeNoticeVotes(t, []config.Notice{{ClientNotice: "a"}, {ClientNotice: "b"}, {ClientNotice: "c"}})
+	for _, s := range states {
+		s.Lock()
+		_, _, _, err := s.tallyVotes(epoch)
+		s.Unlock()
 		require.Error(t, err)
 	}
 }
