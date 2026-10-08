@@ -50,7 +50,15 @@ func (t *TimerQueue) Peek() *Entry {
 func (t *TimerQueue) Pop() interface{} {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
+	t.mergePendingLocked()
 	return t.queue.Dequeue()
+}
+
+func (t *TimerQueue) mergePendingLocked() {
+	for _, item := range t.pending {
+		t.queue.Enqueue(item.priority, item.value)
+	}
+	t.pending = nil
 }
 
 func (t *TimerQueue) Len() int {
@@ -105,8 +113,8 @@ func (t *TimerQueue) Push(priority uint64, value interface{}) {
 	}
 }
 
-// PushChLen reports the number of items Push has accepted that the worker has
-// not yet moved into the heap. Intended for tests that wish to assert "items
+// PushChLen reports the number of items Push has accepted that have not yet
+// been moved into the heap. Intended for tests that wish to assert "items
 // were pushed but the worker has not yet drained them"; production callers
 // should not depend on this value.
 func (t *TimerQueue) PushChLen() int {
@@ -137,28 +145,9 @@ func (t *TimerQueue) worker() {
 			return
 		case <-timer.C:
 			timerFired = true
-
-			t.mutex.Lock()
-			m := t.queue.Peek()
-			t.queue.Dequeue()
-			t.mutex.Unlock()
-			if m != nil {
-				// Use a separate goroutine that respects the halt channel
-				go func(value interface{}) {
-					select {
-					case <-t.HaltCh():
-						return
-					default:
-						t.action(value)
-					}
-				}(m.Value)
-			}
 		case <-t.wakeCh:
 			t.mutex.Lock()
-			for _, item := range t.pending {
-				t.queue.Enqueue(item.priority, item.value)
-			}
-			t.pending = nil
+			t.mergePendingLocked()
 			t.mutex.Unlock()
 		}
 
@@ -172,6 +161,12 @@ func (t *TimerQueue) worker() {
 
 		for {
 			t.mutex.Lock()
+			select {
+			case <-t.HaltCh():
+				t.mutex.Unlock()
+				return
+			default:
+			}
 			m := t.queue.Peek()
 
 			if m == nil {
@@ -187,15 +182,7 @@ func (t *TimerQueue) worker() {
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
 				t.queue.Dequeue()
 				t.mutex.Unlock()
-				// Use a separate goroutine that respects the halt channel
-				go func(value interface{}) {
-					select {
-					case <-t.HaltCh():
-						return
-					default:
-						t.action(value)
-					}
-				}(m.Value)
+				t.action(m.Value)
 				continue
 			} else {
 				timer.Reset(time.Duration(timeLeft))

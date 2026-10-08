@@ -3,6 +3,7 @@
 package queue
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,4 +68,95 @@ func TestTimerQueueCancelLeavesTheRestSchedulable(t *testing.T) {
 		t.Fatalf("a cancelled entry fired: %v", got)
 	case <-time.After(100 * time.Millisecond):
 	}
+}
+
+func TestTimerQueueCancelDoesNotDispatchTheNextEarly(t *testing.T) {
+	t.Parallel()
+	fired := make(chan interface{}, 2)
+	q := NewTimerQueue(func(v interface{}) { fired <- v })
+	q.Start()
+	t.Cleanup(q.Halt)
+
+	a, b := new(int), new(int)
+	start := time.Now()
+	q.Push(uint64(start.Add(500*time.Millisecond).UnixNano()), a)
+	q.Push(uint64(start.Add(time.Hour).UnixNano()), b)
+	require.Eventually(t, func() bool { return q.Len() == 2 }, 250*time.Millisecond, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.True(t, q.Cancel(a))
+
+	select {
+	case got := <-fired:
+		t.Fatalf("an entry due in an hour ran %v after start, its neighbour having been cancelled (is b: %v)", time.Since(start), got == b)
+	case <-time.After(time.Until(start.Add(time.Second))):
+	}
+}
+
+func TestTimerQueueHaltLeavesUnrunItemsPoppable(t *testing.T) {
+	t.Parallel()
+	for round := 0; round < 200; round++ {
+		var ran atomic.Int64
+		q := NewTimerQueue(func(interface{}) { ran.Add(1) })
+		q.EnqueueDirect(0, new(int))
+		q.Start()
+		q.Push(0, new(int))
+		q.Halt()
+
+		popped := 0
+		for q.Pop() != nil {
+			popped++
+		}
+		require.Equal(t, 2, int(ran.Load())+popped+q.PushChLen(),
+			"round %d: ran %d, popped %d, pending %d", round, ran.Load(), popped, q.PushChLen())
+	}
+}
+
+func TestTimerQueuePopReturnsAJustPushedEntry(t *testing.T) {
+	t.Parallel()
+	q := NewTimerQueue(func(interface{}) {})
+	t.Cleanup(q.Halt)
+
+	early, late := new(int), new(int)
+	q.EnqueueDirect(2, late)
+	q.Push(1, early)
+
+	for _, want := range []*int{early, late} {
+		e, ok := q.Pop().(*Entry)
+		require.True(t, ok, "Pop found nothing although an entry was pushed")
+		require.Same(t, want, e.Value, "Pop skipped the entry that was pushed but not yet in the heap")
+	}
+	require.Nil(t, q.Pop())
+	require.Equal(t, 0, q.Len()+q.PushChLen())
+}
+
+func TestTimerQueueDispatchIsBounded(t *testing.T) {
+	t.Parallel()
+	const n = 50
+	var inFlight atomic.Int64
+	started := make(chan struct{}, n)
+	var q *TimerQueue
+	q = NewTimerQueue(func(interface{}) {
+		inFlight.Add(1)
+		defer inFlight.Add(-1)
+		started <- struct{}{}
+		<-q.HaltCh()
+	})
+	for i := 0; i < n; i++ {
+		q.Push(0, new(int))
+	}
+	q.Start()
+	t.Cleanup(q.Halt)
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no due entry was dispatched")
+	}
+	select {
+	case <-started:
+		t.Fatalf("a second action started while the first was still running, %d in flight", inFlight.Load())
+	case <-time.After(200 * time.Millisecond):
+	}
+	require.Equal(t, int64(1), inFlight.Load())
+	require.Equal(t, n-1, q.Len()+q.PushChLen(), "entries not yet run must stay queued")
 }
