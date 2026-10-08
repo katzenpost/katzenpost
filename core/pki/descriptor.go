@@ -73,7 +73,7 @@ type MixDescriptor struct {
 	// LoadWeight is the node's load balancing weight (unused).
 	LoadWeight uint8
 
-	ContactInfo string `cbor:"-"`
+	ContactInfo string `cbor:"ContactInfo,omitempty"`
 
 	// AuthenticationType is the authentication mechanism required
 	AuthenticationType string
@@ -109,7 +109,17 @@ func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	return ccbor.Marshal((*mixdescriptor)(d))
 }
 
+const maxContactInfoLength = 256
+
 func IsContactInfoWellFormed(v string) error {
+	if len(v) > maxContactInfoLength {
+		return fmt.Errorf("ContactInfo exceeds %d bytes", maxContactInfoLength)
+	}
+	for i := 0; i < len(v); i++ {
+		if v[i] < 0x20 || v[i] > 0x7e {
+			return fmt.Errorf("ContactInfo has a non-printable byte at %d", i)
+		}
+	}
 	return nil
 }
 
