@@ -29,12 +29,29 @@ func TestCacheEntryNeedsRedispatch(t *testing.T) {
 	old := &CourierBookKeeping{CreatedAt: time.Now().Add(-2 * redispatchGrace)}
 	require.True(t, e.cacheEntryNeedsRedispatch(old))
 
-	// Errors only: re-dispatch regardless of age.
 	errsOnly := &CourierBookKeeping{
-		CreatedAt:       time.Now(),
+		CreatedAt:       time.Now().Add(-2 * redispatchGrace),
 		EnvelopeReplies: [2]*commands.ReplicaMessageReply{errReply, nil},
 	}
 	require.True(t, e.cacheEntryNeedsRedispatch(errsOnly))
+
+	spentTooSoon := &CourierBookKeeping{
+		CreatedAt:          time.Now().Add(-2 * redispatchGrace),
+		RedispatchAttempts: 2,
+		EnvelopeReplies:    [2]*commands.ReplicaMessageReply{errReply, nil},
+	}
+	require.False(t, e.cacheEntryNeedsRedispatch(spentTooSoon),
+		"attempt %d must wait %s from creation, not fire on the next poll",
+		spentTooSoon.RedispatchAttempts+1, redispatchGrace*time.Duration(spentTooSoon.RedispatchAttempts+1))
+
+	spacedOut := &CourierBookKeeping{
+		CreatedAt:          time.Now().Add(-4 * redispatchGrace),
+		RedispatchAttempts: 2,
+		EnvelopeReplies:    [2]*commands.ReplicaMessageReply{errReply, nil},
+	}
+	require.True(t, e.cacheEntryNeedsRedispatch(spacedOut),
+		"attempt %d is due once %s have passed since creation",
+		spacedOut.RedispatchAttempts+1, redispatchGrace*time.Duration(spacedOut.RedispatchAttempts+1))
 
 	// Any success: never re-dispatch.
 	success := &CourierBookKeeping{
