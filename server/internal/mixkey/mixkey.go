@@ -310,11 +310,11 @@ func readKeyFile(fd io.Reader, epoch uint64, g *geo.Geometry) (*MixKey, bool, er
 // consensus. The write is atomic (temp file + rename).
 func (k *MixKey) Persist(keyStoreDir string) error {
 	kind := byte(keyFileKindNike)
-	var keyBytes []byte
+	var keyBytes, again []byte
 	switch {
 	case k.nikeKeypair != nil:
 		keyBytes = k.nikeKeypair.Bytes()
-		defer utils.ExplicitBzero(keyBytes)
+		again = k.nikeKeypair.Bytes()
 	case k.kemKeypair != nil:
 		kind = keyFileKindKem
 		var err error
@@ -322,8 +322,16 @@ func (k *MixKey) Persist(keyStoreDir string) error {
 		if err != nil {
 			return err
 		}
+		again, err = k.kemKeypair.MarshalBinary()
+		if err != nil {
+			return err
+		}
 	default:
 		return errors.New("mixkey: cannot persist a key with no private key material")
+	}
+	if !sameStorage(keyBytes, again) {
+		defer utils.ExplicitBzero(keyBytes)
+		defer utils.ExplicitBzero(again)
 	}
 
 	hdr := make([]byte, 0, len(keyFileMagic)+5+len(keyBytes))
@@ -331,6 +339,7 @@ func (k *MixKey) Persist(keyStoreDir string) error {
 	hdr = append(hdr, kind)
 	hdr = binary.BigEndian.AppendUint32(hdr, uint32(len(keyBytes)))
 	hdr = append(hdr, keyBytes...)
+	defer utils.ExplicitBzero(hdr)
 
 	if err := os.MkdirAll(keyStoreDir, 0700); err != nil {
 		return err
@@ -351,6 +360,10 @@ func Remove(epoch uint64, keyStoreDir string) {
 }
 
 var writeKeyFile = atomicWrite
+
+func sameStorage(a, b []byte) bool {
+	return len(a) == 0 || len(b) == 0 || &a[0] == &b[0]
+}
 
 func keyPath(epoch uint64, keyStoreDir string) string {
 	return filepath.Join(keyStoreDir, fmt.Sprintf("mixkey-%d.bin", epoch))
