@@ -165,6 +165,13 @@ var (
 		},
 		[]string{"channel_name"},
 	)
+	channelUsageMax = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_channel_usage_max",
+			Help: "Highest number of items seen in the channel since start",
+		},
+		[]string{"channel_name"},
+	)
 	rateLimitDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_dropped_rate_limit_total",
