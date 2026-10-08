@@ -2,7 +2,21 @@
 
 package cborplugin
 
-import "os"
+import (
+	"os"
+
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+)
+
+const (
+	PluginPayloadLengthEnv = "KATZENPOST_PLUGIN_USER_FORWARD_PAYLOAD_LENGTH"
+	PluginGeometryEnv      = "KATZENPOST_PLUGIN_SPHINX_GEOMETRY"
+)
+
+type Host struct {
+	UserForwardPayloadLength int
+	Geometry                 *geo.Geometry
+}
 
 func HostSocketPath(fallback string) (string, bool) {
 	socket := os.Getenv(PluginSocketEnv)
@@ -10,4 +24,8 @@ func HostSocketPath(fallback string) (string, bool) {
 		return fallback, false
 	}
 	return socket, true
+}
+
+func HostInfo() (*Host, error) {
+	return new(Host), nil
 }
