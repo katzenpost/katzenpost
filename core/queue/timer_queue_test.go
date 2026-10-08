@@ -68,3 +68,25 @@ func TestTimerQueueCancelLeavesTheRestSchedulable(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+func TestTimerQueueCancelDoesNotDispatchTheNextEarly(t *testing.T) {
+	t.Parallel()
+	fired := make(chan interface{}, 2)
+	q := NewTimerQueue(func(v interface{}) { fired <- v })
+	q.Start()
+	t.Cleanup(q.Halt)
+
+	a, b := new(int), new(int)
+	start := time.Now()
+	q.Push(uint64(start.Add(500*time.Millisecond).UnixNano()), a)
+	q.Push(uint64(start.Add(time.Hour).UnixNano()), b)
+	require.Eventually(t, func() bool { return q.Len() == 2 }, 250*time.Millisecond, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.True(t, q.Cancel(a))
+
+	select {
+	case got := <-fired:
+		t.Fatalf("an entry due in an hour ran %v after start, its neighbour having been cancelled (is b: %v)", time.Since(start), got == b)
+	case <-time.After(time.Until(start.Add(time.Second))):
+	}
+}
