@@ -21,9 +21,11 @@ package kaetzchen
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/op/go-logging.v1"
 
@@ -37,7 +39,10 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
-const InboundPacketsChannelSize = 1000
+const (
+	InboundPacketsChannelSize = 1000
+	maxPluginParamsSize       = 4096
+)
 
 // PluginChans maps from Recipient ID to channel.
 type PluginChans = map[[constants.RecipientIDLength]byte]chan interface{}
@@ -67,6 +72,7 @@ type CBORPluginWorker struct {
 	haltOnce    sync.Once
 	pluginChans PluginChans
 	clients     []*cborplugin.Client
+	params      map[string]map[string]interface{}
 }
 
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
@@ -183,6 +189,10 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 		case cborResponse := <-pluginClient.ReadChan():
 			switch r := cborResponse.(type) {
 			case *cborplugin.Response:
+				if r.IsParametersResponse {
+					k.storeParams(pluginCap, r.Params)
+					continue
+				}
 				if len(r.Payload) > k.geo.UserForwardPayloadLength {
 					// response is probably invalid, so drop it
 					k.log.Errorf("%v: Got response too long: %d > max (%d)",
@@ -222,6 +232,33 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 				instrument.KaetzchenRequestsDropped(1)
 			}
 		}
+	}
+}
+
+func (k *CBORPluginWorker) storeParams(capa string, params map[string]interface{}) {
+	blob, err := cbor.Marshal(params)
+	if err != nil || len(blob) > maxPluginParamsSize {
+		k.log.Errorf("%v: refusing plugin parameters (%d bytes, max %d): %v", capa, len(blob), maxPluginParamsSize, err)
+		return
+	}
+	k.Lock()
+	defer k.Unlock()
+	if _, ok := k.params[capa]; !ok {
+		k.params[capa] = params
+	}
+}
+
+func (k *CBORPluginWorker) AdvertisedData() map[string]map[string]interface{} {
+	k.Lock()
+	defer k.Unlock()
+	return maps.Clone(k.params)
+}
+
+func (k *CBORPluginWorker) requestParams(pluginClient *cborplugin.Client) {
+	select {
+	case <-k.HaltCh():
+	case <-pluginClient.HaltCh():
+	case pluginClient.WriteChan() <- cborplugin.NewParametersRequest():
 	}
 }
 
@@ -297,6 +334,7 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
 		pluginChans: make(PluginChans),
 		clients:     make([]*cborplugin.Client, 0),
+		params:      make(map[string]map[string]interface{}),
 	}
 
 	capaMap := make(map[string]bool)
@@ -427,14 +465,16 @@ func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) erro
 		k.sendworker(pluginClient)
 	})
 
+	if pluginClient.SpeaksProtocol2() {
+		defer k.Go(func() {
+			k.requestParams(pluginClient)
+		})
+	}
+
 	// Unregister pluginClient when it halts
 	defer k.Go(func() {
 		<-pluginClient.HaltCh()
 		k.unregister(endpoint, pluginClient)
 	})
-	return nil
-}
-
-func (k *CBORPluginWorker) AdvertisedData() map[string]map[string]interface{} {
 	return nil
 }

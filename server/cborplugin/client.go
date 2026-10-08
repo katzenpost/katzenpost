@@ -220,6 +220,7 @@ type Client struct {
 
 	socketFile string
 	hostDir    string
+	protocol2  bool
 	cmd        *exec.Cmd
 	//conn       net.Conn
 
@@ -245,6 +246,10 @@ func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuil
 		capability:     capability,
 		endpoint:       endpoint,
 	}
+}
+
+func (c *Client) SpeaksProtocol2() bool {
+	return c.protocol2
 }
 
 func (c *Client) Capability() string {
@@ -381,6 +386,7 @@ func (c *Client) awaitSocket(command, hostSocket string, firstLine <-chan string
 		for _, p := range []string{hostSocket, candidate} {
 			if p != "" && isSocket(p) {
 				c.socketFile = p
+				c.protocol2 = p == hostSocket
 				c.log.Debugf("plugin socket path:'%s'\n", p)
 				return nil
 			}
@@ -458,8 +464,4 @@ func NewParametersResponse(params map[string]interface{}) *Response {
 		IsParametersResponse: true,
 		Params:               params,
 	}
-}
-
-func (c *Client) SpeaksProtocol2() bool {
-	return false
 }
