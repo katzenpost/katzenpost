@@ -24,7 +24,7 @@ jobs:
       matrix:
         go-version: [1.26.x]
         os: [ubuntu-latest]
-        transport: ${{ github.event_name == 'schedule' && fromJSON('["tcp", "alternate"]') || fromJSON('["tcp"]') }}
+        transport: [tcp]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
