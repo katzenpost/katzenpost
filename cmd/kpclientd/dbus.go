@@ -22,12 +22,10 @@ func sessionBus() (busOwner, error) {
 		return nil, fmt.Errorf("%w: %v", errNoSessionBus, err)
 	}
 	if err := conn.Auth(nil); err != nil {
-		conn.Close()
-		return nil, err
+		return nil, errors.Join(err, conn.Close())
 	}
 	if err := conn.Hello(); err != nil {
-		conn.Close()
-		return nil, err
+		return nil, errors.Join(err, conn.Close())
 	}
 	return conn, nil
 }
@@ -48,13 +46,11 @@ func ownBusName(ctx context.Context, name string) (io.Closer, error) {
 		}
 		reply, err := conn.RequestName(name, dbus.NameFlagDoNotQueue)
 		if err != nil {
-			conn.Close()
-			ch <- result{nil, err}
+			ch <- result{nil, errors.Join(err, conn.Close())}
 			return
 		}
 		if reply != dbus.RequestNameReplyPrimaryOwner {
-			conn.Close()
-			ch <- result{nil, fmt.Errorf("dbus name %s is already owned", name)}
+			ch <- result{nil, errors.Join(fmt.Errorf("dbus name %s is already owned", name), conn.Close())}
 			return
 		}
 		ch <- result{conn, nil}
