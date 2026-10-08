@@ -91,6 +91,7 @@ var BuiltInCtors = map[string]BuiltInCtorFn{
 	TestDestCapability: func(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 		return NewEcho(cfg, glue, TestDestCapability)
 	},
+	MOTDCapability: NewMOTD,
 }
 
 type KaetzchenWorker struct {
