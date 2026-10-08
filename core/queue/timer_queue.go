@@ -137,22 +137,6 @@ func (t *TimerQueue) worker() {
 			return
 		case <-timer.C:
 			timerFired = true
-
-			t.mutex.Lock()
-			m := t.queue.Peek()
-			t.queue.Dequeue()
-			t.mutex.Unlock()
-			if m != nil {
-				// Use a separate goroutine that respects the halt channel
-				go func(value interface{}) {
-					select {
-					case <-t.HaltCh():
-						return
-					default:
-						t.action(value)
-					}
-				}(m.Value)
-			}
 		case <-t.wakeCh:
 			t.mutex.Lock()
 			for _, item := range t.pending {
