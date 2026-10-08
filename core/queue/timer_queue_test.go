@@ -110,3 +110,21 @@ func TestTimerQueueHaltLeavesUnrunItemsPoppable(t *testing.T) {
 			"round %d: ran %d, popped %d, pending %d", round, ran.Load(), popped, q.PushChLen())
 	}
 }
+
+func TestTimerQueuePopReturnsAJustPushedEntry(t *testing.T) {
+	t.Parallel()
+	q := NewTimerQueue(func(interface{}) {})
+	t.Cleanup(q.Halt)
+
+	early, late := new(int), new(int)
+	q.EnqueueDirect(2, late)
+	q.Push(1, early)
+
+	for _, want := range []*int{early, late} {
+		e, ok := q.Pop().(*Entry)
+		require.True(t, ok, "Pop found nothing although an entry was pushed")
+		require.Same(t, want, e.Value, "Pop skipped the entry that was pushed but not yet in the heap")
+	}
+	require.Nil(t, q.Pop())
+	require.Equal(t, 0, q.Len()+q.PushChLen())
+}
