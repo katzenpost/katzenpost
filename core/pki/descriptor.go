@@ -112,15 +112,7 @@ func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 const maxContactInfoLength = 256
 
 func IsContactInfoWellFormed(v string) error {
-	if len(v) > maxContactInfoLength {
-		return fmt.Errorf("ContactInfo exceeds %d bytes", maxContactInfoLength)
-	}
-	for i := 0; i < len(v); i++ {
-		if v[i] < 0x20 || v[i] > 0x7e {
-			return fmt.Errorf("ContactInfo has a non-printable byte at %d", i)
-		}
-	}
-	return nil
+	return printableWithin("ContactInfo", v, maxContactInfoLength)
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive
@@ -183,15 +175,7 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 const maxSoftwareVersionLength = 128
 
 func IsSoftwareVersionWellFormed(v string) error {
-	if len(v) > maxSoftwareVersionLength {
-		return fmt.Errorf("SoftwareVersion exceeds %d bytes", maxSoftwareVersionLength)
-	}
-	for i := 0; i < len(v); i++ {
-		if v[i] < 0x20 || v[i] > 0x7e {
-			return fmt.Errorf("SoftwareVersion has a non-printable byte at %d", i)
-		}
-	}
-	return nil
+	return printableWithin("SoftwareVersion", v, maxSoftwareVersionLength)
 }
 
 func isDescriptorAddressWellFormed(transport, addr string, isGatewayNode bool, allowOnion bool) error {
