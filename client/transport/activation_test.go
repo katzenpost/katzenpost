@@ -149,3 +149,26 @@ func TestSystemdSocketActivate(t *testing.T) {
 	require.Equal(t, path, string(got), out.String())
 	require.NoError(t, waitErr, out.String())
 }
+
+func TestUnmatchedInheritedSocketIsRefused(t *testing.T) {
+	for name, cfg := range map[string]func(path string) *ListenConfig{
+		"unix": func(path string) *ListenConfig { return &ListenConfig{Unix: &UnixListenConfig{Address: path}} },
+		"tcp":  func(string) *ListenConfig { return &ListenConfig{Tcp: &TcpListenConfig{Address: "127.0.0.1:0"}} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if os.Getenv(activationChild) == "" {
+				unmatched := fmt.Sprintf("@kp-activation-%d-%s", os.Getpid(), name)
+				runActivated(t, []string{"KP_TEST_ABSTRACT=" + unmatched}, listenUnixForChild(t, unmatched))
+				return
+			}
+			t.Setenv("LISTEN_PID", strconv.Itoa(os.Getpid()))
+			path := filepath.Join(shortSockDir(t), "kpclientd.sock")
+			l, err := cfg(path).Listen()
+			require.ErrorContains(t, err, os.Getenv("KP_TEST_ABSTRACT"))
+			require.Nil(t, l)
+			requireActivationEnvUnset(t)
+			_, err = os.Stat(path)
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
