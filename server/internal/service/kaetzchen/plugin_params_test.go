@@ -34,11 +34,8 @@ func (p *paramsPlugin) OnCommand(cmd cborplugin.Command) error {
 	return nil
 }
 
-func TestParamsHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_PARAMS_HELPER") != "1" {
-		return
-	}
-	tmpDir, err := os.MkdirTemp("", "kaetzchen_params_helper")
+func newParamsHelperLog(dirPrefix string) (*log.Backend, string) {
+	tmpDir, err := os.MkdirTemp("", dirPrefix)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -46,6 +43,14 @@ func TestParamsHelperProcess(t *testing.T) {
 	if err != nil {
 		os.Exit(1)
 	}
+	return logBackend, tmpDir
+}
+
+func TestParamsHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_PARAMS_HELPER") != "1" {
+		return
+	}
+	logBackend, tmpDir := newParamsHelperLog("kaetzchen_params_helper")
 	own := filepath.Join(tmpDir, "helper.socket")
 	socketFile, fromHost := cborplugin.HostSocketPath(own)
 	if os.Getenv("GO_PARAMS_LEGACY") == "1" {
