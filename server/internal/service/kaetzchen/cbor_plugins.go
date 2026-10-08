@@ -190,6 +190,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 					instrument.PacketsDropped()
 					instrument.PacketsDroppedByReason("cbor_kaetzchen_response_too_long")
 					instrument.KaetzchenRequestsDropped(1)
+					instrument.KaetzchenResponsesDropped(pluginCap)
 					continue
 				}
 				// Iff there is a SURB, generate a SURB-Reply and schedule.
@@ -199,6 +200,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 						k.log.Debugf("%v: Failed to generate SURB-Reply: %v (%v)", pluginCap, r.ID, err)
 						instrument.PacketsDropped()
 						instrument.PacketsDroppedByReason("cbor_kaetzchen_surb_reply_failed")
+						instrument.KaetzchenResponsesDropped(pluginCap)
 						continue
 					}
 					// Set the packet queue delay
@@ -220,6 +222,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 				instrument.PacketsDropped()
 				instrument.PacketsDroppedByReason("cbor_kaetzchen_unknown_response_type")
 				instrument.KaetzchenRequestsDropped(1)
+				instrument.KaetzchenResponsesDropped(pluginCap)
 			}
 		}
 	}
