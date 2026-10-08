@@ -30,7 +30,10 @@ type serviceNode struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch chan interface{}
+	ch      chan interface{}
+	readyCh chan *packet.Packet
+
+	preDelay *preDelay
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
@@ -38,6 +41,9 @@ type serviceNode struct {
 
 func (p *serviceNode) Halt() {
 	p.Worker.Halt()
+	if p.preDelay != nil {
+		p.preDelay.Halt()
+	}
 
 	close(p.ch)
 	p.kaetzchenWorker.Halt()
@@ -46,6 +52,26 @@ func (p *serviceNode) Halt() {
 
 func (p *serviceNode) OnPacket(pkt *packet.Packet) {
 	p.ch <- pkt
+}
+
+func (p *serviceNode) OnNewMixMaxDelay(ms uint64) {
+	if p.preDelay != nil {
+		p.preDelay.setMaxDelay(ms)
+	}
+}
+
+func (p *serviceNode) releaseDelayed(pkt *packet.Packet) {
+	select {
+	case p.readyCh <- pkt:
+	case <-p.HaltCh():
+		pkt.Dispose()
+	}
+}
+
+func dropDelayed(pkt *packet.Packet) {
+	instrument.PacketsDropped()
+	instrument.PacketsDroppedByReason("service_predelay_overflow")
+	pkt.Dispose()
 }
 
 func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[string]map[string]interface{}, error) {
@@ -108,6 +134,11 @@ func (p *serviceNode) worker() {
 				pkt.Dispose()
 				continue
 			}
+			if p.preDelay != nil {
+				p.preDelay.push(pkt)
+				continue
+			}
+		case pkt = <-p.readyCh:
 		}
 
 		if pkt == nil {
@@ -279,11 +310,19 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 		glue:                      glue,
 		log:                       glue.LogBackend().GetLogger("provider"),
 		ch:                        make(chan interface{}, InboundPacketsChannelSize),
+		readyCh:                   make(chan *packet.Packet, InboundPacketsChannelSize),
 		kaetzchenWorker:           kaetzchenWorker,
 		cborPluginKaetzchenWorker: cborPluginWorker,
 	}
 
 	cfg := glue.Config()
+	if !cfg.Debug.DisableServicePreDelay {
+		size := cfg.Debug.ServicePreDelayQueueSize
+		if size <= 0 {
+			size = defaultPreDelayQueueSize
+		}
+		p.preDelay = newPreDelay(p.releaseDelayed, size, dropDelayed)
+	}
 
 	isOk := false
 	defer func() {
