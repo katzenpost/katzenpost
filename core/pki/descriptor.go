@@ -80,7 +80,7 @@ type MixDescriptor struct {
 	// specified version so that it can be rejected if the format changes.
 	Version string
 
-	SoftwareVersion string `cbor:"-"`
+	SoftwareVersion string `cbor:"SoftwareVersion,omitempty"`
 }
 
 // String returns a human readable MixDescriptor suitable for terse logging.
@@ -164,7 +164,17 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 	return nil
 }
 
+const maxSoftwareVersionLength = 128
+
 func IsSoftwareVersionWellFormed(v string) error {
+	if len(v) > maxSoftwareVersionLength {
+		return fmt.Errorf("SoftwareVersion exceeds %d bytes", maxSoftwareVersionLength)
+	}
+	for i := 0; i < len(v); i++ {
+		if v[i] < 0x20 || v[i] > 0x7e {
+			return fmt.Errorf("SoftwareVersion has a non-printable byte at %d", i)
+		}
+	}
 	return nil
 }
 
@@ -253,7 +263,7 @@ type ReplicaDescriptor struct {
 	// be used to reach the node.
 	Addresses map[string][]string
 
-	SoftwareVersion string `cbor:"-"`
+	SoftwareVersion string `cbor:"SoftwareVersion,omitempty"`
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface

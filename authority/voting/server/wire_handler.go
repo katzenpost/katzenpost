@@ -649,7 +649,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 		return resp
 	}
 
-	if err := pki.IsReplicaDescriptorWellFormed(desc, cmd.Epoch); err != nil {
+	if err := errors.Join(pki.IsReplicaDescriptorWellFormed(desc, cmd.Epoch), pki.IsSoftwareVersionWellFormed(desc.SoftwareVersion)); err != nil {
 		s.log.Noticef(
 			"Peer %s: Rejecting malformed uploaded replica descriptor for node %s epoch %d: %s",
 			strconv.QuoteToASCII(peerID),
@@ -792,7 +792,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 
 	// TODO(david): Use the packet loss statistics to make decisions about how to
 	// generate the consensus document.
-	if err := pki.IsDescriptorWellFormed(desc, cmd.Epoch); err != nil {
+	if err := errors.Join(pki.IsDescriptorWellFormed(desc, cmd.Epoch), pki.IsSoftwareVersionWellFormed(desc.SoftwareVersion)); err != nil {
 		s.log.Noticef(
 			"onPostDescriptor: Rejecting malformed uploaded descriptor for node %s epoch %d from peer %s: %s",
 			strconv.QuoteToASCII(desc.Name),
