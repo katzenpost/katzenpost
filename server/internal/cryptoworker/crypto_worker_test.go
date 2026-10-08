@@ -172,6 +172,8 @@ func (s *mockService) KaetzchenForPKI() (map[string]map[string]interface{}, map[
 	return nil, nil, nil
 }
 
+func (s *mockService) OnNewMixMaxDelay(uint64) {}
+
 type mockGateway struct {
 	count int
 }
