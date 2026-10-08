@@ -4,6 +4,7 @@ matrix:
   SUITE:
     - authority
     - client
+    - cmd/kpclientd
     - core
     - core/sphinx
     - server

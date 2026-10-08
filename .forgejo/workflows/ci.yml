@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [authority, client, core, core/sphinx, server, courier, pigeonhole]
+        suite: [authority, client, cmd/kpclientd, core, core/sphinx, server, courier, pigeonhole]
     container:
       image: ${{ vars.CI_IMAGE }}
     steps:
