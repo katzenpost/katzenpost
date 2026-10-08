@@ -318,6 +318,10 @@ func (s *Server) StartPlugin() {
 }
 
 func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
+	if reply == nil || reply.EnvelopeHash == nil {
+		e.log.Debugf("HandleReply: dropping nil reply or nil EnvelopeHash")
+		return
+	}
 	e.copyCacheLock.RLock()
 	ch, isCopy := e.copyCache[*reply.EnvelopeHash]
 	e.copyCacheLock.RUnlock()
@@ -339,12 +343,12 @@ func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
 }
 
 func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
-	e.log.Debugf("CacheReply called with envelope hash: %x from replica ID: %d", reply.EnvelopeHash, reply.ReplicaID)
-
 	if !e.validateReply(reply) {
 		e.log.Errorf("courier/!e.validateReply(reply:%v)", reply)
 		return
 	}
+
+	e.log.Debugf("CacheReply called with envelope hash: %x from replica ID: %d", reply.EnvelopeHash, reply.ReplicaID)
 
 	// DEBUG: Log which replica sent this reply
 	e.dedupCacheLock.Lock()
@@ -375,7 +379,7 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 
 // validateReply checks if the reply should be cached
 func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
-	if reply.EnvelopeHash == nil {
+	if reply == nil || reply.EnvelopeHash == nil {
 		e.log.Debugf("CacheReply: envelope hash is nil, not caching")
 		return false
 	}
