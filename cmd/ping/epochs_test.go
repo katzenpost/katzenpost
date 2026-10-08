@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,4 +46,24 @@ func TestReportEpochsSingleEpochIsSilent(t *testing.T) {
 	var buf bytes.Buffer
 	a.reportEpochs(&buf)
 	require.Empty(t, buf.String())
+}
+
+func TestReportEpochsIgnoresUntimedObservations(t *testing.T) {
+	period := epochtime.Period()
+	at := epochtime.Epoch.Add(1000 * period)
+	a := &attribution{}
+	a.record(observation{cat: catDelivered, at: at, ok: true})
+	a.record(observation{cat: catLost})
+	a.record(observation{cat: catDelivered, ok: true})
+	var buf bytes.Buffer
+	a.reportEpochs(&buf)
+	require.Empty(t, buf.String())
+
+	a.record(observation{cat: catLost, at: at.Add(period)})
+	buf.Reset()
+	a.reportEpochs(&buf)
+	out := buf.String()
+	require.Contains(t, out, "epoch 1000  1/1")
+	require.Contains(t, out, "epoch 1001  0/1")
+	require.Equal(t, 3, strings.Count(out, "\n"))
 }
