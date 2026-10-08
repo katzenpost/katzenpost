@@ -125,7 +125,7 @@ func (l *QuicListener) Accept() (net.Conn, error) {
 	for {
 		conn, err := l.Listener.Accept(context.Background())
 		if err != nil {
-			return nil, err
+			return nil, &net.OpError{Op: "accept", Net: "quic", Addr: l.Listener.Addr(), Err: err}
 		}
 		streamCtx, cancel := context.WithTimeout(context.Background(), AcceptStreamTimeout)
 		stream, err := conn.AcceptStream(streamCtx)
