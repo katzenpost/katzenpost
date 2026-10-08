@@ -6,6 +6,7 @@ package service
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -325,7 +326,7 @@ func mergeAdvertized(plugin, static map[string]map[string]interface{}, onClash f
 				out[capa] = m
 			}
 			for key, val := range params {
-				if _, exists := m[key]; exists {
+				if existing, exists := m[key]; exists && !reflect.DeepEqual(existing, val) {
 					onClash(capa, key)
 				}
 				m[key] = val
