@@ -149,7 +149,7 @@ func (d *Daemon) encryptRead(request *Request) {
 	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, true, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to create envelope: %v", err)
-		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
+		d.sendEncryptReadError(request, notReadyErrorCode(err))
 		return
 	}
 
@@ -315,7 +315,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, false, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to create envelope: %v", err)
-		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
+		d.sendEncryptWriteError(request, notReadyErrorCode(err))
 		return
 	}
 
@@ -425,6 +425,13 @@ func positionErrorCode(err error) uint8 {
 	}
 }
 
+func notReadyErrorCode(err error) uint8 {
+	if errors.Is(err, errNoPKIDocument) || errors.Is(err, pigeonhole.ErrReplicaKeysNotReady) {
+		return thin.ThinClientErrorServiceUnavailable
+	}
+	return thin.ThinClientErrorInternalError
+}
+
 // writeInnerMessage wraps a write or tombstone in a ReplicaInnerMessage.
 func writeInnerMessage(write *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaInnerMessage {
 	return &pigeonhole.ReplicaInnerMessage{
@@ -529,7 +536,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
-			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, notReadyErrorCode(err))
 			return
 		}
 		d.log.Debug("createCourierEnvelopesFromPayload: built an envelope")
@@ -691,7 +698,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 			envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
 			if err != nil {
 				d.log.Errorf("createCourierEnvelopesFromPayloads: %v", err)
-				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
+				d.sendCreateCourierEnvelopesFromPayloadsError(request, notReadyErrorCode(err))
 				return
 			}
 			newElements, err := encoder.AddEnvelope(envelope)
@@ -823,7 +830,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &tombstone.BoxID, writeInnerMessage(tombstone))
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: %v", err)
-			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, notReadyErrorCode(err))
 			return
 		}
 		courierEnvelopes = append(courierEnvelopes, envelope)
@@ -1813,11 +1820,7 @@ func (d *Daemon) startResendingCopyCommand(request *Request) {
 	destIdHash, recipientQueueID, err := d.resolveCourier(req.CourierIdentityHash, req.CourierQueueID)
 	if err != nil {
 		d.log.Errorf("startResendingCopyCommand: %s", err)
-		code := thin.ThinClientErrorInternalError
-		if errors.Is(err, errNoPKIDocument) {
-			code = thin.ThinClientErrorServiceUnavailable
-		}
-		d.sendStartResendingCopyCommandError(request, code)
+		d.sendStartResendingCopyCommandError(request, notReadyErrorCode(err))
 		return
 	}
 

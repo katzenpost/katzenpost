@@ -47,13 +47,15 @@ func CryptoRandIndex(n int) (int, error) {
 	}
 }
 
+var ErrReplicaKeysNotReady = errors.New("replica envelope keys not ready")
+
 // GetRandomIntermediateReplicas returns two random replica numbers and their public keys.
 func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint8, []nike.PublicKey, error) {
 	if doc == nil {
 		return [2]uint8{}, nil, errors.New("PKI document is nil")
 	}
 	if doc.StorageReplicas == nil {
-		return [2]uint8{}, nil, errors.New("PKI document has nil StorageReplicas")
+		return [2]uint8{}, nil, fmt.Errorf("PKI document has nil StorageReplicas: %w", ErrReplicaKeysNotReady)
 	}
 
 	numReplicas := uint8(len(doc.StorageReplicas))
@@ -94,10 +96,10 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 			}
 			keyBytes, exists := desc.EnvelopeKeys[replicaEpoch]
 			if !exists {
-				return nil, fmt.Errorf("no envelope key found for replica %d at epoch %d", replicaNum, replicaEpoch)
+				return nil, fmt.Errorf("no envelope key found for replica %d at epoch %d: %w", replicaNum, replicaEpoch, ErrReplicaKeysNotReady)
 			}
 			if len(keyBytes) == 0 {
-				return nil, fmt.Errorf("empty envelope key for replica %d at epoch %d", replicaNum, replicaEpoch)
+				return nil, fmt.Errorf("empty envelope key for replica %d at epoch %d: %w", replicaNum, replicaEpoch, ErrReplicaKeysNotReady)
 			}
 			replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
 			if err != nil {
