@@ -56,7 +56,7 @@ func testPacket(id uint64, delay time.Duration) *packet.Packet {
 
 func TestPreDelayHoldsUntilDue(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+	d := newPreDelay(r.release, 0, nil, 0)
 	defer d.Halt()
 
 	pkt := testPacket(1, 300*time.Millisecond)
@@ -76,7 +76,7 @@ func TestPreDelayHoldsUntilDue(t *testing.T) {
 
 func TestPreDelayZeroDelayReleasesAtOnce(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+	d := newPreDelay(r.release, 0, nil, 0)
 	defer d.Halt()
 
 	d.push(testPacket(1, 0))
@@ -85,7 +85,7 @@ func TestPreDelayZeroDelayReleasesAtOnce(t *testing.T) {
 
 func TestPreDelayReleasesInDueOrder(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+	d := newPreDelay(r.release, 0, nil, 0)
 	defer d.Halt()
 
 	d.push(testPacket(1, 400*time.Millisecond))
@@ -106,7 +106,7 @@ func TestPreDelayReleasesInDueOrder(t *testing.T) {
 
 func TestPreDelayResetsDispatchAt(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil)
+	d := newPreDelay(r.release, 0, nil, 0)
 	defer d.Halt()
 
 	pkt := testPacket(1, 200*time.Millisecond)
@@ -125,7 +125,7 @@ func wantCeiling() time.Duration {
 }
 
 func TestPreDelayRefusesOverMaxDelay(t *testing.T) {
-	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {})
+	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, 0)
 	defer d.Halt()
 	d.setMaxDelay(100)
 
@@ -136,7 +136,7 @@ func TestPreDelayRefusesOverMaxDelay(t *testing.T) {
 }
 
 func TestPreDelayCeilingWithoutCap(t *testing.T) {
-	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {})
+	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, math.MaxInt)
 	defer d.Halt()
 
 	d.push(testPacket(1, wantCeiling()+time.Millisecond))
@@ -146,7 +146,7 @@ func TestPreDelayCeilingWithoutCap(t *testing.T) {
 }
 
 func TestPreDelayZeroCapRestoresCeiling(t *testing.T) {
-	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {})
+	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, 0)
 	defer d.Halt()
 	d.setMaxDelay(100)
 	d.setMaxDelay(0)
@@ -158,7 +158,7 @@ func TestPreDelayZeroCapRestoresCeiling(t *testing.T) {
 }
 
 func TestPreDelayHugeCapIsCeiling(t *testing.T) {
-	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {})
+	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, 0)
 	defer d.Halt()
 	d.setMaxDelay(math.MaxUint64)
 
@@ -178,9 +178,9 @@ func TestPreDelayOverflowDropsRandomEntry(t *testing.T) {
 			mu.Lock()
 			dropped = append(dropped, pkt.ID)
 			mu.Unlock()
-		})
+		}, 0)
 		for id := uint64(1); id <= capacity+2; id++ {
-			d.push(testPacket(id, time.Hour))
+			d.push(testPacket(id, 20*time.Second))
 		}
 		require.Equal(t, capacity, d.len())
 		mu.Lock()
@@ -203,9 +203,9 @@ func TestPreDelayHaltDropsPending(t *testing.T) {
 		mu.Lock()
 		dropped = append(dropped, pkt.ID)
 		mu.Unlock()
-	})
-	d.push(testPacket(1, time.Hour))
-	d.push(testPacket(2, time.Hour))
+	}, 0)
+	d.push(testPacket(1, 20*time.Second))
+	d.push(testPacket(2, 20*time.Second))
 	d.Halt()
 
 	mu.Lock()

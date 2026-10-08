@@ -223,8 +223,8 @@ func TestServiceNodePreDelayQueueSizeBoundsHeldRequests(t *testing.T) {
 	sn, g := newTestServiceNode(t, config.Debug{ServicePreDelayQueueSize: 1})
 	require.Equal(t, 1, sn.preDelay.maxLen)
 
-	sn.OnPacket(echoRequest(t, g.cfg.SphinxGeometry, time.Hour))
-	sn.OnPacket(echoRequest(t, g.cfg.SphinxGeometry, time.Hour))
+	sn.OnPacket(echoRequest(t, g.cfg.SphinxGeometry, 20*time.Second))
+	sn.OnPacket(echoRequest(t, g.cfg.SphinxGeometry, 20*time.Second))
 	time.Sleep(200 * time.Millisecond)
 	require.Equal(t, 1, sn.preDelay.len())
 }

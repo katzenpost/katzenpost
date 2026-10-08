@@ -17,6 +17,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
+	"github.com/katzenpost/katzenpost/server/internal/maxdelay"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/service/kaetzchen"
 )
@@ -55,8 +56,11 @@ func (p *serviceNode) OnPacket(pkt *packet.Packet) {
 }
 
 func (p *serviceNode) OnNewMixMaxDelay(ms uint64) {
-	if p.preDelay != nil {
-		p.preDelay.setMaxDelay(ms)
+	if p.preDelay == nil {
+		return
+	}
+	if limit, fromConsensus, changed := p.preDelay.setMaxDelay(ms); changed {
+		p.log.Infof("Pre-delay max delay %v from %v, consensus MixMaxDelay %v ms.", limit, maxdelay.Source(fromConsensus), ms)
 	}
 }
 
@@ -135,7 +139,12 @@ func (p *serviceNode) worker() {
 				continue
 			}
 			if p.preDelay != nil {
-				p.preDelay.push(pkt)
+				if !p.preDelay.push(pkt) {
+					p.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.ID, pkt.Delay)
+					instrument.PacketsDropped()
+					instrument.PacketsDroppedByReason("service_predelay_delay_exceeds_max")
+					pkt.Dispose()
+				}
 				continue
 			}
 		case pkt = <-p.readyCh:
@@ -321,7 +330,9 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 		if size <= 0 {
 			size = defaultPreDelayQueueSize
 		}
-		p.preDelay = newPreDelay(p.releaseDelayed, size, dropDelayed)
+		p.preDelay = newPreDelay(p.releaseDelayed, size, dropDelayed, cfg.Debug.MixMaxDelayFallback)
+		limit, fromConsensus, _ := p.preDelay.setMaxDelay(0)
+		p.log.Infof("Pre-delay max delay %v from %v.", limit, maxdelay.Source(fromConsensus))
 	}
 
 	isOk := false
