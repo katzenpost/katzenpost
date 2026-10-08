@@ -830,14 +830,6 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	}
 	e.dedupCacheLock.Unlock()
 
-	// Cache hit. If every reply so far is an error (e.g. BoxIDNotFound
-	// while data is still propagating), or no reply has arrived at all
-	// past the grace age (the original dispatch died with a session),
-	// schedule a bounded re-dispatch so the cache can refresh for the
-	// client's next ARQ retry. The cached state is still returned
-	// immediately via handleOldMessage so that NoRetry clients stop;
-	// the inFlight guard keeps repeated client retries from stacking
-	// dispatches, and RedispatchAttempts bounds the total.
 	e.dedupCacheLock.Lock()
 	redispatch := e.cacheEntryNeedsRedispatch(cacheEntry)
 	if redispatch {
