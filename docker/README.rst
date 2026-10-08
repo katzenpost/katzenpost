@@ -89,6 +89,17 @@ pyroscope             ``base_port+2003``        4040
 kpclientd /metrics    (not published)           ``base_port+2004``
 ====================  ========================  =====================
 
+``TRANSPORT`` picks the transport of every link between nodes: ``TCP`` (the
+default), ``QUIC``, or ``TCP+QUIC`` (every second node on QUIC). Case does not
+matter, and any other value stops make at once::
+
+   make TRANSPORT=QUIC start wait test
+   make TRANSPORT=TCP+QUIC start wait test
+   make check-transport   # checks the genconfig flag for each value, no docker
+
+A network keeps the transport it was generated with: ``start`` and ``wait``
+refuse a different ``TRANSPORT`` until ``make clean-local``.
+
 3. Distros, networks, and parallelism
 
 The default distro is ``alpine``. Any number of network deployments can coexist

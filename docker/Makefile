@@ -1,9 +1,9 @@
-.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports interop-ref-binaries interop-gate interop-env-check interop-report interop-matrix interop-combo client-check
+.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports check-net-transport check-transport interop-ref-binaries interop-gate interop-env-check interop-report interop-matrix interop-combo client-check
 
 help:
 	@echo "These make targets allow you to control the test network:"
 	@echo " config-only               - generate configuration files only (no docker containers)"
-	@echo " start                     - start the testnet"
+	@echo " start                     - start the testnet; TRANSPORT=TCP (default), QUIC or TCP+QUIC picks the link transport"
 	@echo " stop                      - stop the testnet"
 	@echo " client-restart            - restart just the kpclientd daemon"
 	@echo " client-logs               - view kpclientd daemon logs"
@@ -35,6 +35,7 @@ help:
 	@echo " pigeonhole-cp-roundtrip   - round-trip a file through a pigeonhole channel"
 	@echo " run-ping                  - send a ping over the testnet"
 	@echo " test                      - run every component's docker integration tests (requires the testnet to be up)"
+	@echo " check-transport           - check that each TRANSPORT value maps to the right genconfig --transport, without docker"
 	@echo " interop-gate              - bring HEAD up with release binaries on interop_swap_groups (release_refs), require 6/6 signatures and every node listed, verify revisions, ping"
 	@echo " interop-combo combo=<name> - one upgrade combination: authorities-mixed|authorities-old|authorities-old-n1|nodes-mixed|nodes-old|nodes-old-n1|everything-mixed|everything-mixed-n1"
 	@echo " interop-matrix            - twelve combinations in turn: auth, the node groups, and every group, each against the last two tags and the last tag, with and without interop_all"
@@ -53,7 +54,7 @@ no_courier_replica_decoy?=false
 no_mixdecoy?=true
 no_gatewaydecoy?=true
 no_metrics?=true
-transport?=tcp
+TRANSPORT?=TCP
 pyroscope_dirauth?=false
 pyroscope_kpclientd?=false
 kpclientd_metrics?=false
@@ -225,6 +226,17 @@ ifeq ($(no_metrics),true)
   noMetricsFlag=--noMetrics
 endif
 
+transport_upper:=$(shell printf '%s' '$(TRANSPORT)' | tr a-z A-Z)
+ifeq ($(transport_upper),TCP)
+  genconfig_transport=tcp
+else ifeq ($(transport_upper),QUIC)
+  genconfig_transport=quic
+else ifeq ($(transport_upper),TCP+QUIC)
+  genconfig_transport=alternate
+else
+  $(error TRANSPORT must be TCP, QUIC or TCP+QUIC, not '$(TRANSPORT)')
+endif
+
 # Mix key persistence across clean restarts. The testnet's dirauth
 # consensus survives `make stop`/`make start` because node dirs are
 # bind-mounted onto the host; persist the mix keys to each node's DataDir
@@ -268,7 +280,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	$(noDecoyFlag) $(noClientDecoyFlag) $(noCourierReplicaDecoyFlag) $(noMetricsFlag) \
 	--epochDuration "$(epoch_duration)" $(if $(node_versions),--nodeVersions $(node_versions)) \
 	--sessionGracePeriod $(or $(session_grace_period),0) \
-	--transport $(transport) \
+	--transport $(genconfig_transport) \
 	$(pyroscopeDirauthFlag) $(pyroscopeKpclientdFlag) $(kpclientdMetricsFlag) \
 	--schedulerSlack $(schedulerSlack) --schedulerMaxBurst $(schedulerMaxBurst) \
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
@@ -427,6 +439,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		&& ../cmd/genconfig/genconfig $(genconfig_args) \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--dockerImage katzenpost-$(distro)_base'
+	printf '%s\n' $(genconfig_transport) > $(net_name)/transport
 	sed -i '/^\[Logging\]/,/^\[/s|^\( *File = \)""$$|\1"/$(net_name)/client/kpclientd.log"|' $(net_name)/client/client.toml
 
 # Generate configuration files only (without docker containers)
@@ -435,6 +448,7 @@ config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
 	cd ../cmd/genconfig && go build && ./genconfig $(genconfig_args) \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port)
+	printf '%s\n' $(genconfig_transport) > $(net_name)/transport
 	@echo "Configuration files generated in ./$(net_name)/"
 	@echo "Tests can now use the symlinked configs (e.g., client/testdata/client.toml -> ../../docker/$(net_name)/client/client.toml)"
 
@@ -465,6 +479,20 @@ selfcheck-cache-restore: $(docker_compose_yml)
 	  done; \
 	fi
 
+check-net-transport:
+	@if [ -f $(net_name)/transport ] && [ "$$(cat $(net_name)/transport)" != $(genconfig_transport) ]; then \
+		echo "ERROR: $(net_name) was generated with --transport $$(cat $(net_name)/transport), and TRANSPORT=$(TRANSPORT) wants --transport $(genconfig_transport)."; \
+		echo "  Use 'make clean-local' to wipe it, or pass the TRANSPORT it was generated with."; \
+		exit 1; \
+	fi
+
+check-transport:
+	@for p in TCP:tcp tcp:tcp QUIC:quic quic:quic TCP+QUIC:alternate tcp+quic:alternate; do \
+		$(MAKE) -s -n TRANSPORT=$${p%%:*} config-only | grep -q -- "--transport $${p#*:} " \
+			|| { echo "TRANSPORT=$${p%%:*} does not pass --transport $${p#*:} to genconfig"; exit 1; }; \
+	done
+	@! $(MAKE) -s -n TRANSPORT=udp config-only >/dev/null 2>&1 || { echo "TRANSPORT=udp was accepted"; exit 1; }
+
 check-ports:
 	@for port in $$(seq $$(($(base_port) + 2000)) $$(($(base_port) + 2003))); do \
 		if ss -tlnp "sport = :$$port" 2>/dev/null | grep -q LISTEN; then \
@@ -474,7 +502,7 @@ check-ports:
 		fi; \
 	done
 
-start: check-ports $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
+start: check-ports check-net-transport $(docker_compose_yml) testnet_binaries selfcheck-cache-restore
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
@@ -678,7 +706,7 @@ $(net_name)/client/thinclient-bridge.toml: | $(net_name)/client
 	@echo '    Address = "kpclientd:$(shell expr $(base_port) + 2000)"' >> $@
 	@echo '    Network = "tcp"'                          >> $@
 
-wait: $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
+wait: check-net-transport $(net_name)/running.stamp $(net_name)/client/thinclient-bridge.toml | $(cache_dir)
 	@deadline=$$(( $$(date +%s) + $(wait_seconds) )); until left=$$(( deadline - $$(date +%s) )); [ $$left -gt 0 ] || exit 1; $(docker) run --network=$(compose_network_name) ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/thinclient-bridge.toml -r 2 --require-ready --ready-timeout $${left}s; do \
 	  echo "wait: the client daemon is not accepting connections yet; retrying"; sleep 5; done

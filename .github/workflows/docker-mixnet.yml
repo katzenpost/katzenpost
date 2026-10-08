@@ -19,7 +19,7 @@ jobs:
       no_decoy: true
       epoch_duration: 2m
       no_metrics: true
-      transport: ${{ matrix.transport }}
+      TRANSPORT: ${{ matrix.transport }}
     strategy:
       matrix:
         go-version: [1.26.x]
@@ -48,6 +48,10 @@ jobs:
 
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Check the TRANSPORT mapping
+        run: |
+          cd docker && make check-transport
 
       - name: Build and start the mixnet
         run: |
