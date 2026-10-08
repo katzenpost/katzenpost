@@ -31,3 +31,15 @@ func TestMergeAdvertized(t *testing.T) {
 
 	require.Empty(t, mergeAdvertized(nil, nil, func(string, string) {}))
 }
+
+func TestMergeAdvertizedNoClashWhenValuesEqual(t *testing.T) {
+	plugin := map[string]map[string]interface{}{
+		"courier": {"same": "v"},
+	}
+	static := map[string]map[string]interface{}{
+		"courier": {"same": "v"},
+	}
+	var clashes []string
+	mergeAdvertized(plugin, static, func(capa, key string) { clashes = append(clashes, capa+"/"+key) })
+	require.Empty(t, clashes)
+}
