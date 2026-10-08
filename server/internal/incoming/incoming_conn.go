@@ -293,6 +293,7 @@ func (c *incomingConn) worker() {
 	creds, err := c.w.PeerCredentials()
 	if err != nil {
 		c.log.Debugf("Session failure: %s", err)
+		return
 	}
 	if c.fromMix {
 		blob, err := creds.PublicKey.MarshalBinary()

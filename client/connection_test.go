@@ -1292,3 +1292,31 @@ func TestGetConsensusCanceledNoDeadlock(t *testing.T) {
 
 	c.Shutdown()
 }
+
+func TestIsPeerValidRejectsUnparsableDescriptorLinkKey(t *testing.T) {
+	conn := newTestConnection(t)
+	conn.client.cfg.WireKEMScheme = "x25519"
+
+	linkScheme := kemSchemes.ByName("x25519")
+	linkPubKey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	idKey := make([]byte, 32)
+	_, err = rand.Reader.Read(idKey)
+	require.NoError(t, err)
+
+	conn.descriptor = &cpki.MixDescriptor{
+		Name:        "test-gateway",
+		LinkKey:     []byte{0x01},
+		IdentityKey: idKey,
+	}
+
+	creds := &wire.PeerCredentials{
+		PublicKey:      linkPubKey,
+		AdditionalData: func() []byte { h := hash.Sum256(idKey); return h[:] }(),
+	}
+
+	require.NotPanics(t, func() {
+		require.False(t, conn.IsPeerValid(creds))
+	})
+}

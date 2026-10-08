@@ -750,17 +750,20 @@ func (c *connection) deliverConsensusReply(consensusCtx *getConsensusCtx, reply 
 func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 	credsKey, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
-		panic(err)
+		c.log.Warningf("client/connection: IsPeerValid(): failed to marshal credentials key: %v", err)
+		return false
 	}
 	if !hmac.Equal(c.descriptor.LinkKey, credsKey) {
 		scheme := schemes.ByName(c.client.cfg.WireKEMScheme)
 		expectedLinkPubKey, err := scheme.UnmarshalBinaryPublicKey(c.descriptor.LinkKey)
 		if err != nil {
-			panic(err)
+			c.log.Warningf("client/connection: IsPeerValid(): failed to unmarshal expected link key: %v", err)
+			return false
 		}
 		gotLinkPubKey, err := scheme.UnmarshalBinaryPublicKey(credsKey)
 		if err != nil {
-			panic(err)
+			c.log.Warningf("client/connection: IsPeerValid(): failed to unmarshal received link key: %v", err)
+			return false
 		}
 		expected := pem.ToPublicPEMString(expectedLinkPubKey)
 		got := pem.ToPublicPEMString(gotLinkPubKey)
