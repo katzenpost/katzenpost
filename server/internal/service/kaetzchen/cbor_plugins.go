@@ -189,6 +189,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 						pluginCap, len(r.Payload), k.geo.UserForwardPayloadLength)
 					instrument.PacketsDropped()
 					instrument.PacketsDroppedByReason("cbor_kaetzchen_response_too_long")
+					instrument.KaetzchenRequestsDropped(1)
 					instrument.KaetzchenResponsesDropped(pluginCap)
 					continue
 				}
@@ -220,6 +221,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 				k.log.Errorf("%v: Failed to handle Kaetzchen request, unknown command type: (%v), response: %s", pluginCap, r, cborResponse)
 				instrument.PacketsDropped()
 				instrument.PacketsDroppedByReason("cbor_kaetzchen_unknown_response_type")
+				instrument.KaetzchenRequestsDropped(1)
 				instrument.KaetzchenResponsesDropped(pluginCap)
 			}
 		}
