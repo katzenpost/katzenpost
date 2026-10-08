@@ -694,3 +694,5 @@ func (a *attribution) reportOverTime(w io.Writer, obs []observation) {
 			sent[i], lost[i], 100*frac, bar)
 	}
 }
+
+func (a *attribution) reportEpochs(w io.Writer) {}
