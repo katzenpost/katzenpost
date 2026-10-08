@@ -3,6 +3,7 @@ module github.com/katzenpost/katzenpost
 go 1.26.8
 
 require (
+	github.com/godbus/dbus/v5 v5.1.0
 	charm.land/lipgloss/v2 v2.0.2
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20250520111509-a70c2aa677fa
