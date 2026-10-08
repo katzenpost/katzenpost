@@ -311,6 +311,7 @@ func (k *CBORPluginWorker) unregister(endpoint [constants.RecipientIDLength]byte
 	k.Lock()
 	defer k.Unlock()
 	delete(k.pluginChans, endpoint)
+	delete(k.params, pluginClient.Capability())
 	for i, c := range k.clients {
 		if c == pluginClient {
 			// last element in clients
