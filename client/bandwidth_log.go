@@ -10,9 +10,10 @@ import (
 
 func (d *Daemon) logBandwidth(doc *cpki.Document, docLen int) {
 	rates := [2]float64{doc.LambdaP, doc.LambdaL}
-	if rates == d.loggedRates {
+	if d.loggedRatesSet && rates == d.loggedRates {
 		return
 	}
+	d.loggedRatesSet = true
 	d.loggedRates = rates
 	b := thin.EstimateBandwidth(doc.LambdaP, doc.LambdaL, !d.cfg.Debug.DisableDecoyTraffic, d.cfg.SphinxGeometry, docLen, epochtime.Period())
 	d.log.Infof("Estimated bandwidth: %s", b)

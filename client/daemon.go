@@ -107,7 +107,8 @@ type Daemon struct {
 
 	haltOnce sync.Once
 
-	loggedRates [2]float64
+	loggedRates    [2]float64
+	loggedRatesSet bool
 }
 
 func NewDaemon(cfg *config.Config) (*Daemon, error) {
