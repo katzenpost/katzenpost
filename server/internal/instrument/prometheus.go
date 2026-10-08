@@ -5,6 +5,7 @@ package instrument
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -165,6 +166,15 @@ var (
 		},
 		[]string{"channel_name"},
 	)
+	channelUsageMax = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_channel_usage_max",
+			Help: "Highest number of items seen in the channel since start",
+		},
+		[]string{"channel_name"},
+	)
+	channelPeaksMu   sync.Mutex
+	channelPeaks     = make(map[string]int)
 	rateLimitDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_dropped_rate_limit_total",
@@ -243,6 +253,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
 	prometheus.MustRegister(channelUsage)
+	prometheus.MustRegister(channelUsageMax)
 	prometheus.MustRegister(rateLimitDropped)
 	prometheus.MustRegister(sphinxUnwraps)
 	prometheus.MustRegister(packetsDroppedByReason)
@@ -368,10 +379,38 @@ func InvalidPKICache(epoch string) {
 // GaugeChannelLength sets the per-channel depth gauge. Matching the
 // signature of the noprometheus stub so callers can invoke this
 // unconditionally; the metric is registered above as channelUsage.
-// No call site references it yet; this accessor is added so that
-// future use does not require touching the instrument package.
 func GaugeChannelLength(name string, length int) {
 	channelUsage.With(prometheus.Labels{"channel_name": name}).Set(float64(length))
+	channelPeaksMu.Lock()
+	defer channelPeaksMu.Unlock()
+	if length > channelPeaks[name] {
+		channelPeaks[name] = length
+		channelUsageMax.With(prometheus.Labels{"channel_name": name}).Set(float64(length))
+	}
+}
+
+func ChannelGauge(name string) (usage, peak float64, found bool) {
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return 0, 0, false
+	}
+	for _, f := range families {
+		switch f.GetName() {
+		case "katzenpost_channel_usage":
+			for _, m := range f.GetMetric() {
+				if m.GetLabel()[0].GetValue() == name {
+					usage, found = m.GetGauge().GetValue(), true
+				}
+			}
+		case "katzenpost_channel_usage_max":
+			for _, m := range f.GetMetric() {
+				if m.GetLabel()[0].GetValue() == name {
+					peak, found = m.GetGauge().GetValue(), true
+				}
+			}
+		}
+	}
+	return usage, peak, found
 }
 
 // RateLimitDropped increments the counter for client packets dropped by
