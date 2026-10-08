@@ -15,14 +15,22 @@ import (
 	"time"
 )
 
-// Listen creates a unix-domain-socket listener bound to c.Address.
-func (c *UnixListenConfig) Listen() (Listener, error) {
+func (c *UnixListenConfig) listen(inherited []Listener) (Listener, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
+	}
+	byAddress := make(map[string]Listener, len(inherited))
+	for _, l := range inherited {
+		byAddress[l.Addr().String()] = l
 	}
 	addresses := append([]string{c.Address}, c.Addresses...)
 	listeners := make([]Listener, 0, len(addresses))
 	for _, address := range addresses {
+		if l, ok := byAddress[address]; ok {
+			delete(byAddress, address)
+			listeners = append(listeners, l)
+			continue
+		}
 		listener, err := listenUnix(address)
 		if err != nil {
 			closeListeners(listeners)
@@ -182,14 +190,4 @@ func isClosing(done chan struct{}) bool {
 	default:
 		return false
 	}
-}
-
-func closeListeners(listeners []Listener) error {
-	errs := make([]error, 0, len(listeners))
-	for _, listener := range listeners {
-		if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
 }
