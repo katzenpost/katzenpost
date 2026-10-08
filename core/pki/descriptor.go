@@ -79,6 +79,8 @@ type MixDescriptor struct {
 	// Version uniquely identifies the descriptor format as being for the
 	// specified version so that it can be rejected if the format changes.
 	Version string
+
+	SoftwareVersion string `cbor:"-"`
 }
 
 // String returns a human readable MixDescriptor suitable for terse logging.
@@ -159,6 +161,10 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			return fmt.Errorf("Descriptor contains invalid Kaetzchen block: %v", err)
 		}
 	}
+	return nil
+}
+
+func IsSoftwareVersionWellFormed(v string) error {
 	return nil
 }
 
@@ -246,6 +252,8 @@ type ReplicaDescriptor struct {
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
 	Addresses map[string][]string
+
+	SoftwareVersion string `cbor:"-"`
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
