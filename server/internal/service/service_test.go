@@ -190,6 +190,15 @@ func TestServiceNodeDropsRequestOverFallback(t *testing.T) {
 	require.Zero(t, sn.preDelay.len(), "a request over the fallback was held before a consensus")
 }
 
+func TestServiceNodeUnsetFallbackIsBuiltin(t *testing.T) {
+	sn, g := newTestServiceNode(t, config.Debug{})
+
+	sendBehindMarker(t, sn, g, 27633*time.Millisecond)
+	require.Zero(t, sn.preDelay.len(), "a request over the built-in cap was held before a consensus")
+	sendBehindMarker(t, sn, g, 27632*time.Millisecond)
+	require.Equal(t, 1, sn.preDelay.len())
+}
+
 func TestServiceNodeConsensusCapReplacesFallback(t *testing.T) {
 	sn, g := newTestServiceNode(t, config.Debug{MixMaxDelayFallback: 100})
 	sn.OnNewMixMaxDelay(60000)

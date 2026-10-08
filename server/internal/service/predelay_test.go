@@ -145,6 +145,17 @@ func TestPreDelayCeilingWithoutCap(t *testing.T) {
 	require.Equal(t, 1, d.len())
 }
 
+func TestPreDelayUnsetFallbackIsBuiltin(t *testing.T) {
+	for _, fallback := range []int{0, -1} {
+		d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, fallback)
+		d.push(testPacket(1, 27633*time.Millisecond))
+		require.Zero(t, d.len(), "a delay over the built-in cap was held with fallback %d", fallback)
+		d.push(testPacket(2, 27632*time.Millisecond))
+		require.Equal(t, 1, d.len())
+		d.Halt()
+	}
+}
+
 func TestPreDelayZeroCapRestoresCeiling(t *testing.T) {
 	d := newPreDelay(func(*packet.Packet) {}, 0, func(*packet.Packet) {}, 0)
 	defer d.Halt()
