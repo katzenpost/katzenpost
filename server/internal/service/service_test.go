@@ -170,21 +170,38 @@ func TestServiceNodeDisabledPreDelayRepliesAtOnce(t *testing.T) {
 	}
 }
 
-func TestServiceNodeMixMaxDelayCapsHeldRequest(t *testing.T) {
-	sn, g := newTestServiceNode(t, config.Debug{})
-	sn.OnNewMixMaxDelay(100)
-
-	pkt := echoRequest(t, g.cfg.SphinxGeometry, time.Hour)
-	recvAt := pkt.RecvAt
-	sn.OnPacket(pkt)
-
+func sendBehindMarker(t *testing.T, sn *serviceNode, g *serviceGlue, delay time.Duration) {
+	t.Helper()
+	sn.OnPacket(echoRequest(t, g.cfg.SphinxGeometry, delay))
+	sn.OnPacket(echoRequest(t, g.cfg.SphinxGeometry, 0))
 	select {
-	case r := <-g.sched.ch:
-		require.GreaterOrEqual(t, r.at.Sub(recvAt), 100*time.Millisecond)
-		require.Less(t, r.at.Sub(recvAt), 5*time.Second)
+	case <-g.sched.ch:
 	case <-time.After(5 * time.Second):
-		t.Fatal("no echo reply")
+		t.Fatal("no echo reply to the zero delay marker")
 	}
+}
+
+func TestServiceNodeDropsRequestOverFallback(t *testing.T) {
+	sn, g := newTestServiceNode(t, config.Debug{MixMaxDelayFallback: 100})
+
+	sendBehindMarker(t, sn, g, time.Hour)
+	require.Zero(t, sn.preDelay.len(), "a request over the fallback was held before a consensus")
+	sendBehindMarker(t, sn, g, 10*time.Second)
+	require.Zero(t, sn.preDelay.len(), "a request over the fallback was held before a consensus")
+}
+
+func TestServiceNodeConsensusCapReplacesFallback(t *testing.T) {
+	sn, g := newTestServiceNode(t, config.Debug{MixMaxDelayFallback: 100})
+	sn.OnNewMixMaxDelay(60000)
+
+	sendBehindMarker(t, sn, g, 10*time.Second)
+	require.Equal(t, 1, sn.preDelay.len())
+	sendBehindMarker(t, sn, g, 61*time.Second)
+	require.Equal(t, 1, sn.preDelay.len(), "a request over the consensus cap was held")
+
+	sn.OnNewMixMaxDelay(0)
+	sendBehindMarker(t, sn, g, time.Second)
+	require.Equal(t, 1, sn.preDelay.len(), "a request over the fallback was held after a zero consensus value")
 }
 
 func TestServiceNodeDropsStaleRequestBeforeHolding(t *testing.T) {
