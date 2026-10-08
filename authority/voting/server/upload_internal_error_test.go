@@ -93,7 +93,7 @@ func (f *uploadFixture) postMix(t *testing.T, port string) uint8 {
 	require.NoError(t, up.Sign(f.priv, f.pub))
 	raw, err := up.Marshal()
 	require.NoError(t, err)
-	resp, ok := f.srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: f.epoch, Payload: raw}, f.idHash[:]).(*commands.PostDescriptorStatus)
+	resp, ok := f.srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: f.epoch, Payload: raw}, f.idHash[:], []byte{1}).(*commands.PostDescriptorStatus)
 	require.True(t, ok)
 	return resp.ErrorCode
 }
@@ -114,7 +114,7 @@ func (f *uploadFixture) postReplica(t *testing.T, port string) uint8 {
 	require.NoError(t, up.Sign(f.priv, f.pub))
 	raw, err := up.Marshal()
 	require.NoError(t, err)
-	resp, ok := f.srv.onPostReplicaDescriptor("peer", &commands.PostReplicaDescriptor{Epoch: f.epoch, Payload: raw}, f.idHash[:]).(*commands.PostReplicaDescriptorStatus)
+	resp, ok := f.srv.onPostReplicaDescriptor("peer", &commands.PostReplicaDescriptor{Epoch: f.epoch, Payload: raw}, f.idHash[:], []byte{1}).(*commands.PostReplicaDescriptorStatus)
 	require.True(t, ok)
 	return resp.ErrorCode
 }

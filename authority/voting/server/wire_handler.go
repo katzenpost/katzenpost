@@ -27,7 +27,6 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/schemes"
-	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
@@ -278,9 +277,9 @@ func (s *Server) onConn(conn net.Conn) {
 	if auth.isClient {
 		resp = s.onClient(peerID, cmd)
 	} else if auth.isMix {
-		resp = s.onMix(peerID, cmd, auth.peerIdentityKeyHash)
+		resp = s.onMix(peerID, cmd, auth.peerIdentityKeyHash, auth.peerLinkKey)
 	} else if auth.isReplica {
-		resp = s.onReplica(peerID, cmd, auth.peerIdentityKeyHash)
+		resp = s.onReplica(peerID, cmd, auth.peerIdentityKeyHash, auth.peerLinkKey)
 	} else if auth.isAuthority {
 		resp = s.onAuthority(peerID, cmd, auth.peerIdentityKeyHash)
 	} else {
@@ -483,14 +482,14 @@ func (s *Server) onClient(peerID string, cmd commands.Command) commands.Command 
 	return resp
 }
 
-func (s *Server) onMix(peerID string, cmd commands.Command, peerIdentityKeyHash []byte) commands.Command {
+func (s *Server) onMix(peerID string, cmd commands.Command, peerIdentityKeyHash, peerLinkKey []byte) commands.Command {
 	s.log.Debug("onMix")
 	var resp commands.Command
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(peerID, c)
 	case *commands.PostDescriptor:
-		resp = s.onPostDescriptor(peerID, c, peerIdentityKeyHash)
+		resp = s.onPostDescriptor(peerID, c, peerIdentityKeyHash, peerLinkKey)
 	default:
 		s.log.Debugf("Peer %s: Invalid request: %T", peerID, c)
 		return nil
@@ -498,12 +497,12 @@ func (s *Server) onMix(peerID string, cmd commands.Command, peerIdentityKeyHash 
 	return resp
 }
 
-func (s *Server) onReplica(peerID string, cmd commands.Command, peerIdentityKeyHash []byte) commands.Command {
+func (s *Server) onReplica(peerID string, cmd commands.Command, peerIdentityKeyHash, peerLinkKey []byte) commands.Command {
 	s.log.Debug("onReplica")
 	var resp commands.Command
 	switch c := cmd.(type) {
 	case *commands.PostReplicaDescriptor:
-		resp = s.onPostReplicaDescriptor(peerID, c, peerIdentityKeyHash)
+		resp = s.onPostReplicaDescriptor(peerID, c, peerIdentityKeyHash, peerLinkKey)
 	default:
 		s.log.Debugf("Peer %s: Invalid request: %T", peerID, c)
 		return nil
@@ -562,7 +561,7 @@ func (s *Server) onGetConsensus(peerID string, cmd *commands.GetConsensus) comma
 	return resp
 }
 
-func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplicaDescriptor, pubKeyHash []byte) commands.Command {
+func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplicaDescriptor, pubKeyHash, sessionLinkKey []byte) commands.Command {
 	phase, timeRemaining := s.state.PhaseInfo()
 	s.log.Debugf("onPostReplicaDescriptor: Received from peer %s for epoch %d (phase: %s, time remaining: %v)", peerID, cmd.Epoch, phase, timeRemaining)
 	resp := &commands.PostReplicaDescriptorStatus{
@@ -640,6 +639,13 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 		return resp
 	}
 
+	if !hmac.Equal(desc.LinkKey, sessionLinkKey) {
+		s.log.Errorf("Peer %s: replica descriptor link key is not the session link key", strconv.QuoteToASCII(peerID))
+		instrument.DescriptorRejected("replica", "link_key_mismatch")
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
 	// Ensure that the descriptor is from an allowed peer.
 	if err := s.state.replicaAuthorizationError(desc); err != nil {
 		s.log.Errorf("Peer %s: rejecting replica descriptor name=%q ReplicaID=%d identity_hash=%x: %s",
@@ -690,7 +696,7 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 	return resp
 }
 
-func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, pubKeyHash []byte) commands.Command {
+func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, pubKeyHash, sessionLinkKey []byte) commands.Command {
 	phase, timeRemaining := s.state.PhaseInfo()
 	s.log.Debugf("onPostDescriptor: Received descriptor from peer %s for epoch %d (phase: %s, time remaining: %v)", peerID, cmd.Epoch, phase, timeRemaining)
 	resp := &commands.PostDescriptorStatus{
@@ -780,6 +786,13 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	}
 	s.log.Debugf("onPostDescriptor: SignedUpload signature verification passed for node %s from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
 
+	if !hmac.Equal(desc.LinkKey, sessionLinkKey) {
+		s.log.Errorf("Peer %s: descriptor link key is not the session link key", strconv.QuoteToASCII(peerID))
+		instrument.DescriptorRejected("mix", "link_key_mismatch")
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
 	// Ensure that the descriptor is from an allowed peer.
 	s.log.Debugf("onPostDescriptor: Checking authorization for node %s from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
 	if err := s.state.descriptorAuthorizationError(desc); err != nil {
@@ -838,7 +851,7 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 type wireAuthenticator struct {
 	s *Server
 
-	peerLinkKey         *ecdh.PublicKey
+	peerLinkKey         []byte
 	peerIdentityKeyHash []byte
 	peerName            string
 
@@ -880,6 +893,11 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 	a.peerIdentityKeyHash = creds.AdditionalData
 	a.peerName = a.s.state.PeerName(creds.AdditionalData)
+	if creds.PublicKey != nil {
+		if blob, err := creds.PublicKey.MarshalBinary(); err == nil {
+			a.peerLinkKey = blob
+		}
+	}
 
 	pk := [hash.HashSize]byte{}
 	copy(pk[:], creds.AdditionalData[:hash.HashSize])
