@@ -336,7 +336,9 @@ func (c *outgoingConn) dialAddress(dialCtx *workerContext, dialer *net.Dialer, a
 	}
 	c.log.Debugf("Dialing: %v", u.Host)
 
-	conn, err := common.DialURL(u, dialCtx.Context, dialer.DialContext)
+	connectCtx, connectCancel := context.WithTimeout(dialCtx.Context, dialer.Timeout)
+	conn, err := common.DialURL(u, connectCtx, dialer.DialContext)
+	connectCancel()
 	select {
 	case <-dialCtx.Done():
 		// Canceled.

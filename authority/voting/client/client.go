@@ -327,7 +327,7 @@ func (p *connector) initSession(
 			continue
 		}
 
-		ictx, cancelFn := context.WithCancel(ctx)
+		ictx, cancelFn := context.WithTimeout(ctx, dialTimeout)
 		conn, err = common.DialURL(u, ictx, dialFn)
 		cancelFn()
 		if err == nil {

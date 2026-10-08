@@ -207,7 +207,11 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			// so pick a common protocol rather than something fingerprintable.
 			NextProtos: []string{http3.NextProtoH3},
 		}
-		qconn, err := quic.DialAddr(ctx, u.Host, tlsConf, Config())
+		cfg := Config()
+		if deadline, ok := ctx.Deadline(); ok {
+			cfg.HandshakeIdleTimeout = max(time.Until(deadline), 0)
+		}
+		qconn, err := quic.DialAddr(ctx, u.Host, tlsConf, cfg)
 		if err == nil {
 			// open a quic stream
 			stream, err := qconn.OpenStream()
