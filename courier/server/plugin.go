@@ -287,7 +287,7 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 // StartPlugin starts the CBOR plugin service which listens for socket connections
 // from the service node.
 func (s *Server) StartPlugin() {
-	socketFile := filepath.Join(s.cfg.DataDir, fmt.Sprintf("%d.courier.socket", os.Getpid()))
+	socketFile, fromHost := cborplugin.HostSocketPath(filepath.Join(s.cfg.DataDir, fmt.Sprintf("%d.courier.socket", os.Getpid())))
 
 	scheme := schemes.ByName(s.cfg.EnvelopeScheme)
 	cmds := commands.NewStorageReplicaCommands(s.cfg.SphinxGeometry, scheme)
@@ -307,7 +307,9 @@ func (s *Server) StartPlugin() {
 	}()
 
 	server := cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestFactory), courier)
-	fmt.Printf("%s\n", socketFile)
+	if !fromHost {
+		fmt.Printf("%s\n", socketFile)
+	}
 	server.Accept()
 	server.Wait()
 	err := os.Remove(socketFile)

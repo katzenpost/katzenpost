@@ -104,12 +104,14 @@ func runEcho(cfg echoConfig) {
 	if err != nil {
 		cborplugin.FailStartup("echo-plugin", err)
 	}
-	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.echo.socket", os.Getpid()))
+	socketFile, fromHost := cborplugin.HostSocketPath(filepath.Join(tmpDir, fmt.Sprintf("%d.echo.socket", os.Getpid())))
 	echo := new(Echo)
 
 	var server *cborplugin.Server
 	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), echo)
-	fmt.Printf("%s\n", socketFile)
+	if !fromHost {
+		fmt.Printf("%s\n", socketFile)
+	}
 	server.Accept()
 	server.Wait()
 	err = os.Remove(socketFile)
