@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
@@ -21,24 +20,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
-
-func gaugeReported(name string) bool {
-	families, err := prometheus.DefaultGatherer.Gather()
-	if err != nil {
-		return false
-	}
-	for _, f := range families {
-		if f.GetName() != "katzenpost_channel_usage" {
-			continue
-		}
-		for _, m := range f.GetMetric() {
-			if m.GetLabel()[0].GetValue() == name {
-				return true
-			}
-		}
-	}
-	return false
-}
 
 func stalePacket(t *testing.T) *packet.Packet {
 	g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
@@ -67,7 +48,10 @@ func TestWorkersReportChannelUsage(t *testing.T) {
 	k.Go(k.worker)
 	defer k.Halt()
 	k.ch <- stalePacket(t)
-	require.Eventually(t, func() bool { return gaugeReported("kaetzchen_incoming") }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		_, _, found := instrument.ChannelGauge("kaetzchen_incoming")
+		return found
+	}, 5*time.Second, 10*time.Millisecond)
 
 	var recipient [sConstants.RecipientIDLength]byte
 	copy(recipient[:], "+gauge")
@@ -80,5 +64,8 @@ func TestWorkersReportChannelUsage(t *testing.T) {
 	c.Go(func() { c.worker(recipient, client) })
 	defer c.Halt()
 	c.pluginChans[recipient] <- stalePacket(t)
-	require.Eventually(t, func() bool { return gaugeReported("cbor_plugin_gauge") }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		_, _, found := instrument.ChannelGauge("cbor_plugin_gauge")
+		return found
+	}, 5*time.Second, 10*time.Millisecond)
 }

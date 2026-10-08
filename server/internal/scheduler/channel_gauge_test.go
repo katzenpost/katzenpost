@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
@@ -19,24 +18,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
-
-func channelUsageReported(name string) bool {
-	families, err := prometheus.DefaultGatherer.Gather()
-	if err != nil {
-		return false
-	}
-	for _, f := range families {
-		if f.GetName() != "katzenpost_channel_usage" {
-			continue
-		}
-		for _, m := range f.GetMetric() {
-			if m.GetLabel()[0].GetValue() == name {
-				return true
-			}
-		}
-	}
-	return false
-}
 
 func TestPipeWorkerReportsChannelUsage(t *testing.T) {
 	func() {
@@ -57,5 +38,8 @@ func TestPipeWorkerReportsChannelUsage(t *testing.T) {
 	pkt, err := packet.New(make([]byte, g.PacketLength), g)
 	require.NoError(t, err)
 	sch.inCh <- pkt
-	require.Eventually(t, func() bool { return channelUsageReported("scheduler_incoming") }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		_, _, found := instrument.ChannelGauge("scheduler_incoming")
+		return found
+	}, 5*time.Second, 10*time.Millisecond)
 }
