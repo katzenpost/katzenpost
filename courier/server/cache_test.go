@@ -477,3 +477,30 @@ func (m *mockPKIClient) PostReplica(ctx context.Context, epoch uint64, signingPr
 func (m *mockPKIClient) Deserialize(raw []byte) (*pki.Document, error) {
 	panic(errNotImplemented)
 }
+
+func TestHandleReplyDropsReplyWithoutEnvelopeHash(t *testing.T) {
+	courier := createTestCourier(t)
+	require.NotNil(t, courier)
+
+	require.NotPanics(t, func() {
+		courier.HandleReply(nil)
+	})
+
+	require.NotPanics(t, func() {
+		courier.HandleReply(&commands.ReplicaMessageReply{
+			EnvelopeHash: nil,
+			ReplicaID:    1,
+		})
+	})
+
+	require.NotPanics(t, func() {
+		courier.CacheReply(nil)
+	})
+
+	require.NotPanics(t, func() {
+		courier.CacheReply(&commands.ReplicaMessageReply{
+			EnvelopeHash: nil,
+			ReplicaID:    1,
+		})
+	})
+}
