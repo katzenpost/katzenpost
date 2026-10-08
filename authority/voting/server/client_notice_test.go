@@ -3,11 +3,13 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -15,6 +17,14 @@ import (
 )
 
 func exchangeNoticeVotes(t *testing.T, notices []config.Notice) ([]*state, uint64) {
+	noticeScheme := signSchemes.ByName(testSchemeName)
+	if noticeScheme == nil {
+		t.Skip("Ed25519 Sphincs+ is not built on this platform")
+	}
+	priorScheme := testSignatureScheme
+	testSignatureScheme = noticeScheme
+	defer func() { testSignatureScheme = priorScheme }()
+
 	epoch, _, _ := epochtime.Now()
 	epoch += 2
 	states, _ := buildScenarioStates(t, len(notices), epoch, nil)
@@ -103,12 +113,45 @@ func TestConsensusCarriesAgreedNotice(t *testing.T) {
 	}
 }
 
-func TestMismatchedNoticesFormNoConsensus(t *testing.T) {
+func TestMismatchedNoticeStillFormsConsensusWithEmptyNotice(t *testing.T) {
 	states, epoch := exchangeNoticeVotes(t, []config.Notice{{ClientNotice: "a"}, {ClientNotice: "b"}, {ClientNotice: "c"}})
 	for _, s := range states {
 		s.Lock()
-		_, _, _, err := s.tallyVotes(epoch)
+		_, _, params, err := s.tallyVotes(epoch)
 		s.Unlock()
-		require.Error(t, err)
+		require.NoError(t, err)
+		require.Equal(t, "", params.Notice.MinClientVersion)
+		require.Equal(t, "", params.Notice.ClientNotice)
+		require.Equal(t, 0.001, params.Mu)
+	}
+}
+
+func TestNoticeThresholdWinsConsensus(t *testing.T) {
+	n := config.Notice{MinClientVersion: "v0.0.105", ClientNotice: "upgrade soon"}
+	states, epoch := exchangeNoticeVotes(t, []config.Notice{n, n, n, {}, {ClientNotice: "other"}})
+	for _, s := range states {
+		s.Lock()
+		_, _, params, err := s.tallyVotes(epoch)
+		s.Unlock()
+		require.NoError(t, err)
+		require.Equal(t, "v0.0.105", params.Notice.MinClientVersion)
+		require.Equal(t, "upgrade soon", params.Notice.ClientNotice)
+	}
+}
+
+func TestMalformedNoticeVoteParametersStillCount(t *testing.T) {
+	states, epoch := exchangeNoticeVotes(t, []config.Notice{
+		{ClientNotice: "a"},
+		{ClientNotice: "b"},
+		{ClientNotice: strings.Repeat("n", 513)},
+	})
+	for _, s := range states {
+		s.Lock()
+		_, _, params, err := s.tallyVotes(epoch)
+		s.Unlock()
+		require.NoError(t, err)
+		require.Equal(t, "", params.Notice.MinClientVersion)
+		require.Equal(t, "", params.Notice.ClientNotice)
+		require.Equal(t, 0.001, params.Mu)
 	}
 }
