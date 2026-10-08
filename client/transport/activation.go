@@ -36,3 +36,8 @@ func inheritedListeners() ([]Listener, error) {
 	}
 	return listeners, nil
 }
+
+func refuseInherited(inherited []Listener, unmatched net.Addr) error {
+	closeListeners(inherited)
+	return fmt.Errorf("transport: inherited socket %s matches no configured [Listen.Unix] address", unmatched)
+}

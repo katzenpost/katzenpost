@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,11 +20,14 @@ func (c *UnixListenConfig) listen(inherited []Listener) (Listener, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
+	addresses := append([]string{c.Address}, c.Addresses...)
 	byAddress := make(map[string]Listener, len(inherited))
 	for _, l := range inherited {
+		if l.Addr().Network() != "unix" || !slices.Contains(addresses, l.Addr().String()) {
+			return nil, refuseInherited(inherited, l.Addr())
+		}
 		byAddress[l.Addr().String()] = l
 	}
-	addresses := append([]string{c.Address}, c.Addresses...)
 	listeners := make([]Listener, 0, len(addresses))
 	for _, address := range addresses {
 		if l, ok := byAddress[address]; ok {
@@ -33,6 +37,7 @@ func (c *UnixListenConfig) listen(inherited []Listener) (Listener, error) {
 		}
 		listener, err := listenUnix(address)
 		if err != nil {
+			closeListeners(inherited)
 			closeListeners(listeners)
 			return nil, err
 		}

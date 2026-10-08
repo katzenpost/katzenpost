@@ -89,9 +89,13 @@ func (c *ListenConfig) Listen() (Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case c.Unix != nil:
+	if c.Unix != nil {
 		return c.Unix.listen(inherited)
+	}
+	if len(inherited) > 0 {
+		return nil, refuseInherited(inherited, inherited[0].Addr())
+	}
+	switch {
 	case c.Tcp != nil:
 		return c.Tcp.Listen()
 	case c.Ws != nil:
