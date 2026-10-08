@@ -1,6 +1,11 @@
 name: docker mixnet integration tests
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      transports:
+        type: string
+        default: '["tcp"]'
   merge_group:
   schedule:
     - cron: '0 */12 * * *'
@@ -21,10 +26,11 @@ jobs:
       no_metrics: true
       TRANSPORT: ${{ matrix.transport }}
     strategy:
+      fail-fast: false
       matrix:
         go-version: [1.26.x]
         os: [ubuntu-latest]
-        transport: [tcp]
+        transport: ${{ fromJSON(inputs.transports || '["tcp"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
