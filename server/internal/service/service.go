@@ -6,6 +6,7 @@ package service
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -69,16 +70,19 @@ func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[
 		}
 	}
 
-	kaetzchenAdvertizedData := make(map[string]map[string]interface{})
+	static := make(map[string]map[string]interface{})
 	cfg := p.glue.Config()
 	for _, v := range cfg.ServiceNode.CBORPluginKaetzchen {
 		if v.PKIAdvertizedData != nil {
 			_, ok := v.PKIAdvertizedData[v.Capability]
 			if ok {
-				kaetzchenAdvertizedData[v.Capability] = v.PKIAdvertizedData[v.Capability]
+				static[v.Capability] = v.PKIAdvertizedData[v.Capability]
 			}
 		}
 	}
+	kaetzchenAdvertizedData := mergeAdvertized(p.cborPluginKaetzchenWorker.AdvertisedData(), static, func(capa, key string) {
+		p.log.Warningf("Kaetzchen %s: config overrides plugin parameter %q", capa, key)
+	})
 
 	p.log.Infof("kaetzchenAdvertizedData %v", kaetzchenAdvertizedData)
 
@@ -310,4 +314,24 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 
 	isOk = true
 	return p, nil
+}
+
+func mergeAdvertized(plugin, static map[string]map[string]interface{}, onClash func(capa, key string)) map[string]map[string]interface{} {
+	out := make(map[string]map[string]interface{})
+	for _, src := range []map[string]map[string]interface{}{plugin, static} {
+		for capa, params := range src {
+			m, ok := out[capa]
+			if !ok {
+				m = make(map[string]interface{})
+				out[capa] = m
+			}
+			for key, val := range params {
+				if existing, exists := m[key]; exists && !reflect.DeepEqual(existing, val) {
+					onClash(capa, key)
+				}
+				m[key] = val
+			}
+		}
+	}
+	return out
 }
