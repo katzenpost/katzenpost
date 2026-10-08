@@ -156,6 +156,12 @@ func (t *TimerQueue) worker() {
 
 		for {
 			t.mutex.Lock()
+			select {
+			case <-t.HaltCh():
+				t.mutex.Unlock()
+				return
+			default:
+			}
 			m := t.queue.Peek()
 
 			if m == nil {
@@ -171,15 +177,8 @@ func (t *TimerQueue) worker() {
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
 				t.queue.Dequeue()
 				t.mutex.Unlock()
-				// Use a separate goroutine that respects the halt channel
-				go func(value interface{}) {
-					select {
-					case <-t.HaltCh():
-						return
-					default:
-						t.action(value)
-					}
-				}(m.Value)
+				value := m.Value
+				t.Go(func() { t.action(value) })
 				continue
 			} else {
 				timer.Reset(time.Duration(timeLeft))
