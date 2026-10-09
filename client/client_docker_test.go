@@ -78,9 +78,7 @@ func testDockerClientSendReceive(t *testing.T) error {
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
-	t.Log("BEFORE sendAndWait")
 	reply, err := sendAndWait(t, client, message1, &nodeIdKey, []byte("+testdest"))
-	t.Log("AFTER sendAndWait")
 	if err != nil {
 		return fmt.Errorf("sendAndWait: %w", err)
 	}

@@ -17,14 +17,9 @@
 // Package constants defines internal constants for the Katzenpost server.
 package constants
 
-import "time"
-
 const (
 	// NumMixKeys is the number of mix keys to generate/publish.
 	NumMixKeys = 3
-
-	// KeepAliveInterval is the TCP/IP KeepAlive interval.
-	KeepAliveInterval = 3 * time.Minute
 
 	// Namespace is the namespace for the prometheus metrics
 	Namespace = "katzenpost"

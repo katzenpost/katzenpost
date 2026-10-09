@@ -32,6 +32,8 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // QuicConn wraps a conn and a single stream and implements net.Conn
@@ -125,7 +127,7 @@ func (l *QuicListener) Accept() (net.Conn, error) {
 	for {
 		conn, err := l.Listener.Accept(context.Background())
 		if err != nil {
-			return nil, err
+			return nil, &net.OpError{Op: "accept", Net: "quic", Addr: l.Listener.Addr(), Err: err}
 		}
 		streamCtx, cancel := context.WithTimeout(context.Background(), AcceptStreamTimeout)
 		stream, err := conn.AcceptStream(streamCtx)
@@ -144,6 +146,12 @@ func (l *QuicListener) Addr() net.Addr {
 
 func (l *QuicListener) Close() error {
 	return l.Listener.Close()
+}
+
+const KeepAlivePeriod = 3 * time.Minute
+
+func Config() *quic.Config {
+	return &quic.Config{KeepAlivePeriod: KeepAlivePeriod, MaxIdleTimeout: wire.DefaultReadTimeout}
 }
 
 // Setup a bare-bones TLS config for the server
@@ -201,7 +209,11 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			// so pick a common protocol rather than something fingerprintable.
 			NextProtos: []string{http3.NextProtoH3},
 		}
-		qconn, err := quic.DialAddr(ctx, u.Host, tlsConf, nil)
+		cfg := Config()
+		if deadline, ok := ctx.Deadline(); ok {
+			cfg.HandshakeIdleTimeout = max(time.Until(deadline), 0)
+		}
+		qconn, err := quic.DialAddr(ctx, u.Host, tlsConf, cfg)
 		if err == nil {
 			// open a quic stream
 			stream, err := qconn.OpenStream()

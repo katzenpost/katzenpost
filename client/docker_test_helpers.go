@@ -54,35 +54,21 @@ func registerClientForShutdown(c *thin.ThinClient) {
 	activeClients = append(activeClients, c)
 }
 
-// setupThinClientWithConfig creates and connects a thin client with the specified configuration
-func setupThinClientWithConfig(tb testing.TB, configFile, logLevel string) *thin.ThinClient {
-	cfg, err := thin.LoadFile(configFile)
+// setupThinClient creates and connects a thin client with default test configuration
+func setupThinClient(tb testing.TB) *thin.ThinClient {
+	cfg, err := thin.LoadFile(defaultThinClientConfigFile)
 	require.NoError(tb, err)
 
-	logging := &config.Logging{
-		Disable: false,
-		File:    "",
-		Level:   logLevel,
-	}
-
-	client := thin.NewThinClient(cfg, logging)
-	tb.Log("thin client Dialing")
+	client := thin.NewThinClient(cfg, &config.Logging{Level: defaultTestLogLevel})
 	err = client.Dial()
 	require.NoError(tb, err)
-	tb.Log("thin client connected")
 
 	registerClientForShutdown(client)
 	return client
 }
 
-// setupThinClient creates and connects a thin client with default test configuration
-func setupThinClient(tb testing.TB) *thin.ThinClient {
-	return setupThinClientWithConfig(tb, defaultThinClientConfigFile, defaultTestLogLevel)
-}
-
 // validatePKIDocument gets and validates the PKI document from a thin client
 func validatePKIDocument(t *testing.T, client *thin.ThinClient) *cpki.Document {
-	t.Log("thin client getting PKI doc")
 	doc := client.PKIDocument()
 	require.NotNil(t, doc)
 	require.NotEqual(t, doc.LambdaP, 0.0)
@@ -176,21 +162,13 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 		}
 
 		switch v := event.(type) {
-		case *thin.MessageIDGarbageCollected:
-			t.Log("MessageIDGarbageCollected")
+		case *thin.MessageIDGarbageCollected, *thin.NewDocumentEvent, *thin.MessageSentEvent:
 		case *thin.ConnectionStatusEvent:
-			t.Log("ConnectionStatusEvent")
 			if !v.IsConnected {
 				return nil, fmt.Errorf("socket connection lost")
 			}
-		case *thin.NewDocumentEvent:
-			t.Log("NewDocumentEvent")
-		case *thin.MessageSentEvent:
-			t.Log("MessageSentEvent")
 		case *thin.MessageReplyEvent:
-			t.Log("MessageReplyEvent")
 			if v.SURBID == nil || !sent[string(v.SURBID[:])] {
-				t.Log("reply for an earlier SURB, ignoring")
 				continue
 			}
 			return v.Payload, nil

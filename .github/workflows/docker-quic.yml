@@ -1,0 +1,42 @@
+name: docker quic testnet
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'quic/**'
+      - 'core/genconfig/**'
+      - 'cmd/genconfig/**'
+      - 'core/utils/addr.go'
+      - 'core/wire/session.go'
+      - 'core/pki/descriptor.go'
+      - 'core/pki/document.go'
+      - 'client/config/config_impl.go'
+      - 'client/connection.go'
+      - 'authority/voting/client/client.go'
+      - 'authority/voting/server/peer_conns.go'
+      - 'authority/voting/server/server.go'
+      - 'authority/voting/server/wire_handler.go'
+      - 'courier/server/outgoing_conn.go'
+      - 'replica/listener.go'
+      - 'replica/outgoing_conn.go'
+      - 'server/internal/incoming/listener.go'
+      - 'server/internal/outgoing/outgoing_conn.go'
+      - 'server/internal/pki/pki.go'
+      - 'cmd/http-proxy-client/**'
+      - 'cmd/http-proxy-server/**'
+      - 'docker/Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/docker-quic.yml'
+concurrency:
+  group: docker-quic-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quic:
+    uses: ./.github/workflows/docker-mixnet.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      transports: '["TCP+QUIC", "QUIC"]'
