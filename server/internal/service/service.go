@@ -219,7 +219,7 @@ func (p *serviceNode) onStopKaetzchen(c *thwack.Conn, l string) error {
 	}
 	// check external plugins
 	if p.isCBORKaetzchenConfigured(capa) && !p.isCBORKaetzchenRegistered(capa) {
-		c.Log().Debugf("START_KAETZCHEN failed: %v not running", capa)
+		c.Log().Debugf("STOP_KAETZCHEN failed: %v not running", capa)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
 	err := p.cborPluginKaetzchenWorker.UnregisterKaetzchen(capa)

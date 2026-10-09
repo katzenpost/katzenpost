@@ -314,7 +314,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 
 		// set the response packet delay from requesting packet, sans processing duration
 		delay := pkt.NewDelay()
-		respPkt.NodeDelay.Delay = uint32(delay)
+		respPkt.NodeDelay.Delay = uint32(delay / time.Millisecond)
 		respPkt.Delay = delay
 
 		k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
