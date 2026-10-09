@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client/thin"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
@@ -18,6 +19,11 @@ const (
 	// round trip timeout threshold.
 	RoundTripTimeSlop = (20 * time.Second)
 )
+
+func arqResendAt(sentAt time.Time, eta time.Duration) time.Time {
+	jitter := time.Duration(rand.Exp(rand.NewMath(), 4/float64(RoundTripTimeSlop)))
+	return sentAt.Add(eta + RoundTripTimeSlop + min(jitter, RoundTripTimeSlop))
+}
 
 // ARQState represents the state of an ARQ message in the stop-and-wait protocol.
 type ARQState uint8

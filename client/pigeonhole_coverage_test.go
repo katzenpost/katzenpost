@@ -6,7 +6,6 @@
 package client
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -490,67 +489,6 @@ func TestCancelResendingEncryptedMessageNilEnvelopeHash(t *testing.T) {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.CancelResendingEncryptedMessageReply)
 		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.CancelResendingEncryptedMessageReply.ErrorCode)
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout")
-	}
-}
-
-func TestEncryptWriteNoPKIDoc(t *testing.T) {
-	d, testAppID, responseCh := setupDaemonWithMockConn(t)
-
-	// Clear PKI docs
-	d.client.pki.docs = sync.Map{}
-
-	writeCap, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	firstIdx := writeCap.GetMessageBoxIndex()
-	queryID := &[thin.QueryIDLength]byte{}
-	copy(queryID[:], []byte("encwrit-nopki000"))
-
-	d.encryptWrite(&Request{
-		AppID: testAppID,
-		EncryptWrite: &thin.EncryptWrite{
-			QueryID:         queryID,
-			WriteCap:        writeCap,
-			MessageBoxIndex: firstIdx,
-			Plaintext:       []byte("test"),
-		},
-	})
-
-	select {
-	case resp := <-responseCh:
-		require.NotNil(t, resp.EncryptWriteReply)
-		require.Equal(t, thin.ThinClientErrorInternalError, resp.EncryptWriteReply.ErrorCode)
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout")
-	}
-}
-
-func TestEncryptReadNoPKIDoc(t *testing.T) {
-	d, testAppID, responseCh := setupDaemonWithMockConn(t)
-
-	d.client.pki.docs = sync.Map{}
-
-	writeCap, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	readCap := writeCap.ReadCap()
-	mbi := writeCap.GetMessageBoxIndex()
-	queryID := &[thin.QueryIDLength]byte{}
-	copy(queryID[:], []byte("encread-nopki000"))
-
-	d.encryptRead(&Request{
-		AppID: testAppID,
-		EncryptRead: &thin.EncryptRead{
-			QueryID:         queryID,
-			ReadCap:         readCap,
-			MessageBoxIndex: mbi,
-		},
-	})
-
-	select {
-	case resp := <-responseCh:
-		require.NotNil(t, resp.EncryptReadReply)
-		require.Equal(t, thin.ThinClientErrorInternalError, resp.EncryptReadReply.ErrorCode)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout")
 	}

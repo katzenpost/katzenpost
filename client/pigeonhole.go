@@ -141,7 +141,7 @@ func (d *Daemon) encryptRead(request *Request) {
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		d.log.Error("encryptRead: no PKI document available")
-		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
+		d.sendEncryptReadError(request, thin.ThinClientErrorServiceUnavailable)
 		return
 	}
 
@@ -149,7 +149,7 @@ func (d *Daemon) encryptRead(request *Request) {
 	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, true, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to create envelope: %v", err)
-		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
+		d.sendEncryptReadError(request, notReadyErrorCode(err))
 		return
 	}
 
@@ -251,7 +251,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		d.log.Error("encryptWrite: no PKI document available")
-		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
+		d.sendEncryptWriteError(request, thin.ThinClientErrorServiceUnavailable)
 		return
 	}
 
@@ -315,7 +315,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessageWithPadding(msg, doc, false, 0, d.cfg.PigeonholeGeometry())
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to create envelope: %v", err)
-		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
+		d.sendEncryptWriteError(request, notReadyErrorCode(err))
 		return
 	}
 
@@ -425,6 +425,13 @@ func positionErrorCode(err error) uint8 {
 	}
 }
 
+func notReadyErrorCode(err error) uint8 {
+	if errors.Is(err, errNoPKIDocument) || errors.Is(err, pigeonhole.ErrReplicaKeysNotReady) {
+		return thin.ThinClientErrorServiceUnavailable
+	}
+	return thin.ThinClientErrorInternalError
+}
+
 // writeInnerMessage wraps a write or tombstone in a ReplicaInnerMessage.
 func writeInnerMessage(write *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaInnerMessage {
 	return &pigeonhole.ReplicaInnerMessage{
@@ -498,7 +505,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		d.log.Error("createCourierEnvelopesFromPayload: no PKI document available")
-		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorServiceUnavailable)
 		return
 	}
 	// Derive the replica epoch from the PKI doc we just used for replica
@@ -529,7 +536,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
-			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, notReadyErrorCode(err))
 			return
 		}
 		d.log.Debug("createCourierEnvelopesFromPayload: built an envelope")
@@ -617,7 +624,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		d.log.Error("createCourierEnvelopesFromPayloads: no PKI document available")
-		d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
+		d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorServiceUnavailable)
 		return
 	}
 
@@ -691,7 +698,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 			envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
 			if err != nil {
 				d.log.Errorf("createCourierEnvelopesFromPayloads: %v", err)
-				d.sendCreateCourierEnvelopesFromPayloadsError(request, thin.ThinClientErrorInternalError)
+				d.sendCreateCourierEnvelopesFromPayloadsError(request, notReadyErrorCode(err))
 				return
 			}
 			newElements, err := encoder.AddEnvelope(envelope)
@@ -797,7 +804,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		d.log.Error("createCourierEnvelopesFromTombstoneRange: no PKI document available")
-		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+		d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorServiceUnavailable)
 		return
 	}
 
@@ -823,7 +830,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &tombstone.BoxID, writeInnerMessage(tombstone))
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: %v", err)
-			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, thin.ThinClientErrorInternalError)
+			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, notReadyErrorCode(err))
 			return
 		}
 		courierEnvelopes = append(courierEnvelopes, envelope)
@@ -1223,7 +1230,7 @@ func (d *Daemon) arqSend(message *ARQMessage, envHashKey [32]byte) error {
 	d.replyLock.Unlock()
 	instrument.SurbIDCreated()
 
-	priority := uint64(message.SentAt.Add(rtt).Add(RoundTripTimeSlop).UnixNano())
+	priority := uint64(arqResendAt(message.SentAt, rtt).UnixNano())
 	d.arqTimerQueue.Push(priority, surbID)
 
 	if err := d.client.SendPacket(pkt); err != nil {
@@ -1762,10 +1769,12 @@ func validateCancelResendingCopyCommandRequest(req *thin.CancelResendingCopyComm
 	return nil
 }
 
+var errNoPKIDocument = errors.New("no PKI document available")
+
 // resolveCourier picks a courier for a copy-command send: the one the
 // client specified if provided, else a random one from the current PKI
-// document. A nil PKI document or a lookup failure produces an error
-// that the caller should surface as InternalError.
+// document. A nil PKI document produces errNoPKIDocument; any other
+// lookup failure is internal.
 func (d *Daemon) resolveCourier(specifiedHash *[32]byte, specifiedQueueID []byte) (*[32]byte, []byte, error) {
 	if specifiedHash != nil && len(specifiedQueueID) > 0 {
 		d.log.Debugf("resolveCourier: using specified courier %x", specifiedHash[:8])
@@ -1773,7 +1782,7 @@ func (d *Daemon) resolveCourier(specifiedHash *[32]byte, specifiedQueueID []byte
 	}
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
-		return nil, nil, fmt.Errorf("no PKI document available")
+		return nil, nil, errNoPKIDocument
 	}
 	return GetRandomCourier(doc)
 }
@@ -1811,7 +1820,7 @@ func (d *Daemon) startResendingCopyCommand(request *Request) {
 	destIdHash, recipientQueueID, err := d.resolveCourier(req.CourierIdentityHash, req.CourierQueueID)
 	if err != nil {
 		d.log.Errorf("startResendingCopyCommand: %s", err)
-		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
+		d.sendStartResendingCopyCommandError(request, notReadyErrorCode(err))
 		return
 	}
 

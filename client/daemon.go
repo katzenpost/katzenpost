@@ -106,6 +106,9 @@ type Daemon struct {
 	secureRand *mrand.Rand
 
 	haltOnce sync.Once
+
+	loggedRates    [2]float64
+	loggedRatesSet bool
 }
 
 func NewDaemon(cfg *config.Config) (*Daemon, error) {
@@ -334,6 +337,7 @@ func (d *Daemon) Start() error {
 
 func (d *Daemon) onDocument(doc *cpki.Document) {
 	d.listener.updateFromPKIDoc(doc)
+	d.logBandwidth(doc, len(d.client.RawSignedDocumentByEpoch(doc.Epoch)))
 }
 
 func (d *Daemon) proxyReplies(surbID *[sphinxConstants.SURBIDLength]byte, ciphertext []byte) error {
@@ -1083,9 +1087,7 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	}
 
 	d.log.Debug("ARQ resend scheduled")
-	myRtt := message.SentAt.Add(message.ReplyETA)
-	myRtt = myRtt.Add(RoundTripTimeSlop)
-	priority := uint64(myRtt.UnixNano())
+	priority := uint64(arqResendAt(message.SentAt, message.ReplyETA).UnixNano())
 	d.arqTimerQueue.Push(priority, newsurbID)
 
 	err = d.client.SendPacket(pkt)
