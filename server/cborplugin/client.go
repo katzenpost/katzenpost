@@ -27,7 +27,9 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -37,6 +39,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -164,6 +167,13 @@ type ServicePlugin interface {
 const (
 	maxStderrTailLines = 60
 	maxStderrTailBytes = 8192
+
+	PluginProtocolEnv = "KATZENPOST_PLUGIN_PROTOCOL"
+	PluginSocketEnv   = "KATZENPOST_PLUGIN_SOCKET"
+	PluginProtocol    = "2"
+
+	maxSocketPathLen = 100
+	socketWait       = 40 * time.Second
 )
 
 // stderrTail keeps a bounded tail of a plugin's stderr output, for
@@ -209,6 +219,8 @@ type Client struct {
 	log        *logging.Logger
 
 	socketFile string
+	hostDir    string
+	protocol2  bool
 	cmd        *exec.Cmd
 	//conn       net.Conn
 
@@ -218,6 +230,8 @@ type Client struct {
 
 	capability string
 	endpoint   string
+
+	Geometry *geo.Geometry
 }
 
 // New creates a new plugin client instance which represents the single execution
@@ -232,6 +246,10 @@ func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuil
 		capability:     capability,
 		endpoint:       endpoint,
 	}
+}
+
+func (c *Client) SpeaksProtocol2() bool {
+	return c.protocol2
 }
 
 func (c *Client) Capability() string {
@@ -250,6 +268,11 @@ func (c *Client) GetParameters() *map[string]interface{} {
 func (c *Client) Start(command string, args []string) error {
 	err := c.launch(command, args)
 	if err != nil {
+		if c.cmd.Process != nil && c.cmd.ProcessState == nil {
+			c.cmd.Process.Kill()
+			c.cmd.Wait()
+		}
+		os.RemoveAll(c.hostDir)
 		return err
 	}
 	c.Go(c.reaper)
@@ -268,11 +291,13 @@ func (c *Client) reaper() {
 	err := c.cmd.Process.Signal(syscall.SIGTERM)
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, error sending SIGTERM: %s\n", err)
+		c.cmd.Process.Kill()
 	}
 	err = c.cmd.Wait()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
 	}
+	os.RemoveAll(c.hostDir)
 }
 
 func (c *Client) logPluginStderr(stderr io.ReadCloser) {
@@ -287,6 +312,10 @@ func (c *Client) logPluginStderr(stderr io.ReadCloser) {
 func (c *Client) launch(command string, args []string) error {
 	// exec plugin
 	c.cmd = exec.Command(command, args...)
+	hostSocket, err := c.offerHostSocket()
+	if err != nil {
+		return err
+	}
 	stdout, err := c.cmd.StdoutPipe()
 	if err != nil {
 		c.log.Debugf("pipe failure: %s", err)
@@ -309,17 +338,87 @@ func (c *Client) launch(command string, args []string) error {
 		c.logPluginStderr(stderr)
 	})
 
-	// read and decode plugin stdout
-	stdoutScanner := bufio.NewScanner(stdout)
-	if !stdoutScanner.Scan() {
-		return c.earlyExitError(command, stdoutScanner.Err())
+	firstLine := make(chan string, 1)
+	c.Go(func() {
+		c.readPluginStdout(stdout, firstLine)
+	})
+	return c.awaitSocket(command, hostSocket, firstLine)
+}
+
+func (c *Client) offerHostSocket() (string, error) {
+	dir, err := os.MkdirTemp("", "kpplugin")
+	if err != nil {
+		return "", err
 	}
-	c.socketFile = stdoutScanner.Text()
-	if c.socketFile == "" {
-		return c.earlyExitError(command, fmt.Errorf("plugin printed an empty socket path"))
+	c.hostDir = dir
+	geoEnv, err := hostGeometryEnv(c.Geometry)
+	if err != nil {
+		return "", err
 	}
-	c.log.Debugf("plugin socket path:'%s'\n", c.socketFile)
-	return nil
+	c.cmd.Env = append(os.Environ(), geoEnv...)
+	hostSocket := filepath.Join(dir, "plugin.socket")
+	if len(hostSocket) > maxSocketPathLen {
+		return "", nil
+	}
+	c.cmd.Env = append(c.cmd.Env, PluginProtocolEnv+"="+PluginProtocol, PluginSocketEnv+"="+hostSocket)
+	return hostSocket, nil
+}
+
+func (c *Client) readPluginStdout(stdout io.Reader, firstLine chan<- string) {
+	r := bufio.NewReader(stdout)
+	line, err := r.ReadString('\n')
+	if l := strings.TrimRight(line, "\r\n"); err == nil || l != "" {
+		c.log.Debugf("plugin stdout: %s", l)
+		firstLine <- l
+	}
+	close(firstLine)
+	if err == nil {
+		c.logPluginStdout(r)
+	}
+}
+
+func (c *Client) awaitSocket(command, hostSocket string, firstLine <-chan string) error {
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(socketWait)
+	candidate := ""
+	for {
+		for _, p := range []string{hostSocket, candidate} {
+			if p != "" && isSocket(p) {
+				c.socketFile = p
+				c.protocol2 = p == hostSocket
+				c.log.Debugf("plugin socket path:'%s'\n", p)
+				return nil
+			}
+		}
+		select {
+		case l, ok := <-firstLine:
+			if ok {
+				candidate = l
+			} else {
+				firstLine = nil
+			}
+			if (ok || hostSocket == "") && !filepath.IsAbs(candidate) {
+				return fmt.Errorf("plugin %q printed %q instead of a socket path; stderr:\n%s", command, candidate, c.stderrTail.String())
+			}
+		case <-c.HaltCh():
+			return c.earlyExitError(command, nil)
+		case <-deadline:
+			return fmt.Errorf("plugin %q provided no socket within %v; stderr:\n%s", command, socketWait, c.stderrTail.String())
+		case <-tick.C:
+		}
+	}
+}
+
+func isSocket(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode()&os.ModeSocket != 0
+}
+
+func (c *Client) logPluginStdout(stdout io.Reader) {
+	if _, err := io.Copy(c.logBackend.GetLogWriter(c.cmd.Path, "DEBUG"), stdout); err != nil {
+		c.log.Errorf("Failed to proxy cborplugin stdout to DEBUG log: %s", err)
+	}
 }
 
 // earlyExitError is returned by launch when the plugin's stdout closed
