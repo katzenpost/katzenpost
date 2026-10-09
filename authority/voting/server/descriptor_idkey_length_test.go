@@ -46,7 +46,7 @@ func TestPostDescriptorRejectsWrongLengthIdentityKey(t *testing.T) {
 
 		var resp commands.Command
 		require.NotPanics(t, func() {
-			resp = srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: now, Payload: raw}, keyHash[:])
+			resp = srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: now, Payload: raw}, keyHash[:], nil)
 		}, "onPostDescriptor must not panic on a wrong-length identity key")
 
 		status, ok := resp.(*commands.PostDescriptorStatus)
@@ -62,7 +62,7 @@ func TestPostDescriptorRejectsWrongLengthIdentityKey(t *testing.T) {
 
 		var resp commands.Command
 		require.NotPanics(t, func() {
-			resp = srv.onPostReplicaDescriptor("peer", &commands.PostReplicaDescriptor{Epoch: now, Payload: raw}, keyHash[:])
+			resp = srv.onPostReplicaDescriptor("peer", &commands.PostReplicaDescriptor{Epoch: now, Payload: raw}, keyHash[:], nil)
 		}, "onPostReplicaDescriptor must not panic on a wrong-length identity key")
 
 		status, ok := resp.(*commands.PostReplicaDescriptorStatus)

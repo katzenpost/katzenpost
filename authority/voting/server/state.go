@@ -2183,6 +2183,30 @@ func (s *state) isReplicaPeer(pk [publicKeyHashSize]byte) bool {
 	return ok
 }
 
+func (s *state) nodeLinkKeyPinned(identityHash, linkKey []byte, replica bool) bool {
+	var pk [publicKeyHashSize]byte
+	if len(identityHash) != publicKeyHashSize || len(linkKey) == 0 {
+		return false
+	}
+	copy(pk[:], identityHash)
+	now, _, _ := epochtime.Now()
+	s.RLock()
+	defer s.RUnlock()
+	pinned := false
+	for _, epoch := range []uint64{now - 1, now, now + 1} {
+		var descLinkKey []byte
+		if replica {
+			if d, ok := s.replicaDescriptors[epoch][pk]; ok {
+				descLinkKey = d.LinkKey
+			}
+		} else if d, ok := s.descriptors[epoch][pk]; ok {
+			descLinkKey = d.LinkKey
+		}
+		pinned = hmac.Equal(descLinkKey, linkKey) || pinned
+	}
+	return pinned
+}
+
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	if err := s.descriptorAuthorizationError(desc); err != nil {
 		s.log.Errorf("Node authorization failure for descriptor name=%q identity_hash=%x: %s",
