@@ -1,0 +1,11 @@
+[Unit]
+Description=Katzenpost thin client daemon socket
+Documentation=https://katzenpost.network/
+
+[Socket]
+ListenStream=%t/katzenpost/kpclientd.sock
+SocketMode=0600
+DirectoryMode=0700
+
+[Install]
+WantedBy=sockets.target
