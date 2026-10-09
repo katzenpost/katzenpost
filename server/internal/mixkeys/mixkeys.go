@@ -17,6 +17,7 @@
 package mixkeys
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -139,7 +140,9 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 		)
 		if m.persistOnShutdown {
 			k, found, err = mixkey.Load(e, m.geo, m.keyStoreDir)
-			if err != nil {
+			if errors.Is(err, mixkey.ErrReplayStateLost) {
+				m.log.Warningf("Not reusing persisted mix key for epoch %d: %v", e, err)
+			} else if err != nil {
 				// A persisted key file that cannot be loaded or consumed
 				// is fatal: the on-disk state disagrees with what the
 				// consensus expects, and silently generating a fresh key

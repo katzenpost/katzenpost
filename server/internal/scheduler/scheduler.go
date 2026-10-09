@@ -237,6 +237,7 @@ loop:
 			if !ok {
 				break loop
 			}
+			instrument.GaugeChannelLength("scheduler_incoming", len(sch.inCh))
 			select {
 			case <-sch.HaltCh():
 				sch.log.Debugf("mix server's scheduler's pipe worker: Terminating gracefully.")

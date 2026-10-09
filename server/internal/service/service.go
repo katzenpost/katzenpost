@@ -100,6 +100,7 @@ func (p *serviceNode) worker() {
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
+			instrument.GaugeChannelLength("service_incoming", len(ch))
 
 			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)

@@ -120,6 +120,7 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
+			instrument.GaugeChannelLength("cbor_plugin_"+pluginClient.Capability(), len(ch))
 			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
