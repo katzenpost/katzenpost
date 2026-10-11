@@ -44,14 +44,32 @@ type serviceNode struct {
 }
 
 func (p *serviceNode) Halt() {
-	p.Worker.Halt()
 	if p.preDelay != nil {
 		p.preDelay.Halt()
 	}
+	p.Worker.Halt()
 
-	close(p.ch)
-	p.kaetzchenWorker.Halt()
-	p.cborPluginKaetzchenWorker.Halt()
+	for {
+		select {
+		case pkt := <-p.readyCh:
+			if pkt != nil {
+				pkt.Dispose()
+			}
+		default:
+			goto drained
+		}
+	}
+drained:
+
+	if p.ch != nil {
+		close(p.ch)
+	}
+	if p.kaetzchenWorker != nil {
+		p.kaetzchenWorker.Halt()
+	}
+	if p.cborPluginKaetzchenWorker != nil {
+		p.cborPluginKaetzchenWorker.Halt()
+	}
 }
 
 func (p *serviceNode) OnPacket(pkt *packet.Packet) {
@@ -71,6 +89,12 @@ func (p *serviceNode) OnNewMixMaxDelay(ms uint64) {
 }
 
 func (p *serviceNode) releaseDelayed(pkt *packet.Packet) {
+	select {
+	case <-p.HaltCh():
+		pkt.Dispose()
+		return
+	default:
+	}
 	select {
 	case p.readyCh <- pkt:
 	case <-p.HaltCh():
