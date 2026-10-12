@@ -3,7 +3,11 @@
 package cborplugin
 
 import (
+	"fmt"
 	"os"
+	"strconv"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -27,5 +31,34 @@ func HostSocketPath(fallback string) (string, bool) {
 }
 
 func HostInfo() (*Host, error) {
-	return new(Host), nil
+	h := new(Host)
+	if v := os.Getenv(PluginPayloadLengthEnv); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("cborplugin: bad %s %q", PluginPayloadLengthEnv, v)
+		}
+		h.UserForwardPayloadLength = n
+	}
+	if v := os.Getenv(PluginGeometryEnv); v != "" {
+		cfg := new(geo.Config)
+		if _, err := toml.Decode(v, cfg); err != nil || cfg.SphinxGeometry == nil {
+			return nil, fmt.Errorf("cborplugin: bad %s: %v", PluginGeometryEnv, err)
+		}
+		h.Geometry = cfg.SphinxGeometry
+	}
+	return h, nil
+}
+
+func hostGeometryEnv(g *geo.Geometry) ([]string, error) {
+	if g == nil {
+		return nil, nil
+	}
+	blob, err := g.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	return []string{
+		PluginPayloadLengthEnv + "=" + strconv.Itoa(g.UserForwardPayloadLength),
+		PluginGeometryEnv + "=" + string(blob),
+	}, nil
 }

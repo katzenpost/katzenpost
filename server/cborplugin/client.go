@@ -346,11 +346,16 @@ func (c *Client) offerHostSocket() (string, error) {
 		return "", err
 	}
 	c.hostDir = dir
+	geoEnv, err := hostGeometryEnv(c.Geometry)
+	if err != nil {
+		return "", err
+	}
+	c.cmd.Env = append(os.Environ(), geoEnv...)
 	hostSocket := filepath.Join(dir, "plugin.socket")
 	if len(hostSocket) > maxSocketPathLen {
 		return "", nil
 	}
-	c.cmd.Env = append(os.Environ(), PluginProtocolEnv+"="+PluginProtocol, PluginSocketEnv+"="+hostSocket)
+	c.cmd.Env = append(c.cmd.Env, PluginProtocolEnv+"="+PluginProtocol, PluginSocketEnv+"="+hostSocket)
 	return hostSocket, nil
 }
 
