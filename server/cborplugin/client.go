@@ -404,7 +404,8 @@ func (c *Client) awaitSocket(command, hostSocket string, firstLine <-chan string
 				return fmt.Errorf("plugin %q printed %q instead of a socket path; stderr:\n%s", command, candidate, c.stderrTail.String())
 			}
 		case <-c.HaltCh():
-			return c.earlyExitError(command, nil)
+			c.cmd.Wait()
+			return fmt.Errorf("plugin %q exited before providing a socket path; stderr:\n%s", command, c.stderrTail.String())
 		case <-deadline:
 			return fmt.Errorf("plugin %q provided no socket within %v; stderr:\n%s", command, socketWait, c.stderrTail.String())
 		case <-tick.C:
@@ -442,24 +443,6 @@ func (c *Client) logPluginOutput(stream string, r *bufio.Reader) {
 	if dropped > 0 {
 		c.log.Warningf("plugin %s: dropped %d bytes of %s over the log bounds", c.cmd.Path, dropped, stream)
 	}
-}
-
-// earlyExitError is returned by launch when the plugin's stdout closed
-// without ever providing a usable socket path, i.e. it exited (or crashed)
-// during its own initialization. It waits briefly for the concurrent
-// logPluginStderr goroutine to finish draining stderr, so the captured tail
-// is complete, before reaping the process and composing a diagnostic error.
-func (c *Client) earlyExitError(command string, scanErr error) error {
-	select {
-	case <-c.HaltCh():
-	case <-time.After(2 * time.Second):
-	}
-	c.cmd.Wait()
-	tail := c.stderrTail.String()
-	if scanErr != nil {
-		return fmt.Errorf("plugin %q exited before providing a socket path (%v); stderr:\n%s", command, scanErr, tail)
-	}
-	return fmt.Errorf("plugin %q exited before providing a socket path; stderr:\n%s", command, tail)
 }
 
 func (c *Client) ReadChan() chan Command {
