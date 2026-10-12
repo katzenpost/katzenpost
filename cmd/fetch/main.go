@@ -43,6 +43,7 @@ import (
 
 // Config holds the command line configuration
 type Config struct {
+	Bandwidth    bool
 	ConfigFile   string
 	LogLevel     string
 	MinReplicas  int
@@ -88,6 +89,8 @@ and inspecting the current state of the mixnet topology.`,
 	// Configuration flags
 	cmd.Flags().StringVarP(&cfg.ConfigFile, "config", "f", "thinclient.toml",
 		"path to the thin client configuration file (TOML format)")
+	cmd.Flags().BoolVar(&cfg.Bandwidth, "bandwidth", false,
+		"print the estimated per-client bandwidth at the current consensus rates and exit")
 	cmd.Flags().StringVarP(&cfg.LogLevel, "log_level", "l", "DEBUG",
 		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
 	cmd.Flags().IntVarP(&cfg.MinReplicas, "min-replicas", "r", 0,
@@ -137,6 +140,10 @@ func runFetch(cfg Config) error {
 	err = client.Dial()
 	if err != nil {
 		return fmt.Errorf("failed to connect to client daemon: %v", err)
+	}
+
+	if cfg.Bandwidth {
+		return printBandwidth(client)
 	}
 
 	// Resolve the directory authority names once, so signers may be

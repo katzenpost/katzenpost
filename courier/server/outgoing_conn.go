@@ -38,8 +38,6 @@ import (
 
 var outgoingConnID uint64
 
-const KeepAliveInterval = 3 * time.Minute
-
 // noIdleReadTimeout effectively disables the wire session's idle read
 // deadline; dead peers are detected by TCP keepalive.
 const noIdleReadTimeout = 24 * 365 * time.Hour
@@ -188,7 +186,7 @@ func (c *outgoingConn) initializeWorker() (*workerContext, *net.Dialer, *wire.Pe
 	dialCtx, cancelFn := context.WithCancel(context.Background())
 
 	dialer := &net.Dialer{
-		KeepAlive: KeepAliveInterval,
+		KeepAlive: common.KeepAlivePeriod,
 		Timeout:   time.Duration(c.co.Server().cfg.ConnectTimeout) * time.Millisecond,
 	}
 
@@ -336,7 +334,9 @@ func (c *outgoingConn) dialAddress(dialCtx *workerContext, dialer *net.Dialer, a
 	}
 	c.log.Debugf("Dialing: %v", u.Host)
 
-	conn, err := common.DialURL(u, dialCtx.Context, dialer.DialContext)
+	connectCtx, connectCancel := context.WithTimeout(dialCtx.Context, dialer.Timeout)
+	conn, err := common.DialURL(u, connectCtx, dialer.DialContext)
+	connectCancel()
 	select {
 	case <-dialCtx.Done():
 		// Canceled.

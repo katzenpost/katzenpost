@@ -44,6 +44,8 @@ func TimeKaetzchenRequestsDuration() {}
 // KaetzchenRequestsDropped increments the counter for the number of dropped kaetzchen requests
 func KaetzchenRequestsDropped(dropCounter uint64) {}
 
+func KaetzchenResponsesDropped(capability string) {}
+
 // KaetzchenRequestsFailed increments the counter for the number of failed kaetzchen requests
 func KaetzchenRequestsFailed() {}
 

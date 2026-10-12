@@ -40,12 +40,11 @@ var (
 	ErrShutdown = errors.New("shutdown requested")
 
 	defaultDialer = net.Dialer{
-		KeepAlive: keepAliveInterval,
+		KeepAlive: common.KeepAlivePeriod,
 		Timeout:   connectTimeout,
 	}
 
-	keepAliveInterval = 3 * time.Minute
-	connectTimeout    = 1 * time.Minute
+	connectTimeout = 1 * time.Minute
 
 	// readIdleTimeout bounds how long the peer reader will wait between
 	// successive commands from the gateway before declaring the link

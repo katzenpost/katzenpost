@@ -268,6 +268,7 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 	}
 
 	reportCategories(os.Stdout, tally)
+	attrib.reportEpochs(os.Stdout)
 	attrib.report(os.Stdout, session.PKIDocument())
 
 	return tally

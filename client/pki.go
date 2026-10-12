@@ -147,8 +147,8 @@ func (c *Client) RawSignedDocumentByEpoch(epoch uint64) []byte {
 // gateway is normal around an epoch boundary, particularly under
 // short (2-minute) epoch durations, and typically clears within a
 // second or two. Without the retry every caller of CurrentDocument
-// would observe nil during that window and the daemon would return
-// ThinClientErrorInternalError to its thin client.
+// would observe nil during that window and fail the thin client's
+// request.
 func (c *Client) WaitForCurrentDocument() {
 	if _, doc := c.pki.currentDocument(); doc != nil {
 		return

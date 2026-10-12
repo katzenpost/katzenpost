@@ -5,6 +5,7 @@ package instrument
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -93,6 +94,13 @@ var (
 			Help: "Number of total dropped kaetzchen requests",
 		},
 	)
+	kaetzchenResponsesDropped = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_kaetzchen_dropped_responses_total",
+			Help: "Number of dropped kaetzchen responses by capability",
+		},
+		[]string{"capability"},
+	)
 	kaetzchenRequestsFailed = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_kaetzchen_failed_requests_total",
@@ -165,6 +173,15 @@ var (
 		},
 		[]string{"channel_name"},
 	)
+	channelUsageMax = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_channel_usage_max",
+			Help: "Highest number of items seen in the channel since start",
+		},
+		[]string{"channel_name"},
+	)
+	channelPeaksMu   sync.Mutex
+	channelPeaks     = make(map[string]int)
 	rateLimitDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_dropped_rate_limit_total",
@@ -233,6 +250,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(kaetzchenRequestsDropped)
 	prometheus.MustRegister(kaetzchenRequestsDuration)
 	prometheus.MustRegister(kaetzchenRequestsFailed)
+	prometheus.MustRegister(kaetzchenResponsesDropped)
 	prometheus.MustRegister(mixPacketsDropped)
 	prometheus.MustRegister(mixQueueSize)
 	prometheus.MustRegister(pkiDocs)
@@ -243,6 +261,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
 	prometheus.MustRegister(channelUsage)
+	prometheus.MustRegister(channelUsageMax)
 	prometheus.MustRegister(rateLimitDropped)
 	prometheus.MustRegister(sphinxUnwraps)
 	prometheus.MustRegister(packetsDroppedByReason)
@@ -303,6 +322,10 @@ func KaetzchenRequests() {
 // KaetzchenRequestsDropped increments the counter for the number of dropped kaetzchen requests
 func KaetzchenRequestsDropped(dropCounter uint64) {
 	kaetzchenRequestsDropped.Add(float64(dropCounter))
+}
+
+func KaetzchenResponsesDropped(capability string) {
+	kaetzchenResponsesDropped.With(prometheus.Labels{"capability": capability}).Inc()
 }
 
 // KaetzchenRequestsFailed increments the counter for the number of failed kaetzchen requests
@@ -368,10 +391,38 @@ func InvalidPKICache(epoch string) {
 // GaugeChannelLength sets the per-channel depth gauge. Matching the
 // signature of the noprometheus stub so callers can invoke this
 // unconditionally; the metric is registered above as channelUsage.
-// No call site references it yet; this accessor is added so that
-// future use does not require touching the instrument package.
 func GaugeChannelLength(name string, length int) {
 	channelUsage.With(prometheus.Labels{"channel_name": name}).Set(float64(length))
+	channelPeaksMu.Lock()
+	defer channelPeaksMu.Unlock()
+	if length > channelPeaks[name] {
+		channelPeaks[name] = length
+		channelUsageMax.With(prometheus.Labels{"channel_name": name}).Set(float64(length))
+	}
+}
+
+func ChannelGauge(name string) (usage, peak float64, found bool) {
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return 0, 0, false
+	}
+	for _, f := range families {
+		switch f.GetName() {
+		case "katzenpost_channel_usage":
+			for _, m := range f.GetMetric() {
+				if m.GetLabel()[0].GetValue() == name {
+					usage, found = m.GetGauge().GetValue(), true
+				}
+			}
+		case "katzenpost_channel_usage_max":
+			for _, m := range f.GetMetric() {
+				if m.GetLabel()[0].GetValue() == name {
+					peak, found = m.GetGauge().GetValue(), true
+				}
+			}
+		}
+	}
+	return usage, peak, found
 }
 
 // RateLimitDropped increments the counter for client packets dropped by

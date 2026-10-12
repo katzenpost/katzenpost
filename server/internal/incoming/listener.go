@@ -36,7 +36,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/quic/common"
-	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
@@ -145,7 +144,7 @@ func (l *listener) worker() {
 		tcpConn, ok := conn.(*net.TCPConn)
 		if ok {
 			tcpConn.SetKeepAlive(true)
-			tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+			tcpConn.SetKeepAlivePeriod(common.KeepAlivePeriod)
 			// Disable Nagle so the responder's finalisation NoOp does
 			// not wait on a coalesce timer behind the small handshake
 			// messages it follows.
@@ -350,7 +349,7 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string, lim
 		}
 	case "quic":
 		l.log.Noticef("Starting listener on: %q", addr)
-		ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+		ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), common.Config())
 		if err != nil {
 			l.log.Errorf("Failed to start listener %q after %v: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration, and check that the address is assigned and the port is available.", addr, time.Since(listenStart), err)
 			return nil, err

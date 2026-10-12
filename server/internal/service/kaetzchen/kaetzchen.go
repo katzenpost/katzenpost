@@ -244,6 +244,7 @@ func (k *KaetzchenWorker) worker() {
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
+			instrument.GaugeChannelLength("kaetzchen_incoming", len(ch))
 			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				count := k.incrementDropCounter()
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
@@ -314,7 +315,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 
 		// set the response packet delay from requesting packet, sans processing duration
 		delay := pkt.NewDelay()
-		respPkt.NodeDelay.Delay = uint32(delay)
+		respPkt.NodeDelay.Delay = uint32(delay / time.Millisecond)
 		respPkt.Delay = delay
 
 		k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)

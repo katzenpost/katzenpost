@@ -429,11 +429,8 @@ func New(cfg *config.Config) (*Server, error) {
 		panic("KEM scheme not found")
 	}
 
-	//GenerateKeypair
-	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
-	if err != nil {
-		panic(err)
-	}
+	var linkPublicKey kem.PublicKey
+	var linkPrivateKey kem.PrivateKey
 	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, err = pemkem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
@@ -448,7 +445,7 @@ func New(cfg *config.Config) (*Server, error) {
 		if err != nil {
 			panic(err)
 		}
-		linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, rng)
+		linkPublicKey, linkPrivateKey = nyquistkem.GenerateKeypair(scheme, rng)
 		err = pemkem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
 			return nil, err

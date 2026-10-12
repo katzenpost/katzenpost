@@ -28,3 +28,8 @@ func (c *UnixListenConfig) Validate() error {
 	}
 	return nil
 }
+
+// Listen creates a unix-domain-socket listener bound to c.Address.
+func (c *UnixListenConfig) Listen() (Listener, error) {
+	return c.listen(nil)
+}

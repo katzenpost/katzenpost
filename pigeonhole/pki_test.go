@@ -4,6 +4,7 @@
 package pigeonhole
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -228,4 +229,40 @@ func TestGetRandomIntermediateReplicas(t *testing.T) {
 		require.Less(t, replicaIndices[1], uint8(5))
 		require.NotEqual(t, replicaIndices[0], replicaIndices[1])
 	})
+}
+
+func TestGetRandomIntermediateReplicasNotReady(t *testing.T) {
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	docWithKeys := func(keys map[uint64][]byte) *pki.Document {
+		doc := &pki.Document{}
+		for i := 0; i < 2; i++ {
+			id := make([]byte, 32)
+			_, err := rand.Reader.Read(id)
+			require.NoError(t, err)
+			doc.StorageReplicas = append(doc.StorageReplicas, &pki.ReplicaDescriptor{
+				Name:         fmt.Sprintf("replica-%d", i),
+				ReplicaID:    uint8(i),
+				IdentityKey:  id,
+				EnvelopeKeys: keys,
+			})
+			doc.ConfiguredReplicaIdentityKeys = append(doc.ConfiguredReplicaIdentityKeys, id)
+		}
+		return doc
+	}
+	for _, tc := range []struct {
+		name     string
+		doc      *pki.Document
+		notReady bool
+	}{
+		{"nilStorageReplicas", &pki.Document{}, true},
+		{"missingKey", docWithKeys(map[uint64][]byte{}), true},
+		{"emptyKey", docWithKeys(map[uint64][]byte{replicaEpoch: {}}), true},
+		{"malformedKey", docWithKeys(map[uint64][]byte{replicaEpoch: {1, 2, 3}}), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := GetRandomIntermediateReplicas(tc.doc, generateRandomBoxID(t))
+			require.Error(t, err)
+			require.Equal(t, tc.notReady, errors.Is(err, ErrReplicaKeysNotReady))
+		})
+	}
 }
