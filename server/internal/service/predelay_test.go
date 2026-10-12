@@ -53,9 +53,11 @@ func (r *releases) wait(t *testing.T, n int, timeout time.Duration) {
 	}
 }
 
+var testGeometry = geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
+
 func testPacket(id uint64, delay time.Duration) *packet.Packet {
 	now := time.Now()
-	return &packet.Packet{ID: id, Delay: delay, RecvAt: now, DispatchAt: now}
+	return &packet.Packet{ID: id, Delay: delay, RecvAt: now, DispatchAt: now, Geometry: testGeometry}
 }
 
 func TestPreDelayHoldsUntilDue(t *testing.T) {
@@ -212,7 +214,6 @@ func TestPreDelayOverflowDropsRandomEntry(t *testing.T) {
 }
 
 func TestPreDelayHaltDisposesPending(t *testing.T) {
-	g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
 	var dropped []uint64
 	var mu sync.Mutex
 	d := newPreDelay(func(*packet.Packet) { t.Error("released after halt") }, 0, func(pkt *packet.Packet) {
@@ -220,7 +221,7 @@ func TestPreDelayHaltDisposesPending(t *testing.T) {
 		dropped = append(dropped, pkt.ID)
 		mu.Unlock()
 	}, 0)
-	pkts := []*packet.Packet{echoRequest(t, g, 20*time.Second), echoRequest(t, g, 20*time.Second)}
+	pkts := []*packet.Packet{echoRequest(t, testGeometry, 20*time.Second), echoRequest(t, testGeometry, 20*time.Second)}
 	for _, pkt := range pkts {
 		require.True(t, d.push(pkt))
 	}
