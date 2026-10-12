@@ -30,6 +30,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -353,7 +354,9 @@ func (c *Client) offerHostSocket() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	c.cmd.Env = append(os.Environ(), geoEnv...)
+	c.cmd.Env = append(slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		return strings.HasPrefix(kv, PluginProtocolEnv+"=") || strings.HasPrefix(kv, PluginSocketEnv+"=")
+	}), geoEnv...)
 	hostSocket := filepath.Join(dir, "plugin.socket")
 	if len(hostSocket) > maxSocketPathLen {
 		return "", nil
