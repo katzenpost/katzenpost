@@ -5,6 +5,7 @@ package queue
 
 import (
 	"math"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -111,6 +112,10 @@ func (t *TimerQueue) Push(priority uint64, value interface{}) {
 	case t.wakeCh <- struct{}{}:
 	default:
 	}
+}
+
+func (t *TimerQueue) PushBounded(priority uint64, value interface{}, maxLen int, r *rand.Rand) interface{} {
+	return nil
 }
 
 // PushChLen reports the number of items Push has accepted that have not yet

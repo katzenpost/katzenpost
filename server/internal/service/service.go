@@ -31,7 +31,10 @@ type serviceNode struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch chan interface{}
+	ch      chan interface{}
+	readyCh chan *packet.Packet
+
+	preDelay *preDelay
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
@@ -47,6 +50,20 @@ func (p *serviceNode) Halt() {
 
 func (p *serviceNode) OnPacket(pkt *packet.Packet) {
 	p.ch <- pkt
+}
+
+func (p *serviceNode) OnNewMixMaxDelay(ms uint64) {
+}
+
+func (p *serviceNode) releaseDelayed(pkt *packet.Packet) {
+	select {
+	case p.readyCh <- pkt:
+	case <-p.HaltCh():
+		pkt.Dispose()
+	}
+}
+
+func dropDelayed(pkt *packet.Packet) {
 }
 
 func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[string]map[string]interface{}, error) {
@@ -286,6 +303,7 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 		ch:                        make(chan interface{}, InboundPacketsChannelSize),
 		kaetzchenWorker:           kaetzchenWorker,
 		cborPluginKaetzchenWorker: cborPluginWorker,
+		preDelay:                  newPreDelay(nil, 0, nil, 0),
 	}
 
 	cfg := glue.Config()

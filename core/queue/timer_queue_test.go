@@ -3,6 +3,7 @@
 package queue
 
 import (
+	mrand "math/rand"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -159,4 +160,26 @@ func TestTimerQueueDispatchIsBounded(t *testing.T) {
 	}
 	require.Equal(t, int64(1), inFlight.Load())
 	require.Equal(t, n-1, q.Len()+q.PushChLen(), "entries not yet run must stay queued")
+}
+
+func TestTimerQueuePushBoundedEvictsAtTheBound(t *testing.T) {
+	q := NewTimerQueue(func(interface{}) {})
+	q.Start()
+	r := mrand.New(mrand.NewSource(1))
+	far := uint64(time.Now().Add(time.Hour).UnixNano())
+
+	values := []int{1, 2, 3, 4, 5}
+	evicted := 0
+	for i := range values {
+		if v := q.PushBounded(far, &values[i], 3, r); v != nil {
+			evicted++
+		}
+	}
+	require.Equal(t, 3, q.Len())
+	require.Equal(t, 2, evicted)
+
+	q.Halt()
+	v := 6
+	require.Same(t, &v, q.PushBounded(far, &v, 3, r))
+	require.Equal(t, 3, q.Len())
 }
