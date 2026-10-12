@@ -1631,3 +1631,7 @@ func (e *Courier) RegisterConsumer(s *cborplugin.Server) {
 func (e *Courier) SetWriteFunc(writeFunc func(cborplugin.Command)) {
 	e.write = writeFunc
 }
+
+func checkHostGeometry(own *geo.Geometry) error {
+	return nil
+}

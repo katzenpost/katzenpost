@@ -39,6 +39,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -228,6 +229,8 @@ type Client struct {
 
 	capability string
 	endpoint   string
+
+	Geometry *geo.Geometry
 }
 
 // New creates a new plugin client instance which represents the single execution
