@@ -53,6 +53,9 @@ func TestHelperProcess(t *testing.T) {
 			fmt.Println(socketFile)
 			os.Stdout.Write(make([]byte, 128*1024))
 		})
+	case "long_first_line":
+		os.Stdout.Write([]byte(strings.Repeat("a", 1<<20) + "\n"))
+		time.Sleep(time.Minute)
 	case "junk_stdout":
 		fmt.Println("plugin starting")
 		time.Sleep(time.Minute)
