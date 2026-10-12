@@ -3127,6 +3127,9 @@ func (s *state) restoredMixDescriptor(raw []byte) (*pki.MixDescriptor, error) {
 	if !up.Verify(pub) {
 		return nil, errors.New("invalid upload signature")
 	}
+	if !s.s.cfg.Server.AcceptDescriptorMetadata {
+		up.MixDescriptor.DropMetadata()
+	}
 	return up.MixDescriptor, nil
 }
 
@@ -3144,6 +3147,9 @@ func (s *state) restoredReplicaDescriptor(raw []byte) (*pki.ReplicaDescriptor, e
 	}
 	if !up.Verify(pub) {
 		return nil, errors.New("invalid upload signature")
+	}
+	if !s.s.cfg.Server.AcceptDescriptorMetadata {
+		up.ReplicaDescriptor.DropMetadata()
 	}
 	return up.ReplicaDescriptor, nil
 }

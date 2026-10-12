@@ -80,7 +80,7 @@ type MixDescriptor struct {
 	// specified version so that it can be rejected if the format changes.
 	Version string
 
-	SoftwareVersion string `cbor:"-"`
+	SoftwareVersion string `cbor:"SoftwareVersion,omitempty"`
 }
 
 // String returns a human readable MixDescriptor suitable for terse logging.
@@ -105,6 +105,14 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 // MarshalBinary implmements encoding.BinaryMarshaler
 func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	return ccbor.Marshal((*mixdescriptor)(d))
+}
+
+func (d *MixDescriptor) DropMetadata() {
+	d.SoftwareVersion = ""
+}
+
+func (d *ReplicaDescriptor) DropMetadata() {
+	d.SoftwareVersion = ""
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive
@@ -164,8 +172,10 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 	return nil
 }
 
+const maxSoftwareVersionLength = 128
+
 func IsSoftwareVersionWellFormed(v string) error {
-	return nil
+	return printableWithin("SoftwareVersion", v, maxSoftwareVersionLength)
 }
 
 func isDescriptorAddressWellFormed(transport, addr string, isGatewayNode bool, allowOnion bool) error {
@@ -253,7 +263,7 @@ type ReplicaDescriptor struct {
 	// be used to reach the node.
 	Addresses map[string][]string
 
-	SoftwareVersion string `cbor:"-"`
+	SoftwareVersion string `cbor:"SoftwareVersion,omitempty"`
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
