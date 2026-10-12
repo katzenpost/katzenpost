@@ -303,11 +303,7 @@ func (c *Client) reaper() {
 }
 
 func (c *Client) logPluginStderr(stderr io.ReadCloser) {
-	logWriter := c.logBackend.GetLogWriter(c.cmd.Path, "DEBUG")
-	_, err := io.Copy(io.MultiWriter(logWriter, &c.stderrTail), stderr)
-	if err != nil {
-		c.log.Errorf("Failed to proxy cborplugin stderr to DEBUG log: %s", err)
-	}
+	c.logPluginOutput("stderr", bufio.NewReaderSize(io.TeeReader(stderr, &c.stderrTail), maxPluginLineLen))
 	c.Halt()
 }
 
