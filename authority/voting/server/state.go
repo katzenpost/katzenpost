@@ -518,7 +518,9 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	// vote topology is irrelevent.
 	var zeros [32]byte
 	s.log.Debugf("getVote: Generating document with %d mix descriptors and %d replica descriptors", len(descriptors), len(replicaDescriptors))
-	vote := s.getDocument(descriptors, replicaDescriptors, s.s.cfg.Parameters, zeros[:])
+	params := *s.s.cfg.Parameters
+	params.Notice = s.s.cfg.Notice
+	vote := s.getDocument(descriptors, replicaDescriptors, &params, zeros[:])
 
 	// create our SharedRandom Commit
 	s.log.Debugf("getVote: Generating SharedRandom commit for epoch %d", epoch)
@@ -894,6 +896,8 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		WeeklySharedRandom:            s.weeklySRV,
 		SphinxGeometryHash:            s.geo.Hash(),
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
+		MinClientVersion:              params.Notice.MinClientVersion,
+		ClientNotice:                  params.Notice.ClientNotice,
 	}
 	return doc
 }
@@ -1545,6 +1549,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	mixParams := make(map[string]map[[publicKeyHashSize]byte]struct{})
 	replicaTally := make(map[string]map[[publicKeyHashSize]byte]struct{})
 	replicaNodes := make([]*pki.ReplicaDescriptor, 0)
+	noticeTally := make(map[config.Notice]int)
 	for id, vote := range s.votes[epoch] {
 		// serialize the vote parameters and tally these as well.
 		bs, err := votedParametersKey(vote)
@@ -1556,6 +1561,12 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			mixParams[bs] = make(map[[publicKeyHashSize]byte]struct{})
 		}
 		mixParams[bs][id] = struct{}{}
+
+		notice := config.Notice{}
+		if err := pki.IsClientNoticeWellFormed(vote.MinClientVersion, vote.ClientNotice); err == nil {
+			notice = config.Notice{MinClientVersion: vote.MinClientVersion, ClientNotice: vote.ClientNotice}
+		}
+		noticeTally[notice]++
 
 		// include edge nodes in the tally.
 		for _, desc := range vote.GatewayNodes {
@@ -1653,6 +1664,12 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 
 		if len(authorities) >= s.threshold {
 			sortNodesByPublicKey(nodes)
+			for n, count := range noticeTally {
+				if count >= s.threshold {
+					params.Notice = n
+					break
+				}
+			}
 			// successful tally
 			return nodes, replicaNodes, params, nil
 		} else if len(authorities) >= s.dissenters {

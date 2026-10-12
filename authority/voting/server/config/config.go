@@ -115,6 +115,8 @@ type Parameters struct {
 	// that the courier and storage replicas will sample to determine the
 	// send timing of decoy traffic between each other.
 	LambdaR float64
+
+	Notice Notice `toml:"-"`
 }
 
 func (pCfg *Parameters) validate() error {
@@ -469,6 +471,7 @@ type Config struct {
 	Logging     *Logging
 	Parameters  *Parameters
 	Debug       *Debug
+	Notice      Notice
 
 	Mixes           []*Node
 	GatewayNodes    []*Node

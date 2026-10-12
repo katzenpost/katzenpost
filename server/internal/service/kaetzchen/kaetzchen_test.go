@@ -93,6 +93,8 @@ func (p *mockProvider) KaetzchenForPKI() (map[string]map[string]interface{}, map
 	return nil, nil, nil
 }
 
+func (p *mockProvider) OnNewMixMaxDelay(uint64) {}
+
 type mockDecoy struct{}
 
 func (d *mockDecoy) Halt() {}

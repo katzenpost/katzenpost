@@ -186,8 +186,7 @@ func TestSchedulerMaxDelayConsensusOverridesFallback(t *testing.T) {
 }
 
 func TestSchedulerMaxDelayConsensusAboveCeiling(t *testing.T) {
-	_, elapsed, till := epochtime.Now()
-	ceiling := (elapsed + till) * constants.NumMixKeys
+	ceiling := schedulerCeiling()
 	h := newMaxDelayHarness(t)
 	h.sch.OnNewMixMaxDelay(uint64((2 * ceiling) / time.Millisecond))
 	h.requireAccepts(t, ceiling)
@@ -198,8 +197,7 @@ func TestSchedulerMaxDelayConsensusAboveCeiling(t *testing.T) {
 }
 
 func schedulerCeiling() time.Duration {
-	_, elapsed, till := epochtime.Now()
-	return (elapsed + till) * constants.NumMixKeys
+	return epochtime.Period() * constants.NumMixKeys
 }
 
 func TestSchedulerLogsBuiltinMaxDelayAtStartup(t *testing.T) {
