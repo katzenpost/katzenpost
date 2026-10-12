@@ -44,6 +44,11 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(1)
 	case "handshake_ok":
 		runHandshakeOKHelper()
+	case "noisy_stdout":
+		runEchoHelper(func(socketFile string) {
+			fmt.Println(socketFile)
+			os.Stdout.Write(make([]byte, 128*1024))
+		})
 	}
 	os.Exit(2)
 }
