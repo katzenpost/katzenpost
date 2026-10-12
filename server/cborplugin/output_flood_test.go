@@ -46,3 +46,9 @@ func TestClientBoundsLoggedPluginStdout(t *testing.T) {
 		t.Fatalf("log grew to %d bytes from a 24 MiB stdout flood", size)
 	}
 }
+
+func TestClientBoundsLoggedPluginStderr(t *testing.T) {
+	if size := floodedLogSize(t, "stderr_flood"); size > 8<<20 {
+		t.Fatalf("log grew to %d bytes from a 24 MiB stderr flood", size)
+	}
+}

@@ -58,6 +58,11 @@ func TestHelperProcess(t *testing.T) {
 			fmt.Println(socketFile)
 			writeFlood(os.Stdout)
 		})
+	case "stderr_flood":
+		runEchoHelper(func(socketFile string) {
+			writeFlood(os.Stderr)
+			fmt.Println(socketFile)
+		})
 	case "long_first_line":
 		os.Stdout.Write([]byte(strings.Repeat("a", 1<<20) + "\n"))
 		time.Sleep(time.Minute)
