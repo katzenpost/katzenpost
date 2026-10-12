@@ -197,11 +197,8 @@ func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) 
 		c.log.Debugf("Failed to send response: nil command")
 		return
 	}
-	_, isDecoy := cmd.(*commands.ReplicaDecoy)
 	if err := session.SendCommand(context.Background(), cmd); err != nil {
 		c.log.Debugf("Failed to send response: %v", err)
-	} else if !isDecoy {
-		c.log.Debugf("Sent response: %T", cmd)
 	}
 }
 
@@ -366,9 +363,6 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 		}
 
 		if resp != nil {
-			if resp.ReplicaDecoy == nil {
-				c.log.Debugf("Enqueueing response: %T", resp)
-			}
 			select {
 			case <-c.l.closeAllCh:
 				return
