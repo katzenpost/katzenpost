@@ -319,25 +319,23 @@ func TestReleaseDelayedAfterHaltDisposes(t *testing.T) {
 	for _, bufSize := range []int{0, 1, InboundPacketsChannelSize} {
 		t.Run(fmt.Sprintf("bufSize=%d", bufSize), func(t *testing.T) {
 			g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
-			p := &serviceNode{readyCh: make(chan *packet.Packet, bufSize)}
-			p.Worker.Halt()
-			pkt := echoRequest(t, g, 0)
-			p.releaseDelayed(pkt)
-			require.Nil(t, pkt.Payload)
-			require.Nil(t, pkt.Recipient)
-			require.Empty(t, p.readyCh)
+			for i := 0; i < 32; i++ {
+				p := &serviceNode{readyCh: make(chan *packet.Packet, bufSize)}
+				p.Worker.Halt()
+				pkt := echoRequest(t, g, 0)
+				p.releaseDelayed(pkt)
+				require.Nil(t, pkt.Payload)
+				require.Nil(t, pkt.Recipient)
+				require.Empty(t, p.readyCh)
+			}
 		})
 	}
 }
 
 func TestServiceNodeHaltDrainsReadyCh(t *testing.T) {
-	g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
-	p := &serviceNode{
-		readyCh: make(chan *packet.Packet, InboundPacketsChannelSize),
-		ch:      make(chan interface{}, InboundPacketsChannelSize),
-	}
-	pkt1 := echoRequest(t, g, 0)
-	pkt2 := echoRequest(t, g, 0)
+	p, g := newIdleServiceNode(t)
+	pkt1 := echoRequest(t, g.cfg.SphinxGeometry, 0)
+	pkt2 := echoRequest(t, g.cfg.SphinxGeometry, 0)
 	p.readyCh <- pkt1
 	p.readyCh <- pkt2
 
