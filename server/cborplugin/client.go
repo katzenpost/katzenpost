@@ -172,9 +172,10 @@ const (
 	PluginSocketEnv   = "KATZENPOST_PLUGIN_SOCKET"
 	PluginProtocol    = "2"
 
-	maxSocketPathLen = 100
-	maxPluginLineLen = 4096
-	socketWait       = 40 * time.Second
+	maxSocketPathLen  = 100
+	maxPluginLineLen  = 4096
+	maxPluginLogLines = 1024
+	socketWait        = 40 * time.Second
 )
 
 // stderrTail keeps a bounded tail of a plugin's stderr output, for
@@ -375,7 +376,7 @@ func (c *Client) readPluginStdout(stdout io.Reader, firstLine chan<- string) {
 	}
 	close(firstLine)
 	if err == nil || err == bufio.ErrBufferFull {
-		c.logPluginStdout(r)
+		c.logPluginOutput("stdout", r)
 	}
 }
 
@@ -420,9 +421,30 @@ func isSocket(path string) bool {
 	return err == nil && fi.Mode()&os.ModeSocket != 0
 }
 
-func (c *Client) logPluginStdout(stdout io.Reader) {
-	if _, err := io.Copy(c.logBackend.GetLogWriter(c.cmd.Path, "DEBUG"), stdout); err != nil {
-		c.log.Errorf("Failed to proxy cborplugin stdout to DEBUG log: %s", err)
+func (c *Client) logPluginOutput(stream string, r *bufio.Reader) {
+	w := c.logBackend.GetLogWriter(c.cmd.Path, "DEBUG")
+	lines, dropped := 0, 0
+	for {
+		line, err := r.ReadSlice('\n')
+		if lines < maxPluginLogLines {
+			w.Write(line)
+			lines++
+		} else {
+			dropped += len(line)
+		}
+		for err == bufio.ErrBufferFull {
+			line, err = r.ReadSlice('\n')
+			dropped += len(line)
+		}
+		if err != nil {
+			if err != io.EOF {
+				c.log.Errorf("Failed to proxy cborplugin %s to DEBUG log: %s", stream, err)
+			}
+			break
+		}
+	}
+	if dropped > 0 {
+		c.log.Warningf("plugin %s: dropped %d bytes of %s over the log bounds", c.cmd.Path, dropped, stream)
 	}
 }
 
