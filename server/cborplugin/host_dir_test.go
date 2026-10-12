@@ -102,3 +102,19 @@ func TestClientRemovesHostDirWhenPluginExits(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+func TestOfferHostSocketDropsAnInheritedOffer(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), strings.Repeat("d", maxSocketPathLen))
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", dir)
+	t.Setenv("TMP", dir)
+	t.Setenv(PluginProtocolEnv, PluginProtocol)
+	t.Setenv(PluginSocketEnv, filepath.Join(t.TempDir(), "stale.socket"))
+	c := &Client{cmd: exec.Command("true")}
+	if socket, err := c.offerHostSocket(); err != nil || socket != "" {
+		t.Fatalf("offerHostSocket = %q, %v; want no offer", socket, err)
+	}
+	requireNoHostOffer(t, c.cmd.Env)
+}
