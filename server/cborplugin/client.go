@@ -260,6 +260,10 @@ func (c *Client) GetParameters() *map[string]interface{} {
 func (c *Client) Start(command string, args []string) error {
 	err := c.launch(command, args)
 	if err != nil {
+		if c.cmd.Process != nil && c.cmd.ProcessState == nil {
+			c.cmd.Process.Kill()
+			c.cmd.Wait()
+		}
 		os.RemoveAll(c.hostDir)
 		return err
 	}
