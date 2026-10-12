@@ -404,7 +404,6 @@ func (c *Client) awaitSocket(command, hostSocket string, firstLine <-chan string
 				return fmt.Errorf("plugin %q printed %q instead of a socket path; stderr:\n%s", command, candidate, c.stderrTail.String())
 			}
 		case <-c.HaltCh():
-			c.cmd.Wait()
 			return fmt.Errorf("plugin %q exited before providing a socket path; stderr:\n%s", command, c.stderrTail.String())
 		case <-deadline:
 			return fmt.Errorf("plugin %q provided no socket within %v; stderr:\n%s", command, socketWait, c.stderrTail.String())
