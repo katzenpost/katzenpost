@@ -82,7 +82,7 @@ func TestUploadReplicaContactInfo(t *testing.T) {
 				raw, err := up.Marshal()
 				require.NoError(t, err)
 				srv := contactInfoReplicaServer(t, scheme, idHash)
-				resp, ok := srv.onPostReplicaDescriptor("peer", &commands.PostReplicaDescriptor{Epoch: epoch, Payload: raw}, idHash[:]).(*commands.PostReplicaDescriptorStatus)
+				resp, ok := srv.onPostReplicaDescriptor("peer", &commands.PostReplicaDescriptor{Epoch: epoch, Payload: raw}, idHash[:], []byte{1}).(*commands.PostReplicaDescriptorStatus)
 				require.True(t, ok)
 				require.Equal(t, c.want, resp.ErrorCode)
 			})

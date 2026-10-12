@@ -81,7 +81,7 @@ func TestUploadContactInfo(t *testing.T) {
 				raw, err := up.Marshal()
 				require.NoError(t, err)
 				srv := contactInfoServer(t, scheme, idHash)
-				resp, ok := srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: epoch, Payload: raw}, idHash[:]).(*commands.PostDescriptorStatus)
+				resp, ok := srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: epoch, Payload: raw}, idHash[:], []byte{1}).(*commands.PostDescriptorStatus)
 				require.True(t, ok)
 				require.Equal(t, c.want, resp.ErrorCode)
 			})

@@ -89,7 +89,7 @@ func TestUploadSoftwareVersion(t *testing.T) {
 				raw, err := mix.Marshal()
 				require.NoError(t, err)
 				srv := softwareVersionServer(t, scheme, idHash)
-				resp, ok := srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: epoch, Payload: raw}, idHash[:]).(*commands.PostDescriptorStatus)
+				resp, ok := srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: epoch, Payload: raw}, idHash[:], []byte{1}).(*commands.PostDescriptorStatus)
 				require.True(t, ok)
 				require.Equal(t, c.want, resp.ErrorCode)
 
@@ -107,7 +107,7 @@ func TestUploadSoftwareVersion(t *testing.T) {
 				raw, err = replica.Marshal()
 				require.NoError(t, err)
 				srv = softwareVersionServer(t, scheme, idHash)
-				rresp, ok := srv.onPostReplicaDescriptor("peer", &commands.PostReplicaDescriptor{Epoch: epoch, Payload: raw}, idHash[:]).(*commands.PostReplicaDescriptorStatus)
+				rresp, ok := srv.onPostReplicaDescriptor("peer", &commands.PostReplicaDescriptor{Epoch: epoch, Payload: raw}, idHash[:], []byte{1}).(*commands.PostReplicaDescriptorStatus)
 				require.True(t, ok)
 				require.Equal(t, c.want, rresp.ErrorCode)
 			})
