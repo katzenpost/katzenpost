@@ -310,16 +310,29 @@ func (c *Client) launch(command string, args []string) error {
 	})
 
 	// read and decode plugin stdout
-	stdoutScanner := bufio.NewScanner(stdout)
-	if !stdoutScanner.Scan() {
-		return c.earlyExitError(command, stdoutScanner.Err())
+	stdoutReader := bufio.NewReader(stdout)
+	line, err := stdoutReader.ReadString('\n')
+	if err != nil {
+		if err == io.EOF {
+			err = nil
+		}
+		return c.earlyExitError(command, err)
 	}
-	c.socketFile = stdoutScanner.Text()
+	c.socketFile = strings.TrimRight(line, "\r\n")
 	if c.socketFile == "" {
 		return c.earlyExitError(command, fmt.Errorf("plugin printed an empty socket path"))
 	}
 	c.log.Debugf("plugin socket path:'%s'\n", c.socketFile)
+	c.Go(func() {
+		c.logPluginStdout(stdoutReader)
+	})
 	return nil
+}
+
+func (c *Client) logPluginStdout(stdout io.Reader) {
+	if _, err := io.Copy(c.logBackend.GetLogWriter(c.cmd.Path, "DEBUG"), stdout); err != nil {
+		c.log.Errorf("Failed to proxy cborplugin stdout to DEBUG log: %s", err)
+	}
 }
 
 // earlyExitError is returned by launch when the plugin's stdout closed
