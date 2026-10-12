@@ -2,6 +2,12 @@
 
 package cborplugin
 
+import "os"
+
 func HostSocketPath(fallback string) (string, bool) {
-	return "", false
+	socket := os.Getenv(PluginSocketEnv)
+	if os.Getenv(PluginProtocolEnv) != PluginProtocol || socket == "" {
+		return fallback, false
+	}
+	return socket, true
 }
