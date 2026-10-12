@@ -44,9 +44,11 @@ func TestClientFailsAtOnceWithoutASocketPath(t *testing.T) {
 			}()
 			select {
 			case err := <-errCh:
-				client.cmd.Process.Kill()
 				if err == nil || !strings.Contains(err.Error(), line) {
 					t.Fatalf("Start = %v; want an error naming %s", err, line)
+				}
+				if client.cmd.ProcessState == nil {
+					t.Fatal("Start returned without reaping the still-running plugin")
 				}
 			case <-time.After(10 * time.Second):
 				t.Fatal("Start still waiting on a plugin that printed no socket path")
@@ -67,12 +69,14 @@ func TestClientFailsAtOnceWithHostSocketOffered(t *testing.T) {
 			}()
 			select {
 			case err := <-errCh:
-				client.cmd.Process.Kill()
 				if !slices.ContainsFunc(client.cmd.Env, func(e string) bool { return strings.HasPrefix(e, PluginSocketEnv+"=") }) {
 					t.Fatal("host offered no socket")
 				}
 				if err == nil || !strings.Contains(err.Error(), line) {
 					t.Fatalf("Start = %v; want an error naming %s", err, line)
+				}
+				if client.cmd.ProcessState == nil {
+					t.Fatal("Start returned without reaping the still-running plugin")
 				}
 			case <-time.After(10 * time.Second):
 				t.Fatal("Start still waiting on a plugin that printed no socket path")
