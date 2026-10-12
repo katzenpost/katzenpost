@@ -115,7 +115,24 @@ func (t *TimerQueue) Push(priority uint64, value interface{}) {
 }
 
 func (t *TimerQueue) PushBounded(priority uint64, value interface{}, maxLen int, r *rand.Rand) interface{} {
-	return nil
+	select {
+	case <-t.HaltCh():
+		return value
+	default:
+	}
+	t.mutex.Lock()
+	t.mergePendingLocked()
+	t.queue.Enqueue(priority, value)
+	var evicted interface{}
+	if maxLen > 0 && t.queue.Len() > maxLen {
+		evicted = t.queue.DequeueRandom(r).Value
+	}
+	t.mutex.Unlock()
+	select {
+	case t.wakeCh <- struct{}{}:
+	default:
+	}
+	return evicted
 }
 
 // PushChLen reports the number of items Push has accepted that have not yet

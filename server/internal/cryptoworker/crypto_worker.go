@@ -355,6 +355,9 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 
 	if isServiceNode {
 		w.log.Debugf("Handing off service destined packet: %v", pkt.ID)
+		if pkt.NodeDelay != nil {
+			pkt.Delay = time.Duration(pkt.NodeDelay.Delay) * time.Millisecond
+		}
 		pkt.DispatchAt = startAt
 		w.glue.ServiceNode().OnPacket(pkt)
 		return
