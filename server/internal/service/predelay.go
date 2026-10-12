@@ -76,6 +76,6 @@ func (d *preDelay) push(pkt *packet.Packet) bool {
 func (d *preDelay) Halt() {
 	d.tq.Halt()
 	for e := d.tq.Pop(); e != nil; e = d.tq.Pop() {
-		d.drop(e.(*queue.Entry).Value.(*packet.Packet))
+		e.(*queue.Entry).Value.(*packet.Packet).Dispose()
 	}
 }
