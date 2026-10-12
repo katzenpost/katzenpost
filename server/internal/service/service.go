@@ -43,10 +43,10 @@ type serviceNode struct {
 }
 
 func (p *serviceNode) Halt() {
+	p.Worker.Halt()
 	if p.preDelay != nil {
 		p.preDelay.Halt()
 	}
-	p.Worker.Halt()
 
 	for {
 		select {
