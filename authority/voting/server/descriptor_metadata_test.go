@@ -16,7 +16,10 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
-const testSoftwareVersion = "katzenpost 1.0"
+const (
+	testContactInfo     = "ops@example.org"
+	testSoftwareVersion = "katzenpost 1.0"
+)
 
 func TestAuthorityIgnoresMalformedMetadataUnlessAccepted(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
@@ -30,18 +33,18 @@ func TestAuthorityIgnoresMalformedMetadataUnlessAccepted(t *testing.T) {
 			require.NoError(t, err)
 			idHash := hash.Sum256(idKey)
 			up := &pki.SignedUpload{MixDescriptor: &pki.MixDescriptor{
-				Name:            "mix1",
-				Epoch:           epoch,
-				IdentityKey:     idKey,
-				LinkKey:         []byte{1},
-				MixKeys:         map[uint64][]byte{epoch: {1}},
-				Addresses:       map[string][]string{"tcp": {"tcp://127.0.0.1:1"}},
-				SoftwareVersion: testSoftwareVersion + "\n",
+				Name:        "mix1",
+				Epoch:       epoch,
+				IdentityKey: idKey,
+				LinkKey:     []byte{1},
+				MixKeys:     map[uint64][]byte{epoch: {1}},
+				Addresses:   map[string][]string{"tcp": {"tcp://127.0.0.1:1"}},
+				ContactInfo: "ops@example.org\n",
 			}}
 			require.NoError(t, up.Sign(priv, pub))
 			raw, err := up.Marshal()
 			require.NoError(t, err)
-			srv := softwareVersionServer(t, testSchemeName, idHash)
+			srv := contactInfoServer(t, testSchemeName, idHash)
 			srv.cfg.Server.AcceptDescriptorMetadata = accept
 			resp, ok := srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: epoch, Payload: raw}, idHash[:], []byte{1}).(*commands.PostDescriptorStatus)
 			require.True(t, ok)
@@ -54,11 +57,11 @@ func TestAuthorityIgnoresMalformedMetadataUnlessAccepted(t *testing.T) {
 	}
 }
 
-func wantMetadata(accept bool) string {
+func wantMetadata(accept bool) (string, string) {
 	if accept {
-		return testSoftwareVersion
+		return testContactInfo, testSoftwareVersion
 	}
-	return ""
+	return "", ""
 }
 
 func TestAuthorityDropsMixMetadataUnlessAccepted(t *testing.T) {
@@ -79,22 +82,25 @@ func TestAuthorityDropsMixMetadataUnlessAccepted(t *testing.T) {
 				LinkKey:         []byte{1},
 				MixKeys:         map[uint64][]byte{epoch: {1}},
 				Addresses:       map[string][]string{"tcp": {"tcp://127.0.0.1:1"}},
+				ContactInfo:     testContactInfo,
 				SoftwareVersion: testSoftwareVersion,
 			}}
 			require.NoError(t, up.Sign(priv, pub))
 			raw, err := up.Marshal()
 			require.NoError(t, err)
-			srv := softwareVersionServer(t, testSchemeName, idHash)
+			srv := contactInfoServer(t, testSchemeName, idHash)
 			srv.cfg.Server.AcceptDescriptorMetadata = accept
 			srv.state.s = srv
 			resp, ok := srv.onPostDescriptor("peer", &commands.PostDescriptor{Epoch: epoch, Payload: raw}, idHash[:], []byte{1}).(*commands.PostDescriptorStatus)
 			require.True(t, ok)
 			require.Equal(t, uint8(commands.DescriptorOk), resp.ErrorCode)
-			version := wantMetadata(accept)
+			contact, version := wantMetadata(accept)
 			stored := srv.state.descriptors[epoch][idHash]
+			require.Equal(t, contact, stored.ContactInfo)
 			require.Equal(t, version, stored.SoftwareVersion)
 			restored, err := srv.state.restoredMixDescriptor(raw)
 			require.NoError(t, err)
+			require.Equal(t, contact, restored.ContactInfo)
 			require.Equal(t, version, restored.SoftwareVersion)
 		})
 	}
@@ -119,22 +125,25 @@ func TestAuthorityDropsReplicaMetadataUnlessAccepted(t *testing.T) {
 				LinkKey:         []byte{1},
 				EnvelopeKeys:    map[uint64][]byte{1: {1}},
 				Addresses:       map[string][]string{"tcp": {"tcp://127.0.0.1:1"}},
+				ContactInfo:     testContactInfo,
 				SoftwareVersion: testSoftwareVersion,
 			}}
 			require.NoError(t, up.Sign(priv, pub))
 			raw, err := up.Marshal()
 			require.NoError(t, err)
-			srv := softwareVersionServer(t, testSchemeName, idHash)
+			srv := contactInfoReplicaServer(t, testSchemeName, idHash)
 			srv.cfg.Server.AcceptDescriptorMetadata = accept
 			srv.state.s = srv
 			resp, ok := srv.onPostReplicaDescriptor("peer", &commands.PostReplicaDescriptor{Epoch: epoch, Payload: raw}, idHash[:], []byte{1}).(*commands.PostReplicaDescriptorStatus)
 			require.True(t, ok)
 			require.Equal(t, uint8(commands.DescriptorOk), resp.ErrorCode)
-			version := wantMetadata(accept)
+			contact, version := wantMetadata(accept)
 			stored := srv.state.replicaDescriptors[epoch][idHash]
+			require.Equal(t, contact, stored.ContactInfo)
 			require.Equal(t, version, stored.SoftwareVersion)
 			restored, err := srv.state.restoredReplicaDescriptor(raw)
 			require.NoError(t, err)
+			require.Equal(t, contact, restored.ContactInfo)
 			require.Equal(t, version, restored.SoftwareVersion)
 		})
 	}
