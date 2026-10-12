@@ -178,8 +178,8 @@ type Document struct {
 	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 
-	MinClientVersion string `cbor:"-"`
-	ClientNotice     string `cbor:"-"`
+	MinClientVersion string `cbor:"MinClientVersion,omitempty"`
+	ClientNotice     string `cbor:"ClientNotice,omitempty"`
 }
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
