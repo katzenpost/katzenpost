@@ -69,6 +69,13 @@ func TestHelperProcess(t *testing.T) {
 	case "junk_stdout":
 		fmt.Println("plugin starting")
 		time.Sleep(time.Minute)
+	case "stderr_closed":
+		os.Stderr.Close()
+		time.AfterFunc(30*time.Second, func() { os.Exit(0) })
+		time.Sleep(500 * time.Millisecond)
+		runEchoHelper(func(socketFile string) {
+			fmt.Println(socketFile)
+		})
 	case "empty_stdout":
 		fmt.Println()
 		time.Sleep(time.Minute)

@@ -97,3 +97,25 @@ func TestClientLegacyPluginWithoutHostOffer(t *testing.T) {
 	}
 	requireEcho(t, client)
 }
+
+func TestClientStartReturnsWhenALivePluginClosesStderr(t *testing.T) {
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+	t.Setenv("GO_HELPER_BEHAVIOR", "stderr_closed")
+	client := newTestClient(t)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- client.Start(os.Args[0], []string{"-test.run=TestHelperProcess"})
+	}()
+	select {
+	case err := <-errCh:
+		if err == nil {
+			client.Halt()
+			return
+		}
+		if client.cmd.ProcessState == nil {
+			t.Fatalf("Start = %v without reaping the plugin", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Start still blocked 10s after a live plugin closed stderr")
+	}
+}
