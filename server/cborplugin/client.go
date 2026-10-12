@@ -459,3 +459,7 @@ func NewParametersResponse(params map[string]interface{}) *Response {
 		Params:               params,
 	}
 }
+
+func (c *Client) SpeaksProtocol2() bool {
+	return false
+}
