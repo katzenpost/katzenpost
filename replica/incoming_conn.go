@@ -157,7 +157,7 @@ func (c *incomingConn) worker() {
 
 	// Connection closed - begin shutdown sequence:
 	// 1. Halt the emitter so its TimerQueue worker stops scheduling
-	//    new sends and the action goroutines unblock via the
+	//    new sends and an action in progress unblocks via the
 	//    TimerQueue's halt channel.
 	emitter.Halt()
 
