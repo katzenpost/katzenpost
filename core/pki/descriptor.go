@@ -73,7 +73,7 @@ type MixDescriptor struct {
 	// LoadWeight is the node's load balancing weight (unused).
 	LoadWeight uint8
 
-	ContactInfo string `cbor:"-"`
+	ContactInfo string `cbor:"ContactInfo,omitempty"`
 
 	// AuthenticationType is the authentication mechanism required
 	AuthenticationType string
@@ -109,16 +109,18 @@ func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	return ccbor.Marshal((*mixdescriptor)(d))
 }
 
+const maxContactInfoLength = 256
+
 func IsContactInfoWellFormed(v string) error {
-	return nil
+	return printableWithin("ContactInfo", v, maxContactInfoLength)
 }
 
 func (d *MixDescriptor) DropMetadata() {
-	d.SoftwareVersion = ""
+	d.ContactInfo, d.SoftwareVersion = "", ""
 }
 
 func (d *ReplicaDescriptor) DropMetadata() {
-	d.SoftwareVersion = ""
+	d.ContactInfo, d.SoftwareVersion = "", ""
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive
@@ -256,7 +258,7 @@ type ReplicaDescriptor struct {
 	// Epoch is the Epoch in which this descriptor was created
 	Epoch uint64
 
-	ContactInfo string `cbor:"-"`
+	ContactInfo string `cbor:"ContactInfo,omitempty"`
 
 	// IdentityKey is the node's identity (signing) key.
 	IdentityKey []byte
