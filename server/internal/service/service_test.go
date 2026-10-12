@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -396,5 +397,49 @@ func TestServiceNodeHaltDisposesRequestReleasedDuringHalt(t *testing.T) {
 		require.Empty(t, sn.readyCh)
 		require.Nil(t, pkt.Payload)
 		require.Nil(t, pkt.Recipient)
+	}
+}
+
+func TestServiceNodeHaltStopsWorkersBeforePreDelay(t *testing.T) {
+	g := newServiceGlue(t, config.Debug{})
+	n, err := New(g)
+	require.NoError(t, err)
+	sn := n.(*serviceNode)
+	sn.preDelay.Halt()
+
+	var once sync.Once
+	entered := make(chan struct{})
+	queueHaltedFirst := false
+	var d *preDelay
+	d = newPreDelay(sn.releaseDelayed, 1, func(pkt *packet.Packet) {
+		once.Do(func() {
+			close(entered)
+			select {
+			case <-d.tq.HaltCh():
+			case <-sn.HaltCh():
+			}
+			select {
+			case <-d.tq.HaltCh():
+				queueHaltedFirst = true
+			default:
+			}
+		})
+		pkt.Dispose()
+	}, 0)
+	sn.preDelay = d
+
+	held := echoRequest(t, g.cfg.SphinxGeometry, 0)
+	d.tq.EnqueueDirect(math.MaxUint64, held)
+	pkt := echoRequest(t, g.cfg.SphinxGeometry, 0)
+	pkt.RecvAt = pkt.RecvAt.Add(time.Hour)
+	sn.OnPacket(pkt)
+	<-entered
+
+	sn.Halt()
+
+	require.False(t, queueHaltedFirst, "pre-delay queue halted while a service worker was pushing")
+	for _, p := range []*packet.Packet{held, pkt} {
+		require.Nil(t, p.Payload)
+		require.Nil(t, p.Recipient)
 	}
 }
