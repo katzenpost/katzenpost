@@ -10,7 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
@@ -207,7 +211,8 @@ func TestPreDelayOverflowDropsRandomEntry(t *testing.T) {
 	require.Greater(t, len(survivors), 1, "overflow always dropped the same entries")
 }
 
-func TestPreDelayHaltDropsPending(t *testing.T) {
+func TestPreDelayHaltDisposesPending(t *testing.T) {
+	g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
 	var dropped []uint64
 	var mu sync.Mutex
 	d := newPreDelay(func(*packet.Packet) { t.Error("released after halt") }, 0, func(pkt *packet.Packet) {
@@ -215,13 +220,19 @@ func TestPreDelayHaltDropsPending(t *testing.T) {
 		dropped = append(dropped, pkt.ID)
 		mu.Unlock()
 	}, 0)
-	d.push(testPacket(1, 20*time.Second))
-	d.push(testPacket(2, 20*time.Second))
+	pkts := []*packet.Packet{echoRequest(t, g, 20*time.Second), echoRequest(t, g, 20*time.Second)}
+	for _, pkt := range pkts {
+		require.True(t, d.push(pkt))
+	}
 	d.Halt()
 
 	mu.Lock()
 	defer mu.Unlock()
-	require.ElementsMatch(t, []uint64{1, 2}, dropped)
+	require.Empty(t, dropped)
+	for _, pkt := range pkts {
+		require.Nil(t, pkt.Payload)
+		require.Nil(t, pkt.Recipient)
+	}
 }
 
 func TestServiceNodeOnNewMixMaxDelayDisabled(t *testing.T) {
