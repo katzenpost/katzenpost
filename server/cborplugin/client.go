@@ -27,7 +27,9 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -164,6 +166,13 @@ type ServicePlugin interface {
 const (
 	maxStderrTailLines = 60
 	maxStderrTailBytes = 8192
+
+	PluginProtocolEnv = "KATZENPOST_PLUGIN_PROTOCOL"
+	PluginSocketEnv   = "KATZENPOST_PLUGIN_SOCKET"
+	PluginProtocol    = "2"
+
+	maxSocketPathLen = 100
+	socketWait       = 40 * time.Second
 )
 
 // stderrTail keeps a bounded tail of a plugin's stderr output, for
@@ -209,6 +218,7 @@ type Client struct {
 	log        *logging.Logger
 
 	socketFile string
+	hostDir    string
 	cmd        *exec.Cmd
 	//conn       net.Conn
 
@@ -250,6 +260,7 @@ func (c *Client) GetParameters() *map[string]interface{} {
 func (c *Client) Start(command string, args []string) error {
 	err := c.launch(command, args)
 	if err != nil {
+		os.RemoveAll(c.hostDir)
 		return err
 	}
 	c.Go(c.reaper)
@@ -268,11 +279,13 @@ func (c *Client) reaper() {
 	err := c.cmd.Process.Signal(syscall.SIGTERM)
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, error sending SIGTERM: %s\n", err)
+		c.cmd.Process.Kill()
 	}
 	err = c.cmd.Wait()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
 	}
+	os.RemoveAll(c.hostDir)
 }
 
 func (c *Client) logPluginStderr(stderr io.ReadCloser) {
@@ -287,6 +300,10 @@ func (c *Client) logPluginStderr(stderr io.ReadCloser) {
 func (c *Client) launch(command string, args []string) error {
 	// exec plugin
 	c.cmd = exec.Command(command, args...)
+	hostSocket, err := c.offerHostSocket()
+	if err != nil {
+		return err
+	}
 	stdout, err := c.cmd.StdoutPipe()
 	if err != nil {
 		c.log.Debugf("pipe failure: %s", err)
@@ -309,24 +326,72 @@ func (c *Client) launch(command string, args []string) error {
 		c.logPluginStderr(stderr)
 	})
 
-	// read and decode plugin stdout
-	stdoutReader := bufio.NewReader(stdout)
-	line, err := stdoutReader.ReadString('\n')
-	if err != nil {
-		if err == io.EOF {
-			err = nil
-		}
-		return c.earlyExitError(command, err)
-	}
-	c.socketFile = strings.TrimRight(line, "\r\n")
-	if c.socketFile == "" {
-		return c.earlyExitError(command, fmt.Errorf("plugin printed an empty socket path"))
-	}
-	c.log.Debugf("plugin socket path:'%s'\n", c.socketFile)
+	firstLine := make(chan string, 1)
 	c.Go(func() {
-		c.logPluginStdout(stdoutReader)
+		c.readPluginStdout(stdout, firstLine)
 	})
-	return nil
+	return c.awaitSocket(command, hostSocket, firstLine)
+}
+
+func (c *Client) offerHostSocket() (string, error) {
+	dir, err := os.MkdirTemp("", "kpplugin")
+	if err != nil {
+		return "", err
+	}
+	c.hostDir = dir
+	hostSocket := filepath.Join(dir, "plugin.socket")
+	if len(hostSocket) > maxSocketPathLen {
+		return "", nil
+	}
+	c.cmd.Env = append(os.Environ(), PluginProtocolEnv+"="+PluginProtocol, PluginSocketEnv+"="+hostSocket)
+	return hostSocket, nil
+}
+
+func (c *Client) readPluginStdout(stdout io.Reader, firstLine chan<- string) {
+	r := bufio.NewReader(stdout)
+	line, err := r.ReadString('\n')
+	if l := strings.TrimRight(line, "\r\n"); l != "" {
+		c.log.Debugf("plugin stdout: %s", l)
+		firstLine <- l
+	}
+	close(firstLine)
+	if err == nil {
+		c.logPluginStdout(r)
+	}
+}
+
+func (c *Client) awaitSocket(command, hostSocket string, firstLine <-chan string) error {
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(socketWait)
+	candidate := ""
+	for {
+		for _, p := range []string{hostSocket, candidate} {
+			if p != "" && isSocket(p) {
+				c.socketFile = p
+				c.log.Debugf("plugin socket path:'%s'\n", p)
+				return nil
+			}
+		}
+		select {
+		case l, ok := <-firstLine:
+			if !ok {
+				firstLine = nil
+				continue
+			}
+			candidate = l
+		case <-c.HaltCh():
+			return c.earlyExitError(command, nil)
+		case <-deadline:
+			return fmt.Errorf("plugin %q provided no socket within %v; stderr:\n%s", command, socketWait, c.stderrTail.String())
+		case <-tick.C:
+		}
+	}
+}
+
+func isSocket(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode()&os.ModeSocket != 0
 }
 
 func (c *Client) logPluginStdout(stdout io.Reader) {
