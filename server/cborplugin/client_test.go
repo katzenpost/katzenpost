@@ -44,6 +44,47 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(1)
 	case "handshake_ok":
 		runHandshakeOKHelper()
+	case "host_geometry":
+		runHostGeometryHelper()
+	case "host_socket":
+		runHostSocketHelper()
+	case "noisy_stdout":
+		runEchoHelper(func(socketFile string) {
+			fmt.Println(socketFile)
+			os.Stdout.Write(make([]byte, 128*1024))
+		})
+	case "stdout_flood":
+		runEchoHelper(func(socketFile string) {
+			fmt.Println(socketFile)
+			writeFlood(os.Stdout)
+		})
+	case "stderr_flood":
+		runEchoHelper(func(socketFile string) {
+			writeFlood(os.Stderr)
+			fmt.Println(socketFile)
+		})
+	case "long_first_line":
+		os.Stdout.Write([]byte(strings.Repeat("a", 1<<20) + "\n"))
+		time.Sleep(time.Minute)
+	case "junk_stdout":
+		fmt.Println("plugin starting")
+		time.Sleep(time.Minute)
+	case "stderr_closed":
+		os.Stderr.Close()
+		time.AfterFunc(30*time.Second, func() { os.Exit(0) })
+		time.Sleep(500 * time.Millisecond)
+		runEchoHelper(func(socketFile string) {
+			fmt.Println(socketFile)
+		})
+	case "empty_stdout":
+		fmt.Println()
+		time.Sleep(time.Minute)
+	case "own_tmp":
+		os.Setenv("TMPDIR", os.Getenv("GO_HELPER_TMPDIR"))
+		os.Setenv("TMP", os.Getenv("GO_HELPER_TMPDIR"))
+		runEchoHelper(func(socketFile string) {
+			fmt.Println(socketFile)
+		})
 	}
 	os.Exit(2)
 }

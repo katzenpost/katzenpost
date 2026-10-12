@@ -153,14 +153,16 @@ func runProxyServer(cfg proxyServerConfig) {
 	if err != nil {
 		cborplugin.FailStartup("http-proxy-server", err)
 	}
-	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid()))
+	socketFile, fromHost := cborplugin.HostSocketPath(filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid())))
 
 	p := &proxy{allowedHost: make(map[string]struct{}), log: serverLog}
 	p.allowedHost[cfg.host] = struct{}{}
 
 	cmdBuilder := new(cborplugin.RequestFactory)
 	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, p)
-	fmt.Printf("%s\n", socketFile)
+	if !fromHost {
+		fmt.Printf("%s\n", socketFile)
+	}
 	server.Accept()
 	server.Wait()
 	os.Remove(socketFile)

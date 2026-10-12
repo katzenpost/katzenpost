@@ -228,7 +228,7 @@ func (w logWriter) Write(p []byte) (n int, err error) {
 	// the end, so it needs to be stripped off.
 	s := strings.TrimSpace(string(p))
 	if len(s) == 0 {
-		return
+		return len(p), nil
 	}
 
 	switch w.lvl {
