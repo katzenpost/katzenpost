@@ -7,7 +7,6 @@ package transport
 
 import "errors"
 
-// Listen creates a unix-domain-socket listener bound to c.Address.
-func (c *UnixListenConfig) Listen() (Listener, error) {
+func (c *UnixListenConfig) listen([]Listener) (Listener, error) {
 	return nil, errors.New("not implemented")
 }

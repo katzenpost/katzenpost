@@ -29,7 +29,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yawning/bloom"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/nike"
@@ -268,8 +267,8 @@ func TestIsReplaySaturationNoPanic(t *testing.T) {
 	logging.SetBackend(logging.NewLogBackend(&buf, "", 0))
 	k.SetLogger(logging.MustGetLogger("mixkey-test"))
 
-	small, err := bloom.New(rand.Reader, 13, 0.001)
-	require.NoError(err, "bloom.New()")
+	small, err := newReplayFilter(rand.Reader, 13, 0.001)
+	require.NoError(err, "newReplayFilter()")
 	k.f = small
 
 	max := k.f.MaxEntries()

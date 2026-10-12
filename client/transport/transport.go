@@ -85,13 +85,31 @@ func (c *ListenConfig) Listen() (Listener, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
+	inherited, err := inheritedListeners()
+	if err != nil {
+		return nil, err
+	}
+	if c.Unix != nil {
+		return c.Unix.listen(inherited)
+	}
+	if len(inherited) > 0 {
+		return nil, refuseInherited(inherited, inherited[0].Addr())
+	}
 	switch {
-	case c.Unix != nil:
-		return c.Unix.Listen()
 	case c.Tcp != nil:
 		return c.Tcp.Listen()
 	case c.Ws != nil:
 		return c.Ws.Listen()
 	}
 	return nil, ErrNoTransport
+}
+
+func closeListeners(listeners []Listener) error {
+	errs := make([]error, 0, len(listeners))
+	for _, listener := range listeners {
+		if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }

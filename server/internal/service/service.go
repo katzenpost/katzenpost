@@ -135,6 +135,7 @@ func (p *serviceNode) worker() {
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
+			instrument.GaugeChannelLength("service_incoming", len(ch))
 
 			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
@@ -263,7 +264,7 @@ func (p *serviceNode) onStopKaetzchen(c *thwack.Conn, l string) error {
 	}
 	// check external plugins
 	if p.isCBORKaetzchenConfigured(capa) && !p.isCBORKaetzchenRegistered(capa) {
-		c.Log().Debugf("START_KAETZCHEN failed: %v not running", capa)
+		c.Log().Debugf("STOP_KAETZCHEN failed: %v not running", capa)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
 	err := p.cborPluginKaetzchenWorker.UnregisterKaetzchen(capa)

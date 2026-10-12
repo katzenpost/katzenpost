@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/fang v1.0.0
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/coder/websocket v1.8.15
+	github.com/dchest/siphash v1.2.3
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20 v0.0.1
@@ -60,7 +61,6 @@ require (
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dchest/siphash v1.2.3 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
