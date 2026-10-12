@@ -51,6 +51,18 @@ func TestHelperProcess(t *testing.T) {
 			fmt.Println(socketFile)
 			os.Stdout.Write(make([]byte, 128*1024))
 		})
+	case "junk_stdout":
+		fmt.Println("plugin starting")
+		time.Sleep(time.Minute)
+	case "empty_stdout":
+		fmt.Println()
+		time.Sleep(time.Minute)
+	case "own_tmp":
+		os.Setenv("TMPDIR", os.Getenv("GO_HELPER_TMPDIR"))
+		os.Setenv("TMP", os.Getenv("GO_HELPER_TMPDIR"))
+		runEchoHelper(func(socketFile string) {
+			fmt.Println(socketFile)
+		})
 	}
 	os.Exit(2)
 }
