@@ -375,11 +375,14 @@ func (c *Client) awaitSocket(command, hostSocket string, firstLine <-chan string
 		}
 		select {
 		case l, ok := <-firstLine:
-			if !ok {
+			if ok {
+				candidate = l
+			} else {
 				firstLine = nil
-				continue
 			}
-			candidate = l
+			if hostSocket == "" && !filepath.IsAbs(candidate) {
+				return fmt.Errorf("plugin %q printed %q instead of a socket path; stderr:\n%s", command, candidate, c.stderrTail.String())
+			}
 		case <-c.HaltCh():
 			return c.earlyExitError(command, nil)
 		case <-deadline:
