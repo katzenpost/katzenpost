@@ -173,6 +173,7 @@ const (
 	PluginProtocol    = "2"
 
 	maxSocketPathLen = 100
+	maxPluginLineLen = 4096
 	socketWait       = 40 * time.Second
 )
 
@@ -365,14 +366,15 @@ func (c *Client) offerHostSocket() (string, error) {
 }
 
 func (c *Client) readPluginStdout(stdout io.Reader, firstLine chan<- string) {
-	r := bufio.NewReader(stdout)
-	line, err := r.ReadString('\n')
-	if l := strings.TrimRight(line, "\r\n"); err == nil || l != "" {
-		c.log.Debugf("plugin stdout: %s", l)
+	r := bufio.NewReaderSize(stdout, maxPluginLineLen)
+	line, err := r.ReadSlice('\n')
+	l := string(line)
+	if trimmed := strings.TrimRight(l, "\r\n"); err == nil || trimmed != "" {
+		c.log.Debugf("plugin stdout: %s", trimmed)
 		firstLine <- l
 	}
 	close(firstLine)
-	if err == nil {
+	if err == nil || err == bufio.ErrBufferFull {
 		c.logPluginStdout(r)
 	}
 }
@@ -393,8 +395,11 @@ func (c *Client) awaitSocket(command, hostSocket string, firstLine <-chan string
 		}
 		select {
 		case l, ok := <-firstLine:
+			if len(l) >= maxPluginLineLen {
+				return fmt.Errorf("plugin %q printed a first line of %d bytes or more; stderr:\n%s", command, maxPluginLineLen, c.stderrTail.String())
+			}
 			if ok {
-				candidate = l
+				candidate = strings.TrimRight(l, "\r\n")
 			} else {
 				firstLine = nil
 			}
