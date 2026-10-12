@@ -62,7 +62,7 @@ func testPacket(id uint64, delay time.Duration) *packet.Packet {
 
 func TestPreDelayHoldsUntilDue(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil, 0)
+	d := newPreDelay(r.release, 0, (*packet.Packet).Dispose, 0)
 	defer d.Halt()
 
 	pkt := testPacket(1, 300*time.Millisecond)
@@ -82,7 +82,7 @@ func TestPreDelayHoldsUntilDue(t *testing.T) {
 
 func TestPreDelayZeroDelayReleasesAtOnce(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil, 0)
+	d := newPreDelay(r.release, 0, (*packet.Packet).Dispose, 0)
 	defer d.Halt()
 
 	d.push(testPacket(1, 0))
@@ -91,7 +91,7 @@ func TestPreDelayZeroDelayReleasesAtOnce(t *testing.T) {
 
 func TestPreDelayReleasesInDueOrder(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil, 0)
+	d := newPreDelay(r.release, 0, (*packet.Packet).Dispose, 0)
 	defer d.Halt()
 
 	d.push(testPacket(1, 400*time.Millisecond))
@@ -112,7 +112,7 @@ func TestPreDelayReleasesInDueOrder(t *testing.T) {
 
 func TestPreDelayResetsDispatchAt(t *testing.T) {
 	r := newReleases()
-	d := newPreDelay(r.release, 0, nil, 0)
+	d := newPreDelay(r.release, 0, (*packet.Packet).Dispose, 0)
 	defer d.Halt()
 
 	pkt := testPacket(1, 200*time.Millisecond)

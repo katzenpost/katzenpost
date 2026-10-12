@@ -384,7 +384,7 @@ func TestServiceNodeHaltDisposesRequestReleasedDuringHalt(t *testing.T) {
 			close(entered)
 			<-d.tq.HaltCh()
 			sn.releaseDelayed(pkt)
-		}, defaultPreDelayQueueSize, nil, 0)
+		}, defaultPreDelayQueueSize, (*packet.Packet).Dispose, 0)
 		sn.preDelay = d
 		pkt := echoRequest(t, g.cfg.SphinxGeometry, 0)
 		require.True(t, d.push(pkt))
