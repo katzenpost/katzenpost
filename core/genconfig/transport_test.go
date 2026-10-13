@@ -106,12 +106,6 @@ func TestGenConfigPublishesQUICKeyHashesOnlyWhenEveryAuthorityIsCurrent(t *testi
 		require.NoError(t, s.GenNodeConfig(true, false, true))
 		require.NoError(t, s.GenNodeConfig(false, false, true))
 		require.NoError(t, s.GenReplicaNodeConfig())
-		for _, n := range s.NodeConfigs {
-			require.Equal(t, tc.publish, n.Server.PublishQUICKeyHashes, "%v %s", tc.versions, n.Server.Identifier)
-		}
-		for _, r := range s.ReplicaNodeConfigs {
-			require.Equal(t, tc.publish, r.PublishQUICKeyHashes, "%v %s", tc.versions, r.Identifier)
-		}
 		for _, a := range s.VotingAuthConfigs {
 			require.Equal(t, tc.publish, a.Server.PublishQUICKeyHashes, "%v %s", tc.versions, a.Server.Identifier)
 		}

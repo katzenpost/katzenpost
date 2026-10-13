@@ -163,10 +163,6 @@ func (s *Katzenpost) allAuthoritiesCurrent() bool {
 	return true
 }
 
-func (s *Katzenpost) pinsQUICKeys(addresses []string) bool {
-	return s.allAuthoritiesCurrent() && slices.ContainsFunc(addresses, func(a string) bool { return strings.HasPrefix(a, "quic://") })
-}
-
 func (s *Katzenpost) epochDuration() *time.Duration {
 	d, err := time.ParseDuration(s.EpochDuration)
 	if err != nil {
@@ -642,7 +638,6 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.AllowHostnameAddresses = true
 
 	cfg.Addresses = s.peerAddrs(cfg.Identifier, s.LastPort, false)
-	cfg.PublishQUICKeyHashes = s.pinsQUICKeys(cfg.Addresses)
 	s.LastPort++
 
 	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastPort)
@@ -719,7 +714,6 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// so we never bind to 0.0.0.0.
 	cfg.Server.Addresses = s.peerAddrs(n, s.LastPort, isGateway)
 	cfg.Server.BindAddresses = cfg.Server.Addresses
-	cfg.Server.PublishQUICKeyHashes = s.pinsQUICKeys(cfg.Server.Addresses)
 	s.LastPort += 2
 	cfg.Server.DataDir = filepath.Join(s.BaseDir, n)
 

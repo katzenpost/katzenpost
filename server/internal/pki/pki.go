@@ -39,6 +39,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
+	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -718,8 +719,8 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		ContactInfo:     p.glue.Config().Server.ContactInfo,
 		SoftwareVersion: cpki.ResolveSoftwareVersion(p.glue.Config().Server.SoftwareVersion, kpcommon.Version()),
 	}
-	if p.glue.Config().Server.PublishQUICKeyHashes && len(p.descAddrMap[cpki.TransportQUIC]) > 0 {
-		if desc.QUICKeyHash, err = p.quicKeyHash(uploadCtx, doPublishEpoch, budget/4); err != nil {
+	if len(p.descAddrMap[cpki.TransportQUIC]) > 0 {
+		if desc.QUICKeyHash, err = p.quicKeyHash(doPublishEpoch); err != nil {
 			return err
 		}
 	}
@@ -844,22 +845,9 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	return err
 }
 
-func (p *pki) quicKeyHash(ctx context.Context, epoch uint64, fetchTimeout time.Duration) ([]byte, error) {
-	var doc *cpki.Document
-	if entry := p.entryForEpoch(epoch - 1); entry != nil {
-		doc = entry.Document()
-	} else {
-		fetchCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
-		fetched, _, err := p.impl.GetPKIDocumentForEpoch(fetchCtx, epoch-1)
-		cancel()
-		if err != nil {
-			p.log.Noticef("Withholding QUICKeyHash for epoch %d: no consensus for epoch %d: %v", epoch, epoch-1, err)
-			return nil, nil
-		}
-		doc = fetched
-	}
-	if doc == nil || len(doc.AuthorityQUICKeyHashes) == 0 {
-		p.log.Noticef("Withholding QUICKeyHash for epoch %d: the consensus for epoch %d withholds AuthorityQUICKeyHashes", epoch, epoch-1)
+func (p *pki) quicKeyHash(epoch uint64) ([]byte, error) {
+	if !vConfig.EveryAuthorityHasAQUICKeyHash(p.glue.Config().PKI.Voting.Authorities) {
+		p.log.Noticef("Withholding QUICKeyHash for epoch %d: not every authority has a QUICKeyHash", epoch)
 		return nil, nil
 	}
 	return p.quicKeys.Hashes(epoch)

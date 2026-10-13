@@ -22,6 +22,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/loops"
@@ -59,40 +60,26 @@ func fixedIdentityKey(t *testing.T, schemeName string) (sign.PublicKey, sign.Pri
 	return identityPublicKey, identityPrivateKey
 }
 
-func publishedDescriptor(t *testing.T, schemeName string, addresses []string, publishQUICKeyHashes bool) *cpki.MixDescriptor {
+func pinnedAuthorities(pinned bool) []*vConfig.Authority {
+	if pinned {
+		return authoritiesWithQUICKeyHashes(3, 3)
+	}
+	return authoritiesWithQUICKeyHashes(3, 0)
+}
+
+func publishedDescriptor(t *testing.T, schemeName string, addresses []string, pinned bool) *cpki.MixDescriptor {
 	t.Helper()
-	desc, _ := publishedDescriptorAndKeys(t, schemeName, addresses, publishQUICKeyHashes)
+	desc, _ := publishedDescriptorAndKeys(t, schemeName, addresses, pinned)
 	return desc
 }
 
-func publishedDescriptorAndKeys(t *testing.T, schemeName string, addresses []string, publishQUICKeyHashes bool) (*cpki.MixDescriptor, *common.EpochKeys) {
+func publishedDescriptorAndKeys(t *testing.T, schemeName string, addresses []string, pinned bool) (*cpki.MixDescriptor, *common.EpochKeys) {
 	t.Helper()
-	desc, quicKeys, _ := publishedDescriptorLogged(t, schemeName, addresses, publishQUICKeyHashes, t.TempDir(), "", heldWithAuthorityQUICKeyHashes)
+	desc, quicKeys, _ := publishedDescriptorLogged(t, schemeName, addresses, pinnedAuthorities(pinned), t.TempDir(), "")
 	return desc, quicKeys
 }
 
-type heldConsensus int
-
-const (
-	heldNothing heldConsensus = iota
-	heldWithoutAuthorityQUICKeyHashes
-	heldWithAuthorityQUICKeyHashes
-)
-
-func heldConsensusEntry(t *testing.T, held heldConsensus, epoch uint64, idPub sign.PublicKey) *pkicache.Entry {
-	t.Helper()
-	idPubBlob, err := idPub.MarshalBinary()
-	require.NoError(t, err)
-	doc := &cpki.Document{Epoch: epoch, Topology: [][]*cpki.MixDescriptor{{{Name: "mix1", IdentityKey: idPubBlob}}}}
-	if held == heldWithAuthorityQUICKeyHashes {
-		doc.AuthorityQUICKeyHashes = map[[cpki.PublicKeyHashSize]byte][]byte{{1}: bytes.Repeat([]byte{2}, 3*cpki.QUICKeyHashSize)}
-	}
-	entry, err := pkicache.New(doc, idPub, false, false)
-	require.NoError(t, err)
-	return entry
-}
-
-func publishedDescriptorLogged(t *testing.T, schemeName string, addresses []string, publishQUICKeyHashes bool, quicKeyDir, logFile string, held heldConsensus) (*cpki.MixDescriptor, *common.EpochKeys, *log.Backend) {
+func publishedDescriptorLogged(t *testing.T, schemeName string, addresses []string, authorities []*vConfig.Authority, quicKeyDir, logFile string) (*cpki.MixDescriptor, *common.EpochKeys, *log.Backend) {
 	t.Helper()
 	setEpochClock(t, 1000, time.Second)
 	quicKeys, err := common.NewEpochKeys(quicKeyDir, common.CurrentEpoch)
@@ -109,23 +96,22 @@ func publishedDescriptorLogged(t *testing.T, schemeName string, addresses []stri
 	addrs, err := makeDescAddrMap(addresses)
 	require.NoError(t, err)
 	poster := &quicHashPoster{}
-	docs := make(map[uint64]*pkicache.Entry)
-	if held != heldNothing {
-		docs[1000] = heldConsensusEntry(t, held, 1000, idPub)
-	}
 	p := &pki{
 		glue: &publishGlue{
 			rotationGlue: rotationGlue{mk: &keyedMixKeys{}},
-			cfg:          &config.Config{Server: &config.Server{Identifier: "mix1", PublishQUICKeyHashes: publishQUICKeyHashes}},
-			idPub:        idPub,
-			idKey:        idKey,
-			link:         link,
+			cfg: &config.Config{
+				Server: &config.Server{Identifier: "mix1"},
+				PKI:    &config.PKI{Voting: &config.Voting{Authorities: authorities}},
+			},
+			idPub: idPub,
+			idKey: idKey,
+			link:  link,
 		},
 		log:           backend.GetLogger("pki"),
 		impl:          poster,
 		descAddrMap:   addrs,
 		quicKeys:      quicKeys,
-		docs:          docs,
+		docs:          make(map[uint64]*pkicache.Entry),
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
 		advertising:   true,
@@ -171,10 +157,10 @@ func TestQUICNodePublishesItsKeyHash(t *testing.T) {
 	}
 }
 
-func TestQUICNodePublishesNoKeyHashByDefault(t *testing.T) {
+func TestQUICNodePublishesNoKeyHashWithoutAuthorityPins(t *testing.T) {
 	for _, scheme := range []string{"Ed25519", testSchemeName} {
 		desc := publishedDescriptor(t, scheme, []string{"tcp://127.0.0.1:4242", "quic://127.0.0.1:4242"}, false)
-		require.Nil(t, desc.QUICKeyHash, "%s: a node published its QUIC key hash without PublishQUICKeyHashes", scheme)
+		require.Nil(t, desc.QUICKeyHash, "%s: a node published its QUIC key hash without authority pins", scheme)
 	}
 }
 
@@ -188,7 +174,7 @@ func TestQUICNodePublishesThreeEpochKeyHashes(t *testing.T) {
 func TestQUICKeysAreNeverLogged(t *testing.T) {
 	quicKeyDir := t.TempDir()
 	logFile := filepath.Join(t.TempDir(), "pki.log")
-	_, quicKeys, backend := publishedDescriptorLogged(t, testSchemeName, []string{"quic://127.0.0.1:4242"}, true, quicKeyDir, logFile, heldWithAuthorityQUICKeyHashes)
+	_, quicKeys, backend := publishedDescriptorLogged(t, testSchemeName, []string{"quic://127.0.0.1:4242"}, pinnedAuthorities(true), quicKeyDir, logFile)
 	_, idKey := fixedIdentityKey(t, testSchemeName)
 	presentedSPKI(t, idKey, quicKeys)
 	backend.Close()
@@ -207,12 +193,5 @@ func TestQUICKeysAreNeverLogged(t *testing.T) {
 				require.NotContains(t, string(logged), form, "a QUIC TLS key reached the log")
 			}
 		}
-	}
-}
-
-func TestQUICNodePublishesKeyHashOnlyUnderAConsensusWithAuthorityHashes(t *testing.T) {
-	for _, held := range []heldConsensus{heldNothing, heldWithoutAuthorityQUICKeyHashes} {
-		desc, _, _ := publishedDescriptorLogged(t, testSchemeName, []string{"tcp://127.0.0.1:4242", "quic://127.0.0.1:4242"}, true, t.TempDir(), "", held)
-		require.Nil(t, desc.QUICKeyHash, "held consensus %d: a node published its QUIC key hash without a consensus proving every authority current", held)
 	}
 }

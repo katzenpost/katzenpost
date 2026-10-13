@@ -16,7 +16,7 @@ import (
 
 func TestReplicaLogsAWithheldQUICKeyHash(t *testing.T) {
 	setReplicaEpochClock(t, 1000, time.Second)
-	client := &servingReplicaPKIClient{}
+	client := &mockReplicaPKIClient{}
 	fixture, cleanup := createPublishDescriptorTestWorker(t, client)
 	defer cleanup()
 	server := fixture.server
@@ -27,7 +27,6 @@ func TestReplicaLogsAWithheldQUICKeyHash(t *testing.T) {
 	t.Cleanup(func() { server.logBackend.Close() })
 	w, err := newPKIWorkerWithClient(server, client, server.logBackend.GetLogger("replica pkiWorker"))
 	require.NoError(t, err)
-	server.cfg.PublishQUICKeyHashes = true
 	w.descAddrMap[pki.TransportQUIC] = []string{"quic://127.0.0.1:7483"}
 	require.NoError(t, w.publishDescriptorIfNeeded(context.Background()))
 	logged, err := os.ReadFile(logFile)

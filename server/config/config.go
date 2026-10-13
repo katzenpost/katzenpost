@@ -133,8 +133,6 @@ type Server struct {
 	// resolves them inside its local proxy, not via DNS.
 	AllowHostnameAddresses bool
 
-	PublishQUICKeyHashes bool `toml:",omitempty"`
-
 	// WaitForConsensusExitOnShutdown, when true, makes SIGINT and SIGTERM
 	// stop descriptor publication and wait until every epoch for which this
 	// node may have advertised has ended before shutting down. The node keeps

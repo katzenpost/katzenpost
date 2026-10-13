@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	authconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -86,20 +87,9 @@ func (p *PKIWorker) PKIDocument() *cpki.Document {
 	return p.entryForEpoch(epoch)
 }
 
-func (p *PKIWorker) quicKeyHash(ctx context.Context, epoch uint64, fetchTimeout time.Duration) ([]byte, error) {
-	doc := p.entryForEpoch(epoch - 1)
-	if doc == nil {
-		fetchCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
-		fetched, _, err := p.impl.GetPKIDocumentForEpoch(fetchCtx, epoch-1)
-		cancel()
-		if err != nil {
-			p.server.log.Noticef("Withholding QUICKeyHash for epoch %d: no consensus for epoch %d: %v", epoch, epoch-1, err)
-			return nil, nil
-		}
-		doc = fetched
-	}
-	if doc == nil || len(doc.AuthorityQUICKeyHashes) == 0 {
-		p.server.log.Noticef("Withholding QUICKeyHash for epoch %d: the consensus for epoch %d withholds AuthorityQUICKeyHashes", epoch, epoch-1)
+func (p *PKIWorker) quicKeyHash(epoch uint64) ([]byte, error) {
+	if !authconfig.EveryAuthorityHasAQUICKeyHash(p.server.cfg.PKI.Voting.Authorities) {
+		p.server.log.Noticef("Withholding QUICKeyHash for epoch %d: not every authority has a QUICKeyHash", epoch)
 		return nil, nil
 	}
 	return p.server.quicKeys.Hashes(epoch)
@@ -452,8 +442,8 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		ContactInfo:     p.server.cfg.ContactInfo,
 		SoftwareVersion: cpki.ResolveSoftwareVersion(p.server.cfg.SoftwareVersion, kpcommon.Version()),
 	}
-	if p.server.cfg.PublishQUICKeyHashes && len(p.descAddrMap[cpki.TransportQUIC]) > 0 {
-		if desc.QUICKeyHash, err = p.quicKeyHash(uploadCtx, doPublishEpoch, budget/4); err != nil {
+	if len(p.descAddrMap[cpki.TransportQUIC]) > 0 {
+		if desc.QUICKeyHash, err = p.quicKeyHash(doPublishEpoch); err != nil {
 			return err
 		}
 	}

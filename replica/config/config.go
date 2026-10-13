@@ -204,8 +204,6 @@ type Config struct {
 	// hostnames resolve via the compose runtime's embedded DNS.
 	// Onion addresses are always permitted.
 	AllowHostnameAddresses bool
-
-	PublishQUICKeyHashes bool `toml:",omitempty"`
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {

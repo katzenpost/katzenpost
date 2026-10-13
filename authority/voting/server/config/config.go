@@ -257,6 +257,15 @@ type Authority struct {
 
 var ErrNoQUICKeyHash = errors.New("no QUIC key hash configured")
 
+func EveryAuthorityHasAQUICKeyHash(authorities []*Authority) bool {
+	for _, a := range authorities {
+		if len(a.QUICKeyHash) == 0 {
+			return false
+		}
+	}
+	return len(authorities) > 0
+}
+
 func (a *Authority) DialQUICKeyHash(log *logging.Logger, addr string) ([]byte, error) {
 	if len(a.QUICKeyHash) == 0 {
 		log.Debugf("peer %s: no QUIC key hash configured, not dialing %s", a.Identifier, addr)
