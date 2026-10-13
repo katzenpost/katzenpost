@@ -52,8 +52,7 @@ for transport in TCP QUIC; do
 	"$make" "${params[@]}" TRANSPORT=$transport clean-local
 done
 
-summarize() {
-	awk -v project="$(cat "$1/project")" '
+median='
 	function median(a, n,    i, j, t) {
 		for (i = 2; i <= n; i++)
 			for (j = i; j > 1 && a[j - 1] > a[j]; j--) {
@@ -61,6 +60,10 @@ summarize() {
 			}
 		return n % 2 ? a[(n + 1) / 2] : (a[n / 2] + a[n / 2 + 1]) / 2
 	}
+'
+
+summarize() {
+	awk -v project="$(cat "$1/project")" "$median"'
 	{
 		name = $2
 		sub("^" project "[-_]", "", name)
@@ -93,26 +96,18 @@ summarize() {
 }
 
 kinds() {
-	sort | awk '
-	function median(a, n,    i, j, t) {
-		for (i = 2; i <= n; i++)
-			for (j = i; j > 1 && a[j - 1] > a[j]; j--) {
-				t = a[j]; a[j] = a[j - 1]; a[j - 1] = t
-			}
-		return n % 2 ? a[(n + 1) / 2] : (a[n / 2] + a[n / 2 + 1]) / 2
-	}
-	function flush(    i, lo, hi) {
+	sort | awk "$median"'
+	function flush() {
 		if (kind == "")
 			return
-		lo = cpu[1]; hi = cpu[1]
-		for (i = 1; i <= n; i++) {
-			if (cpu[i] < lo) lo = cpu[i]
-			if (cpu[i] > hi) hi = cpu[i]
-		}
 		printf "%s %d %.2f %.2f %.2f %.2f %.1f %.2f\n", kind, n, total, median(cpu, n), lo, hi, median(mem, n), bytes
 	}
 	$1 != kind { flush(); kind = $1; n = 0; total = 0; bytes = 0; delete cpu; delete mem }
-	{ cpu[++n] = $3; mem[n] = $4; total += $3; bytes += $5 }
+	{
+		cpu[++n] = $3; mem[n] = $4; total += $3; bytes += $5
+		if (n == 1 || $3 < lo) lo = $3
+		if (n == 1 || $3 > hi) hi = $3
+	}
 	END { flush() }'
 }
 
