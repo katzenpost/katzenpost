@@ -4,12 +4,17 @@ package server
 
 import (
 	"encoding/hex"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/hash"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
@@ -38,4 +43,28 @@ func TestMalformedNoticeVoteIsOutvoted(t *testing.T) {
 		require.NoError(t, errs[i])
 		require.Equal(t, "upgrade soon", docs[i].ClientNotice)
 	}
+}
+
+func TestMalformedNoticeVoteIsLogged(t *testing.T) {
+	states, epoch := exchangeNoticeVotes(t, []config.Notice{
+		{ClientNotice: "a"},
+		{ClientNotice: "a"},
+		{ClientNotice: strings.Repeat("n", 513)},
+	})
+	p := filepath.Join(t.TempDir(), "warning.log")
+	lb, err := log.New(p, "WARNING", false)
+	require.NoError(t, err)
+	t.Cleanup(func() { lb.Close() })
+	s := states[0]
+	s.log = lb.GetLogger("notice")
+
+	s.Lock()
+	_, _, params, err := s.tallyVotes(epoch)
+	s.Unlock()
+	require.NoError(t, err)
+	require.Equal(t, "a", params.Notice.ClientNotice)
+
+	b, err := os.ReadFile(p)
+	require.NoError(t, err)
+	require.Contains(t, string(b), s.authorityName(hash.Sum256From(states[2].s.identityPublicKey)), "no warning names the authority whose vote carries a malformed notice")
 }
