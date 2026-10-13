@@ -83,6 +83,9 @@ type Server struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
 
+	ContactInfo     string `toml:",omitempty"`
+	SoftwareVersion string `toml:",omitempty"`
+
 	// WireKEM is the KEM string representing the chosen KEM scheme with which to communicate
 	// with the mixnet and dirauth nodes.
 	WireKEM string
