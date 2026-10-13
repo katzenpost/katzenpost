@@ -18,18 +18,13 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/client"
 	clientcommon "github.com/katzenpost/katzenpost/client/common"
-	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/thin"
+	"github.com/katzenpost/katzenpost/cmd/internal/mixclient"
 	"github.com/katzenpost/katzenpost/common"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/spf13/cobra"
 )
 
@@ -44,23 +39,6 @@ func randUser() string {
 		panic(err)
 	}
 	return fmt.Sprintf("%x", user[:])
-}
-
-// getLogFilePath creates a temporary log file with a ping-specific pattern
-func getLogFilePath() string {
-	// Create a temporary file with a ping-specific pattern
-	// The pattern will create files like: /tmp/ping.log.123456.tmp
-	tmpFile, err := os.CreateTemp("", "ping.log.*.tmp")
-	if err != nil {
-		// If we can't create a temp file, fall back to no logging
-		return ""
-	}
-
-	// Get the file path and close the file (we just want the path)
-	logPath := tmpFile.Name()
-	tmpFile.Close()
-
-	return logPath
 }
 
 // Config holds the command line configuration.
@@ -117,23 +95,15 @@ full client mode where this ping tool starts it's own client daemon.`,
 			}
 
 			// Print log file location for user reference
-			logPath := getLogFilePath()
+			logPath := mixclient.LogFilePath("ping")
 			if logPath != "" {
 				fmt.Printf("Logging to: %s (level: %s)\n", logPath, cfg.LogLevel)
 			}
 
-			thinClient, daemon := initializeClient(cfg.ConfigFile, cfg.ThinClientOnly, logPath, cfg.LogLevel)
-			defer cleanup(thinClient, daemon)
+			thinClient, daemon := mixclient.Connect(cfg.ConfigFile, cfg.ThinClientOnly, logPath, cfg.LogLevel)
+			defer mixclient.Close(thinClient, daemon)
 
-			// Ensure thin_close is sent even on Ctrl-C
-			sigCh := make(chan os.Signal, 1)
-			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-			go func() {
-				<-sigCh
-				fmt.Println()
-				cleanup(thinClient, daemon)
-				os.Exit(0)
-			}()
+			mixclient.CloseOnInterrupt(thinClient, daemon)
 
 			tally := executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff, cfg.RotateServices)
 			return tally.gateError(cfg.Strict, cfg.Count)
@@ -155,82 +125,6 @@ full client mode where this ping tool starts it's own client daemon.`,
 	cmd.MarkFlagRequired("service")
 
 	return cmd
-}
-
-// initializeClient sets up either thin client or full daemon mode
-func initializeClient(configFile string, thinClientOnly bool, logPath string, logLevel string) (*thin.ThinClient, *client.Daemon) {
-	if thinClientOnly {
-		return initializeThinClient(configFile, logPath, logLevel), nil
-	}
-	return initializeFullClient(configFile, logPath, logLevel)
-}
-
-// initializeThinClient sets up thin client mode
-func initializeThinClient(configFile string, logPath string, logLevel string) *thin.ThinClient {
-	cfg, err := thin.LoadFile(configFile)
-	if err != nil {
-		panic(fmt.Errorf("failed to open thin client config: %s", err))
-	}
-
-	logging := &config.Logging{
-		Disable: false,
-		File:    logPath,
-		Level:   logLevel,
-	}
-
-	thinClient := thin.NewThinClient(cfg, logging)
-	err = thinClient.Dial()
-	if err != nil {
-		panic(fmt.Errorf("failed to connect to daemon: %s", err))
-	}
-	return thinClient
-}
-
-// initializeFullClient sets up full daemon mode
-func loadFullConfig(configFile string) (*config.Config, error) {
-	cfg, err := config.LoadFile(configFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open config: %s", err)
-	}
-	if err := epochtime.Configure(cfg.EpochDuration, os.Stderr); err != nil {
-		return nil, fmt.Errorf("config file '%v': %v", configFile, err)
-	}
-	return cfg, nil
-}
-
-func initializeFullClient(configFile string, logPath string, logLevel string) (*thin.ThinClient, *client.Daemon) {
-	cfg, err := loadFullConfig(configFile)
-	if err != nil {
-		panic(err)
-	}
-
-	// Override logging configuration to use our log file
-	if cfg.Logging == nil {
-		cfg.Logging = &config.Logging{}
-	}
-	cfg.Logging.File = logPath
-	cfg.Logging.Level = logLevel
-	cfg.Logging.Disable = false
-
-	// create a client and connect to the mixnet Gateway
-	daemon, err := client.NewDaemon(cfg)
-	if err != nil {
-		panic(err)
-	}
-	err = daemon.Start()
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("Sleeping for 3 seconds to let the client daemon startup...")
-	time.Sleep(time.Second * 3)
-
-	thinClient := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
-	err = thinClient.Dial()
-	if err != nil {
-		panic(err)
-	}
-	return thinClient, daemon
 }
 
 // executePing performs the ping operation and returns the per-category counts.
@@ -255,16 +149,6 @@ func executePing(thinClient *thin.ThinClient, service string, count, concurrency
 	}
 
 	return sendPings(thinClient, service, services, count, concurrency, printDiff)
-}
-
-// cleanup closes the thin client connection and shuts down the daemon if running
-func cleanup(thinClient *thin.ThinClient, daemon *client.Daemon) {
-	if thinClient != nil {
-		thinClient.Close()
-	}
-	if daemon != nil {
-		daemon.Shutdown()
-	}
 }
 
 func main() {

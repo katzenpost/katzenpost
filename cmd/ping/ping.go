@@ -35,8 +35,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/common"
 	"github.com/katzenpost/katzenpost/client/thin"
-	kpcommon "github.com/katzenpost/katzenpost/common"
-	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/cmd/internal/mixclient"
 )
 
 var basePayload = []byte(`Data encryption is used widely to protect the content of Internet
@@ -62,73 +61,6 @@ var (
 	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true) // Bright cyan
 	headerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // Bright yellow
 )
-
-// perHopSlopMs is the wall-clock budget per Sphinx hop on top of the
-// encoded per-hop delay. It covers crypto unwrap, scheduler dwell, and
-// network transmission between adjacent nodes. 500ms is comfortably
-// above the server's default SchedulerSlack (450ms) plus typical
-// crypto/network overhead, and the budget multiplies by the hop count
-// so a longer topology gets proportionally more slack.
-const perHopSlopMs uint64 = 500
-
-// fallbackRoundTrip is the timeout used when the PKI document is not
-// yet available. It is well above any honest path's RTT and well below
-// the one-epoch SURB validity window, so the ping cannot block
-// indefinitely waiting for a doc.
-const fallbackRoundTrip = 60 * time.Second
-
-// roundTripTimeout returns the per-packet timeout derived from the
-// consensus document's Mu parameter and topology. Per-hop delays are
-// drawn from Exp(Mu) and clamped at common.SafetyCap(Mu) (the
-// 1 - 10^-12 quantile), so the encoded Sphinx round-trip delay is
-// strictly bounded above by hops × SafetyCap(Mu). We add a per-hop
-// slop budget for processing and network overhead. The result is a
-// timeout that effectively never false-positives on an honest path
-// and which cuts off lost packets in tens of seconds rather than
-// blocking the batch forever.
-//
-// The hop count for an echo round-trip is 2L + 3 where L is the
-// number of mix layers: forward path is gateway + L mixes + service
-// (L + 2 hops with encoded delays because the packet carries a SURB),
-// SURB return is L mixes + gateway (L + 1 hops). For the default
-// L = 3 topology this is 9, matching the paper's Erlang-9 analysis.
-// replySlop is how long past the daemon's own estimate of a reply's due time
-// a packet is worth waiting for.
-//
-// The daemon reports, as ReplyETA, the delay actually encoded into the packet
-// it just sent. What that figure cannot include is the wall-clock cost the
-// Sphinx delays do not encode: crypto at each hop, scheduler dwell, and
-// transmission between nodes. Those are what this budget covers, at
-// perHopSlopMs each.
-//
-// The alternative, which this replaces as the normal case, is to wait
-// roundTripTimeout for every packet. That bound assumes every hop drew close
-// to the worst delay the distribution permits, which on namenlos comes to four
-// minutes; a packet that is simply lost then holds a concurrency slot for four
-// minutes rather than the few seconds its own route warranted.
-func replySlop(doc *cpki.Document) time.Duration {
-	hops := uint64(9)
-	if doc != nil && len(doc.Topology) > 0 {
-		hops = uint64(2*len(doc.Topology) + 3)
-	}
-	return time.Duration(hops*perHopSlopMs) * time.Millisecond
-}
-
-// roundTripTimeout returns the outer bound on a packet's wait, used when the
-// daemon reports no estimate of its own: an older daemon, or a send that
-// failed before the estimate arrived. See replySlop for the normal case.
-func roundTripTimeout(doc *cpki.Document) time.Duration {
-	if doc == nil || doc.Mu <= 0 || len(doc.Topology) == 0 {
-		return fallbackRoundTrip
-	}
-	hops := uint64(2*len(doc.Topology) + 3)
-	perHopCapMs := kpcommon.SafetyCap(doc.Mu)
-	if perHopCapMs == 0 {
-		return fallbackRoundTrip
-	}
-	totalMs := hops * (perHopCapMs + perHopSlopMs)
-	return time.Duration(totalMs) * time.Millisecond
-}
 
 // sendPing sends one ping and reports the outcome together with the route the
 // daemon chose for it. The route is recorded on failure as well as success,
@@ -222,8 +154,8 @@ func sendPings(session *thin.ThinClient, service string, services []*common.Serv
 	// document may rotate during a long batch; in practice Mu and the
 	// topology change rarely enough that recomputing per ping would
 	// add complexity without benefit.
-	timeout := roundTripTimeout(session.PKIDocument())
-	slop := replySlop(session.PKIDocument())
+	timeout := mixclient.RoundTripTimeout(session.PKIDocument())
+	slop := mixclient.ReplySlop(session.PKIDocument())
 
 	fmt.Println("Control-C to abort...")
 	fmt.Printf("%s\n", headerStyle.Render(fmt.Sprintf(
