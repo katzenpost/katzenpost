@@ -83,6 +83,9 @@ type Server struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
 
+	ContactInfo     string `toml:",omitempty"`
+	SoftwareVersion string `toml:",omitempty"`
+
 	// WireKEM is the KEM string representing the chosen KEM scheme with which to communicate
 	// with the mixnet and dirauth nodes.
 	WireKEM string
@@ -178,6 +181,15 @@ func (sCfg *Server) validate() error {
 	}
 	if sCfg.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
+	}
+
+	if err := pki.IsContactInfoWellFormed(sCfg.ContactInfo); err != nil {
+		return fmt.Errorf("config: Server: %w", err)
+	}
+	if sCfg.SoftwareVersion != pki.AutoSoftwareVersion {
+		if err := pki.IsSoftwareVersionWellFormed(sCfg.SoftwareVersion); err != nil {
+			return fmt.Errorf("config: Server: %w", err)
+		}
 	}
 
 	if sCfg.WireKEM == "" {
@@ -338,6 +350,10 @@ type Debug struct {
 	// DisableRateLimit disables the per-client rate limiter.  This option
 	// should only be used for testing.
 	DisableRateLimit bool
+
+	DisableServicePreDelay bool
+
+	ServicePreDelayQueueSize int
 
 	MaxClientConns *int
 

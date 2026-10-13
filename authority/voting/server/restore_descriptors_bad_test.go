@@ -41,19 +41,19 @@ func TestRestoredDescriptorRejectsBadEntries(t *testing.T) {
 	st := openRestoreState(t, filepath.Join(t.TempDir(), "persistence.db"), scheme.Name(), mix, replica)
 	defer st.db.Close()
 
-	mixDesc := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id, LinkKey: []byte("link")}
+	mixDesc := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id, LinkKey: []byte("link"), MixKeys: map[uint64][]byte{epoch: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
 	bareMix, err := mixDesc.MarshalBinary()
 	require.NoError(t, err)
 	emptyMix, err := (&pki.SignedUpload{}).Marshal()
 	require.NoError(t, err)
-	shortMix := signedMix(t, mix, &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id[:3], LinkKey: []byte("link")})
+	shortMix := signedMix(t, mix, &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id[:3], LinkKey: []byte("link"), MixKeys: map[uint64][]byte{epoch: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}})
 
-	repDesc := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id, LinkKey: []byte("link")}
+	repDesc := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id, LinkKey: []byte("link"), EnvelopeKeys: map[uint64][]byte{1: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
 	bareRep, err := repDesc.Marshal()
 	require.NoError(t, err)
 	emptyRep, err := (&pki.SignedReplicaUpload{}).Marshal()
 	require.NoError(t, err)
-	shortRep := signedReplica(t, replica, &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id[:3], LinkKey: []byte("link")})
+	shortRep := signedReplica(t, replica, &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id[:3], LinkKey: []byte("link"), EnvelopeKeys: map[uint64][]byte{1: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}})
 
 	for name, raw := range map[string][]byte{
 		"garbage":     []byte("not a signed upload"),
@@ -62,7 +62,7 @@ func TestRestoredDescriptorRejectsBadEntries(t *testing.T) {
 		"short key":   shortMix,
 		"forged":      signedMix(t, other, mixDesc),
 	} {
-		_, err := st.restoredMixDescriptor(raw)
+		_, err := st.restoredMixDescriptor(raw, epoch)
 		require.Error(t, err, "mix "+name)
 	}
 	for name, raw := range map[string][]byte{
@@ -72,14 +72,14 @@ func TestRestoredDescriptorRejectsBadEntries(t *testing.T) {
 		"short key":   shortRep,
 		"forged":      signedReplica(t, other, repDesc),
 	} {
-		_, err := st.restoredReplicaDescriptor(raw)
+		_, err := st.restoredReplicaDescriptor(raw, epoch)
 		require.Error(t, err, "replica "+name)
 	}
 
-	got, err := st.restoredMixDescriptor(signedMix(t, mix, mixDesc))
+	got, err := st.restoredMixDescriptor(signedMix(t, mix, mixDesc), epoch)
 	require.NoError(t, err)
 	require.Equal(t, mixDesc, got)
-	gotRep, err := st.restoredReplicaDescriptor(signedReplica(t, replica, repDesc))
+	gotRep, err := st.restoredReplicaDescriptor(signedReplica(t, replica, repDesc), epoch)
 	require.NoError(t, err)
 	require.Equal(t, repDesc, gotRep)
 }
@@ -94,10 +94,10 @@ func TestRestoreKeepsGoodAndDropsBadEntries(t *testing.T) {
 	st := openRestoreState(t, path, scheme.Name(), mix, replica)
 	require.NoError(t, st.db.Close())
 
-	mixDesc := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id, LinkKey: []byte("link")}
-	repDesc := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id, LinkKey: []byte("link")}
-	forgedMix := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: other.id, LinkKey: []byte("link")}
-	forgedRep := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: other.id, LinkKey: []byte("link")}
+	mixDesc := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id, LinkKey: []byte("link"), MixKeys: map[uint64][]byte{epoch: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
+	repDesc := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id, LinkKey: []byte("link"), EnvelopeKeys: map[uint64][]byte{1: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
+	forgedMix := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: other.id, LinkKey: []byte("link"), MixKeys: map[uint64][]byte{epoch: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
+	forgedRep := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: other.id, LinkKey: []byte("link"), EnvelopeKeys: map[uint64][]byte{1: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
 	mixHash := hash.Sum256(mix.id)
 	repHash := hash.Sum256(replica.id)
 	otherHash := hash.Sum256(other.id)

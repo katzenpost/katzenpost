@@ -9,3 +9,4 @@ Type=simple
 ExecStart=/usr/bin/kpclientd -c %E/katzenpost/kpclientd.toml
 Restart=on-failure
 RestartSec=5s
+NoNewPrivileges=true

@@ -4,6 +4,9 @@ include $(dir $(lastword $(MAKEFILE_LIST)))packaging/debian/targets.mk
 
 .PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
 
+build_version?=$(shell git describe --tags --always --dirty 2>/dev/null)
+build_ldflags=-s -w -X github.com/katzenpost/katzenpost/common.BuildVersion=$(build_version)
+
 ci_suites=authority client core core/sphinx server courier pigeonhole
 suite?=
 suite_timeout?=30m
@@ -97,46 +100,46 @@ endif
 all: server dirauth genconfig ping courier replica echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd sphinx
 
 server:
-	cd cmd/server; go build -trimpath -ldflags "-s -w"
+	cd cmd/server; go build -trimpath -ldflags "$(build_ldflags)"
 
 dirauth:
-	cd cmd/dirauth; go build -trimpath -ldflags "-s -w"
+	cd cmd/dirauth; go build -trimpath -ldflags "$(build_ldflags)"
 
 genconfig:
-	cd cmd/genconfig; go build -trimpath -ldflags "-s -w"
+	cd cmd/genconfig; go build -trimpath -ldflags "$(build_ldflags)"
 
 ping:
-	cd cmd/ping; go build -trimpath -ldflags "-s -w"
+	cd cmd/ping; go build -trimpath -ldflags "$(build_ldflags)"
 
 courier:
-	cd cmd/courier; go build -trimpath -ldflags "-s -w"
+	cd cmd/courier; go build -trimpath -ldflags "$(build_ldflags)"
 
 echo-plugin:
-	cd cmd/echo-plugin; go build -trimpath -ldflags "-s -w"
+	cd cmd/echo-plugin; go build -trimpath -ldflags "$(build_ldflags)"
 
 fetch:
-	cd cmd/fetch; go build -trimpath -ldflags "-s -w"
+	cd cmd/fetch; go build -trimpath -ldflags "$(build_ldflags)"
 
 genkeypair:
-	cd cmd/genkeypair; go build -trimpath -ldflags "-s -w"
+	cd cmd/genkeypair; go build -trimpath -ldflags "$(build_ldflags)"
 
 geometry:
-	cd cmd/geometry; go build -trimpath -ldflags "-s -w"
+	cd cmd/geometry; go build -trimpath -ldflags "$(build_ldflags)"
 
 http-proxy-client:
-	cd cmd/http-proxy-client; go build -trimpath -ldflags "-s -w"
+	cd cmd/http-proxy-client; go build -trimpath -ldflags "$(build_ldflags)"
 
 http-proxy-server:
-	cd cmd/http-proxy-server; go build -trimpath -ldflags "-s -w"
+	cd cmd/http-proxy-server; go build -trimpath -ldflags "$(build_ldflags)"
 
 kpclientd:
-	cd cmd/kpclientd; go build -trimpath -ldflags "-s -w"
+	cd cmd/kpclientd; go build -trimpath -ldflags "$(build_ldflags)"
 
 sphinx:
-	cd cmd/sphinx; go build -trimpath -ldflags "-s -w"
+	cd cmd/sphinx; go build -trimpath -ldflags "$(build_ldflags)"
 
 replica:
-	cd cmd/replica; go build -v -trimpath -ldflags "-s -w"
+	cd cmd/replica; go build -v -trimpath -ldflags "$(build_ldflags)"
 
 clean:
 	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping \
