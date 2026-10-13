@@ -79,6 +79,75 @@ always the same as "the file fails to parse".
 - Every authority, node and client of one network must agree on the
   period; nothing about it is carried in the PKI document.
 
+## QUIC links (every component except the thin client)
+
+A TCP link carries PQ Noise directly on TCP, with no TLS. QUIC requires
+TLS 1.3, so a QUIC link is TLS 1.3 (a self-signed certificate per
+epoch, pinned by its key hash in the PKI document) carrying the same PQ
+Noise session. The new optional `[QUIC]` table tunes that outer layer
+in `authority.toml`, `katzenpost.toml`, `replica.toml`, `courier.toml`
+and `client.toml` (kpclientd, which uses it to dial its gateway and the
+authorities). Every key is unset by default, and each default is the
+recommended setting. A value that fails validation refuses the config.
+
+```toml
+[QUIC]
+  ALPN = "pqnoise"
+  CurvePreferences = ["X25519MLKEM768", "X25519"]
+  AddressValidation = "always"
+  KeepAlivePeriod = "3m"
+  KeepAliveJitter = 0.25
+```
+
+- **Added** `ALPN` (string, at most 255 bytes; default `"pqnoise"`).
+  The TLS ALPN protocol a link offers. Both ends must offer the same
+  value or the handshake fails, so it is a per-network setting: every
+  authority, node, replica, courier and client of one network must
+  agree. `"h3"` makes the TLS hellos name HTTP/3. This does not
+  attempt to hide from active probing: anyone who connects completes
+  TLS with a self-signed certificate and finds no HTTP/3 behind it.
+  **[breaking]** Releases before this change offered `"h3"`; a QUIC
+  link between an older and a newer node fails (TCP links are
+  unaffected) unless the newer nodes set `ALPN = "h3"` until the
+  whole network is upgraded.
+- **Added** `CurvePreferences` (string array; default unset). The TLS
+  key exchange groups in order of preference, by Go's names: `X25519`,
+  `X25519MLKEM768`, `SecP256r1MLKEM768`, `SecP384r1MLKEM1024`,
+  `CurveP256`, `CurveP384`, `CurveP521`. An unknown or repeated name
+  refuses the config. Unset keeps crypto/tls's default groups,
+  currently the post-quantum hybrid `X25519MLKEM768` first, on both
+  dial and listen, and that is the recommended setting. A dialer and a
+  listener with no group in common fail the handshake.
+- **Added** `AddressValidation` (`"always"`, `"under-load"` or
+  `"off"`; default `"always"`). QUIC Retry, RFC 9000 section 8.1.2,
+  on listeners. `"always"` answers every new connection with a Retry,
+  so a peer proves it receives at its source address before the
+  listener keeps any handshake state; it costs one round trip per new
+  connection. `"under-load"` retries only while 128 or more handshakes
+  are in flight. `"off"` never retries.
+- **Added** `KeepAlivePeriod` (Go duration string; default `"3m"` on
+  authorities, nodes, replicas and couriers, `"20s"` in `client.toml`
+  so consumer NAT UDP mappings survive) and `KeepAliveJitter` (a
+  fraction in `[0, 1)`; default `0.25`). Each connection draws its
+  period once, uniformly within period x (1 +/- jitter), when it is
+  dialed or accepted. quic-go fixes the period for the life of a
+  connection, so the jitter varies between connections, not between
+  the keepalives of one connection. `"0s"` disables keepalives. quic-go
+  also never waits longer than half of the idle timeout, which is 2
+  minutes on every link, so any period above 60 s acts as 60 s: the
+  server default of 3 minutes and its jitter are today an effective,
+  unjittered 60 s.
+- Not configurable: each QUIC listener logs one warning at start when
+  its UDP socket buffers are below the 7 MiB quic-go asks for, naming
+  the sysctl to raise (`net.core.rmem_max` and `net.core.wmem_max` on
+  Linux). It never fails start. Nodes export the buffers they got as
+  `katzenpost_quic_udp_receive_buffer_bytes` and
+  `katzenpost_quic_udp_send_buffer_bytes` (by listen address) and, on
+  Linux, the kernel's UDP `RcvbufErrors` and `SndbufErrors` as
+  `katzenpost_udp_receive_buffer_errors_total` and
+  `katzenpost_udp_send_buffer_errors_total`. Those two count every UDP
+  socket in the network namespace, not only the node's.
+
 ## Directory authority (`authority.toml`)
 
 Source: `authority/voting/server/config/config.go`.
@@ -200,6 +269,11 @@ Source: `server/config/config.go`.
   systemd `TimeoutStopSec` comfortably above 40 minutes, for example `45min`.
   This option and `PersistMixKeysOnShutdown` are mutually exclusive; enabling
   both is a configuration error.
+- **Added** `InternalTransports` (string array; default unset, which
+  dials `tcp4`, then `tcp6`, then `quic`). The order in which the node
+  dials the transports another node publishes. Entries must be among
+  `tcp4`, `tcp6` and `quic`, none repeated, and a set list must not be
+  empty; a transport left out is never dialed.
 
 ### `[PKI.Voting]`
 
@@ -428,6 +502,15 @@ The client TOML had the most substantial reshape, driven by the
   the `kpclientd_metrics` build tag is set; production builds without
   the tag treat the field as inert. Convention is `127.0.0.1` only;
   binding to a public address is not supported.
+- `PreferedTransports` is unchanged, but a thin client can now replace
+  the order at run time with the `SetPreferredTransports` request
+  (CBOR `set_preferred_transports` with a `transports` list, answered
+  by `set_preferred_transports_reply`). Names must be among `tcp`,
+  `tcp4`, `tcp6`, `quic`, `ws` and `onion`, none repeated, or the reply
+  carries `ThinClientErrorInvalidRequest` and nothing changes. The order
+  applies from the next connection to the gateway; the current one is
+  kept. An empty list restores `PreferedTransports`, and a restart
+  forgets the change.
 
 ### `[Debug]`
 
