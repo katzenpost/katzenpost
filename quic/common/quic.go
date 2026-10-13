@@ -20,7 +20,9 @@ package common
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/hkdf"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -34,6 +36,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 
@@ -273,6 +276,12 @@ func (q *QuicConn) Write(b []byte) (int, error) {
 // QuicListener implements net.Listener
 type QuicListener struct {
 	Listener *quic.Listener
+
+	transport   *quic.Transport
+	connsMu     sync.Mutex
+	conns       int
+	closed      bool
+	releaseOnce sync.Once
 }
 
 // AcceptStreamTimeout bounds how long a freshly-accepted QUIC connection has to
@@ -289,7 +298,34 @@ func (l *QuicListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, &net.OpError{Op: "accept", Net: "quic", Addr: l.Listener.Addr(), Err: err}
 	}
+	if l.transport != nil {
+		l.track(conn)
+	}
 	return newAcceptedQuicConn(conn), nil
+}
+
+func (l *QuicListener) track(conn *quic.Conn) {
+	l.connsMu.Lock()
+	l.conns++
+	l.connsMu.Unlock()
+	context.AfterFunc(conn.Context(), l.untrack)
+}
+
+func (l *QuicListener) untrack() {
+	l.connsMu.Lock()
+	l.conns--
+	idle := l.closed && l.conns == 0
+	l.connsMu.Unlock()
+	if idle {
+		l.releaseTransport()
+	}
+}
+
+func (l *QuicListener) releaseTransport() {
+	l.releaseOnce.Do(func() {
+		l.transport.Close()
+		l.transport.Conn.Close()
+	})
 }
 
 func (l *QuicListener) Addr() net.Addr {
@@ -297,7 +333,65 @@ func (l *QuicListener) Addr() net.Addr {
 }
 
 func (l *QuicListener) Close() error {
-	return l.Listener.Close()
+	err := l.Listener.Close()
+	if l.transport == nil {
+		return err
+	}
+	l.connsMu.Lock()
+	l.closed = true
+	idle := l.conns == 0
+	l.connsMu.Unlock()
+	if idle {
+		l.releaseTransport()
+	}
+	return err
+}
+
+const statelessResetInfo = "katzenpost quic stateless reset"
+
+func statelessResetKey(identityPrivateKey sign.PrivateKey) (*quic.StatelessResetKey, error) {
+	identitySecret, err := identityPrivateKey.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	identitySecretAgain, err := identityPrivateKey.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	if len(identitySecret) > 0 && len(identitySecretAgain) > 0 && &identitySecret[0] != &identitySecretAgain[0] {
+		defer clear(identitySecret)
+		defer clear(identitySecretAgain)
+	}
+	derivedSecret, err := hkdf.Key(sha256.New, identitySecret, nil, statelessResetInfo, len(quic.StatelessResetKey{}))
+	if err != nil {
+		return nil, err
+	}
+	resetKey := quic.StatelessResetKey(derivedSecret)
+	clear(derivedSecret)
+	return &resetKey, nil
+}
+
+func Listen(host string, identityPrivateKey sign.PrivateKey) (*QuicListener, error) {
+	resetKey, err := statelessResetKey(identityPrivateKey)
+	if err != nil {
+		return nil, err
+	}
+	addr, err := net.ResolveUDPAddr("udp", host)
+	if err != nil {
+		return nil, err
+	}
+	udpConn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	transport := &quic.Transport{Conn: udpConn, StatelessResetKey: resetKey}
+	ql, err := transport.Listen(GenerateTLSConfig(), Config())
+	if err != nil {
+		transport.Close()
+		udpConn.Close()
+		return nil, err
+	}
+	return &QuicListener{Listener: ql, transport: transport}, nil
 }
 
 const KeepAlivePeriod = 3 * time.Minute

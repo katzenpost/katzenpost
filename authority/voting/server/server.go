@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -691,19 +690,15 @@ func New(cfg *config.Config) (*Server, error) {
 					s.listenWorker(l)
 				})
 			case "quic":
-				l, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), common.Config())
+				ql, err := common.Listen(u.Host, s.identityPrivateKey)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
 				}
-				// Wrap quic.Listener with common.QuicListener
-				// so it implements like net.Listener for a
-				// single QUIC Stream
-				ql := common.QuicListener{Listener: l}
-				s.listeners = append(s.listeners, &ql)
+				s.listeners = append(s.listeners, ql)
 				s.Add(1)
 				s.state.Go(func() {
-					s.listenWorker(&ql)
+					s.listenWorker(ql)
 				})
 			default:
 				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)

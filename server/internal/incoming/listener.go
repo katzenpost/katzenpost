@@ -37,7 +37,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -349,15 +348,11 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string, lim
 		}
 	case "quic":
 		l.log.Noticef("Starting listener on: %q", addr)
-		ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), common.Config())
+		l.l, err = common.Listen(u.Host, glue.IdentityKey())
 		if err != nil {
 			l.log.Errorf("Failed to start listener %q after %v: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration, and check that the address is assigned and the port is available.", addr, time.Since(listenStart), err)
 			return nil, err
 		}
-		// Wrap quic.Listener with common.QuicListener
-		// so it implements like net.Listener for a
-		// single QUIC Stream
-		l.l = &common.QuicListener{Listener: ql}
 	case "onion":
 		err = fmt.Errorf("unsupported listener scheme %q in address %q", u.Scheme, addr)
 		l.log.Errorf("%v. Please fix Server.Addresses or Server.BindAddresses in the server configuration.", err)
