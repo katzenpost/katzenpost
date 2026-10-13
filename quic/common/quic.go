@@ -296,6 +296,7 @@ func (l *QuicListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, &net.OpError{Op: "accept", Net: "quic", Addr: l.Listener.Addr(), Err: err}
 	}
+	settleHandshake(conn)
 	if l.transport != nil {
 		l.track(conn)
 	}
@@ -388,6 +389,7 @@ func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys *
 		CurvePreferences: opts.curvePreferences(),
 	}
 	transport := &quic.Transport{Conn: udpConn, StatelessResetKey: resetKey}
+	opts.validateAddresses(transport)
 	ql, err := transport.Listen(tlsConf, opts.quicConfig())
 	if err != nil {
 		transport.Close()

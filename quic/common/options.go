@@ -3,10 +3,14 @@
 package common
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -97,4 +101,49 @@ func (o *Options) curvePreferences() []tls.CurveID {
 
 func (o *Options) quicConfig() *quic.Config {
 	return Config()
+}
+
+const UnderLoadHandshakes = 128
+
+type handshakeSettleKey struct{}
+
+type handshakes struct {
+	inFlight atomic.Int64
+}
+
+func (h *handshakes) underLoad(net.Addr) bool {
+	return h.inFlight.Load() >= UnderLoadHandshakes
+}
+
+func (h *handshakes) connContext(ctx context.Context, _ *quic.ClientInfo) (context.Context, error) {
+	h.inFlight.Add(1)
+	settle := sync.OnceFunc(func() { h.inFlight.Add(-1) })
+	context.AfterFunc(ctx, settle)
+	return context.WithValue(ctx, handshakeSettleKey{}, settle), nil
+}
+
+func settleHandshake(conn *quic.Conn) {
+	if settle, ok := conn.Context().Value(handshakeSettleKey{}).(func()); ok {
+		settle()
+	}
+}
+
+func always(net.Addr) bool {
+	return true
+}
+
+func (o *Options) validateAddresses(transport *quic.Transport) {
+	mode := ""
+	if o != nil {
+		mode = o.AddressValidation
+	}
+	switch mode {
+	case AddressValidationOff:
+	case AddressValidationUnderLoad:
+		h := &handshakes{}
+		transport.VerifySourceAddress = h.underLoad
+		transport.ConnContext = h.connContext
+	default:
+		transport.VerifySourceAddress = always
+	}
 }

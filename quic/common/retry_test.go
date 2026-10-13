@@ -57,3 +57,36 @@ func TestAddressValidation(t *testing.T) {
 	require.Equal(t, int32(0), retriesFor(t, &Options{AddressValidation: AddressValidationUnderLoad}), "one handshake is no load")
 	require.Equal(t, int32(0), retriesFor(t, &Options{AddressValidation: AddressValidationOff}))
 }
+
+func TestUnderLoadCountsHandshakesInFlight(t *testing.T) {
+	h := &handshakes{}
+	var cancels []context.CancelFunc
+	defer func() {
+		for _, cancel := range cancels {
+			cancel()
+		}
+	}()
+	open := func() context.Context {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancels = append(cancels, cancel)
+		connCtx, err := h.connContext(ctx, nil)
+		require.NoError(t, err)
+		return connCtx
+	}
+	for range UnderLoadHandshakes - 1 {
+		open()
+	}
+	require.False(t, h.underLoad(nil))
+	last := open()
+	require.True(t, h.underLoad(nil))
+	settle := last.Value(handshakeSettleKey{}).(func())
+	settle()
+	settle()
+	require.False(t, h.underLoad(nil))
+	cancels[len(cancels)-1]()
+	require.Equal(t, int64(UnderLoadHandshakes-1), h.inFlight.Load(), "a settled handshake was counted out twice")
+	for _, cancel := range cancels {
+		cancel()
+	}
+	require.Eventually(t, func() bool { return h.inFlight.Load() == 0 }, 5*time.Second, 10*time.Millisecond)
+}
