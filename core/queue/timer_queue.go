@@ -204,7 +204,8 @@ func (t *TimerQueue) worker() {
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
 				t.queue.Dequeue()
 				t.mutex.Unlock()
-				t.action(m.Value)
+				v := m.Value
+				t.Go(func() { t.action(v) })
 				continue
 			} else {
 				timer.Reset(time.Duration(timeLeft))
