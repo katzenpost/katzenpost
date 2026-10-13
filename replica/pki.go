@@ -86,6 +86,25 @@ func (p *PKIWorker) PKIDocument() *cpki.Document {
 	return p.entryForEpoch(epoch)
 }
 
+func (p *PKIWorker) quicKeyHash(ctx context.Context, epoch uint64, fetchTimeout time.Duration) ([]byte, error) {
+	doc := p.entryForEpoch(epoch - 1)
+	if doc == nil {
+		fetchCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
+		fetched, _, err := p.impl.GetPKIDocumentForEpoch(fetchCtx, epoch-1)
+		cancel()
+		if err != nil {
+			p.server.log.Noticef("Withholding QUICKeyHash for epoch %d: no consensus for epoch %d: %v", epoch, epoch-1, err)
+			return nil, nil
+		}
+		doc = fetched
+	}
+	if doc == nil || len(doc.AuthorityQUICKeyHashes) == 0 {
+		p.server.log.Noticef("Withholding QUICKeyHash for epoch %d: the consensus for epoch %d withholds AuthorityQUICKeyHashes", epoch, epoch-1)
+		return nil, nil
+	}
+	return p.server.quicKeys.Hashes(epoch)
+}
+
 // entryForEpoch returns the PKI document for the specified epoch
 func (p *PKIWorker) entryForEpoch(epoch uint64) *cpki.Document {
 	return p.EntryForEpoch(epoch)
@@ -432,6 +451,11 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		EnvelopeKeys:    envelopeKeys,
 		ContactInfo:     p.server.cfg.ContactInfo,
 		SoftwareVersion: cpki.ResolveSoftwareVersion(p.server.cfg.SoftwareVersion, kpcommon.Version()),
+	}
+	if p.server.cfg.PublishQUICKeyHashes && len(p.descAddrMap[cpki.TransportQUIC]) > 0 {
+		if desc.QUICKeyHash, err = p.quicKeyHash(uploadCtx, doPublishEpoch, budget/4); err != nil {
+			return err
+		}
 	}
 
 	if err := cpki.IsReplicaDescriptorWellFormed(desc, doPublishEpoch); err != nil {

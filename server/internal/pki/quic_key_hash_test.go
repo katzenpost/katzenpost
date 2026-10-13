@@ -150,6 +150,17 @@ func presentedSPKI(t *testing.T, identityPrivateKey sign.PrivateKey, quicKeys *c
 	return conn.(*common.QuicConn).Conn.ConnectionState().TLS.PeerCertificates[0].RawSubjectPublicKeyInfo
 }
 
+func TestTCPOnlyDescriptorIsUnchanged(t *testing.T) {
+	for _, scheme := range []string{"Ed25519", testSchemeName} {
+		desc := publishedDescriptor(t, scheme, []string{"tcp://127.0.0.1:4242"}, true)
+		require.Nil(t, desc.QUICKeyHash)
+		blob, err := (&cpki.SignedUpload{MixDescriptor: desc}).Marshal()
+		require.NoError(t, err)
+		sum := sha256.Sum256(blob)
+		require.Equal(t, tcpOnlySignedBlobSum256[scheme], hex.EncodeToString(sum[:]), scheme)
+	}
+}
+
 func TestQUICNodePublishesItsKeyHash(t *testing.T) {
 	for _, scheme := range []string{"Ed25519", testSchemeName} {
 		desc, quicKeys := publishedDescriptorAndKeys(t, scheme, []string{"tcp://127.0.0.1:4242", "quic://127.0.0.1:4242"}, true)
@@ -157,6 +168,13 @@ func TestQUICNodePublishesItsKeyHash(t *testing.T) {
 		presented := sha256.Sum256(presentedSPKI(t, idKey, quicKeys))
 		require.Len(t, desc.QUICKeyHash, 3*sha256.Size, scheme)
 		require.Equal(t, presented[:], desc.QUICKeyHash[:sha256.Size], "%s: the listener in epoch %d must present the first key the descriptor for %d publishes", scheme, desc.Epoch-1, desc.Epoch)
+	}
+}
+
+func TestQUICNodePublishesNoKeyHashByDefault(t *testing.T) {
+	for _, scheme := range []string{"Ed25519", testSchemeName} {
+		desc := publishedDescriptor(t, scheme, []string{"tcp://127.0.0.1:4242", "quic://127.0.0.1:4242"}, false)
+		require.Nil(t, desc.QUICKeyHash, "%s: a node published its QUIC key hash without PublishQUICKeyHashes", scheme)
 	}
 }
 
@@ -189,5 +207,12 @@ func TestQUICKeysAreNeverLogged(t *testing.T) {
 				require.NotContains(t, string(logged), form, "a QUIC TLS key reached the log")
 			}
 		}
+	}
+}
+
+func TestQUICNodePublishesKeyHashOnlyUnderAConsensusWithAuthorityHashes(t *testing.T) {
+	for _, held := range []heldConsensus{heldNothing, heldWithoutAuthorityQUICKeyHashes} {
+		desc, _, _ := publishedDescriptorLogged(t, testSchemeName, []string{"tcp://127.0.0.1:4242", "quic://127.0.0.1:4242"}, true, t.TempDir(), "", held)
+		require.Nil(t, desc.QUICKeyHash, "held consensus %d: a node published its QUIC key hash without a consensus proving every authority current", held)
 	}
 }

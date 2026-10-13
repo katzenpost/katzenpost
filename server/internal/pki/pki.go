@@ -718,6 +718,11 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		ContactInfo:     p.glue.Config().Server.ContactInfo,
 		SoftwareVersion: cpki.ResolveSoftwareVersion(p.glue.Config().Server.SoftwareVersion, kpcommon.Version()),
 	}
+	if p.glue.Config().Server.PublishQUICKeyHashes && len(p.descAddrMap[cpki.TransportQUIC]) > 0 {
+		if desc.QUICKeyHash, err = p.quicKeyHash(uploadCtx, doPublishEpoch, budget/4); err != nil {
+			return err
+		}
+	}
 
 	if p.glue.Config().Server.IsGatewayNode {
 		// Only set the layer if the node is a provider. Otherwise, nodes
@@ -837,6 +842,27 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	return err
+}
+
+func (p *pki) quicKeyHash(ctx context.Context, epoch uint64, fetchTimeout time.Duration) ([]byte, error) {
+	var doc *cpki.Document
+	if entry := p.entryForEpoch(epoch - 1); entry != nil {
+		doc = entry.Document()
+	} else {
+		fetchCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
+		fetched, _, err := p.impl.GetPKIDocumentForEpoch(fetchCtx, epoch-1)
+		cancel()
+		if err != nil {
+			p.log.Noticef("Withholding QUICKeyHash for epoch %d: no consensus for epoch %d: %v", epoch, epoch-1, err)
+			return nil, nil
+		}
+		doc = fetched
+	}
+	if doc == nil || len(doc.AuthorityQUICKeyHashes) == 0 {
+		p.log.Noticef("Withholding QUICKeyHash for epoch %d: the consensus for epoch %d withholds AuthorityQUICKeyHashes", epoch, epoch-1)
+		return nil, nil
+	}
+	return p.quicKeys.Hashes(epoch)
 }
 
 func (p *pki) entryForEpoch(epoch uint64) *pkicache.Entry {

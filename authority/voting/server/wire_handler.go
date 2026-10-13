@@ -630,6 +630,13 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 		return resp
 	}
 
+	if err := pki.IsQUICKeyHashWellFormed(desc.QUICKeyHash); err != nil {
+		s.log.Noticef("Peer %s: Rejecting replica descriptor for node %s epoch %d: %s", strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(err.Error()))
+		instrument.DescriptorRejected("replica", "malformed")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
+
 	// Ensure that the descriptor is from an allowed peer.
 	if err := s.state.replicaAuthorizationError(desc); err != nil {
 		s.log.Errorf("Peer %s: rejecting replica descriptor name=%q ReplicaID=%d identity_hash=%x: %s",
@@ -774,6 +781,13 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 		s.log.Errorf("Peer %s: descriptor link key is not the session link key", strconv.QuoteToASCII(peerID))
 		instrument.DescriptorRejected("mix", "link_key_mismatch")
 		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
+	if err := pki.IsQUICKeyHashWellFormed(desc.QUICKeyHash); err != nil {
+		s.log.Noticef("onPostDescriptor: Rejecting descriptor for node %s epoch %d from peer %s: %s", strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+		instrument.DescriptorRejected("mix", "malformed")
+		resp.ErrorCode = commands.DescriptorInvalid
 		return resp
 	}
 

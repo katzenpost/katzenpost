@@ -74,8 +74,22 @@ func TestReplicaQUICKeyHash(t *testing.T) {
 	require.Equal(t, want[:], desc.QUICKeyHash[:sha256.Size], "the listener in epoch %d must present the first key the descriptor for %d publishes", desc.Epoch-1, desc.Epoch)
 }
 
+func TestReplicaPublishesNoQUICKeyHashByDefault(t *testing.T) {
+	setReplicaEpochClock(t, 1000, time.Second)
+	desc, _ := publishedReplicaDescriptor(t, []string{"quic://127.0.0.1:7483"}, false)
+	require.Nil(t, desc.QUICKeyHash, "a replica published its QUIC key hash without PublishQUICKeyHashes")
+}
+
 func TestReplicaPublishesThreeEpochKeyHashes(t *testing.T) {
 	setReplicaEpochClock(t, 1000, time.Second)
 	desc, _ := publishedReplicaDescriptor(t, []string{"quic://127.0.0.1:7483"}, true)
 	require.Len(t, desc.QUICKeyHash, 3*sha256.Size, "the descriptor for epoch %d must carry the hashes of the keys for %d, %d and %d", desc.Epoch, desc.Epoch-1, desc.Epoch, desc.Epoch+1)
+}
+
+func TestReplicaPublishesQUICKeyHashOnlyUnderAConsensusWithAuthorityHashes(t *testing.T) {
+	setReplicaEpochClock(t, 1000, time.Second)
+	for _, held := range []heldConsensus{heldNothing, heldWithoutAuthorityQUICKeyHashes} {
+		desc, _ := publishedReplicaDescriptorHolding(t, []string{"quic://127.0.0.1:7483"}, true, held)
+		require.Nil(t, desc.QUICKeyHash, "held consensus %d: a replica published its QUIC key hash without a consensus proving every authority current", held)
+	}
 }
