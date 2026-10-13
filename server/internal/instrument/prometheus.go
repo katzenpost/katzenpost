@@ -300,6 +300,10 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(selfCheckSphinxCores)
 	prometheus.MustRegister(nodeReady)
 	prometheus.MustRegister(nodeCurrentEpoch)
+	prometheus.MustRegister(linkHandshakeDuration)
+	prometheus.MustRegister(linksEstablished)
+	prometheus.MustRegister(linkFailures)
+	prometheus.MustRegister(quicDials)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress == "" {
@@ -508,14 +512,44 @@ func SetNodeReady(ready bool, epoch uint64) {
 	nodeCurrentEpoch.Set(float64(epoch))
 }
 
-func LinkHandshake(transport, direction string, d time.Duration) {}
+func LinkHandshake(transport, direction string, d time.Duration) {
+	linkHandshakeDuration.With(prometheus.Labels{"transport": transport, "direction": direction}).Observe(d.Seconds())
+}
 
-func LinkEstablished(transport, direction string) {}
+func LinkEstablished(transport, direction string) {
+	linksEstablished.With(prometheus.Labels{"transport": transport, "direction": direction}).Inc()
+}
 
-func LinkFailure(transport, direction, reason string) {}
+func LinkFailure(transport, direction, reason string) {
+	linkFailures.With(prometheus.Labels{"transport": transport, "direction": direction, "reason": reason}).Inc()
+}
 
-func QUICDial(result string) {}
+func QUICDial(result string) {
+	quicDials.With(prometheus.Labels{"result": result}).Inc()
+}
 
 func LinkSample(name string, labels map[string]string) float64 {
-	return 0
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return 0
+	}
+	total := 0.0
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			matched := 0
+			for _, l := range m.GetLabel() {
+				if v, ok := labels[l.GetName()]; ok && v == l.GetValue() {
+					matched++
+				}
+			}
+			if matched != len(labels) {
+				continue
+			}
+			total += m.GetCounter().GetValue() + float64(m.GetHistogram().GetSampleCount())
+		}
+	}
+	return total
 }
