@@ -33,8 +33,8 @@ import (
 
 var (
 	tcpOnlySignedBlobSum256 = map[string]string{
-		"Ed25519":      "16a9a0f6cf5c211e85b67e7892d921d6fdd2d4753257d497b9f44b0f830a88a4",
-		testSchemeName: "9585077c26768e783cf4fb62a6006cea1d1145fab4ae7a099c5c35d96b543966",
+		"Ed25519":          "16a9a0f6cf5c211e85b67e7892d921d6fdd2d4753257d497b9f44b0f830a88a4",
+		"Ed25519 Sphincs+": "9585077c26768e783cf4fb62a6006cea1d1145fab4ae7a099c5c35d96b543966",
 	}
 )
 
