@@ -256,6 +256,8 @@ func (a *Authority) DialQUICKeyHashes(pins *pki.AuthorityQUICKeyPins, log *loggi
 	switch {
 	case len(quicKeyHashes) > 0:
 		log.Debugf("peer %s: quic dial pinned to %d consensus QUIC key hashes", a.Identifier, len(quicKeyHashes)/pki.QUICKeyHashSize)
+	case pins.FirstWithheldDial(now):
+		log.Warningf("peer %s: quic dial unpinned, no QUIC key hashes known; the consensus for epoch %d withholds AuthorityQUICKeyHashes", a.Identifier, now)
 	default:
 		log.Debugf("peer %s: quic dial unpinned, no QUIC key hashes known", a.Identifier)
 	}

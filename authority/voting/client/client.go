@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,6 +42,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/retry"
@@ -291,6 +293,16 @@ func (p *connector) initSession(
 ) (*connection, error) {
 	usable := *peer
 	usable.Addresses = retry.FilterByLocalAddresses(p.cfg.LocalAddresses, peer.Addresses)
+	now, _, _ := epochtime.Now()
+	var identity [pki.PublicKeyHashSize]byte
+	if peer.IdentityPublicKey != nil {
+		identity = hash.Sum256From(peer.IdentityPublicKey)
+		if p.quicPins.Mismatched(identity, now) {
+			usable.Addresses = slices.DeleteFunc(slices.Clone(usable.Addresses), func(addr string) bool {
+				return !strings.HasPrefix(addr, pki.TransportQUIC+"://")
+			})
+		}
+	}
 	peer = &usable
 
 	var conn net.Conn
@@ -351,6 +363,7 @@ func (p *connector) initSession(
 		}
 
 		if errors.Is(err, common.ErrQUICKeyMismatch) {
+			p.quicPins.MarkMismatch(identity, now)
 			return nil, fmt.Errorf("%s: failed to connect to %s: %w", peerInfo(), peer.Addresses[idx], err)
 		}
 		lastErr = fmt.Errorf("%s: failed to connect to %s: %v", peerInfo(), peer.Addresses[idx], err)
@@ -572,10 +585,15 @@ type postPeerState struct {
 	peer          *config.Authority
 	accepted      bool
 	conflict      bool
+	pinMismatch   bool
 	lastErr       error
 	lastKind      postAttemptKind
 	attempts      int
 	nextAttemptAt time.Time
+}
+
+func (s *postPeerState) settled() bool {
+	return s.accepted || s.conflict || s.pinMismatch
 }
 
 type postSummary struct {
@@ -817,10 +835,7 @@ func peersNeedingCompletion(states map[string]*postPeerState) []*config.Authorit
 	peers := []*config.Authority{}
 
 	for _, state := range states {
-		if state.accepted {
-			continue
-		}
-		if state.conflict {
+		if state.settled() {
 			continue
 		}
 		peers = append(peers, state.peer)
@@ -833,10 +848,7 @@ func postStatesReadyForCompletion(states map[string]*postPeerState, now time.Tim
 	ready := []*postPeerState{}
 
 	for _, state := range states {
-		if state.accepted {
-			continue
-		}
-		if state.conflict {
+		if state.settled() {
 			continue
 		}
 		if state.nextAttemptAt.IsZero() || !state.nextAttemptAt.After(now) {
@@ -851,10 +863,7 @@ func nextPostAttemptAt(states map[string]*postPeerState) (time.Time, bool) {
 	var next time.Time
 
 	for _, state := range states {
-		if state.accepted {
-			continue
-		}
-		if state.conflict {
+		if state.settled() {
 			continue
 		}
 		if state.nextAttemptAt.IsZero() {
@@ -1071,6 +1080,10 @@ func (p *connector) postDescriptorWithCompletionRounds(
 				state.lastErr = result.err
 				state.lastKind = result.kind
 				state.attempts++
+				if errors.Is(result.err, common.ErrQUICKeyMismatch) {
+					state.pinMismatch = true
+					break
+				}
 
 				delay := descriptorPostRetryDelay(p.cfg, state.attempts)
 				state.nextAttemptAt = time.Now().Add(delay)

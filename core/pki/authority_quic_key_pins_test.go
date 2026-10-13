@@ -45,3 +45,33 @@ func TestAuthorityQUICKeyPinsJoinOverlappingConsensuses(t *testing.T) {
 	require.Equal(t, []byte{100, 101, 102}, []byte{got[0], got[3*QUICKeyHashSize], got[6*QUICKeyHashSize]})
 	require.Len(t, pins.Pins(a, 103), 3*QUICKeyHashSize)
 }
+
+func TestFirstWithheldDialWarnsOncePerWithheldEpoch(t *testing.T) {
+	var pins AuthorityQUICKeyPins
+	require.False(t, pins.FirstWithheldDial(10), "no consensus held is bootstrap, not withholding")
+	pins.Learn(&Document{Epoch: 10})
+	require.True(t, pins.FirstWithheldDial(10))
+	require.False(t, pins.FirstWithheldDial(10))
+	require.False(t, pins.FirstWithheldDial(11))
+	pins.Learn(&Document{Epoch: 11})
+	pins.Learn(&Document{Epoch: 10})
+	require.False(t, pins.FirstWithheldDial(10), "relearning an epoch must not warn again")
+	require.True(t, pins.FirstWithheldDial(11))
+	pins.Learn(&Document{Epoch: 14})
+	require.Len(t, pins.withheld, 1)
+}
+
+func TestAuthorityQUICKeyPinsForgetAMismatchAtTheNextEpoch(t *testing.T) {
+	var a, b [PublicKeyHashSize]byte
+	a[0], b[0] = 1, 2
+	var pins AuthorityQUICKeyPins
+	require.False(t, pins.Mismatched(a, 5))
+	pins.MarkMismatch(a, 5)
+	require.True(t, pins.Mismatched(a, 5))
+	require.False(t, pins.Mismatched(b, 5))
+	require.False(t, pins.Mismatched(a, 6))
+	pins.MarkMismatch(b, 6)
+	require.True(t, pins.Mismatched(b, 6))
+	require.False(t, pins.Mismatched(a, 5))
+	require.Len(t, pins.mismatched, 1)
+}

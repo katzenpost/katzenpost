@@ -3,8 +3,10 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -21,6 +24,8 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/quic/common"
@@ -161,4 +166,37 @@ func TestPostPinMismatchDoesNotRetryOverUnpinnedTCP(t *testing.T) {
 		require.Equal(t, postsBefore, tcpPosts.Load(), "after a pin mismatch on quic the completion rounds re-dialed the same authority over unpinned tcp")
 	}
 	require.True(t, sawPinnedDial)
+}
+
+func TestPinMismatchIsNotATransientDialError(t *testing.T) {
+	impostor, err := quic.ListenAddr("127.0.0.1:0", common.GenerateTLSConfig(), common.Config())
+	require.NoError(t, err)
+	t.Cleanup(func() { impostor.Close() })
+	u, err := url.Parse("quic://" + impostor.Addr().String())
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = common.DialURL(u, ctx, nil, bytes.Repeat([]byte{2}, 3*pki.QUICKeyHashSize))
+	require.ErrorIs(t, err, common.ErrQUICKeyMismatch)
+	require.False(t, retry.IsTransientError(err), "%v", err)
+}
+
+func TestPinMismatchFromInitSessionIsNotTransient(t *testing.T) {
+	epoch, _, _ := epochtime.Now()
+	a := newQUICAuthorityKeys(t)
+	impostorKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
+	require.NoError(t, err)
+	_, err = impostorKeys.Hashes(epoch)
+	require.NoError(t, err)
+	impostor := a.servePosts(t, impostorKeys)
+	c, peer := a.postingClient(t, filepath.Join(t.TempDir(), "client.log"))
+	peer.Addresses = []string{impostor}
+	c.pool.quicPins.Learn(&pki.Document{Epoch: epoch, AuthorityQUICKeyHashes: map[[pki.PublicKeyHashSize]byte][]byte{
+		hash.Sum256From(a.identityPublicKey): bytes.Repeat([]byte{2}, 3*pki.QUICKeyHashSize),
+	}})
+	_, linkKey, err := testingScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	_, err = c.pool.initSession(context.Background(), linkKey, nil, peer)
+	require.ErrorIs(t, err, common.ErrQUICKeyMismatch)
+	require.False(t, retry.IsTransientError(err), "%v", err)
 }
