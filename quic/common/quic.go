@@ -29,6 +29,7 @@ import (
 	"math/big"
 	"net"
 	"net/url"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,10 +45,15 @@ type QuicConn struct {
 	Stream *quic.Stream
 	Conn   *quic.Conn
 
-	readMu     sync.Mutex
-	writeMu    sync.Mutex
-	deadlineMu sync.Mutex
-	closed     atomic.Bool
+	streamReady   chan struct{}
+	streamErr     error
+	readMu        sync.Mutex
+	writeMu       sync.Mutex
+	deadlineMu    sync.Mutex
+	readDeadline  time.Time
+	writeDeadline time.Time
+	deadlineSet   chan struct{}
+	closed        atomic.Bool
 }
 
 const closeLinger = 2 * time.Second
@@ -61,9 +67,76 @@ func NewQuicConn(conn *quic.Conn, stream *quic.Stream) *QuicConn {
 	if stream == nil {
 		panic("QuicConn requires a non-nil stream")
 	}
-	return &QuicConn{
-		Conn:   conn,
-		Stream: stream,
+	q := &QuicConn{
+		Conn:        conn,
+		Stream:      stream,
+		streamReady: make(chan struct{}),
+		deadlineSet: make(chan struct{}),
+	}
+	close(q.streamReady)
+	return q
+}
+
+func newAcceptedQuicConn(conn *quic.Conn) *QuicConn {
+	q := &QuicConn{
+		Conn:        conn,
+		streamReady: make(chan struct{}),
+		deadlineSet: make(chan struct{}),
+	}
+	go q.acceptStream()
+	return q
+}
+
+func (q *QuicConn) acceptStream() {
+	ctx, cancel := context.WithTimeout(context.Background(), AcceptStreamTimeout)
+	defer cancel()
+	stream, err := q.Conn.AcceptStream(ctx)
+	if err != nil {
+		q.Conn.CloseWithError(0, "no stream opened")
+	}
+	q.deadlineMu.Lock()
+	defer q.deadlineMu.Unlock()
+	if err != nil {
+		q.streamErr = err
+	} else {
+		stream.SetReadDeadline(q.readDeadline)
+		stream.SetWriteDeadline(q.writeDeadline)
+		q.Stream = stream
+	}
+	close(q.streamReady)
+}
+
+func (q *QuicConn) awaitStream(deadline *time.Time) error {
+	for {
+		q.deadlineMu.Lock()
+		if q.Stream != nil || q.streamErr != nil {
+			err := q.streamErr
+			q.deadlineMu.Unlock()
+			return err
+		}
+		until, deadlineSet := *deadline, q.deadlineSet
+		q.deadlineMu.Unlock()
+		if q.closed.Load() {
+			return net.ErrClosed
+		}
+		var expired <-chan time.Time
+		if !until.IsZero() {
+			wait := time.Until(until)
+			if wait <= 0 {
+				return os.ErrDeadlineExceeded
+			}
+			timer := time.NewTimer(wait)
+			defer timer.Stop()
+			expired = timer.C
+		}
+		select {
+		case <-q.streamReady:
+		case <-deadlineSet:
+		case <-expired:
+			return os.ErrDeadlineExceeded
+		case <-q.Conn.Context().Done():
+			<-q.streamReady
+		}
 	}
 }
 
@@ -79,38 +152,59 @@ func (q *QuicConn) RemoteAddr() net.Addr {
 
 // SetDeadline implements net.Conn
 func (q *QuicConn) SetDeadline(t time.Time) error {
-	q.deadlineMu.Lock()
-	defer q.deadlineMu.Unlock()
-	if q.closed.Load() {
-		return net.ErrClosed
-	}
-	return q.Stream.SetDeadline(t)
+	return q.setDeadline(t, true, true)
 }
 
 // SetReadDeadline implements net.Conn
 func (q *QuicConn) SetReadDeadline(t time.Time) error {
-	q.deadlineMu.Lock()
-	defer q.deadlineMu.Unlock()
-	if q.closed.Load() {
-		return net.ErrClosed
-	}
-	return q.Stream.SetReadDeadline(t)
+	return q.setDeadline(t, true, false)
 }
 
 // SetWriteDeadline implements net.Conn
 func (q *QuicConn) SetWriteDeadline(t time.Time) error {
+	return q.setDeadline(t, false, true)
+}
+
+func (q *QuicConn) setDeadline(t time.Time, read, write bool) error {
 	q.deadlineMu.Lock()
 	defer q.deadlineMu.Unlock()
 	if q.closed.Load() {
 		return net.ErrClosed
 	}
-	return q.Stream.SetWriteDeadline(t)
+	if read {
+		q.readDeadline = t
+	}
+	if write {
+		q.writeDeadline = t
+	}
+	if q.Stream == nil {
+		q.wakeDeadlineWaiters()
+		return nil
+	}
+	if read {
+		if err := q.Stream.SetReadDeadline(t); err != nil {
+			return err
+		}
+	}
+	if write {
+		return q.Stream.SetWriteDeadline(t)
+	}
+	return nil
+}
+
+func (q *QuicConn) wakeDeadlineWaiters() {
+	close(q.deadlineSet)
+	q.deadlineSet = make(chan struct{})
 }
 
 // Close implements net.Conn; all streams are closed.
 func (q *QuicConn) Close() error {
-	if !q.markClosed() {
+	streamless, closing := q.markClosed()
+	if !closing {
 		return nil
+	}
+	if streamless {
+		return q.Conn.CloseWithError(0, "")
 	}
 	q.writeMu.Lock()
 	err := q.Stream.Close()
@@ -119,14 +213,18 @@ func (q *QuicConn) Close() error {
 	return err
 }
 
-func (q *QuicConn) markClosed() bool {
+func (q *QuicConn) markClosed() (streamless, closing bool) {
 	q.deadlineMu.Lock()
 	defer q.deadlineMu.Unlock()
 	if q.closed.Swap(true) {
-		return false
+		return false, false
+	}
+	q.wakeDeadlineWaiters()
+	if q.Stream == nil {
+		return true, true
 	}
 	q.Stream.SetDeadline(time.Now())
-	return true
+	return false, true
 }
 
 func (q *QuicConn) linger() {
@@ -145,7 +243,10 @@ func (q *QuicConn) Read(b []byte) (int, error) {
 	if q.closed.Load() {
 		return 0, net.ErrClosed
 	}
-	n, err := q.Stream.Read(b)
+	n, err := 0, q.awaitStream(&q.readDeadline)
+	if err == nil {
+		n, err = q.Stream.Read(b)
+	}
 	if err != nil && q.closed.Load() {
 		err = net.ErrClosed
 	}
@@ -159,7 +260,10 @@ func (q *QuicConn) Write(b []byte) (int, error) {
 	if q.closed.Load() {
 		return 0, net.ErrClosed
 	}
-	n, err := q.Stream.Write(b)
+	n, err := 0, q.awaitStream(&q.writeDeadline)
+	if err == nil {
+		n, err = q.Stream.Write(b)
+	}
 	if err != nil && q.closed.Load() {
 		err = net.ErrClosed
 	}
@@ -174,30 +278,18 @@ type QuicListener struct {
 // AcceptStreamTimeout bounds how long a freshly-accepted QUIC connection has to
 // open its stream. A legitimate peer opens it immediately after the handshake;
 // a peer that completes the handshake and then never opens a stream would
-// otherwise block AcceptStream (and thus the whole accept loop) forever.
+// otherwise hold its connection open forever.
 var AcceptStreamTimeout = 30 * time.Second
 
-// Accept implements net.Listener. It accepts a QUIC connection and its single
-// stream, returning a QuicConn that implements net.Conn for that stream.
-//
-// AcceptStream is bounded by AcceptStreamTimeout: a connection that completes
-// the QUIC handshake but does not open a stream in time is dropped and the loop
-// moves on to the next connection, so one silent peer cannot wedge the listener.
+// Accept implements net.Listener. It accepts a QUIC connection and returns a
+// QuicConn that implements net.Conn for its single stream, which is accepted
+// on first use under that call's deadline.
 func (l *QuicListener) Accept() (net.Conn, error) {
-	for {
-		conn, err := l.Listener.Accept(context.Background())
-		if err != nil {
-			return nil, &net.OpError{Op: "accept", Net: "quic", Addr: l.Listener.Addr(), Err: err}
-		}
-		streamCtx, cancel := context.WithTimeout(context.Background(), AcceptStreamTimeout)
-		stream, err := conn.AcceptStream(streamCtx)
-		cancel()
-		if err != nil {
-			conn.CloseWithError(0, "no stream opened")
-			continue
-		}
-		return NewQuicConn(conn, stream), nil
+	conn, err := l.Listener.Accept(context.Background())
+	if err != nil {
+		return nil, &net.OpError{Op: "accept", Net: "quic", Addr: l.Listener.Addr(), Err: err}
 	}
+	return newAcceptedQuicConn(conn), nil
 }
 
 func (l *QuicListener) Addr() net.Addr {
