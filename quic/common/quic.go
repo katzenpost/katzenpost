@@ -276,6 +276,7 @@ type QuicListener struct {
 	Listener *quic.Listener
 
 	transport   *quic.Transport
+	udpBuffers  UDPBuffers
 	connsMu     sync.Mutex
 	conns       int
 	closed      bool
