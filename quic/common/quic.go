@@ -368,13 +368,12 @@ func statelessResetKey(identityPrivateKey sign.PrivateKey) (*quic.StatelessReset
 	if err != nil {
 		return nil, err
 	}
-	identitySecretAgain, err := identityPrivateKey.MarshalBinary()
+	freshCopy, err := marshalBinaryReturnedAFreshCopy(identityPrivateKey, identitySecret)
 	if err != nil {
 		return nil, err
 	}
-	if len(identitySecret) > 0 && len(identitySecretAgain) > 0 && &identitySecret[0] != &identitySecretAgain[0] {
+	if freshCopy {
 		defer clear(identitySecret)
-		defer clear(identitySecretAgain)
 	}
 	derivedSecret, err := hkdf.Key(sha256.New, identitySecret, nil, statelessResetInfo, len(quic.StatelessResetKey{}))
 	if err != nil {
@@ -383,6 +382,18 @@ func statelessResetKey(identityPrivateKey sign.PrivateKey) (*quic.StatelessReset
 	resetKey := quic.StatelessResetKey(derivedSecret)
 	clear(derivedSecret)
 	return &resetKey, nil
+}
+
+func marshalBinaryReturnedAFreshCopy(identityPrivateKey sign.PrivateKey, identitySecret []byte) (bool, error) {
+	identitySecretAgain, err := identityPrivateKey.MarshalBinary()
+	if err != nil {
+		return false, err
+	}
+	freshCopy := len(identitySecret) > 0 && len(identitySecretAgain) > 0 && &identitySecret[0] != &identitySecretAgain[0]
+	if freshCopy {
+		clear(identitySecretAgain)
+	}
+	return freshCopy, nil
 }
 
 type CertificateSource interface {
