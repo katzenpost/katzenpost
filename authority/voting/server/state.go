@@ -3126,14 +3126,10 @@ func (s *state) restoredMixDescriptor(raw []byte, epoch uint64) (*pki.MixDescrip
 	if !up.Verify(pub) {
 		return nil, errors.New("invalid upload signature")
 	}
-	desc := up.MixDescriptor
-	if !s.s.cfg.Server.AcceptDescriptorMetadata {
-		desc.DropMetadata()
-	}
-	if err := errors.Join(pki.IsDescriptorWellFormed(desc, epoch), pki.IsSoftwareVersionWellFormed(desc.SoftwareVersion), pki.IsContactInfoWellFormed(desc.ContactInfo)); err != nil {
+	if err := s.s.wellFormedMixUpload(up.MixDescriptor, epoch); err != nil {
 		return nil, err
 	}
-	return desc, nil
+	return up.MixDescriptor, nil
 }
 
 func (s *state) restoredReplicaDescriptor(raw []byte, epoch uint64) (*pki.ReplicaDescriptor, error) {
@@ -3151,14 +3147,24 @@ func (s *state) restoredReplicaDescriptor(raw []byte, epoch uint64) (*pki.Replic
 	if !up.Verify(pub) {
 		return nil, errors.New("invalid upload signature")
 	}
-	desc := up.ReplicaDescriptor
-	if !s.s.cfg.Server.AcceptDescriptorMetadata {
-		desc.DropMetadata()
-	}
-	if err := errors.Join(pki.IsReplicaDescriptorWellFormed(desc, epoch), pki.IsSoftwareVersionWellFormed(desc.SoftwareVersion), pki.IsContactInfoWellFormed(desc.ContactInfo)); err != nil {
+	if err := s.s.wellFormedReplicaUpload(up.ReplicaDescriptor, epoch); err != nil {
 		return nil, err
 	}
-	return desc, nil
+	return up.ReplicaDescriptor, nil
+}
+
+func (s *Server) wellFormedMixUpload(desc *pki.MixDescriptor, epoch uint64) error {
+	if !s.cfg.Server.AcceptDescriptorMetadata {
+		desc.DropMetadata()
+	}
+	return errors.Join(pki.IsDescriptorWellFormed(desc, epoch), pki.IsSoftwareVersionWellFormed(desc.SoftwareVersion), pki.IsContactInfoWellFormed(desc.ContactInfo))
+}
+
+func (s *Server) wellFormedReplicaUpload(desc *pki.ReplicaDescriptor, epoch uint64) error {
+	if !s.cfg.Server.AcceptDescriptorMetadata {
+		desc.DropMetadata()
+	}
+	return errors.Join(pki.IsReplicaDescriptorWellFormed(desc, epoch), pki.IsSoftwareVersionWellFormed(desc.SoftwareVersion), pki.IsContactInfoWellFormed(desc.ContactInfo))
 }
 
 func votingThresholds(votingSetSize int) (threshold, dissenters int) {
