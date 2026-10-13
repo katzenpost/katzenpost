@@ -315,12 +315,22 @@ func (s *Server) listenWorker(l net.Listener) {
 				conn.Close()
 				continue
 			}
-		} else {
-			s.connSem <- struct{}{}
+			s.state.Go(func() {
+				defer func() { <-s.connSem }()
+				defer token.Release()
+				s.handleConn(conn)
+			})
+			continue
 		}
 		s.state.Go(func() {
-			defer func() { <-s.connSem }()
 			defer token.Release()
+			select {
+			case s.connSem <- struct{}{}:
+			case <-s.state.HaltCh():
+				conn.Close()
+				return
+			}
+			defer func() { <-s.connSem }()
 			s.handleConn(conn)
 		})
 	}

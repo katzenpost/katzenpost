@@ -36,14 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
-	"github.com/katzenpost/katzenpost/quic/common"
 )
-
-// isQUICConn returns true if the connection is a QUIC connection
-func isQUICConn(conn net.Conn) bool {
-	_, ok := conn.(*common.QuicConn)
-	return ok
-}
 
 // firstCommandTimeout bounds how long the responder waits for the first command
 // after a completed handshake, distinct from and shorter than the per-command
@@ -115,16 +108,7 @@ func (s *Server) onConn(conn net.Conn) {
 		return
 	}
 
-	// wireConn.Close calls conn.Close. In quic, sends are nonblocking and Close
-	// tears down the connection before the response was sent. So this waits
-	// 100ms after the response has been served before closing the connection.
-	defer func() {
-		// Only delay for QUIC connections if needed
-		if isQUICConn(conn) {
-			<-time.After(time.Millisecond * 100)
-		}
-		wireConn.Close()
-	}()
+	defer wireConn.Close()
 
 	// Handshake.
 	handshakeTimeout := time.Duration(s.cfg.Server.HandshakeTimeoutSec) * time.Second
