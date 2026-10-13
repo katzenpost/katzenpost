@@ -617,6 +617,8 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.ReplicaNIKEScheme = s.ReplicaNIKEScheme.Name()
 	cfg.PKISignatureScheme = s.PkiSignatureScheme.Name()
 	cfg.EpochDuration = s.epochDuration()
+	cfg.ContactInfo = s.ContactInfo
+	cfg.SoftwareVersion = s.SoftwareVersion
 	// Docker-mixnet replicas address dirauths and peers by container
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
@@ -689,6 +691,8 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.PKISignatureScheme = s.PkiSignatureScheme.Name()
 	cfg.Server.EpochDuration = s.epochDuration()
 	cfg.Server.Identifier = n
+	cfg.Server.ContactInfo = s.ContactInfo
+	cfg.Server.SoftwareVersion = s.SoftwareVersion
 	// Both the advertise address (Addresses, used by peers via the
 	// embedded bridge DNS) and the bind address (BindAddresses, used
 	// by net.Listen) point at the service's own hostname. Inside the
@@ -1118,6 +1122,8 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.ProxyRequestTimeout = cfg.ProxyRequestTimeout
 	s.SessionGracePeriod = cfg.SessionGracePeriod
 	s.PersistMixKeysOnShutdownDir = cfg.PersistMixKeysOnShutdownDir
+	s.ContactInfo = cfg.ContactInfo
+	s.SoftwareVersion = cfg.SoftwareVersion
 	s.Cover = cfg.Cover
 
 	return s

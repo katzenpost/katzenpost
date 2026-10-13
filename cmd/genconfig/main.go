@@ -187,6 +187,11 @@ performance optimization and security requirements.`,
 			"shutdown to this subdirectory of each node's DataDir (e.g. mixkeys) and reloading "+
 			"them on the next boot; empty leaves persistence off in generated configs")
 
+	cmd.Flags().StringVar(&cfg.ContactInfo, "contactInfo", "",
+		"ContactInfo published in every mix, gateway, service node and replica descriptor; empty omits it")
+	cmd.Flags().StringVar(&cfg.SoftwareVersion, "softwareVersion", "",
+		"SoftwareVersion published in those descriptors: \"auto\" for the binary's release and git revision, any other value as given; empty omits it")
+
 	// Logging flags
 	cmd.Flags().StringVar(&cfg.LogLevel, "logLevel", genconfig.DebugLogLevel,
 		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
