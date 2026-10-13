@@ -186,6 +186,12 @@ func IsSoftwareVersionWellFormed(v string) error {
 	return printableWithin("SoftwareVersion", v, maxSoftwareVersionLength)
 }
 
+const AutoSoftwareVersion = "auto"
+
+func ResolveSoftwareVersion(v, build string) string {
+	return v
+}
+
 func isDescriptorAddressWellFormed(transport, addr string, isGatewayNode bool, allowOnion bool) error {
 	u, err := url.Parse(addr)
 	if err != nil {
