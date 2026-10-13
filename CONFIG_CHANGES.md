@@ -98,6 +98,7 @@ recommended setting. A value that fails validation refuses the config.
   AddressValidation = "always"
   KeepAlivePeriod = "3m"
   KeepAliveJitter = 0.25
+  PinMismatch = "fallback"
 ```
 
 - **Added** `ALPN` (string, at most 255 bytes; default `"pqnoise"`).
@@ -138,6 +139,30 @@ recommended setting. A value that fails validation refuses the config.
   minutes on every link, so any period above 60 s acts as 60 s: the
   server default of 3 minutes and its jitter are today an effective,
   unjittered 60 s.
+- **Added** `PinMismatch` (`"fallback"` or `"strict"`; default
+  `"fallback"`). What a dialer does when a QUIC peer presents a TLS key
+  that matches none of the hashes pinned for it (an authority's
+  `QUICKeyHash`, or the QUIC key hashes in a node's, gateway's or
+  replica's descriptor). `"fallback"` stops using QUIC to that peer
+  for the rest of the epoch and dials its TCP addresses, which PQ
+  Noise authenticates on its own; a peer with no TCP address is not
+  dialed again until the next epoch. `"strict"` dials that peer only
+  over pinned QUIC for the rest of the epoch, so the link stays down
+  until the key matches, and an authority's descriptor upload to it is
+  given up for the epoch. Neither ever dials QUIC unpinned. Either way
+  the dialer logs a warning naming the peer and the first 4 bytes of
+  the presented and expected hashes, and counts
+  `katzenpost_outgoing_dial_failures_total{reason="pin_mismatch"}`;
+  nodes also count `katzenpost_link_failures_total{reason="pin_mismatch"}`
+  and `katzenpost_quic_dials_total{result="mismatch"}`. Whether QUIC
+  is tried at all is still decided by the transport order, not by this
+  key: `InternalTransports` in `katzenpost.toml` for links between
+  nodes, `PreferedTransports` (or a thin client's
+  `SetPreferredTransports`) in `client.toml` for the gateway, the fixed
+  order `tcp`, `tcp4`, `tcp6`, `quic`, `ws`, `onion` for replicas and
+  couriers dialing a replica, and an authority entry's `Addresses` with
+  its `QUICKeyHash` for authorities. `PinMismatch` only acts once a
+  pinned QUIC dial has failed its pin.
 - **Added** `QUICKeyHash` (64 hex digits; default unset) to every
   authority entry: `[[Authorities]]` in `authority.toml`,
   `[[PKI.Voting.Authorities]]` in `katzenpost.toml`, `replica.toml`
@@ -148,7 +173,7 @@ recommended setting. A value that fails validation refuses the config.
   and logs `QUIC key hash <hex>` at start; copy that value into the
   entries for it, next to its `LinkPublicKey`. A QUIC dial to an
   authority is pinned to the hash from the first dial, and a mismatch
-  ends the dial. An entry without it is never dialed over QUIC; TCP
+  is handled as `PinMismatch` says. An entry without it is never dialed over QUIC; TCP
   still is. genconfig writes it for every authority of the current
   release on a QUIC network.
 - A node, replica or gateway with a QUIC address publishes its
