@@ -123,25 +123,32 @@ func (q *QuicConn) awaitStream(deadline *time.Time) error {
 		if q.closed.Load() {
 			return net.ErrClosed
 		}
-		var expired <-chan time.Time
-		if !until.IsZero() {
-			wait := time.Until(until)
-			if wait <= 0 {
-				return os.ErrDeadlineExceeded
-			}
-			timer := time.NewTimer(wait)
-			defer timer.Stop()
-			expired = timer.C
-		}
-		select {
-		case <-q.streamReady:
-		case <-deadlineSet:
-		case <-expired:
-			return os.ErrDeadlineExceeded
-		case <-q.Conn.Context().Done():
-			<-q.streamReady
+		if err := q.waitForStream(until, deadlineSet); err != nil {
+			return err
 		}
 	}
+}
+
+func (q *QuicConn) waitForStream(until time.Time, deadlineSet <-chan struct{}) error {
+	var expired <-chan time.Time
+	if !until.IsZero() {
+		wait := time.Until(until)
+		if wait <= 0 {
+			return os.ErrDeadlineExceeded
+		}
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		expired = timer.C
+	}
+	select {
+	case <-q.streamReady:
+	case <-deadlineSet:
+	case <-expired:
+		return os.ErrDeadlineExceeded
+	case <-q.Conn.Context().Done():
+		<-q.streamReady
+	}
+	return nil
 }
 
 // LocalAddr implements net.Conn
