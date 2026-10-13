@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"net/url"
 	"testing"
 	"time"
 
@@ -50,4 +51,22 @@ func TestQuicSecondStreamIsRefused(t *testing.T) {
 	pulled.SetReadDeadline(time.Now().Add(3 * time.Second))
 	n, _ := io.ReadFull(pulled, make([]byte, parked))
 	require.Less(t, n, parked, "a second stream on a one-stream link was accepted and the server buffered %d bytes from it", n)
+}
+
+func TestDialerAcceptsNoStreamFromTheListener(t *testing.T) {
+	ql, err := quic.ListenAddr("127.0.0.1:0", GenerateTLSConfig(), Config())
+	require.NoError(t, err)
+	defer ql.Close()
+	u, err := url.Parse("quic://" + ql.Addr().String())
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := DialURL(u, ctx, nil, nil, nil)
+	require.NoError(t, err)
+	defer client.Close()
+	server, err := ql.Accept(ctx)
+	require.NoError(t, err)
+	defer server.CloseWithError(0, "")
+	_, err = server.OpenStream()
+	require.Error(t, err, "the listener could open a stream the dialer never accepts")
 }
