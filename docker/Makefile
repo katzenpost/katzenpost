@@ -245,6 +245,8 @@ endif
 # as first-hop MAC failures until the next epoch). Always passed with an
 # explicit value; empty disables persistence in generated configs.
 persistMixKeysOnShutdownDir ?= mixkeys
+contactInfo ?=
+softwareVersion ?=
 ifeq ($(pyroscope_dirauth),true)
   pyroscope_dirauth_tags=-tags pyroscope
   pyroscopeDirauthFlag=--pyroscopeDirauth
@@ -286,6 +288,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--sendSlack $(sendSlack) --unwrapDelay $(unwrapDelay) --numSphinxWorkers $(numSphinxWorkers) \
 	--proxyWorkerCount $(proxyWorkerCount) --proxyRequestTimeout $(proxyRequestTimeout) \
 	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
+	--contactInfo "$(contactInfo)" --softwareVersion "$(softwareVersion)" \
 	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level) $(coverFlag)
 
 # Pumba network chaos. Off by default; invoke `make pumba-latency` or
