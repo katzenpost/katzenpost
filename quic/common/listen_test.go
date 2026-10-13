@@ -15,8 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testIdentityScheme = "Ed25519 Sphincs+"
-
 func TestStatelessResetKeyFollowsTheIdentityKey(t *testing.T) {
 	scheme := signschemes.ByName(testIdentityScheme)
 	_, identityPrivateKey, err := scheme.GenerateKey()

@@ -39,7 +39,7 @@ func gathered(t *testing.T, name string) bool {
 
 func TestQUICListenerExportsUDPBuffers(t *testing.T) {
 	incomingSample("katzenpost_links_established_total", "quic")
-	_, identityKey, err := signSchemes.ByName("Ed25519 Sphincs+").GenerateKey()
+	_, identityKey, err := signSchemes.ByName(testSchemeName).GenerateKey()
 	require.NoError(t, err)
 	quicKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
 	require.NoError(t, err)

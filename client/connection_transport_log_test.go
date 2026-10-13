@@ -19,7 +19,7 @@ import (
 )
 
 func TestConnectLogsItsTransport(t *testing.T) {
-	_, identityPrivateKey, err := signSchemes.ByName("Ed25519 Sphincs+").GenerateKey()
+	_, identityPrivateKey, err := signSchemes.ByName(testSchemeName).GenerateKey()
 	require.NoError(t, err)
 	keys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
 	require.NoError(t, err)

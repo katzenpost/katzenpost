@@ -28,7 +28,6 @@ import (
 const (
 	quicRestartChildAddr = "KATZENPOST_QUIC_RESTART_CHILD_ADDR"
 	quicRestartChildKey  = "KATZENPOST_QUIC_RESTART_CHILD_KEY"
-	quicRestartScheme    = "Ed25519 Sphincs+"
 )
 
 func runQuicRestartChild(t *testing.T, addr string) {

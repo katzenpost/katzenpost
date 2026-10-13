@@ -19,7 +19,7 @@ import (
 
 func quicKeyHashAuthority(t *testing.T) map[string]interface{} {
 	t.Helper()
-	ss := signschemes.ByName("Ed25519 Sphincs+")
+	ss := signschemes.ByName(testSchemeName)
 	ks := kemschemes.ByName("Xwing")
 	idPub, _, err := ss.GenerateKey()
 	require.NoError(t, err)
