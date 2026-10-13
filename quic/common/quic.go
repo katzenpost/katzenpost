@@ -25,9 +25,12 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"io"
 	"math/big"
 	"net"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -40,7 +43,14 @@ import (
 type QuicConn struct {
 	Stream *quic.Stream
 	Conn   *quic.Conn
+
+	readMu     sync.Mutex
+	writeMu    sync.Mutex
+	deadlineMu sync.Mutex
+	closed     atomic.Bool
 }
+
+const closeLinger = 2 * time.Second
 
 // NewQuicConn creates a new QuicConn with the provided connection and stream.
 // Both conn and stream must be non-nil.
@@ -69,41 +79,91 @@ func (q *QuicConn) RemoteAddr() net.Addr {
 
 // SetDeadline implements net.Conn
 func (q *QuicConn) SetDeadline(t time.Time) error {
+	q.deadlineMu.Lock()
+	defer q.deadlineMu.Unlock()
+	if q.closed.Load() {
+		return net.ErrClosed
+	}
 	return q.Stream.SetDeadline(t)
 }
 
 // SetReadDeadline implements net.Conn
 func (q *QuicConn) SetReadDeadline(t time.Time) error {
+	q.deadlineMu.Lock()
+	defer q.deadlineMu.Unlock()
+	if q.closed.Load() {
+		return net.ErrClosed
+	}
 	return q.Stream.SetReadDeadline(t)
 }
 
 // SetWriteDeadline implements net.Conn
 func (q *QuicConn) SetWriteDeadline(t time.Time) error {
+	q.deadlineMu.Lock()
+	defer q.deadlineMu.Unlock()
+	if q.closed.Load() {
+		return net.ErrClosed
+	}
 	return q.Stream.SetWriteDeadline(t)
 }
 
 // Close implements net.Conn; all streams are closed.
 func (q *QuicConn) Close() error {
-	// Close the stream first and wait for it to complete
-	streamErr := q.Stream.Close()
-	// Then close the connection
-	connErr := q.Conn.CloseWithError(0, "")
-
-	// Return the stream error if it occurred, otherwise the connection error
-	if streamErr != nil {
-		return streamErr
+	if !q.markClosed() {
+		return nil
 	}
-	return connErr
+	q.writeMu.Lock()
+	err := q.Stream.Close()
+	q.writeMu.Unlock()
+	go q.linger()
+	return err
+}
+
+func (q *QuicConn) markClosed() bool {
+	q.deadlineMu.Lock()
+	defer q.deadlineMu.Unlock()
+	if q.closed.Swap(true) {
+		return false
+	}
+	q.Stream.SetDeadline(time.Now())
+	return true
+}
+
+func (q *QuicConn) linger() {
+	q.readMu.Lock()
+	defer q.readMu.Unlock()
+	q.Stream.SetReadDeadline(time.Now().Add(closeLinger))
+	io.Copy(io.Discard, q.Stream)
+	q.Stream.CancelRead(0)
+	q.Conn.CloseWithError(0, "")
 }
 
 // Read implements net.Conn
-func (q *QuicConn) Read(b []byte) (n int, err error) {
-	return q.Stream.Read(b)
+func (q *QuicConn) Read(b []byte) (int, error) {
+	q.readMu.Lock()
+	defer q.readMu.Unlock()
+	if q.closed.Load() {
+		return 0, net.ErrClosed
+	}
+	n, err := q.Stream.Read(b)
+	if err != nil && q.closed.Load() {
+		err = net.ErrClosed
+	}
+	return n, err
 }
 
 // Write implements net.Conn
-func (q *QuicConn) Write(b []byte) (n int, err error) {
-	return q.Stream.Write(b)
+func (q *QuicConn) Write(b []byte) (int, error) {
+	q.writeMu.Lock()
+	defer q.writeMu.Unlock()
+	if q.closed.Load() {
+		return 0, net.ErrClosed
+	}
+	n, err := q.Stream.Write(b)
+	if err != nil && q.closed.Load() {
+		err = net.ErrClosed
+	}
+	return n, err
 }
 
 // QuicListener implements net.Listener
