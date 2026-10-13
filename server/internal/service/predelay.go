@@ -43,6 +43,7 @@ func newPreDelay(release func(*packet.Packet), maxLen int, drop func(*packet.Pac
 	d.tq = queue.NewTimerQueue(func(v interface{}) {
 		pkt := v.(*packet.Packet)
 		pkt.DispatchAt = time.Now()
+		pkt.Delay = 0
 		release(pkt)
 	})
 	d.tq.Start()
