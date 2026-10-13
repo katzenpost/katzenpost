@@ -183,6 +183,15 @@ func (sCfg *Server) validate() error {
 		return errors.New("config: Server: Identifier is not set")
 	}
 
+	if err := pki.IsContactInfoWellFormed(sCfg.ContactInfo); err != nil {
+		return fmt.Errorf("config: Server: %w", err)
+	}
+	if sCfg.SoftwareVersion != pki.AutoSoftwareVersion {
+		if err := pki.IsSoftwareVersionWellFormed(sCfg.SoftwareVersion); err != nil {
+			return fmt.Errorf("config: Server: %w", err)
+		}
+	}
+
 	if sCfg.WireKEM == "" {
 		return errors.New("config: Server: WireKEM is not set")
 	}
