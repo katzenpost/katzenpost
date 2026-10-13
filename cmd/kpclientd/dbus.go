@@ -14,7 +14,19 @@ type busOwner interface {
 }
 
 func sessionBus() (busOwner, error) {
-	return dbus.ConnectSessionBus()
+	conn, err := dbus.SessionBusPrivateNoAutoStartup()
+	if err != nil {
+		return nil, err
+	}
+	if err := conn.Auth(nil); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if err := conn.Hello(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
 }
 
 var connectBus = sessionBus
