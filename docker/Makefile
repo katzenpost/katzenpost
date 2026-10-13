@@ -531,15 +531,19 @@ check-running-transport:
 	esac || { echo "links established: tcp $$ltcp, quic $$lquic do not match TRANSPORT=$(TRANSPORT)"; fail=1; }; \
 	echo "TRANSPORT=$(TRANSPORT): $$quic nodes on quic, $$plain without; links established: tcp $$ltcp, quic $$lquic"; \
 	auths=$$(ls */authority.toml | wc -l); \
-	publishing=$$(grep -l '^ *PublishQUICKeyHashes = true' */authority.toml | wc -l); \
-	carried=$$(grep -l AuthorityQUICKeyHashes */persistence.db 2>/dev/null | wc -l); \
-	pinned=$$(grep -rahE --include='*.log' 'quic dial pinned to [0-9]+ consensus QUIC key hashes' . | wc -l); \
-	unpinned=$$(grep -rah --include='*.log' 'quic dial unpinned, no QUIC key hashes known' . | wc -l); \
+	pins=$$(grep -h '^ *QUICKeyHash = ' */authority.toml | sort -u | wc -l); \
+	dials='quic dial pinned to its configured QUIC key hash|quic dial unpinned|no QUIC key hash configured, not dialing'; \
+	pinned=$$(grep -rah --include='*.log' 'quic dial pinned to its configured QUIC key hash' . | wc -l); \
+	unpinned=$$(grep -rahE --include='*.log' 'quic dial unpinned|no QUIC key hash configured, not dialing' . | wc -l); \
+	first_pinned=0 first_unpinned=0; \
+	for f in $$(grep -rlE --include='*.log' "$$dials" .); do \
+		if grep -m1 -E "$$dials" $$f | grep -q 'quic dial pinned'; then first_pinned=$$((first_pinned+1)); else first_unpinned=$$((first_unpinned+1)); fi; \
+	done; \
 	case $(genconfig_transport) in \
-	tcp) [ $$publishing -eq 0 ] && [ $$carried -eq 0 ] && [ $$pinned -eq 0 ] ;; \
-	*) [ $$publishing -lt $$auths ] || { [ $$carried -gt 0 ] && [ $$pinned -gt 0 ]; } ;; \
-	esac || { echo "authority QUIC keys do not match TRANSPORT=$(TRANSPORT)"; fail=1; }; \
-	echo "authority QUIC keys: $$publishing of $$auths authorities publish, $$carried keep a consensus naming them; quic dials to authorities: $$pinned pinned, $$unpinned unpinned"; \
+	tcp) [ $$pins -eq 0 ] && [ $$pinned -eq 0 ] ;; \
+	*) [ $$pins -lt $$auths ] || { [ $$pinned -gt 0 ] && [ $$unpinned -eq 0 ] && [ $$first_unpinned -eq 0 ]; } ;; \
+	esac || { echo "authority QUIC pins do not match TRANSPORT=$(TRANSPORT)"; fail=1; }; \
+	echo "authority QUIC pins: $$pins of $$auths authorities pinned; quic dials to authorities: $$pinned pinned, $$unpinned unpinned; first dial pinned in $$first_pinned logs, unpinned in $$first_unpinned"; \
 	exit $$fail
 
 perf_dir?=perf-compare
