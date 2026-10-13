@@ -50,6 +50,7 @@ func TestPeerDialIsPinnedToItsConfiguredKeyFromTheFirstDial(t *testing.T) {
 		}
 	})
 	dialer, target := states[0], states[1]
+	dialer.s.cfg.QUIC = &common.Options{PinMismatch: common.PinMismatchStrict}
 	genuineKeys, genuineHash := fixedEpochKeys(t, epoch)
 	impostorKeys, _ := fixedEpochKeys(t, epoch)
 	genuine := listenQUICAuthority(t, target, genuineKeys)

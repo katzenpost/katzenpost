@@ -15,6 +15,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 func TestPeerPinMismatchDoesNotFallBackToTCP(t *testing.T) {
@@ -27,6 +28,7 @@ func TestPeerPinMismatchDoesNotFallBackToTCP(t *testing.T) {
 		}
 	})
 	dialer, target := states[0], states[1]
+	dialer.s.cfg.QUIC = &common.Options{PinMismatch: common.PinMismatchStrict}
 	impostorKeys, _ := fixedEpochKeys(t, epoch)
 	impostor := listenQUICAuthority(t, target, impostorKeys)
 	var dialed atomic.Int32
