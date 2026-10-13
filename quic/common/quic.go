@@ -411,7 +411,7 @@ const KeepAlivePeriod = 3 * time.Minute
 
 func Config() *quic.Config {
 	return &quic.Config{
-		KeepAlivePeriod:       KeepAlivePeriod,
+		KeepAlivePeriod:       ServerKeepAlivePeriod,
 		MaxIdleTimeout:        wire.DefaultReadTimeout,
 		MaxIncomingStreams:    1,
 		MaxIncomingUniStreams: -1,

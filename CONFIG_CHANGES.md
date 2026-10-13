@@ -96,7 +96,7 @@ recommended setting. A value that fails validation refuses the config.
   ALPN = "h3"
   CurvePreferences = ["X25519MLKEM768", "X25519"]
   AddressValidation = "always"
-  KeepAlivePeriod = "3m"
+  KeepAlivePeriod = "45s"
   KeepAliveJitter = 0.25
   PinMismatch = "fallback"
 ```
@@ -132,7 +132,7 @@ recommended setting. A value that fails validation refuses the config.
   listener keeps any handshake state; it costs one round trip per new
   connection. `"under-load"` retries only while 128 or more handshakes
   are in flight. `"off"` never retries.
-- **Added** `KeepAlivePeriod` (Go duration string; default `"3m"` on
+- **Added** `KeepAlivePeriod` (Go duration string; default `"45s"` on
   authorities, nodes, replicas and couriers, `"20s"` in `client.toml`
   so consumer NAT UDP mappings survive) and `KeepAliveJitter` (a
   fraction in `[0, 1)`; default `0.25`). Each connection draws its
@@ -140,10 +140,10 @@ recommended setting. A value that fails validation refuses the config.
   dialed or accepted. quic-go fixes the period for the life of a
   connection, so the jitter varies between connections, not between
   the keepalives of one connection. `"0s"` disables keepalives. quic-go
-  also never waits longer than half of the idle timeout, which is 2
-  minutes on every link, so any period above 60 s acts as 60 s: the
-  server default of 3 minutes and its jitter are today an effective,
-  unjittered 60 s.
+  never waits longer than half of the idle timeout, which is 2 minutes
+  on every link, so any drawn period above 60 s acts as 60 s; the
+  defaults stay below it (45 s +/- 25% is 33.75 s to 56.25 s), so
+  their jitter takes effect. TCP keepalives are unchanged at 3 minutes.
 - **Added** `PinMismatch` (`"fallback"` or `"strict"`; default
   `"fallback"`). What a dialer does when a QUIC peer presents a TLS key
   that matches none of the hashes pinned for it (an authority's

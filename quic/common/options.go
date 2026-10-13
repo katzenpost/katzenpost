@@ -123,12 +123,13 @@ func (o *Options) curvePreferences() []tls.CurveID {
 }
 
 const (
+	ServerKeepAlivePeriod  = 45 * time.Second
 	ClientKeepAlivePeriod  = 20 * time.Second
 	DefaultKeepAliveJitter = 0.25
 )
 
 func (o *Options) keepAlivePeriod() time.Duration {
-	period, jitter := KeepAlivePeriod, DefaultKeepAliveJitter
+	period, jitter := ServerKeepAlivePeriod, DefaultKeepAliveJitter
 	if o != nil && o.client {
 		period = ClientKeepAlivePeriod
 	}
