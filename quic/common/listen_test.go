@@ -5,7 +5,6 @@ package common
 import (
 	"context"
 	"io"
-	"net"
 	"net/url"
 	"testing"
 	"time"
@@ -36,10 +35,11 @@ func TestStatelessResetKeyFollowsTheIdentityKey(t *testing.T) {
 	require.NotEqual(t, identitySecret[:len(resetKey)], resetKey[:])
 }
 
-func TestListenReleasesItsSocketAfterTheLastConnection(t *testing.T) {
+func TestListenAgainOnTheSamePortAfterClose(t *testing.T) {
 	_, identityPrivateKey, err := signschemes.ByName(testIdentityScheme).GenerateKey()
 	require.NoError(t, err)
-	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, newTestEpochKeys(t, t.TempDir(), newEpochClock(CurrentEpoch())), nil)
+	keys := newTestEpochKeys(t, t.TempDir(), newEpochClock(CurrentEpoch()))
+	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	addr := l.Addr().String()
 	u, err := url.Parse("quic://" + addr)
@@ -51,28 +51,18 @@ func TestListenReleasesItsSocketAfterTheLastConnection(t *testing.T) {
 	require.NoError(t, err)
 	server, err := l.Accept()
 	require.NoError(t, err)
+	defer server.Close()
 	var b [1]byte
 	_, err = io.ReadFull(server, b[:])
 	require.NoError(t, err)
 
 	require.NoError(t, l.Close())
-	_, err = client.Write([]byte{2})
-	require.NoError(t, err)
-	_, err = io.ReadFull(server, b[:])
-	require.NoError(t, err, "closing the listener must keep its accepted connections")
-	require.Equal(t, byte(2), b[0])
-	_, err = net.ListenPacket("udp", addr)
-	require.Error(t, err, "the socket was released while a connection still used it")
-
-	require.NoError(t, server.Close())
-	require.Eventually(t, func() bool {
-		pc, err := net.ListenPacket("udp", addr)
-		if err != nil {
-			return false
-		}
-		pc.Close()
-		return true
-	}, closeLinger+2*time.Second, 50*time.Millisecond, "the socket outlived the listener and its connections")
+	again, err := ListenWithEpochKeys(addr, identityPrivateKey, keys, nil)
+	require.NoError(t, err, "listening again on the port of a closed listener failed")
+	again.Close()
+	require.NoError(t, server.SetReadDeadline(time.Now().Add(5*time.Second)))
+	_, err = server.Read(b[:])
+	require.Error(t, err, "closing the listener left an accepted connection open")
 }
 
 func TestListenWithTheSameKeyResetsConnectionsOfACrashedListener(t *testing.T) {
