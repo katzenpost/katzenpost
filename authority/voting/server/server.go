@@ -286,6 +286,7 @@ func (s *Server) startListeners(listenAddresses []string) {
 					s.listenWorker(l)
 				})
 			case "quic":
+				s.log.Noticef("Starting listener on: %q", v)
 				keys, err := s.quicEpochKeys()
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)

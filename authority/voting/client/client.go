@@ -353,6 +353,7 @@ func (p *connector) initSession(
 		conn, err = common.DialURL(u, ictx, dialFn, quicKeyHashes)
 		cancelFn()
 		if err == nil {
+			p.log.Debugf("%s: %s connection established.", peerInfo(), u.Scheme)
 			// Disable Nagle so handshake/finalisation messages do not
 			// wait on a coalesce timer; harmless on non-TCP transports.
 			if tcpConn, ok := conn.(*net.TCPConn); ok {
@@ -522,7 +523,7 @@ func (p *connector) initSessionWithRetry(
 		}
 
 		lastErr = err
-		if !retry.IsTransientError(err) {
+		if ctx.Err() != nil || !retry.IsTransientError(err) {
 			return nil, err
 		}
 

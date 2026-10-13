@@ -834,6 +834,10 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 	}
 	s.log.Debugf("onPostDescriptor: Successfully submitted descriptor for node %s to state worker from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
 
+	if desc.IsGatewayNode && len(desc.Addresses[pki.TransportQUIC]) > 0 && !hasProxyableAddress(desc) {
+		s.log.Warningf("onPostDescriptor: gateway %s has no tcp or onion address; clients behind a SOCKS proxy cannot reach it", strconv.QuoteToASCII(desc.Name))
+	}
+
 	// Return a successful response.
 	s.log.Noticef(
 		"onPostDescriptor: SUCCESS! Accepted uploaded descriptor for node %s epoch %d from peer %s",
@@ -934,4 +938,13 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 
 	// not reached
+}
+
+func hasProxyableAddress(desc *pki.MixDescriptor) bool {
+	for _, transport := range []string{pki.TransportTCP, pki.TransportTCPv4, pki.TransportTCPv6, pki.TransportOnion} {
+		if len(desc.Addresses[transport]) > 0 {
+			return true
+		}
+	}
+	return false
 }

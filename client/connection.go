@@ -399,7 +399,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 					continue
 				}
 			}
-			c.log.Debugf("TCP connection established.")
+			c.log.Debugf("%v connection established.", u.Scheme)
 			// Disable Nagle so the PQ Noise handshake's finalisation
 			// NoOp does not wait on a coalesce timer; harmless on
 			// non-TCP transports. Also enable TCP keepalive so the
