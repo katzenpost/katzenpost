@@ -22,6 +22,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client/instrument"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -345,6 +346,12 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				dstAddrs = append(dstAddrs, addr)
 			}
 		}
+		quicOpts := c.client.cfg.QUIC.ForClient()
+		gateway := hash.Sum256(c.descriptor.IdentityKey)
+		epoch, _, _ := epochtime.Now()
+		if c.client.quicPinMismatches.Has(gateway, epoch) {
+			dstAddrs = quicOpts.AddressesAfterPinMismatch(dstAddrs)
+		}
 		if len(dstAddrs) == 0 {
 			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
 			c.descriptor = nil // Give up till the next PKI fetch.
@@ -354,6 +361,9 @@ func (c *connection) doConnect(dialCtx context.Context) {
 
 	dial:
 		for _, addr := range dstAddrs {
+			if c.client.quicPinMismatches.Has(gateway, epoch) && !quicOpts.DialableAfterPinMismatch(addr) {
+				continue
+			}
 			select {
 			case <-time.After(time.Duration(atomic.LoadInt64(&c.retryDelay))):
 				// Back off the reconnect delay.
@@ -375,7 +385,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				continue
 			}
 
-			conn, err := common.DialURL(u, dialCtx, dialFn, c.descriptor.QUICKeyHash, c.client.cfg.QUIC.ForClient())
+			conn, err := common.DialURL(u, dialCtx, dialFn, c.descriptor.QUICKeyHash, quicOpts)
 			select {
 			case <-c.HaltCh():
 				if conn != nil {
@@ -390,7 +400,11 @@ func (c *connection) doConnect(dialCtx context.Context) {
 						c.client.cfg.Callbacks.OnConnFn(&ConnectError{Err: err})
 					}
 					if errors.Is(err, common.ErrQUICKeyMismatch) {
-						break dial
+						c.client.quicPinMismatches.Mark(gateway, epoch)
+						quicOpts.ReportPinMismatch(c.log, c.descriptor.Name, err)
+						if quicOpts.StrictPinMismatch() {
+							break dial
+						}
 					}
 					continue
 				}

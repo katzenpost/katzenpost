@@ -28,6 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
@@ -44,6 +45,7 @@ type Client struct {
 	conn *connection
 
 	preferredTransports atomic.Pointer[[]string]
+	quicPinMismatches   common.QUICPinMismatches
 
 	sphinx           *sphinx.Sphinx
 	geo              *geo.Geometry
