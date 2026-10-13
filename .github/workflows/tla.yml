@@ -9,7 +9,6 @@ on:
       - 'client/tla/**'
       - 'server/tla/**'
       - '.ci/tla.sh'
-      - '.github/workflows/tla.yml'
   push:
     branches: [main]
     paths:
@@ -17,7 +16,6 @@ on:
       - 'client/tla/**'
       - 'server/tla/**'
       - '.ci/tla.sh'
-      - '.github/workflows/tla.yml'
   workflow_dispatch:
   schedule:
     - cron: '41 2 * * *'
