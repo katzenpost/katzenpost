@@ -4,6 +4,9 @@ package common
 
 import (
 	"crypto/tls"
+	"errors"
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -18,7 +21,56 @@ type Options struct {
 	KeepAliveJitter   *float64
 }
 
+const (
+	AddressValidationAlways    = "always"
+	AddressValidationUnderLoad = "under-load"
+	AddressValidationOff       = "off"
+)
+
+var knownCurves = []tls.CurveID{
+	tls.X25519,
+	tls.X25519MLKEM768,
+	tls.SecP256r1MLKEM768,
+	tls.SecP384r1MLKEM1024,
+	tls.CurveP256,
+	tls.CurveP384,
+	tls.CurveP521,
+}
+
+func curveByName(name string) (tls.CurveID, bool) {
+	i := slices.IndexFunc(knownCurves, func(c tls.CurveID) bool { return c.String() == name })
+	if i < 0 {
+		return 0, false
+	}
+	return knownCurves[i], true
+}
+
 func (o *Options) Validate() error {
+	if o == nil {
+		return nil
+	}
+	if len(o.ALPN) > 255 {
+		return errors.New("quic: ALPN is longer than 255 bytes")
+	}
+	for i, name := range o.CurvePreferences {
+		if _, ok := curveByName(name); !ok {
+			return fmt.Errorf("quic: unknown curve %q in CurvePreferences", name)
+		}
+		if slices.Contains(o.CurvePreferences[:i], name) {
+			return fmt.Errorf("quic: curve %q repeats in CurvePreferences", name)
+		}
+	}
+	switch o.AddressValidation {
+	case "", AddressValidationAlways, AddressValidationUnderLoad, AddressValidationOff:
+	default:
+		return fmt.Errorf("quic: AddressValidation %q is not %q, %q or %q", o.AddressValidation, AddressValidationAlways, AddressValidationUnderLoad, AddressValidationOff)
+	}
+	if o.KeepAlivePeriod != nil && *o.KeepAlivePeriod < 0 {
+		return errors.New("quic: KeepAlivePeriod is negative")
+	}
+	if o.KeepAliveJitter != nil && !(*o.KeepAliveJitter >= 0 && *o.KeepAliveJitter < 1) {
+		return errors.New("quic: KeepAliveJitter is outside [0, 1)")
+	}
 	return nil
 }
 
