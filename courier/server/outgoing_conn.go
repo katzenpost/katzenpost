@@ -67,6 +67,8 @@ type outgoingConn struct {
 	id         uint64
 	retryDelay time.Duration
 
+	quicPinMismatches common.QUICPinMismatches
+
 	// unknownCmdSeen dedups unhandled-command warnings per type.
 	// Touched only by the event loop goroutine.
 	unknownCmdSeen map[string]bool
@@ -265,12 +267,23 @@ func (c *outgoingConn) collectDestinationAddresses() []string {
 			dstAddrs = append(dstAddrs, v...)
 		}
 	}
+	if c.quicPinMismatchedThisEpoch() {
+		dstAddrs = c.cfg.QUIC.AddressesAfterPinMismatch(dstAddrs)
+	}
 	return dstAddrs
+}
+
+func (c *outgoingConn) quicPinMismatchedThisEpoch() bool {
+	epoch, _, _ := epochtime.Now()
+	return c.quicPinMismatches.Has(hash.Sum256(c.dst.IdentityKey), epoch)
 }
 
 // attemptConnections tries to connect to each address and returns true if worker should exit
 func (c *outgoingConn) attemptConnections(dialCtx *workerContext, dialer *net.Dialer, dstAddrs []string, retryIncrement, maxRetryDelay time.Duration) bool {
 	for _, addr := range dstAddrs {
+		if c.quicPinMismatchedThisEpoch() && !c.cfg.QUIC.DialableAfterPinMismatch(addr) {
+			continue
+		}
 		if c.handleRetryDelay(dialCtx, retryIncrement, maxRetryDelay) {
 			return true // Canceled during retry delay
 		}
@@ -346,9 +359,15 @@ func (c *outgoingConn) dialAddress(dialCtx *workerContext, dialer *net.Dialer, a
 		}
 		return nil, true
 	default:
+		if errors.Is(err, common.ErrQUICKeyMismatch) {
+			epoch, _, _ := epochtime.Now()
+			c.quicPinMismatches.Mark(hash.Sum256(c.dst.IdentityKey), epoch)
+			c.cfg.QUIC.ReportPinMismatch(c.log, c.dst.Name, err)
+			return nil, c.cfg.QUIC.StrictPinMismatch()
+		}
 		if err != nil {
 			c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
-			return nil, errors.Is(err, common.ErrQUICKeyMismatch)
+			return nil, false
 		}
 	}
 
