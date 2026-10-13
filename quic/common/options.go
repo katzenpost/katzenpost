@@ -22,6 +22,17 @@ type Options struct {
 	AddressValidation string
 	KeepAlivePeriod   *time.Duration
 	KeepAliveJitter   *float64
+
+	client bool
+}
+
+func (o *Options) ForClient() *Options {
+	c := Options{}
+	if o != nil {
+		c = *o
+	}
+	c.client = true
+	return &c
 }
 
 const (
