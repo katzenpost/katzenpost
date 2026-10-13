@@ -254,7 +254,7 @@ func executePing(thinClient *thin.ThinClient, service string, count, concurrency
 		services = []*clientcommon.ServiceDescriptor{desc}
 	}
 
-	return sendPings(thinClient, services, count, concurrency, printDiff)
+	return sendPings(thinClient, service, services, count, concurrency, printDiff)
 }
 
 // cleanup closes the thin client connection and shuts down the daemon if running

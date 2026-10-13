@@ -134,7 +134,7 @@ func roundTripTimeout(doc *cpki.Document) time.Duration {
 // daemon chose for it. The route is recorded on failure as well as success,
 // which is the whole point: a packet that never came back is the one whose
 // hops we most want to know.
-func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, timeout, slop time.Duration, printDiff bool) observation {
+func sendPing(session *thin.ThinClient, service string, serviceDesc *common.ServiceDescriptor, timeout, slop time.Duration, printDiff bool) observation {
 	var nonce [32]byte
 
 	_, err := rand.Reader.Read(nonce[:])
@@ -175,15 +175,7 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, t
 		return o
 	}
 
-	var replyPayload []byte
-
-	_, err = cbor.UnmarshalFirst(res.Payload, &replyPayload)
-	if err != nil {
-		fmt.Printf("Failed to unmarshal: %s\n", err)
-		panic(err)
-	}
-
-	payloadOK := bytes.Equal(replyPayload, pingPayload)
+	payloadOK, replyPayload := replyDelivered(service, res.Payload, pingPayload)
 	if !payloadOK && printDiff {
 		fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
 	}
@@ -192,10 +184,20 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, t
 	return o
 }
 
+func replyDelivered(service string, reply, sent []byte) (bool, []byte) {
+	var got []byte
+	_, err := cbor.UnmarshalFirst(reply, &got)
+	if err != nil {
+		fmt.Printf("Failed to unmarshal: %s\n", err)
+		panic(err)
+	}
+	return bytes.Equal(got, sent), got
+}
+
 // sendPings sends count pings and returns the per-category outcome counts.
 // Callers decide from these which categories gate a non-zero exit, so the
 // ping can be used as a smoke-test that fails only on genuine mixnet loss.
-func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, count int, concurrency int, printDiff bool) counts {
+func sendPings(session *thin.ThinClient, service string, services []*common.ServiceDescriptor, count int, concurrency int, printDiff bool) counts {
 	// Extract service name from RecipientQueueID (remove leading '+' if present)
 	serviceName := string(services[0].RecipientQueueID)
 	nodeName := services[0].MixDescriptor.Name
@@ -240,7 +242,7 @@ func sendPings(session *thin.ThinClient, services []*common.ServiceDescriptor, c
 
 		// make new goroutine for each ping to send them in parallel
 		go func() {
-			o := sendPing(session, desc, timeout, slop, printDiff)
+			o := sendPing(session, service, desc, timeout, slop, printDiff)
 			attrib.record(o)
 			atomic.AddUint64(&tally[o.cat], 1)
 			if o.ok {
