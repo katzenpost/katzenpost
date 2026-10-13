@@ -29,9 +29,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -289,12 +291,11 @@ func (q *QuicConn) Write(b []byte) (int, error) {
 type QuicListener struct {
 	Listener *quic.Listener
 
-	transport   *quic.Transport
-	udpBuffers  UDPBuffers
-	connsMu     sync.Mutex
-	conns       int
-	closed      bool
-	releaseOnce sync.Once
+	transport  *quic.Transport
+	udpBuffers UDPBuffers
+	connsMu    sync.Mutex
+	conns      map[*quic.Conn]struct{}
+	closed     bool
 }
 
 // AcceptStreamTimeout bounds how long a freshly-accepted QUIC connection has to
@@ -312,34 +313,31 @@ func (l *QuicListener) Accept() (net.Conn, error) {
 		return nil, &net.OpError{Op: "accept", Net: "quic", Addr: l.Listener.Addr(), Err: err}
 	}
 	settleHandshake(conn)
-	if l.transport != nil {
-		l.track(conn)
+	if l.transport != nil && !l.track(conn) {
+		conn.CloseWithError(0, "")
+		return nil, &net.OpError{Op: "accept", Net: "quic", Addr: l.Listener.Addr(), Err: net.ErrClosed}
 	}
 	return newAcceptedQuicConn(conn), nil
 }
 
-func (l *QuicListener) track(conn *quic.Conn) {
+func (l *QuicListener) track(conn *quic.Conn) bool {
 	l.connsMu.Lock()
-	l.conns++
-	l.connsMu.Unlock()
-	context.AfterFunc(conn.Context(), l.untrack)
-}
-
-func (l *QuicListener) untrack() {
-	l.connsMu.Lock()
-	l.conns--
-	idle := l.closed && l.conns == 0
-	l.connsMu.Unlock()
-	if idle {
-		l.releaseTransport()
+	defer l.connsMu.Unlock()
+	if l.closed {
+		return false
 	}
+	if l.conns == nil {
+		l.conns = make(map[*quic.Conn]struct{})
+	}
+	l.conns[conn] = struct{}{}
+	context.AfterFunc(conn.Context(), func() { l.untrack(conn) })
+	return true
 }
 
-func (l *QuicListener) releaseTransport() {
-	l.releaseOnce.Do(func() {
-		l.transport.Close()
-		l.transport.Conn.Close()
-	})
+func (l *QuicListener) untrack(conn *quic.Conn) {
+	l.connsMu.Lock()
+	defer l.connsMu.Unlock()
+	delete(l.conns, conn)
 }
 
 func (l *QuicListener) Addr() net.Addr {
@@ -352,12 +350,18 @@ func (l *QuicListener) Close() error {
 		return err
 	}
 	l.connsMu.Lock()
-	l.closed = true
-	idle := l.conns == 0
-	l.connsMu.Unlock()
-	if idle {
-		l.releaseTransport()
+	if l.closed {
+		l.connsMu.Unlock()
+		return err
 	}
+	l.closed = true
+	conns := slices.Collect(maps.Keys(l.conns))
+	l.connsMu.Unlock()
+	for _, conn := range conns {
+		conn.CloseWithError(0, "")
+	}
+	l.transport.Close()
+	l.transport.Conn.Close()
 	return err
 }
 
