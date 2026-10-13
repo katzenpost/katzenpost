@@ -3,7 +3,9 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -159,5 +161,55 @@ func TestVoteWithForeignQUICKeyHashesIsMalformed(t *testing.T) {
 			resp := target.onVoteUpload(&commands.Vote{Epoch: epoch, PublicKey: from.s.identityPublicKey, Payload: raw}, self[:]).(*commands.VoteStatus)
 			require.Equal(t, uint8(commands.VoteMalformed), resp.ErrorCode, "%s: a vote naming QUIC key hashes it does not own was accepted", name)
 		})
+	}
+}
+
+func preAuthorityQUICKeyHashesDocumentType() reflect.Type {
+	current := reflect.TypeOf(pki.Document{})
+	fields := make([]reflect.StructField, 0, current.NumField())
+	for i := 0; i < current.NumField(); i++ {
+		if f := current.Field(i); f.Name != authorityQUICKeyHashesKey {
+			fields = append(fields, f)
+		}
+	}
+	return reflect.StructOf(fields)
+}
+
+func reencodedByPreAuthorityQUICKeyHashesCode(t *testing.T, payload []byte) []byte {
+	t.Helper()
+	old := reflect.New(preAuthorityQUICKeyHashesDocumentType())
+	require.NoError(t, cbor.Unmarshal(payload, old.Interface()))
+	em, err := cbor.CanonicalEncOptions().EncMode()
+	require.NoError(t, err)
+	b, err := em.Marshal(old.Interface())
+	require.NoError(t, err)
+	return b
+}
+
+func TestConsensusWithoutEveryAuthorityIsUnchangedForOldAuthorities(t *testing.T) {
+	for _, n := range []int{3, 4} {
+		for _, optedIn := range []int{n, n - 1, 0} {
+			t.Run(fmt.Sprintf("%d of %d", optedIn, n), func(t *testing.T) {
+				epoch, _, _ := epochtime.Now()
+				epoch += 1
+				docs := runVoteScenarioWith(t, n, epoch, nil, func(states []*state) {
+					for _, s := range states[:optedIn] {
+						optInQUICKeyHashes(t, s, epoch)
+					}
+				})
+				for i, doc := range docs {
+					raw, err := doc.MarshalCertificate()
+					require.NoError(t, err)
+					payload, err := cert.GetCertified(raw)
+					require.NoError(t, err)
+					unchanged := bytes.Equal(payload, reencodedByPreAuthorityQUICKeyHashesCode(t, payload))
+					if optedIn == n {
+						require.False(t, unchanged, "authority %d: an old authority would re-encode an all-opted-in consensus unchanged", i)
+						continue
+					}
+					require.True(t, unchanged, "authority %d: an old authority re-encodes a consensus from %d of %d opted-in authorities differently", i, optedIn, n)
+				}
+			})
+		}
 	}
 }
