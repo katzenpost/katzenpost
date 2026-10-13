@@ -24,6 +24,18 @@ func LoadStaticKey(path string) (*StaticKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	return staticKeyFromSeed(seed)
+}
+
+func ReadStaticKey(path string) (*StaticKey, error) {
+	seed, err := readSeed(path)
+	if err != nil {
+		return nil, err
+	}
+	return staticKeyFromSeed(seed)
+}
+
+func staticKeyFromSeed(seed []byte) (*StaticKey, error) {
 	tlsPrivateKey := ed25519.NewKeyFromSeed(seed)
 	clear(seed)
 	spki, err := x509.MarshalPKIXPublicKey(tlsPrivateKey.Public())

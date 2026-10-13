@@ -105,17 +105,22 @@ func (k *EpochKeys) pruneLocked(now uint64) error {
 	return nil
 }
 
-func loadOrGenerateSeed(path string) ([]byte, error) {
+func readSeed(path string) ([]byte, error) {
 	seed, err := os.ReadFile(path)
-	if err == nil {
-		if len(seed) != ed25519.SeedSize {
-			clear(seed)
-			return nil, fmt.Errorf("quic: TLS key file %s is %d bytes, want %d", path, len(seed), ed25519.SeedSize)
-		}
-		return seed, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
+	if err != nil {
 		return nil, err
+	}
+	if len(seed) != ed25519.SeedSize {
+		clear(seed)
+		return nil, fmt.Errorf("quic: TLS key file %s is %d bytes, want %d", path, len(seed), ed25519.SeedSize)
+	}
+	return seed, nil
+}
+
+func loadOrGenerateSeed(path string) ([]byte, error) {
+	seed, err := readSeed(path)
+	if !errors.Is(err, os.ErrNotExist) {
+		return seed, err
 	}
 	seed = make([]byte, ed25519.SeedSize)
 	if _, err := rand.Read(seed); err != nil {
