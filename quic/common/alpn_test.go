@@ -35,13 +35,13 @@ func handshakeWith(t *testing.T, listenOpts, dialOpts *Options) (tls.ConnectionS
 func TestALPN(t *testing.T) {
 	state, err := handshakeWith(t, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, "pqnoise", state.NegotiatedProtocol)
-
-	h3 := &Options{ALPN: "h3"}
-	state, err = handshakeWith(t, h3, h3)
-	require.NoError(t, err)
 	require.Equal(t, "h3", state.NegotiatedProtocol)
 
-	_, err = handshakeWith(t, nil, h3)
+	pqnoise := &Options{ALPN: "pqnoise"}
+	state, err = handshakeWith(t, pqnoise, pqnoise)
+	require.NoError(t, err)
+	require.Equal(t, "pqnoise", state.NegotiatedProtocol)
+
+	_, err = handshakeWith(t, nil, pqnoise)
 	require.Error(t, err, "a dial with another ALPN than the listener's must fail")
 }
