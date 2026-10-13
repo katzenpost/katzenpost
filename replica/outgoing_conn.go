@@ -76,9 +76,10 @@ type outgoingConn struct {
 	// Touched only by the connection worker goroutine.
 	reauthFailures int
 
-	id          uint64
-	retryDelay  time.Duration
-	egressErrCh chan struct{}
+	id                uint64
+	retryDelay        time.Duration
+	egressErrCh       chan struct{}
+	quicPinMismatches httpCommon.QUICPinMismatches
 
 	// sessionUp reports whether a handshaked session is currently
 	// carrying this peer's queue. False before the first handshake and
@@ -229,7 +230,15 @@ func (c *outgoingConn) getDestinationAddresses() []string {
 			dstAddrs = append(dstAddrs, v...)
 		}
 	}
+	if c.quicPinMismatchedThisEpoch() {
+		dstAddrs = c.co.Server().cfg.QUIC.AddressesAfterPinMismatch(dstAddrs)
+	}
 	return dstAddrs
+}
+
+func (c *outgoingConn) quicPinMismatchedThisEpoch() bool {
+	epoch, _, _ := epochtime.Now()
+	return c.quicPinMismatches.Has(hash.Sum256(c.dst.IdentityKey), epoch)
 }
 
 // drainToRetryQueue moves any commands parked in the per-peer FIFO into
@@ -262,6 +271,9 @@ func (c *outgoingConn) drainToRetryQueue() {
 // attemptConnectionToAddresses tries to connect to each address with retry logic
 func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx context.Context, dialer net.Dialer, retryIncrement, maxRetryDelay time.Duration) bool {
 	for _, addr := range dstAddrs {
+		if c.quicPinMismatchedThisEpoch() && !c.co.Server().cfg.QUIC.DialableAfterPinMismatch(addr) {
+			continue
+		}
 		c.drainToRetryQueue()
 		select {
 		case <-time.After(common.JitterDelay(c.retryDelay)):
@@ -308,9 +320,15 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 		}
 		return true
 	default:
+		if errors.Is(err, httpCommon.ErrQUICKeyMismatch) {
+			epoch, _, _ := epochtime.Now()
+			c.quicPinMismatches.Mark(hash.Sum256(c.dst.IdentityKey), epoch)
+			c.co.Server().cfg.QUIC.ReportPinMismatch(c.log, c.dst.Name, err)
+			return c.co.Server().cfg.QUIC.StrictPinMismatch()
+		}
 		if err != nil {
 			c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
-			return errors.Is(err, httpCommon.ErrQUICKeyMismatch)
+			return false
 		}
 	}
 	c.log.Debugf("%v connection established.", u.Scheme)
