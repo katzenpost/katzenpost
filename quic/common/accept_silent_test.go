@@ -29,7 +29,7 @@ func TestQuicAcceptNotBlockedBySilentPeer(t *testing.T) {
 
 	u, err := url.Parse("quic://" + l.Addr().String())
 	require.NoError(t, err)
-	good, err := DialURL(u, context.Background(), nil)
+	good, err := DialURL(u, context.Background(), nil, nil)
 	require.NoError(t, err)
 	defer good.Close()
 	_, err = good.Write([]byte{1})
@@ -77,7 +77,7 @@ func TestQuicSilentHandshakesDoNotLockOutPeers(t *testing.T) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	peer, err := DialURL(u, ctx, nil)
+	peer, err := DialURL(u, ctx, nil, nil)
 	require.NoError(t, err)
 	defer peer.Close()
 	_, err = peer.Write([]byte{1})

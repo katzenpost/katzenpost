@@ -372,6 +372,18 @@ func statelessResetKey(identityPrivateKey sign.PrivateKey) (*quic.StatelessReset
 }
 
 func Listen(host string, identityPrivateKey sign.PrivateKey) (*QuicListener, error) {
+	return listen(host, identityPrivateKey, GenerateTLSConfig())
+}
+
+func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys *EpochKeys) (*QuicListener, error) {
+	tlsConf := &tls.Config{
+		GetCertificate: keys.GetCertificate,
+		NextProtos:     []string{http3.NextProtoH3},
+	}
+	return listen(host, identityPrivateKey, tlsConf)
+}
+
+func listen(host string, identityPrivateKey sign.PrivateKey, tlsConf *tls.Config) (*QuicListener, error) {
 	resetKey, err := statelessResetKey(identityPrivateKey)
 	if err != nil {
 		return nil, err
@@ -385,7 +397,7 @@ func Listen(host string, identityPrivateKey sign.PrivateKey) (*QuicListener, err
 		return nil, err
 	}
 	transport := &quic.Transport{Conn: udpConn, StatelessResetKey: resetKey}
-	ql, err := transport.Listen(GenerateTLSConfig(), Config())
+	ql, err := transport.Listen(tlsConf, Config())
 	if err != nil {
 		transport.Close()
 		udpConn.Close()
@@ -440,7 +452,7 @@ func ConnectContext(ctx context.Context, timeout time.Duration) (context.Context
 	return context.WithTimeout(ctx, timeout)
 }
 
-func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
+func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error), quicKeyHashes []byte) (net.Conn, error) {
 	switch u.Scheme {
 	case "tcp", "onion":
 		// XXX: make sure to use the supplied dialer for proxy users

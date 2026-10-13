@@ -22,7 +22,7 @@ func TestQuicIdleLinkSurvivesPeerIdleTimeout(t *testing.T) {
 
 	u, err := url.Parse("quic://" + l.Addr().String())
 	require.NoError(t, err)
-	client, err := DialURL(u, context.Background(), nil)
+	client, err := DialURL(u, context.Background(), nil, nil)
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.Write([]byte{0})

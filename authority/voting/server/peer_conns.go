@@ -156,7 +156,7 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 			continue
 		}
 		ctx, cancelFn := common.ConnectContext(context.Background(), dialTimeout)
-		conn, err := common.DialURL(u, ctx, dialFn)
+		conn, err := common.DialURL(u, ctx, dialFn, nil)
 		cancelFn()
 		if err == nil {
 			return conn, nil

@@ -333,7 +333,7 @@ func (p *connector) initSession(
 		}
 
 		ictx, cancelFn := common.ConnectContext(ctx, dialTimeout)
-		conn, err = common.DialURL(u, ictx, dialFn)
+		conn, err = common.DialURL(u, ictx, dialFn, nil)
 		cancelFn()
 		if err == nil {
 			// Disable Nagle so handshake/finalisation messages do not

@@ -39,7 +39,7 @@ func TestQuicResponderReturnsOnceItsResponseIsSent(t *testing.T) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	c, err := common.DialURL(u, ctx, nil)
+	c, err := common.DialURL(u, ctx, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 	s, err := wire.NewPKISession(&wire.SessionConfig{

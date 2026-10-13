@@ -94,7 +94,7 @@ func TestQuicListenerRestartResetsOldConnections(t *testing.T) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, err := common.DialURL(u, ctx, nil)
+	conn, err := common.DialURL(u, ctx, nil, nil)
 	require.NoError(t, err)
 	defer conn.Close()
 
