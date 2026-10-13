@@ -48,3 +48,12 @@ func TestQUICKeyHashRoundTrip(t *testing.T) {
 	require.NoError(t, gotReplica.Unmarshal(b))
 	require.Equal(t, r, gotReplica)
 }
+
+func TestIsQUICKeyHashWellFormed(t *testing.T) {
+	for _, h := range [][]byte{nil, {}, make([]byte, 32), make([]byte, 64), make([]byte, 96)} {
+		require.NoError(t, IsQUICKeyHashWellFormed(h), "%d", len(h))
+	}
+	for _, h := range [][]byte{{1}, make([]byte, 31), make([]byte, 33), make([]byte, 48), make([]byte, 63), make([]byte, 65), make([]byte, 95), make([]byte, 97), make([]byte, 128)} {
+		require.Error(t, IsQUICKeyHashWellFormed(h), "%d", len(h))
+	}
+}

@@ -23,6 +23,7 @@ import (
 	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"errors"
 	"io"
@@ -436,10 +437,31 @@ func ConnectContext(ctx context.Context, timeout time.Duration) (context.Context
 	return context.WithTimeout(ctx, timeout)
 }
 
+var errQUICKeyMismatch = errors.New("quic: peer QUIC key does not match its published hash")
+
+func verifyQUICKeyHash(quicKeyHashes []byte) func(tls.ConnectionState) error {
+	if len(quicKeyHashes) == 0 {
+		return nil
+	}
+	return func(cs tls.ConnectionState) error {
+		if len(quicKeyHashes)%sha256.Size != 0 || len(cs.PeerCertificates) == 0 {
+			return errQUICKeyMismatch
+		}
+		presented := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
+		match := 0
+		for pinned := quicKeyHashes; len(pinned) > 0; pinned = pinned[sha256.Size:] {
+			match |= subtle.ConstantTimeCompare(presented[:], pinned[:sha256.Size])
+		}
+		if match != 1 {
+			return errQUICKeyMismatch
+		}
+		return nil
+	}
+}
+
 func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error), quicKeyHashes []byte) (net.Conn, error) {
 	switch u.Scheme {
 	case "tcp", "onion":
-		// XXX: make sure to use the supplied dialer for proxy users
 		conn, err := dialFn(ctx, "tcp", u.Host)
 		if err != nil {
 			return nil, err
@@ -447,13 +469,9 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			return conn, nil
 		}
 	case "quic":
-		// http/3 quic connector
-		// XXX: will need to add the TLS certificate
-		// fingerprint to the authority configuration
-		// or obtain valid CA-signed certificates for
-		// the authorities.
 		tlsConf := &tls.Config{
-			InsecureSkipVerify: true, // XXX
+			InsecureSkipVerify: true,
+			VerifyConnection:   verifyQUICKeyHash(quicKeyHashes),
 			// ALPN is externally visible as part of the client/server hello,
 			// so pick a common protocol rather than something fingerprintable.
 			NextProtos: []string{http3.NextProtoH3},
