@@ -156,11 +156,7 @@ func (p *serviceNode) worker() {
 			pkt = e.(*packet.Packet)
 			instrument.GaugeChannelLength("service_incoming", len(ch))
 
-			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
-				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
-				instrument.PacketsDropped()
-				instrument.PacketsDroppedByReason("service_dwell_exceeded")
-				pkt.Dispose()
+			if p.dwellExceeded(pkt, maxDwell) {
 				continue
 			}
 			if p.preDelay != nil {
@@ -173,6 +169,9 @@ func (p *serviceNode) worker() {
 				continue
 			}
 		case pkt = <-p.readyCh:
+			if p.dwellExceeded(pkt, maxDwell) {
+				continue
+			}
 		}
 
 		if pkt == nil {
@@ -218,6 +217,18 @@ func (p *serviceNode) worker() {
 		instrument.PacketsDroppedByReason("service_unknown_recipient")
 		pkt.Dispose()
 	}
+}
+
+func (p *serviceNode) dwellExceeded(pkt *packet.Packet, maxDwell time.Duration) bool {
+	dwellTime := time.Now().Sub(pkt.DispatchAt)
+	if dwellTime <= maxDwell {
+		return false
+	}
+	p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
+	instrument.PacketsDropped()
+	instrument.PacketsDroppedByReason("service_dwell_exceeded")
+	pkt.Dispose()
+	return true
 }
 
 func (p *serviceNode) isKaetzchenConfigured(capa string) bool {
