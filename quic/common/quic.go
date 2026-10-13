@@ -397,7 +397,7 @@ func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys *
 		udpConn.Close()
 		return nil, err
 	}
-	return &QuicListener{Listener: ql, transport: transport}, nil
+	return &QuicListener{Listener: ql, transport: transport, udpBuffers: readUDPBuffers(udpConn)}, nil
 }
 
 const KeepAlivePeriod = 3 * time.Minute
