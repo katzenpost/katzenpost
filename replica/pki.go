@@ -88,11 +88,15 @@ func (p *PKIWorker) PKIDocument() *cpki.Document {
 }
 
 func (p *PKIWorker) quicKeyHash(epoch uint64) ([]byte, error) {
+	hashes, err := p.server.quicKeys.Hashes(epoch)
+	if err != nil {
+		return nil, err
+	}
 	if !authconfig.EveryAuthorityHasAQUICKeyHash(p.server.cfg.PKI.Voting.Authorities) {
 		p.server.log.Noticef("Withholding QUICKeyHash for epoch %d: not every authority has a QUICKeyHash", epoch)
 		return nil, nil
 	}
-	return p.server.quicKeys.Hashes(epoch)
+	return hashes, nil
 }
 
 // entryForEpoch returns the PKI document for the specified epoch

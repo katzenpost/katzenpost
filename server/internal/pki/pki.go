@@ -846,11 +846,15 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 }
 
 func (p *pki) quicKeyHash(epoch uint64) ([]byte, error) {
+	hashes, err := p.quicKeys.Hashes(epoch)
+	if err != nil {
+		return nil, err
+	}
 	if !vConfig.EveryAuthorityHasAQUICKeyHash(p.glue.Config().PKI.Voting.Authorities) {
 		p.log.Noticef("Withholding QUICKeyHash for epoch %d: not every authority has a QUICKeyHash", epoch)
 		return nil, nil
 	}
-	return p.quicKeys.Hashes(epoch)
+	return hashes, nil
 }
 
 func (p *pki) entryForEpoch(epoch uint64) *pkicache.Entry {

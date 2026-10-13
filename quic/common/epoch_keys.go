@@ -35,6 +35,7 @@ type epochKey struct {
 }
 
 type EpochKeys struct {
+	diskMu   sync.Mutex
 	mu       sync.Mutex
 	dir      string
 	now      func() uint64
@@ -87,8 +88,10 @@ func (k *EpochKeys) purgeStaleFiles(now uint64) error {
 	return nil
 }
 
-func (k *EpochKeys) pruneLocked(now uint64) error {
+func (k *EpochKeys) prune(now uint64) error {
+	k.mu.Lock()
 	if k.prunedAt == now {
+		k.mu.Unlock()
 		return nil
 	}
 	for epoch, key := range k.keys {
@@ -98,10 +101,15 @@ func (k *EpochKeys) pruneLocked(now uint64) error {
 		clear(key.tlsPrivateKey)
 		delete(k.keys, epoch)
 	}
+	k.mu.Unlock()
+	k.diskMu.Lock()
+	defer k.diskMu.Unlock()
 	if err := k.purgeStaleFiles(now); err != nil {
 		return err
 	}
+	k.mu.Lock()
 	k.prunedAt = now
+	k.mu.Unlock()
 	return nil
 }
 
@@ -180,10 +188,33 @@ func epochCertificate(epoch uint64, tlsPrivateKey ed25519.PrivateKey) (*tls.Cert
 	return &tls.Certificate{Certificate: [][]byte{certDER}, PrivateKey: tlsPrivateKey}, nil
 }
 
-func (k *EpochKeys) keyLocked(epoch uint64) (*epochKey, error) {
-	if key, ok := k.keys[epoch]; ok {
+func (k *EpochKeys) cached(epoch uint64) (*epochKey, bool) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	key, ok := k.keys[epoch]
+	return key, ok
+}
+
+func (k *EpochKeys) key(epoch uint64) (*epochKey, error) {
+	if key, ok := k.cached(epoch); ok {
 		return key, nil
 	}
+	k.diskMu.Lock()
+	defer k.diskMu.Unlock()
+	if key, ok := k.cached(epoch); ok {
+		return key, nil
+	}
+	key, err := k.loadOrGenerate(epoch)
+	if err != nil {
+		return nil, err
+	}
+	k.mu.Lock()
+	k.keys[epoch] = key
+	k.mu.Unlock()
+	return key, nil
+}
+
+func (k *EpochKeys) loadOrGenerate(epoch uint64) (*epochKey, error) {
 	seed, err := loadOrGenerateSeed(k.keyFile(epoch))
 	if err != nil {
 		return nil, err
@@ -200,16 +231,12 @@ func (k *EpochKeys) keyLocked(epoch uint64) (*epochKey, error) {
 		clear(tlsPrivateKey)
 		return nil, err
 	}
-	key := &epochKey{tlsPrivateKey: tlsPrivateKey, certificate: certificate, keyHash: sha256.Sum256(spki)}
-	k.keys[epoch] = key
-	return key, nil
+	return &epochKey{tlsPrivateKey: tlsPrivateKey, certificate: certificate, keyHash: sha256.Sum256(spki)}, nil
 }
 
 func (k *EpochKeys) Hashes(epoch uint64) ([]byte, error) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
 	now := k.now()
-	if err := k.pruneLocked(now); err != nil {
+	if err := k.prune(now); err != nil {
 		return nil, err
 	}
 	hashes := make([]byte, 0, 3*sha256.Size)
@@ -217,7 +244,7 @@ func (k *EpochKeys) Hashes(epoch uint64) ([]byte, error) {
 		if !inWindow(e, now) {
 			continue
 		}
-		key, err := k.keyLocked(e)
+		key, err := k.key(e)
 		if err != nil {
 			return nil, err
 		}
@@ -227,13 +254,7 @@ func (k *EpochKeys) Hashes(epoch uint64) ([]byte, error) {
 }
 
 func (k *EpochKeys) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	now := k.now()
-	if err := k.pruneLocked(now); err != nil {
-		return nil, err
-	}
-	key, err := k.keyLocked(now)
+	key, err := k.key(k.now())
 	if err != nil {
 		return nil, err
 	}
