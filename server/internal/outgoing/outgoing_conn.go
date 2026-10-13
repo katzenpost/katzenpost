@@ -233,7 +233,7 @@ func (c *outgoingConn) worker() {
 		}
 
 		// Flatten the lists of addresses to Dial to.
-		dstAddrs := dialAddresses(c.co.glue.Config().Server.Addresses, c.dst)
+		dstAddrs := dialAddresses(c.co.glue.Config().Server, c.dst)
 		if len(dstAddrs) == 0 {
 			// Should *NEVER* happen because descriptors currently MUST have
 			// at least once `tcp4` address to be considered valid.

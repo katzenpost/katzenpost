@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/server/config"
 )
 
 func TestDialAddressesFiltersByLocalFamilies(t *testing.T) {
@@ -15,14 +16,14 @@ func TestDialAddressesFiltersByLocalFamilies(t *testing.T) {
 		cpki.TransportTCPv4: {"tcp4://192.0.2.1:4242"},
 		cpki.TransportTCPv6: {"tcp6://[2001:db8::1]:4242"},
 	}}
-	require.Equal(t, []string{"tcp4://192.0.2.1:4242"}, dialAddresses([]string{"tcp://198.51.100.7:1234"}, desc))
-	require.Equal(t, []string{"tcp6://[2001:db8::1]:4242"}, dialAddresses([]string{"tcp://[2001:db8::7]:1234"}, desc))
-	require.Equal(t, []string{"tcp4://192.0.2.1:4242", "tcp6://[2001:db8::1]:4242"}, dialAddresses(nil, desc))
+	require.Equal(t, []string{"tcp4://192.0.2.1:4242"}, dialAddresses(&config.Server{Addresses: []string{"tcp://198.51.100.7:1234"}}, desc))
+	require.Equal(t, []string{"tcp6://[2001:db8::1]:4242"}, dialAddresses(&config.Server{Addresses: []string{"tcp://[2001:db8::7]:1234"}}, desc))
+	require.Equal(t, []string{"tcp4://192.0.2.1:4242", "tcp6://[2001:db8::1]:4242"}, dialAddresses(&config.Server{}, desc))
 }
 
 func TestDialAddressesKeepsAllWhenNoneMatch(t *testing.T) {
 	desc := &cpki.MixDescriptor{Addresses: map[string][]string{
 		cpki.TransportTCPv6: {"tcp6://[2001:db8::1]:4242"},
 	}}
-	require.Equal(t, []string{"tcp6://[2001:db8::1]:4242"}, dialAddresses([]string{"tcp://198.51.100.7:1234"}, desc))
+	require.Equal(t, []string{"tcp6://[2001:db8::1]:4242"}, dialAddresses(&config.Server{Addresses: []string{"tcp://198.51.100.7:1234"}}, desc))
 }
