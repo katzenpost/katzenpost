@@ -264,7 +264,7 @@ type Config struct {
 	SessionGracePeriod time.Duration
 
 	// DBusName is the session dbus name to own; empty owns none.
-	DBusName string
+	DBusName string `toml:",omitempty"`
 
 	upstreamProxy *proxy.Config
 }
