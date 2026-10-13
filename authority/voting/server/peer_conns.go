@@ -19,6 +19,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -148,12 +149,25 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 		dialFn = (&net.Dialer{Timeout: dialTimeout}).DialContext
 	}
 
+	var identity [hash.HashSize]byte
+	if peer.IdentityPublicKey != nil {
+		identity = hash.Sum256From(peer.IdentityPublicKey)
+	}
+	epoch, _, _ := epochtime.Now()
+	strict := s.s.cfg.QUIC.StrictPinMismatch()
+	if s.quicPinMismatches.Has(identity, epoch) {
+		addrs = s.s.cfg.QUIC.AddressesAfterPinMismatch(addrs)
+	}
+
 	var errs []error
 	for _, a := range addrs {
 		u, err := url.Parse(a)
 		if err != nil {
 			s.log.Debugf("peer %s: invalid URL %s: %v", peer.Identifier, a, err)
 			errs = append(errs, fmt.Errorf("invalid URL %s: %w", a, err))
+			continue
+		}
+		if u.Scheme == pki.TransportQUIC && !strict && s.quicPinMismatches.Has(identity, epoch) {
 			continue
 		}
 		var quicKeyHash []byte
@@ -173,7 +187,11 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)
 		errs = append(errs, fmt.Errorf("dial %s failed: %w", a, err))
 		if errors.Is(err, common.ErrQUICKeyMismatch) {
-			break
+			s.quicPinMismatches.Mark(identity, epoch)
+			s.s.cfg.QUIC.ReportPinMismatch(s.log, peer.Identifier, err)
+			if strict {
+				break
+			}
 		}
 	}
 	if len(errs) > 0 {
