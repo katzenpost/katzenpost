@@ -176,6 +176,9 @@ func sendPing(session *thin.ThinClient, service string, serviceDesc *common.Serv
 	}
 
 	payloadOK, replyPayload := replyDelivered(service, res.Payload, pingPayload)
+	if service != echoService {
+		fmt.Printf("\n%s replied: %q\n", service, replyPayload)
+	}
 	if !payloadOK && printDiff {
 		fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
 	}
@@ -184,12 +187,15 @@ func sendPing(session *thin.ThinClient, service string, serviceDesc *common.Serv
 	return o
 }
 
+const echoService = "echo"
+
 func replyDelivered(service string, reply, sent []byte) (bool, []byte) {
+	if service != echoService {
+		return true, bytes.TrimRight(reply, "\x00")
+	}
 	var got []byte
-	_, err := cbor.UnmarshalFirst(reply, &got)
-	if err != nil {
-		fmt.Printf("Failed to unmarshal: %s\n", err)
-		panic(err)
+	if _, err := cbor.UnmarshalFirst(reply, &got); err != nil {
+		return false, reply
 	}
 	return bytes.Equal(got, sent), got
 }
