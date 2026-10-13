@@ -566,7 +566,10 @@ The client TOML had the most substantial reshape, driven by the
   carries `ThinClientErrorInvalidRequest` and nothing changes. The order
   applies from the next connection to the gateway; the current one is
   kept. An empty list restores `PreferedTransports`, and a restart
-  forgets the change.
+  forgets the change. The order is daemon-wide: one kpclientd keeps one
+  gateway connection for every thin client attached to it, so a
+  request from any application changes the gateway transports of all
+  of them.
 
 ### `[Debug]`
 
