@@ -83,7 +83,16 @@ func (o *Options) nextProtos() []string {
 }
 
 func (o *Options) curvePreferences() []tls.CurveID {
-	return nil
+	if o == nil {
+		return nil
+	}
+	var curves []tls.CurveID
+	for _, name := range o.CurvePreferences {
+		if c, ok := curveByName(name); ok {
+			curves = append(curves, c)
+		}
+	}
+	return curves
 }
 
 func (o *Options) quicConfig() *quic.Config {
