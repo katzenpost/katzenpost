@@ -12,7 +12,6 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 func TestValidateConfigTransport(t *testing.T) {
@@ -82,41 +81,5 @@ func TestGenConfigTransport(t *testing.T) {
 			got = append(got, addressSchemes(t, n.Server.Addresses))
 		}
 		require.Equal(t, want, got, "transport %q", transport)
-	}
-}
-
-func TestGenConfigPublishesQUICKeyHashesOnlyWhenEveryAuthorityIsCurrent(t *testing.T) {
-	for _, tc := range []struct {
-		versions map[string]string
-		publish  bool
-	}{
-		{nil, true},
-		{map[string]string{"auth1": CurrentVersion, "mix1": "v0.0.104"}, true},
-		{map[string]string{"auth2": "v0.0.104"}, false},
-	} {
-		s := testKatzenpost(t)
-		s.PkiSignatureScheme = signSchemes.ByName(testSchemeName)
-		s.BaseDir = t.TempDir()
-		s.LastPort = 30000
-		s.LogLevel = "DEBUG"
-		s.Transport = "quic"
-		s.NodeVersions = tc.versions
-		s.ReplicaNIKEScheme = replicaCommon.NikeScheme
-		require.NoError(t, s.GenVotingAuthoritiesCfg(2, &vConfig.Parameters{Mu: 0.005, LambdaP: 0.001}, 5, s.WireKEMScheme))
-		require.NoError(t, s.GenNodeConfig(true, false, true))
-		require.NoError(t, s.GenNodeConfig(false, false, true))
-		require.NoError(t, s.GenReplicaNodeConfig())
-		for _, a := range s.VotingAuthConfigs {
-			require.Equal(t, tc.publish, a.Server.PublishQUICKeyHashes, "%v %s", tc.versions, a.Server.Identifier)
-		}
-	}
-}
-
-func TestGenConfigEveryAuthorityPublishesQUICKeyHashesOnAQUICNetwork(t *testing.T) {
-	for transport, publish := range map[string]bool{"tcp": false, "quic": true, "alternate": true} {
-		s := transportFixture(t, transport)
-		for _, a := range s.VotingAuthConfigs {
-			require.Equal(t, publish, a.Server.PublishQUICKeyHashes, "transport %s: %s with addresses %v", transport, a.Server.Identifier, a.Server.Addresses)
-		}
 	}
 }

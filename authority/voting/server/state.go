@@ -531,14 +531,6 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	commits := make(map[[hash.HashSize]byte][]byte)
 	commits[s.identityPubKeyHash()] = signedCommit
 	vote.SharedRandomCommit = commits
-	if s.s.cfg.Server.PublishQUICKeyHashes {
-		quicKeyHashes, err := s.s.quicKeys.Hashes(epoch)
-		if err != nil {
-			s.log.Errorf("getVote: Failed to read our QUIC key hashes for epoch %d: %s", epoch, err)
-			return nil, err
-		}
-		vote.AuthorityQUICKeyHashes = map[[publicKeyHashSize]byte][]byte{s.identityPubKeyHash(): quicKeyHashes}
-	}
 	s.log.Debugf("getVote: Added SharedRandom commit to vote for epoch %d", epoch)
 
 	s.log.Debugf("getVote: Signing vote document for epoch %d", epoch)
@@ -590,7 +582,6 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 	var zeros [32]byte
 	srv := zeros[:]
 	certificate := s.getDocument(mixes, replicas, params, notice, srv)
-	certificate.AuthorityQUICKeyHashes = s.authorityQUICKeyHashes(epoch)
 	// Embed only the commit/reveal pairs we hold BOTH halves for. An
 	// authority whose commit (vote) we saw but whose reveal never arrived is
 	// dropped from our certificate rather than allowed to poison it: a commit
@@ -674,7 +665,6 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	consensusOfOne := s.getDocument(mixes, replicas, params, notice, srv)
-	consensusOfOne.AuthorityQUICKeyHashes = s.authorityQUICKeyHashes(epoch)
 
 	// Log the per-role counts that actually landed in the assembled consensus
 	// so an operator can compare them against the authorized counts logged at
@@ -1692,26 +1682,6 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	return nil, nil, nil, config.Notice{}, errors.New("consensus failure (mixParams empty)")
 }
 
-func (s *state) authorityQUICKeyHashes(epoch uint64) map[[publicKeyHashSize]byte][]byte {
-	votes := s.votes[epoch]
-	if len(votes) != len(s.verifiers) {
-		return nil
-	}
-	entries := make(map[[publicKeyHashSize]byte][]byte, len(s.verifiers))
-	for pk := range s.verifiers {
-		vote, ok := votes[pk]
-		if !ok || len(vote.AuthorityQUICKeyHashes) != 1 {
-			return nil
-		}
-		quicKeyHashes, ok := vote.AuthorityQUICKeyHashes[pk]
-		if !ok {
-			return nil
-		}
-		entries[pk] = bytes.Clone(quicKeyHashes)
-	}
-	return entries
-}
-
 func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize]byte][]byte, reveals map[[publicKeyHashSize]byte][]byte) ([]byte, error) {
 	if len(commits) < s.threshold {
 		s.log.Errorf("Insufficient commits for epoch %d to make consensus", epoch)
@@ -2643,12 +2613,6 @@ func (s *state) onVoteUpload(vote *commands.Vote, peerIdentityKeyHash []byte) co
 		// It's possible that an authority submitted another authoritys vote on its behalf,
 		// but we are not going to allow that behavior as it is not specified.
 		s.log.Error("Vote from %s did not contain SharedRandom Commit.", s.authorityNames[pk])
-		instrument.VoteReceived("malformed")
-		resp.ErrorCode = commands.VoteMalformed
-		return &resp
-	}
-	if _, ok := doc.AuthorityQUICKeyHashes[pk]; len(doc.AuthorityQUICKeyHashes) > 1 || (len(doc.AuthorityQUICKeyHashes) == 1 && !ok) {
-		s.log.Errorf("Vote from %s carries QUIC key hashes for another authority", s.authorityNames[pk])
 		instrument.VoteReceived("malformed")
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp

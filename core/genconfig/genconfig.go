@@ -897,7 +897,6 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			Addresses:              s.peerAddrs(authIdentifier, s.LastPort, true),
 			DataDir:                filepath.Join(s.BaseDir, authIdentifier),
 		}
-		cfg.Server.PublishQUICKeyHashes = (s.Transport == "quic" || s.Transport == "alternate") && s.allAuthoritiesCurrent()
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
 		s.LastPort += 1
 		// Allocate a metrics listener port for this dirauth. The
