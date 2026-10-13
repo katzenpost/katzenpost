@@ -39,6 +39,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -707,11 +708,13 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	desc := &cpki.MixDescriptor{
-		Name:        p.glue.Config().Server.Identifier,
-		IdentityKey: idkeyblob,
-		LinkKey:     linkblob,
-		Addresses:   p.descAddrMap,
-		Epoch:       doPublishEpoch,
+		Name:            p.glue.Config().Server.Identifier,
+		IdentityKey:     idkeyblob,
+		LinkKey:         linkblob,
+		Addresses:       p.descAddrMap,
+		Epoch:           doPublishEpoch,
+		ContactInfo:     p.glue.Config().Server.ContactInfo,
+		SoftwareVersion: cpki.ResolveSoftwareVersion(p.glue.Config().Server.SoftwareVersion, kpcommon.Version()),
 	}
 
 	if p.glue.Config().Server.IsGatewayNode {
