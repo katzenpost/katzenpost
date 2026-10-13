@@ -570,6 +570,21 @@ func (e *GetDirectoryAuthoritiesReply) String() string {
 	return fmt.Sprintf("GetDirectoryAuthoritiesReply: %d authorities", len(e.Authorities))
 }
 
+type SetPreferredTransportsReply struct {
+	QueryID   *[QueryIDLength]byte `cbor:"query_id"`
+	ErrorCode uint8                `cbor:"error_code"`
+}
+
+func (e *SetPreferredTransportsReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("SetPreferredTransportsReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "SetPreferredTransportsReply"
+}
+
 // Copy Channel API:
 
 // CreateCourierEnvelopesFromPayloadReply is sent in response to a CreateCourierEnvelopesFromPayload request.
