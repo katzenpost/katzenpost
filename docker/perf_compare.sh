@@ -141,7 +141,7 @@ metrics() {
 }
 
 latency() {
-	awk '/^BenchmarkPigeonholeWrite/ { for (i = 2; i <= NF; i++) if ($i == "median_ms" || $i == "p95_ms") printf "pigeonhole write %s|%s\n", $i, $(i - 1) }' "$1/latency.txt"
+	awk '/median_ms/ { for (i = 2; i <= NF; i++) if ($i == "median_ms" || $i == "p95_ms") printf "pigeonhole write %s|%s\n", $i, $(i - 1) }' "$1/latency.txt"
 }
 
 rows() {
