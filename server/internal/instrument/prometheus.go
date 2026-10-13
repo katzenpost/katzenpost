@@ -6,6 +6,7 @@ package instrument
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -230,6 +231,35 @@ var (
 			Name: "katzenpost_node_current_epoch",
 			Help: "The epoch whose consensus the node_ready gauge was last computed against.",
 		},
+	)
+	linkHandshakeDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_link_handshake_duration_seconds",
+			Help:    "Seconds to set up a link that completed its wire handshake, by transport (tcp, quic) and direction. Outgoing links count from the dial, so a quic link includes its TLS 1.3 handshake; incoming links count from accept, after a quic listener has finished TLS.",
+			Buckets: prometheus.ExponentialBuckets(0.001, 2, 14),
+		},
+		[]string{"transport", "direction"},
+	)
+	linksEstablished = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_links_established_total",
+			Help: "Links that completed the wire handshake, by transport (tcp, quic) and direction (incoming, outgoing).",
+		},
+		[]string{"transport", "direction"},
+	)
+	linkFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_link_failures_total",
+			Help: "Links that failed before carrying traffic, by transport, direction and reason: dial (the transport could not connect), pin_mismatch (a quic peer presented a key not among its published QUIC key hashes), handshake (the wire handshake failed).",
+		},
+		[]string{"transport", "direction", "reason"},
+	)
+	quicDials = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_quic_dials_total",
+			Help: "Outgoing quic dials that reached the peer, by result: pinned (the key matched a published hash), unpinned (the peer published no hash), mismatch (the key matched none).",
+		},
+		[]string{"result"},
 	)
 )
 
@@ -476,4 +506,16 @@ func SetNodeReady(ready bool, epoch uint64) {
 		nodeReady.Set(0)
 	}
 	nodeCurrentEpoch.Set(float64(epoch))
+}
+
+func LinkHandshake(transport, direction string, d time.Duration) {}
+
+func LinkEstablished(transport, direction string) {}
+
+func LinkFailure(transport, direction, reason string) {}
+
+func QUICDial(result string) {}
+
+func LinkSample(name string, labels map[string]string) float64 {
+	return 0
 }
