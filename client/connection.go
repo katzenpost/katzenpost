@@ -304,7 +304,8 @@ func (c *connection) doConnect(dialCtx context.Context) {
 	)
 
 	dialFn := c.client.DialContextFn
-	if dialFn == nil {
+	proxied := dialFn != nil
+	if !proxied {
 		dialFn = defaultDialer.DialContext
 	}
 
@@ -341,8 +342,11 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			transports = cpki.ClientTransports
 		}
 		for _, t := range transports {
-			if v, ok := c.descriptor.Addresses[t]; ok {
-				dstAddrs = append(dstAddrs, v...)
+			for _, addr := range c.descriptor.Addresses[t] {
+				if u, err := url.Parse(addr); proxied && err == nil && u.Scheme == cpki.TransportQUIC {
+					continue
+				}
+				dstAddrs = append(dstAddrs, addr)
 			}
 		}
 		if len(dstAddrs) == 0 {

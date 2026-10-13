@@ -157,11 +157,7 @@ func New(cfg *config.Config, logBackend *log.Backend) (*Client, error) {
 
 	// A per-connection tag (for Tor SOCKS5 stream isloation)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
-	dialFn := cfg.UpstreamProxyConfig().ToDialContext(proxyContext)
-	if dialFn == nil {
-		dialFn = defaultDialer.DialContext
-	}
-	c.DialContextFn = dialFn
+	c.DialContextFn = cfg.UpstreamProxyConfig().ToDialContext(proxyContext)
 
 	c.log = c.logbackend.GetLogger("katzenpost/client")
 

@@ -311,7 +311,8 @@ func (p *connector) initSession(
 	p.log.Debugf("Client timeouts: dial=%v, handshake=%v, response=%v", dialTimeout, handshakeTimeout, responseTimeout)
 
 	dialFn := p.cfg.DialContextFn
-	if dialFn == nil {
+	proxied := dialFn != nil
+	if !proxied {
 		dialer := &net.Dialer{Timeout: dialTimeout}
 		dialFn = dialer.DialContext
 	}
@@ -324,6 +325,10 @@ func (p *connector) initSession(
 		u, err := url.Parse(peer.Addresses[idx])
 		if err != nil {
 			lastErr = fmt.Errorf("%s: invalid URL %s: %v", peerInfo(), peer.Addresses[idx], err)
+			continue
+		}
+		if proxied && u.Scheme == pki.TransportQUIC {
+			lastErr = fmt.Errorf("%s: refusing to dial %s outside the configured dialer", peerInfo(), peer.Addresses[idx])
 			continue
 		}
 

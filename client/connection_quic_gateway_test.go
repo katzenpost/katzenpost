@@ -23,6 +23,12 @@ import (
 )
 
 func newQUICGatewayConnection(t *testing.T, upstream *config.UpstreamProxy) (*connection, *net.UDPConn) {
+	conn, udp := newGatewayTestConnection(t, upstream)
+	startConnect(t, conn)
+	return conn, udp
+}
+
+func newGatewayTestConnection(t *testing.T, upstream *config.UpstreamProxy) (*connection, *net.UDPConn) {
 	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	require.NoError(t, err)
 	t.Cleanup(func() { udp.Close() })
@@ -86,7 +92,10 @@ func newQUICGatewayConnection(t *testing.T, upstream *config.UpstreamProxy) (*co
 		IsGatewayNode: true,
 	}
 	conn.pkiEpoch = 42
+	return conn, udp
+}
 
+func startConnect(t *testing.T, conn *connection) {
 	done := make(chan struct{})
 	go func() {
 		conn.doConnect(context.Background())
@@ -96,7 +105,6 @@ func newQUICGatewayConnection(t *testing.T, upstream *config.UpstreamProxy) (*co
 		conn.Halt()
 		<-done
 	})
-	return conn, udp
 }
 
 func receivesUDP(udp *net.UDPConn, wait time.Duration) bool {
@@ -108,4 +116,9 @@ func receivesUDP(udp *net.UDPConn, wait time.Duration) bool {
 func TestConnectWithProxyNeverDialsQUIC(t *testing.T) {
 	_, udp := newQUICGatewayConnection(t, &config.UpstreamProxy{Type: "tor+socks5", Network: "tcp", Address: "127.0.0.1:1"})
 	require.False(t, receivesUDP(udp, 2*time.Second))
+}
+
+func TestConnectWithoutProxyDialsQUIC(t *testing.T) {
+	_, udp := newQUICGatewayConnection(t, &config.UpstreamProxy{})
+	require.True(t, receivesUDP(udp, 5*time.Second))
 }
