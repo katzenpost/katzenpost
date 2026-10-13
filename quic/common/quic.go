@@ -370,19 +370,7 @@ func statelessResetKey(identityPrivateKey sign.PrivateKey) (*quic.StatelessReset
 	return &resetKey, nil
 }
 
-func Listen(host string, identityPrivateKey sign.PrivateKey) (*QuicListener, error) {
-	return listen(host, identityPrivateKey, GenerateTLSConfig())
-}
-
 func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys *EpochKeys) (*QuicListener, error) {
-	tlsConf := &tls.Config{
-		GetCertificate: keys.GetCertificate,
-		NextProtos:     []string{http3.NextProtoH3},
-	}
-	return listen(host, identityPrivateKey, tlsConf)
-}
-
-func listen(host string, identityPrivateKey sign.PrivateKey, tlsConf *tls.Config) (*QuicListener, error) {
 	resetKey, err := statelessResetKey(identityPrivateKey)
 	if err != nil {
 		return nil, err
@@ -394,6 +382,10 @@ func listen(host string, identityPrivateKey sign.PrivateKey, tlsConf *tls.Config
 	udpConn, err := net.ListenUDP("udp", addr)
 	if err != nil {
 		return nil, err
+	}
+	tlsConf := &tls.Config{
+		GetCertificate: keys.GetCertificate,
+		NextProtos:     []string{http3.NextProtoH3},
 	}
 	transport := &quic.Transport{Conn: udpConn, StatelessResetKey: resetKey}
 	ql, err := transport.Listen(tlsConf, Config())

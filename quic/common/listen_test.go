@@ -41,7 +41,7 @@ func TestStatelessResetKeyFollowsTheIdentityKey(t *testing.T) {
 func TestListenReleasesItsSocketAfterTheLastConnection(t *testing.T) {
 	_, identityPrivateKey, err := signschemes.ByName(testIdentityScheme).GenerateKey()
 	require.NoError(t, err)
-	l, err := Listen("127.0.0.1:0", identityPrivateKey)
+	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, newTestEpochKeys(t, t.TempDir(), newEpochClock(CurrentEpoch())))
 	require.NoError(t, err)
 	addr := l.Addr().String()
 	u, err := url.Parse("quic://" + addr)
@@ -80,7 +80,8 @@ func TestListenReleasesItsSocketAfterTheLastConnection(t *testing.T) {
 func TestListenWithTheSameKeyResetsConnectionsOfACrashedListener(t *testing.T) {
 	_, identityPrivateKey, err := signschemes.ByName(testIdentityScheme).GenerateKey()
 	require.NoError(t, err)
-	crashed, err := Listen("127.0.0.1:0", identityPrivateKey)
+	keys := newTestEpochKeys(t, t.TempDir(), newEpochClock(CurrentEpoch()))
+	crashed, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys)
 	require.NoError(t, err)
 	addr := crashed.Addr().String()
 	u, err := url.Parse("quic://" + addr)
@@ -97,7 +98,7 @@ func TestListenWithTheSameKeyResetsConnectionsOfACrashedListener(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, crashed.transport.Conn.Close())
 
-	restarted, err := Listen(addr, identityPrivateKey)
+	restarted, err := ListenWithEpochKeys(addr, identityPrivateKey, keys)
 	require.NoError(t, err)
 	defer restarted.Close()
 	_, err = client.Write(make([]byte, 512))

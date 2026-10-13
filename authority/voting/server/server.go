@@ -62,6 +62,7 @@ type Server struct {
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
 	linkKey            kem.PrivateKey
+	quicKeys           *common.EpochKeys
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -285,7 +286,12 @@ func (s *Server) startListeners(listenAddresses []string) {
 					s.listenWorker(l)
 				})
 			case "quic":
-				ql, err := common.Listen(u.Host, s.identityPrivateKey)
+				keys, err := s.quicEpochKeys()
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				ql, err := common.ListenWithEpochKeys(u.Host, s.identityPrivateKey, keys)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
@@ -301,6 +307,18 @@ func (s *Server) startListeners(listenAddresses []string) {
 			}
 		}
 	}
+}
+
+func (s *Server) quicEpochKeys() (*common.EpochKeys, error) {
+	if s.quicKeys != nil {
+		return s.quicKeys, nil
+	}
+	keys, err := common.NewEpochKeys(filepath.Join(s.cfg.Server.DataDir, "quic"), common.CurrentEpoch)
+	if err != nil {
+		return nil, err
+	}
+	s.quicKeys = keys
+	return keys, nil
 }
 
 func (s *Server) listenWorker(l net.Listener) {
@@ -694,6 +712,10 @@ func New(cfg *config.Config) (*Server, error) {
 	s.connLimiter = connlimit.New(*s.cfg.Debug.MaxClientConns, *s.cfg.Debug.MaxPeerConns, *s.cfg.Debug.MaxConnsPerIP, *s.cfg.Debug.MaxLoopbackConns)
 	s.peerSet = connlimit.NewPeerSet()
 	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
+
+	if _, err := s.quicEpochKeys(); err != nil {
+		return nil, err
+	}
 
 	// Start up the state worker.
 	if s.state, err = newState(s); err != nil {
