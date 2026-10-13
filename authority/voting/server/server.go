@@ -62,7 +62,7 @@ type Server struct {
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
 	linkKey            kem.PrivateKey
-	quicKeys           *common.EpochKeys
+	quicKey            *common.StaticKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -287,12 +287,12 @@ func (s *Server) startListeners(listenAddresses []string) {
 				})
 			case "quic":
 				s.log.Noticef("Starting listener on: %q", v)
-				keys, err := s.quicEpochKeys()
+				key, err := s.quicStaticKey()
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
 				}
-				ql, err := common.ListenWithEpochKeys(u.Host, s.identityPrivateKey, keys, s.cfg.QUIC)
+				ql, err := common.ListenWithEpochKeys(u.Host, s.identityPrivateKey, key, s.cfg.QUIC)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
@@ -313,16 +313,17 @@ func (s *Server) startListeners(listenAddresses []string) {
 	}
 }
 
-func (s *Server) quicEpochKeys() (*common.EpochKeys, error) {
-	if s.quicKeys != nil {
-		return s.quicKeys, nil
+func (s *Server) quicStaticKey() (*common.StaticKey, error) {
+	if s.quicKey != nil {
+		return s.quicKey, nil
 	}
-	keys, err := common.NewEpochKeys(filepath.Join(s.cfg.Server.DataDir, "quic"), common.CurrentEpoch)
+	key, err := common.LoadStaticKey(filepath.Join(s.cfg.Server.DataDir, "quic-tls.key"))
 	if err != nil {
 		return nil, err
 	}
-	s.quicKeys = keys
-	return keys, nil
+	s.log.Noticef("QUIC key hash %x", key.Hash())
+	s.quicKey = key
+	return key, nil
 }
 
 func (s *Server) listenWorker(l net.Listener) {
@@ -717,7 +718,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.peerSet = connlimit.NewPeerSet()
 	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
 
-	if _, err := s.quicEpochKeys(); err != nil {
+	if _, err := s.quicStaticKey(); err != nil {
 		return nil, err
 	}
 

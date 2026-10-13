@@ -105,12 +105,12 @@ func (k *EpochKeys) pruneLocked(now uint64) error {
 	return nil
 }
 
-func (k *EpochKeys) loadOrGenerateSeed(epoch uint64) ([]byte, error) {
-	seed, err := os.ReadFile(k.keyFile(epoch))
+func loadOrGenerateSeed(path string) ([]byte, error) {
+	seed, err := os.ReadFile(path)
 	if err == nil {
 		if len(seed) != ed25519.SeedSize {
 			clear(seed)
-			return nil, fmt.Errorf("quic: TLS key file for epoch %d is %d bytes, want %d", epoch, len(seed), ed25519.SeedSize)
+			return nil, fmt.Errorf("quic: TLS key file %s is %d bytes, want %d", path, len(seed), ed25519.SeedSize)
 		}
 		return seed, nil
 	}
@@ -121,18 +121,19 @@ func (k *EpochKeys) loadOrGenerateSeed(epoch uint64) ([]byte, error) {
 	if _, err := rand.Read(seed); err != nil {
 		return nil, err
 	}
-	if err := k.writeSeed(epoch, seed); err != nil {
+	if err := writeSeed(path, seed); err != nil {
 		clear(seed)
 		return nil, err
 	}
 	return seed, nil
 }
 
-func (k *EpochKeys) writeSeed(epoch uint64, seed []byte) error {
-	if err := os.MkdirAll(k.dir, 0700); err != nil {
+func writeSeed(path string, seed []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(k.dir, ".quic-tls-*.tmp")
+	f, err := os.CreateTemp(dir, ".quic-tls-*.tmp")
 	if err != nil {
 		return err
 	}
@@ -145,7 +146,7 @@ func (k *EpochKeys) writeSeed(epoch uint64, seed []byte) error {
 		err = closeErr
 	}
 	if err == nil {
-		err = os.Rename(tmp, k.keyFile(epoch))
+		err = os.Rename(tmp, path)
 	}
 	if err != nil {
 		os.Remove(tmp)
@@ -178,7 +179,7 @@ func (k *EpochKeys) keyLocked(epoch uint64) (*epochKey, error) {
 	if key, ok := k.keys[epoch]; ok {
 		return key, nil
 	}
-	seed, err := k.loadOrGenerateSeed(epoch)
+	seed, err := loadOrGenerateSeed(k.keyFile(epoch))
 	if err != nil {
 		return nil, err
 	}

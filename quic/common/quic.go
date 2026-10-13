@@ -371,7 +371,11 @@ func statelessResetKey(identityPrivateKey sign.PrivateKey) (*quic.StatelessReset
 	return &resetKey, nil
 }
 
-func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys *EpochKeys, opts *Options) (*QuicListener, error) {
+type CertificateSource interface {
+	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
+}
+
+func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys CertificateSource, opts *Options) (*QuicListener, error) {
 	resetKey, err := statelessResetKey(identityPrivateKey)
 	if err != nil {
 		return nil, err
