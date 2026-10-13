@@ -20,6 +20,7 @@ import (
 
 func TestConnectPinMismatchDoesNotFallBackToAnUnpinnedAddress(t *testing.T) {
 	conn, _ := newGatewayTestConnection(t, &config.UpstreamProxy{})
+	conn.client.cfg.QUIC = &common.Options{PinMismatch: common.PinMismatchStrict}
 	impostor, err := quic.ListenAddr("127.0.0.1:0", common.GenerateTLSConfig(), common.Config())
 	require.NoError(t, err)
 	t.Cleanup(func() { impostor.Close() })
