@@ -189,7 +189,17 @@ func IsSoftwareVersionWellFormed(v string) error {
 const AutoSoftwareVersion = "auto"
 
 func ResolveSoftwareVersion(v, build string) string {
-	return v
+	if v != AutoSoftwareVersion {
+		return v
+	}
+	b := []byte(build)
+	b = b[:min(len(b), maxSoftwareVersionLength)]
+	for i, c := range b {
+		if c < 0x20 || c > 0x7e {
+			b[i] = '?'
+		}
+	}
+	return string(b)
 }
 
 func isDescriptorAddressWellFormed(transport, addr string, isGatewayNode bool, allowOnion bool) error {
