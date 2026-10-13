@@ -107,6 +107,11 @@ func runClientDaemon(cfg Config) error {
 	if err := epochtime.Configure(clientCfg.EpochDuration, os.Stderr); err != nil {
 		return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
 	}
+	if cfg.DBusName != "" {
+		if err := config.ValidateDBusName(cfg.DBusName); err != nil {
+			return err
+		}
+	}
 	if cfg.ValidateOnly {
 		if err := tomlstrict.Check(cfg.ConfigFile, new(config.Config)); err != nil {
 			return fmt.Errorf("config file '%v': %v", cfg.ConfigFile, err)
