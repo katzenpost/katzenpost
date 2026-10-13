@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -104,6 +105,8 @@ type Server struct {
 	// BindAddresses are the listener addresses that the server will bind to and accept connections on
 	// These Addresses are not advertised in the PKI.
 	BindAddresses []string
+
+	InternalTransports []string
 
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	MetricsAddress string
@@ -235,9 +238,16 @@ func (sCfg *Server) validate() error {
 		sCfg.Addresses = []string{"tcp://" + addr.String() + defaultAddress}
 	}
 
-	internalTransports := make(map[string]bool)
-	for _, v := range pki.InternalTransports {
-		internalTransports[strings.ToLower(string(v))] = true
+	if sCfg.InternalTransports != nil && len(sCfg.InternalTransports) == 0 {
+		return errors.New("config: Server: InternalTransports is empty")
+	}
+	for i, t := range sCfg.InternalTransports {
+		if !slices.Contains(pki.InternalTransports, t) {
+			return fmt.Errorf("config: Server: InternalTransports: %q is not one of %v", t, pki.InternalTransports)
+		}
+		if slices.Contains(sCfg.InternalTransports[:i], t) {
+			return fmt.Errorf("config: Server: InternalTransports: %q repeats", t)
+		}
 	}
 
 	if !filepath.IsAbs(sCfg.DataDir) {
