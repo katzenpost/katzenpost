@@ -22,6 +22,7 @@ package config
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -36,6 +37,7 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -150,6 +152,18 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		addresses = append(addresses, s)
 	}
 	a.Addresses = addresses
+
+	if raw, present := data["QUICKeyHash"]; present {
+		encoded, ok := raw.(string)
+		if !ok {
+			return errors.New("Authority.QUICKeyHash must be a hex string")
+		}
+		quicKeyHash, err := hex.DecodeString(encoded)
+		if err != nil || len(quicKeyHash) != pki.QUICKeyHashSize {
+			return fmt.Errorf("Authority.QUICKeyHash must be %d hex-encoded bytes", pki.QUICKeyHashSize)
+		}
+		a.QUICKeyHash = quicKeyHash
+	}
 	return nil
 }
 
