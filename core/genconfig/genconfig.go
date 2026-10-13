@@ -280,6 +280,9 @@ type Config struct {
 	// the keypairs already published in the consensus. Empty leaves
 	// persistence off in generated configs.
 	PersistMixKeysOnShutdownDir string
+
+	ContactInfo     string
+	SoftwareVersion string
 }
 
 type Katzenpost struct {
@@ -340,6 +343,9 @@ type Katzenpost struct {
 	// and reloaded from on boot; when empty, mix key persistence is
 	// left off in generated server configs.
 	PersistMixKeysOnShutdownDir string
+
+	ContactInfo     string
+	SoftwareVersion string
 }
 
 type AuthById []*vConfig.Authority
