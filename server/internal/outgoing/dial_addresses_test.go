@@ -27,3 +27,13 @@ func TestDialAddressesKeepsAllWhenNoneMatch(t *testing.T) {
 	}}
 	require.Equal(t, []string{"tcp6://[2001:db8::1]:4242"}, dialAddresses(&config.Server{Addresses: []string{"tcp://198.51.100.7:1234"}}, desc))
 }
+
+func TestDialAddressesFollowInternalTransports(t *testing.T) {
+	desc := &cpki.MixDescriptor{Addresses: map[string][]string{
+		cpki.TransportTCPv4: {"tcp4://192.0.2.1:4242"},
+		cpki.TransportQUIC:  {"quic://192.0.2.1:4243"},
+	}}
+	require.Equal(t, []string{"tcp4://192.0.2.1:4242", "quic://192.0.2.1:4243"}, dialAddresses(&config.Server{}, desc), "the default must stay tcp first, quic last")
+	require.Equal(t, []string{"quic://192.0.2.1:4243", "tcp4://192.0.2.1:4242"}, dialAddresses(&config.Server{InternalTransports: []string{"quic", "tcp4"}}, desc))
+	require.Equal(t, []string{"quic://192.0.2.1:4243"}, dialAddresses(&config.Server{InternalTransports: []string{"quic"}}, desc))
+}
