@@ -1249,6 +1249,13 @@ func receivesUDP(udp *net.UDPConn, wait time.Duration) bool {
 	return err == nil
 }
 
+func TestInitSessionWithDialerNeverDialsQUIC(t *testing.T) {
+	udp := dialQUICAuthority(t, func(context.Context, string, string) (net.Conn, error) {
+		return nil, fmt.Errorf("proxy unreachable")
+	})
+	require.False(t, receivesUDP(udp, 2*time.Second))
+}
+
 func TestInitSessionWithoutDialerDialsQUIC(t *testing.T) {
 	udp := dialQUICAuthority(t, nil)
 	require.True(t, receivesUDP(udp, 5*time.Second), "a connector without DialTimeoutSec sent nothing to its quic peer")
