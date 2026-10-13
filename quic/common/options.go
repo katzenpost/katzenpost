@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"slices"
 	"sync"
@@ -110,8 +111,37 @@ func (o *Options) curvePreferences() []tls.CurveID {
 	return curves
 }
 
+const (
+	ClientKeepAlivePeriod  = 20 * time.Second
+	DefaultKeepAliveJitter = 0.25
+)
+
+func (o *Options) keepAlivePeriod() time.Duration {
+	period, jitter := KeepAlivePeriod, DefaultKeepAliveJitter
+	if o != nil && o.client {
+		period = ClientKeepAlivePeriod
+	}
+	if o != nil && o.KeepAlivePeriod != nil {
+		period = *o.KeepAlivePeriod
+	}
+	if o != nil && o.KeepAliveJitter != nil {
+		jitter = *o.KeepAliveJitter
+	}
+	return time.Duration(float64(period) * (1 + jitter*(2*rand.Float64()-1)))
+}
+
+func (o *Options) connectionConfig() *quic.Config {
+	cfg := Config()
+	cfg.KeepAlivePeriod = o.keepAlivePeriod()
+	return cfg
+}
+
 func (o *Options) quicConfig() *quic.Config {
-	return Config()
+	cfg := o.connectionConfig()
+	cfg.GetConfigForClient = func(*quic.ClientInfo) (*quic.Config, error) {
+		return o.connectionConfig(), nil
+	}
+	return cfg
 }
 
 const UnderLoadHandshakes = 128
