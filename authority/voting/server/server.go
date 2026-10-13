@@ -267,6 +267,42 @@ func dirauthStaticAuthorityAddresses(cfg *config.Config) []string {
 	return addrs
 }
 
+func (s *Server) startListeners(listenAddresses []string) {
+	for _, v := range listenAddresses {
+		// parse the Address line as a URL
+		u, err := url.Parse(v)
+		if err == nil {
+			switch u.Scheme {
+			case "tcp":
+				l, err := net.Listen("tcp", u.Host)
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				s.listeners = append(s.listeners, l)
+				s.Add(1)
+				s.state.Go(func() {
+					s.listenWorker(l)
+				})
+			case "quic":
+				ql, err := common.Listen(u.Host, s.identityPrivateKey)
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				s.listeners = append(s.listeners, ql)
+				s.Add(1)
+				s.state.Go(func() {
+					s.listenWorker(ql)
+				})
+			default:
+				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
+				continue
+			}
+		}
+	}
+}
+
 func (s *Server) listenWorker(l net.Listener) {
 	addr := l.Addr()
 	s.log.Noticef("Listening on: %v", addr)
@@ -673,39 +709,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if len(s.cfg.Server.BindAddresses) > 0 {
 		listenAddresses = s.cfg.Server.BindAddresses
 	}
-	for _, v := range listenAddresses {
-		// parse the Address line as a URL
-		u, err := url.Parse(v)
-		if err == nil {
-			switch u.Scheme {
-			case "tcp":
-				l, err := net.Listen("tcp", u.Host)
-				if err != nil {
-					s.log.Errorf("Failed to start listener '%v': %v", v, err)
-					continue
-				}
-				s.listeners = append(s.listeners, l)
-				s.Add(1)
-				s.state.Go(func() {
-					s.listenWorker(l)
-				})
-			case "quic":
-				ql, err := common.Listen(u.Host, s.identityPrivateKey)
-				if err != nil {
-					s.log.Errorf("Failed to start listener '%v': %v", v, err)
-					continue
-				}
-				s.listeners = append(s.listeners, ql)
-				s.Add(1)
-				s.state.Go(func() {
-					s.listenWorker(ql)
-				})
-			default:
-				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
-				continue
-			}
-		}
-	}
+	s.startListeners(listenAddresses)
 	if len(s.listeners) == 0 {
 		s.log.Errorf("Failed to start all listeners.")
 		return nil, fmt.Errorf("authority: failed to start all listeners")
