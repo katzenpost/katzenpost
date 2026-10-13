@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 )
@@ -57,5 +58,17 @@ func TestOwnBusName(t *testing.T) {
 				t.Fatal("bus not closed")
 			}
 		})
+	}
+}
+
+func TestSessionBusUnreachableDoesNotAutolaunch(t *testing.T) {
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+t.TempDir()+"/absent.sock")
+	start := time.Now()
+	bus, err := sessionBus()
+	if bus != nil || !errors.Is(err, errNoSessionBus) {
+		t.Fatalf("got bus=%v err=%v", bus != nil, err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("connect attempt took %v", time.Since(start))
 	}
 }
