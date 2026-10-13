@@ -183,3 +183,32 @@ func TestTimerQueuePushBoundedEvictsAtTheBound(t *testing.T) {
 	require.Same(t, &v, q.PushBounded(far, &v, 3, r))
 	require.Equal(t, 3, q.Len())
 }
+
+func TestTimerQueueBlockedActionDoesNotDelayLaterEntries(t *testing.T) {
+	t.Parallel()
+	blocker, later := new(int), new(int)
+	release := make(chan struct{})
+	fired := make(chan time.Time, 1)
+	q := NewTimerQueue(func(v interface{}) {
+		if v == blocker {
+			<-release
+			return
+		}
+		fired <- time.Now()
+	})
+	q.Start()
+	t.Cleanup(q.Halt)
+	t.Cleanup(func() { close(release) })
+
+	start := time.Now()
+	q.Push(uint64(start.UnixNano()), blocker)
+	due := start.Add(100 * time.Millisecond)
+	q.Push(uint64(due.UnixNano()), later)
+
+	select {
+	case at := <-fired:
+		require.Less(t, at.Sub(due), 200*time.Millisecond)
+	case <-time.After(2 * time.Second):
+		t.Fatal("a blocked action held back a later due entry")
+	}
+}
