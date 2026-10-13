@@ -397,7 +397,12 @@ func Listen(host string, identityPrivateKey sign.PrivateKey) (*QuicListener, err
 const KeepAlivePeriod = 3 * time.Minute
 
 func Config() *quic.Config {
-	return &quic.Config{KeepAlivePeriod: KeepAlivePeriod, MaxIdleTimeout: wire.DefaultReadTimeout}
+	return &quic.Config{
+		KeepAlivePeriod:       KeepAlivePeriod,
+		MaxIdleTimeout:        wire.DefaultReadTimeout,
+		MaxIncomingStreams:    1,
+		MaxIncomingUniStreams: -1,
+	}
 }
 
 // Setup a bare-bones TLS config for the server
@@ -444,12 +449,7 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 		// fingerprint to the authority configuration
 		// or obtain valid CA-signed certificates for
 		// the authorities.
-		pool, err := x509.SystemCertPool()
-		if err != nil {
-			panic(err)
-		}
 		tlsConf := &tls.Config{
-			RootCAs:            pool,
 			InsecureSkipVerify: true, // XXX
 			// ALPN is externally visible as part of the client/server hello,
 			// so pick a common protocol rather than something fingerprintable.
@@ -467,6 +467,7 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 				// wrap the stream and conn to implement net.Conn
 				return NewQuicConn(qconn, stream), nil
 			}
+			qconn.CloseWithError(0, "")
 			return nil, err
 		}
 		return nil, err
