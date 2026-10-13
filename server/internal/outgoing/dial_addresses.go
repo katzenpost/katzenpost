@@ -9,8 +9,12 @@ import (
 )
 
 func dialAddresses(cfg *config.Server, dst *cpki.MixDescriptor) []string {
+	order := cfg.InternalTransports
+	if order == nil {
+		order = cpki.InternalTransports
+	}
 	var addrs []string
-	for _, t := range cpki.InternalTransports {
+	for _, t := range order {
 		addrs = append(addrs, dst.Addresses[t]...)
 	}
 	return retry.FilterByLocalAddresses(cfg.Addresses, addrs)
