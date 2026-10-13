@@ -33,9 +33,6 @@ func preDelayCeiling() time.Duration {
 }
 
 func newPreDelay(release func(*packet.Packet), maxLen int, drop func(*packet.Packet), fallbackMs int) *preDelay {
-	if drop == nil {
-		drop = func(pkt *packet.Packet) { pkt.Dispose() }
-	}
 	d := &preDelay{
 		mRand:      rand.NewMath(),
 		maxLen:     maxLen,

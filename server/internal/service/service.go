@@ -49,26 +49,17 @@ func (p *serviceNode) Halt() {
 		p.preDelay.Halt()
 	}
 
+	close(p.ch)
+	p.kaetzchenWorker.Halt()
+	p.cborPluginKaetzchenWorker.Halt()
+
 	for {
 		select {
 		case pkt := <-p.readyCh:
-			if pkt != nil {
-				pkt.Dispose()
-			}
+			pkt.Dispose()
 		default:
-			goto drained
+			return
 		}
-	}
-drained:
-
-	if p.ch != nil {
-		close(p.ch)
-	}
-	if p.kaetzchenWorker != nil {
-		p.kaetzchenWorker.Halt()
-	}
-	if p.cborPluginKaetzchenWorker != nil {
-		p.cborPluginKaetzchenWorker.Halt()
 	}
 }
 

@@ -319,25 +319,23 @@ func TestReleaseDelayedAfterHaltDisposes(t *testing.T) {
 	for _, bufSize := range []int{0, 1, InboundPacketsChannelSize} {
 		t.Run(fmt.Sprintf("bufSize=%d", bufSize), func(t *testing.T) {
 			g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
-			p := &serviceNode{readyCh: make(chan *packet.Packet, bufSize)}
-			p.Worker.Halt()
-			pkt := echoRequest(t, g, 0)
-			p.releaseDelayed(pkt)
-			require.Nil(t, pkt.Payload)
-			require.Nil(t, pkt.Recipient)
-			require.Empty(t, p.readyCh)
+			for i := 0; i < 32; i++ {
+				p := &serviceNode{readyCh: make(chan *packet.Packet, bufSize)}
+				p.Worker.Halt()
+				pkt := echoRequest(t, g, 0)
+				p.releaseDelayed(pkt)
+				require.Nil(t, pkt.Payload)
+				require.Nil(t, pkt.Recipient)
+				require.Empty(t, p.readyCh)
+			}
 		})
 	}
 }
 
 func TestServiceNodeHaltDrainsReadyCh(t *testing.T) {
-	g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
-	p := &serviceNode{
-		readyCh: make(chan *packet.Packet, InboundPacketsChannelSize),
-		ch:      make(chan interface{}, InboundPacketsChannelSize),
-	}
-	pkt1 := echoRequest(t, g, 0)
-	pkt2 := echoRequest(t, g, 0)
+	p, g := newIdleServiceNode(t)
+	pkt1 := echoRequest(t, g.cfg.SphinxGeometry, 0)
+	pkt2 := echoRequest(t, g.cfg.SphinxGeometry, 0)
 	p.readyCh <- pkt1
 	p.readyCh <- pkt2
 
@@ -356,6 +354,48 @@ func newIdleServiceNode(t *testing.T) (*serviceNode, *serviceGlue) {
 	sn, err := New(g)
 	require.NoError(t, err)
 	return sn.(*serviceNode), g
+}
+
+func TestServiceNodeHaltDisposesReleasedRequests(t *testing.T) {
+	sn, g := newIdleServiceNode(t)
+	pkts := make([]*packet.Packet, 8)
+	for i := range pkts {
+		pkts[i] = echoRequest(t, g.cfg.SphinxGeometry, 0)
+		require.True(t, sn.preDelay.push(pkts[i]))
+	}
+	require.Eventually(t, func() bool { return len(sn.readyCh) == len(pkts) }, 5*time.Second, time.Millisecond)
+
+	sn.Halt()
+
+	require.Empty(t, sn.readyCh)
+	for _, pkt := range pkts {
+		require.Nil(t, pkt.Payload)
+		require.Nil(t, pkt.Recipient)
+	}
+}
+
+func TestServiceNodeHaltDisposesRequestReleasedDuringHalt(t *testing.T) {
+	for i := 0; i < 32; i++ {
+		sn, g := newIdleServiceNode(t)
+		sn.preDelay.Halt()
+		entered := make(chan struct{})
+		var d *preDelay
+		d = newPreDelay(func(pkt *packet.Packet) {
+			close(entered)
+			<-d.tq.HaltCh()
+			sn.releaseDelayed(pkt)
+		}, defaultPreDelayQueueSize, (*packet.Packet).Dispose, 0)
+		sn.preDelay = d
+		pkt := echoRequest(t, g.cfg.SphinxGeometry, 0)
+		require.True(t, d.push(pkt))
+		<-entered
+
+		sn.Halt()
+
+		require.Empty(t, sn.readyCh)
+		require.Nil(t, pkt.Payload)
+		require.Nil(t, pkt.Recipient)
+	}
 }
 
 func TestServiceNodeHaltStopsWorkersBeforePreDelay(t *testing.T) {
