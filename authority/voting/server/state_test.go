@@ -340,8 +340,15 @@ func buildScenarioStates(t *testing.T, authNum int, votingEpoch uint64, prior *p
 }
 
 func runVoteScenario(t *testing.T, authNum int, votingEpoch uint64, prior *pki.Document) []*pki.Document {
+	return runVoteScenarioWith(t, authNum, votingEpoch, prior, nil)
+}
+
+func runVoteScenarioWith(t *testing.T, authNum int, votingEpoch uint64, prior *pki.Document, setup func([]*state)) []*pki.Document {
 	require := require.New(t)
 	stateAuthority, authCfgs := buildScenarioStates(t, authNum, votingEpoch, prior)
+	if setup != nil {
+		setup(stateAuthority)
+	}
 	// exchange votes
 	for i, s := range stateAuthority {
 		s.votingEpoch = votingEpoch

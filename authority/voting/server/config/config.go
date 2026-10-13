@@ -437,6 +437,8 @@ type Server struct {
 	// permitted.
 	AllowHostnameAddresses bool
 
+	PublishQUICKeyHashes bool `toml:",omitempty"`
+
 	IdentityPrivateKeyFile string `toml:",omitempty"`
 	IdentityPublicKeyFile  string `toml:",omitempty"`
 	LinkPrivateKeyFile     string `toml:",omitempty"`
