@@ -156,12 +156,15 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 			errs = append(errs, fmt.Errorf("invalid URL %s: %w", a, err))
 			continue
 		}
-		var quicKeyHashes []byte
+		var quicKeyHash []byte
 		if u.Scheme == pki.TransportQUIC {
-			quicKeyHashes = peer.DialQUICKeyHashes(&s.quicPins, s.log)
+			if quicKeyHash, err = peer.DialQUICKeyHash(s.log, a); err != nil {
+				errs = append(errs, fmt.Errorf("dial %s: %w", a, err))
+				continue
+			}
 		}
 		ctx, cancelFn := common.ConnectContext(context.Background(), dialTimeout)
-		conn, err := common.DialURL(u, ctx, dialFn, quicKeyHashes, s.s.cfg.QUIC)
+		conn, err := common.DialURL(u, ctx, dialFn, quicKeyHash, s.s.cfg.QUIC)
 		cancelFn()
 		if err == nil {
 			s.log.Debugf("peer %s: %s connection established.", peer.Identifier, u.Scheme)

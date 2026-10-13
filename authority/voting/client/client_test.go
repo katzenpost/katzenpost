@@ -1228,6 +1228,7 @@ func dialQUICAuthority(t *testing.T, dialFn func(context.Context, string, string
 		Identifier:    "auth",
 		Addresses:     []string{"quic://" + udp.LocalAddr().String()},
 		WireKEMScheme: "x25519",
+		QUICKeyHash:   make([]byte, pki.QUICKeyHashSize),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

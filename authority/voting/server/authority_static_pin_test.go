@@ -23,6 +23,23 @@ func fixedEpochKeys(t *testing.T, epoch uint64) (*common.EpochKeys, []byte) {
 	return keys, hashes[pki.QUICKeyHashSize : 2*pki.QUICKeyHashSize]
 }
 
+func listenQUICAuthority(t *testing.T, s *state, keys *common.EpochKeys) string {
+	t.Helper()
+	l, err := common.ListenWithEpochKeys("127.0.0.1:0", s.s.identityPrivateKey, keys, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+	return "quic://" + l.Addr().String()
+}
+
 func TestPeerDialIsPinnedToItsConfiguredKeyFromTheFirstDial(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	states, _ := buildScenarioStates(t, 3, epoch+1, nil)

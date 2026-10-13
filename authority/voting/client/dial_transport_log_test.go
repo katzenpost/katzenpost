@@ -22,8 +22,7 @@ import (
 func TestInitSessionLogsItsTransport(t *testing.T) {
 	_, identityPrivateKey, err := signschemes.ByName(testSchemeName).GenerateKey()
 	require.NoError(t, err)
-	keys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
+	keys, quicKeyHash := fixedEpochKeys(t, common.CurrentEpoch())
 	l, err := common.ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	defer l.Close()
@@ -41,6 +40,7 @@ func TestInitSessionLogsItsTransport(t *testing.T) {
 		Identifier:    "auth1",
 		Addresses:     []string{"quic://" + l.Addr().String()},
 		WireKEMScheme: "x25519",
+		QUICKeyHash:   quicKeyHash,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

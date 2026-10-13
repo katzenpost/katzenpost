@@ -16,14 +16,13 @@ import (
 func TestPeerDialLogsItsTransport(t *testing.T) {
 	_, identityPrivateKey, err := signSchemes.ByName(testSchemeName).GenerateKey()
 	require.NoError(t, err)
-	keys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
+	keys, quicKeyHash := fixedEpochKeys(t, common.CurrentEpoch())
 	l, err := common.ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	defer l.Close()
 	st := &state{s: &Server{cfg: &config.Config{}}}
 	out := fileLogged(t, st)
-	peer := &config.Authority{Identifier: "auth2"}
+	peer := &config.Authority{Identifier: "auth2", QUICKeyHash: quicKeyHash}
 	conn, err := st.dialPeerAddrs(peer, []string{"quic://" + l.Addr().String()}, 5*time.Second)
 	require.NoError(t, err)
 	conn.Close()

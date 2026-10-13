@@ -5,8 +5,6 @@ package client
 import (
 	"context"
 	"net"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,9 +18,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -54,11 +50,10 @@ func newQUICAuthorityKeys(t *testing.T) *quicAuthorityKeys {
 	}
 }
 
-func (a *quicAuthorityKeys) consensus(t *testing.T, epoch uint64, quicKeyHashes []byte) []byte {
+func (a *quicAuthorityKeys) consensus(t *testing.T, epoch uint64) []byte {
 	t.Helper()
 	doc, err := generateMixnet(6, 2, epoch)
 	require.NoError(t, err)
-	doc.AuthorityQUICKeyHashes = map[[pki.PublicKeyHashSize]byte][]byte{hash.Sum256From(a.identityPublicKey): quicKeyHashes}
 	raw, err := multiSignTestDocument([]sign.PrivateKey{a.identityPrivateKey}, []sign.PublicKey{a.identityPublicKey}, doc)
 	require.NoError(t, err)
 	return raw
@@ -139,36 +134,4 @@ func fetch(t *testing.T, c *Client, epoch uint64) error {
 	defer cancel()
 	_, _, err := c.GetPKIDocumentForEpoch(ctx, epoch)
 	return err
-}
-
-func TestAuthorityDialIsPinnedOnceAConsensusNamesItsKeys(t *testing.T) {
-	epoch, _, _ := epochtime.Now()
-	a := newQUICAuthorityKeys(t)
-	genuineKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
-	published, err := genuineKeys.Hashes(epoch)
-	require.NoError(t, err)
-	impostorKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
-	_, err = impostorKeys.Hashes(epoch)
-	require.NoError(t, err)
-	consensus := a.consensus(t, epoch, published)
-	genuine := a.serve(t, genuineKeys, consensus)
-	impostor := a.serve(t, impostorKeys, consensus)
-
-	logFile := filepath.Join(t.TempDir(), "client.log")
-	c, peer := a.client(t, logFile)
-	peer.Addresses = []string{impostor}
-	require.NoError(t, fetch(t, c, epoch), "a bootstrap dial with no consensus must succeed unpinned")
-
-	peer.Addresses = []string{genuine}
-	require.NoError(t, fetch(t, c, epoch), "a dial to the key the consensus names must succeed")
-
-	peer.Addresses = []string{impostor}
-	require.Error(t, fetch(t, c, epoch), "a quic dial accepted a key the consensus does not name")
-
-	logged, err := os.ReadFile(logFile)
-	require.NoError(t, err)
-	require.Contains(t, string(logged), "peer auth1: quic dial unpinned, no QUIC key hashes known")
-	require.Contains(t, string(logged), "peer auth1: quic dial pinned to 3 consensus QUIC key hashes")
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 func (a *quicAuthorityKeys) serveTCP(t *testing.T, consensus []byte, dialed *atomic.Int32) string {
@@ -37,15 +36,9 @@ func (a *quicAuthorityKeys) serveTCP(t *testing.T, consensus []byte, dialed *ato
 func TestPinMismatchDoesNotFallBackToTCP(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	a := newQUICAuthorityKeys(t)
-	genuineKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
-	published, err := genuineKeys.Hashes(epoch)
-	require.NoError(t, err)
-	impostorKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
-	_, err = impostorKeys.Hashes(epoch)
-	require.NoError(t, err)
-	consensus := a.consensus(t, epoch, published)
+	genuineKeys, genuineHash := fixedEpochKeys(t, epoch)
+	impostorKeys, _ := fixedEpochKeys(t, epoch)
+	consensus := a.consensus(t, epoch)
 	genuine := a.serve(t, genuineKeys, consensus)
 	impostor := a.serve(t, impostorKeys, consensus)
 	var dialed atomic.Int32
@@ -53,13 +46,14 @@ func TestPinMismatchDoesNotFallBackToTCP(t *testing.T) {
 
 	logFile := filepath.Join(t.TempDir(), "client.log")
 	c, peer := a.client(t, logFile)
+	peer.QUICKeyHash = genuineHash
 	peer.Addresses = []string{genuine}
 	require.NoError(t, fetch(t, c, epoch), "bootstrap")
 
 	pinnedDials := func() int {
 		logged, err := os.ReadFile(logFile)
 		require.NoError(t, err)
-		return strings.Count(string(logged), "quic dial pinned to 3 consensus QUIC key hashes")
+		return strings.Count(string(logged), "quic dial pinned to its configured QUIC key hash")
 	}
 	peer.Addresses = []string{impostor, tcp}
 	sawPinnedDial := false

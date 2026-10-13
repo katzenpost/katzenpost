@@ -347,12 +347,15 @@ func (p *connector) initSession(
 			continue
 		}
 
-		var quicKeyHashes []byte
+		var quicKeyHash []byte
 		if u.Scheme == pki.TransportQUIC {
-			quicKeyHashes = peer.DialQUICKeyHashes(&p.quicPins, p.log)
+			if quicKeyHash, err = peer.DialQUICKeyHash(p.log, peer.Addresses[idx]); err != nil {
+				lastErr = fmt.Errorf("%s: %s: %v", peerInfo(), peer.Addresses[idx], err)
+				continue
+			}
 		}
 		ictx, cancelFn := common.ConnectContext(ctx, dialTimeout)
-		conn, err = common.DialURL(u, ictx, dialFn, quicKeyHashes, p.cfg.QUIC)
+		conn, err = common.DialURL(u, ictx, dialFn, quicKeyHash, p.cfg.QUIC)
 		cancelFn()
 		if err == nil {
 			p.log.Debugf("%s: %s connection established.", peerInfo(), u.Scheme)

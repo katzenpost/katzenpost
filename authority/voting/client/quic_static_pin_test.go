@@ -10,8 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/sign"
-
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/quic/common"
@@ -26,21 +24,12 @@ func fixedEpochKeys(t *testing.T, epoch uint64) (*common.EpochKeys, []byte) {
 	return keys, hashes[pki.QUICKeyHashSize : 2*pki.QUICKeyHashSize]
 }
 
-func (a *quicAuthorityKeys) plainConsensus(t *testing.T, epoch uint64) []byte {
-	t.Helper()
-	doc, err := generateMixnet(6, 2, epoch)
-	require.NoError(t, err)
-	raw, err := multiSignTestDocument([]sign.PrivateKey{a.identityPrivateKey}, []sign.PublicKey{a.identityPublicKey}, doc)
-	require.NoError(t, err)
-	return raw
-}
-
 func TestAuthorityDialIsPinnedToItsConfiguredKeyFromTheFirstDial(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	a := newQUICAuthorityKeys(t)
 	genuineKeys, genuineHash := fixedEpochKeys(t, epoch)
 	impostorKeys, _ := fixedEpochKeys(t, epoch)
-	consensus := a.plainConsensus(t, epoch)
+	consensus := a.consensus(t, epoch)
 	genuine := a.serve(t, genuineKeys, consensus)
 	impostor := a.serve(t, impostorKeys, consensus)
 
@@ -61,7 +50,7 @@ func TestAuthorityWithoutAQUICKeyHashIsNotDialedOverQUIC(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	a := newQUICAuthorityKeys(t)
 	keys, _ := fixedEpochKeys(t, epoch)
-	consensus := a.plainConsensus(t, epoch)
+	consensus := a.consensus(t, epoch)
 	quic := a.serve(t, keys, consensus)
 	var tcpDials atomic.Int32
 	tcp := a.serveTCP(t, consensus, &tcpDials)

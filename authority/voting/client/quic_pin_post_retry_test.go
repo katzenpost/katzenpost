@@ -124,23 +124,18 @@ func (a *quicAuthorityKeys) postingClient(t *testing.T, logFile string) (*Client
 func TestPostPinMismatchDoesNotRetryOverUnpinnedTCP(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	a := newQUICAuthorityKeys(t)
-	genuineKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
-	published, err := genuineKeys.Hashes(epoch)
-	require.NoError(t, err)
-	impostorKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
-	_, err = impostorKeys.Hashes(epoch)
-	require.NoError(t, err)
-	genuine := a.serve(t, genuineKeys, a.consensus(t, epoch, published))
+	genuineKeys, genuineHash := fixedEpochKeys(t, epoch)
+	impostorKeys, _ := fixedEpochKeys(t, epoch)
+	genuine := a.serve(t, genuineKeys, a.consensus(t, epoch))
 	impostor := a.servePosts(t, impostorKeys)
 	var tcpPosts atomic.Int32
 	tcp := a.serveTCPPosts(t, &tcpPosts)
 
 	logFile := filepath.Join(t.TempDir(), "client.log")
 	c, peer := a.postingClient(t, logFile)
+	peer.QUICKeyHash = genuineHash
 	peer.Addresses = []string{genuine}
-	require.NoError(t, fetch(t, c, epoch), "bootstrap fetch that learns the consensus pins")
+	require.NoError(t, fetch(t, c, epoch), "bootstrap")
 
 	idPub, idPriv, err := signSchemes.ByName(testSchemeName).GenerateKey()
 	require.NoError(t, err)
@@ -149,7 +144,7 @@ func TestPostPinMismatchDoesNotRetryOverUnpinnedTCP(t *testing.T) {
 	pinnedDials := func() int {
 		logged, err := os.ReadFile(logFile)
 		require.NoError(t, err)
-		return strings.Count(string(logged), "quic dial pinned to 3 consensus QUIC key hashes")
+		return strings.Count(string(logged), "quic dial pinned to its configured QUIC key hash")
 	}
 	peer.Addresses = []string{impostor, tcp}
 	sawPinnedDial := false
@@ -184,16 +179,11 @@ func TestPinMismatchIsNotATransientDialError(t *testing.T) {
 func TestPinMismatchFromInitSessionIsNotTransient(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	a := newQUICAuthorityKeys(t)
-	impostorKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
-	_, err = impostorKeys.Hashes(epoch)
-	require.NoError(t, err)
+	impostorKeys, _ := fixedEpochKeys(t, epoch)
 	impostor := a.servePosts(t, impostorKeys)
 	c, peer := a.postingClient(t, filepath.Join(t.TempDir(), "client.log"))
 	peer.Addresses = []string{impostor}
-	c.pool.quicPins.Learn(&pki.Document{Epoch: epoch, AuthorityQUICKeyHashes: map[[pki.PublicKeyHashSize]byte][]byte{
-		hash.Sum256From(a.identityPublicKey): bytes.Repeat([]byte{2}, 3*pki.QUICKeyHashSize),
-	}})
+	peer.QUICKeyHash = bytes.Repeat([]byte{2}, pki.QUICKeyHashSize)
 	_, linkKey, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 	_, err = c.pool.initSession(context.Background(), linkKey, nil, peer)

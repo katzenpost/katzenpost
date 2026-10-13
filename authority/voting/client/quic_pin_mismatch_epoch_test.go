@@ -11,8 +11,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/hash"
-
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/quic/common"
@@ -21,17 +19,12 @@ import (
 func TestPinMismatchKeepsThePeerOffUnpinnedAddressesForTheEpoch(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	a := newQUICAuthorityKeys(t)
-	impostorKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
-	require.NoError(t, err)
-	_, err = impostorKeys.Hashes(epoch)
-	require.NoError(t, err)
+	impostorKeys, _ := fixedEpochKeys(t, epoch)
 	impostor := a.servePosts(t, impostorKeys)
 	var tcpDials atomic.Int32
 	tcp := a.serveTCPPosts(t, &tcpDials)
 	c, peer := a.postingClient(t, filepath.Join(t.TempDir(), "client.log"))
-	c.pool.quicPins.Learn(&pki.Document{Epoch: epoch, AuthorityQUICKeyHashes: map[[pki.PublicKeyHashSize]byte][]byte{
-		hash.Sum256From(a.identityPublicKey): bytes.Repeat([]byte{2}, 3*pki.QUICKeyHashSize),
-	}})
+	peer.QUICKeyHash = bytes.Repeat([]byte{2}, pki.QUICKeyHashSize)
 	_, linkKey, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
