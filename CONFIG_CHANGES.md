@@ -82,9 +82,10 @@ always the same as "the file fails to parse".
 ## QUIC links (every component except the thin client)
 
 A TCP link carries PQ Noise directly on TCP, with no TLS. QUIC requires
-TLS 1.3, so a QUIC link is TLS 1.3 (a self-signed certificate per
-epoch, pinned by its key hash in the PKI document) carrying the same PQ
-Noise session. The new optional `[QUIC]` table tunes that outer layer
+TLS 1.3, so a QUIC link is TLS 1.3 (a self-signed certificate pinned by
+its key hash: a node's per-epoch keys through its descriptor, an
+authority's one long-term key through its peers' configs) carrying the
+same PQ Noise session. The new optional `[QUIC]` table tunes that outer layer
 in `authority.toml`, `katzenpost.toml`, `replica.toml`, `courier.toml`
 and `client.toml` (kpclientd, which uses it to dial its gateway and the
 authorities). Every key is unset by default, and each default is the
@@ -137,6 +138,23 @@ recommended setting. A value that fails validation refuses the config.
   minutes on every link, so any period above 60 s acts as 60 s: the
   server default of 3 minutes and its jitter are today an effective,
   unjittered 60 s.
+- **Added** `QUICKeyHash` (64 hex digits; default unset) to every
+  authority entry: `[[Authorities]]` in `authority.toml`,
+  `[[PKI.Voting.Authorities]]` in `katzenpost.toml`, `replica.toml`
+  and `courier.toml`, and `[[VotingAuthority.Peers]]` in
+  `client.toml`. It is the SHA-256 of the authority's QUIC TLS public
+  key (its SubjectPublicKeyInfo). Each authority keeps one long-term
+  QUIC TLS key in `DataDir/quic-tls.key`, generated on first start,
+  and logs `QUIC key hash <hex>` at start; copy that value into the
+  entries for it, next to its `LinkPublicKey`. A QUIC dial to an
+  authority is pinned to the hash from the first dial, and a mismatch
+  ends the dial. An entry without it is never dialed over QUIC; TCP
+  still is. genconfig writes it for every authority of the current
+  release on a QUIC network.
+- A node, replica or gateway with a QUIC address publishes its
+  per-epoch QUIC key hashes in its descriptor only when every authority
+  entry in its config has a `QUICKeyHash`: only authorities of this
+  release hold such a key, and only they accept the descriptor field.
 - Not configurable: each QUIC listener logs one warning at start when
   its UDP socket buffers are below the 7 MiB quic-go asks for, naming
   the sysctl to raise (`net.core.rmem_max` and `net.core.wmem_max` on
