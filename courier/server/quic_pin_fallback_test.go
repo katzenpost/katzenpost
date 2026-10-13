@@ -34,7 +34,7 @@ func TestPinMismatchDoesNotFallBackToAnUnpinnedAddress(t *testing.T) {
 	}}
 	c := &outgoingConn{
 		log: backendLog.GetLogger("test"),
-		cfg: &config.Config{},
+		cfg: &config.Config{QUIC: &common.Options{PinMismatch: common.PinMismatchStrict}},
 		dst: &cpki.ReplicaDescriptor{
 			Name: "storagereplica1",
 			Addresses: map[string][]string{
