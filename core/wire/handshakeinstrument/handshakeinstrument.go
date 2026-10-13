@@ -57,7 +57,7 @@ var (
 	outgoingDialFailures = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "katzenpost_outgoing_dial_failures_total",
-			Help: "Number of outbound TCP dial attempts that failed before any Noise handshake could begin, labelled by reason (refused, timeout, no_route, dns, other). These never produce a handshake_failures_total counter increment because the wire.Session.Initialize call site is never reached; this counter is the only operator surface for pre-handshake dial failures.",
+			Help: "Number of outbound dial attempts that failed before any Noise handshake could begin, labelled by reason (refused, timeout, no_route, dns, other, or pin_mismatch: a QUIC peer presented a TLS key matching none of its pinned QUIC key hashes). These never produce a handshake_failures_total counter increment because the wire.Session.Initialize call site is never reached; this counter is the only operator surface for pre-handshake dial failures.",
 		},
 		[]string{"reason"},
 	)

@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -252,7 +251,7 @@ func (c *connection) Close() {
 type connector struct {
 	cfg           *Config
 	log           *logging.Logger
-	pinMismatches quicPinMismatches
+	pinMismatches common.QUICPinMismatches
 }
 
 func newConnector(cfg *Config) *connector {
@@ -299,10 +298,8 @@ func (p *connector) initSession(
 	var identity [pki.PublicKeyHashSize]byte
 	if peer.IdentityPublicKey != nil {
 		identity = hash.Sum256From(peer.IdentityPublicKey)
-		if p.pinMismatches.has(identity, now) {
-			usable.Addresses = slices.DeleteFunc(slices.Clone(usable.Addresses), func(addr string) bool {
-				return !strings.HasPrefix(addr, pki.TransportQUIC+"://")
-			})
+		if p.pinMismatches.Has(identity, now) {
+			usable.Addresses = p.cfg.QUIC.AddressesAfterPinMismatch(usable.Addresses)
 		}
 	}
 	peer = &usable
@@ -347,6 +344,10 @@ func (p *connector) initSession(
 			continue
 		}
 
+		if u.Scheme == pki.TransportQUIC && !p.cfg.QUIC.StrictPinMismatch() && p.pinMismatches.Has(identity, now) {
+			continue
+		}
+
 		var quicKeyHash []byte
 		if u.Scheme == pki.TransportQUIC {
 			if quicKeyHash, err = peer.DialQUICKeyHash(p.log, peer.Addresses[idx]); err != nil {
@@ -369,8 +370,13 @@ func (p *connector) initSession(
 		}
 
 		if errors.Is(err, common.ErrQUICKeyMismatch) {
-			p.pinMismatches.mark(identity, now)
-			return nil, fmt.Errorf("%s: failed to connect to %s: %w", peerInfo(), peer.Addresses[idx], err)
+			p.pinMismatches.Mark(identity, now)
+			p.cfg.QUIC.ReportPinMismatch(p.log, peer.Identifier, err)
+			lastErr = fmt.Errorf("%s: failed to connect to %s: %w", peerInfo(), peer.Addresses[idx], err)
+			if p.cfg.QUIC.StrictPinMismatch() {
+				return nil, lastErr
+			}
+			continue
 		}
 		lastErr = fmt.Errorf("%s: failed to connect to %s: %v", peerInfo(), peer.Addresses[idx], err)
 		if i == len(peer.Addresses)-1 {
@@ -1086,7 +1092,7 @@ func (p *connector) postDescriptorWithCompletionRounds(
 				state.lastErr = result.err
 				state.lastKind = result.kind
 				state.attempts++
-				if errors.Is(result.err, common.ErrQUICKeyMismatch) {
+				if p.cfg.QUIC.StrictPinMismatch() && errors.Is(result.err, common.ErrQUICKeyMismatch) {
 					state.pinMismatch = true
 					break
 				}

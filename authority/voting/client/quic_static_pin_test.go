@@ -35,6 +35,7 @@ func TestAuthorityDialIsPinnedToItsConfiguredKeyFromTheFirstDial(t *testing.T) {
 
 	logFile := filepath.Join(t.TempDir(), "client.log")
 	c, peer := a.client(t, logFile)
+	c.cfg.QUIC = &common.Options{PinMismatch: common.PinMismatchStrict}
 	peer.QUICKeyHash = genuineHash
 	peer.Addresses = []string{impostor}
 	require.Error(t, fetch(t, c, epoch), "the first quic dial to an authority accepted a key other than its QUICKeyHash")
