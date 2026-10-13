@@ -141,6 +141,28 @@ func TestEpochKeysRotateAcrossAnEpochBoundary(t *testing.T) {
 	early.Close()
 }
 
+func TestEpochKeysExpiredKeyIsRejected(t *testing.T) {
+	clock := newEpochClock(1000)
+	keys := newTestEpochKeys(t, t.TempDir(), clock)
+	l := listenWithEpochKeys(t, keys)
+	serveEcho(l)
+	published, err := keys.Hashes(1000)
+	require.NoError(t, err)
+	clock.epoch.Store(1003)
+	_, err = dialEpochListener(t, l, published)
+	require.ErrorContains(t, err, "QUIC key does not match", "a listener at epoch 1003 still answered with a key epoch 1000 published")
+
+	stuck := newTestEpochKeys(t, t.TempDir(), newEpochClock(1000))
+	stale := listenWithEpochKeys(t, stuck)
+	serveEcho(stale)
+	_, err = dialEpochListener(t, stale, published)
+	require.ErrorContains(t, err, "QUIC key does not match")
+	current, err := stuck.Hashes(1003)
+	require.NoError(t, err)
+	_, err = dialEpochListener(t, stale, current)
+	require.ErrorContains(t, err, "QUIC key does not match", "epoch 1000's key was accepted against epoch 1003's hashes")
+}
+
 func TestEpochKeysPersistAndExpire(t *testing.T) {
 	dir := t.TempDir()
 	clock := newEpochClock(1000)
