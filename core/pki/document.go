@@ -153,6 +153,8 @@ type Document struct {
 	// go offline. It is used for consistent hashing to determine shard assignments.
 	ConfiguredReplicaIdentityKeys [][]byte `cbor:"ConfiguredReplicaIdentityKeys,omitempty"`
 
+	AuthorityQUICKeyHashes map[[PublicKeyHashSize]byte][]byte `cbor:"AuthorityQUICKeyHashes,omitempty"`
+
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
 
@@ -652,6 +654,17 @@ func isDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 			if !srv.Verify(reveal) {
 				return fmt.Errorf("Document has an invalid Reveal for! %x", id)
 			}
+		}
+	}
+	for id, quicKeyHashes := range d.AuthorityQUICKeyHashes {
+		if _, ok := vmap[id]; !ok {
+			return fmt.Errorf("Document has an AuthorityQUICKeyHashes entry for an unknown authority")
+		}
+		if len(quicKeyHashes) == 0 {
+			return fmt.Errorf("Document has an empty AuthorityQUICKeyHashes entry for %x", id)
+		}
+		if err := IsQUICKeyHashWellFormed(quicKeyHashes); err != nil {
+			return fmt.Errorf("Document has a malformed AuthorityQUICKeyHashes entry for %x: %w", id, err)
 		}
 	}
 	pks := make(map[[hash.HashSize]byte]bool)

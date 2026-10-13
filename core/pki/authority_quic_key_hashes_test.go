@@ -4,6 +4,7 @@ package pki
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"testing"
 
@@ -85,5 +86,15 @@ func TestAuthorityQUICKeyHashesWellFormed(t *testing.T) {
 			}
 			require.Error(t, err, fmt.Sprintf("%s: a malformed authority QUIC key hash was accepted", c.name))
 		})
+	}
+}
+
+func TestNoAuthorityQUICKeyHashesEncodeAsBefore(t *testing.T) {
+	for _, entries := range []map[[PublicKeyHashSize]byte][]byte{nil, {}} {
+		d := weeklySRVDoc()
+		d.AuthorityQUICKeyHashes = entries
+		b, err := ccbor.Marshal((*document)(d))
+		require.NoError(t, err)
+		require.Equal(t, weeklySRVGolden, hex.EncodeToString(b))
 	}
 }
