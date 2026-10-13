@@ -21,7 +21,11 @@ func genNetwork(t *testing.T, epochDuration string) (string, error) {
 
 func genNetworkWith(t *testing.T, epochDuration string, nodeVersions map[string]string) (string, error) {
 	dir := t.TempDir()
-	return dir, RunGenConfig(Config{
+	return dir, RunGenConfig(networkConfig(t, dir, epochDuration, nodeVersions))
+}
+
+func networkConfig(t *testing.T, dir, epochDuration string, nodeVersions map[string]string) Config {
+	return Config{
 		NodeVersions:             nodeVersions,
 		NrLayers:                 NrLayers,
 		NrNodes:                  NrNodes,
@@ -46,7 +50,7 @@ func genNetworkWith(t *testing.T, epochDuration string, nodeVersions map[string]
 		LL:                       0.0005,
 		LM:                       0.2,
 		LR:                       0.0005,
-	})
+	}
 }
 
 func generatedEpochDurations(t *testing.T, dir string) map[string]*time.Duration {
