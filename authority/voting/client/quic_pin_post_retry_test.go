@@ -133,6 +133,7 @@ func TestPostPinMismatchDoesNotRetryOverUnpinnedTCP(t *testing.T) {
 
 	logFile := filepath.Join(t.TempDir(), "client.log")
 	c, peer := a.postingClient(t, logFile)
+	c.cfg.QUIC = &common.Options{PinMismatch: common.PinMismatchStrict}
 	peer.QUICKeyHash = genuineHash
 	peer.Addresses = []string{genuine}
 	require.NoError(t, fetch(t, c, epoch), "bootstrap")

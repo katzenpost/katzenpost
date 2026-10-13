@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 func (a *quicAuthorityKeys) serveTCP(t *testing.T, consensus []byte, dialed *atomic.Int32) string {
@@ -46,6 +47,7 @@ func TestPinMismatchDoesNotFallBackToTCP(t *testing.T) {
 
 	logFile := filepath.Join(t.TempDir(), "client.log")
 	c, peer := a.client(t, logFile)
+	c.cfg.QUIC = &common.Options{PinMismatch: common.PinMismatchStrict}
 	peer.QUICKeyHash = genuineHash
 	peer.Addresses = []string{genuine}
 	require.NoError(t, fetch(t, c, epoch), "bootstrap")

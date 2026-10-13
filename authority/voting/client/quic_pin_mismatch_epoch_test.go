@@ -24,6 +24,7 @@ func TestPinMismatchKeepsThePeerOffUnpinnedAddressesForTheEpoch(t *testing.T) {
 	var tcpDials atomic.Int32
 	tcp := a.serveTCPPosts(t, &tcpDials)
 	c, peer := a.postingClient(t, filepath.Join(t.TempDir(), "client.log"))
+	c.cfg.QUIC = &common.Options{PinMismatch: common.PinMismatchStrict}
 	peer.QUICKeyHash = bytes.Repeat([]byte{2}, pki.QUICKeyHashSize)
 	_, linkKey, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
