@@ -1098,6 +1098,28 @@ func (d *Daemon) sendGetDirectoryAuthoritiesError(request *Request, errorCode ui
 	})
 }
 
+func (d *Daemon) setPreferredTransports(request *Request) {
+	errorCode := thin.ThinClientSuccess
+	if err := d.client.SetPreferredTransports(request.SetPreferredTransports.Transports); err != nil {
+		d.log.Warningf("SetPreferredTransports: %v", err)
+		errorCode = thin.ThinClientErrorInvalidRequest
+	} else {
+		d.log.Noticef("Gateway transport order for the next connection: %v", d.client.PreferredTransports())
+	}
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		SetPreferredTransportsReply: &thin.SetPreferredTransportsReply{
+			QueryID:   request.SetPreferredTransports.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
 // createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
 func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	return createEnvelopeFromMessageWithPadding(msg, doc, isRead, replyIndex, nil)

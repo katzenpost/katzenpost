@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
@@ -41,6 +43,8 @@ type Client struct {
 
 	conn *connection
 
+	preferredTransports atomic.Pointer[[]string]
+
 	sphinx           *sphinx.Sphinx
 	geo              *geo.Geometry
 	wireKEMScheme    kem.Scheme
@@ -54,10 +58,31 @@ type Client struct {
 }
 
 func (c *Client) PreferredTransports() []string {
+	if p := c.preferredTransports.Load(); p != nil {
+		return *p
+	}
 	if c.cfg.PreferedTransports != nil {
 		return c.cfg.PreferedTransports
 	}
 	return cpki.ClientTransports
+}
+
+func (c *Client) SetPreferredTransports(transports []string) error {
+	for i, t := range transports {
+		if !slices.Contains(cpki.ClientTransports, t) {
+			return fmt.Errorf("client: transport %q is not one of %v", t, cpki.ClientTransports)
+		}
+		if slices.Contains(transports[:i], t) {
+			return fmt.Errorf("client: transport %q repeats", t)
+		}
+	}
+	if len(transports) == 0 {
+		c.preferredTransports.Store(nil)
+		return nil
+	}
+	order := slices.Clone(transports)
+	c.preferredTransports.Store(&order)
+	return nil
 }
 
 func (c *Client) haltConnection() {
