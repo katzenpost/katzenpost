@@ -15,8 +15,8 @@ Description: Katzenpost mix network
  Every katzenpost binary, each installed under a kp prefix so that no
  generic name is claimed in /usr/bin: kpserver, kpdirauth, kpcourier and
  kpreplica, the kpclientd client daemon, and the kpconfig, kpgenconfig,
- kpgenkeypair, kpgeometry, kpsphinx, kpping, kpfetch, kpecho-plugin and
- kphttp-proxy tools.
+ kpgenkeypair, kpgeometry, kpsphinx, kpping, kpmotd, kpfetch,
+ kpecho-plugin and kphttp-proxy tools.
  .
  kpclientd gets a system and a user unit, and kpserver, kpauthority and
  kpreplica are template units, so one host can run several of each. Every

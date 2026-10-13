@@ -65,6 +65,21 @@ builds:
    goarm:
       - 6
       - 7
+ - id: motd
+   main: ./cmd/motd
+   binary: motd
+   env:
+      - CGO_ENABLED=1
+   goos:
+      - linux
+      - darwin
+      - windows
+   goarch:
+      - amd64
+      - arm64
+   goarm:
+      - 6
+      - 7
 
 archives:
   - format: tar.gz

@@ -28,6 +28,7 @@ cmd/katzencat/katzencat
 cmd/katzencopy/katzencopy
 cmd/gensphinx/gensphinx
 cmd/ping/ping
+cmd/motd/motd
 cmd/genkeypair/genkeypair
 cmd/http-proxy-client/http-proxy-client
 cmd/http-proxy-server/http-proxy-server
