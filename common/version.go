@@ -16,7 +16,13 @@ import (
 // had local modifications, which identifies no reproducible source
 // state.
 func Version() string {
-	return formatVersion(versioninfo.Version, versioninfo.Revision)
+	return resolveVersion(BuildVersion, versioninfo.Version, versioninfo.Revision)
+}
+
+var BuildVersion string
+
+func resolveVersion(build, version, revision string) string {
+	return formatVersion(version, revision)
 }
 
 func formatVersion(version, revision string) string {
