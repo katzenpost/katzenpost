@@ -1209,3 +1209,47 @@ func TestPostAcceptsQuorumSuccessWithFailingAuthorities(t *testing.T) {
 	err = client.Post(ctx, epoch, signingPrivateKey, signingPublicKey, desc, nil)
 	require.NoError(err)
 }
+
+func dialQUICAuthority(t *testing.T, dialFn func(context.Context, string, string) (net.Conn, error)) *net.UDPConn {
+	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	require.NoError(t, err)
+	t.Cleanup(func() { udp.Close() })
+
+	logBackend, err := log.New("", "ERROR", false)
+	require.NoError(t, err)
+	_, linkPriv, err := schemes.ByName("x25519").GenerateKeyPair()
+	require.NoError(t, err)
+
+	p := &connector{
+		cfg: &Config{LogBackend: logBackend, DialContextFn: dialFn},
+		log: logBackend.GetLogger("quic"),
+	}
+	peer := &config.Authority{
+		Identifier:    "auth",
+		Addresses:     []string{"quic://" + udp.LocalAddr().String()},
+		WireKEMScheme: "x25519",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	done := make(chan struct{})
+	go func() {
+		_, _ = p.initSession(ctx, linkPriv, nil, peer)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	return udp
+}
+
+func receivesUDP(udp *net.UDPConn, wait time.Duration) bool {
+	_ = udp.SetReadDeadline(time.Now().Add(wait))
+	_, _, err := udp.ReadFromUDP(make([]byte, 2048))
+	return err == nil
+}
+
+func TestInitSessionWithoutDialerDialsQUIC(t *testing.T) {
+	udp := dialQUICAuthority(t, nil)
+	require.True(t, receivesUDP(udp, 5*time.Second), "a connector without DialTimeoutSec sent nothing to its quic peer")
+}
