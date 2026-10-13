@@ -1,4 +1,4 @@
-.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports check-net-transport check-transport check-running-transport interop-ref-binaries interop-gate interop-env-check interop-report interop-matrix interop-combo client-check
+.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports check-net-transport check-transport check-running-transport interop-ref-binaries interop-gate interop-env-check interop-report interop-matrix interop-combo client-check perf-compare
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -37,6 +37,7 @@ help:
 	@echo " test                      - run every component's docker integration tests (requires the testnet to be up)"
 	@echo " check-transport           - check that each TRANSPORT value maps to the right genconfig --transport, without docker"
 	@echo " check-running-transport   - check that the running testnet's nodes listen on, and its links run over, the transports TRANSPORT asks for"
+	@echo " perf-compare              - run the namenlos-parameter network over TCP then QUIC: cpu, mem, net, pigeonhole latency, link metrics into perf_dir/report.md (mixnet-alpine only)"
 	@echo " interop-gate              - bring HEAD up with release binaries on interop_swap_groups (release_refs), require 6/6 signatures and every node listed, verify revisions, ping"
 	@echo " interop-combo combo=<name> - one upgrade combination: authorities-mixed|authorities-old|authorities-old-n1|nodes-mixed|nodes-old|nodes-old-n1|everything-mixed|everything-mixed-n1"
 	@echo " interop-matrix            - twelve combinations in turn: auth, the node groups, and every group, each against the last two tags and the last tag, with and without interop_all"
@@ -118,6 +119,7 @@ nike=x25519
 
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
+pkiScheme?=ed25519
 
 DISTROS=alpine debian-trixie ubuntu-26.04
 distro=alpine
@@ -278,7 +280,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--layers $(layers) \
 	--gateways $(gateways) --serviceNodes $(serviceNodes) --storageNodes $(storageNodes) \
 	--mu $(mu) --lambdaP $(lP) --lambdaL $(lL) --lambdaM $(lM) --lambdaR $(lR) \
-	--nike "$(nike)" --kem "$(kem)" \
+	--nike "$(nike)" --kem "$(kem)" --pkiScheme "$(pkiScheme)" \
 	--noMixDecoy=$(no_mixdecoy) --noGatewayDecoy=$(no_gatewaydecoy) \
 	$(noDecoyFlag) $(noClientDecoyFlag) $(noCourierReplicaDecoyFlag) $(noMetricsFlag) \
 	--epochDuration "$(epoch_duration)" $(if $(node_versions),--nodeVersions $(node_versions)) \
@@ -539,6 +541,14 @@ check-running-transport:
 	esac || { echo "authority QUIC keys do not match TRANSPORT=$(TRANSPORT)"; fail=1; }; \
 	echo "authority QUIC keys: $$publishing of $$auths authorities publish, $$carried keep a consensus naming them; quic dials to authorities: $$pinned pinned, $$unpinned unpinned"; \
 	exit $$fail
+
+perf_dir?=perf-compare
+perf_window?=300
+perf_interval?=10
+perf_writes?=20
+perf-compare:
+	perf_dir=$(perf_dir) perf_window=$(perf_window) perf_interval=$(perf_interval) perf_writes=$(perf_writes) \
+		ldflags_body='$(ldflags_body)' MAKE='$(MAKE)' $(sh) ./perf_compare.sh
 
 check-ports:
 	@for port in $$(seq $$(($(base_port) + 2000)) $$(($(base_port) + 2003))); do \

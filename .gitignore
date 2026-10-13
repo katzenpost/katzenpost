@@ -13,6 +13,7 @@ docker/*_rust.stamp
 docker/cache
 docker/mixnet-*
 docker/namenlos-client
+docker/perf-compare
 docker/.base_port_seed
 docker/thin_client
 cmd/genconfig/genconfig
