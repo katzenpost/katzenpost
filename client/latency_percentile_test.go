@@ -13,10 +13,7 @@ import (
 func latencyPercentiles(durations []time.Duration) (median, p95 time.Duration) {
 	sorted := slices.Sorted(slices.Values(durations))
 	median = sorted[len(sorted)/2]
-	p95 = sorted[(len(sorted)*95)/100]
-	if p95 >= time.Duration(len(sorted)) {
-		p95 = sorted[len(sorted)-1]
-	}
+	p95 = sorted[(len(sorted)*95+99)/100-1]
 	return median, p95
 }
 
