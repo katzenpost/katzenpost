@@ -19,6 +19,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
@@ -155,14 +156,21 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 			errs = append(errs, fmt.Errorf("invalid URL %s: %w", a, err))
 			continue
 		}
+		var quicKeyHashes []byte
+		if u.Scheme == pki.TransportQUIC {
+			quicKeyHashes = peer.DialQUICKeyHashes(&s.quicPins, s.log)
+		}
 		ctx, cancelFn := common.ConnectContext(context.Background(), dialTimeout)
-		conn, err := common.DialURL(u, ctx, dialFn, nil)
+		conn, err := common.DialURL(u, ctx, dialFn, quicKeyHashes)
 		cancelFn()
 		if err == nil {
 			return conn, nil
 		}
 		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)
 		errs = append(errs, fmt.Errorf("dial %s failed: %w", a, err))
+		if errors.Is(err, common.ErrQUICKeyMismatch) {
+			break
+		}
 	}
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("peer %s: all addresses exhausted: %w", peer.Identifier, errors.Join(errs...))

@@ -25,11 +25,15 @@ import (
 	"time"
 
 	"golang.org/x/net/idna"
+	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/connlimit"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -241,6 +245,21 @@ type Authority struct {
 	// BindAddresses are the IP addresses to bind to for incoming connections.
 	// If left empty, Addresses will be used.
 	BindAddresses []string
+}
+
+func (a *Authority) DialQUICKeyHashes(pins *pki.AuthorityQUICKeyPins, log *logging.Logger) []byte {
+	now, _, _ := epochtime.Now()
+	var quicKeyHashes []byte
+	if a.IdentityPublicKey != nil {
+		quicKeyHashes = pins.Pins(hash.Sum256From(a.IdentityPublicKey), now)
+	}
+	switch {
+	case len(quicKeyHashes) > 0:
+		log.Debugf("peer %s: quic dial pinned to %d consensus QUIC key hashes", a.Identifier, len(quicKeyHashes)/pki.QUICKeyHashSize)
+	default:
+		log.Debugf("peer %s: quic dial unpinned, no QUIC key hashes known", a.Identifier)
+	}
+	return quicKeyHashes
 }
 
 // Node is an authority mix node or provider entry.

@@ -246,8 +246,9 @@ func (c *connection) Close() {
 }
 
 type connector struct {
-	cfg *Config
-	log *logging.Logger
+	cfg      *Config
+	log      *logging.Logger
+	quicPins pki.AuthorityQUICKeyPins
 }
 
 func newConnector(cfg *Config) *connector {
@@ -332,8 +333,12 @@ func (p *connector) initSession(
 			continue
 		}
 
+		var quicKeyHashes []byte
+		if u.Scheme == pki.TransportQUIC {
+			quicKeyHashes = peer.DialQUICKeyHashes(&p.quicPins, p.log)
+		}
 		ictx, cancelFn := common.ConnectContext(ctx, dialTimeout)
-		conn, err = common.DialURL(u, ictx, dialFn, nil)
+		conn, err = common.DialURL(u, ictx, dialFn, quicKeyHashes)
 		cancelFn()
 		if err == nil {
 			// Disable Nagle so handshake/finalisation messages do not
@@ -345,6 +350,9 @@ func (p *connector) initSession(
 			break
 		}
 
+		if errors.Is(err, common.ErrQUICKeyMismatch) {
+			return nil, fmt.Errorf("%s: failed to connect to %s: %w", peerInfo(), peer.Addresses[idx], err)
+		}
 		lastErr = fmt.Errorf("%s: failed to connect to %s: %v", peerInfo(), peer.Addresses[idx], err)
 		if i == len(peer.Addresses)-1 {
 			return nil, fmt.Errorf("%s: all connection attempts failed: %v", peerInfo(), lastErr)
@@ -1617,6 +1625,7 @@ func (c *Client) fetchAndValidate(ctx context.Context, auth *config.Authority, l
 		res.err = fmt.Errorf("epoch mismatch: doc=%d want=%d", doc.Epoch, epoch)
 		return res
 	}
+	c.pool.quicPins.Learn(doc)
 	res.doc = doc
 	res.rawDoc = r.Payload
 	res.sigs = len(good)
