@@ -31,14 +31,14 @@ func newEpochClock(epoch uint64) *epochClock {
 
 func (c *epochClock) now() uint64 { return c.epoch.Load() }
 
-func newTestEpochKeys(t *testing.T, dir string, clock *epochClock) *EpochKeys {
+func newTestEpochKeys(t testing.TB, dir string, clock *epochClock) *EpochKeys {
 	t.Helper()
 	keys, err := NewEpochKeys(dir, clock.now)
 	require.NoError(t, err)
 	return keys
 }
 
-func listenWithEpochKeys(t *testing.T, keys *EpochKeys) *QuicListener {
+func listenWithEpochKeys(t testing.TB, keys *EpochKeys) *QuicListener {
 	t.Helper()
 	_, identityPrivateKey, err := signschemes.ByName(testIdentityScheme).GenerateKey()
 	require.NoError(t, err)
