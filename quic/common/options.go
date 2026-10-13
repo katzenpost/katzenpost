@@ -23,6 +23,7 @@ type Options struct {
 	AddressValidation string
 	KeepAlivePeriod   *time.Duration
 	KeepAliveJitter   *float64
+	PinMismatch       string
 
 	client bool
 }
@@ -40,6 +41,11 @@ const (
 	AddressValidationAlways    = "always"
 	AddressValidationUnderLoad = "under-load"
 	AddressValidationOff       = "off"
+)
+
+const (
+	PinMismatchFallback = "fallback"
+	PinMismatchStrict   = "strict"
 )
 
 var knownCurves = []tls.CurveID{
@@ -79,6 +85,11 @@ func (o *Options) Validate() error {
 	case "", AddressValidationAlways, AddressValidationUnderLoad, AddressValidationOff:
 	default:
 		return fmt.Errorf("quic: AddressValidation %q is not %q, %q or %q", o.AddressValidation, AddressValidationAlways, AddressValidationUnderLoad, AddressValidationOff)
+	}
+	switch o.PinMismatch {
+	case "", PinMismatchFallback, PinMismatchStrict:
+	default:
+		return fmt.Errorf("quic: PinMismatch %q is not %q or %q", o.PinMismatch, PinMismatchFallback, PinMismatchStrict)
 	}
 	if o.KeepAlivePeriod != nil && *o.KeepAlivePeriod < 0 {
 		return errors.New("quic: KeepAlivePeriod is negative")
