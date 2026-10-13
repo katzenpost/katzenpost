@@ -16,6 +16,7 @@ import (
 	"github.com/katzenpost/katzenpost/common/config"
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -392,6 +393,14 @@ func (c *Config) validateRequiredFields() error {
 	}
 	if c.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
+	}
+	if err := pki.IsContactInfoWellFormed(c.ContactInfo); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	if c.SoftwareVersion != pki.AutoSoftwareVersion {
+		if err := pki.IsSoftwareVersionWellFormed(c.SoftwareVersion); err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
 	}
 	if c.WireKEMScheme == "" {
 		return errors.New("config: Server: WireKEMScheme is not set")
