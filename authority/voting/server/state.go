@@ -1562,11 +1562,11 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 		}
 		mixParams[bs][id] = struct{}{}
 
-		notice := config.Notice{}
-		if err := pki.IsClientNoticeWellFormed(vote.MinClientVersion, vote.ClientNotice); err == nil {
-			notice = config.Notice{MinClientVersion: vote.MinClientVersion, ClientNotice: vote.ClientNotice}
+		if err := pki.IsClientNoticeWellFormed(vote.MinClientVersion, vote.ClientNotice); err != nil {
+			s.log.Warningf("Leaving the notice of Authority %s out of the tally: %v", s.authorityName(id), err)
+		} else {
+			noticeTally[config.Notice{MinClientVersion: vote.MinClientVersion, ClientNotice: vote.ClientNotice}]++
 		}
-		noticeTally[notice]++
 
 		// include edge nodes in the tally.
 		for _, desc := range vote.GatewayNodes {
