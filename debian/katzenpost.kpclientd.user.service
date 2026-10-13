@@ -9,6 +9,7 @@ Type=simple
 ExecStart=/usr/bin/kpclientd -c /etc/katzenpost/kpclientd.toml
 Restart=on-failure
 RestartSec=5s
+NoNewPrivileges=true
 
 [Install]
 WantedBy=default.target

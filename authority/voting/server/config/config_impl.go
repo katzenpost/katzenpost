@@ -268,6 +268,9 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	if cfg.Debug == nil {
 		cfg.Debug = &Debug{}
 	}
+	if err := cfg.Notice.validate(); err != nil {
+		return err
+	}
 	if cfg.Topology != nil {
 		minPerLayer := cfg.Debug.MinNodesPerLayer
 		if minPerLayer <= 0 {

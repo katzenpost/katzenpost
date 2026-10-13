@@ -73,12 +73,16 @@ type MixDescriptor struct {
 	// LoadWeight is the node's load balancing weight (unused).
 	LoadWeight uint8
 
+	ContactInfo string `cbor:"ContactInfo,omitempty"`
+
 	// AuthenticationType is the authentication mechanism required
 	AuthenticationType string
 
 	// Version uniquely identifies the descriptor format as being for the
 	// specified version so that it can be rejected if the format changes.
 	Version string
+
+	SoftwareVersion string `cbor:"SoftwareVersion,omitempty"`
 }
 
 // String returns a human readable MixDescriptor suitable for terse logging.
@@ -103,6 +107,20 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 // MarshalBinary implmements encoding.BinaryMarshaler
 func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	return ccbor.Marshal((*mixdescriptor)(d))
+}
+
+const maxContactInfoLength = 256
+
+func IsContactInfoWellFormed(v string) error {
+	return printableWithin("ContactInfo", v, maxContactInfoLength)
+}
+
+func (d *MixDescriptor) DropMetadata() {
+	d.ContactInfo, d.SoftwareVersion = "", ""
+}
+
+func (d *ReplicaDescriptor) DropMetadata() {
+	d.ContactInfo, d.SoftwareVersion = "", ""
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive
@@ -160,6 +178,28 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 		}
 	}
 	return nil
+}
+
+const maxSoftwareVersionLength = 128
+
+func IsSoftwareVersionWellFormed(v string) error {
+	return printableWithin("SoftwareVersion", v, maxSoftwareVersionLength)
+}
+
+const AutoSoftwareVersion = "auto"
+
+func ResolveSoftwareVersion(v, build string) string {
+	if v != AutoSoftwareVersion {
+		return v
+	}
+	b := []byte(build)
+	b = b[:min(len(b), maxSoftwareVersionLength)]
+	for i, c := range b {
+		if c < 0x20 || c > 0x7e {
+			b[i] = '?'
+		}
+	}
+	return string(b)
 }
 
 func isDescriptorAddressWellFormed(transport, addr string, isGatewayNode bool, allowOnion bool) error {
@@ -234,6 +274,8 @@ type ReplicaDescriptor struct {
 	// Epoch is the Epoch in which this descriptor was created
 	Epoch uint64
 
+	ContactInfo string `cbor:"ContactInfo,omitempty"`
+
 	// IdentityKey is the node's identity (signing) key.
 	IdentityKey []byte
 
@@ -246,6 +288,8 @@ type ReplicaDescriptor struct {
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
 	Addresses map[string][]string
+
+	SoftwareVersion string `cbor:"SoftwareVersion,omitempty"`
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface

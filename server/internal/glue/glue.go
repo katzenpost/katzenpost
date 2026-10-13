@@ -88,6 +88,7 @@ type ServiceNode interface {
 	Halt()
 	OnPacket(*packet.Packet)
 	KaetzchenForPKI() (map[string]map[string]interface{}, map[string]map[string]interface{}, error)
+	OnNewMixMaxDelay(uint64)
 }
 
 type Scheduler interface {

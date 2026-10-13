@@ -37,7 +37,7 @@ func TestRestoreContinuesPastBadDocument(t *testing.T) {
 			return err
 		}
 		for _, e := range []uint64{now - 1, now, now + 1} {
-			descs[e] = &pki.MixDescriptor{Name: "mix1", Epoch: e, IdentityKey: mix.id, LinkKey: []byte("link")}
+			descs[e] = &pki.MixDescriptor{Name: "mix1", Epoch: e, IdentityKey: mix.id, LinkKey: []byte("link"), MixKeys: map[uint64][]byte{e: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
 			b, err := tx.Bucket([]byte(descriptorsBucket)).CreateBucketIfNotExists(epochToBytes(e))
 			if err != nil {
 				return err

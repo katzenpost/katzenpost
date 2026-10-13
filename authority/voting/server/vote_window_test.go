@@ -40,7 +40,7 @@ func TestVoteBeforeTheSignaturePhaseCountsInTheTally(t *testing.T) {
 	tally := func() error {
 		target.Lock()
 		defer target.Unlock()
-		_, _, _, err := target.tallyVotes(epoch)
+		_, _, _, _, err := target.tallyVotes(epoch)
 		return err
 	}
 	voted := func(from *state) bool {

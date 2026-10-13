@@ -396,6 +396,8 @@ type Server struct {
 	// (the default) each command uses its own dial and handshake.
 	PersistentPeerConns bool
 
+	AcceptDescriptorMetadata bool
+
 	// Peer retry configuration for authority-to-authority communication
 
 	// PeerRetryMaxAttempts is the maximum number of retry attempts for peer communication
@@ -469,6 +471,7 @@ type Config struct {
 	Logging     *Logging
 	Parameters  *Parameters
 	Debug       *Debug
+	Notice      Notice
 
 	Mixes           []*Node
 	GatewayNodes    []*Node

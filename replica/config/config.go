@@ -16,6 +16,7 @@ import (
 	"github.com/katzenpost/katzenpost/common/config"
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -59,6 +60,9 @@ type Config struct {
 
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
+
+	ContactInfo     string `toml:",omitempty"`
+	SoftwareVersion string `toml:",omitempty"`
 
 	// ReplicaID is the static uint8 identifier for this replica.
 	// This must match the ReplicaID configured in all dirauths for this replica.
@@ -389,6 +393,14 @@ func (c *Config) validateRequiredFields() error {
 	}
 	if c.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
+	}
+	if err := pki.IsContactInfoWellFormed(c.ContactInfo); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	if c.SoftwareVersion != pki.AutoSoftwareVersion {
+		if err := pki.IsSoftwareVersionWellFormed(c.SoftwareVersion); err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
 	}
 	if c.WireKEMScheme == "" {
 		return errors.New("config: Server: WireKEMScheme is not set")
