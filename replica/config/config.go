@@ -60,6 +60,9 @@ type Config struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
 
+	ContactInfo     string `toml:",omitempty"`
+	SoftwareVersion string `toml:",omitempty"`
+
 	// ReplicaID is the static uint8 identifier for this replica.
 	// This must match the ReplicaID configured in all dirauths for this replica.
 	ReplicaID uint8
