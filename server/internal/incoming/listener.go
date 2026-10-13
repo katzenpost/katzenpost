@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -352,11 +353,18 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string, lim
 		if !ok {
 			return nil, errors.New("incoming: no QUIC keys for a quic listener")
 		}
-		l.l, err = common.ListenWithEpochKeys(u.Host, glue.IdentityKey(), keyed.QUICKeys(), glue.Config().QUIC)
+		var ql *common.QuicListener
+		ql, err = common.ListenWithEpochKeys(u.Host, glue.IdentityKey(), keyed.QUICKeys(), glue.Config().QUIC)
 		if err != nil {
 			l.log.Errorf("Failed to start listener %q after %v: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration, and check that the address is assigned and the port is available.", addr, time.Since(listenStart), err)
 			return nil, err
 		}
+		buffers := ql.UDPBuffers()
+		instrument.QUICUDPBuffers(ql.Addr().String(), buffers.Receive, buffers.Send)
+		if warning := buffers.Warning(); warning != "" {
+			l.log.Warningf("Listener %q: %s", addr, warning)
+		}
+		l.l = ql
 	case "onion":
 		err = fmt.Errorf("unsupported listener scheme %q in address %q", u.Scheme, addr)
 		l.log.Errorf("%v. Please fix Server.Addresses or Server.BindAddresses in the server configuration.", err)

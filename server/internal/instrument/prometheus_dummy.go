@@ -114,3 +114,5 @@ func LinkEstablished(transport, direction string) {}
 func LinkFailure(transport, direction, reason string) {}
 
 func QUICDial(result string) {}
+
+func QUICUDPBuffers(address string, receive, send int) {}

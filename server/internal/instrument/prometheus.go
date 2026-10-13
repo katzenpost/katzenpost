@@ -12,6 +12,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/common/metrics"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 )
 
@@ -261,6 +262,40 @@ var (
 		},
 		[]string{"result"},
 	)
+	quicUDPReceiveBuffer = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_quic_udp_receive_buffer_bytes",
+			Help: "SO_RCVBUF of a quic listener's UDP socket after quic-go sized it, by listen address, as the kernel reports it (Linux reports twice the size granted). quic-go wants 7 MiB; less drops datagrams under load.",
+		},
+		[]string{"address"},
+	)
+	quicUDPSendBuffer = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_quic_udp_send_buffer_bytes",
+			Help: "SO_SNDBUF of a quic listener's UDP socket after quic-go sized it, by listen address, as the kernel reports it (Linux reports twice the size granted). quic-go wants 7 MiB.",
+		},
+		[]string{"address"},
+	)
+	udpReceiveBufferErrors = prometheus.NewCounterFunc(
+		prometheus.CounterOpts{
+			Name: "katzenpost_udp_receive_buffer_errors_total",
+			Help: "UDP RcvbufErrors from /proc/net/snmp: datagrams the kernel dropped because a socket's receive buffer was full. It counts every UDP socket in the network namespace, not only this process's. Linux only.",
+		},
+		func() float64 {
+			receive, _, _ := common.UDPBufferErrors()
+			return float64(receive)
+		},
+	)
+	udpSendBufferErrors = prometheus.NewCounterFunc(
+		prometheus.CounterOpts{
+			Name: "katzenpost_udp_send_buffer_errors_total",
+			Help: "UDP SndbufErrors from /proc/net/snmp: datagrams the kernel could not queue because a socket's send buffer was full. It counts every UDP socket in the network namespace, not only this process's. Linux only.",
+		},
+		func() float64 {
+			_, send, _ := common.UDPBufferErrors()
+			return float64(send)
+		},
+	)
 )
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP
@@ -304,6 +339,12 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(linksEstablished)
 	prometheus.MustRegister(linkFailures)
 	prometheus.MustRegister(quicDials)
+	prometheus.MustRegister(quicUDPReceiveBuffer)
+	prometheus.MustRegister(quicUDPSendBuffer)
+	if _, _, ok := common.UDPBufferErrors(); ok {
+		prometheus.MustRegister(udpReceiveBufferErrors)
+		prometheus.MustRegister(udpSendBufferErrors)
+	}
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress == "" {
@@ -528,6 +569,11 @@ func QUICDial(result string) {
 	quicDials.With(prometheus.Labels{"result": result}).Inc()
 }
 
+func QUICUDPBuffers(address string, receive, send int) {
+	quicUDPReceiveBuffer.With(prometheus.Labels{"address": address}).Set(float64(receive))
+	quicUDPSendBuffer.With(prometheus.Labels{"address": address}).Set(float64(send))
+}
+
 func LinkSample(name string, labels map[string]string) float64 {
 	families, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
@@ -548,7 +594,7 @@ func LinkSample(name string, labels map[string]string) float64 {
 			if matched != len(labels) {
 				continue
 			}
-			total += m.GetCounter().GetValue() + float64(m.GetHistogram().GetSampleCount())
+			total += m.GetCounter().GetValue() + m.GetGauge().GetValue() + float64(m.GetHistogram().GetSampleCount())
 		}
 	}
 	return total
