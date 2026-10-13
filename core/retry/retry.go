@@ -69,7 +69,7 @@ func Delay(baseDelay, maxDelay time.Duration, jitter float64, attempt int) time.
 // retrying.  This includes network timeouts, connection refused, connection
 // reset, etc.
 func IsTransientError(err error) bool {
-	if err == nil {
+	if err == nil || errors.Is(err, ErrQUICKeyMismatch) {
 		return false
 	}
 

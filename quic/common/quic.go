@@ -38,6 +38,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 
+	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -437,7 +438,7 @@ func ConnectContext(ctx context.Context, timeout time.Duration) (context.Context
 	return context.WithTimeout(ctx, timeout)
 }
 
-var errQUICKeyMismatch = errors.New("quic: peer QUIC key does not match its published hash")
+var ErrQUICKeyMismatch = retry.ErrQUICKeyMismatch
 
 func verifyQUICKeyHash(quicKeyHashes []byte) func(tls.ConnectionState) error {
 	if len(quicKeyHashes) == 0 {
@@ -445,7 +446,7 @@ func verifyQUICKeyHash(quicKeyHashes []byte) func(tls.ConnectionState) error {
 	}
 	return func(cs tls.ConnectionState) error {
 		if len(quicKeyHashes)%sha256.Size != 0 || len(cs.PeerCertificates) == 0 {
-			return errQUICKeyMismatch
+			return ErrQUICKeyMismatch
 		}
 		presented := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
 		match := 0
@@ -453,7 +454,7 @@ func verifyQUICKeyHash(quicKeyHashes []byte) func(tls.ConnectionState) error {
 			match |= subtle.ConstantTimeCompare(presented[:], pinned[:sha256.Size])
 		}
 		if match != 1 {
-			return errQUICKeyMismatch
+			return ErrQUICKeyMismatch
 		}
 		return nil
 	}

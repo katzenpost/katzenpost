@@ -6,6 +6,7 @@ package replica
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -309,7 +310,7 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 	default:
 		if err != nil {
 			c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
-			return false
+			return errors.Is(err, httpCommon.ErrQUICKeyMismatch)
 		}
 	}
 	c.log.Debugf("%v connection established.", u.Scheme)

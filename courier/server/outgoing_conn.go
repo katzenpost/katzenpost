@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -347,7 +348,7 @@ func (c *outgoingConn) dialAddress(dialCtx *workerContext, dialer *net.Dialer, a
 	default:
 		if err != nil {
 			c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
-			return nil, false
+			return nil, errors.Is(err, common.ErrQUICKeyMismatch)
 		}
 	}
 

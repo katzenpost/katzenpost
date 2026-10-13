@@ -356,6 +356,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			return
 		}
 
+	dial:
 		for _, addr := range dstAddrs {
 			select {
 			case <-time.After(time.Duration(atomic.LoadInt64(&c.retryDelay))):
@@ -391,6 +392,9 @@ func (c *connection) doConnect(dialCtx context.Context) {
 					c.log.Warningf("Failed to connect to %v: %v", addr, err)
 					if c.client.cfg.Callbacks.OnConnFn != nil {
 						c.client.cfg.Callbacks.OnConnFn(&ConnectError{Err: err})
+					}
+					if errors.Is(err, common.ErrQUICKeyMismatch) {
+						break dial
 					}
 					continue
 				}
