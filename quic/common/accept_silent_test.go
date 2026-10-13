@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +21,7 @@ func TestQuicAcceptNotBlockedBySilentPeer(t *testing.T) {
 	l := &QuicListener{Listener: ql}
 	defer l.Close()
 
-	silent, err := quic.DialAddr(context.Background(), l.Addr().String(), &tls.Config{InsecureSkipVerify: true, NextProtos: []string{http3.NextProtoH3}}, Config())
+	silent, err := quic.DialAddr(context.Background(), l.Addr().String(), &tls.Config{InsecureSkipVerify: true, NextProtos: []string{DefaultALPN}}, Config())
 	require.NoError(t, err)
 	defer silent.CloseWithError(0, "")
 	time.Sleep(100 * time.Millisecond)
@@ -67,7 +66,7 @@ func TestQuicSilentHandshakesDoNotLockOutPeers(t *testing.T) {
 	}()
 	for range 33 {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		c, err := quic.DialAddr(ctx, l.Addr().String(), &tls.Config{InsecureSkipVerify: true, NextProtos: []string{http3.NextProtoH3}}, Config())
+		c, err := quic.DialAddr(ctx, l.Addr().String(), &tls.Config{InsecureSkipVerify: true, NextProtos: []string{DefaultALPN}}, Config())
 		cancel()
 		require.NoError(t, err)
 		<-c.HandshakeComplete()

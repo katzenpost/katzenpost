@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
 )
 
 type Options struct {
@@ -74,8 +73,13 @@ func (o *Options) Validate() error {
 	return nil
 }
 
+const DefaultALPN = "pqnoise"
+
 func (o *Options) nextProtos() []string {
-	return []string{http3.NextProtoH3}
+	if o == nil || o.ALPN == "" {
+		return []string{DefaultALPN}
+	}
+	return []string{o.ALPN}
 }
 
 func (o *Options) curvePreferences() []tls.CurveID {

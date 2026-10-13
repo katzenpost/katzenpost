@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +21,7 @@ func TestQuicSecondStreamIsRefused(t *testing.T) {
 	defer l.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, err := quic.DialAddr(ctx, l.Addr().String(), &tls.Config{InsecureSkipVerify: true, NextProtos: []string{http3.NextProtoH3}}, Config())
+	c, err := quic.DialAddr(ctx, l.Addr().String(), &tls.Config{InsecureSkipVerify: true, NextProtos: []string{DefaultALPN}}, Config())
 	require.NoError(t, err)
 	defer c.CloseWithError(0, "")
 	first, err := c.OpenStream()

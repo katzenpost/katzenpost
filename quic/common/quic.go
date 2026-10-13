@@ -36,7 +36,6 @@ import (
 
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
 
 	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -420,7 +419,7 @@ func GenerateTLSConfig() *tls.Config {
 	}
 	return &tls.Config{
 		Certificates: []tls.Certificate{*certificate},
-		NextProtos:   []string{http3.NextProtoH3},
+		NextProtos:   []string{DefaultALPN},
 	}
 }
 

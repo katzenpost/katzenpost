@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +21,7 @@ func acceptSilentPeer(t *testing.T) (net.Conn, *quic.Conn) {
 	require.NoError(t, err)
 	l := &QuicListener{Listener: ql}
 	t.Cleanup(func() { l.Close() })
-	silent, err := quic.DialAddr(context.Background(), l.Addr().String(), &tls.Config{InsecureSkipVerify: true, NextProtos: []string{http3.NextProtoH3}}, Config())
+	silent, err := quic.DialAddr(context.Background(), l.Addr().String(), &tls.Config{InsecureSkipVerify: true, NextProtos: []string{DefaultALPN}}, Config())
 	require.NoError(t, err)
 	t.Cleanup(func() { silent.CloseWithError(0, "") })
 	server, err := l.Accept()
