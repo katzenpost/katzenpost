@@ -320,23 +320,18 @@ func (s *Server) quicStaticKey() (*common.StaticKey, error) {
 	}
 	path := filepath.Join(s.cfg.Server.DataDir, "quic-tls.key")
 	pinned := s.ownQUICKeyHash()
-	if len(pinned) == 0 {
-		key, err := common.LoadStaticKey(path)
-		if err != nil {
-			return nil, err
-		}
-		s.log.Noticef("QUIC key hash %x", key.Hash())
-		s.quicKey = key
-		return key, nil
+	load := common.LoadStaticKey
+	if len(pinned) > 0 {
+		load = common.ReadStaticKey
 	}
-	key, err := common.ReadStaticKey(path)
+	key, err := load(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("%s is missing but this authority's own entry pins QUICKeyHash %x; restore that file from backup, or replace QUICKeyHash for this authority in every config that lists it", path, pinned)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(key.Hash(), pinned) {
+	if len(pinned) > 0 && !bytes.Equal(key.Hash(), pinned) {
 		return nil, fmt.Errorf("%s has QUIC key hash %x but this authority's own entry pins QUICKeyHash %x; restore the matching file, or replace QUICKeyHash for this authority in every config that lists it", path, key.Hash(), pinned)
 	}
 	s.log.Noticef("QUIC key hash %x", key.Hash())

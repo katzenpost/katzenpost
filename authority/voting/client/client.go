@@ -344,7 +344,7 @@ func (p *connector) initSession(
 			continue
 		}
 
-		if u.Scheme == pki.TransportQUIC && !p.cfg.QUIC.StrictPinMismatch() && p.pinMismatches.Has(identity, now) {
+		if p.pinMismatches.Has(identity, now) && !p.cfg.QUIC.DialableAfterPinMismatch(peer.Addresses[idx]) {
 			continue
 		}
 

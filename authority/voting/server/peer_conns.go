@@ -154,7 +154,6 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 		identity = hash.Sum256From(peer.IdentityPublicKey)
 	}
 	epoch, _, _ := epochtime.Now()
-	strict := s.s.cfg.QUIC.StrictPinMismatch()
 	if s.quicPinMismatches.Has(identity, epoch) {
 		addrs = s.s.cfg.QUIC.AddressesAfterPinMismatch(addrs)
 	}
@@ -167,7 +166,7 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 			errs = append(errs, fmt.Errorf("invalid URL %s: %w", a, err))
 			continue
 		}
-		if u.Scheme == pki.TransportQUIC && !strict && s.quicPinMismatches.Has(identity, epoch) {
+		if s.quicPinMismatches.Has(identity, epoch) && !s.s.cfg.QUIC.DialableAfterPinMismatch(a) {
 			continue
 		}
 		var quicKeyHash []byte
@@ -189,7 +188,7 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 		if errors.Is(err, common.ErrQUICKeyMismatch) {
 			s.quicPinMismatches.Mark(identity, epoch)
 			s.s.cfg.QUIC.ReportPinMismatch(s.log, peer.Identifier, err)
-			if strict {
+			if s.s.cfg.QUIC.StrictPinMismatch() {
 				break
 			}
 		}

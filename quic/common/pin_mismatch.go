@@ -39,12 +39,8 @@ func (o *Options) StrictPinMismatch() bool {
 	return o != nil && o.PinMismatch == PinMismatchStrict
 }
 
-func IsQUICAddress(addr string) bool {
-	return strings.HasPrefix(addr, "quic://")
-}
-
 func (o *Options) DialableAfterPinMismatch(addr string) bool {
-	return IsQUICAddress(addr) == o.StrictPinMismatch()
+	return strings.HasPrefix(addr, "quic://") == o.StrictPinMismatch()
 }
 
 func (o *Options) AddressesAfterPinMismatch(addrs []string) []string {

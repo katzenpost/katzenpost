@@ -477,12 +477,12 @@ var ErrQUICKeyMismatch = retry.ErrQUICKeyMismatch
 
 const quicKeyHashPrefixSize = 4
 
-type QUICKeyMismatchError struct {
+type quicKeyMismatchError struct {
 	Presented []byte
 	Expected  []byte
 }
 
-func (e *QUICKeyMismatchError) Error() string {
+func (e *quicKeyMismatchError) Error() string {
 	expected := make([]string, 0, len(e.Expected)/sha256.Size+1)
 	for rest := e.Expected; len(rest) > 0; rest = rest[min(len(rest), sha256.Size):] {
 		expected = append(expected, hex.EncodeToString(rest[:min(len(rest), quicKeyHashPrefixSize)]))
@@ -494,7 +494,7 @@ func (e *QUICKeyMismatchError) Error() string {
 	return fmt.Sprintf("%v: presented %s, expected %s", ErrQUICKeyMismatch, presented, strings.Join(expected, " or "))
 }
 
-func (e *QUICKeyMismatchError) Unwrap() error {
+func (e *quicKeyMismatchError) Unwrap() error {
 	return ErrQUICKeyMismatch
 }
 
@@ -504,18 +504,18 @@ func verifyQUICKeyHash(quicKeyHashes []byte) func(tls.ConnectionState) error {
 	}
 	return func(cs tls.ConnectionState) error {
 		if len(cs.PeerCertificates) == 0 {
-			return &QUICKeyMismatchError{Expected: quicKeyHashes}
+			return &quicKeyMismatchError{Expected: quicKeyHashes}
 		}
 		presented := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
 		if len(quicKeyHashes)%sha256.Size != 0 {
-			return &QUICKeyMismatchError{Presented: presented[:], Expected: quicKeyHashes}
+			return &quicKeyMismatchError{Presented: presented[:], Expected: quicKeyHashes}
 		}
 		match := 0
 		for pinned := quicKeyHashes; len(pinned) > 0; pinned = pinned[sha256.Size:] {
 			match |= subtle.ConstantTimeCompare(presented[:], pinned[:sha256.Size])
 		}
 		if match != 1 {
-			return &QUICKeyMismatchError{Presented: presented[:], Expected: quicKeyHashes}
+			return &quicKeyMismatchError{Presented: presented[:], Expected: quicKeyHashes}
 		}
 		return nil
 	}
