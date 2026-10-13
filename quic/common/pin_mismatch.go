@@ -43,10 +43,13 @@ func IsQUICAddress(addr string) bool {
 	return strings.HasPrefix(addr, "quic://")
 }
 
+func (o *Options) DialableAfterPinMismatch(addr string) bool {
+	return IsQUICAddress(addr) == o.StrictPinMismatch()
+}
+
 func (o *Options) AddressesAfterPinMismatch(addrs []string) []string {
-	strict := o.StrictPinMismatch()
 	return slices.DeleteFunc(slices.Clone(addrs), func(addr string) bool {
-		return IsQUICAddress(addr) != strict
+		return !o.DialableAfterPinMismatch(addr)
 	})
 }
 
