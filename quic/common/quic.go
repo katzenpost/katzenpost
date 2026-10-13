@@ -433,6 +433,13 @@ func GenerateTLSConfig() *tls.Config {
 	return &tls.Config{Certificates: []tls.Certificate{tlsCert}, NextProtos: []string{http3.NextProtoH3}}
 }
 
+func ConnectContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
 	switch u.Scheme {
 	case "tcp", "onion":
