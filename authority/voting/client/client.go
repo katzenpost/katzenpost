@@ -250,9 +250,9 @@ func (c *connection) Close() {
 }
 
 type connector struct {
-	cfg      *Config
-	log      *logging.Logger
-	quicPins pki.AuthorityQUICKeyPins
+	cfg           *Config
+	log           *logging.Logger
+	pinMismatches quicPinMismatches
 }
 
 func newConnector(cfg *Config) *connector {
@@ -299,7 +299,7 @@ func (p *connector) initSession(
 	var identity [pki.PublicKeyHashSize]byte
 	if peer.IdentityPublicKey != nil {
 		identity = hash.Sum256From(peer.IdentityPublicKey)
-		if p.quicPins.Mismatched(identity, now) {
+		if p.pinMismatches.has(identity, now) {
 			usable.Addresses = slices.DeleteFunc(slices.Clone(usable.Addresses), func(addr string) bool {
 				return !strings.HasPrefix(addr, pki.TransportQUIC+"://")
 			})
@@ -369,7 +369,7 @@ func (p *connector) initSession(
 		}
 
 		if errors.Is(err, common.ErrQUICKeyMismatch) {
-			p.quicPins.MarkMismatch(identity, now)
+			p.pinMismatches.mark(identity, now)
 			return nil, fmt.Errorf("%s: failed to connect to %s: %w", peerInfo(), peer.Addresses[idx], err)
 		}
 		lastErr = fmt.Errorf("%s: failed to connect to %s: %v", peerInfo(), peer.Addresses[idx], err)
@@ -1644,7 +1644,6 @@ func (c *Client) fetchAndValidate(ctx context.Context, auth *config.Authority, l
 		res.err = fmt.Errorf("epoch mismatch: doc=%d want=%d", doc.Epoch, epoch)
 		return res
 	}
-	c.pool.quicPins.Learn(doc)
 	res.doc = doc
 	res.rawDoc = r.Payload
 	res.sigs = len(good)

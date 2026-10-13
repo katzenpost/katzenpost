@@ -114,7 +114,6 @@ type state struct {
 	worker.Worker
 
 	uploadMu sync.Mutex
-	quicPins pki.AuthorityQUICKeyPins
 
 	s   *Server
 	geo *geo.Geometry
@@ -764,7 +763,6 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		// Persist the document to disk.
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
-		s.quicPins.Learn(ourConsensus)
 		// signedConsensus is exactly what documentForEpoch serves for this
 		// epoch. Cache it now so the first GetConsensus does not re-marshal the
 		// document; a consensus is write-once per epoch, so the bytes never go
@@ -3059,7 +3057,6 @@ func (s *state) restorePersistence() error {
 					} else {
 						s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
 						s.documents[epoch] = doc
-						s.quicPins.Learn(doc)
 					}
 				}
 
@@ -3364,7 +3361,6 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 			// bootstrapping.
 			if _, ok := s.documents[epoch]; !ok {
 				s.documents[epoch] = doc
-				s.quicPins.Learn(doc)
 			}
 			s.Unlock()
 			return
