@@ -22,7 +22,13 @@ func Version() string {
 var BuildVersion string
 
 func resolveVersion(build, version, revision string) string {
-	return formatVersion(version, revision)
+	if build != "" {
+		return build
+	}
+	if v := formatVersion(version, revision); v != "(devel)" {
+		return v
+	}
+	return "unknown"
 }
 
 func formatVersion(version, revision string) string {
