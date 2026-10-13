@@ -39,6 +39,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
@@ -239,6 +240,7 @@ func (c *incomingConn) worker() {
 	// Bind the session to the conn, handshake, authenticate. The Session
 	// enforces the handshake and steady-state deadlines itself.
 	timeoutMs := time.Duration(c.l.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
+	transport := common.LinkTransport(c.c)
 	handshakeStart := time.Now()
 	if err = c.w.Initialize(context.Background(), c.c); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
@@ -250,6 +252,7 @@ func (c *incomingConn) worker() {
 		}
 		handshakeinstrument.HandshakeFailure("incoming", state)
 		handshakeinstrument.HandshakeDuration("incoming", "failure", handshakeElapsed)
+		instrument.LinkFailure(transport, "incoming", "handshake")
 
 		if wire.IsNoHandshakeBytesError(err) {
 			c.log.Debugf(
@@ -273,6 +276,8 @@ func (c *incomingConn) worker() {
 	}
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("incoming", "success", handshakeElapsed)
+	instrument.LinkEstablished(transport, "incoming")
+	instrument.LinkHandshake(transport, "incoming", handshakeElapsed)
 	c.log.Debugf(
 		"Handshake completed local=%v in %v",
 		c.c.LocalAddr(),

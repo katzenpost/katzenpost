@@ -146,7 +146,7 @@ func TestEpochChangeLetsAnEarlyConnectedLinkSend(t *testing.T) {
 	closeCh := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
-		c.onConnEstablished(conn, closeCh)
+		c.onConnEstablished(conn, closeCh, time.Now())
 		close(done)
 	}()
 	defer func() {

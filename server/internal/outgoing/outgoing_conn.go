@@ -267,6 +267,7 @@ func (c *outgoingConn) worker() {
 			}
 			c.log.Debugf("Dialing: %v", u.Host)
 
+			dialStart := time.Now()
 			connectCtx, connectCancel := common.ConnectContext(dialCtx, dialer.Timeout)
 			conn, err := common.DialURL(u, connectCtx, dialer.DialContext, c.dst.QUICKeyHash)
 			connectCancel()
@@ -278,6 +279,7 @@ func (c *outgoingConn) worker() {
 				}
 				return
 			default:
+				countDial(u.Scheme, len(c.dst.QUICKeyHash) > 0, err)
 				if err != nil {
 					c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
 					continue
@@ -293,7 +295,7 @@ func (c *outgoingConn) worker() {
 			start := time.Now()
 
 			// Handle the new connection.
-			if c.onConnEstablished(conn, dialCtx.Done()) {
+			if c.onConnEstablished(conn, dialCtx.Done(), dialStart) {
 				// Canceled with a connection established.
 				c.log.Debugf("Existing connection canceled.")
 				instrument.CancelledOutgoing()
@@ -312,7 +314,25 @@ func (c *outgoingConn) worker() {
 	}
 }
 
-func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{}) (wasHalted bool) {
+func countDial(scheme string, pinned bool, err error) {
+	transport := "tcp"
+	if scheme == "quic" {
+		transport = "quic"
+	}
+	switch {
+	case errors.Is(err, common.ErrQUICKeyMismatch):
+		instrument.QUICDial("mismatch")
+		instrument.LinkFailure(transport, "outgoing", "pin_mismatch")
+	case err != nil:
+		instrument.LinkFailure(transport, "outgoing", "dial")
+	case transport == "quic" && pinned:
+		instrument.QUICDial("pinned")
+	case transport == "quic":
+		instrument.QUICDial("unpinned")
+	}
+}
+
+func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{}, dialStart time.Time) (wasHalted bool) {
 	defer func() {
 		c.log.Debugf("TCP connection closed. (wasHalted: %v)", wasHalted)
 		conn.Close()
@@ -338,6 +358,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
+	linkTransport := common.LinkTransport(conn)
 	handshakeStart := time.Now()
 	if err = w.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
@@ -349,6 +370,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		}
 		handshakeinstrument.HandshakeFailure("outgoing", state)
 		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
+		instrument.LinkFailure(linkTransport, "outgoing", "handshake")
 
 		localAddr := ""
 		if conn.LocalAddr() != nil {
@@ -393,6 +415,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
+	instrument.LinkEstablished(linkTransport, "outgoing")
+	instrument.LinkHandshake(linkTransport, "outgoing", time.Since(dialStart))
 	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 

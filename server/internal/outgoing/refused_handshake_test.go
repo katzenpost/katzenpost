@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -64,7 +65,7 @@ func handshakeLog(t *testing.T, serve func(net.Conn)) string {
 
 	conn, err := net.Dial("tcp", ln.Addr().String())
 	require.NoError(t, err)
-	c.onConnEstablished(conn, make(chan struct{}))
+	c.onConnEstablished(conn, make(chan struct{}), time.Now())
 	require.NoError(t, backend.Close())
 	b, err := os.ReadFile(logPath)
 	require.NoError(t, err)
