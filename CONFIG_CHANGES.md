@@ -188,6 +188,11 @@ recommended setting. A value that fails validation refuses the config.
   per-epoch QUIC key hashes in its descriptor only when every authority
   entry in its config has a `QUICKeyHash`: only authorities of this
   release hold such a key, and only they accept the descriptor field.
+- Not configurable: closing a QUIC link delivers what was written
+  before the close only within a 2 s linger. quic-go v0.63 offers no
+  signal that the peer has acknowledged a stream, so after 2 s the
+  connection is closed and any data the peer has not acknowledged is
+  dropped. A TCP link hands unsent data to the kernel as before.
 - Not configurable: each QUIC listener logs one warning at start when
   its UDP socket buffers are below the 7 MiB quic-go asks for, naming
   the sysctl to raise (`net.core.rmem_max` and `net.core.wmem_max` on

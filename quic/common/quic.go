@@ -232,12 +232,16 @@ func (q *QuicConn) markClosed() (streamless, closing bool) {
 }
 
 func (q *QuicConn) linger() {
-	q.readMu.Lock()
-	defer q.readMu.Unlock()
+	q.awaitInFlightRead()
 	q.Stream.SetReadDeadline(time.Now().Add(closeLinger))
 	io.Copy(io.Discard, q.Stream)
 	q.Stream.CancelRead(0)
 	q.Conn.CloseWithError(0, "")
+}
+
+func (q *QuicConn) awaitInFlightRead() {
+	q.readMu.Lock()
+	q.readMu.Unlock()
 }
 
 // Read implements net.Conn
