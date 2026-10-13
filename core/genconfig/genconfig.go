@@ -154,6 +154,19 @@ func (s *Katzenpost) olderReleaseEnv(node string) []string {
 	return env
 }
 
+func (s *Katzenpost) allAuthoritiesCurrent() bool {
+	for node, version := range s.NodeVersions {
+		if strings.HasPrefix(node, "auth") && version != CurrentVersion {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Katzenpost) pinsQUICKeys(addresses []string) bool {
+	return s.allAuthoritiesCurrent() && slices.ContainsFunc(addresses, func(a string) bool { return strings.HasPrefix(a, "quic://") })
+}
+
 func (s *Katzenpost) epochDuration() *time.Duration {
 	d, err := time.ParseDuration(s.EpochDuration)
 	if err != nil {
@@ -181,13 +194,18 @@ func (s *Katzenpost) kpclientdMetricsPort() uint16 {
 	return s.BasePort + kpclientdMetricsPortOffset
 }
 
-func (s *Katzenpost) peerAddr(identifier string, port uint16) string {
-	scheme := "tcp"
-	if s.Transport == "quic" || (s.Transport == "alternate" && s.peerCount%2 == 1) {
-		scheme = "quic"
-	}
+func (s *Katzenpost) peerAddrs(identifier string, port uint16, keepTCP bool) []string {
+	tcp := fmt.Sprintf("tcp://%s:%d", identifier, port)
+	useQUIC := s.Transport == "quic" || (s.Transport == "alternate" && s.peerCount%2 == 1)
 	s.peerCount++
-	return fmt.Sprintf("%s://%s:%d", scheme, identifier, port)
+	if !useQUIC {
+		return []string{tcp}
+	}
+	addrs := []string{fmt.Sprintf("quic://%s:%d", identifier, port)}
+	if keepTCP && s.Transport == "alternate" {
+		addrs = append(addrs, tcp)
+	}
+	return addrs
 }
 
 // metricsScrapeAddr returns the host:port form a service writes into
@@ -623,7 +641,8 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
 
-	cfg.Addresses = []string{s.peerAddr(cfg.Identifier, s.LastPort)}
+	cfg.Addresses = s.peerAddrs(cfg.Identifier, s.LastPort, false)
+	cfg.PublishQUICKeyHashes = s.pinsQUICKeys(cfg.Addresses)
 	s.LastPort++
 
 	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastPort)
@@ -698,9 +717,9 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// by net.Listen) point at the service's own hostname. Inside the
 	// container that resolves to the private bridge IP via /etc/hosts,
 	// so we never bind to 0.0.0.0.
-	addr := s.peerAddr(n, s.LastPort)
-	cfg.Server.Addresses = []string{addr}
-	cfg.Server.BindAddresses = []string{addr}
+	cfg.Server.Addresses = s.peerAddrs(n, s.LastPort, isGateway)
+	cfg.Server.BindAddresses = cfg.Server.Addresses
+	cfg.Server.PublishQUICKeyHashes = s.pinsQUICKeys(cfg.Server.Addresses)
 	s.LastPort += 2
 	cfg.Server.DataDir = filepath.Join(s.BaseDir, n)
 
@@ -881,9 +900,10 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			EpochDuration:          s.epochDuration(),
 			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 			Identifier:             authIdentifier,
-			Addresses:              []string{s.peerAddr(authIdentifier, s.LastPort)},
+			Addresses:              s.peerAddrs(authIdentifier, s.LastPort, true),
 			DataDir:                filepath.Join(s.BaseDir, authIdentifier),
 		}
+		cfg.Server.PublishQUICKeyHashes = (s.Transport == "quic" || s.Transport == "alternate") && s.allAuthoritiesCurrent()
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
 		s.LastPort += 1
 		// Allocate a metrics listener port for this dirauth. The
