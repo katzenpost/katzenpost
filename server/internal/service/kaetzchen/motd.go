@@ -7,14 +7,12 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 )
 
-const (
-	MOTDCapability = "motd"
-	maxMOTDLength  = 512
-)
+const MOTDCapability = "motd"
 
 type kaetzchenMOTD struct {
 	log    *logging.Logger
@@ -45,13 +43,8 @@ func NewMOTD(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 	if !ok || text == "" {
 		return nil, fmt.Errorf("kaetzchen/motd: Text must be a non-empty string")
 	}
-	if len(text) > maxMOTDLength {
-		return nil, fmt.Errorf("kaetzchen/motd: Text exceeds %d bytes", maxMOTDLength)
-	}
-	for i := 0; i < len(text); i++ {
-		if text[i] < 0x20 || text[i] > 0x7e {
-			return nil, fmt.Errorf("kaetzchen/motd: Text has a non-printable byte at %d", i)
-		}
+	if err := pki.IsClientNoticeWellFormed("", text); err != nil {
+		return nil, fmt.Errorf("kaetzchen/motd: Text is not a valid notice: %w", err)
 	}
 	return &kaetzchenMOTD{
 		log:    glue.LogBackend().GetLogger("kaetzchen/motd"),
