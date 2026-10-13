@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestOwnBusName(t *testing.T) {
 	t.Cleanup(func() { connectBus = original })
 	want := errors.New("test")
 	connectBus = func() (busOwner, error) { return nil, want }
-	closeBus, err := ownBusName("test")
+	closeBus, err := ownBusName(context.Background(), "test")
 	if !errors.Is(err, want) || closeBus != nil {
 		t.Fatalf("unexpected result: close=%t, err=%v", closeBus != nil, err)
 	}
@@ -43,7 +44,7 @@ func TestOwnBusName(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			connectBus = func() (busOwner, error) { return test.bus, nil }
-			closeBus, err := ownBusName("test")
+			closeBus, err := ownBusName(context.Background(), "test")
 			if test.name != "success" {
 				if err == nil || !test.bus.closed {
 					t.Fatalf("got %v, closed %v", err, test.bus.closed)
