@@ -34,17 +34,18 @@ func TestOwnBusName(t *testing.T) {
 		t.Fatalf("unexpected result: bus=%t, err=%v", bus != nil, err)
 	}
 	for _, test := range []struct {
-		name string
-		bus  *fakeBus
+		name    string
+		bus     *fakeBus
+		wantErr bool
 	}{
-		{"request", &fakeBus{err: want}},
-		{"owned", &fakeBus{reply: dbus.RequestNameReplyExists}},
-		{"success", &fakeBus{reply: dbus.RequestNameReplyPrimaryOwner}},
+		{"request", &fakeBus{err: want}, true},
+		{"owned", &fakeBus{reply: dbus.RequestNameReplyExists}, true},
+		{"success", &fakeBus{reply: dbus.RequestNameReplyPrimaryOwner}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			connectBus = func() (busOwner, error) { return test.bus, nil }
 			bus, err := ownBusName(context.Background(), "test")
-			if test.name != "success" {
+			if test.wantErr {
 				if err == nil || !test.bus.closed {
 					t.Fatalf("got %v, closed %v", err, test.bus.closed)
 				}
