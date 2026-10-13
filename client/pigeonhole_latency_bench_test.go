@@ -6,7 +6,6 @@
 package client
 
 import (
-	"sort"
 	"testing"
 	"time"
 
@@ -81,12 +80,7 @@ func BenchmarkPigeonholeWrite(b *testing.B) {
 	}
 	b.StopTimer()
 
-	sort.Slice(durations, func(i, j int) bool { return durations[i] < durations[j] })
-	median := durations[len(durations)/2]
-	p95 := durations[(len(durations)*95)/100]
-	if p95 >= time.Duration(len(durations)) {
-		p95 = durations[len(durations)-1]
-	}
+	median, p95 := latencyPercentiles(durations)
 	b.ReportMetric(float64(median.Milliseconds()), "median_ms")
 	b.ReportMetric(float64(p95.Milliseconds()), "p95_ms")
 }
