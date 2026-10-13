@@ -93,7 +93,7 @@ recommended setting. A value that fails validation refuses the config.
 
 ```toml
 [QUIC]
-  ALPN = "pqnoise"
+  ALPN = "h3"
   CurvePreferences = ["X25519MLKEM768", "X25519"]
   AddressValidation = "always"
   KeepAlivePeriod = "3m"
@@ -101,17 +101,22 @@ recommended setting. A value that fails validation refuses the config.
   PinMismatch = "fallback"
 ```
 
-- **Added** `ALPN` (string, at most 255 bytes; default `"pqnoise"`).
-  The TLS ALPN protocol a link offers. Both ends must offer the same
-  value or the handshake fails, so it is a per-network setting: every
+- **Added** `ALPN` (string, at most 255 bytes; default `"h3"`). The
+  TLS ALPN protocol a link offers. Both ends must offer the same value
+  or the handshake fails, so it is a per-network setting: every
   authority, node, replica, courier and client of one network must
-  agree. `"h3"` makes the TLS hellos name HTTP/3. This does not
-  attempt to hide from active probing: anyone who connects completes
-  TLS with a self-signed certificate and finds no HTTP/3 behind it.
-  **[breaking]** Releases before this change offered `"h3"`; a QUIC
-  link between an older and a newer node fails (TCP links are
-  unaffected) unless the newer nodes set `ALPN = "h3"` until the
-  whole network is upgraded.
+  agree. The ALPN is visible to passive observers: QUIC Initial
+  packets are encrypted with keys anyone can derive from the packet
+  itself, so the ClientHello, ALPN included, is effectively plaintext
+  on the wire. The default `"h3"`, which earlier releases also
+  offered, makes those hellos name HTTP/3 like much other QUIC
+  traffic; a value of the operator's choosing such as `"pqnoise"`
+  marks every link of the network as katzenpost to anyone watching.
+  Neither value hides katzenpost from active probing: anyone who
+  connects completes TLS with a self-signed certificate and finds no
+  HTTP/3 behind it. A value other than `"h3"` also breaks QUIC links
+  to nodes of earlier releases, which offer `"h3"` (TCP links are
+  unaffected).
 - **Added** `CurvePreferences` (string array; default unset). The TLS
   key exchange groups in order of preference, by Go's names: `X25519`,
   `X25519MLKEM768`, `SecP256r1MLKEM768`, `SecP384r1MLKEM1024`,

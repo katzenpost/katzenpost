@@ -100,7 +100,7 @@ func (o *Options) Validate() error {
 	return nil
 }
 
-const DefaultALPN = "pqnoise"
+const DefaultALPN = "h3"
 
 func (o *Options) nextProtos() []string {
 	if o == nil || o.ALPN == "" {
