@@ -337,11 +337,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		// Build the list of candidate addresses, in decreasing order of
 		// preference, by transport.
 		var dstAddrs []string
-		transports := c.client.cfg.PreferedTransports
-		if transports == nil {
-			transports = cpki.ClientTransports
-		}
-		for _, t := range transports {
+		for _, t := range c.client.PreferredTransports() {
 			for _, addr := range c.descriptor.Addresses[t] {
 				if u, err := url.Parse(addr); proxied && err == nil && u.Scheme == cpki.TransportQUIC {
 					continue

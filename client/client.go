@@ -53,6 +53,13 @@ type Client struct {
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
 }
 
+func (c *Client) PreferredTransports() []string {
+	if c.cfg.PreferedTransports != nil {
+		return c.cfg.PreferedTransports
+	}
+	return cpki.ClientTransports
+}
+
 func (c *Client) haltConnection() {
 	if c.conn != nil {
 		c.conn.isShutdown.Store(true)
