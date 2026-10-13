@@ -91,3 +91,22 @@ func TestServiceNodeHaltIsNotCountedAsPreDelayOverflow(t *testing.T) {
 	require.Nil(t, pkt.Payload)
 	require.Nil(t, pkt.Recipient)
 }
+
+func TestServiceNodeDropsReleasedRequestPastDwell(t *testing.T) {
+	sn, g := newTestServiceNode(t, config.Debug{})
+	func() {
+		defer func() { recover() }()
+		instrument.StartPrometheusListener(g)
+	}()
+	before := droppedByReason(t, "service_dwell_exceeded")
+	pkt := echoRequest(t, g.cfg.SphinxGeometry, 0)
+	pkt.DispatchAt = pkt.DispatchAt.Add(-2 * time.Second)
+	sn.readyCh <- pkt
+
+	select {
+	case <-g.sched.ch:
+		t.Fatal("a released request past the service dwell time was answered")
+	case <-time.After(300 * time.Millisecond):
+	}
+	require.Equal(t, before+1, droppedByReason(t, "service_dwell_exceeded"))
+}
