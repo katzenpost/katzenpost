@@ -7,7 +7,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))packaging/debian/targets.mk
 build_version?=$(shell git describe --tags --always --dirty 2>/dev/null)
 build_ldflags=-s -w -X github.com/katzenpost/katzenpost/common.BuildVersion=$(build_version)
 
-ci_suites=authority client core core/sphinx server courier pigeonhole
+ci_suites=authority client cmd/kpclientd core core/sphinx server courier pigeonhole
 suite?=
 suite_timeout?=30m
 
