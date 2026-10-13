@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -422,13 +423,15 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	desc := &cpki.ReplicaDescriptor{
-		Name:         p.server.cfg.Identifier,
-		ReplicaID:    p.server.cfg.ReplicaID,
-		Epoch:        doPublishEpoch,
-		IdentityKey:  idkeyblob,
-		LinkKey:      linkblob,
-		Addresses:    p.descAddrMap,
-		EnvelopeKeys: envelopeKeys,
+		Name:            p.server.cfg.Identifier,
+		ReplicaID:       p.server.cfg.ReplicaID,
+		Epoch:           doPublishEpoch,
+		IdentityKey:     idkeyblob,
+		LinkKey:         linkblob,
+		Addresses:       p.descAddrMap,
+		EnvelopeKeys:    envelopeKeys,
+		ContactInfo:     p.server.cfg.ContactInfo,
+		SoftwareVersion: cpki.ResolveSoftwareVersion(p.server.cfg.SoftwareVersion, kpcommon.Version()),
 	}
 
 	if err := cpki.IsReplicaDescriptorWellFormed(desc, doPublishEpoch); err != nil {
