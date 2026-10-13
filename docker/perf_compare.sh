@@ -67,6 +67,8 @@ summarize() {
 		sub("[-_][0-9]+$", "", name)
 		kind = name
 		sub("[0-9]+$", "", kind)
+		if (kind == "metrics" || kind == "grafana" || kind == "pyroscope")
+			next
 		bytes = 0
 		for (i = 5; i <= NF; i++)
 			bytes += $i
