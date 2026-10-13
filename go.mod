@@ -39,7 +39,7 @@ require (
 )
 
 require (
-	codeberg.org/vula/highctidh v1.0.2025051200 // indirect
+	codeberg.org/vula/highctidh v1.0.2026101300 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e // indirect
 	filippo.io/mlkem768 v0.0.0-20260214141301-2e7bebc7d88d // indirect
