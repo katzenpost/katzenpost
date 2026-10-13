@@ -2,13 +2,14 @@
 
 export GOFLAGS := -trimpath -buildvcs=false
 export SOURCE_DATE_EPOCH ?= $(shell dpkg-parsechangelog -STimestamp)
+export build_version := $(shell dpkg-parsechangelog -SVersion)
 
 %:
 	dh $@
 
 override_dh_auto_build:
 	$(MAKE) all
-	cd cmd/kpconfig && go build -trimpath -ldflags "-s -w"
+	cd cmd/kpconfig && go build -trimpath -ldflags "-s -w -X github.com/katzenpost/katzenpost/common.BuildVersion=$(build_version)"
 
 override_dh_auto_test:
 	:

@@ -372,7 +372,8 @@ log_level=DEBUG
 docker?=$(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 
 ldflags_body=-extldflags=-Wl,-z,stack-size=0x1F40000 -buildid=
-ldflags="$(ldflags_body)"
+build_version?=$(shell git -C .. describe --tags --always --dirty 2>/dev/null)
+ldflags="$(ldflags_body) -X github.com/katzenpost/katzenpost/common.BuildVersion=$(build_version)"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
