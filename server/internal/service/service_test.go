@@ -350,6 +350,14 @@ func TestServiceNodeHaltDrainsReadyCh(t *testing.T) {
 	require.Nil(t, pkt2.Recipient)
 }
 
+func newIdleServiceNode(t *testing.T) (*serviceNode, *serviceGlue) {
+	g := newServiceGlue(t, config.Debug{})
+	g.cfg.Debug.NumServiceWorkers = 0
+	sn, err := New(g)
+	require.NoError(t, err)
+	return sn.(*serviceNode), g
+}
+
 func TestServiceNodeHaltStopsWorkersBeforePreDelay(t *testing.T) {
 	g := newServiceGlue(t, config.Debug{})
 	n, err := New(g)

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
@@ -56,4 +57,37 @@ func TestWorkerReportsChannelUsage(t *testing.T) {
 		_, peak, _ := instrument.ChannelGauge("service_incoming")
 		return peak == 2
 	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func droppedByReason(t *testing.T, reason string) float64 {
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, f := range families {
+		if f.GetName() != "katzenpost_dropped_reason_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			if m.GetLabel()[0].GetValue() == reason {
+				return m.GetCounter().GetValue()
+			}
+		}
+	}
+	return 0
+}
+
+func TestServiceNodeHaltIsNotCountedAsPreDelayOverflow(t *testing.T) {
+	sn, g := newIdleServiceNode(t)
+	func() {
+		defer func() { recover() }()
+		instrument.StartPrometheusListener(g)
+	}()
+	before := droppedByReason(t, "service_predelay_overflow")
+	pkt := echoRequest(t, g.cfg.SphinxGeometry, time.Second)
+	require.True(t, sn.preDelay.push(pkt))
+
+	sn.Halt()
+
+	require.Equal(t, before, droppedByReason(t, "service_predelay_overflow"))
+	require.Nil(t, pkt.Payload)
+	require.Nil(t, pkt.Recipient)
 }
