@@ -47,6 +47,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	rConfig "github.com/katzenpost/katzenpost/replica/config"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
@@ -65,6 +66,7 @@ const (
 	IdentityPrivateKeyFile = "identity.private.pem"
 	LinkPublicKeyFile      = "link.public.pem"
 	LinkPrivateKeyFile     = "link.private.pem"
+	QUICKeyFile            = "quic-tls.key"
 	CourierService         = "courier"
 	ClientIdentifier       = "client"
 	DebugLogLevel          = "DEBUG"
@@ -154,13 +156,9 @@ func (s *Katzenpost) olderReleaseEnv(node string) []string {
 	return env
 }
 
-func (s *Katzenpost) allAuthoritiesCurrent() bool {
-	for node, version := range s.NodeVersions {
-		if strings.HasPrefix(node, "auth") && version != CurrentVersion {
-			return false
-		}
-	}
-	return true
+func (s *Katzenpost) isCurrent(node string) bool {
+	version, ok := s.NodeVersions[node]
+	return !ok || version == CurrentVersion
 }
 
 func (s *Katzenpost) epochDuration() *time.Duration {
@@ -888,13 +886,18 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg := new(vConfig.Config)
 		cfg.SphinxGeometry = s.SphinxGeometry
 		authIdentifier := fmt.Sprintf(AuthNodeFormat, i)
+		pinsQUIC := (s.Transport == "quic" || s.Transport == "alternate") && s.isCurrent(authIdentifier)
+		addresses := s.peerAddrs(authIdentifier, s.LastPort, true)
+		if !pinsQUIC && s.Transport == "quic" {
+			addresses = append(addresses, fmt.Sprintf("tcp://%s:%d", authIdentifier, s.LastPort))
+		}
 		cfg.Server = &vConfig.Server{
 			WireKEMScheme:          s.WireKEMScheme,
 			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
 			EpochDuration:          s.epochDuration(),
 			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 			Identifier:             authIdentifier,
-			Addresses:              s.peerAddrs(authIdentifier, s.LastPort, true),
+			Addresses:              addresses,
 			DataDir:                filepath.Join(s.BaseDir, authIdentifier),
 		}
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
@@ -926,6 +929,13 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			WireKEMScheme:      wirekem,
 			PKISignatureScheme: s.PkiSignatureScheme.Name(),
 			Addresses:          cfg.Server.Addresses,
+		}
+		if pinsQUIC {
+			quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, authIdentifier, QUICKeyFile))
+			if err != nil {
+				return err
+			}
+			authority.QUICKeyHash = quicKey.Hash()
 		}
 		s.Authorities[hash.Sum256From(idKey)] = authority
 	}
