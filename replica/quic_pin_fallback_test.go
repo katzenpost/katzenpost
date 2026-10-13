@@ -28,6 +28,7 @@ func TestPinMismatchDoesNotFallBackToAnUnpinnedAddress(t *testing.T) {
 	keys := GenerateTestKeys(t, schemes)
 	cfg := CreateTestConfig(t, schemes, geometry, CreateTestTempDir(t, "replica_pin_test"), "replica1", []string{"tcp://127.0.0.1:1"})
 	cfg.SetDefaultTimeouts()
+	cfg.QUIC = &common.Options{PinMismatch: common.PinMismatchStrict}
 	s := &Server{
 		identityPublicKey: keys.IdentityPubKey,
 		linkKey:           keys.LinkPrivKey,
