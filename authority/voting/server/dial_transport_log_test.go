@@ -21,7 +21,7 @@ func TestPeerDialLogsItsTransport(t *testing.T) {
 	l, err := common.ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	defer l.Close()
-	st := &state{}
+	st := &state{s: &Server{cfg: &config.Config{}}}
 	out := fileLogged(t, st)
 	peer := &config.Authority{Identifier: "auth2"}
 	conn, err := st.dialPeerAddrs(peer, []string{"quic://" + l.Addr().String()}, 5*time.Second)

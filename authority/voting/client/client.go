@@ -110,6 +110,8 @@ type Config struct {
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
 
+	QUIC *common.Options
+
 	// Geo is the geometry used for the Sphinx packet construction.
 	Geo *geo.Geometry
 
@@ -350,7 +352,7 @@ func (p *connector) initSession(
 			quicKeyHashes = peer.DialQUICKeyHashes(&p.quicPins, p.log)
 		}
 		ictx, cancelFn := common.ConnectContext(ctx, dialTimeout)
-		conn, err = common.DialURL(u, ictx, dialFn, quicKeyHashes, nil)
+		conn, err = common.DialURL(u, ictx, dialFn, quicKeyHashes, p.cfg.QUIC)
 		cancelFn()
 		if err == nil {
 			p.log.Debugf("%s: %s connection established.", peerInfo(), u.Scheme)

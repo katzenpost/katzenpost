@@ -292,7 +292,7 @@ func (s *Server) startListeners(listenAddresses []string) {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
 				}
-				ql, err := common.ListenWithEpochKeys(u.Host, s.identityPrivateKey, keys, nil)
+				ql, err := common.ListenWithEpochKeys(u.Host, s.identityPrivateKey, keys, s.cfg.QUIC)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue

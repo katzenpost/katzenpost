@@ -1182,6 +1182,7 @@ func pkiClientConfig(g glue.Glue, kemscheme kem.Scheme, pkiSignatureScheme sign.
 		DialTimeoutSec:      g.Config().Debug.ConnectTimeout / 1000,
 		HandshakeTimeoutSec: g.Config().Debug.HandshakeTimeout / 1000,
 		LocalAddresses:      g.Config().Server.Addresses,
+		QUIC:                g.Config().QUIC,
 
 		MaxConsensusSize:        g.Config().PKI.Voting.MaxConsensusSize,
 		MaxConsensusSizeSetting: "PKI.Voting.MaxConsensusSize",

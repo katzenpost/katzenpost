@@ -298,7 +298,7 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 	c.log.Debugf("Dialing: %v", u.Host)
 
 	connectCtx, connectCancel := httpCommon.ConnectContext(dialCtx, dialer.Timeout)
-	conn, err := httpCommon.DialURL(u, connectCtx, dialer.DialContext, c.dst.QUICKeyHash, nil)
+	conn, err := httpCommon.DialURL(u, connectCtx, dialer.DialContext, c.dst.QUICKeyHash, c.co.Server().cfg.QUIC)
 	connectCancel()
 	select {
 	case <-dialCtx.Done():

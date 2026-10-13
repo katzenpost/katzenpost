@@ -36,6 +36,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -503,6 +505,8 @@ type Config struct {
 	Topology        *Topology
 
 	SphinxGeometry *geo.Geometry
+
+	QUIC *quicCommon.Options
 
 	hash [32]byte
 }

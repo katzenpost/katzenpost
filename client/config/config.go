@@ -20,6 +20,8 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/proxy"
 	"github.com/katzenpost/katzenpost/client/transport"
+
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -200,6 +202,8 @@ type Config struct {
 	PKISignatureScheme string
 
 	EpochDuration *time.Duration
+
+	QUIC *quicCommon.Options
 
 	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
 	WireKEMScheme string

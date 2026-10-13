@@ -19,6 +19,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -75,6 +77,8 @@ type Config struct {
 	PKISignatureScheme string
 
 	EpochDuration *time.Duration
+
+	QUIC *quicCommon.Options
 
 	// ReplicaNIKEScheme specifies the cryptographic signature scheme
 	ReplicaNIKEScheme string
@@ -205,6 +209,9 @@ type Config struct {
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
+	if err := c.QUIC.Validate(); err != nil {
+		return fmt.Errorf("config: QUIC: %w", err)
+	}
 	c.SetDefaultTimeouts()
 
 	if err := c.validateRequiredFields(); err != nil {

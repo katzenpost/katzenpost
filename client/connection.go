@@ -379,7 +379,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				continue
 			}
 
-			conn, err := common.DialURL(u, dialCtx, dialFn, c.descriptor.QUICKeyHash, nil)
+			conn, err := common.DialURL(u, dialCtx, dialFn, c.descriptor.QUICKeyHash, c.client.cfg.QUIC)
 			select {
 			case <-c.HaltCh():
 				if conn != nil {

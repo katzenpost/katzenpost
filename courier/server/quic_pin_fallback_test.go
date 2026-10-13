@@ -17,6 +17,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/courier/server/config"
 	"github.com/katzenpost/katzenpost/quic/common"
 )
 
@@ -33,6 +34,7 @@ func TestPinMismatchDoesNotFallBackToAnUnpinnedAddress(t *testing.T) {
 	}}
 	c := &outgoingConn{
 		log: backendLog.GetLogger("test"),
+		cfg: &config.Config{},
 		dst: &cpki.ReplicaDescriptor{
 			Name: "storagereplica1",
 			Addresses: map[string][]string{

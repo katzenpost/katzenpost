@@ -244,6 +244,9 @@ func (sCfg *Server) validate() error {
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
+	if err := cfg.QUIC.Validate(); err != nil {
+		return fmt.Errorf("config: QUIC: %w", err)
+	}
 
 	if cfg.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")

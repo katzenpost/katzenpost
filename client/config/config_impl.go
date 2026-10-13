@@ -43,6 +43,9 @@ func (c *Config) PigeonholeGeometry() *pigeonholeGeo.Geometry {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if err := c.QUIC.Validate(); err != nil {
+		return fmt.Errorf("config: QUIC: %w", err)
+	}
 	if err := epochtime.ValidateConfigured(c.EpochDuration); err != nil {
 		return fmt.Errorf("config: EpochDuration: %v", err)
 	}

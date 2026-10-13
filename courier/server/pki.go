@@ -101,6 +101,7 @@ func newPKIWorkerWithDefaultClient(server *Server, log *logging.Logger) (*PKIWor
 		// Convert milliseconds to seconds for PKI client timeouts
 		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
 		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,
+		QUIC:                server.cfg.QUIC,
 	}
 
 	pkiClient, err := vClient.New(pkiCfg)

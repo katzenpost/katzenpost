@@ -118,6 +118,7 @@ func (c *Client) Start() error {
 		Authorities:        c.cfg.VotingAuthority.Peers,
 		Geo:                c.cfg.SphinxGeometry,
 		DialContextFn:      nil,
+		QUIC:               c.cfg.QUIC,
 
 		MaxConsensusSize:        c.cfg.VotingAuthority.MaxConsensusSize,
 		MaxConsensusSizeSetting: "VotingAuthority.MaxConsensusSize",

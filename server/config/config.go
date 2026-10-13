@@ -42,6 +42,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/server/internal/maxdelay"
+
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -801,6 +803,8 @@ type Config struct {
 
 	Debug *Debug
 
+	QUIC *quicCommon.Options
+
 	hash [32]byte
 }
 
@@ -812,6 +816,9 @@ func (cfg *Config) Hash() [32]byte {
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate() error {
+	if err := cfg.QUIC.Validate(); err != nil {
+		return fmt.Errorf("config: QUIC: %w", err)
+	}
 
 	if cfg.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")

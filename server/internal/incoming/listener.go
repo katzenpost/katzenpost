@@ -352,7 +352,7 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string, lim
 		if !ok {
 			return nil, errors.New("incoming: no QUIC keys for a quic listener")
 		}
-		l.l, err = common.ListenWithEpochKeys(u.Host, glue.IdentityKey(), keyed.QUICKeys(), nil)
+		l.l, err = common.ListenWithEpochKeys(u.Host, glue.IdentityKey(), keyed.QUICKeys(), glue.Config().QUIC)
 		if err != nil {
 			l.log.Errorf("Failed to start listener %q after %v: %v. Please fix Server.Addresses or Server.BindAddresses in the server configuration, and check that the address is assigned and the port is available.", addr, time.Since(listenStart), err)
 			return nil, err
