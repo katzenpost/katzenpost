@@ -3020,7 +3020,7 @@ func (s *state) restorePersistence() error {
 					if len(wantHash) != publicKeyHashSize {
 						panic("stored hash should be 32 bytes")
 					}
-					desc, err := s.restoredReplicaDescriptor(rawDesc)
+					desc, err := s.restoredReplicaDescriptor(rawDesc, epoch)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
@@ -3072,7 +3072,7 @@ func (s *state) restorePersistence() error {
 					if len(wantHash) != publicKeyHashSize {
 						panic("stored hash should be 32 bytes")
 					}
-					desc, err := s.restoredMixDescriptor(rawDesc)
+					desc, err := s.restoredMixDescriptor(rawDesc, epoch)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
@@ -3112,7 +3112,7 @@ func (s *state) uploaderKey(id []byte) (sign.PublicKey, error) {
 	return scheme.UnmarshalBinaryPublicKey(id)
 }
 
-func (s *state) restoredMixDescriptor(raw []byte) (*pki.MixDescriptor, error) {
+func (s *state) restoredMixDescriptor(raw []byte, epoch uint64) (*pki.MixDescriptor, error) {
 	up := new(pki.SignedUpload)
 	if err := up.Unmarshal(raw); err != nil {
 		return nil, err
@@ -3127,13 +3127,17 @@ func (s *state) restoredMixDescriptor(raw []byte) (*pki.MixDescriptor, error) {
 	if !up.Verify(pub) {
 		return nil, errors.New("invalid upload signature")
 	}
+	desc := up.MixDescriptor
 	if !s.s.cfg.Server.AcceptDescriptorMetadata {
-		up.MixDescriptor.DropMetadata()
+		desc.DropMetadata()
 	}
-	return up.MixDescriptor, nil
+	if err := errors.Join(pki.IsDescriptorWellFormed(desc, epoch), pki.IsSoftwareVersionWellFormed(desc.SoftwareVersion), pki.IsContactInfoWellFormed(desc.ContactInfo)); err != nil {
+		return nil, err
+	}
+	return desc, nil
 }
 
-func (s *state) restoredReplicaDescriptor(raw []byte) (*pki.ReplicaDescriptor, error) {
+func (s *state) restoredReplicaDescriptor(raw []byte, epoch uint64) (*pki.ReplicaDescriptor, error) {
 	up := new(pki.SignedReplicaUpload)
 	if err := up.Unmarshal(raw); err != nil {
 		return nil, err
@@ -3148,10 +3152,14 @@ func (s *state) restoredReplicaDescriptor(raw []byte) (*pki.ReplicaDescriptor, e
 	if !up.Verify(pub) {
 		return nil, errors.New("invalid upload signature")
 	}
+	desc := up.ReplicaDescriptor
 	if !s.s.cfg.Server.AcceptDescriptorMetadata {
-		up.ReplicaDescriptor.DropMetadata()
+		desc.DropMetadata()
 	}
-	return up.ReplicaDescriptor, nil
+	if err := errors.Join(pki.IsReplicaDescriptorWellFormed(desc, epoch), pki.IsSoftwareVersionWellFormed(desc.SoftwareVersion), pki.IsContactInfoWellFormed(desc.ContactInfo)); err != nil {
+		return nil, err
+	}
+	return desc, nil
 }
 
 func votingThresholds(votingSetSize int) (threshold, dissenters int) {

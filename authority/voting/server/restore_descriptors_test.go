@@ -66,13 +66,13 @@ func TestRestorePersistedDescriptors(t *testing.T) {
 			replica := newRestoreNode(t, scheme)
 			path := filepath.Join(t.TempDir(), "persistence.db")
 
-			mixDesc := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id, LinkKey: []byte("link")}
+			mixDesc := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id, LinkKey: []byte("link"), MixKeys: map[uint64][]byte{epoch: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
 			up := &pki.SignedUpload{MixDescriptor: mixDesc}
 			require.NoError(t, up.Sign(mix.priv, mix.pub))
 			rawUp, err := up.Marshal()
 			require.NoError(t, err)
 
-			repDesc := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id, LinkKey: []byte("link")}
+			repDesc := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id, LinkKey: []byte("link"), EnvelopeKeys: map[uint64][]byte{1: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
 			repUp := &pki.SignedReplicaUpload{ReplicaDescriptor: repDesc}
 			require.NoError(t, repUp.Sign(replica.priv, replica.pub))
 			rawRepUp, err := repUp.Marshal()
@@ -99,13 +99,13 @@ func TestRestoreRejectsForgedDescriptors(t *testing.T) {
 	other := newRestoreNode(t, scheme)
 	path := filepath.Join(t.TempDir(), "persistence.db")
 
-	mixDesc := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id, LinkKey: []byte("link")}
+	mixDesc := &pki.MixDescriptor{Name: "mix1", Epoch: epoch, IdentityKey: mix.id, LinkKey: []byte("link"), MixKeys: map[uint64][]byte{epoch: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
 	up := &pki.SignedUpload{MixDescriptor: mixDesc}
 	require.NoError(t, up.Sign(other.priv, other.pub))
 	rawUp, err := up.Marshal()
 	require.NoError(t, err)
 
-	repDesc := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id, LinkKey: []byte("link")}
+	repDesc := &pki.ReplicaDescriptor{Name: "replica1", ReplicaID: 1, Epoch: epoch, IdentityKey: replica.id, LinkKey: []byte("link"), EnvelopeKeys: map[uint64][]byte{1: {1}}, Addresses: map[string][]string{"tcp": {"tcp://127.0.0.1:1"}}}
 	repUp := &pki.SignedReplicaUpload{ReplicaDescriptor: repDesc}
 	require.NoError(t, repUp.Sign(other.priv, other.pub))
 	rawRepUp, err := repUp.Marshal()

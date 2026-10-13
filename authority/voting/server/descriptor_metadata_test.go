@@ -98,7 +98,7 @@ func TestAuthorityDropsMixMetadataUnlessAccepted(t *testing.T) {
 			stored := srv.state.descriptors[epoch][idHash]
 			require.Equal(t, contact, stored.ContactInfo)
 			require.Equal(t, version, stored.SoftwareVersion)
-			restored, err := srv.state.restoredMixDescriptor(raw)
+			restored, err := srv.state.restoredMixDescriptor(raw, epoch)
 			require.NoError(t, err)
 			require.Equal(t, contact, restored.ContactInfo)
 			require.Equal(t, version, restored.SoftwareVersion)
@@ -141,7 +141,7 @@ func TestAuthorityDropsReplicaMetadataUnlessAccepted(t *testing.T) {
 			stored := srv.state.replicaDescriptors[epoch][idHash]
 			require.Equal(t, contact, stored.ContactInfo)
 			require.Equal(t, version, stored.SoftwareVersion)
-			restored, err := srv.state.restoredReplicaDescriptor(raw)
+			restored, err := srv.state.restoredReplicaDescriptor(raw, epoch)
 			require.NoError(t, err)
 			require.Equal(t, contact, restored.ContactInfo)
 			require.Equal(t, version, restored.SoftwareVersion)
