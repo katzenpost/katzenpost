@@ -117,11 +117,11 @@ func TestMismatchedNoticeStillFormsConsensusWithEmptyNotice(t *testing.T) {
 	states, epoch := exchangeNoticeVotes(t, []config.Notice{{ClientNotice: "a"}, {ClientNotice: "b"}, {ClientNotice: "c"}})
 	for _, s := range states {
 		s.Lock()
-		_, _, params, err := s.tallyVotes(epoch)
+		_, _, params, notice, err := s.tallyVotes(epoch)
 		s.Unlock()
 		require.NoError(t, err)
-		require.Equal(t, "", params.Notice.MinClientVersion)
-		require.Equal(t, "", params.Notice.ClientNotice)
+		require.Equal(t, "", notice.MinClientVersion)
+		require.Equal(t, "", notice.ClientNotice)
 		require.Equal(t, 0.001, params.Mu)
 	}
 }
@@ -131,11 +131,11 @@ func TestNoticeThresholdWinsConsensus(t *testing.T) {
 	states, epoch := exchangeNoticeVotes(t, []config.Notice{n, n, n, {}, {ClientNotice: "other"}})
 	for _, s := range states {
 		s.Lock()
-		_, _, params, err := s.tallyVotes(epoch)
+		_, _, _, notice, err := s.tallyVotes(epoch)
 		s.Unlock()
 		require.NoError(t, err)
-		require.Equal(t, "v0.0.105", params.Notice.MinClientVersion)
-		require.Equal(t, "upgrade soon", params.Notice.ClientNotice)
+		require.Equal(t, "v0.0.105", notice.MinClientVersion)
+		require.Equal(t, "upgrade soon", notice.ClientNotice)
 	}
 }
 
@@ -147,11 +147,11 @@ func TestMalformedNoticeVoteParametersStillCount(t *testing.T) {
 	})
 	for _, s := range states {
 		s.Lock()
-		_, _, params, err := s.tallyVotes(epoch)
+		_, _, params, notice, err := s.tallyVotes(epoch)
 		s.Unlock()
 		require.NoError(t, err)
-		require.Equal(t, "", params.Notice.MinClientVersion)
-		require.Equal(t, "", params.Notice.ClientNotice)
+		require.Equal(t, "", notice.MinClientVersion)
+		require.Equal(t, "", notice.ClientNotice)
 		require.Equal(t, 0.001, params.Mu)
 	}
 }

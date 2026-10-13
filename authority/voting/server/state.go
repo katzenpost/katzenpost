@@ -518,9 +518,7 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	// vote topology is irrelevent.
 	var zeros [32]byte
 	s.log.Debugf("getVote: Generating document with %d mix descriptors and %d replica descriptors", len(descriptors), len(replicaDescriptors))
-	params := *s.s.cfg.Parameters
-	params.Notice = s.s.cfg.Notice
-	vote := s.getDocument(descriptors, replicaDescriptors, &params, zeros[:])
+	vote := s.getDocument(descriptors, replicaDescriptors, s.s.cfg.Parameters, s.s.cfg.Notice, zeros[:])
 
 	// create our SharedRandom Commit
 	s.log.Debugf("getVote: Generating SharedRandom commit for epoch %d", epoch)
@@ -574,7 +572,7 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 		panic("write lock not held in getCertificate(epoch)")
 	}
 
-	mixes, replicas, params, err := s.tallyVotes(epoch)
+	mixes, replicas, params, notice, err := s.tallyVotes(epoch)
 	if err != nil {
 		s.log.Warningf("No document for epoch %v, aborting!, %v", epoch, err)
 		return nil, err
@@ -582,7 +580,7 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 	s.log.Debug("Mixes tallied, now making a document")
 	var zeros [32]byte
 	srv := zeros[:]
-	certificate := s.getDocument(mixes, replicas, params, srv)
+	certificate := s.getDocument(mixes, replicas, params, notice, srv)
 	// Embed only the commit/reveal pairs we hold BOTH halves for. An
 	// authority whose commit (vote) we saw but whose reveal never arrived is
 	// dropped from our certificate rather than allowed to poison it: a commit
@@ -661,11 +659,11 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		// rotate the weekly epochs if it is time to do so.
 		s.weeklySRV = [][]byte{srv, s.weeklySRV[0]}
 	}
-	mixes, replicas, params, err := s.tallyVotes(epoch)
+	mixes, replicas, params, notice, err := s.tallyVotes(epoch)
 	if err != nil {
 		return nil, err
 	}
-	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
+	consensusOfOne := s.getDocument(mixes, replicas, params, notice, srv)
 
 	// Log the per-role counts that actually landed in the assembled consensus
 	// so an operator can compare them against the authorized counts logged at
@@ -797,7 +795,7 @@ func (s *state) identityPubKeyHash() [publicKeyHashSize]byte {
 	return hash.Sum256From(s.s.identityPublicKey)
 }
 
-func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors []*pki.ReplicaDescriptor, params *config.Parameters, srv []byte) *pki.Document {
+func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors []*pki.ReplicaDescriptor, params *config.Parameters, notice config.Notice, srv []byte) *pki.Document {
 	docGenStart := time.Now()
 	defer func() {
 		instrument.DocumentGenerated(time.Since(docGenStart))
@@ -896,8 +894,8 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		WeeklySharedRandom:            s.weeklySRV,
 		SphinxGeometryHash:            s.geo.Hash(),
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
-		MinClientVersion:              params.Notice.MinClientVersion,
-		ClientNotice:                  params.Notice.ClientNotice,
+		MinClientVersion:              notice.MinClientVersion,
+		ClientNotice:                  notice.ClientNotice,
 	}
 	return doc
 }
@@ -1531,17 +1529,17 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 	}
 }
 
-func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDescriptor, *config.Parameters, error) {
+func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDescriptor, *config.Parameters, config.Notice, error) {
 	if s.TryLock() {
 		panic("write lock not held in tallyVotes(epoch)")
 	}
 
 	_, ok := s.votes[epoch]
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
+		return nil, nil, nil, config.Notice{}, fmt.Errorf("no votes for epoch %v", epoch)
 	}
 	if len(s.votes[epoch]) < s.threshold {
-		return nil, nil, nil, fmt.Errorf("not enough votes for epoch %v", epoch)
+		return nil, nil, nil, config.Notice{}, fmt.Errorf("not enough votes for epoch %v", epoch)
 	}
 
 	nodes := make([]*pki.MixDescriptor, 0)
@@ -1629,7 +1627,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			desc := new(pki.MixDescriptor)
 			err := desc.UnmarshalBinary([]byte(rawDesc))
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, config.Notice{}, err
 			}
 			// only add nodes we have authorized
 			if s.isDescriptorAuthorized(desc) {
@@ -1643,7 +1641,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			desc := new(pki.ReplicaDescriptor)
 			err := desc.Unmarshal([]byte(rawDesc))
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, config.Notice{}, err
 			}
 			// only add nodes we have authorized
 			if s.isReplicaDescriptorAuthorized(desc) {
@@ -1664,21 +1662,22 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 
 		if len(authorities) >= s.threshold {
 			sortNodesByPublicKey(nodes)
+			var notice config.Notice
 			for n, count := range noticeTally {
 				if count >= s.threshold {
-					params.Notice = n
+					notice = n
 					break
 				}
 			}
 			// successful tally
-			return nodes, replicaNodes, params, nil
+			return nodes, replicaNodes, params, notice, nil
 		} else if len(authorities) >= s.dissenters {
 			s.log.Errorf("tallyVotes: failed threshold with params: %v", params)
 			continue
 		}
 
 	}
-	return nil, nil, nil, errors.New("consensus failure (mixParams empty)")
+	return nil, nil, nil, config.Notice{}, errors.New("consensus failure (mixParams empty)")
 }
 
 func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize]byte][]byte, reveals map[[publicKeyHashSize]byte][]byte) ([]byte, error) {

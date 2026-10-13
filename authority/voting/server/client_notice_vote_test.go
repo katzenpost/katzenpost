@@ -59,10 +59,10 @@ func TestMalformedNoticeVoteIsLogged(t *testing.T) {
 	s.log = lb.GetLogger("notice")
 
 	s.Lock()
-	_, _, params, err := s.tallyVotes(epoch)
+	_, _, _, notice, err := s.tallyVotes(epoch)
 	s.Unlock()
 	require.NoError(t, err)
-	require.Equal(t, "a", params.Notice.ClientNotice)
+	require.Equal(t, "a", notice.ClientNotice)
 
 	b, err := os.ReadFile(p)
 	require.NoError(t, err)
