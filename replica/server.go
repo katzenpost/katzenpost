@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	httpCommon "github.com/katzenpost/katzenpost/quic/common"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 	"github.com/katzenpost/katzenpost/replica/instrument"
@@ -81,6 +82,7 @@ type Server struct {
 	linkKey            kem.PrivateKey
 
 	envelopeKeys *EnvelopeKeys
+	quicKeys     *httpCommon.EpochKeys
 
 	// pigeonholeGeo is the Pigeonhole geometry derived once at startup
 	// from the Sphinx geometry and the configured replica NIKE scheme.
@@ -318,6 +320,9 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.ReplicaNodeClient) (*Ser
 		return nil, err
 	}
 	if err := s.initLinkKeys(); err != nil {
+		return nil, err
+	}
+	if err := s.initQUICKeys(); err != nil {
 		return nil, err
 	}
 	if err := s.initEnvelopeKeys(); err != nil {
@@ -562,6 +567,12 @@ func (s *Server) initLinkKeys() error {
 
 	s.linkKey = linkPrivateKey
 	return nil
+}
+
+func (s *Server) initQUICKeys() error {
+	var err error
+	s.quicKeys, err = httpCommon.NewEpochKeys(filepath.Join(s.cfg.DataDir, "quic"), httpCommon.CurrentEpoch)
+	return err
 }
 
 // initEnvelopeKeys initializes the server's envelope keys

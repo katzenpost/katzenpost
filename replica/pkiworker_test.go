@@ -225,6 +225,7 @@ func createPublishDescriptorTestWorker(t *testing.T, pkiClient pki.ReplicaNodeCl
 
 	require.NoError(t, server.initIdentityKeys())
 	require.NoError(t, server.initLinkKeys())
+	require.NoError(t, server.initQUICKeys())
 	require.NoError(t, server.initEnvelopeKeys())
 
 	pkiWorker := &PKIWorker{

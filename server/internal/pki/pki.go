@@ -45,6 +45,7 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
@@ -103,6 +104,7 @@ type pki struct {
 
 	impl        cpki.MixNodeClient
 	descAddrMap map[string][]string
+	quicKeys    *common.EpochKeys
 
 	docs          map[uint64]*pkicache.Entry
 	rawDocs       map[uint64][]byte
@@ -1169,6 +1171,9 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
 		advertising:   true,
+	}
+	if keyed, ok := glue.(interface{ QUICKeys() *common.EpochKeys }); ok {
+		p.quicKeys = keyed.QUICKeys()
 	}
 
 	var err error

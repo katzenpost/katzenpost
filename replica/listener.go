@@ -244,7 +244,7 @@ func newListener(server *Server, id int, addr string) (*Listener, error) {
 				return nil, err
 			}
 		case "quic":
-			l.l, err = httpCommon.Listen(u.Host, server.identityPrivateKey)
+			l.l, err = httpCommon.ListenWithEpochKeys(u.Host, server.identityPrivateKey, server.quicKeys)
 			if err != nil {
 				l.log.Errorf("Failed to start Listener '%v': %v", addr, err)
 				return nil, err

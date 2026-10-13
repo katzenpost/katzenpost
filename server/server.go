@@ -47,6 +47,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/decoy"
@@ -85,6 +86,7 @@ type Server struct {
 	cryptoWorkers []*cryptoworker.Worker
 	periodic      *periodicTimer
 	mixKeys       glue.MixKeys
+	quicKeys      *common.EpochKeys
 	pki           glue.PKI
 	shutdownPKI   glue.PKI
 	listeners     []glue.Listener
@@ -478,6 +480,11 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	logStartupStep("mix keys")
 
+	if s.quicKeys, err = common.NewEpochKeys(filepath.Join(s.cfg.Server.DataDir, "quic"), common.CurrentEpoch); err != nil {
+		s.log.Errorf("Failed to initialize QUIC keys: %v", err)
+		return nil, err
+	}
+
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
 	isOk := false
 	defer func() {
@@ -676,6 +683,10 @@ func (g *serverGlue) Management() *thwack.Server {
 
 func (g *serverGlue) MixKeys() glue.MixKeys {
 	return g.s.mixKeys
+}
+
+func (g *serverGlue) QUICKeys() *common.EpochKeys {
+	return g.s.quicKeys
 }
 
 func (g *serverGlue) PKI() glue.PKI {

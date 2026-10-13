@@ -24,11 +24,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"io"
-	"math/big"
 	"net"
 	"net/url"
 	"os"
@@ -417,32 +414,19 @@ func Config() *quic.Config {
 	}
 }
 
-// Setup a bare-bones TLS config for the server
 func GenerateTLSConfig() *tls.Config {
-	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	_, tlsPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
-	template := x509.Certificate{SerialNumber: big.NewInt(1)}
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, pubKey, privKey)
+	certificate, err := epochCertificate(CurrentEpoch(), tlsPrivateKey)
 	if err != nil {
 		panic(err)
 	}
-	pkb, err := x509.MarshalPKCS8PrivateKey(privKey)
-	if err != nil {
-		panic(err)
+	return &tls.Config{
+		Certificates: []tls.Certificate{*certificate},
+		NextProtos:   []string{http3.NextProtoH3},
 	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "ED25519 PRIVATE KEY", Bytes: pkb})
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-
-	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		panic(err)
-	}
-	// ALPN (NextProtos) is externally visible as part of the QUIC TLS
-	// handshake, in the client/server hello, so pick a common protocol
-	// rather than something uniquely fingerprintable to katzenpost.
-	return &tls.Config{Certificates: []tls.Certificate{tlsCert}, NextProtos: []string{http3.NextProtoH3}}
 }
 
 func ConnectContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
