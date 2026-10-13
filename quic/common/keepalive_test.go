@@ -39,11 +39,11 @@ func TestKeepAlive(t *testing.T) {
 		period time.Duration
 		jitter float64
 	}{
-		{"server default", nil, 3 * time.Minute, 0.25},
+		{"server default", nil, 45 * time.Second, 0.25},
 		{"client default", (*Options)(nil).ForClient(), 20 * time.Second, 0.25},
 		{"server override", &Options{KeepAlivePeriod: &period, KeepAliveJitter: &tenth}, period, 0.1},
 		{"client override", (&Options{KeepAlivePeriod: &period}).ForClient(), period, 0.25},
-		{"no jitter", &Options{KeepAliveJitter: &none}, 3 * time.Minute, 0},
+		{"no jitter", &Options{KeepAliveJitter: &none}, 45 * time.Second, 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			requireJittered(t, c.opts.quicConfig, c.period, c.jitter)
@@ -55,5 +55,16 @@ func TestKeepAlive(t *testing.T) {
 				return cfg
 			}, c.period, c.jitter)
 		})
+	}
+}
+
+func TestDefaultKeepAliveJitterFitsUnderTheIdleCap(t *testing.T) {
+	idleCap := Config().MaxIdleTimeout / 2
+	for name, opts := range map[string]*Options{"server": nil, "client": (*Options)(nil).ForClient()} {
+		for range 200 {
+			period := opts.quicConfig().KeepAlivePeriod
+			require.Positive(t, period, name)
+			require.Less(t, period, idleCap, "%s keepalives above half the idle timeout are capped, so the jitter has no effect", name)
+		}
 	}
 }
