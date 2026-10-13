@@ -537,7 +537,7 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			NextProtos:         opts.nextProtos(),
 			CurvePreferences:   opts.curvePreferences(),
 		}
-		cfg := opts.quicConfig()
+		cfg := opts.dialConfig()
 		if deadline, ok := ctx.Deadline(); ok {
 			cfg.HandshakeIdleTimeout = max(time.Until(deadline), 0)
 		}

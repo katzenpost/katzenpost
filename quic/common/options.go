@@ -148,6 +148,12 @@ func (o *Options) connectionConfig() *quic.Config {
 	return cfg
 }
 
+func (o *Options) dialConfig() *quic.Config {
+	cfg := o.connectionConfig()
+	cfg.MaxIncomingStreams = -1
+	return cfg
+}
+
 func (o *Options) quicConfig() *quic.Config {
 	cfg := o.connectionConfig()
 	cfg.GetConfigForClient = func(*quic.ClientInfo) (*quic.Config, error) {
