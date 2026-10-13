@@ -297,6 +297,9 @@ func (s *Server) startListeners(listenAddresses []string) {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
 				}
+				if warning := ql.UDPBuffers().Warning(); warning != "" {
+					s.log.Warningf("Listener %q: %s", v, warning)
+				}
 				s.listeners = append(s.listeners, ql)
 				s.Add(1)
 				s.state.Go(func() {

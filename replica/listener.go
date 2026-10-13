@@ -245,11 +245,16 @@ func newListener(server *Server, id int, addr string) (*Listener, error) {
 			}
 		case "quic":
 			l.log.Noticef("Starting listener on: %q", addr)
-			l.l, err = httpCommon.ListenWithEpochKeys(u.Host, server.identityPrivateKey, server.quicKeys, server.cfg.QUIC)
+			var ql *httpCommon.QuicListener
+			ql, err = httpCommon.ListenWithEpochKeys(u.Host, server.identityPrivateKey, server.quicKeys, server.cfg.QUIC)
 			if err != nil {
 				l.log.Errorf("Failed to start Listener '%v': %v", addr, err)
 				return nil, err
 			}
+			if warning := ql.UDPBuffers().Warning(); warning != "" {
+				l.log.Warningf("Listener %q: %s", addr, warning)
+			}
+			l.l = ql
 		default:
 			return nil, fmt.Errorf("Unsupported Listener scheme '%v': %v", addr, err)
 		}
