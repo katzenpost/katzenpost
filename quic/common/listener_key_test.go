@@ -16,14 +16,14 @@ import (
 
 func presentedSPKI(t *testing.T, identityPrivateKey sign.PrivateKey, keys *EpochKeys) []byte {
 	t.Helper()
-	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys)
+	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	defer l.Close()
 	u, err := url.Parse("quic://" + l.Addr().String())
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := DialURL(u, ctx, nil, nil)
+	conn, err := DialURL(u, ctx, nil, nil, nil)
 	require.NoError(t, err)
 	defer conn.Close()
 	return conn.(*QuicConn).Conn.ConnectionState().TLS.PeerCertificates[0].RawSubjectPublicKeyInfo

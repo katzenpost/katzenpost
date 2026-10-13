@@ -22,7 +22,7 @@ func quicPair(t *testing.T) (*QuicListener, net.Conn, net.Conn) {
 	l := &QuicListener{Listener: ql}
 	u, err := url.Parse("quic://" + l.Addr().String())
 	require.NoError(t, err)
-	client, err := DialURL(u, context.Background(), nil, nil)
+	client, err := DialURL(u, context.Background(), nil, nil, nil)
 	require.NoError(t, err)
 	_, err = client.Write([]byte{0})
 	require.NoError(t, err)

@@ -66,7 +66,7 @@ func (a *quicAuthorityKeys) consensus(t *testing.T, epoch uint64, quicKeyHashes 
 
 func (a *quicAuthorityKeys) serve(t *testing.T, keys *common.EpochKeys, consensus []byte) string {
 	t.Helper()
-	l, err := common.ListenWithEpochKeys("127.0.0.1:0", a.identityPrivateKey, keys)
+	l, err := common.ListenWithEpochKeys("127.0.0.1:0", a.identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 	go func() {

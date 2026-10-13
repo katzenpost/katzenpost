@@ -350,7 +350,7 @@ func (p *connector) initSession(
 			quicKeyHashes = peer.DialQUICKeyHashes(&p.quicPins, p.log)
 		}
 		ictx, cancelFn := common.ConnectContext(ctx, dialTimeout)
-		conn, err = common.DialURL(u, ictx, dialFn, quicKeyHashes)
+		conn, err = common.DialURL(u, ictx, dialFn, quicKeyHashes, nil)
 		cancelFn()
 		if err == nil {
 			p.log.Debugf("%s: %s connection established.", peerInfo(), u.Scheme)

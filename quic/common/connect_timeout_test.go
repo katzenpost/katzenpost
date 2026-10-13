@@ -23,7 +23,7 @@ func TestDialURLQuicHandshakeWaitsForTheConnectDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 	start := time.Now()
-	_, err = DialURL(u, ctx, nil, nil)
+	_, err = DialURL(u, ctx, nil, nil, nil)
 	elapsed := time.Since(start)
 	require.Error(t, err)
 	require.GreaterOrEqual(t, elapsed, connectTimeout-time.Second, "the quic handshake gave up after %v, before the %v connect deadline: %v", elapsed, connectTimeout, err)

@@ -15,7 +15,7 @@ import (
 
 func listenQUICAuthority(t *testing.T, s *state, keys *common.EpochKeys) string {
 	t.Helper()
-	l, err := common.ListenWithEpochKeys("127.0.0.1:0", s.s.identityPrivateKey, keys)
+	l, err := common.ListenWithEpochKeys("127.0.0.1:0", s.s.identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 	go func() {

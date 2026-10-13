@@ -137,14 +137,14 @@ func publishedDescriptorLogged(t *testing.T, schemeName string, addresses []stri
 
 func presentedSPKI(t *testing.T, identityPrivateKey sign.PrivateKey, quicKeys *common.EpochKeys) []byte {
 	t.Helper()
-	l, err := common.ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, quicKeys)
+	l, err := common.ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, quicKeys, nil)
 	require.NoError(t, err)
 	defer l.Close()
 	u, err := url.Parse("quic://" + l.Addr().String())
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := common.DialURL(u, ctx, nil, nil)
+	conn, err := common.DialURL(u, ctx, nil, nil, nil)
 	require.NoError(t, err)
 	defer conn.Close()
 	return conn.(*common.QuicConn).Conn.ConnectionState().TLS.PeerCertificates[0].RawSubjectPublicKeyInfo

@@ -269,7 +269,7 @@ func (c *outgoingConn) worker() {
 
 			dialStart := time.Now()
 			connectCtx, connectCancel := common.ConnectContext(dialCtx, dialer.Timeout)
-			conn, err := common.DialURL(u, connectCtx, dialer.DialContext, c.dst.QUICKeyHash)
+			conn, err := common.DialURL(u, connectCtx, dialer.DialContext, c.dst.QUICKeyHash, nil)
 			connectCancel()
 			select {
 			case <-dialCtx.Done():

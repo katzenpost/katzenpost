@@ -42,7 +42,7 @@ func listenWithEpochKeys(t testing.TB, keys *EpochKeys) *QuicListener {
 	t.Helper()
 	_, identityPrivateKey, err := signschemes.ByName(testIdentityScheme).GenerateKey()
 	require.NoError(t, err)
-	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys)
+	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 	return l
@@ -54,7 +54,7 @@ func dialEpochListener(t *testing.T, l *QuicListener, quicKeyHashes []byte) (net
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return DialURL(u, ctx, nil, quicKeyHashes)
+	return DialURL(u, ctx, nil, quicKeyHashes, nil)
 }
 
 func presentedKeyHash(conn net.Conn) []byte {
@@ -198,7 +198,7 @@ func TestEpochKeysAreIndependent(t *testing.T) {
 	identitySecret = bytes.Clone(identitySecret)
 
 	a := newTestEpochKeys(t, t.TempDir(), clock)
-	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, a)
+	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, a, nil)
 	require.NoError(t, err)
 	defer l.Close()
 	hashesA, err := a.Hashes(1000)

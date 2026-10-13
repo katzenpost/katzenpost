@@ -126,7 +126,7 @@ func newBenchLink(b *testing.B, quicLink bool) *benchLink {
 }
 
 func (link *benchLink) dial(b *testing.B) *wire.Session {
-	conn, err := DialURL(link.url, context.Background(), (&net.Dialer{}).DialContext, link.quicPin)
+	conn, err := DialURL(link.url, context.Background(), (&net.Dialer{}).DialContext, link.quicPin, nil)
 	if err != nil {
 		b.Fatal(err)
 	}

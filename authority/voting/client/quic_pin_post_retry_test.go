@@ -59,7 +59,7 @@ func (a *quicAuthorityKeys) answerPost(conn net.Conn) {
 
 func (a *quicAuthorityKeys) servePosts(t *testing.T, keys *common.EpochKeys) string {
 	t.Helper()
-	l, err := common.ListenWithEpochKeys("127.0.0.1:0", a.identityPrivateKey, keys)
+	l, err := common.ListenWithEpochKeys("127.0.0.1:0", a.identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 	go func() {
@@ -176,7 +176,7 @@ func TestPinMismatchIsNotATransientDialError(t *testing.T) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err = common.DialURL(u, ctx, nil, bytes.Repeat([]byte{2}, 3*pki.QUICKeyHashSize))
+	_, err = common.DialURL(u, ctx, nil, bytes.Repeat([]byte{2}, 3*pki.QUICKeyHashSize), nil)
 	require.ErrorIs(t, err, common.ErrQUICKeyMismatch)
 	require.False(t, retry.IsTransientError(err), "%v", err)
 }

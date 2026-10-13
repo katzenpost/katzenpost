@@ -161,7 +161,7 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 			quicKeyHashes = peer.DialQUICKeyHashes(&s.quicPins, s.log)
 		}
 		ctx, cancelFn := common.ConnectContext(context.Background(), dialTimeout)
-		conn, err := common.DialURL(u, ctx, dialFn, quicKeyHashes)
+		conn, err := common.DialURL(u, ctx, dialFn, quicKeyHashes, nil)
 		cancelFn()
 		if err == nil {
 			s.log.Debugf("peer %s: %s connection established.", peer.Identifier, u.Scheme)

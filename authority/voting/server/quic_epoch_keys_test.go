@@ -62,7 +62,7 @@ func presentedCertificate(t *testing.T, addr string, quicKeyHashes []byte) (*x50
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := common.DialURL(u, ctx, nil, quicKeyHashes)
+	conn, err := common.DialURL(u, ctx, nil, quicKeyHashes, nil)
 	if err != nil {
 		return nil, err
 	}

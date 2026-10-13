@@ -20,7 +20,7 @@ func dialPinned(t *testing.T, addr string, quicKeyHashes []byte) error {
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := DialURL(u, ctx, nil, quicKeyHashes)
+	conn, err := DialURL(u, ctx, nil, quicKeyHashes, nil)
 	if err == nil {
 		conn.Close()
 	}
@@ -41,7 +41,7 @@ func TestDialURLPinsTheQUICKey(t *testing.T) {
 	require.NoError(t, err)
 	clock := newEpochClock(CurrentEpoch())
 	keys := newTestEpochKeys(t, t.TempDir(), clock)
-	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys)
+	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys, nil)
 	require.NoError(t, err)
 	defer l.Close()
 	addr := l.Addr().String()

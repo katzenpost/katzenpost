@@ -31,7 +31,7 @@ func TestDialURLClosesTheConnectionWhenOpenStreamFails(t *testing.T) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := DialURL(u, ctx, nil, nil)
+	conn, err := DialURL(u, ctx, nil, nil, nil)
 	require.Error(t, err, "OpenStream should fail against a listener that allows no streams")
 	require.Nil(t, conn)
 	select {
@@ -59,7 +59,7 @@ func TestDialURLDoesNotNeedSystemRoots(t *testing.T) {
 		require.NoError(t, err)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		c, err := DialURL(u, ctx, nil, nil)
+		c, err := DialURL(u, ctx, nil, nil, nil)
 		require.NoError(t, err)
 		c.Close()
 		return

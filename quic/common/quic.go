@@ -370,7 +370,7 @@ func statelessResetKey(identityPrivateKey sign.PrivateKey) (*quic.StatelessReset
 	return &resetKey, nil
 }
 
-func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys *EpochKeys) (*QuicListener, error) {
+func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys *EpochKeys, opts *Options) (*QuicListener, error) {
 	resetKey, err := statelessResetKey(identityPrivateKey)
 	if err != nil {
 		return nil, err
@@ -384,11 +384,12 @@ func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys *
 		return nil, err
 	}
 	tlsConf := &tls.Config{
-		GetCertificate: keys.GetCertificate,
-		NextProtos:     []string{http3.NextProtoH3},
+		GetCertificate:   keys.GetCertificate,
+		NextProtos:       opts.nextProtos(),
+		CurvePreferences: opts.curvePreferences(),
 	}
 	transport := &quic.Transport{Conn: udpConn, StatelessResetKey: resetKey}
-	ql, err := transport.Listen(tlsConf, Config())
+	ql, err := transport.Listen(tlsConf, opts.quicConfig())
 	if err != nil {
 		transport.Close()
 		udpConn.Close()
@@ -459,7 +460,7 @@ func verifyQUICKeyHash(quicKeyHashes []byte) func(tls.ConnectionState) error {
 	}
 }
 
-func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error), quicKeyHashes []byte) (net.Conn, error) {
+func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error), quicKeyHashes []byte, opts *Options) (net.Conn, error) {
 	switch u.Scheme {
 	case "tcp", "onion":
 		conn, err := dialFn(ctx, "tcp", u.Host)
@@ -472,11 +473,10 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 		tlsConf := &tls.Config{
 			InsecureSkipVerify: true,
 			VerifyConnection:   verifyQUICKeyHash(quicKeyHashes),
-			// ALPN is externally visible as part of the client/server hello,
-			// so pick a common protocol rather than something fingerprintable.
-			NextProtos: []string{http3.NextProtoH3},
+			NextProtos:         opts.nextProtos(),
+			CurvePreferences:   opts.curvePreferences(),
 		}
-		cfg := Config()
+		cfg := opts.quicConfig()
 		if deadline, ok := ctx.Deadline(); ok {
 			cfg.HandshakeIdleTimeout = max(time.Until(deadline), 0)
 		}
