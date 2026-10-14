@@ -305,7 +305,7 @@ func (c *Client) reaper() {
 
 func (c *Client) logPluginStderr(stderr io.ReadCloser) {
 	c.logPluginOutput("stderr", bufio.NewReaderSize(io.TeeReader(stderr, &c.stderrTail), maxPluginLineLen))
-	c.Halt()
+	c.Stop()
 }
 
 func (c *Client) launch(command string, args []string) error {
@@ -332,7 +332,7 @@ func (c *Client) launch(command string, args []string) error {
 	}
 
 	// proxy stderr to our debug log and a bounded tail buffer
-	// also calls Halt() when stderr closes, if the program crashes or is killed
+	// also stops the client when stderr closes, if the program crashes or is killed
 	c.Go(func() {
 		c.logPluginStderr(stderr)
 	})
