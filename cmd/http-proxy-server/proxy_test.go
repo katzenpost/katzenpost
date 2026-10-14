@@ -3,6 +3,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -16,9 +18,11 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/quic/proxy/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
@@ -184,7 +188,7 @@ func TestProxyRefusesReplyThatGrowsPastPayloadLength(t *testing.T) {
 			require.NoError(t, err)
 			dialAnything(p)
 			require.Error(t, p.OnCommand(requestFor(srv.URL)))
-			require.Empty(t, *out)
+			require.Equal(t, http.StatusBadGateway, refusalStatus(t, p, *out))
 		})
 	}
 }
@@ -263,4 +267,54 @@ func TestProxyTakesThePayloadLengthFromTheHost(t *testing.T) {
 	t.Cleanup(func() { lb.Close() })
 	_, err = newProxy([]string{"*"}, 500, lb.GetLogger("http_proxy"))
 	require.Error(t, err, "bad host payload length accepted")
+}
+
+func refusalStatus(t *testing.T, p *proxy, out []cborplugin.Command) int {
+	t.Helper()
+	require.Len(t, out, 1, "no reply to a refused request")
+	r := out[0].(*cborplugin.Response)
+	require.Equal(t, uint64(1), r.ID)
+	require.LessOrEqual(t, len(r.Payload), p.payloadLength)
+	var cr common.Response
+	_, err := cbor.UnmarshalFirst(r.Payload, &cr)
+	require.NoError(t, err)
+	resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(cr.Payload)), nil)
+	require.NoError(t, err)
+	return resp.StatusCode
+}
+
+func TestProxyAnswersARefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	cases := []struct {
+		name, host string
+		payload    string
+		want       int
+	}{
+		{"malformed", "*", "not http", http.StatusBadRequest},
+		{"not absolute", "*", "GET / HTTP/1.1\r\nHost: example.org\r\n\r\n", http.StatusBadRequest},
+		{"host not allowed", "example.org:1", string(requestFor(srv.URL).Payload), http.StatusForbidden},
+		{"fetch failed", "*", string(requestFor(srv.URL).Payload), http.StatusBadGateway},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p, out, err := proxyFor(t, c.host, filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
+			require.NoError(t, err)
+			require.Error(t, p.OnCommand(&cborplugin.Request{ID: 1, SURB: []byte("surb"), Payload: []byte(c.payload)}))
+			require.Equal(t, c.want, refusalStatus(t, p, *out))
+			require.Equal(t, []byte("surb"), (*out)[0].(*cborplugin.Response).SURB)
+		})
+	}
+}
+
+func TestProxySendsNoRefusalLargerThanTheBound(t *testing.T) {
+	lb, err := log.New(filepath.Join(t.TempDir(), "proxy.log"), "ERROR", false)
+	require.NoError(t, err)
+	t.Cleanup(func() { lb.Close() })
+	p, err := newProxy([]string{"*"}, 10, lb.GetLogger("http_proxy"))
+	require.NoError(t, err)
+	var out []cborplugin.Command
+	p.write = func(c cborplugin.Command) { out = append(out, c) }
+	require.Error(t, p.OnCommand(&cborplugin.Request{ID: 1, Payload: []byte("not http")}))
+	require.Empty(t, out)
 }
