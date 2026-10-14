@@ -70,23 +70,6 @@ type CommandIO struct {
 
 var errCommandTooLong = errors.New("cborplugin: command exceeds the length bound")
 
-type boundedReader struct {
-	r         io.Reader
-	remaining int
-}
-
-func (b *boundedReader) Read(p []byte) (int, error) {
-	if b.remaining <= 0 {
-		return 0, errCommandTooLong
-	}
-	if len(p) > b.remaining {
-		p = p[:b.remaining]
-	}
-	n, err := b.r.Read(p)
-	b.remaining -= n
-	return n, err
-}
-
 func NewCommandIO(log *logging.Logger) *CommandIO {
 	return &CommandIO{
 		log:     log,
@@ -195,19 +178,22 @@ func (c *CommandIO) WriteChan() chan Command {
 
 func (c *CommandIO) reader() {
 	var src io.Reader = c.conn
-	bounded := &boundedReader{r: c.conn, remaining: c.maxCommandLength}
+	limit := &io.LimitedReader{R: c.conn, N: int64(c.maxCommandLength)}
 	if c.maxCommandLength > 0 {
-		src = bounded
+		src = limit
 	}
 	dec := cbor.NewDecoder(src)
 	for {
 		cmd := c.commandBuilder.Build()
 		err := dec.Decode(cmd)
 		if err != nil {
+			if src == limit && limit.N == 0 {
+				err = errCommandTooLong
+			}
 			c.fail(err)
 			return
 		}
-		bounded.remaining = c.maxCommandLength
+		limit.N = int64(c.maxCommandLength)
 		select {
 		case <-c.HaltCh():
 			return
