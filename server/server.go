@@ -700,7 +700,7 @@ func (s *Server) isQUICGateway() bool {
 	if len(addresses) == 0 {
 		addresses = s.cfg.Server.Addresses
 	}
-	return s.cfg.Server.IsGatewayNode && slices.ContainsFunc(addresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") })
+	return s.cfg.Server.IsGatewayNode && slices.ContainsFunc(addresses, common.IsQUICAddress)
 }
 
 func (s *Server) gatewayQUICKey() (*common.StaticKey, error) {

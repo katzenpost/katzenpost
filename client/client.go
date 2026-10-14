@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,7 +79,7 @@ func (c *Client) votingAuthorities() []*vServerConfig.Authority {
 	peers := make([]*vServerConfig.Authority, 0, len(c.cfg.VotingAuthority.Peers))
 	for _, peer := range c.cfg.VotingAuthority.Peers {
 		withoutQUIC := *peer
-		withoutQUIC.Addresses = slices.DeleteFunc(slices.Clone(peer.Addresses), func(addr string) bool { return strings.HasPrefix(addr, "quic://") })
+		withoutQUIC.Addresses = slices.DeleteFunc(slices.Clone(peer.Addresses), common.IsQUICAddress)
 		peers = append(peers, &withoutQUIC)
 	}
 	return peers

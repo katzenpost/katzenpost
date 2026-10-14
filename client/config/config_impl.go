@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"slices"
-	"strings"
 
 	"github.com/BurntSushi/toml"
 
@@ -26,6 +25,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -119,7 +119,7 @@ func (c *Config) FixupAndValidate() error {
 			if err := utils.RejectDNSAddrs(gw.Addresses, c.AllowHostnameAddresses); err != nil {
 				return fmt.Errorf("config: PinnedGateway %q: %w", gw.Name, err)
 			}
-			if len(gw.QUICKeyHash) == 0 && slices.Contains(c.PreferedTransports, cpki.TransportQUIC) && slices.ContainsFunc(gw.Addresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") }) {
+			if len(gw.QUICKeyHash) == 0 && slices.Contains(c.PreferedTransports, cpki.TransportQUIC) && slices.ContainsFunc(gw.Addresses, quicCommon.IsQUICAddress) {
 				return fmt.Errorf("config: PinnedGateway %q has a quic:// address but no QUICKeyHash; add the QUIC key hash its gateway logs at start, or remove the quic:// address", gw.Name)
 			}
 		}

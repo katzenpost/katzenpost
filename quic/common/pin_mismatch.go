@@ -44,12 +44,16 @@ func (p *QUICPinMismatches) Has(peer [sha256.Size]byte, epoch uint64) bool {
 	return p.epoch == epoch && p.peers[peer]
 }
 
+func IsQUICAddress(addr string) bool {
+	return strings.HasPrefix(addr, "quic://")
+}
+
 func (o *Options) StrictPinMismatch() bool {
 	return o != nil && o.PinMismatch == PinMismatchStrict
 }
 
 func (o *Options) dialableAfterPinMismatch(addr string) bool {
-	return strings.HasPrefix(addr, "quic://") == o.StrictPinMismatch()
+	return IsQUICAddress(addr) == o.StrictPinMismatch()
 }
 
 func (o *Options) reportPinMismatch(log *logging.Logger, peer string, err error) {
@@ -83,7 +87,7 @@ func (o *Options) PeerDialer(mismatches *QUICPinMismatches, peer [sha256.Size]by
 }
 
 func (d *PeerDialer) unpinned(addr string) bool {
-	return strings.HasPrefix(addr, "quic://") && len(d.quicKeyHashes) == 0
+	return IsQUICAddress(addr) && len(d.quicKeyHashes) == 0
 }
 
 func (d *PeerDialer) dialable(addr string) bool {

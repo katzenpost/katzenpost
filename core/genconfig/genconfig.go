@@ -188,10 +188,6 @@ func (s *Katzenpost) kpclientdMetricsPort() uint16 {
 	return s.BasePort + kpclientdMetricsPortOffset
 }
 
-func isQUICAddress(addr string) bool {
-	return strings.HasPrefix(addr, "quic://")
-}
-
 func (s *Katzenpost) peerAddrs(identifier string, port uint16, keepTCP, isGateway bool) []string {
 	tcp := fmt.Sprintf("tcp://%s:%d", identifier, port)
 	useQUIC := s.Transport == "quic" || (s.Transport == "alternate" && s.peerCount%2 == 1)
@@ -556,9 +552,9 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 		name := s.NodeConfigs[i].Server.Identifier
 		addresses := s.NodeConfigs[i].Server.Addresses
 		var quicKeyHash []byte
-		if slices.ContainsFunc(addresses, isQUICAddress) {
+		if slices.ContainsFunc(addresses, quicCommon.IsQUICAddress) {
 			if !s.isCurrent(name) {
-				addresses = slices.DeleteFunc(slices.Clone(addresses), isQUICAddress)
+				addresses = slices.DeleteFunc(slices.Clone(addresses), quicCommon.IsQUICAddress)
 			} else {
 				quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, name, QUICKeyFile))
 				if err != nil {

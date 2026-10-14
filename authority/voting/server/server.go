@@ -27,7 +27,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 
 	"gopkg.in/op/go-logging.v1"
@@ -697,7 +696,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if len(s.cfg.Server.BindAddresses) > 0 {
 		listenAddresses = s.cfg.Server.BindAddresses
 	}
-	listensOnQUIC := slices.ContainsFunc(listenAddresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") })
+	listensOnQUIC := slices.ContainsFunc(listenAddresses, common.IsQUICAddress)
 
 	if s.cfg.Debug.GenerateOnly {
 		if listensOnQUIC {
