@@ -61,7 +61,14 @@ type proxy struct {
 
 var errNonGlobalAddress = errors.New("refusing to dial a non-global address")
 
-var errReplyTooLarge = errors.New("reply does not fit the payload length")
+var (
+	errReplyTooLarge   = errors.New("reply does not fit the payload length")
+	errMalformed       = errors.New("malformed request")
+	errNotAbsolute     = errors.New("request is not an absolute http or https URL")
+	errHostNotAllowed  = errors.New("requested host invalid")
+	errFetchFailed     = errors.New("fetch failed")
+	errReplyUnreadable = errors.New("reply could not be read")
+)
 
 const fetchTimeout = 30 * time.Second
 
@@ -144,43 +151,33 @@ func (p *proxy) OnCommand(cmd cborplugin.Command) error {
 		// deserialize the HTTP/1.1 wire-format request from the kaetzchen payload
 		req, err := http.ReadRequest(bufio.NewReader(bytes.NewBuffer(r.Payload)))
 		if err != nil {
-			p.log.Errorf("http.ReadRequest: %s", err)
-			return err
+			return errMalformed
 		}
-		p.log.Debugf("got request for %s", req.URL)
 		if req.URL.Host == "" || (req.URL.Scheme != "http" && req.URL.Scheme != "https") {
-			p.log.Errorf("request is not an absolute http or https URL")
-			return errors.New("request is not an absolute http or https URL")
+			return errNotAbsolute
 		}
-		// make the request
 		if _, ok := p.allowedHost[req.URL.Host]; !ok {
 			if _, ok := p.allowedHost["*"]; !ok {
-				// ignore request or send a http.Response
-				p.log.Errorf("invalid AllowedHost: %s", req.Host)
-				return errors.New("requested host invalid")
+				return errHostNotAllowed
 			}
 		}
-		p.log.Debugf("doing round trip with %s", req.URL)
 		req.RequestURI = ""
 		resp, err := p.client.Do(req)
 		if err != nil {
-			p.log.Errorf("http.Request: %v", req)
-			p.log.Errorf("DefaultTransport: %s", err)
-			return err
+			return errFetchFailed
 		}
 		defer resp.Body.Close()
 		body, err := io.ReadAll(io.LimitReader(resp.Body, int64(p.payloadLength)+1))
 		if err != nil {
-			return err
+			return errReplyUnreadable
 		}
 		if len(body) > p.payloadLength {
 			return errReplyTooLarge
 		}
 		resp.Body = io.NopCloser(bytes.NewReader(body))
-		p.log.Debugf("writing raw response")
 		rawResp, err := httputil.DumpResponse(resp, true)
 		if err != nil {
-			return err
+			return errReplyUnreadable
 		}
 
 		// wrap response in common.Response to indicate length to client
@@ -221,7 +218,7 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&cfg.logDir, "log_dir", "", "logging directory")
-	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "NOTICE", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	cmd.Flags().IntVar(&cfg.payloadLength, "payload_length", 2000, "largest reply in bytes, set to the network's UserForwardPayloadLength")
 	cmd.Flags().StringSliceVar(&cfg.hosts, "host", nil, "required: comma separated host[:port] values senders may fetch, matched against the request URL; \"*\" allows any; non-global addresses are always refused")
 	return cmd

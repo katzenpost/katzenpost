@@ -49,7 +49,7 @@ For example, this is the configuration excerpt for the proxy service:
       host = "example.org"
       payload_length = "2000"
       log_dir = "/mixnet-alpine/provider1"
-      log_level = "DEBUG"
+      log_level = "NOTICE"
 
 This means that the service will accept proxy requests for example.org (and
 only example.org). The host value is matched against the host[:port] of the
@@ -61,6 +61,9 @@ Whatever the host list says, the service refuses to connect to loopback,
 link-local, private, multicast, unspecified and other non-global addresses,
 including names that resolve to them. It cannot proxy to a server on the
 service node itself or on its internal network.
+
+The service logs at NOTICE by default and never logs the URLs, headers or
+contents of the requests it carries, at any level.
 
 To build the proxy client, use the makefile.
 ::
