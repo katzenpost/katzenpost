@@ -85,6 +85,10 @@ func TestHelperProcess(t *testing.T) {
 		runEchoHelper(func(socketFile string) {
 			fmt.Println(socketFile)
 		})
+	case "oversized_response":
+		runOversizedResponseHelper()
+	case "undecodable_reply":
+		runUndecodableReplyHelper()
 	}
 	os.Exit(2)
 }
@@ -126,7 +130,7 @@ func newTestClient(t *testing.T) *Client {
 	// Close before t.TempDir()'s own cleanup removes the directory: on
 	// Windows, RemoveAll fails on a file that's still open.
 	t.Cleanup(func() { logBackend.Close() })
-	return NewClient(logBackend, "test-capability", "test-endpoint", &RequestFactory{})
+	return NewClient(logBackend, "test-capability", "test-endpoint", &RequestFactory{}, 0)
 }
 
 const helperTimeoutBudget = 5 * time.Second
@@ -180,14 +184,5 @@ func TestClientStartHandshakeOK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected Start to succeed, got: %v", err)
 	}
-	// Kill the helper subprocess directly rather than calling client.Halt():
-	// logPluginStderr already calls Halt() itself once stderr closes, from
-	// within its own Go()-registered goroutine, which can never observe its
-	// own completion; a second concurrent Halt() call here would join that
-	// same wait and hang the test. Killing the process is enough to make
-	// stderr close, which triggers that chain; reaper() then owns the
-	// resulting Wait() call, so we must not also call it here ourselves.
-	t.Cleanup(func() {
-		client.cmd.Process.Kill()
-	})
+	t.Cleanup(client.Halt)
 }

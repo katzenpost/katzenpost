@@ -114,7 +114,8 @@ type state struct {
 	sync.RWMutex
 	worker.Worker
 
-	uploadMu sync.Mutex
+	uploadLocks           sync.Map
+	beforeDescriptorWrite func()
 
 	s   *Server
 	geo *geo.Geometry
@@ -2711,12 +2712,29 @@ func (s *state) voteCut(epoch uint64) bool {
 	return ok
 }
 
-func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
-	s.uploadMu.Lock()
-	defer s.uploadMu.Unlock()
+func (s *state) persistDescriptor(bucket string, epoch uint64, pk [publicKeyHashSize]byte, raw []byte) error {
+	if s.beforeDescriptorWrite != nil {
+		s.beforeDescriptorWrite()
+	}
+	return s.db.Batch(func(tx *bolt.Tx) error {
+		eBkt, err := tx.Bucket([]byte(bucket)).CreateBucketIfNotExists(epochToBytes(epoch))
+		if err != nil {
+			return err
+		}
+		return eBkt.Put(pk[:], raw)
+	})
+}
 
+func (s *state) lockUpload(pk [publicKeyHashSize]byte) func() {
+	mu, _ := s.uploadLocks.LoadOrStore(pk, new(sync.Mutex))
+	mu.(*sync.Mutex).Lock()
+	return mu.(*sync.Mutex).Unlock
+}
+
+func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
+	defer s.lockUpload(pk)()
 
 	// Phase 1: Check under read lock if we should proceed
 	s.RLock()
@@ -2760,14 +2778,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 
 	// Phase 2: Persist to disk WITHOUT holding the lock
 	// This is the expensive I/O operation that was blocking other goroutines
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(replicaDescriptorsBucket))
-		eBkt, err := bkt.CreateBucketIfNotExists(epochToBytes(epoch))
-		if err != nil {
-			return err
-		}
-		return eBkt.Put(pk[:], rawDesc)
-	}); err != nil {
+	if err := s.persistDescriptor(replicaDescriptorsBucket, epoch, pk, rawDesc); err != nil {
 		// Persistence failures are FATAL.
 		s.s.reportFatal(err)
 		return err
@@ -2801,11 +2812,9 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
-	s.uploadMu.Lock()
-	defer s.uploadMu.Unlock()
-
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
+	defer s.lockUpload(pk)()
 
 	// Phase 1: Check under read lock if we should proceed
 	s.RLock()
@@ -2849,14 +2858,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 
 	// Phase 2: Persist to disk WITHOUT holding the lock
 	// This is the expensive I/O operation that was blocking other goroutines
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(descriptorsBucket))
-		eBkt, err := bkt.CreateBucketIfNotExists(epochToBytes(epoch))
-		if err != nil {
-			return err
-		}
-		return eBkt.Put(pk[:], rawDesc)
-	}); err != nil {
+	if err := s.persistDescriptor(descriptorsBucket, epoch, pk, rawDesc); err != nil {
 		// Persistence failures are FATAL.
 		s.s.reportFatal(err)
 		return err

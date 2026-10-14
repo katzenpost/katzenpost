@@ -46,13 +46,23 @@ For example, this is the configuration excerpt for the proxy service:
     MaxConcurrency = 1
     Disable = false
     [Provider.CBORPluginKaetzchen.Config]
-      host = "localhost:4242"
+      host = "example.org"
       log_dir = "/mixnet-alpine/provider1"
-      log_level = "DEBUG"
+      log_level = "NOTICE"
 
-This means that the service will accept proxy requests for localhost:4242 (and
-only localhost:4242). You can use a wildcard "*", but this will allow any
-client to make http requests to any host.
+This means that the service will accept proxy requests for example.org (and
+only example.org). The host value is matched against the host[:port] of the
+request URL and may be a comma separated list. It is required: the service
+refuses to start without it. You can use a wildcard "*", but this will allow
+any client to make http requests to any host.
+
+Whatever the host list says, the service refuses to connect to loopback,
+link-local, private, multicast, unspecified and other non-global addresses,
+including names that resolve to them. It cannot proxy to a server on the
+service node itself or on its internal network.
+
+The service logs at NOTICE by default and never logs the URLs, headers or
+contents of the requests it carries, at any level.
 
 To build the proxy client, use the makefile.
 ::
@@ -70,9 +80,9 @@ You'll now have a binary client/client (relative to this path). The CLI help:
      -ep string
        	endpoint name
      -log_level string
-       	logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL (default "DEBUG")
-     -port int
-       	listener address (default 8000)
+       	logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL (default "NOTICE")
+     -listen string
+       	address to listen on (default "127.0.0.1:8080")
 
 To start the client using the generated testnet configuration:
 
@@ -80,24 +90,26 @@ To start the client using the generated testnet configuration:
 
    ./client/client -ep http -cfg ../../docker/mixnet-alpine/client/client.toml
 
-Note that you can specify a different listening port (than 8080) with the -port flag.
+The client listens on 127.0.0.1:8080 by default, so other hosts cannot send
+through it. Use -listen to pick another address, e.g. -listen [::1]:8080 or a
+container's address; the old -port flag still listens on 127.0.0.1 but is
+deprecated.
 The client will connect to the mixnet and start exchanging decoy messages (cover traffic).
 
-You can then make requests to the proxy service, which will be forwarded to localhost:4242
-
-Start something listening on localhost:4242 to be connected to (for example)
-::
-
-   mkdir foo && cd foo && python3 -m http.server --bind localhost 4242
-
-And make requests to the proxy client using something that works with http proxy, e.g.:
+You can then make requests to the proxy service, which will be forwarded to
+example.org, using something that works with http proxy, e.g.:
 
 ::
 
-   http_proxy=localhost:8080 curl -v http://localhost:4242
+   http_proxy=localhost:8080 curl -v http://example.org/
 
 Note that this is a *simple* request/response service and does NOT chunk
-responses larger than the mix payload size.
+responses larger than the mix payload size. The service takes the network's
+UserForwardPayloadLength from the mix server as its reply bound; payload_length
+can only lower it, and is needed only when the service runs outside a mix
+server. A reply that does not fit is not read further, a fetch that takes
+longer than 30 seconds is abandoned, and a refused request is answered with a
+short HTTP error. Up to eight fetches run at once.
 
 To adjust the mix payload size for your application, you can pass
 UserForwardPayloadLength=10000 as a make argument when deploying the testnet.

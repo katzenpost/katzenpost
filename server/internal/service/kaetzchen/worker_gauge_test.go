@@ -60,7 +60,7 @@ func TestWorkersReportChannelUsage(t *testing.T) {
 		log:         logBackend.GetLogger("gauge test"),
 		pluginChans: PluginChans{recipient: make(chan interface{}, 4)},
 	}
-	client := cborplugin.NewClient(logBackend, "gauge", "+gauge", nil)
+	client := cborplugin.NewClient(logBackend, "gauge", "+gauge", nil, 0)
 	c.Go(func() { c.worker(recipient, client) })
 	defer c.Halt()
 	c.pluginChans[recipient] <- stalePacket(t)

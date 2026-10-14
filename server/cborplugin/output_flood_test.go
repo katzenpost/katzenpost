@@ -28,7 +28,7 @@ func floodedLogSize(t *testing.T, behavior string) int64 {
 		t.Fatalf("log.New: %v", err)
 	}
 	t.Cleanup(func() { logBackend.Close() })
-	client := NewClient(logBackend, "test-capability", "test-endpoint", &ResponseFactory{})
+	client := NewClient(logBackend, "test-capability", "test-endpoint", &ResponseFactory{}, 0)
 	if err := client.Start(os.Args[0], []string{"-test.run=TestHelperProcess"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

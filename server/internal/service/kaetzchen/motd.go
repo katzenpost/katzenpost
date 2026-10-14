@@ -33,6 +33,9 @@ func (k *kaetzchenMOTD) OnRequest(id uint64, payload []byte, hasSURB bool) ([]by
 		return nil, ErrNoResponse
 	}
 	k.log.Debugf("Handling request: %v", id)
+	if _, err := pki.PrintableMOTD(k.text, pki.MaxMOTDLength); err != nil {
+		return nil, err
+	}
 	return k.text, nil
 }
 
@@ -43,8 +46,8 @@ func NewMOTD(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 	if !ok || text == "" {
 		return nil, fmt.Errorf("kaetzchen/motd: Text must be a non-empty string")
 	}
-	if err := pki.IsClientNoticeWellFormed("", text); err != nil {
-		return nil, fmt.Errorf("kaetzchen/motd: Text is not a valid notice: %w", err)
+	if _, err := pki.PrintableMOTD([]byte(text), glue.Config().SphinxGeometry.UserForwardPayloadLength); err != nil {
+		return nil, fmt.Errorf("kaetzchen/motd: Text: %w", err)
 	}
 	return &kaetzchenMOTD{
 		log:    glue.LogBackend().GetLogger("kaetzchen/motd"),

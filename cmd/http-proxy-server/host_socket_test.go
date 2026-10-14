@@ -23,7 +23,7 @@ func TestProxyServerHelper(t *testing.T) {
 	if os.Getenv("GO_WANT_PLUGIN_HELPER") != "1" {
 		return
 	}
-	runProxyServer(proxyServerConfig{host: "*", logDir: os.Getenv("PLUGIN_LOG_DIR"), logLevel: "DEBUG"})
+	runProxyServer(proxyServerConfig{hosts: []string{"*"}, payloadLength: 2000, logDir: os.Getenv("PLUGIN_LOG_DIR"), logLevel: "DEBUG"})
 	os.Exit(0)
 }
 
@@ -32,7 +32,7 @@ func TestPluginTakesHostSocket(t *testing.T) {
 	t.Setenv(cborplugin.PluginProtocolEnv, cborplugin.PluginProtocol)
 	t.Setenv(cborplugin.PluginSocketEnv, socket)
 	logDir := t.TempDir()
-	go runProxyServer(proxyServerConfig{host: "*", logDir: logDir, logLevel: "DEBUG"})
+	go runProxyServer(proxyServerConfig{hosts: []string{"*"}, payloadLength: 2000, logDir: logDir, logLevel: "DEBUG"})
 	deadline := time.Now().Add(10 * time.Second)
 	for !isSocketFile(socket) {
 		if time.Now().After(deadline) {

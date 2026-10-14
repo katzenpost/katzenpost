@@ -58,6 +58,9 @@ func (c *DialConfig) Validate() error {
 	case 0:
 		return ErrNoTransport
 	case 1:
+		if c.Unix != nil {
+			return c.Unix.Validate()
+		}
 		return nil
 	default:
 		return ErrMultipleTransports

@@ -3,7 +3,11 @@
 
 package transport
 
-import "net"
+import (
+	"net"
+
+	"github.com/katzenpost/katzenpost/core/utils"
+)
 
 // UnixDialConfig configures a unix-domain-socket dialer.
 type UnixDialConfig struct {
@@ -14,5 +18,14 @@ type UnixDialConfig struct {
 
 // Dial opens a unix-domain-socket connection to c.Address.
 func (c *UnixDialConfig) Dial() (net.Conn, error) {
-	return net.Dial("unix", c.Address)
+	address, err := utils.ExpandUnixSocketPath(c.Address)
+	if err != nil {
+		return nil, err
+	}
+	return net.Dial("unix", address)
+}
+
+func (c *UnixDialConfig) Validate() error {
+	_, err := utils.ExpandUnixSocketPath(c.Address)
+	return err
 }
