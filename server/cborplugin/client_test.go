@@ -87,6 +87,8 @@ func TestHelperProcess(t *testing.T) {
 		})
 	case "oversized_response":
 		runOversizedResponseHelper()
+	case "undecodable_reply":
+		runUndecodableReplyHelper()
 	}
 	os.Exit(2)
 }
