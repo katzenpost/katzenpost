@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 
@@ -80,11 +81,32 @@ func (o *Options) PeerDialer(mismatches *QUICPinMismatches, peer [sha256.Size]by
 	}
 }
 
-func (d *PeerDialer) Dialable(addr string) bool {
+func (d *PeerDialer) unpinned(addr string) bool {
+	return strings.HasPrefix(addr, "quic://") && len(d.quicKeyHashes) == 0
+}
+
+func (d *PeerDialer) dialable(addr string) bool {
+	if d.unpinned(addr) {
+		return false
+	}
 	return !d.mismatches.Has(d.peer, d.epoch) || d.opts.dialableAfterPinMismatch(addr)
 }
 
+func (d *PeerDialer) AnyDialable(addrs []string) bool {
+	return slices.ContainsFunc(addrs, d.dialable)
+}
+
+func (d *PeerDialer) Dialable(addr string) bool {
+	if d.unpinned(addr) {
+		d.log.Debugf("peer %s: no QUIC key hash configured, not dialing %s", d.name, addr)
+	}
+	return d.dialable(addr)
+}
+
 func (d *PeerDialer) Dial(ctx context.Context, u *url.URL, dialFn func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
+	if u.Scheme == "quic" {
+		d.log.Debugf("peer %s: quic dial pinned to its configured QUIC key hash", d.name)
+	}
 	conn, err := DialURL(u, ctx, dialFn, d.quicKeyHashes, d.opts)
 	if errors.Is(err, ErrQUICKeyMismatch) {
 		d.mismatches.Mark(d.peer, d.epoch)

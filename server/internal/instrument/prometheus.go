@@ -258,7 +258,7 @@ var (
 	quicDials = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "katzenpost_quic_dials_total",
-			Help: "Outgoing quic dials that reached the peer, by result: pinned (the key matched a published hash), unpinned (the peer published no hash), mismatch (the key matched none).",
+			Help: "Outgoing quic dials that reached the peer, by result: pinned (the key matched a published hash) or mismatch (the key matched none). A peer that published no hash is not dialed over quic.",
 		},
 		[]string{"result"},
 	)

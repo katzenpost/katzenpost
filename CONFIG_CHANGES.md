@@ -188,6 +188,9 @@ recommended setting. A value that fails validation refuses the config.
   per-epoch QUIC key hashes in its descriptor only when every authority
   entry in its config has a `QUICKeyHash`: only authorities of this
   release hold such a key, and only they accept the descriptor field.
+  No dialer ever dials QUIC unpinned: a peer whose descriptor carries
+  no QUIC key hash is dialed only at its other addresses, so a gateway
+  with only QUIC addresses and no hash is not reachable.
 - Not configurable: closing a QUIC link delivers what was written
   before the close only within a 2 s linger. quic-go v0.63 offers no
   signal that the peer has acknowledged a stream, so after 2 s the

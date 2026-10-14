@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"golang.org/x/net/idna"
-	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
@@ -255,8 +254,6 @@ type Authority struct {
 	QUICKeyHash QUICKeyHash `toml:",omitempty"`
 }
 
-var errNoQUICKeyHash = errors.New("no QUIC key hash configured")
-
 func EveryAuthorityHasAQUICKeyHash(authorities []*Authority) bool {
 	for _, a := range authorities {
 		if len(a.QUICKeyHash) == 0 {
@@ -264,15 +261,6 @@ func EveryAuthorityHasAQUICKeyHash(authorities []*Authority) bool {
 		}
 	}
 	return len(authorities) > 0
-}
-
-func (a *Authority) DialQUICKeyHash(log *logging.Logger, addr string) ([]byte, error) {
-	if len(a.QUICKeyHash) == 0 {
-		log.Debugf("peer %s: no QUIC key hash configured, not dialing %s", a.Identifier, addr)
-		return nil, errNoQUICKeyHash
-	}
-	log.Debugf("peer %s: quic dial pinned to its configured QUIC key hash", a.Identifier)
-	return a.QUICKeyHash, nil
 }
 
 // Node is an authority mix node or provider entry.

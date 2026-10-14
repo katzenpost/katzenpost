@@ -19,7 +19,6 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
@@ -164,12 +163,6 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 		}
 		if !pinned.Dialable(a) {
 			continue
-		}
-		if u.Scheme == pki.TransportQUIC {
-			if _, err = peer.DialQUICKeyHash(s.log, a); err != nil {
-				errs = append(errs, fmt.Errorf("dial %s: %w", a, err))
-				continue
-			}
 		}
 		ctx, cancelFn := common.ConnectContext(context.Background(), dialTimeout)
 		conn, err := pinned.Dial(ctx, u, dialFn)

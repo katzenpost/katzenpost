@@ -175,24 +175,12 @@ func TestOutgoingQUICPinnedLinkCounts(t *testing.T) {
 	setups := func() float64 {
 		return linkSample("katzenpost_link_handshake_duration_seconds", "transport", "quic", "direction", "outgoing")
 	}
-	unpinned := linkSample("katzenpost_quic_dials_total", "result", "unpinned")
 	beforePinned, beforeLinks, beforeSetups := pinned(), links(), setups()
 	peer := listenQUICPeer(t)
 	dialLinkPeer(t, peer, peer.quicKeyHash, true, func() bool { return links() > beforeLinks })
 	require.Equal(t, beforePinned+1, pinned())
 	require.Equal(t, beforeLinks+1, links())
 	require.Equal(t, beforeSetups+1, setups())
-	require.Equal(t, unpinned, linkSample("katzenpost_quic_dials_total", "result", "unpinned"))
-}
-
-func TestOutgoingQUICUnpinnedDialCounts(t *testing.T) {
-	unpinned := func() float64 { return linkSample("katzenpost_quic_dials_total", "result", "unpinned") }
-	links := func() float64 {
-		return linkSample("katzenpost_links_established_total", "transport", "quic", "direction", "outgoing")
-	}
-	before, beforeLinks := unpinned(), links()
-	dialLinkPeer(t, listenQUICPeer(t), nil, true, func() bool { return links() > beforeLinks })
-	require.Equal(t, before+1, unpinned())
 }
 
 func TestOutgoingQUICPinMismatchCounts(t *testing.T) {

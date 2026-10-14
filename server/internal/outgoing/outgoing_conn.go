@@ -24,7 +24,6 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -236,7 +235,7 @@ func (c *outgoingConn) worker() {
 		// Flatten the lists of addresses to Dial to.
 		dstAddrs := dialAddresses(c.co.glue.Config().Server, c.dst)
 		peer := c.co.glue.Config().QUIC.PeerDialer(&c.co.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
-		if !slices.ContainsFunc(dstAddrs, peer.Dialable) {
+		if !peer.AnyDialable(dstAddrs) {
 			// Should *NEVER* happen because descriptors currently MUST have
 			// at least once `tcp4` address to be considered valid.
 			c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
@@ -284,7 +283,7 @@ func (c *outgoingConn) worker() {
 				}
 				return
 			default:
-				countDial(u.Scheme, len(c.dst.QUICKeyHash) > 0, err)
+				countDial(u.Scheme, err)
 				if errors.Is(err, common.ErrQUICKeyMismatch) {
 					continue
 				}
@@ -322,7 +321,7 @@ func (c *outgoingConn) worker() {
 	}
 }
 
-func countDial(scheme string, pinned bool, err error) {
+func countDial(scheme string, err error) {
 	transport := "tcp"
 	if scheme == "quic" {
 		transport = "quic"
@@ -333,10 +332,8 @@ func countDial(scheme string, pinned bool, err error) {
 		instrument.LinkFailure(transport, "outgoing", "pin_mismatch")
 	case err != nil:
 		instrument.LinkFailure(transport, "outgoing", "dial")
-	case transport == "quic" && pinned:
-		instrument.QUICDial("pinned")
 	case transport == "quic":
-		instrument.QUICDial("unpinned")
+		instrument.QUICDial("pinned")
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -347,7 +346,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			}
 		}
 		gateway := c.client.cfg.QUIC.ForClient().PeerDialer(&c.client.quicPinMismatches, hash.Sum256(c.descriptor.IdentityKey), c.descriptor.QUICKeyHash, c.log, c.descriptor.Name)
-		if !slices.ContainsFunc(dstAddrs, gateway.Dialable) {
+		if !gateway.AnyDialable(dstAddrs) {
 			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
 			c.descriptor = nil // Give up till the next PKI fetch.
 			connErr = newConnectError("no suitable addresses found")

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -268,7 +267,7 @@ func (c *outgoingConn) collectDestinationAddresses() []string {
 // attemptConnections tries to connect to each address and returns true if worker should exit
 func (c *outgoingConn) attemptConnections(dialCtx *workerContext, dialer *net.Dialer, dstAddrs []string, retryIncrement, maxRetryDelay time.Duration) bool {
 	peer := c.cfg.QUIC.PeerDialer(&c.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
-	if !slices.ContainsFunc(dstAddrs, peer.Dialable) {
+	if !peer.AnyDialable(dstAddrs) {
 		c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
 		return true
 	}

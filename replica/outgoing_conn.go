@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -258,7 +257,7 @@ func (c *outgoingConn) drainToRetryQueue() {
 // attemptConnectionToAddresses tries to connect to each address with retry logic
 func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx context.Context, dialer net.Dialer, retryIncrement, maxRetryDelay time.Duration) bool {
 	peer := c.co.Server().cfg.QUIC.PeerDialer(&c.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
-	if !slices.ContainsFunc(dstAddrs, peer.Dialable) {
+	if !peer.AnyDialable(dstAddrs) {
 		c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
 		return true
 	}

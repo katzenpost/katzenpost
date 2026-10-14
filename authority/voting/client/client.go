@@ -344,12 +344,6 @@ func (p *connector) initSession(
 			continue
 		}
 
-		if u.Scheme == pki.TransportQUIC {
-			if _, err = peer.DialQUICKeyHash(p.log, peer.Addresses[idx]); err != nil {
-				lastErr = fmt.Errorf("%s: %s: %v", peerInfo(), peer.Addresses[idx], err)
-				continue
-			}
-		}
 		ictx, cancelFn := common.ConnectContext(ctx, dialTimeout)
 		conn, err = pinned.Dial(ictx, u, dialFn)
 		cancelFn()
