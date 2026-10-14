@@ -191,14 +191,17 @@ recommended setting. A value that fails validation refuses the config.
   never dialed over QUIC; TCP still is. genconfig writes it for every
   authority of the current release on a QUIC network.
 - A gateway with a `quic://` listen address keeps one long-term QUIC
-  TLS key in `DataDir/quic-tls.key`, generated on its first start with
-  one, logs `QUIC key hash <hex>` at start, and presents that key to
-  every peer, nodes and clients alike. Its descriptor carries that one
-  hash every epoch, so nodes pin it through the consensus as before;
-  mixes, service nodes and replicas keep rotating per-epoch keys. A
-  TCP-only gateway neither reads nor creates the file. Losing the file
-  gives the gateway a new key: clients that pin the old hash then see
-  a pin mismatch until their `client.toml` is updated.
+  TLS key in `DataDir/quic-tls.key`, logs `QUIC key hash <hex>` at
+  start, and presents that key to every peer, nodes and clients alike.
+  Its descriptor carries that one hash every epoch, so nodes pin it
+  through the consensus as before; mixes, service nodes and replicas
+  keep rotating per-epoch keys. A TCP-only gateway neither reads nor
+  creates the file. Only `-g`,
+  `genkeypair --type quic` and genconfig create it: a gateway with a
+  QUIC listener refuses to start when the file is missing, naming it,
+  instead of generating a key no client pins. Restore it from backup,
+  or create a new one and replace `QUICKeyHash` for that gateway in
+  `PinnedGateways` in every `client.toml`.
 - Generating QUIC keys and pins out of band: run an authority with a
   `quic://` listen address, or a gateway with one, with `-g`. Besides
   the identity and link keys it creates `DataDir/quic-tls.key`, keeps

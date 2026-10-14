@@ -472,7 +472,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	if s.cfg.Debug.GenerateOnly {
 		if s.isQUICGateway() {
-			key, err := s.gatewayQUICKey()
+			key, err := s.gatewayQUICKey(common.LoadStaticKey)
 			if err != nil {
 				return nil, err
 			}
@@ -703,8 +703,12 @@ func (s *Server) isQUICGateway() bool {
 	return s.cfg.Server.IsGatewayNode && slices.ContainsFunc(addresses, common.IsQUICAddress)
 }
 
-func (s *Server) gatewayQUICKey() (*common.StaticKey, error) {
-	key, err := common.LoadStaticKey(filepath.Join(s.cfg.Server.DataDir, "quic-tls.key"))
+func (s *Server) gatewayQUICKey(load func(string) (*common.StaticKey, error)) (*common.StaticKey, error) {
+	path := filepath.Join(s.cfg.Server.DataDir, "quic-tls.key")
+	key, err := load(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("%s is missing and clients pin this gateway's QUIC key hash; restore that file from backup, or create a new key with -g or genkeypair --type quic and replace QUICKeyHash for this gateway in PinnedGateways in every client.toml", path)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -716,7 +720,7 @@ func (s *Server) newQUICKeys() (common.ListenerKeys, error) {
 	if !s.isQUICGateway() {
 		return common.NewEpochKeys(filepath.Join(s.cfg.Server.DataDir, "quic"), common.CurrentEpoch)
 	}
-	return s.gatewayQUICKey()
+	return s.gatewayQUICKey(common.ReadStaticKey)
 }
 
 func (g *serverGlue) QUICKeys() common.ListenerKeys {
