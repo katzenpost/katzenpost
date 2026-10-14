@@ -79,25 +79,23 @@ type CBORPluginWorker struct {
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
 func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 	k.Lock()
+	defer k.Unlock()
 	handlerCh, ok := k.pluginChans[pkt.Recipient.ID]
-	k.Unlock()
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", pkt.ID)
 		instrument.PacketsDropped()
 		instrument.PacketsDroppedByReason("cbor_kaetzchen_dispatch_no_handler")
+		pkt.Dispose()
 		return
-	}
-	select {
-	case <-k.HaltCh():
-		k.log.Debugf("Terminating gracefully.")
-		return
-	default:
 	}
 	select {
 	case handlerCh <- pkt:
-	case <-k.HaltCh():
-		k.log.Debugf("Terminating gracefully.")
-		return
+	default:
+		k.log.Debugf("Plugin queue full. Dropping Kaetzchen request: %v", pkt.ID)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("cbor_kaetzchen_queue_full")
+		instrument.KaetzchenRequestsDropped(1)
+		pkt.Dispose()
 	}
 }
 
@@ -326,7 +324,18 @@ func (k *CBORPluginWorker) unregister(endpoint [constants.RecipientIDLength]byte
 	k.log.Debugf("Unregistering %s", pluginClient.Capability())
 	k.Lock()
 	defer k.Unlock()
+	queued := k.pluginChans[endpoint]
 	delete(k.pluginChans, endpoint)
+	for len(queued) > 0 {
+		select {
+		case e := <-queued:
+			e.(*packet.Packet).Dispose()
+			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("cbor_kaetzchen_plugin_stopped")
+			instrument.KaetzchenRequestsDropped(1)
+		default:
+		}
+	}
 	delete(k.params, pluginClient.Capability())
 	for i, c := range k.clients {
 		if c == pluginClient {
