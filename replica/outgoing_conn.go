@@ -79,7 +79,7 @@ type outgoingConn struct {
 	id                uint64
 	retryDelay        time.Duration
 	egressErrCh       chan struct{}
-	quicPinMismatches httpCommon.QUICPinMismatches
+	quicPinMismatches *httpCommon.QUICPinMismatches
 
 	// sessionUp reports whether a handshaked session is currently
 	// carrying this peer's queue. False before the first handshake and
@@ -256,7 +256,7 @@ func (c *outgoingConn) drainToRetryQueue() {
 
 // attemptConnectionToAddresses tries to connect to each address with retry logic
 func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx context.Context, dialer net.Dialer, retryIncrement, maxRetryDelay time.Duration) bool {
-	peer := c.co.Server().cfg.QUIC.PeerDialer(&c.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
+	peer := c.co.Server().cfg.QUIC.PeerDialer(c.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
 	if !peer.AnyDialable(dstAddrs) {
 		c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
 		return true
@@ -816,6 +816,8 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, geo *geo.
 		ch:          make(chan commands.Command, co.Server().cfg.OutgoingQueueSize),
 		id:          atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 		egressErrCh: make(chan struct{}, 1),
+
+		quicPinMismatches: co.QUICPinMismatches(),
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("replica outgoing:%d", c.id))
 

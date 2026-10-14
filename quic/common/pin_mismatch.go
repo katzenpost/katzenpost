@@ -23,17 +23,19 @@ type QUICPinMismatches struct {
 	peers map[[sha256.Size]byte]bool
 }
 
-func (p *QUICPinMismatches) Mark(peer [sha256.Size]byte, epoch uint64) {
+func (p *QUICPinMismatches) Mark(peer [sha256.Size]byte, epoch uint64) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.peers != nil && epoch < p.epoch {
-		return
+		return false
 	}
 	if p.peers == nil || p.epoch != epoch {
 		p.epoch = epoch
 		p.peers = make(map[[sha256.Size]byte]bool)
 	}
+	marked := !p.peers[peer]
 	p.peers[peer] = true
+	return marked
 }
 
 func (p *QUICPinMismatches) Has(peer [sha256.Size]byte, epoch uint64) bool {
@@ -51,7 +53,6 @@ func (o *Options) dialableAfterPinMismatch(addr string) bool {
 }
 
 func (o *Options) reportPinMismatch(log *logging.Logger, peer string, err error) {
-	handshakeinstrument.OutgoingDialFailure("pin_mismatch")
 	if o.StrictPinMismatch() {
 		log.Warningf("peer %s: %v; PinMismatch is strict, so it is dialed over quic only for the rest of this epoch", peer, err)
 		return
@@ -109,8 +110,10 @@ func (d *PeerDialer) Dial(ctx context.Context, u *url.URL, dialFn func(ctx conte
 	}
 	conn, err := DialURL(u, ctx, dialFn, d.quicKeyHashes, d.opts)
 	if errors.Is(err, ErrQUICKeyMismatch) {
-		d.mismatches.Mark(d.peer, d.epoch)
-		d.opts.reportPinMismatch(d.log, d.name, err)
+		handshakeinstrument.OutgoingDialFailure("pin_mismatch")
+		if d.mismatches.Mark(d.peer, d.epoch) {
+			d.opts.reportPinMismatch(d.log, d.name, err)
+		}
 	}
 	return conn, err
 }

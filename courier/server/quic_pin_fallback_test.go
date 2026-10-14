@@ -33,8 +33,9 @@ func TestPinMismatchDoesNotFallBackToAnUnpinnedAddress(t *testing.T) {
 		return errors.New("unpinned dial")
 	}}
 	c := &outgoingConn{
-		log: backendLog.GetLogger("test"),
-		cfg: &config.Config{QUIC: &common.Options{PinMismatch: common.PinMismatchStrict}},
+		log:               backendLog.GetLogger("test"),
+		quicPinMismatches: &common.QUICPinMismatches{},
+		cfg:               &config.Config{QUIC: &common.Options{PinMismatch: common.PinMismatchStrict}},
 		dst: &cpki.ReplicaDescriptor{
 			Name: "storagereplica1",
 			Addresses: map[string][]string{

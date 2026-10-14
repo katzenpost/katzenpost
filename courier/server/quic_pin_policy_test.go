@@ -54,8 +54,9 @@ func TestPinMismatchFallsBackToTCPForTheEpoch(t *testing.T) {
 		return errors.New("tcp dial")
 	}}
 	c := &outgoingConn{
-		log: backendLog.GetLogger("test"),
-		cfg: &config.Config{},
+		log:               backendLog.GetLogger("test"),
+		quicPinMismatches: &common.QUICPinMismatches{},
+		cfg:               &config.Config{},
 		dst: &cpki.ReplicaDescriptor{
 			Name:        "storagereplica1",
 			IdentityKey: []byte("identity"),

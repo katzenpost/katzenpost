@@ -21,6 +21,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/server/config"
 	"github.com/katzenpost/katzenpost/courier/server/instrument"
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 type GenericConnector interface {
@@ -29,6 +30,7 @@ type GenericConnector interface {
 	OnClosedConn(conn *outgoingConn)
 	CloseAllCh() chan interface{}
 	ForceUpdate()
+	QUICPinMismatches() *quicCommon.QUICPinMismatches
 
 	DispatchMessage(dest uint8, message *commands.ReplicaMessage) error
 }

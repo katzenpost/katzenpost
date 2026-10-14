@@ -67,7 +67,7 @@ type outgoingConn struct {
 	id         uint64
 	retryDelay time.Duration
 
-	quicPinMismatches common.QUICPinMismatches
+	quicPinMismatches *common.QUICPinMismatches
 
 	// unknownCmdSeen dedups unhandled-command warnings per type.
 	// Touched only by the event loop goroutine.
@@ -266,7 +266,7 @@ func (c *outgoingConn) collectDestinationAddresses() []string {
 
 // attemptConnections tries to connect to each address and returns true if worker should exit
 func (c *outgoingConn) attemptConnections(dialCtx *workerContext, dialer *net.Dialer, dstAddrs []string, retryIncrement, maxRetryDelay time.Duration) bool {
-	peer := c.cfg.QUIC.PeerDialer(&c.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
+	peer := c.cfg.QUIC.PeerDialer(c.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
 	if !peer.AnyDialable(dstAddrs) {
 		c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
 		return true
@@ -757,7 +757,9 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *conf
 		co:         co,
 		dst:        dst,
 		name:       dst.Name,
-		id:         atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
+
+		quicPinMismatches: co.QUICPinMismatches(),
+		id:                atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("courier outgoing:%d", c.id))
 

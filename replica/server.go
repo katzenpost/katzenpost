@@ -58,6 +58,7 @@ type GenericConnector interface {
 	QueueForRetry(cmd commands.Command, idHash [32]byte)
 	ConnectionCount() int
 	SessionCount() int
+	QUICPinMismatches() *httpCommon.QUICPinMismatches
 }
 
 type Server struct {
