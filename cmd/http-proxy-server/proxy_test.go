@@ -36,7 +36,9 @@ func proxyFor(t *testing.T, host, logFile, logLevel string) (*proxy, *[]cborplug
 	}
 	hosts, err := cmd.Flags().GetStringSlice("host")
 	require.NoError(t, err)
-	p, err := newProxy(hosts, lb.GetLogger("http_proxy"))
+	payloadLength, err := cmd.Flags().GetInt("payload_length")
+	require.NoError(t, err)
+	p, err := newProxy(hosts, payloadLength, lb.GetLogger("http_proxy"))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -147,4 +149,46 @@ func TestProxyCapsReplyBeforeReading(t *testing.T) {
 		require.LessOrEqualf(t, len(r.Payload), genconfigPayloadLength, "proxy read and forwarded a %d byte reply", len(r.Payload))
 	}
 	require.Error(t, err)
+}
+
+func TestProxyRepliesWithinPayloadLength(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "small")
+	}))
+	defer srv.Close()
+	p, out, err := proxyFor(t, "*", filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
+	require.NoError(t, err)
+	dialAnything(p)
+	require.NoError(t, p.OnCommand(requestFor(srv.URL)))
+	require.Len(t, *out, 1)
+	r := (*out)[0].(*cborplugin.Response)
+	require.LessOrEqual(t, len(r.Payload), p.payloadLength)
+	require.Contains(t, string(r.Payload), "small")
+}
+
+func TestProxyRefusesReplyThatGrowsPastPayloadLength(t *testing.T) {
+	cases := map[string]int{"body at the limit": genconfigPayloadLength, "headers past the limit": 0}
+	for name, n := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if n == 0 {
+					w.Header().Set("X-Pad", strings.Repeat("a", 2*genconfigPayloadLength))
+				}
+				w.Write(make([]byte, n))
+			}))
+			defer srv.Close()
+			p, out, err := proxyFor(t, "*", filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
+			require.NoError(t, err)
+			dialAnything(p)
+			require.Error(t, p.OnCommand(requestFor(srv.URL)))
+			require.Empty(t, *out)
+		})
+	}
+}
+
+func TestProxyFetchHasDeadline(t *testing.T) {
+	p, _, err := proxyFor(t, "*", filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
+	require.NoError(t, err)
+	require.Positive(t, p.client.Timeout)
+	require.Positive(t, p.client.Transport.(*http.Transport).ResponseHeaderTimeout)
 }

@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -43,20 +44,26 @@ import (
 )
 
 type proxyServerConfig struct {
-	hosts    []string
-	logDir   string
-	logLevel string
+	hosts         []string
+	payloadLength int
+	logDir        string
+	logLevel      string
 }
 
 type proxy struct {
-	allowedHost map[string]struct{}
-	client      *http.Client
-	log         *logging.Logger
+	allowedHost   map[string]struct{}
+	client        *http.Client
+	payloadLength int
+	log           *logging.Logger
 
 	write func(cborplugin.Command)
 }
 
 var errNonGlobalAddress = errors.New("refusing to dial a non-global address")
+
+var errReplyTooLarge = errors.New("reply does not fit the payload length")
+
+const fetchTimeout = 30 * time.Second
 
 var nonGlobalPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
@@ -98,7 +105,10 @@ func refuseNonGlobal(network, address string, _ syscall.RawConn) error {
 	return nil
 }
 
-func newProxy(hosts []string, log *logging.Logger) (*proxy, error) {
+func newProxy(hosts []string, payloadLength int, log *logging.Logger) (*proxy, error) {
+	if payloadLength <= 0 {
+		return nil, errors.New("--payload_length must be positive")
+	}
 	if len(hosts) == 0 {
 		return nil, errors.New("--host is required: list the host[:port] values senders may fetch, or \"*\" for any global address")
 	}
@@ -111,18 +121,21 @@ func newProxy(hosts []string, log *logging.Logger) (*proxy, error) {
 	}
 	dialer := &net.Dialer{Timeout: 30 * time.Second, Control: refuseNonGlobal}
 	transport := &http.Transport{
-		DialContext:         dialer.DialContext,
-		TLSHandshakeTimeout: 10 * time.Second,
-		MaxIdleConns:        16,
-		IdleConnTimeout:     90 * time.Second,
+		DialContext:            dialer.DialContext,
+		TLSHandshakeTimeout:    10 * time.Second,
+		ResponseHeaderTimeout:  fetchTimeout,
+		MaxResponseHeaderBytes: int64(payloadLength),
+		MaxIdleConns:           16,
+		IdleConnTimeout:        90 * time.Second,
 	}
 	client := &http.Client{
 		Transport: transport,
+		Timeout:   fetchTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-	return &proxy{allowedHost: allowed, client: client, log: log}, nil
+	return &proxy{allowedHost: allowed, client: client, payloadLength: payloadLength, log: log}, nil
 }
 
 func (p *proxy) OnCommand(cmd cborplugin.Command) error {
@@ -156,23 +169,28 @@ func (p *proxy) OnCommand(cmd cborplugin.Command) error {
 			return err
 		}
 		defer resp.Body.Close()
+		body, err := io.ReadAll(io.LimitReader(resp.Body, int64(p.payloadLength)+1))
+		if err != nil {
+			return err
+		}
+		if len(body) > p.payloadLength {
+			return errReplyTooLarge
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(body))
 		p.log.Debugf("writing raw response")
 		rawResp, err := httputil.DumpResponse(resp, true)
 		if err != nil {
 			return err
 		}
 
-		/*
-			if len(rawResp) > 10240 {// where do we learn our maximum payload size ?
-				return nil, errors.New("Response is too long")
-			}
-		*/
-
 		// wrap response in common.Response to indicate length to client
 		cr := &common.Response{Payload: rawResp}
 		serialized, err := cbor.Marshal(cr)
 		if err != nil {
 			return err
+		}
+		if len(serialized) > p.payloadLength {
+			return errReplyTooLarge
 		}
 
 		p.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: serialized})
@@ -190,7 +208,7 @@ func main() {
 }
 
 func normalizeLegacyArgs(cmd *cobra.Command, args []string) []string {
-	return kpcommon.NormalizeLegacyLongFlags(cmd, args, "log_dir", "log_level", "host")
+	return kpcommon.NormalizeLegacyLongFlags(cmd, args, "log_dir", "log_level", "host", "payload_length")
 }
 
 func newRootCommand() *cobra.Command {
@@ -204,6 +222,7 @@ func newRootCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&cfg.logDir, "log_dir", "", "logging directory")
 	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	cmd.Flags().IntVar(&cfg.payloadLength, "payload_length", 2000, "largest reply in bytes, set to the network's UserForwardPayloadLength")
 	cmd.Flags().StringSliceVar(&cfg.hosts, "host", nil, "required: comma separated host[:port] values senders may fetch, matched against the request URL; \"*\" allows any; non-global addresses are always refused")
 	return cmd
 }
@@ -235,7 +254,7 @@ func runProxyServer(cfg proxyServerConfig) {
 	}
 	socketFile, fromHost := cborplugin.HostSocketPath(filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid())))
 
-	p, err := newProxy(cfg.hosts, serverLog)
+	p, err := newProxy(cfg.hosts, cfg.payloadLength, serverLog)
 	if err != nil {
 		cborplugin.FailStartup("http-proxy-server", err)
 	}

@@ -47,6 +47,7 @@ For example, this is the configuration excerpt for the proxy service:
     Disable = false
     [Provider.CBORPluginKaetzchen.Config]
       host = "example.org"
+      payload_length = "2000"
       log_dir = "/mixnet-alpine/provider1"
       log_level = "DEBUG"
 
@@ -98,7 +99,10 @@ example.org, using something that works with http proxy, e.g.:
    http_proxy=localhost:8080 curl -v http://example.org/
 
 Note that this is a *simple* request/response service and does NOT chunk
-responses larger than the mix payload size.
+responses larger than the mix payload size. Set payload_length to the
+network's UserForwardPayloadLength (default 2000). A reply that does not fit
+is dropped without being read further, and a fetch that takes longer than
+30 seconds is abandoned.
 
 To adjust the mix payload size for your application, you can pass
 UserForwardPayloadLength=10000 as a make argument when deploying the testnet.
