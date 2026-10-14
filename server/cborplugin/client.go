@@ -285,6 +285,7 @@ func (c *Client) Start(command string, args []string) error {
 	// Passing it through lets the dial loop below give up immediately on
 	// a plugin that already died, instead of blind-retrying for ~40s.
 	if err := c.socket.Start(true, c.socketFile, c.commandBuilder, c.HaltCh()); err != nil {
+		c.Halt()
 		return fmt.Errorf("plugin %q failed to start: %w; stderr:\n%s", command, err, c.stderrTail.String())
 	}
 	return nil
