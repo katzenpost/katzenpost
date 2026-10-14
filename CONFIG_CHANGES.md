@@ -173,13 +173,15 @@ recommended setting. A value that fails validation refuses the config.
   `[[PKI.Voting.Authorities]]` in `katzenpost.toml`, `replica.toml`
   and `courier.toml`, and `[[VotingAuthority.Peers]]` in
   `client.toml`. It is the SHA-256 of the authority's QUIC TLS public
-  key (its SubjectPublicKeyInfo). Each authority keeps one long-term
-  QUIC TLS key in `DataDir/quic-tls.key`, generated on first start,
-  and logs `QUIC key hash <hex>` at start; copy that value into the
+  key (its SubjectPublicKeyInfo). Each authority with a `quic://`
+  listen address keeps one long-term QUIC TLS key in
+  `DataDir/quic-tls.key`, generated on its first start with one, and
+  logs `QUIC key hash <hex>` at start; copy that value into the
   entries for it, next to its `LinkPublicKey`. Once the authority's
-  own entry in its `authority.toml` carries a `QUICKeyHash`, it
-  refuses to start when that file is missing or holds a key with
-  another hash, instead of generating a key no peer pins. A QUIC dial
+  own entry in its `authority.toml` carries a `QUICKeyHash`, an
+  authority with a QUIC listener refuses to start when that file is
+  missing or holds a key with another hash, instead of generating a
+  key no peer pins. A TCP-only authority neither reads nor creates it. A QUIC dial
   to an authority is pinned to the hash from the first dial, and a
   mismatch is handled as `PinMismatch` says. An entry without it is
   never dialed over QUIC; TCP still is. genconfig writes it for every

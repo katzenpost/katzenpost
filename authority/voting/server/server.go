@@ -26,6 +26,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 
 	"gopkg.in/op/go-logging.v1"
@@ -740,8 +742,14 @@ func New(cfg *config.Config) (*Server, error) {
 	s.peerSet = connlimit.NewPeerSet()
 	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
 
-	if _, err := s.quicStaticKey(); err != nil {
-		return nil, err
+	listenAddresses := s.cfg.Server.Addresses
+	if len(s.cfg.Server.BindAddresses) > 0 {
+		listenAddresses = s.cfg.Server.BindAddresses
+	}
+	if slices.ContainsFunc(listenAddresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") }) {
+		if _, err := s.quicStaticKey(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Start up the state worker.
@@ -754,10 +762,6 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Start up the listeners.
-	listenAddresses := s.cfg.Server.Addresses
-	if len(s.cfg.Server.BindAddresses) > 0 {
-		listenAddresses = s.cfg.Server.BindAddresses
-	}
 	s.startListeners(listenAddresses)
 	if len(s.listeners) == 0 {
 		s.log.Errorf("Failed to start all listeners.")
