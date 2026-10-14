@@ -153,56 +153,80 @@ func newProxy(hosts []string, payloadLength int, log *logging.Logger) (*proxy, e
 }
 
 func (p *proxy) OnCommand(cmd cborplugin.Command) error {
-	switch r := cmd.(type) {
-	case *cborplugin.Request:
-		// deserialize the HTTP/1.1 wire-format request from the kaetzchen payload
-		req, err := http.ReadRequest(bufio.NewReader(bytes.NewBuffer(r.Payload)))
-		if err != nil {
-			return errMalformed
-		}
-		if req.URL.Host == "" || (req.URL.Scheme != "http" && req.URL.Scheme != "https") {
-			return errNotAbsolute
-		}
-		if _, ok := p.allowedHost[req.URL.Host]; !ok {
-			if _, ok := p.allowedHost["*"]; !ok {
-				return errHostNotAllowed
-			}
-		}
-		req.RequestURI = ""
-		resp, err := p.client.Do(req)
-		if err != nil {
-			return errFetchFailed
-		}
-		defer resp.Body.Close()
-		body, err := io.ReadAll(io.LimitReader(resp.Body, int64(p.payloadLength)+1))
-		if err != nil {
-			return errReplyUnreadable
-		}
-		if len(body) > p.payloadLength {
-			return errReplyTooLarge
-		}
-		resp.Body = io.NopCloser(bytes.NewReader(body))
-		rawResp, err := httputil.DumpResponse(resp, true)
-		if err != nil {
-			return errReplyUnreadable
-		}
-
-		// wrap response in common.Response to indicate length to client
-		cr := &common.Response{Payload: rawResp}
-		serialized, err := cbor.Marshal(cr)
-		if err != nil {
-			return err
-		}
-		if len(serialized) > p.payloadLength {
-			return errReplyTooLarge
-		}
-
-		p.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: serialized})
-		return nil
-	default:
+	r, ok := cmd.(*cborplugin.Request)
+	if !ok {
 		p.log.Errorf("OnCommand called with unknown Command type")
 		return errors.New("invalid command type")
 	}
+	return p.serve(r)
+}
+
+func (p *proxy) serve(r *cborplugin.Request) error {
+	reply, err := p.fetch(r.Payload)
+	if err != nil {
+		reply = p.refusal(err)
+	}
+	if reply != nil {
+		p.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: reply})
+	}
+	return err
+}
+
+func (p *proxy) refusal(err error) []byte {
+	code := http.StatusBadGateway
+	switch err {
+	case errMalformed, errNotAbsolute:
+		code = http.StatusBadRequest
+	case errHostNotAllowed:
+		code = http.StatusForbidden
+	}
+	msg := err.Error()
+	raw := fmt.Sprintf("HTTP/1.1 %d %s\r\nContent-Length: %d\r\n\r\n%s", code, http.StatusText(code), len(msg), msg)
+	if reply, err := cbor.Marshal(&common.Response{Payload: []byte(raw)}); err == nil && len(reply) <= p.payloadLength {
+		return reply
+	}
+	return nil
+}
+
+func (p *proxy) fetch(payload []byte) ([]byte, error) {
+	req, err := http.ReadRequest(bufio.NewReader(bytes.NewBuffer(payload)))
+	if err != nil {
+		return nil, errMalformed
+	}
+	if req.URL.Host == "" || (req.URL.Scheme != "http" && req.URL.Scheme != "https") {
+		return nil, errNotAbsolute
+	}
+	if _, ok := p.allowedHost[req.URL.Host]; !ok {
+		if _, ok := p.allowedHost["*"]; !ok {
+			return nil, errHostNotAllowed
+		}
+	}
+	req.RequestURI = ""
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, errFetchFailed
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(p.payloadLength)+1))
+	if err != nil {
+		return nil, errReplyUnreadable
+	}
+	if len(body) > p.payloadLength {
+		return nil, errReplyTooLarge
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	rawResp, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		return nil, errReplyUnreadable
+	}
+	serialized, err := cbor.Marshal(&common.Response{Payload: rawResp})
+	if err != nil {
+		return nil, err
+	}
+	if len(serialized) > p.payloadLength {
+		return nil, errReplyTooLarge
+	}
+	return serialized, nil
 }
 
 func main() {
