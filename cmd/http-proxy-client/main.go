@@ -79,19 +79,11 @@ func getThinClient(cmdCfg proxyClientConfig) (*thin.ThinClient, error) {
 }
 
 type kttp struct {
-	client *thin.ThinClient
-	log    *logging.Logger
-	epName string
+	log  *logging.Logger
+	send func(ctx context.Context, request []byte) ([]byte, error)
 }
 
 func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	d, err := k.client.GetService(k.epName)
-	if err != nil {
-		k.log.Errorf("Err getting service: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
 	// serialize the http request
 	buf, err := httputil.DumpRequest(r, true)
 	if err != nil {
@@ -101,10 +93,9 @@ func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// send the http request
-	destNode := hash.Sum256(d.MixDescriptor.IdentityKey)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	response, err := k.client.BlockingSendMessage(ctx, buf, &destNode, d.RecipientQueueID)
+	response, err := k.send(ctx, buf)
 	if err != nil {
 		// send http error response
 		k.log.Errorf("Err sending message: %v", err)
@@ -181,7 +172,14 @@ func runProxyClient(cfg proxyClientConfig) {
 	clientLog.Noticef("Katzenpost http-proxy-client version: %s", kpcommon.Version())
 	clientLog.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
-	handler := &kttp{client: client, log: clientLog, epName: cfg.epName}
+	handler := &kttp{log: clientLog, send: func(ctx context.Context, request []byte) ([]byte, error) {
+		d, err := client.GetService(cfg.epName)
+		if err != nil {
+			return nil, err
+		}
+		destNode := hash.Sum256(d.MixDescriptor.IdentityKey)
+		return client.BlockingSendMessage(ctx, request, &destNode, d.RecipientQueueID)
+	}}
 	newHTTPServer(cfg, handler).ListenAndServe()
 }
 
