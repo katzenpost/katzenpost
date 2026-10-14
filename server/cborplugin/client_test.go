@@ -85,6 +85,8 @@ func TestHelperProcess(t *testing.T) {
 		runEchoHelper(func(socketFile string) {
 			fmt.Println(socketFile)
 		})
+	case "oversized_response":
+		runOversizedResponseHelper()
 	}
 	os.Exit(2)
 }
