@@ -188,7 +188,7 @@ func (s *Katzenpost) kpclientdMetricsPort() uint16 {
 	return s.BasePort + kpclientdMetricsPortOffset
 }
 
-func (s *Katzenpost) peerAddrs(identifier string, port uint16, keepTCP bool) []string {
+func (s *Katzenpost) peerAddrs(identifier string, port uint16, keepTCP, isGateway bool) []string {
 	tcp := fmt.Sprintf("tcp://%s:%d", identifier, port)
 	useQUIC := s.Transport == "quic" || (s.Transport == "alternate" && s.peerCount%2 == 1)
 	s.peerCount++
@@ -196,7 +196,7 @@ func (s *Katzenpost) peerAddrs(identifier string, port uint16, keepTCP bool) []s
 		return []string{tcp}
 	}
 	addrs := []string{fmt.Sprintf("quic://%s:%d", identifier, port)}
-	if keepTCP && s.Transport == "alternate" {
+	if keepTCP && s.Transport == "alternate" || isGateway && s.Transport == "quic" {
 		addrs = append(addrs, tcp)
 	}
 	return addrs
@@ -635,7 +635,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
 
-	cfg.Addresses = s.peerAddrs(cfg.Identifier, s.LastPort, false)
+	cfg.Addresses = s.peerAddrs(cfg.Identifier, s.LastPort, false, false)
 	s.LastPort++
 
 	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastPort)
@@ -710,8 +710,11 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// by net.Listen) point at the service's own hostname. Inside the
 	// container that resolves to the private bridge IP via /etc/hosts,
 	// so we never bind to 0.0.0.0.
-	cfg.Server.Addresses = s.peerAddrs(n, s.LastPort, isGateway)
+	cfg.Server.Addresses = s.peerAddrs(n, s.LastPort, isGateway, isGateway)
 	cfg.Server.BindAddresses = cfg.Server.Addresses
+	if s.Transport == "quic" {
+		cfg.Server.InternalTransports = []string{cpki.TransportQUIC}
+	}
 	s.LastPort += 2
 	cfg.Server.DataDir = filepath.Join(s.BaseDir, n)
 
@@ -887,7 +890,7 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.SphinxGeometry = s.SphinxGeometry
 		authIdentifier := fmt.Sprintf(AuthNodeFormat, i)
 		pinsQUIC := (s.Transport == "quic" || s.Transport == "alternate") && s.isCurrent(authIdentifier)
-		addresses := s.peerAddrs(authIdentifier, s.LastPort, true)
+		addresses := s.peerAddrs(authIdentifier, s.LastPort, true, false)
 		if !pinsQUIC && s.Transport == "quic" {
 			addresses = append(addresses, fmt.Sprintf("tcp://%s:%d", authIdentifier, s.LastPort))
 		}

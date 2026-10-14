@@ -192,7 +192,11 @@ recommended setting. A value that fails validation refuses the config.
   release hold such a key, and only they accept the descriptor field.
   No dialer ever dials QUIC unpinned: a peer whose descriptor carries
   no QUIC key hash is dialed only at its other addresses, so a gateway
-  with only QUIC addresses and no hash is not reachable.
+  with only QUIC addresses and no hash is not reachable. A client that
+  starts without a consensus knows no hash for its `PinnedGateways`,
+  so it reaches them only at a TCP address: give every gateway one.
+  genconfig does so on a QUIC network, where it also sets nodes'
+  `InternalTransports` to `["quic"]` so links between nodes stay QUIC.
 - Not configurable: closing a QUIC link delivers what was written
   before the close. quic-go v0.63 offers no signal that the peer has
   acknowledged a stream, so the end that closes first keeps the
