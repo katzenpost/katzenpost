@@ -82,3 +82,14 @@ func TestHaltReturnsAfterPluginExit(t *testing.T) {
 		t.Fatal("Halt blocked 5s after the plugin was reaped")
 	}
 }
+
+func TestHaltKillsAPluginIgnoringSIGTERM(t *testing.T) {
+	c, err := startLeakHelper(t, "ignore_term")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pid := c.cmd.Process.Pid
+	t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
+	go c.Halt()
+	waitDead(t, pid, 15*time.Second)
+}
