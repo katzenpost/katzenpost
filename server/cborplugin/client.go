@@ -177,6 +177,7 @@ const (
 	maxPluginLineLen  = 4096
 	maxPluginLogLines = 1024
 	socketWait        = 40 * time.Second
+	reapGrace         = 5 * time.Second
 )
 
 // stderrTail keeps a bounded tail of a plugin's stderr output, for
@@ -296,7 +297,9 @@ func (c *Client) reaper() {
 		c.log.Errorf("CBOR plugin worker, error sending SIGTERM: %s\n", err)
 		c.cmd.Process.Kill()
 	}
+	kill := time.AfterFunc(reapGrace, func() { c.cmd.Process.Kill() })
 	err = c.cmd.Wait()
+	kill.Stop()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
 	}
