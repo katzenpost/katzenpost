@@ -55,6 +55,7 @@ type proxy struct {
 	client        *http.Client
 	payloadLength int
 	log           *logging.Logger
+	fetches       chan struct{}
 
 	write func(cborplugin.Command)
 }
@@ -70,7 +71,10 @@ var (
 	errReplyUnreadable = errors.New("reply could not be read")
 )
 
-const fetchTimeout = 30 * time.Second
+const (
+	fetchTimeout         = 30 * time.Second
+	maxConcurrentFetches = 8
+)
 
 var nonGlobalPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
@@ -149,7 +153,7 @@ func newProxy(hosts []string, payloadLength int, log *logging.Logger) (*proxy, e
 			return http.ErrUseLastResponse
 		},
 	}
-	return &proxy{allowedHost: allowed, client: client, payloadLength: payloadLength, log: log}, nil
+	return &proxy{allowedHost: allowed, client: client, payloadLength: payloadLength, log: log, fetches: make(chan struct{}, maxConcurrentFetches)}, nil
 }
 
 func (p *proxy) OnCommand(cmd cborplugin.Command) error {
@@ -158,7 +162,14 @@ func (p *proxy) OnCommand(cmd cborplugin.Command) error {
 		p.log.Errorf("OnCommand called with unknown Command type")
 		return errors.New("invalid command type")
 	}
-	return p.serve(r)
+	p.fetches <- struct{}{}
+	go func() {
+		defer func() { <-p.fetches }()
+		if err := p.serve(r); err != nil {
+			p.log.Debugf("refused: %v", err)
+		}
+	}()
+	return nil
 }
 
 func (p *proxy) serve(r *cborplugin.Request) error {
