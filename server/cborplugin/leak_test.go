@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -27,11 +28,7 @@ func TestLeakHelperProcess(t *testing.T) {
 		signal.Ignore(syscall.SIGTERM)
 		runEchoHelper(func(socketFile string) { fmt.Println(socketFile) })
 	case "bound_not_listening":
-		dir, err := os.MkdirTemp("", "leak")
-		if err != nil {
-			os.Exit(1)
-		}
-		socketFile := filepath.Join(dir, "h.socket")
+		socketFile := filepath.Join(os.Getenv("GO_LEAK_DIR"), "h.socket")
 		l, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketFile, Net: "unix"})
 		if err != nil {
 			os.Exit(1)
@@ -99,6 +96,16 @@ func TestDialFailureReapsPlugin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("waits out the 40 dial attempts")
 	}
+	base := ""
+	if runtime.GOOS == "darwin" {
+		base = "/tmp"
+	}
+	short, err := os.MkdirTemp(base, "kp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(short) })
+	t.Setenv("GO_LEAK_DIR", short)
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 	c, err := startLeakHelper(t, "bound_not_listening")
