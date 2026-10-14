@@ -44,6 +44,8 @@ const (
 	maxPluginParamsSize       = 4096
 )
 
+const responseEnvelopeLength = 4096
+
 // PluginChans maps from Recipient ID to channel.
 type PluginChans = map[[constants.RecipientIDLength]byte]chan interface{}
 
@@ -304,7 +306,7 @@ func (k *CBORPluginWorker) isKaetzchen(recipient [constants.RecipientIDLength]by
 
 func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{})
+	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{}, k.geo.UserForwardPayloadLength+k.geo.SURBLength+responseEnvelopeLength)
 	plugin.Geometry = k.geo
 	err := plugin.Start(command, args)
 	return plugin, err

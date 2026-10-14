@@ -128,7 +128,7 @@ func newTestClient(t *testing.T) *Client {
 	// Close before t.TempDir()'s own cleanup removes the directory: on
 	// Windows, RemoveAll fails on a file that's still open.
 	t.Cleanup(func() { logBackend.Close() })
-	return NewClient(logBackend, "test-capability", "test-endpoint", &RequestFactory{})
+	return NewClient(logBackend, "test-capability", "test-endpoint", &RequestFactory{}, 0)
 }
 
 const helperTimeoutBudget = 5 * time.Second

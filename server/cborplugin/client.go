@@ -241,9 +241,11 @@ type Client struct {
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
 
-func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuilder CommandBuilder) *Client {
+func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuilder CommandBuilder, maxCommandLength int) *Client {
+	socket := NewCommandIO(logBackend.GetLogger("client_socket"))
+	socket.maxCommandLength = maxCommandLength
 	return &Client{
-		socket:         NewCommandIO(logBackend.GetLogger("client_socket")),
+		socket:         socket,
 		logBackend:     logBackend,
 		log:            logBackend.GetLogger("client"),
 		commandBuilder: commandBuilder,
