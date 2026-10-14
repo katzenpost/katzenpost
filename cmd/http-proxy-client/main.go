@@ -114,6 +114,9 @@ func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	maps.Copy(w.Header(), resp.Header)
+	if _, ok := resp.Header["Content-Type"]; !ok {
+		w.Header()["Content-Type"] = nil
+	}
 	switch {
 	case resp.StatusCode == http.StatusNoContent || resp.StatusCode < 200:
 		w.Header().Del("Content-Length")
