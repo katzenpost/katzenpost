@@ -113,8 +113,15 @@ func refuseNonGlobal(network, address string, _ syscall.RawConn) error {
 }
 
 func newProxy(hosts []string, payloadLength int, log *logging.Logger) (*proxy, error) {
+	host, err := cborplugin.HostInfo()
+	if err != nil {
+		return nil, err
+	}
+	if n := host.UserForwardPayloadLength; n > 0 && (payloadLength == 0 || payloadLength > n) {
+		payloadLength = n
+	}
 	if payloadLength <= 0 {
-		return nil, errors.New("--payload_length must be positive")
+		return nil, errors.New("--payload_length must be positive when the mix server does not give the payload length")
 	}
 	if len(hosts) == 0 {
 		return nil, errors.New("--host is required: list the host[:port] values senders may fetch, or \"*\" for any global address")
@@ -219,7 +226,7 @@ func newRootCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&cfg.logDir, "log_dir", "", "logging directory")
 	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "NOTICE", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	cmd.Flags().IntVar(&cfg.payloadLength, "payload_length", 2000, "largest reply in bytes, set to the network's UserForwardPayloadLength")
+	cmd.Flags().IntVar(&cfg.payloadLength, "payload_length", 0, "largest reply in bytes; 0 takes the network's UserForwardPayloadLength from the mix server, which also caps any other value")
 	cmd.Flags().StringSliceVar(&cfg.hosts, "host", nil, "required: comma separated host[:port] values senders may fetch, matched against the request URL; \"*\" allows any; non-global addresses are always refused")
 	return cmd
 }
@@ -255,6 +262,7 @@ func runProxyServer(cfg proxyServerConfig) {
 	if err != nil {
 		cborplugin.FailStartup("http-proxy-server", err)
 	}
+	serverLog.Noticef("Replies are bound to %d bytes", p.payloadLength)
 
 	cmdBuilder := new(cborplugin.RequestFactory)
 	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, p)
