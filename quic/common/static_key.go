@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
+	"os"
 	"sync"
 )
 
@@ -49,6 +51,10 @@ func staticKeyFromSeed(seed []byte) (*StaticKey, error) {
 func (k *StaticKey) Hash() []byte {
 	keyHash := k.keyHash
 	return keyHash[:]
+}
+
+func (k *StaticKey) WriteHash(path string) error {
+	return os.WriteFile(path, []byte(hex.EncodeToString(k.Hash())+"\n"), 0o644)
 }
 
 func (k *StaticKey) Hashes(uint64) ([]byte, error) {

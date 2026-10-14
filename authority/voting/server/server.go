@@ -693,7 +693,22 @@ func New(cfg *config.Config) (*Server, error) {
 	linkPubKeyHash := hash.Sum256(linkBlob)
 	s.log.Noticef("Authority link public key hash is: %x", linkPubKeyHash[:])
 
+	listenAddresses := s.cfg.Server.Addresses
+	if len(s.cfg.Server.BindAddresses) > 0 {
+		listenAddresses = s.cfg.Server.BindAddresses
+	}
+	listensOnQUIC := slices.ContainsFunc(listenAddresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") })
+
 	if s.cfg.Debug.GenerateOnly {
+		if listensOnQUIC {
+			key, err := s.quicStaticKey()
+			if err != nil {
+				return nil, err
+			}
+			if err := key.WriteHash(filepath.Join(s.cfg.Server.DataDir, "quic-tls.hash")); err != nil {
+				return nil, err
+			}
+		}
 		return nil, ErrGenerateOnly
 	}
 
@@ -742,11 +757,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.peerSet = connlimit.NewPeerSet()
 	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
 
-	listenAddresses := s.cfg.Server.Addresses
-	if len(s.cfg.Server.BindAddresses) > 0 {
-		listenAddresses = s.cfg.Server.BindAddresses
-	}
-	if slices.ContainsFunc(listenAddresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") }) {
+	if listensOnQUIC {
 		if _, err := s.quicStaticKey(); err != nil {
 			return nil, err
 		}

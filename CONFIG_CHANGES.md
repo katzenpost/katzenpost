@@ -199,6 +199,18 @@ recommended setting. A value that fails validation refuses the config.
   TCP-only gateway neither reads nor creates the file. Losing the file
   gives the gateway a new key: clients that pin the old hash then see
   a pin mismatch until their `client.toml` is updated.
+- Generating QUIC keys and pins out of band: run an authority with a
+  `quic://` listen address, or a gateway with one, with `-g`. Besides
+  the identity and link keys it creates `DataDir/quic-tls.key`, keeps
+  an existing one, and writes `DataDir/quic-tls.hash`: the
+  `QUICKeyHash` as 64 lowercase hex digits and a newline, exactly as
+  it goes in TOML. An authority whose own entry already pins a hash
+  still refuses to start, `-g` included, when that file is missing.
+  Roll pins out in this order: put `QUICKeyHash` in every authority
+  entry of every config first, since nodes, gateways and replicas
+  publish their descriptor hashes only once every authority entry has
+  one; nodes then publish theirs on their own; finally add each
+  gateway's hash to `PinnedGateways` in `client.toml`.
 - **Added** `QUICKeyHash` (64 hex digits; default unset) to
   `[[PinnedGateways.Gateways]]` in `client.toml`: the hash that
   gateway logs as `QUIC key hash <hex>`. A client that opts in to QUIC

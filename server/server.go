@@ -471,6 +471,15 @@ func New(cfg *config.Config) (*Server, error) {
 	logStartupStep("link key initialization")
 
 	if s.cfg.Debug.GenerateOnly {
+		if s.isQUICGateway() {
+			key, err := s.gatewayQUICKey()
+			if err != nil {
+				return nil, err
+			}
+			if err := key.WriteHash(filepath.Join(s.cfg.Server.DataDir, "quic-tls.hash")); err != nil {
+				return nil, err
+			}
+		}
 		return nil, ErrGenerateOnly
 	}
 
@@ -686,21 +695,28 @@ func (g *serverGlue) MixKeys() glue.MixKeys {
 	return g.s.mixKeys
 }
 
-func (s *Server) newQUICKeys() (common.ListenerKeys, error) {
+func (s *Server) isQUICGateway() bool {
 	addresses := s.cfg.Server.BindAddresses
 	if len(addresses) == 0 {
 		addresses = s.cfg.Server.Addresses
 	}
-	listensOnQUIC := slices.ContainsFunc(addresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") })
-	if !s.cfg.Server.IsGatewayNode || !listensOnQUIC {
-		return common.NewEpochKeys(filepath.Join(s.cfg.Server.DataDir, "quic"), common.CurrentEpoch)
-	}
+	return s.cfg.Server.IsGatewayNode && slices.ContainsFunc(addresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") })
+}
+
+func (s *Server) gatewayQUICKey() (*common.StaticKey, error) {
 	key, err := common.LoadStaticKey(filepath.Join(s.cfg.Server.DataDir, "quic-tls.key"))
 	if err != nil {
 		return nil, err
 	}
 	s.log.Noticef("QUIC key hash %x", key.Hash())
 	return key, nil
+}
+
+func (s *Server) newQUICKeys() (common.ListenerKeys, error) {
+	if !s.isQUICGateway() {
+		return common.NewEpochKeys(filepath.Join(s.cfg.Server.DataDir, "quic"), common.CurrentEpoch)
+	}
+	return s.gatewayQUICKey()
 }
 
 func (g *serverGlue) QUICKeys() common.ListenerKeys {
