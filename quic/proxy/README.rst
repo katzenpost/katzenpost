@@ -81,9 +81,9 @@ You'll now have a binary client/client (relative to this path). The CLI help:
      -ep string
        	endpoint name
      -log_level string
-       	logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL (default "DEBUG")
+       	logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL (default "NOTICE")
      -port int
-       	listener address (default 8000)
+       	port to listen on, on 127.0.0.1 (default 8080)
 
 To start the client using the generated testnet configuration:
 
@@ -92,6 +92,7 @@ To start the client using the generated testnet configuration:
    ./client/client -ep http -cfg ../../docker/mixnet-alpine/client/client.toml
 
 Note that you can specify a different listening port (than 8080) with the -port flag.
+The client listens on 127.0.0.1 only, so other hosts cannot send through it.
 The client will connect to the mixnet and start exchanging decoy messages (cover traffic).
 
 You can then make requests to the proxy service, which will be forwarded to

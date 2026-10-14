@@ -21,11 +21,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"os"
+	"strconv"
 	"time"
 
 	cbor "github.com/fxamacker/cbor/v2"
@@ -159,8 +160,8 @@ func newRootCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&cfg.cfgFile, "cfg", "proxy.toml", "thin client config file")
 	cmd.Flags().StringVar(&cfg.epName, "ep", "http", "endpoint name")
-	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	cmd.Flags().IntVar(&cfg.port, "port", 8080, "listener address")
+	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "NOTICE", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	cmd.Flags().IntVar(&cfg.port, "port", 8080, "port to listen on, on 127.0.0.1")
 	cmd.Flags().IntVar(&cfg.retry, "retry", -1, "limit number of reconnection attempts")
 	cmd.Flags().IntVar(&cfg.delay, "delay", 30, "time to wait between connection attempts (seconds)>")
 	return cmd
@@ -182,5 +183,10 @@ func runProxyClient(cfg proxyClientConfig) {
 }
 
 func newHTTPServer(cfg proxyClientConfig, handler http.Handler) *http.Server {
-	return &http.Server{Addr: fmt.Sprintf(":%d", cfg.port), Handler: handler}
+	return &http.Server{
+		Addr:              net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.port)),
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 }
