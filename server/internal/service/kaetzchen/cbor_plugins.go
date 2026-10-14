@@ -106,8 +106,6 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
-	defer k.haltOnce.Do(k.haltAllClients)
-
 	k.Lock()
 	handlerCh, ok := k.pluginChans[recipient]
 	k.Unlock()
@@ -125,6 +123,9 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 		select {
 		case <-k.HaltCh():
 			k.log.Debugf("Terminating gracefully.")
+			k.haltOnce.Do(k.haltAllClients)
+			return
+		case <-pluginClient.HaltCh():
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
@@ -145,7 +146,10 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 
 func (k *CBORPluginWorker) haltAllClients() {
 	k.log.Debug("Halting plugin clients.")
-	for _, client := range k.clients {
+	k.Lock()
+	clients := append([]*cborplugin.Client(nil), k.clients...)
+	k.Unlock()
+	for _, client := range clients {
 		go client.Halt()
 	}
 }
@@ -176,6 +180,11 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		Payload:   payload,
 		SURB:      surb,
 	}:
+	case <-pluginClient.HaltCh():
+		k.log.Debugf("%v: Dropping Kaetzchen request: %v (plugin stopped)", pluginCap, pkt.ID)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("cbor_kaetzchen_plugin_stopped")
+		instrument.KaetzchenRequestsDropped(1)
 	case <-k.HaltCh():
 		k.log.Debugf("Terminating gracefully.")
 		return
@@ -188,6 +197,8 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 	for {
 		select {
 		case <-k.HaltCh():
+			return
+		case <-pluginClient.HaltCh():
 			return
 		case cborResponse := <-pluginClient.ReadChan():
 			switch r := cborResponse.(type) {

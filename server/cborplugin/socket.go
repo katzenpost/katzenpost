@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -62,6 +63,9 @@ type CommandIO struct {
 	commandBuilder CommandBuilder
 
 	maxCommandLength int
+
+	failOnce sync.Once
+	err      error
 }
 
 var errCommandTooLong = errors.New("cborplugin: command exceeds the length bound")
@@ -123,8 +127,7 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 		if !started {
 			return fmt.Errorf("gave up dialing %q after %d tries: %w", socketFile, maxTries, err)
 		}
-		c.Go(c.reader)
-		c.Go(c.writer)
+		c.serve()
 	} else {
 		c.log.Debugf("listening to unix domain socket file: %s", socketFile)
 
@@ -152,8 +155,23 @@ func (c *CommandIO) Accept() {
 		return
 	}
 
+	c.serve()
+}
+
+func (c *CommandIO) serve() {
 	c.Go(c.reader)
 	c.Go(c.writer)
+	c.Go(func() {
+		<-c.HaltCh()
+		c.conn.Close()
+	})
+}
+
+func (c *CommandIO) fail(err error) {
+	c.failOnce.Do(func() {
+		c.err = err
+		c.Stop()
+	})
 }
 
 func (c *CommandIO) dial(socketFile string) error {
@@ -186,7 +204,7 @@ func (c *CommandIO) reader() {
 		cmd := c.commandBuilder.Build()
 		err := dec.Decode(cmd)
 		if err != nil {
-			c.Halt()
+			c.fail(err)
 			return
 		}
 		bounded.remaining = c.maxCommandLength
@@ -207,7 +225,7 @@ func (c *CommandIO) writer() {
 		case cmd := <-c.writeCh:
 			err := enc.Encode(cmd)
 			if err != nil {
-				c.Halt()
+				c.fail(err)
 				return
 			}
 		}

@@ -290,7 +290,22 @@ func (c *Client) Start(command string, args []string) error {
 		c.Halt()
 		return fmt.Errorf("plugin %q failed to start: %w; stderr:\n%s", command, err, c.stderrTail.String())
 	}
+	c.Go(c.supervise)
 	return nil
+}
+
+func (c *Client) supervise() {
+	select {
+	case <-c.HaltCh():
+	case <-c.socket.HaltCh():
+		select {
+		case <-c.HaltCh():
+		default:
+			c.log.Errorf("CBOR plugin %s failed: %v", c.capability, c.socket.err)
+			c.Stop()
+		}
+	}
+	c.socket.Halt()
 }
 
 func (c *Client) reaper() {
