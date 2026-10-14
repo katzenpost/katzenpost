@@ -166,7 +166,8 @@ recommended setting. A value that fails validation refuses the config.
   is tried at all is still decided by the transport order, not by this
   key: `InternalTransports` in `katzenpost.toml` for links between
   nodes, `PreferedTransports` (or a thin client's
-  `SetPreferredTransports`) in `client.toml` for the gateway, the fixed
+  `SetPreferredTransports`) in `client.toml` for the gateway, where QUIC
+  is off unless it is listed, the fixed
   order `tcp`, `tcp4`, `tcp6`, `quic`, `ws`, `onion` for replicas and
   couriers dialing a replica, and an authority entry's `Addresses` with
   its `QUICKeyHash` for authorities. `PinMismatch` only acts once a
@@ -200,8 +201,9 @@ recommended setting. A value that fails validation refuses the config.
   a pin mismatch until their `client.toml` is updated.
 - **Added** `QUICKeyHash` (64 hex digits; default unset) to
   `[[PinnedGateways.Gateways]]` in `client.toml`: the hash that
-  gateway logs as `QUIC key hash <hex>`. A client with no consensus
-  dials that gateway's `quic://` address pinned to it; once it has a
+  gateway logs as `QUIC key hash <hex>`. A client that opts in to QUIC
+  (see `PreferedTransports`) and has no consensus dials that gateway's
+  `quic://` address pinned to it; once it has a
   consensus it pins the gateway's descriptor instead, which carries
   the same hash. A pinned gateway with a `quic://` address and no
   `QUICKeyHash` refuses the config, so a missing pin never turns into
@@ -599,8 +601,17 @@ The client TOML had the most substantial reshape, driven by the
   the `kpclientd_metrics` build tag is set; production builds without
   the tag treat the field as inert. Convention is `127.0.0.1` only;
   binding to a public address is not supported.
-- `PreferedTransports` is unchanged, but a thin client can now replace
-  the order at run time with the `SetPreferredTransports` request
+- **Changed** `PreferedTransports`: kpclientd dials QUIC only when it
+  lists `quic`. Unset, the order is `tcp`, `tcp4`, `tcp6`, `ws`,
+  `onion`, so a client never dials a gateway or an authority over QUIC
+  unless it opts in, even when `client.toml` carries their QUIC key
+  hashes; earlier releases tried `quic` after the TCP transports. To
+  use QUIC put `quic` first, for example `["quic", "tcp"]`: the
+  gateway is then dialed over pinned QUIC and over TCP only when that
+  dial fails. Authorities are dialed over QUIC only when `quic` is in
+  `PreferedTransports` in the file; `SetPreferredTransports` changes
+  the gateway order alone.
+- A thin client can now replace the order at run time with the `SetPreferredTransports` request
   (CBOR `set_preferred_transports` with a `transports` list, answered
   by `set_preferred_transports_reply`). Names must be among `tcp`,
   `tcp4`, `tcp6`, `quic`, `ws` and `onion`, none repeated, or the reply

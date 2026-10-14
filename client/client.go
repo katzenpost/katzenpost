@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +22,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/client"
+	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -59,6 +61,8 @@ type Client struct {
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
 }
 
+var defaultTransports = slices.DeleteFunc(slices.Clone(cpki.ClientTransports), func(t string) bool { return t == cpki.TransportQUIC })
+
 func (c *Client) PreferredTransports() []string {
 	if p := c.preferredTransports.Load(); p != nil {
 		return *p
@@ -66,7 +70,20 @@ func (c *Client) PreferredTransports() []string {
 	if c.cfg.PreferedTransports != nil {
 		return c.cfg.PreferedTransports
 	}
-	return cpki.ClientTransports
+	return defaultTransports
+}
+
+func (c *Client) votingAuthorities() []*vServerConfig.Authority {
+	if slices.Contains(c.cfg.PreferedTransports, cpki.TransportQUIC) {
+		return c.cfg.VotingAuthority.Peers
+	}
+	peers := make([]*vServerConfig.Authority, 0, len(c.cfg.VotingAuthority.Peers))
+	for _, peer := range c.cfg.VotingAuthority.Peers {
+		withoutQUIC := *peer
+		withoutQUIC.Addresses = slices.DeleteFunc(slices.Clone(peer.Addresses), func(addr string) bool { return strings.HasPrefix(addr, "quic://") })
+		peers = append(peers, &withoutQUIC)
+	}
+	return peers
 }
 
 func (c *Client) SetPreferredTransports(transports []string) error {
@@ -149,7 +166,7 @@ func (c *Client) Start() error {
 		PKISignatureScheme: signSchemes.ByName(c.cfg.PKISignatureScheme),
 		LinkKey:            pkilinkKey,
 		LogBackend:         c.logbackend,
-		Authorities:        c.cfg.VotingAuthority.Peers,
+		Authorities:        c.votingAuthorities(),
 		Geo:                c.cfg.SphinxGeometry,
 		DialContextFn:      c.DialContextFn,
 		QUIC:               c.cfg.QUIC.ForClient(),
