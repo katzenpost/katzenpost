@@ -115,6 +115,8 @@ type state struct {
 
 	uploadMu sync.Mutex
 
+	beforeDescriptorWrite func()
+
 	s   *Server
 	geo *geo.Geometry
 	log *logging.Logger
@@ -2708,6 +2710,31 @@ func (s *state) voteCut(epoch uint64) bool {
 	return ok
 }
 
+type pendingDescriptor struct {
+	bucket string
+	epoch  uint64
+	pk     [publicKeyHashSize]byte
+	raw    []byte
+}
+
+func (s *state) writeDescriptors(batch []pendingDescriptor) error {
+	if s.beforeDescriptorWrite != nil {
+		s.beforeDescriptorWrite()
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		for _, d := range batch {
+			eBkt, err := tx.Bucket([]byte(d.bucket)).CreateBucketIfNotExists(epochToBytes(d.epoch))
+			if err != nil {
+				return err
+			}
+			if err := eBkt.Put(d.pk[:], d.raw); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
 	s.uploadMu.Lock()
 	defer s.uploadMu.Unlock()
@@ -2757,14 +2784,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 
 	// Phase 2: Persist to disk WITHOUT holding the lock
 	// This is the expensive I/O operation that was blocking other goroutines
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(replicaDescriptorsBucket))
-		eBkt, err := bkt.CreateBucketIfNotExists(epochToBytes(epoch))
-		if err != nil {
-			return err
-		}
-		return eBkt.Put(pk[:], rawDesc)
-	}); err != nil {
+	if err := s.writeDescriptors([]pendingDescriptor{{replicaDescriptorsBucket, epoch, pk, rawDesc}}); err != nil {
 		// Persistence failures are FATAL.
 		s.s.reportFatal(err)
 		return err
@@ -2846,14 +2866,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 
 	// Phase 2: Persist to disk WITHOUT holding the lock
 	// This is the expensive I/O operation that was blocking other goroutines
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(descriptorsBucket))
-		eBkt, err := bkt.CreateBucketIfNotExists(epochToBytes(epoch))
-		if err != nil {
-			return err
-		}
-		return eBkt.Put(pk[:], rawDesc)
-	}); err != nil {
+	if err := s.writeDescriptors([]pendingDescriptor{{descriptorsBucket, epoch, pk, rawDesc}}); err != nil {
 		// Persistence failures are FATAL.
 		s.s.reportFatal(err)
 		return err
