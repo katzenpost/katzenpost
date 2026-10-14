@@ -15,8 +15,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
@@ -79,7 +81,7 @@ func TestProxyRefusesServiceNodeLoopback(t *testing.T) {
 			if err != nil {
 				return
 			}
-			err = p.OnCommand(requestFor(c.url))
+			err = p.serve(requestFor(c.url))
 			require.Zerof(t, hits.Load(), "proxy with --host %q fetched %s from the service node's loopback (err=%v, replies=%d)", c.host, c.url, err, len(*out))
 		})
 	}
@@ -125,7 +127,7 @@ func TestProxyRefusesIPv6Loopback(t *testing.T) {
 	for _, u := range []string{srv.URL, "http://[::ffff:127.0.0.1]:" + port} {
 		p, _, err := proxyFor(t, "*", filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
 		require.NoError(t, err)
-		require.Error(t, p.OnCommand(requestFor(u)))
+		require.Error(t, p.serve(requestFor(u)))
 	}
 	require.Zero(t, hits.Load())
 }
@@ -150,7 +152,7 @@ func TestProxyCapsReplyBeforeReading(t *testing.T) {
 	p, out, err := proxyFor(t, "*", filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
 	require.NoError(t, err)
 	dialAnything(p)
-	err = p.OnCommand(requestFor(srv.URL))
+	err = p.serve(requestFor(srv.URL))
 	for _, c := range *out {
 		r := c.(*cborplugin.Response)
 		require.LessOrEqualf(t, len(r.Payload), genconfigPayloadLength, "proxy read and forwarded a %d byte reply", len(r.Payload))
@@ -166,7 +168,7 @@ func TestProxyRepliesWithinPayloadLength(t *testing.T) {
 	p, out, err := proxyFor(t, "*", filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
 	require.NoError(t, err)
 	dialAnything(p)
-	require.NoError(t, p.OnCommand(requestFor(srv.URL)))
+	require.NoError(t, p.serve(requestFor(srv.URL)))
 	require.Len(t, *out, 1)
 	r := (*out)[0].(*cborplugin.Response)
 	require.LessOrEqual(t, len(r.Payload), p.payloadLength)
@@ -187,7 +189,7 @@ func TestProxyRefusesReplyThatGrowsPastPayloadLength(t *testing.T) {
 			p, out, err := proxyFor(t, "*", filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
 			require.NoError(t, err)
 			dialAnything(p)
-			require.Error(t, p.OnCommand(requestFor(srv.URL)))
+			require.Error(t, p.serve(requestFor(srv.URL)))
 			require.Equal(t, http.StatusBadGateway, refusalStatus(t, p, *out))
 		})
 	}
@@ -214,7 +216,7 @@ func TestProxyLogKeepsNoRequestContent(t *testing.T) {
 					dialAnything(p)
 				}
 				req := &cborplugin.Request{ID: 1, Payload: []byte("GET " + srv.URL + "/secret-page HTTP/1.1\r\nHost: x\r\nCookie: sid=s3cr3t\r\n\r\n")}
-				err = p.OnCommand(req)
+				err = p.serve(req)
 				b, rerr := os.ReadFile(f)
 				require.NoError(t, rerr)
 				for _, secret := range []string{"secret-page", "s3cr3t", srv.URL[len("http://"):]} {
@@ -300,7 +302,7 @@ func TestProxyAnswersARefusal(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			p, out, err := proxyFor(t, c.host, filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
 			require.NoError(t, err)
-			require.Error(t, p.OnCommand(&cborplugin.Request{ID: 1, SURB: []byte("surb"), Payload: []byte(c.payload)}))
+			require.Error(t, p.serve(&cborplugin.Request{ID: 1, SURB: []byte("surb"), Payload: []byte(c.payload)}))
 			require.Equal(t, c.want, refusalStatus(t, p, *out))
 			require.Equal(t, []byte("surb"), (*out)[0].(*cborplugin.Response).SURB)
 		})
@@ -315,6 +317,48 @@ func TestProxySendsNoRefusalLargerThanTheBound(t *testing.T) {
 	require.NoError(t, err)
 	var out []cborplugin.Command
 	p.write = func(c cborplugin.Command) { out = append(out, c) }
-	require.Error(t, p.OnCommand(&cborplugin.Request{ID: 1, Payload: []byte("not http")}))
+	require.Error(t, p.serve(&cborplugin.Request{ID: 1, Payload: []byte("not http")}))
 	require.Empty(t, out)
+}
+
+func TestProxyFetchesConcurrentlyUpToItsBound(t *testing.T) {
+	const bound, extra = 8, 3
+	var inFlight, peak atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := inFlight.Add(1)
+		defer inFlight.Add(-1)
+		for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+		}
+		<-release
+	}))
+	defer srv.Close()
+	var once sync.Once
+	free := func() { once.Do(func() { close(release) }) }
+	defer free()
+	p, _, err := proxyFor(t, "*", filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
+	require.NoError(t, err)
+	dialAnything(p)
+	var mu sync.Mutex
+	replies := 0
+	p.write = func(cborplugin.Command) {
+		mu.Lock()
+		defer mu.Unlock()
+		replies++
+	}
+	go func() {
+		for i := 0; i < bound+extra; i++ {
+			p.OnCommand(requestFor(srv.URL))
+		}
+	}()
+	require.Eventually(t, func() bool { return peak.Load() == bound }, 10*time.Second, 10*time.Millisecond, "slow fetches did not run side by side up to the bound")
+	time.Sleep(100 * time.Millisecond)
+	require.EqualValues(t, bound, inFlight.Load(), "more fetches in flight than the bound")
+	free()
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return replies == bound+extra
+	}, 10*time.Second, 10*time.Millisecond)
+	require.EqualValues(t, bound, peak.Load())
 }
