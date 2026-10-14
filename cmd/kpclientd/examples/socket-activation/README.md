@@ -11,14 +11,19 @@ socket outlives a crash or restart of the service.
 
 ## Config
 
-The socket's path must be one of the `[Listen.Unix]` addresses, written
-out in full. kpclientd does not expand variables in the config, so put
-the value of `$XDG_RUNTIME_DIR` in its place, for example for uid 1000:
+The socket's path must be one of the `[Listen.Unix]` addresses.
+kpclientd expands `$NAME` and `${NAME}` in filesystem socket paths when
+it loads the config, so the address can use `$XDG_RUNTIME_DIR`, the
+directory the unit names `%t`:
 
     [Listen]
       [Listen.Unix]
         Address = "@katzenpost"
-        Addresses = ["/run/user/1000/katzenpost/kpclientd.sock"]
+        Addresses = ["$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock"]
+
+A variable that is unset or empty fails the config load, naming it.
+Abstract addresses, those starting with `@`, are taken as written. A thin
+client's `[Dial.Unix]` address expands the same way.
 
 kpclientd binds the addresses systemd does not pass, here `@katzenpost`,
 itself. It refuses to start when systemd passes a socket that no
