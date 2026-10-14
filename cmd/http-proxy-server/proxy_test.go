@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -28,6 +29,7 @@ func defaultFlag(t *testing.T, name string) string {
 
 func proxyFor(t *testing.T, host, logFile, logLevel string) (*proxy, *[]cborplugin.Command, error) {
 	t.Helper()
+	t.Setenv(cborplugin.PluginPayloadLengthEnv, strconv.Itoa(genconfigPayloadLength))
 	lb, err := log.New(logFile, logLevel, false)
 	require.NoError(t, err)
 	t.Cleanup(func() { lb.Close() })
@@ -220,4 +222,45 @@ func TestProxyLogKeepsNoRequestContent(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestProxyTakesThePayloadLengthFromTheHost(t *testing.T) {
+	cases := []struct {
+		host, flag string
+		want       int
+	}{
+		{"1000", "", 1000},
+		{"1000", "500", 500},
+		{"1000", "3000", 1000},
+		{"", "500", 500},
+		{"", "", 0},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("host=%q flag=%q", c.host, c.flag), func(t *testing.T) {
+			t.Setenv(cborplugin.PluginPayloadLengthEnv, c.host)
+			cmd := newRootCommand()
+			if c.flag != "" {
+				require.NoError(t, cmd.Flags().Set("payload_length", c.flag))
+			}
+			n, err := cmd.Flags().GetInt("payload_length")
+			require.NoError(t, err)
+			lb, err := log.New(filepath.Join(t.TempDir(), "proxy.log"), "ERROR", false)
+			require.NoError(t, err)
+			t.Cleanup(func() { lb.Close() })
+			p, err := newProxy([]string{"*"}, n, lb.GetLogger("http_proxy"))
+			if c.want == 0 {
+				require.Error(t, err, "no payload length from the host or the flag")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, c.want, p.payloadLength)
+			require.Equal(t, int64(c.want), p.client.Transport.(*http.Transport).MaxResponseHeaderBytes)
+		})
+	}
+	t.Setenv(cborplugin.PluginPayloadLengthEnv, "bogus")
+	lb, err := log.New(filepath.Join(t.TempDir(), "proxy.log"), "ERROR", false)
+	require.NoError(t, err)
+	t.Cleanup(func() { lb.Close() })
+	_, err = newProxy([]string{"*"}, 500, lb.GetLogger("http_proxy"))
+	require.Error(t, err, "bad host payload length accepted")
 }
