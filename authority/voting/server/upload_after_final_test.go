@@ -42,7 +42,7 @@ func TestUploadRejectedOnceDocumentIsFinal(t *testing.T) {
 				defer close(done)
 				done <- post(t, "1")
 			}()
-			require.Eventually(t, func() bool { return parkedInPersist("(*state).writeDescriptors(") }, 10*time.Second, time.Millisecond)
+			require.Eventually(t, func() bool { return parkedInPersist("(*state).persistDescriptor(") }, 10*time.Second, time.Millisecond)
 			st.Lock()
 			st.documents[f.epoch] = &pki.Document{}
 			st.Unlock()
