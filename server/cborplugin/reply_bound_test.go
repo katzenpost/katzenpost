@@ -4,6 +4,7 @@ package cborplugin
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -108,5 +109,56 @@ func TestBoundedReaderPassesBackToBackCommandsAtTheBound(t *testing.T) {
 	case <-c.HaltCh():
 	case <-time.After(10 * time.Second):
 		require.Fail(t, "reader neither refused nor delivered")
+	}
+}
+
+func TestBoundedReaderReportsEOFAfterAReplyAtTheBound(t *testing.T) {
+	const bound = 4096
+	logBackend, err := log.New(filepath.Join(t.TempDir(), "test.log"), "DEBUG", false)
+	require.NoError(t, err)
+	t.Cleanup(func() { logBackend.Close() })
+	r := &Response{ID: 1}
+	for b, _ := cbor.Marshal(r); len(b) < bound; b, _ = cbor.Marshal(r) {
+		r.Payload = append(r.Payload, 0)
+	}
+	atBound, err := cbor.Marshal(r)
+	require.NoError(t, err)
+	require.Len(t, atBound, bound)
+	small, err := cbor.Marshal(&Response{ID: 2})
+	require.NoError(t, err)
+	cases := []struct {
+		name   string
+		stream []byte
+		want   int
+	}{
+		{"alone", atBound, 1},
+		{"after a read-ahead", append(append([]byte{}, small...), atBound...), 2},
+	}
+	for _, tc := range cases {
+		local, remote := net.Pipe()
+		c := NewCommandIO(logBackend.GetLogger("test"))
+		c.conn = local
+		c.commandBuilder = &ResponseFactory{}
+		c.maxCommandLength = bound
+		c.Go(c.reader)
+		go func() {
+			remote.Write(tc.stream)
+			remote.Close()
+		}()
+		delivered := 0
+	read:
+		for {
+			select {
+			case <-c.ReadChan():
+				delivered++
+			case <-c.HaltCh():
+				break read
+			case <-time.After(10 * time.Second):
+				require.Fail(t, "reader neither delivered nor halted", tc.name)
+			}
+		}
+		require.Equal(t, tc.want, delivered, tc.name)
+		require.ErrorIs(t, c.err, io.EOF, tc.name)
+		local.Close()
 	}
 }
