@@ -17,10 +17,10 @@ import (
 )
 
 func (c *UnixListenConfig) listen(inherited []Listener) (Listener, error) {
-	if err := c.Validate(); err != nil {
+	addresses, err := c.addresses()
+	if err != nil {
 		return nil, err
 	}
-	addresses := append([]string{c.Address}, c.Addresses...)
 	byAddress := make(map[string]Listener, len(inherited))
 	for _, l := range inherited {
 		if l.Addr().Network() != "unix" || !slices.Contains(addresses, l.Addr().String()) {

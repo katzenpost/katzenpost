@@ -2,7 +2,7 @@
 include $(dir $(lastword $(MAKEFILE_LIST)))ci.mk
 include $(dir $(lastword $(MAKEFILE_LIST)))packaging/debian/targets.mk
 
-.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping motd courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
 
 build_version?=$(shell git describe --tags --always --dirty 2>/dev/null)
 build_ldflags=-s -w -X github.com/katzenpost/katzenpost/common.BuildVersion=$(build_version)
@@ -97,7 +97,7 @@ ifneq (,$(wildcard vendor))
 	go mod vendor
 endif
 
-all: server dirauth genconfig ping courier replica echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd sphinx
+all: server dirauth genconfig ping motd courier replica echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd sphinx
 
 server:
 	cd cmd/server; go build -trimpath -ldflags "$(build_ldflags)"
@@ -110,6 +110,9 @@ genconfig:
 
 ping:
 	cd cmd/ping; go build -trimpath -ldflags "$(build_ldflags)"
+
+motd:
+	cd cmd/motd; go build -trimpath -ldflags "$(build_ldflags)"
 
 courier:
 	cd cmd/courier; go build -trimpath -ldflags "$(build_ldflags)"
@@ -142,7 +145,7 @@ replica:
 	cd cmd/replica; go build -v -trimpath -ldflags "$(build_ldflags)"
 
 clean:
-	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping \
+	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping cmd/motd/motd \
 		cmd/courier/courier cmd/echo-plugin/echo-plugin cmd/fetch/fetch \
 		cmd/genkeypair/genkeypair cmd/geometry/geometry \
 		cmd/http-proxy-client/http-proxy-client cmd/http-proxy-server/http-proxy-server \

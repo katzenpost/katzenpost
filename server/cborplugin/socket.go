@@ -17,9 +17,12 @@
 package cborplugin
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -58,7 +61,14 @@ type CommandIO struct {
 	writeCh chan Command
 
 	commandBuilder CommandBuilder
+
+	maxCommandLength int
+
+	failOnce sync.Once
+	err      error
 }
+
+var errCommandTooLong = errors.New("cborplugin: command exceeds the length bound")
 
 func NewCommandIO(log *logging.Logger) *CommandIO {
 	return &CommandIO{
@@ -100,8 +110,7 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 		if !started {
 			return fmt.Errorf("gave up dialing %q after %d tries: %w", socketFile, maxTries, err)
 		}
-		c.Go(c.reader)
-		c.Go(c.writer)
+		c.serve()
 	} else {
 		c.log.Debugf("listening to unix domain socket file: %s", socketFile)
 
@@ -129,8 +138,23 @@ func (c *CommandIO) Accept() {
 		return
 	}
 
+	c.serve()
+}
+
+func (c *CommandIO) serve() {
 	c.Go(c.reader)
 	c.Go(c.writer)
+	c.Go(func() {
+		<-c.HaltCh()
+		c.conn.Close()
+	})
+}
+
+func (c *CommandIO) fail(err error) {
+	c.failOnce.Do(func() {
+		c.err = err
+		c.Stop()
+	})
 }
 
 func (c *CommandIO) dial(socketFile string) error {
@@ -153,14 +177,24 @@ func (c *CommandIO) WriteChan() chan Command {
 }
 
 func (c *CommandIO) reader() {
-	dec := cbor.NewDecoder(c.conn)
+	var src io.Reader = c.conn
+	limit := &io.LimitedReader{R: c.conn, N: int64(c.maxCommandLength)}
+	if c.maxCommandLength > 0 {
+		src = limit
+	}
+	dec := cbor.NewDecoder(src)
 	for {
 		cmd := c.commandBuilder.Build()
 		err := dec.Decode(cmd)
 		if err != nil {
-			c.Halt()
+			if src == limit && limit.N == 0 {
+				err = errCommandTooLong
+			}
+			c.fail(err)
 			return
 		}
+		buffered, _ := io.Copy(io.Discard, dec.Buffered())
+		limit.N = max(0, int64(c.maxCommandLength)-buffered)
 		select {
 		case <-c.HaltCh():
 			return
@@ -178,7 +212,7 @@ func (c *CommandIO) writer() {
 		case cmd := <-c.writeCh:
 			err := enc.Encode(cmd)
 			if err != nil {
-				c.Halt()
+				c.fail(err)
 				return
 			}
 		}

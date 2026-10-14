@@ -40,19 +40,19 @@ The tool supports both classical and post-quantum cryptographic schemes,
 configurable network topologies, and comprehensive parameter tuning for
 performance optimization and security requirements.`,
 		Example: `  # Generate basic voting mixnet with default settings
-  genconfig --voting --wirekem MLKEM768 --nike x25519 --baseDir /tmp/mixnet --outDir ./configs
+  genconfig --voting --wirekem KYBER768-X25519 --nike x25519 --baseDir /tmp/mixnet --outDir ./configs
 
   # Generate larger network with custom parameters
   genconfig --voting --nrVoting 5 --layers 5 --nodes 15 --gateways 3 \
-    --serviceNodes 2 --storageNodes 7 --wirekem MLKEM768 --nike x25519 \
+    --serviceNodes 2 --storageNodes 7 --wirekem KYBER768-X25519 --nike x25519 \
     --baseDir /opt/katzenpost --outDir ./production-configs
 
   # Generate test network with post-quantum KEM for Sphinx
-  genconfig --voting --wirekem MLKEM768 --kem MLKEM768 \
+  genconfig --voting --wirekem KYBER768-X25519 --kem MLKEM768 \
     --baseDir /tmp/test --outDir ./test-configs --dockerImage katzenpost:latest
 
   # Generate network with custom timing parameters
-  genconfig --voting --wirekem MLKEM768 --nike x25519 \
+  genconfig --voting --wirekem KYBER768-X25519 --nike x25519 \
     --mu 0.01 --lP 0.002 --lM 0.1 --baseDir /tmp/mixnet --outDir ./configs`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return genconfig.RunGenConfig(cfg)

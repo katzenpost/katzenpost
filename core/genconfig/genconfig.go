@@ -2858,7 +2858,7 @@ services:
     restart: "no"
     hostname: metrics
     image: docker.io/prom/prometheus
-    pull_policy: if_not_present
+    pull_policy: missing
     volumes:
       - ./:%s
     command: --config.file="%s/prometheus.yml"
@@ -2873,7 +2873,7 @@ services:
     restart: "no"
     hostname: grafana
     image: docker.io/grafana/grafana:latest
-    pull_policy: if_not_present
+    pull_policy: missing
     volumes:
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
@@ -2898,7 +2898,7 @@ services:
     restart: "no"
     hostname: pyroscope
     image: docker.io/grafana/pyroscope:latest
-    pull_policy: if_not_present
+    pull_policy: missing
     networks:
       - %s
     ports:

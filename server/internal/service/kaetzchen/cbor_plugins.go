@@ -42,6 +42,7 @@ import (
 const (
 	InboundPacketsChannelSize = 1000
 	maxPluginParamsSize       = 4096
+	responseEnvelopeLength    = 4096
 )
 
 // PluginChans maps from Recipient ID to channel.
@@ -78,33 +79,29 @@ type CBORPluginWorker struct {
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
 func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 	k.Lock()
+	defer k.Unlock()
 	handlerCh, ok := k.pluginChans[pkt.Recipient.ID]
-	k.Unlock()
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", pkt.ID)
 		instrument.PacketsDropped()
 		instrument.PacketsDroppedByReason("cbor_kaetzchen_dispatch_no_handler")
+		pkt.Dispose()
 		return
-	}
-	select {
-	case <-k.HaltCh():
-		k.log.Debugf("Terminating gracefully.")
-		return
-	default:
 	}
 	select {
 	case handlerCh <- pkt:
-	case <-k.HaltCh():
-		k.log.Debugf("Terminating gracefully.")
-		return
+	default:
+		k.log.Debugf("Plugin queue full. Dropping Kaetzchen request: %v", pkt.ID)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("cbor_kaetzchen_queue_full")
+		instrument.KaetzchenRequestsDropped(1)
+		pkt.Dispose()
 	}
 }
 
 func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, pluginClient *cborplugin.Client) {
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
-
-	defer k.haltOnce.Do(k.haltAllClients)
 
 	k.Lock()
 	handlerCh, ok := k.pluginChans[recipient]
@@ -123,6 +120,9 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 		select {
 		case <-k.HaltCh():
 			k.log.Debugf("Terminating gracefully.")
+			k.haltOnce.Do(k.haltAllClients)
+			return
+		case <-pluginClient.HaltCh():
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
@@ -143,7 +143,10 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 
 func (k *CBORPluginWorker) haltAllClients() {
 	k.log.Debug("Halting plugin clients.")
-	for _, client := range k.clients {
+	k.Lock()
+	clients := append([]*cborplugin.Client(nil), k.clients...)
+	k.Unlock()
+	for _, client := range clients {
 		go client.Halt()
 	}
 }
@@ -174,6 +177,11 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		Payload:   payload,
 		SURB:      surb,
 	}:
+	case <-pluginClient.HaltCh():
+		k.log.Debugf("%v: Dropping Kaetzchen request: %v (plugin stopped)", pluginCap, pkt.ID)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("cbor_kaetzchen_plugin_stopped")
+		instrument.KaetzchenRequestsDropped(1)
 	case <-k.HaltCh():
 		k.log.Debugf("Terminating gracefully.")
 		return
@@ -186,6 +194,8 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 	for {
 		select {
 		case <-k.HaltCh():
+			return
+		case <-pluginClient.HaltCh():
 			return
 		case cborResponse := <-pluginClient.ReadChan():
 			switch r := cborResponse.(type) {
@@ -304,7 +314,7 @@ func (k *CBORPluginWorker) isKaetzchen(recipient [constants.RecipientIDLength]by
 
 func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{})
+	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{}, k.geo.UserForwardPayloadLength+k.geo.SURBLength+responseEnvelopeLength)
 	plugin.Geometry = k.geo
 	err := plugin.Start(command, args)
 	return plugin, err
@@ -314,7 +324,18 @@ func (k *CBORPluginWorker) unregister(endpoint [constants.RecipientIDLength]byte
 	k.log.Debugf("Unregistering %s", pluginClient.Capability())
 	k.Lock()
 	defer k.Unlock()
+	queued := k.pluginChans[endpoint]
 	delete(k.pluginChans, endpoint)
+	for len(queued) > 0 {
+		select {
+		case e := <-queued:
+			e.(*packet.Packet).Dispose()
+			instrument.PacketsDropped()
+			instrument.PacketsDroppedByReason("cbor_kaetzchen_plugin_stopped")
+			instrument.KaetzchenRequestsDropped(1)
+		default:
+		}
+	}
 	delete(k.params, pluginClient.Capability())
 	for i, c := range k.clients {
 		if c == pluginClient {

@@ -63,7 +63,7 @@ func TestSendworkerDropCounters(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			capability := "drop-" + tc.name
-			client := cborplugin.NewClient(logBackend, capability, "", nil)
+			client := cborplugin.NewClient(logBackend, capability, "", nil, 0)
 			k := &CBORPluginWorker{geo: tc.geo, log: logBackend.GetLogger("drop test")}
 			go k.sendworker(client)
 			defer k.Halt()
