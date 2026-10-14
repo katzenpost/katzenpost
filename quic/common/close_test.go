@@ -115,16 +115,15 @@ func TestQuicCloseBothEndsDoNotLinger(t *testing.T) {
 }
 
 func TestQuicCloseLingerIsBounded(t *testing.T) {
-	bound := closeLinger
-	closeLinger = 500 * time.Millisecond
-	t.Cleanup(func() { closeLinger = bound })
+	bound := 500 * time.Millisecond
 	l, client, server := quicPair(t)
 	defer l.Close()
 	defer client.Close()
+	server.(*QuicConn).lingerBound = bound
 	require.NoError(t, server.Close())
 	select {
 	case <-server.(*QuicConn).Conn.Context().Done():
-	case <-time.After(closeLinger + time.Second):
-		t.Fatal("Close lingered past closeLinger behind a silent peer")
+	case <-time.After(bound + time.Second):
+		t.Fatal("Close lingered past CloseLinger behind a silent peer")
 	}
 }

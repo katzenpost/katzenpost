@@ -63,7 +63,7 @@ type QuicConn struct {
 	lingerBound   time.Duration
 }
 
-var closeLinger = 30 * time.Second
+const closeLinger = 30 * time.Second
 
 // NewQuicConn creates a new QuicConn with the provided connection and stream.
 // Both conn and stream must be non-nil.
