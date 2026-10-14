@@ -119,7 +119,7 @@ func (c *Config) FixupAndValidate() error {
 			if err := utils.RejectDNSAddrs(gw.Addresses, c.AllowHostnameAddresses); err != nil {
 				return fmt.Errorf("config: PinnedGateway %q: %w", gw.Name, err)
 			}
-			if len(gw.QUICKeyHash) == 0 && slices.ContainsFunc(gw.Addresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") }) {
+			if len(gw.QUICKeyHash) == 0 && slices.Contains(c.PreferedTransports, cpki.TransportQUIC) && slices.ContainsFunc(gw.Addresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") }) {
 				return fmt.Errorf("config: PinnedGateway %q has a quic:// address but no QUICKeyHash; add the QUIC key hash its gateway logs at start, or remove the quic:// address", gw.Name)
 			}
 		}

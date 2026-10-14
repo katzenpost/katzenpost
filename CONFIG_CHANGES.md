@@ -205,9 +205,12 @@ recommended setting. A value that fails validation refuses the config.
   (see `PreferedTransports`) and has no consensus dials that gateway's
   `quic://` address pinned to it; once it has a
   consensus it pins the gateway's descriptor instead, which carries
-  the same hash. A pinned gateway with a `quic://` address and no
-  `QUICKeyHash` refuses the config, so a missing pin never turns into
-  a silent TCP dial. A mismatch is handled as `PinMismatch` says. TCP
+  the same hash. When `PreferedTransports` lists `quic`, a pinned
+  gateway with a `quic://` address and no `QUICKeyHash` refuses the
+  config, naming the gateway, so a missing pin never turns into a
+  silent TCP dial; without `quic` the entry is accepted and its
+  `quic://` address skipped, as every dialer skips an unpinned one, so
+  pins can be rolled out one gateway at a time. A mismatch is handled as `PinMismatch` says. TCP
   is dialed after QUIC only when the QUIC dial fails (UDP filtered or
   dropped, nothing listening, handshake timeout) and the gateway also
   lists a TCP address. genconfig writes it for every gateway with a
