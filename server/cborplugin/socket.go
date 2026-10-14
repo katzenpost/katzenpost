@@ -17,6 +17,7 @@
 package cborplugin
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -193,7 +194,7 @@ func (c *CommandIO) reader() {
 			c.fail(err)
 			return
 		}
-		limit.N = int64(c.maxCommandLength)
+		limit.N = max(0, int64(c.maxCommandLength)-int64(dec.Buffered().(*bytes.Reader).Len()))
 		select {
 		case <-c.HaltCh():
 			return
