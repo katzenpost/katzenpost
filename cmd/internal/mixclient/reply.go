@@ -3,6 +3,10 @@
 package mixclient
 
 import (
+	"bytes"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"io"
 
 	"gopkg.in/op/go-logging.v1"
@@ -11,6 +15,16 @@ import (
 )
 
 func PrintableReply(reply []byte, notices io.Writer, log *logging.Logger) []byte {
-	text, _ := cpki.PrintableMOTD(reply, cpki.MaxMOTDLength)
+	log.Debugf("raw reply: %s", hex.EncodeToString(reply))
+	text, err := cpki.PrintableMOTD(bytes.TrimRight(reply, "\x00"), cpki.MaxMOTDLength)
+	var e *cpki.MOTDError
+	if errors.As(err, &e) {
+		if e.Disallowed > 0 {
+			fmt.Fprintf(notices, "removed %d disallowed byte(s) from the reply\n", e.Disallowed)
+		}
+		if e.Cut {
+			fmt.Fprintf(notices, "cut the reply at %d bytes\n", e.Limit)
+		}
+	}
 	return text
 }
