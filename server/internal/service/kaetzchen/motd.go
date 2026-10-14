@@ -33,9 +33,6 @@ func (k *kaetzchenMOTD) OnRequest(id uint64, payload []byte, hasSURB bool) ([]by
 		return nil, ErrNoResponse
 	}
 	k.log.Debugf("Handling request: %v", id)
-	if _, err := pki.PrintableMOTD(k.text, pki.MaxMOTDLength); err != nil {
-		return nil, err
-	}
 	return k.text, nil
 }
 

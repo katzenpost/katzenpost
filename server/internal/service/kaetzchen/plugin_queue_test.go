@@ -79,3 +79,11 @@ func TestUnregisterDisposesQueuedPackets(t *testing.T) {
 	k.OnKaetzchen(pkt)
 	require.Nil(t, pkt.Recipient, "packet for an unregistered plugin was not disposed")
 }
+
+func TestShutdownDisposesIncomingPackets(t *testing.T) {
+	k, recipient, _ := stuckPluginWorker(t, 2)
+	k.Halt()
+	pkt := queuedPacket(t, recipient)
+	k.OnKaetzchen(pkt)
+	require.Nil(t, pkt.Recipient, "packet arriving after halt was not disposed")
+}
