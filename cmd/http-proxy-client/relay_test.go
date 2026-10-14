@@ -100,3 +100,18 @@ func TestRelayFailuresUseGatewayCodes(t *testing.T) {
 		require.Equal(t, c.want, relay(t, http.MethodGet, c.upstream, c.sendErr).Code, c.name)
 	}
 }
+
+func TestRelayAddsNoContentType(t *testing.T) {
+	lb, err := log.New(filepath.Join(t.TempDir(), "client.log"), "ERROR", false)
+	require.NoError(t, err)
+	t.Cleanup(func() { lb.Close() })
+	reply, err := cbor.Marshal(&common.Response{Payload: []byte("HTTP/1.1 403 Forbidden\r\nContent-Length: 22\r\n\r\nrequested host invalid")})
+	require.NoError(t, err)
+	srv := httptest.NewServer(&kttp{log: lb.GetLogger("http_proxy"), send: func(context.Context, []byte) ([]byte, error) { return reply, nil }})
+	defer srv.Close()
+	resp, err := http.Get(srv.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.Empty(t, resp.Header.Values("Content-Type"), "the proxy added a Content-Type the server did not send")
+}
