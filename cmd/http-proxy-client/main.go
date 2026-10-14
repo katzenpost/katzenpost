@@ -21,11 +21,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
+	"maps"
+	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/textproto"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	cbor "github.com/fxamacker/cbor/v2"
@@ -43,6 +47,7 @@ type proxyClientConfig struct {
 	cfgFile  string
 	epName   string
 	logLevel string
+	listen   string
 	port     int
 	retry    int
 	delay    int
@@ -77,65 +82,81 @@ func getThinClient(cmdCfg proxyClientConfig) (*thin.ThinClient, error) {
 }
 
 type kttp struct {
-	client *thin.ThinClient
-	log    *logging.Logger
-	epName string
+	log  *logging.Logger
+	send func(ctx context.Context, request []byte) ([]byte, error)
 }
 
-func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	d, err := k.client.GetService(k.epName)
-	if err != nil {
-		k.log.Errorf("Err getting service: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+var hopByHopHeaders = []string{"Connection", "Keep-Alive", "Proxy-Connection", "Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade"}
 
-	// serialize the http request
+func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	buf, err := httputil.DumpRequest(r, true)
 	if err != nil {
 		k.log.Errorf("Err dumping request: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
-	// send the http request
-	destNode := hash.Sum256(d.MixDescriptor.IdentityKey)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	response, err := k.client.BlockingSendMessage(ctx, buf, &destNode, d.RecipientQueueID)
+	reply, err := k.send(ctx, buf)
 	if err != nil {
-		// send http error response
 		k.log.Errorf("Err sending message: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		code := http.StatusBadGateway
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, thin.ErrReplyOverdue) {
+			code = http.StatusGatewayTimeout
+		}
+		w.WriteHeader(code)
 		return
 	}
-
-	// decode payload from response
-	proxyResponse := &common.Response{}
-	_, err = cbor.UnmarshalFirst(response, proxyResponse)
+	resp, body, err := readReply(reply, r)
 	if err != nil {
-		// send http error response
-		k.log.Errorf("Err unmarshalling kaetzchen response: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		k.log.Errorf("Err reading the reply: %v", err)
+		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
-
-	// return the http response
-	responseReader := bufio.NewReader(bytes.NewBuffer(proxyResponse.Payload))
-	resp, err := http.ReadResponse(responseReader, r)
-	if err != nil {
-		// send http error response
-		k.log.Errorf("Err parsing http response: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+	maps.Copy(w.Header(), resp.Header)
+	if _, ok := resp.Header["Content-Type"]; !ok {
+		w.Header()["Content-Type"] = nil
 	}
-
-	defer resp.Body.Close()
-	_, err = io.Copy(w, resp.Body)
-	// log err
-	if err != nil {
+	switch {
+	case resp.StatusCode == http.StatusNoContent || resp.StatusCode < 200:
+		w.Header().Del("Content-Length")
+	case r.Method != http.MethodHead && resp.StatusCode != http.StatusNotModified:
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	}
+	w.WriteHeader(resp.StatusCode)
+	if _, err := w.Write(body); err != nil {
 		k.log.Errorf("Err proxying: %v", err)
 	}
+}
+
+func readReply(reply []byte, r *http.Request) (*http.Response, []byte, error) {
+	var proxyResponse common.Response
+	if _, err := cbor.UnmarshalFirst(reply, &proxyResponse); err != nil {
+		return nil, nil, err
+	}
+	tp := textproto.NewReader(bufio.NewReader(bytes.NewReader(proxyResponse.Payload)))
+	if _, err := tp.ReadLine(); err != nil {
+		return nil, nil, err
+	}
+	sent, err := tp.ReadMIMEHeader()
+	if err != nil {
+		return nil, nil, err
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(proxyResponse.Payload)), r)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	for _, v := range sent.Values("Connection") {
+		for _, name := range strings.Split(v, ",") {
+			resp.Header.Del(strings.TrimSpace(name))
+		}
+	}
+	for _, name := range hopByHopHeaders {
+		resp.Header.Del(name)
+	}
+	return resp, body, err
 }
 
 func main() {
@@ -159,8 +180,10 @@ func newRootCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&cfg.cfgFile, "cfg", "proxy.toml", "thin client config file")
 	cmd.Flags().StringVar(&cfg.epName, "ep", "http", "endpoint name")
-	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	cmd.Flags().IntVar(&cfg.port, "port", 8080, "listener address")
+	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "NOTICE", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	cmd.Flags().StringVar(&cfg.listen, "listen", "127.0.0.1:8080", "address to listen on")
+	cmd.Flags().IntVar(&cfg.port, "port", 0, "port to listen on, on 127.0.0.1")
+	cmd.Flags().MarkDeprecated("port", "use --listen 127.0.0.1:<port>")
 	cmd.Flags().IntVar(&cfg.retry, "retry", -1, "limit number of reconnection attempts")
 	cmd.Flags().IntVar(&cfg.delay, "delay", 30, "time to wait between connection attempts (seconds)>")
 	return cmd
@@ -177,7 +200,26 @@ func runProxyClient(cfg proxyClientConfig) {
 	clientLog.Noticef("Katzenpost http-proxy-client version: %s", kpcommon.Version())
 	clientLog.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
-	addr := fmt.Sprintf(":%d", cfg.port)
-	handler := &kttp{client: client, log: clientLog, epName: cfg.epName}
-	http.ListenAndServe(addr, handler)
+	handler := &kttp{log: clientLog, send: func(ctx context.Context, request []byte) ([]byte, error) {
+		d, err := client.GetService(cfg.epName)
+		if err != nil {
+			return nil, err
+		}
+		destNode := hash.Sum256(d.MixDescriptor.IdentityKey)
+		return client.BlockingSendMessage(ctx, request, &destNode, d.RecipientQueueID)
+	}}
+	newHTTPServer(cfg, handler).ListenAndServe()
+}
+
+func newHTTPServer(cfg proxyClientConfig, handler http.Handler) *http.Server {
+	addr := cfg.listen
+	if cfg.port != 0 {
+		addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.port))
+	}
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 }

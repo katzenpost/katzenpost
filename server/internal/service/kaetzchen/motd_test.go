@@ -3,12 +3,16 @@
 package kaetzchen
 
 import (
+	"crypto/rand"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/config"
 )
 
@@ -21,11 +25,12 @@ func motdGlue(t *testing.T, kaetzchen ...*config.Kaetzchen) *mockGlue {
 		gateway:    p,
 		service:    p,
 		cfg: &config.Config{
-			Server:      &config.Server{},
-			Logging:     &config.Logging{},
-			ServiceNode: &config.ServiceNode{Kaetzchen: kaetzchen},
-			PKI:         &config.PKI{},
-			Debug:       &config.Debug{NumKaetzchenWorkers: 1},
+			Server:         &config.Server{},
+			Logging:        &config.Logging{},
+			ServiceNode:    &config.ServiceNode{Kaetzchen: kaetzchen},
+			PKI:            &config.PKI{},
+			Debug:          &config.Debug{NumKaetzchenWorkers: 1},
+			SphinxGeometry: geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5),
 		},
 	}}
 }
@@ -52,11 +57,11 @@ func TestMOTDRejectsBadText(t *testing.T) {
 	ctor, ok := BuiltInCtors["motd"]
 	require.True(t, ok)
 	g := motdGlue(t)
-	for _, text := range []interface{}{nil, "", 7, strings.Repeat("m", 513), "line\nbreak"} {
+	for _, text := range []interface{}{nil, "", 7, strings.Repeat("m", 1025)} {
 		_, err := ctor(motdConfig(text), g)
 		require.Error(t, err, "%v", text)
 	}
-	_, err := ctor(motdConfig(strings.Repeat("m", 512)), g)
+	_, err := ctor(motdConfig(strings.Repeat("m", 1024)), g)
 	require.NoError(t, err)
 }
 

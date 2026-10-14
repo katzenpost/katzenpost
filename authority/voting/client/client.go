@@ -1486,12 +1486,13 @@ func (c *Client) PostReplica(
 // fetchResult carries the outcome of a single authority's consensus fetch
 // when racing peers in parallel.
 type fetchResult struct {
-	peer   string
-	doc    *pki.Document
-	rawDoc []byte
-	sigs   int
-	gone   bool
-	err    error
+	peer     string
+	doc      *pki.Document
+	rawDoc   []byte
+	sigs     int
+	gone     bool
+	notFound bool
+	err      error
 }
 
 // GetPKIDocumentForEpoch returns the PKI document for the provided epoch.
@@ -1543,6 +1544,10 @@ func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki
 
 	gone := 0
 	for res := range results {
+		if res.notFound {
+			c.log.Infof("Get: %s: %v", res.peer, res.err)
+			continue
+		}
 		if res.err != nil {
 			c.log.Errorf("Get: %s: %v", res.peer, res.err)
 			if res.gone {
@@ -1591,6 +1596,7 @@ func (c *Client) fetchAndValidate(ctx context.Context, auth *config.Authority, l
 	}
 	if r.ErrorCode != commands.ConsensusOk {
 		res.gone = r.ErrorCode == commands.ConsensusGone
+		res.notFound = r.ErrorCode == commands.ConsensusNotFound
 		res.err = fmt.Errorf("consensus error code %d", r.ErrorCode)
 		return res
 	}

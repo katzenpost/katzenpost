@@ -17,13 +17,16 @@
 package kaetzchen
 
 import (
+	"crypto/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/kem"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/config"
 )
 
@@ -35,10 +38,11 @@ func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey kem.Privat
 			service:    provider,
 			linkKey:    linkKey,
 			cfg: &config.Config{
-				Server:      &config.Server{},
-				Logging:     &config.Logging{},
-				ServiceNode: &config.ServiceNode{},
-				PKI:         &config.PKI{},
+				Server:         &config.Server{},
+				Logging:        &config.Logging{},
+				ServiceNode:    &config.ServiceNode{},
+				PKI:            &config.PKI{},
+				SphinxGeometry: geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5),
 				Debug: &config.Debug{
 					NumKaetzchenWorkers: 3,
 					KaetzchenDelay:      300,

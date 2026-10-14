@@ -66,6 +66,10 @@ func (a *codeAuthority) serve(c net.Conn, g *geo.Geometry) {
 func fetchWithCodes(t *testing.T, codes []int, base int) error {
 	logBackend, err := log.New("", "ERROR", false)
 	require.NoError(t, err)
+	return fetchWithCodesLog(t, codes, base, logBackend)
+}
+
+func fetchWithCodesLog(t *testing.T, codes []int, base int, logBackend *log.Backend) error {
 	g := geo.GeometryFromUserForwardPayloadLength(ecdh.Scheme(rand.Reader), 2000, true, 5)
 
 	auths := make(map[string]*codeAuthority)

@@ -29,6 +29,7 @@ type observation struct {
 	cat     category
 	forward []string
 	back    []string
+	reply   []byte
 }
 
 // attribution collects the outcome and route of every packet in a batch and

@@ -43,14 +43,18 @@ func (w *Worker) Go(fn func()) {
 // Halt signals all Go routines started under a Worker to terminate, and waits
 // till all go routines have returned.
 func (w *Worker) Halt() {
+	w.Stop()
+	w.Wait()
+}
+
+func (w *Worker) Stop() {
 	w.initOnce.Do(w.init)
 	w.closeOnce.Do(func() {
 		close(w.haltCh)
 	})
-	w.Wait()
 }
 
-// HaltCh returns the channel that will be closed on a call to Halt.
+// HaltCh returns the channel that will be closed on a call to Halt or Stop.
 func (w *Worker) HaltCh() <-chan interface{} {
 	w.initOnce.Do(w.init)
 	return w.haltCh

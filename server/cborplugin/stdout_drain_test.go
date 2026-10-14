@@ -67,7 +67,7 @@ func newEchoClient(t *testing.T) *Client {
 		t.Fatalf("log.New: %v", err)
 	}
 	t.Cleanup(func() { logBackend.Close() })
-	return NewClient(logBackend, "test-capability", "test-endpoint", &ResponseFactory{})
+	return NewClient(logBackend, "test-capability", "test-endpoint", &ResponseFactory{}, 0)
 }
 
 func TestClientDrainsPluginStdout(t *testing.T) {

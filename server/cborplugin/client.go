@@ -177,6 +177,7 @@ const (
 	maxPluginLineLen  = 4096
 	maxPluginLogLines = 1024
 	socketWait        = 40 * time.Second
+	reapGrace         = 5 * time.Second
 )
 
 // stderrTail keeps a bounded tail of a plugin's stderr output, for
@@ -240,9 +241,11 @@ type Client struct {
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
 
-func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuilder CommandBuilder) *Client {
+func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuilder CommandBuilder, maxCommandLength int) *Client {
+	socket := NewCommandIO(logBackend.GetLogger("client_socket"))
+	socket.maxCommandLength = maxCommandLength
 	return &Client{
-		socket:         NewCommandIO(logBackend.GetLogger("client_socket")),
+		socket:         socket,
 		logBackend:     logBackend,
 		log:            logBackend.GetLogger("client"),
 		commandBuilder: commandBuilder,
@@ -284,9 +287,27 @@ func (c *Client) Start(command string, args []string) error {
 	// Passing it through lets the dial loop below give up immediately on
 	// a plugin that already died, instead of blind-retrying for ~40s.
 	if err := c.socket.Start(true, c.socketFile, c.commandBuilder, c.HaltCh()); err != nil {
+		c.Halt()
 		return fmt.Errorf("plugin %q failed to start: %w; stderr:\n%s", command, err, c.stderrTail.String())
 	}
+	c.Go(c.supervise)
 	return nil
+}
+
+func (c *Client) supervise() {
+	select {
+	case <-c.HaltCh():
+	case <-c.socket.HaltCh():
+		select {
+		case <-c.HaltCh():
+		default:
+			if c.socket.err != nil {
+				c.log.Errorf("CBOR plugin %s failed: %v", c.capability, c.socket.err)
+			}
+			c.Stop()
+		}
+	}
+	c.socket.Halt()
 }
 
 func (c *Client) reaper() {
@@ -296,7 +317,9 @@ func (c *Client) reaper() {
 		c.log.Errorf("CBOR plugin worker, error sending SIGTERM: %s\n", err)
 		c.cmd.Process.Kill()
 	}
+	kill := time.AfterFunc(reapGrace, func() { c.cmd.Process.Kill() })
 	err = c.cmd.Wait()
+	kill.Stop()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
 	}
@@ -305,7 +328,7 @@ func (c *Client) reaper() {
 
 func (c *Client) logPluginStderr(stderr io.ReadCloser) {
 	c.logPluginOutput("stderr", bufio.NewReaderSize(io.TeeReader(stderr, &c.stderrTail), maxPluginLineLen))
-	c.Halt()
+	c.Stop()
 }
 
 func (c *Client) launch(command string, args []string) error {
@@ -332,7 +355,7 @@ func (c *Client) launch(command string, args []string) error {
 	}
 
 	// proxy stderr to our debug log and a bounded tail buffer
-	// also calls Halt() when stderr closes, if the program crashes or is killed
+	// also stops the client when stderr closes, if the program crashes or is killed
 	c.Go(func() {
 		c.logPluginStderr(stderr)
 	})

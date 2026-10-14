@@ -29,9 +29,9 @@ func TestUploadRejectedOnceDocumentIsFinal(t *testing.T) {
 	for _, kind := range []string{"mix", "replica"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newUploadFixture(t, testSchemeName)
-			post, handler := f.postMix, "(*state).onDescriptorUpload("
+			post := f.postMix
 			if kind == "replica" {
-				post, handler = f.postReplica, "(*state).onReplicaDescriptorUpload("
+				post = f.postReplica
 			}
 			st := f.srv.state
 			tx, err := st.db.Begin(true)
@@ -42,7 +42,7 @@ func TestUploadRejectedOnceDocumentIsFinal(t *testing.T) {
 				defer close(done)
 				done <- post(t, "1")
 			}()
-			require.Eventually(t, func() bool { return parkedInPersist(handler) }, 10*time.Second, time.Millisecond)
+			require.Eventually(t, func() bool { return parkedInPersist("(*state).persistDescriptor(") }, 10*time.Second, time.Millisecond)
 			st.Lock()
 			st.documents[f.epoch] = &pki.Document{}
 			st.Unlock()

@@ -2,7 +2,7 @@
 set -eu
 
 for b in clientd config server dirauth courier replica genconfig \
-         genkeypair geometry sphinx ping fetch echo-plugin \
+         genkeypair geometry sphinx ping motd fetch echo-plugin \
          http-proxy-client http-proxy-server; do
     test -x "/usr/bin/kp$b" \
         || { printf '%s\n' "missing kp$b" >&2; exit 1; }

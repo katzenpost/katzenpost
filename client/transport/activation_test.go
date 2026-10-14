@@ -172,3 +172,26 @@ func TestUnmatchedInheritedSocketIsRefused(t *testing.T) {
 		})
 	}
 }
+
+func TestActivatedSocketMatchesExpandedAddress(t *testing.T) {
+	if os.Getenv(activationChild) == "" {
+		dir := shortSockDir(t)
+		require.NoError(t, os.Mkdir(filepath.Join(dir, "katzenpost"), 0700))
+		runActivated(t, []string{"XDG_RUNTIME_DIR=" + dir}, listenUnixForChild(t, filepath.Join(dir, "katzenpost", "kpclientd.sock")))
+		return
+	}
+	t.Setenv("LISTEN_PID", strconv.Itoa(os.Getpid()))
+	path := filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "katzenpost", "kpclientd.sock")
+	before, err := os.Stat(path)
+	require.NoError(t, err)
+
+	l, err := (&ListenConfig{Unix: &UnixListenConfig{Address: "$XDG_RUNTIME_DIR/katzenpost/kpclientd.sock"}}).Listen()
+	require.NoError(t, err)
+	defer l.Close()
+	requireActivationEnvUnset(t)
+	after, err := os.Stat(path)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(before, after))
+	require.Equal(t, path, l.Addr().String())
+	requireAccepts(t, l, path)
+}
