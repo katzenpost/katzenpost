@@ -10,11 +10,6 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
-func TestMOTDTextDropsThePadding(t *testing.T) {
-	reply := append([]byte("hello from the testnet"), make([]byte, 64)...)
-	require.Equal(t, "hello from the testnet", motdText(reply))
-}
-
 func TestMOTDServiceLookup(t *testing.T) {
 	_, err := motdService(nil)
 	require.ErrorIs(t, err, errNoDocument)

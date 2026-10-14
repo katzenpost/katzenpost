@@ -40,16 +40,11 @@ func motdService(doc *cpki.Document) (*clientcommon.ServiceDescriptor, error) {
 	return services[rand.NewMath().Intn(len(services))], nil
 }
 
-func motdText(reply []byte) string {
-	text, _ := cpki.PrintableMOTD(reply, cpki.MaxMOTDLength)
-	return string(text)
-}
-
-func fetchMOTD(thinClient *thin.ThinClient, timeout time.Duration) (string, error) {
+func fetchMOTD(thinClient *thin.ThinClient, timeout time.Duration) ([]byte, error) {
 	doc := thinClient.PKIDocument()
 	desc, err := motdService(doc)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if timeout <= 0 {
 		timeout = mixclient.RoundTripTimeout(doc)
@@ -59,9 +54,9 @@ func fetchMOTD(thinClient *thin.ThinClient, timeout time.Duration) (string, erro
 	defer cancel()
 	res, err := thinClient.BlockingSendMessageWithResult(ctx, []byte(motdCapability), &id, desc.RecipientQueueID, mixclient.ReplySlop(doc))
 	if err != nil {
-		return "", fmt.Errorf("no motd reply from %s within %v: %w", desc.MixDescriptor.Name, timeout, err)
+		return nil, fmt.Errorf("no motd reply from %s within %v: %w", desc.MixDescriptor.Name, timeout, err)
 	}
-	return motdText(res.Payload), nil
+	return res.Payload, nil
 }
 
 func newRootCommand() *cobra.Command {
@@ -81,10 +76,11 @@ func newRootCommand() *cobra.Command {
 			thinClient, daemon := mixclient.Connect(configFile, thinOnly, mixclient.LogFilePath("motd"), logLevel)
 			defer mixclient.Close(thinClient, daemon)
 			mixclient.CloseOnInterrupt(thinClient, daemon)
-			text, err := fetchMOTD(thinClient, timeout)
+			reply, err := fetchMOTD(thinClient, timeout)
 			if err != nil {
 				return err
 			}
+			text := string(mixclient.PrintableReply(reply, os.Stderr, thinClient.GetLogger("motd")))
 			if !strings.HasSuffix(text, "\n") {
 				text += "\n"
 			}
