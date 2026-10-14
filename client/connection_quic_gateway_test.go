@@ -51,6 +51,7 @@ func newGatewayTestConnection(t *testing.T, upstream *config.UpstreamProxy) (*co
 		UpstreamProxy:      upstream,
 		Debug:              &config.Debug{},
 		PinnedGateways:     &config.Gateways{},
+		PreferedTransports: cpki.ClientTransports,
 		VotingAuthority: &config.VotingAuthority{
 			Peers: []*vServerConfig.Authority{
 				{
@@ -123,6 +124,13 @@ func TestConnectWithProxyNeverDialsQUIC(t *testing.T) {
 func TestConnectWithoutProxyDialsQUIC(t *testing.T) {
 	_, udp := newQUICGatewayConnection(t, &config.UpstreamProxy{})
 	require.True(t, receivesUDP(udp, 5*time.Second))
+}
+
+func TestDefaultClientNeverDialsQUICToItsGateway(t *testing.T) {
+	conn, udp := newGatewayTestConnection(t, &config.UpstreamProxy{})
+	conn.client.cfg.PreferedTransports = nil
+	startConnect(t, conn)
+	require.False(t, receivesUDP(udp, 2*time.Second), "a client that did not opt in to quic dialed its gateway over quic")
 }
 
 func TestConnectNeverDialsAnUnpinnedQUICGateway(t *testing.T) {
