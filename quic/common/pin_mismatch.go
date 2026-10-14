@@ -22,6 +22,9 @@ type QUICPinMismatches struct {
 func (p *QUICPinMismatches) Mark(peer [sha256.Size]byte, epoch uint64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.peers != nil && epoch < p.epoch {
+		return
+	}
 	if p.peers == nil || p.epoch != epoch {
 		p.epoch = epoch
 		p.peers = make(map[[sha256.Size]byte]bool)
