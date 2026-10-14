@@ -151,7 +151,7 @@ func (c *Client) Start() error {
 		LogBackend:         c.logbackend,
 		Authorities:        c.cfg.VotingAuthority.Peers,
 		Geo:                c.cfg.SphinxGeometry,
-		DialContextFn:      nil,
+		DialContextFn:      c.DialContextFn,
 		QUIC:               c.cfg.QUIC.ForClient(),
 
 		MaxConsensusSize:        c.cfg.VotingAuthority.MaxConsensusSize,
