@@ -32,3 +32,8 @@ func TestListenAddressIsAFlag(t *testing.T) {
 	require.NotNil(t, port)
 	require.NotEmpty(t, port.Deprecated, "--port not deprecated in favour of --listen")
 }
+
+func TestListenerTakesTheListenAddress(t *testing.T) {
+	require.Equal(t, "[::1]:9", newHTTPServer(proxyClientConfig{listen: "[::1]:9"}, nil).Addr)
+	require.Equal(t, "127.0.0.1:7", newHTTPServer(proxyClientConfig{listen: "[::1]:9", port: 7}, nil).Addr)
+}
