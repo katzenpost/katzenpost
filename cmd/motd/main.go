@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -42,7 +41,8 @@ func motdService(doc *cpki.Document) (*clientcommon.ServiceDescriptor, error) {
 }
 
 func motdText(reply []byte) string {
-	return string(bytes.TrimRight(reply, "\x00"))
+	text, _ := cpki.PrintableMOTD(reply, cpki.MaxMOTDLength)
+	return string(text)
 }
 
 func fetchMOTD(thinClient *thin.ThinClient, timeout time.Duration) (string, error) {

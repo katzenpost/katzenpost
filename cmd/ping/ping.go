@@ -36,6 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/common"
 	"github.com/katzenpost/katzenpost/client/thin"
 	"github.com/katzenpost/katzenpost/cmd/internal/mixclient"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
 var basePayload = []byte(`Data encryption is used widely to protect the content of Internet
@@ -123,7 +124,8 @@ const echoService = "echo"
 
 func replyDelivered(service string, reply, sent []byte) (bool, []byte) {
 	if service != echoService {
-		return true, bytes.TrimRight(reply, "\x00")
+		text, _ := cpki.PrintableMOTD(reply, cpki.MaxMOTDLength)
+		return true, text
 	}
 	var got []byte
 	if _, err := cbor.UnmarshalFirst(reply, &got); err != nil {
