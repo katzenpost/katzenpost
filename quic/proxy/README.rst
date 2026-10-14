@@ -47,7 +47,6 @@ For example, this is the configuration excerpt for the proxy service:
     Disable = false
     [Provider.CBORPluginKaetzchen.Config]
       host = "example.org"
-      payload_length = "2000"
       log_dir = "/mixnet-alpine/provider1"
       log_level = "NOTICE"
 
@@ -82,8 +81,8 @@ You'll now have a binary client/client (relative to this path). The CLI help:
        	endpoint name
      -log_level string
        	logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL (default "NOTICE")
-     -port int
-       	port to listen on, on 127.0.0.1 (default 8080)
+     -listen string
+       	address to listen on (default "127.0.0.1:8080")
 
 To start the client using the generated testnet configuration:
 
@@ -91,8 +90,10 @@ To start the client using the generated testnet configuration:
 
    ./client/client -ep http -cfg ../../docker/mixnet-alpine/client/client.toml
 
-Note that you can specify a different listening port (than 8080) with the -port flag.
-The client listens on 127.0.0.1 only, so other hosts cannot send through it.
+The client listens on 127.0.0.1:8080 by default, so other hosts cannot send
+through it. Use -listen to pick another address, e.g. -listen [::1]:8080 or a
+container's address; the old -port flag still listens on 127.0.0.1 but is
+deprecated.
 The client will connect to the mixnet and start exchanging decoy messages (cover traffic).
 
 You can then make requests to the proxy service, which will be forwarded to
@@ -103,10 +104,12 @@ example.org, using something that works with http proxy, e.g.:
    http_proxy=localhost:8080 curl -v http://example.org/
 
 Note that this is a *simple* request/response service and does NOT chunk
-responses larger than the mix payload size. Set payload_length to the
-network's UserForwardPayloadLength (default 2000). A reply that does not fit
-is dropped without being read further, and a fetch that takes longer than
-30 seconds is abandoned.
+responses larger than the mix payload size. The service takes the network's
+UserForwardPayloadLength from the mix server as its reply bound; payload_length
+can only lower it, and is needed only when the service runs outside a mix
+server. A reply that does not fit is not read further, a fetch that takes
+longer than 30 seconds is abandoned, and a refused request is answered with a
+short HTTP error. Up to eight fetches run at once.
 
 To adjust the mix payload size for your application, you can pass
 UserForwardPayloadLength=10000 as a make argument when deploying the testnet.
