@@ -3,11 +3,16 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/log"
 )
 
 func TestReplyDeliveredFromANonEchoService(t *testing.T) {
@@ -51,4 +56,20 @@ func TestReplyFromANonEchoServiceIsPrintableASCII(t *testing.T) {
 		require.True(t, ok, name)
 		require.Equal(t, c[1], string(got), name)
 	}
+}
+
+func TestABatchPrintsOneNonEchoReply(t *testing.T) {
+	lb, err := log.New(filepath.Join(t.TempDir(), "ping.log"), "ERROR", false)
+	require.NoError(t, err)
+	t.Cleanup(func() { lb.Close() })
+	first := new(firstReply)
+	var out bytes.Buffer
+	first.print(&out, io.Discard, lb.GetLogger("ping"), "motd")
+	require.Empty(t, out.String(), "a batch with no reply printed one")
+	for _, r := range []string{"hello\x00\x00", "again", "and again"} {
+		first.keep(nil)
+		first.keep([]byte(r))
+	}
+	first.print(&out, io.Discard, lb.GetLogger("ping"), "motd")
+	require.Equal(t, "motd replied: \"hello\"\n", out.String())
 }
