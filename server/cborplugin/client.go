@@ -301,7 +301,9 @@ func (c *Client) supervise() {
 		select {
 		case <-c.HaltCh():
 		default:
-			c.log.Errorf("CBOR plugin %s failed: %v", c.capability, c.socket.err)
+			if c.socket.err != nil {
+				c.log.Errorf("CBOR plugin %s failed: %v", c.capability, c.socket.err)
+			}
 			c.Stop()
 		}
 	}
