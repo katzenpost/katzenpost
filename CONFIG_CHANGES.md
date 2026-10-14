@@ -192,10 +192,13 @@ recommended setting. A value that fails validation refuses the config.
   no QUIC key hash is dialed only at its other addresses, so a gateway
   with only QUIC addresses and no hash is not reachable.
 - Not configurable: closing a QUIC link delivers what was written
-  before the close only within a 2 s linger. quic-go v0.63 offers no
-  signal that the peer has acknowledged a stream, so after 2 s the
-  connection is closed and any data the peer has not acknowledged is
-  dropped. A TCP link hands unsent data to the kernel as before.
+  before the close. quic-go v0.63 offers no signal that the peer has
+  acknowledged a stream, so the end that closes first keeps the
+  connection until the peer finishes its own stream, and the end that
+  closes second keeps it until the peer closes the connection. Either
+  wait ends after at most 2 minutes, the QUIC idle timeout, after which
+  any data the peer has not read is dropped. A TCP link hands unsent
+  data to the kernel as before.
 - Not configurable: each QUIC listener logs one warning at start when
   its UDP socket buffers are below the 7 MiB quic-go asks for, naming
   the sysctl to raise (`net.core.rmem_max` and `net.core.wmem_max` on

@@ -62,7 +62,7 @@ type QuicConn struct {
 	closed        atomic.Bool
 }
 
-const closeLinger = 2 * time.Second
+var closeLinger = wire.DefaultReadTimeout
 
 // NewQuicConn creates a new QuicConn with the provided connection and stream.
 // Both conn and stream must be non-nil.
@@ -222,8 +222,20 @@ func (q *QuicConn) Close() error {
 	q.writeMu.Lock()
 	err := q.Stream.Close()
 	q.writeMu.Unlock()
-	go q.linger()
+	go q.linger(q.peerFinishedSending(), closeLinger)
 	return err
+}
+
+func (q *QuicConn) peerFinishedSending() bool {
+	known := make(chan struct{})
+	q.Stream.SetReceiveFinalSizeCallback(func(int64) { close(known) })
+	q.Stream.SetReceiveFinalSizeCallback(nil)
+	select {
+	case <-known:
+		return true
+	default:
+		return false
+	}
 }
 
 func (q *QuicConn) markClosed() (streamless, closing bool) {
@@ -240,10 +252,19 @@ func (q *QuicConn) markClosed() (streamless, closing bool) {
 	return false, true
 }
 
-func (q *QuicConn) linger() {
+func (q *QuicConn) linger(peerFinishedSending bool, bound time.Duration) {
 	q.awaitInFlightRead()
-	q.Stream.SetReadDeadline(time.Now().Add(closeLinger))
-	io.Copy(io.Discard, q.Stream)
+	if peerFinishedSending {
+		timer := time.NewTimer(bound)
+		defer timer.Stop()
+		select {
+		case <-q.Conn.Context().Done():
+		case <-timer.C:
+		}
+	} else {
+		q.Stream.SetReadDeadline(time.Now().Add(bound))
+		io.Copy(io.Discard, q.Stream)
+	}
 	q.Stream.CancelRead(0)
 	q.Conn.CloseWithError(0, "")
 }

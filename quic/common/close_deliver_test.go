@@ -63,3 +63,33 @@ func TestQuicCloseOutlastsASlowReader(t *testing.T) {
 	require.NoError(t, err, "Close cut a reader that took longer than 2 s")
 	require.Equal(t, msg, got)
 }
+
+func TestQuicCloseLingerIsBoundedAfterThePeerFinishedSending(t *testing.T) {
+	bound := closeLinger
+	closeLinger = 500 * time.Millisecond
+	t.Cleanup(func() { closeLinger = bound })
+	ql, err := quic.ListenAddr("127.0.0.1:0", GenerateTLSConfig(), Config())
+	require.NoError(t, err)
+	l := &QuicListener{Listener: ql}
+	defer l.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := quic.DialAddr(ctx, l.Addr().String(), &tls.Config{InsecureSkipVerify: true, NextProtos: []string{DefaultALPN}}, Config())
+	require.NoError(t, err)
+	defer conn.CloseWithError(0, "")
+	stream, err := conn.OpenStream()
+	require.NoError(t, err)
+	_, err = stream.Write([]byte{0})
+	require.NoError(t, err)
+	require.NoError(t, stream.Close())
+	server, err := l.Accept()
+	require.NoError(t, err)
+	_, err = io.ReadAll(server)
+	require.NoError(t, err)
+	require.NoError(t, server.Close())
+	select {
+	case <-server.(*QuicConn).Conn.Context().Done():
+	case <-time.After(closeLinger + time.Second):
+		t.Fatal("Close lingered past closeLinger behind a peer that never closed")
+	}
+}
