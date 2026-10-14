@@ -24,6 +24,7 @@ type Options struct {
 	KeepAlivePeriod   *time.Duration
 	KeepAliveJitter   *float64
 	PinMismatch       string
+	CloseLinger       time.Duration
 
 	client bool
 }
@@ -97,6 +98,9 @@ func (o *Options) Validate() error {
 	if o.KeepAliveJitter != nil && !(*o.KeepAliveJitter >= 0 && *o.KeepAliveJitter < 1) {
 		return errors.New("quic: KeepAliveJitter is outside [0, 1)")
 	}
+	if o.CloseLinger < 0 {
+		return errors.New("quic: CloseLinger is negative")
+	}
 	return nil
 }
 
@@ -140,6 +144,13 @@ func (o *Options) keepAlivePeriod() time.Duration {
 		jitter = *o.KeepAliveJitter
 	}
 	return time.Duration(float64(period) * (1 + jitter*(2*rand.Float64()-1)))
+}
+
+func (o *Options) closeLinger() time.Duration {
+	if o == nil || o.CloseLinger == 0 {
+		return closeLinger
+	}
+	return o.CloseLinger
 }
 
 func (o *Options) connectionConfig() *quic.Config {

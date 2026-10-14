@@ -60,9 +60,10 @@ type QuicConn struct {
 	writeDeadline time.Time
 	deadlineSet   chan struct{}
 	closed        atomic.Bool
+	lingerBound   time.Duration
 }
 
-var closeLinger = wire.DefaultReadTimeout
+var closeLinger = 30 * time.Second
 
 // NewQuicConn creates a new QuicConn with the provided connection and stream.
 // Both conn and stream must be non-nil.
@@ -78,16 +79,18 @@ func NewQuicConn(conn *quic.Conn, stream *quic.Stream) *QuicConn {
 		Stream:      stream,
 		streamReady: make(chan struct{}),
 		deadlineSet: make(chan struct{}),
+		lingerBound: closeLinger,
 	}
 	close(q.streamReady)
 	return q
 }
 
-func newAcceptedQuicConn(conn *quic.Conn) *QuicConn {
+func newAcceptedQuicConn(conn *quic.Conn, lingerBound time.Duration) *QuicConn {
 	q := &QuicConn{
 		Conn:        conn,
 		streamReady: make(chan struct{}),
 		deadlineSet: make(chan struct{}),
+		lingerBound: lingerBound,
 	}
 	go q.acceptStream()
 	return q
@@ -222,7 +225,7 @@ func (q *QuicConn) Close() error {
 	q.writeMu.Lock()
 	err := q.Stream.Close()
 	q.writeMu.Unlock()
-	go q.linger(q.peerFinishedSending(), closeLinger)
+	go q.linger(q.peerFinishedSending(), q.lingerBound)
 	return err
 }
 
@@ -317,6 +320,7 @@ type QuicListener struct {
 	connsMu    sync.Mutex
 	conns      map[*quic.Conn]struct{}
 	closed     bool
+	opts       *Options
 }
 
 // AcceptStreamTimeout bounds how long a freshly-accepted QUIC connection has to
@@ -338,7 +342,7 @@ func (l *QuicListener) Accept() (net.Conn, error) {
 		conn.CloseWithError(0, "")
 		return nil, &net.OpError{Op: "accept", Net: "quic", Addr: l.Listener.Addr(), Err: net.ErrClosed}
 	}
-	return newAcceptedQuicConn(conn), nil
+	return newAcceptedQuicConn(conn, l.opts.closeLinger()), nil
 }
 
 func (l *QuicListener) track(conn *quic.Conn) bool {
@@ -451,7 +455,7 @@ func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys C
 		udpConn.Close()
 		return nil, err
 	}
-	return &QuicListener{Listener: ql, transport: transport, udpBuffers: readUDPBuffers(udpConn)}, nil
+	return &QuicListener{Listener: ql, transport: transport, udpBuffers: readUDPBuffers(udpConn), opts: opts}, nil
 }
 
 const KeepAlivePeriod = 3 * time.Minute
@@ -568,7 +572,9 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			stream, err := qconn.OpenStream()
 			if err == nil {
 				// wrap the stream and conn to implement net.Conn
-				return NewQuicConn(qconn, stream), nil
+				q := NewQuicConn(qconn, stream)
+				q.lingerBound = opts.closeLinger()
+				return q, nil
 			}
 			qconn.CloseWithError(0, "")
 			return nil, err

@@ -99,6 +99,7 @@ recommended setting. A value that fails validation refuses the config.
   KeepAlivePeriod = "45s"
   KeepAliveJitter = 0.25
   PinMismatch = "fallback"
+  CloseLinger = "30s"
 ```
 
 - **Added** `ALPN` (string, at most 255 bytes; default `"h3"`). The
@@ -197,14 +198,17 @@ recommended setting. A value that fails validation refuses the config.
   so it reaches them only at a TCP address: give every gateway one.
   genconfig does so on a QUIC network, where it also sets nodes'
   `InternalTransports` to `["quic"]` so links between nodes stay QUIC.
-- Not configurable: closing a QUIC link delivers what was written
-  before the close. quic-go v0.63 offers no signal that the peer has
-  acknowledged a stream, so the end that closes first keeps the
-  connection until the peer finishes its own stream, and the end that
-  closes second keeps it until the peer closes the connection. Either
-  wait ends after at most 2 minutes, the QUIC idle timeout, after which
-  any data the peer has not read is dropped. A TCP link hands unsent
-  data to the kernel as before.
+- **Added** `CloseLinger` (Go duration string; default `"30s"`).
+  Closing a QUIC link delivers what was written before the close.
+  quic-go v0.63 offers no signal that the peer has acknowledged a
+  stream, so the end that closes first keeps the connection until the
+  peer finishes its own stream, and the end that closes second keeps
+  it until the peer closes the connection. Either wait ends after at
+  most `CloseLinger`, after which any data the peer has not read is
+  dropped. Unset or `"0s"` means the default, so zero does not
+  disable it as it does `KeepAlivePeriod`; a negative value refuses
+  the config. Earlier revisions waited up to 2 minutes, the QUIC idle
+  timeout. A TCP link hands unsent data to the kernel as before.
 - Not configurable: each QUIC listener logs one warning at start when
   its UDP socket buffers are below the 7 MiB quic-go asks for, naming
   the sysctl to raise (`net.core.rmem_max` and `net.core.wmem_max` on
