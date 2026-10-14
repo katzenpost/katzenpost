@@ -22,11 +22,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/textproto"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	cbor "github.com/fxamacker/cbor/v2"
@@ -83,52 +86,74 @@ type kttp struct {
 	send func(ctx context.Context, request []byte) ([]byte, error)
 }
 
+var hopByHopHeaders = []string{"Connection", "Keep-Alive", "Proxy-Connection", "Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade"}
+
 func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// serialize the http request
 	buf, err := httputil.DumpRequest(r, true)
 	if err != nil {
 		k.log.Errorf("Err dumping request: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
-	// send the http request
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	response, err := k.send(ctx, buf)
+	reply, err := k.send(ctx, buf)
 	if err != nil {
-		// send http error response
 		k.log.Errorf("Err sending message: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		code := http.StatusBadGateway
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, thin.ErrReplyOverdue) {
+			code = http.StatusGatewayTimeout
+		}
+		w.WriteHeader(code)
 		return
 	}
-
-	// decode payload from response
-	proxyResponse := &common.Response{}
-	_, err = cbor.UnmarshalFirst(response, proxyResponse)
+	resp, body, err := readReply(reply, r)
 	if err != nil {
-		// send http error response
-		k.log.Errorf("Err unmarshalling kaetzchen response: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		k.log.Errorf("Err reading the reply: %v", err)
+		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
-
-	// return the http response
-	responseReader := bufio.NewReader(bytes.NewBuffer(proxyResponse.Payload))
-	resp, err := http.ReadResponse(responseReader, r)
-	if err != nil {
-		// send http error response
-		k.log.Errorf("Err parsing http response: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+	maps.Copy(w.Header(), resp.Header)
+	switch {
+	case resp.StatusCode == http.StatusNoContent || resp.StatusCode < 200:
+		w.Header().Del("Content-Length")
+	case r.Method != http.MethodHead && resp.StatusCode != http.StatusNotModified:
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	}
-
-	defer resp.Body.Close()
-	_, err = io.Copy(w, resp.Body)
-	// log err
-	if err != nil {
+	w.WriteHeader(resp.StatusCode)
+	if _, err := w.Write(body); err != nil {
 		k.log.Errorf("Err proxying: %v", err)
 	}
+}
+
+func readReply(reply []byte, r *http.Request) (*http.Response, []byte, error) {
+	var proxyResponse common.Response
+	if _, err := cbor.UnmarshalFirst(reply, &proxyResponse); err != nil {
+		return nil, nil, err
+	}
+	tp := textproto.NewReader(bufio.NewReader(bytes.NewReader(proxyResponse.Payload)))
+	if _, err := tp.ReadLine(); err != nil {
+		return nil, nil, err
+	}
+	sent, err := tp.ReadMIMEHeader()
+	if err != nil {
+		return nil, nil, err
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(proxyResponse.Payload)), r)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	for _, v := range sent.Values("Connection") {
+		for _, name := range strings.Split(v, ",") {
+			resp.Header.Del(strings.TrimSpace(name))
+		}
+	}
+	for _, name := range hopByHopHeaders {
+		resp.Header.Del(name)
+	}
+	return resp, body, err
 }
 
 func main() {
