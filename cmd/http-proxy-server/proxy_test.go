@@ -120,3 +120,31 @@ func TestProxyRefusesIPv6Loopback(t *testing.T) {
 	}
 	require.Zero(t, hits.Load())
 }
+
+const genconfigPayloadLength = 2000
+
+func dialAnything(p *proxy) {
+	p.client.Transport.(*http.Transport).DialContext = (&net.Dialer{}).DialContext
+}
+
+func TestProxyCapsReplyBeforeReading(t *testing.T) {
+	const body = 64 << 20
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chunk := make([]byte, 1<<20)
+		for i := 0; i < body>>20; i++ {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+	p, out, err := proxyFor(t, "*", filepath.Join(t.TempDir(), "proxy.log"), "ERROR")
+	require.NoError(t, err)
+	dialAnything(p)
+	err = p.OnCommand(requestFor(srv.URL))
+	for _, c := range *out {
+		r := c.(*cborplugin.Response)
+		require.LessOrEqualf(t, len(r.Payload), genconfigPayloadLength, "proxy read and forwarded a %d byte reply", len(r.Payload))
+	}
+	require.Error(t, err)
+}
