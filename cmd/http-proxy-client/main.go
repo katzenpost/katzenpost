@@ -177,7 +177,10 @@ func runProxyClient(cfg proxyClientConfig) {
 	clientLog.Noticef("Katzenpost http-proxy-client version: %s", kpcommon.Version())
 	clientLog.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
-	addr := fmt.Sprintf(":%d", cfg.port)
 	handler := &kttp{client: client, log: clientLog, epName: cfg.epName}
-	http.ListenAndServe(addr, handler)
+	newHTTPServer(cfg, handler).ListenAndServe()
+}
+
+func newHTTPServer(cfg proxyClientConfig, handler http.Handler) *http.Server {
+	return &http.Server{Addr: fmt.Sprintf(":%d", cfg.port), Handler: handler}
 }
