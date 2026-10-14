@@ -24,6 +24,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -234,13 +235,8 @@ func (c *outgoingConn) worker() {
 
 		// Flatten the lists of addresses to Dial to.
 		dstAddrs := dialAddresses(c.co.glue.Config().Server, c.dst)
-		quicOpts := c.co.glue.Config().QUIC
-		peerIdentity := hash.Sum256(c.dst.IdentityKey)
-		epoch, _, _ := epochtime.Now()
-		if c.co.quicPinMismatches.Has(peerIdentity, epoch) {
-			dstAddrs = quicOpts.AddressesAfterPinMismatch(dstAddrs)
-		}
-		if len(dstAddrs) == 0 {
+		peer := c.co.glue.Config().QUIC.PeerDialer(&c.co.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
+		if !slices.ContainsFunc(dstAddrs, peer.Dialable) {
 			// Should *NEVER* happen because descriptors currently MUST have
 			// at least once `tcp4` address to be considered valid.
 			c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
@@ -248,7 +244,7 @@ func (c *outgoingConn) worker() {
 		}
 
 		for _, addr := range dstAddrs {
-			if c.co.quicPinMismatches.Has(peerIdentity, epoch) && !quicOpts.DialableAfterPinMismatch(addr) {
+			if !peer.Dialable(addr) {
 				continue
 			}
 			select {
@@ -278,7 +274,7 @@ func (c *outgoingConn) worker() {
 
 			dialStart := time.Now()
 			connectCtx, connectCancel := common.ConnectContext(dialCtx, dialer.Timeout)
-			conn, err := common.DialURL(u, connectCtx, dialer.DialContext, c.dst.QUICKeyHash, quicOpts)
+			conn, err := peer.Dial(connectCtx, u, dialer.DialContext)
 			connectCancel()
 			select {
 			case <-dialCtx.Done():
@@ -290,8 +286,6 @@ func (c *outgoingConn) worker() {
 			default:
 				countDial(u.Scheme, len(c.dst.QUICKeyHash) > 0, err)
 				if errors.Is(err, common.ErrQUICKeyMismatch) {
-					c.co.quicPinMismatches.Mark(peerIdentity, epoch)
-					quicOpts.ReportPinMismatch(c.log, c.dst.Name, err)
 					continue
 				}
 				if err != nil {

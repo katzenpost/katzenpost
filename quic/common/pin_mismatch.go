@@ -3,8 +3,11 @@
 package common
 
 import (
+	"context"
 	"crypto/sha256"
-	"slices"
+	"errors"
+	"net"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -42,21 +45,50 @@ func (o *Options) StrictPinMismatch() bool {
 	return o != nil && o.PinMismatch == PinMismatchStrict
 }
 
-func (o *Options) DialableAfterPinMismatch(addr string) bool {
+func (o *Options) dialableAfterPinMismatch(addr string) bool {
 	return strings.HasPrefix(addr, "quic://") == o.StrictPinMismatch()
 }
 
-func (o *Options) AddressesAfterPinMismatch(addrs []string) []string {
-	return slices.DeleteFunc(slices.Clone(addrs), func(addr string) bool {
-		return !o.DialableAfterPinMismatch(addr)
-	})
-}
-
-func (o *Options) ReportPinMismatch(log *logging.Logger, peer string, err error) {
+func (o *Options) reportPinMismatch(log *logging.Logger, peer string, err error) {
 	handshakeinstrument.OutgoingDialFailure("pin_mismatch")
 	if o.StrictPinMismatch() {
 		log.Warningf("peer %s: %v; PinMismatch is strict, so it is dialed over quic only for the rest of this epoch", peer, err)
 		return
 	}
 	log.Warningf("peer %s: %v; no quic to it for the rest of this epoch, falling back to tcp", peer, err)
+}
+
+type PeerDialer struct {
+	opts          *Options
+	mismatches    *QUICPinMismatches
+	peer          [sha256.Size]byte
+	epoch         uint64
+	quicKeyHashes []byte
+	log           *logging.Logger
+	name          string
+}
+
+func (o *Options) PeerDialer(mismatches *QUICPinMismatches, peer [sha256.Size]byte, quicKeyHashes []byte, log *logging.Logger, name string) *PeerDialer {
+	return &PeerDialer{
+		opts:          o,
+		mismatches:    mismatches,
+		peer:          peer,
+		epoch:         CurrentEpoch(),
+		quicKeyHashes: quicKeyHashes,
+		log:           log,
+		name:          name,
+	}
+}
+
+func (d *PeerDialer) Dialable(addr string) bool {
+	return !d.mismatches.Has(d.peer, d.epoch) || d.opts.dialableAfterPinMismatch(addr)
+}
+
+func (d *PeerDialer) Dial(ctx context.Context, u *url.URL, dialFn func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
+	conn, err := DialURL(u, ctx, dialFn, d.quicKeyHashes, d.opts)
+	if errors.Is(err, ErrQUICKeyMismatch) {
+		d.mismatches.Mark(d.peer, d.epoch)
+		d.opts.reportPinMismatch(d.log, d.name, err)
+	}
+	return conn, err
 }

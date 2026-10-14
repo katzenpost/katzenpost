@@ -41,7 +41,6 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/retry"
@@ -294,15 +293,12 @@ func (p *connector) initSession(
 ) (*connection, error) {
 	usable := *peer
 	usable.Addresses = retry.FilterByLocalAddresses(p.cfg.LocalAddresses, peer.Addresses)
-	now, _, _ := epochtime.Now()
 	var identity [pki.PublicKeyHashSize]byte
 	if peer.IdentityPublicKey != nil {
 		identity = hash.Sum256From(peer.IdentityPublicKey)
-		if p.pinMismatches.Has(identity, now) {
-			usable.Addresses = p.cfg.QUIC.AddressesAfterPinMismatch(usable.Addresses)
-		}
 	}
 	peer = &usable
+	pinned := p.cfg.QUIC.PeerDialer(&p.pinMismatches, identity, peer.QUICKeyHash, p.log, peer.Identifier)
 
 	var conn net.Conn
 	var err error
@@ -344,19 +340,18 @@ func (p *connector) initSession(
 			continue
 		}
 
-		if p.pinMismatches.Has(identity, now) && !p.cfg.QUIC.DialableAfterPinMismatch(peer.Addresses[idx]) {
+		if !pinned.Dialable(peer.Addresses[idx]) {
 			continue
 		}
 
-		var quicKeyHash []byte
 		if u.Scheme == pki.TransportQUIC {
-			if quicKeyHash, err = peer.DialQUICKeyHash(p.log, peer.Addresses[idx]); err != nil {
+			if _, err = peer.DialQUICKeyHash(p.log, peer.Addresses[idx]); err != nil {
 				lastErr = fmt.Errorf("%s: %s: %v", peerInfo(), peer.Addresses[idx], err)
 				continue
 			}
 		}
 		ictx, cancelFn := common.ConnectContext(ctx, dialTimeout)
-		conn, err = common.DialURL(u, ictx, dialFn, quicKeyHash, p.cfg.QUIC)
+		conn, err = pinned.Dial(ictx, u, dialFn)
 		cancelFn()
 		if err == nil {
 			p.log.Debugf("%s: %s connection established.", peerInfo(), u.Scheme)
@@ -370,12 +365,7 @@ func (p *connector) initSession(
 		}
 
 		if errors.Is(err, common.ErrQUICKeyMismatch) {
-			p.pinMismatches.Mark(identity, now)
-			p.cfg.QUIC.ReportPinMismatch(p.log, peer.Identifier, err)
 			lastErr = fmt.Errorf("%s: failed to connect to %s: %w", peerInfo(), peer.Addresses[idx], err)
-			if p.cfg.QUIC.StrictPinMismatch() {
-				return nil, lastErr
-			}
 			continue
 		}
 		lastErr = fmt.Errorf("%s: failed to connect to %s: %v", peerInfo(), peer.Addresses[idx], err)

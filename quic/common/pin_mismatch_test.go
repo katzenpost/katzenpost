@@ -3,6 +3,7 @@
 package common
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"testing"
 
@@ -24,12 +25,26 @@ func TestQUICPinMismatchesForgetAMismatchAtTheNextEpoch(t *testing.T) {
 	require.Len(t, pins.peers, 1)
 }
 
-func TestAddressesAfterPinMismatch(t *testing.T) {
-	addrs := []string{"tcp://192.0.2.1:1", "quic://192.0.2.1:2", "tcp4://192.0.2.1:3", "quic://192.0.2.1:4"}
-	require.Equal(t, []string{"tcp://192.0.2.1:1", "tcp4://192.0.2.1:3"}, (*Options)(nil).AddressesAfterPinMismatch(addrs))
-	require.Equal(t, []string{"tcp://192.0.2.1:1", "tcp4://192.0.2.1:3"}, (&Options{PinMismatch: PinMismatchFallback}).AddressesAfterPinMismatch(addrs))
-	require.Equal(t, []string{"quic://192.0.2.1:2", "quic://192.0.2.1:4"}, (&Options{PinMismatch: PinMismatchStrict}).AddressesAfterPinMismatch(addrs))
-	require.Len(t, addrs, 4)
+func TestPeerDialerDialable(t *testing.T) {
+	var peer [sha256.Size]byte
+	hashes := bytes.Repeat([]byte{1}, sha256.Size)
+	for _, c := range []struct {
+		opts      *Options
+		tcp, quic bool
+	}{
+		{nil, true, false},
+		{&Options{PinMismatch: PinMismatchFallback}, true, false},
+		{&Options{PinMismatch: PinMismatchStrict}, false, true},
+	} {
+		var mismatches QUICPinMismatches
+		d := c.opts.PeerDialer(&mismatches, peer, hashes, nil, "peer")
+		require.True(t, d.Dialable("tcp://192.0.2.1:1"))
+		require.True(t, d.Dialable("quic://192.0.2.1:2"))
+		mismatches.Mark(peer, d.epoch)
+		require.Equal(t, c.tcp, d.Dialable("tcp://192.0.2.1:1"))
+		require.Equal(t, c.tcp, d.Dialable("onion://192.0.2.1:3"))
+		require.Equal(t, c.quic, d.Dialable("quic://192.0.2.1:2"))
+	}
 }
 
 func TestQUICPinMismatchesIgnoreAMarkForAnOlderEpoch(t *testing.T) {

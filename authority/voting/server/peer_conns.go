@@ -19,7 +19,6 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -153,10 +152,7 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 	if peer.IdentityPublicKey != nil {
 		identity = hash.Sum256From(peer.IdentityPublicKey)
 	}
-	epoch, _, _ := epochtime.Now()
-	if s.quicPinMismatches.Has(identity, epoch) {
-		addrs = s.s.cfg.QUIC.AddressesAfterPinMismatch(addrs)
-	}
+	pinned := s.s.cfg.QUIC.PeerDialer(&s.quicPinMismatches, identity, peer.QUICKeyHash, s.log, peer.Identifier)
 
 	var errs []error
 	for _, a := range addrs {
@@ -166,18 +162,17 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 			errs = append(errs, fmt.Errorf("invalid URL %s: %w", a, err))
 			continue
 		}
-		if s.quicPinMismatches.Has(identity, epoch) && !s.s.cfg.QUIC.DialableAfterPinMismatch(a) {
+		if !pinned.Dialable(a) {
 			continue
 		}
-		var quicKeyHash []byte
 		if u.Scheme == pki.TransportQUIC {
-			if quicKeyHash, err = peer.DialQUICKeyHash(s.log, a); err != nil {
+			if _, err = peer.DialQUICKeyHash(s.log, a); err != nil {
 				errs = append(errs, fmt.Errorf("dial %s: %w", a, err))
 				continue
 			}
 		}
 		ctx, cancelFn := common.ConnectContext(context.Background(), dialTimeout)
-		conn, err := common.DialURL(u, ctx, dialFn, quicKeyHash, s.s.cfg.QUIC)
+		conn, err := pinned.Dial(ctx, u, dialFn)
 		cancelFn()
 		if err == nil {
 			s.log.Debugf("peer %s: %s connection established.", peer.Identifier, u.Scheme)
@@ -185,13 +180,6 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 		}
 		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)
 		errs = append(errs, fmt.Errorf("dial %s failed: %w", a, err))
-		if errors.Is(err, common.ErrQUICKeyMismatch) {
-			s.quicPinMismatches.Mark(identity, epoch)
-			s.s.cfg.QUIC.ReportPinMismatch(s.log, peer.Identifier, err)
-			if s.s.cfg.QUIC.StrictPinMismatch() {
-				break
-			}
-		}
 	}
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("peer %s: all addresses exhausted: %w", peer.Identifier, errors.Join(errs...))

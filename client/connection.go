@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,7 +23,6 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client/instrument"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -346,22 +346,16 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				dstAddrs = append(dstAddrs, addr)
 			}
 		}
-		quicOpts := c.client.cfg.QUIC.ForClient()
-		gateway := hash.Sum256(c.descriptor.IdentityKey)
-		epoch, _, _ := epochtime.Now()
-		if c.client.quicPinMismatches.Has(gateway, epoch) {
-			dstAddrs = quicOpts.AddressesAfterPinMismatch(dstAddrs)
-		}
-		if len(dstAddrs) == 0 {
+		gateway := c.client.cfg.QUIC.ForClient().PeerDialer(&c.client.quicPinMismatches, hash.Sum256(c.descriptor.IdentityKey), c.descriptor.QUICKeyHash, c.log, c.descriptor.Name)
+		if !slices.ContainsFunc(dstAddrs, gateway.Dialable) {
 			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
 			c.descriptor = nil // Give up till the next PKI fetch.
 			connErr = newConnectError("no suitable addresses found")
 			return
 		}
 
-	dial:
 		for _, addr := range dstAddrs {
-			if c.client.quicPinMismatches.Has(gateway, epoch) && !quicOpts.DialableAfterPinMismatch(addr) {
+			if !gateway.Dialable(addr) {
 				continue
 			}
 			select {
@@ -385,7 +379,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				continue
 			}
 
-			conn, err := common.DialURL(u, dialCtx, dialFn, c.descriptor.QUICKeyHash, quicOpts)
+			conn, err := gateway.Dial(dialCtx, u, dialFn)
 			select {
 			case <-c.HaltCh():
 				if conn != nil {
@@ -398,13 +392,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 					c.log.Warningf("Failed to connect to %v: %v", addr, err)
 					if c.client.cfg.Callbacks.OnConnFn != nil {
 						c.client.cfg.Callbacks.OnConnFn(&ConnectError{Err: err})
-					}
-					if errors.Is(err, common.ErrQUICKeyMismatch) {
-						c.client.quicPinMismatches.Mark(gateway, epoch)
-						quicOpts.ReportPinMismatch(c.log, c.descriptor.Name, err)
-						if quicOpts.StrictPinMismatch() {
-							break dial
-						}
 					}
 					continue
 				}
