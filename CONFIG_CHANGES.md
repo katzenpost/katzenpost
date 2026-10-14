@@ -196,7 +196,9 @@ recommended setting. A value that fails validation refuses the config.
 - Not configurable: each QUIC listener logs one warning at start when
   its UDP socket buffers are below the 7 MiB quic-go asks for, naming
   the sysctl to raise (`net.core.rmem_max` and `net.core.wmem_max` on
-  Linux). It never fails start. Nodes export the buffers they got as
+  Linux). It never fails start. Where the buffer sizes cannot be read
+  (any platform other than Unix) there is no warning. Nodes export the
+  buffers they got, where they can be read, as
   `katzenpost_quic_udp_receive_buffer_bytes` and
   `katzenpost_quic_udp_send_buffer_bytes` (by listen address) and, on
   Linux, the kernel's UDP `RcvbufErrors` and `SndbufErrors` as

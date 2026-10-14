@@ -69,10 +69,10 @@ func (b UDPBuffers) Warning() string {
 	want := desiredUDPBuffer()
 	receiveSysctl, sendSysctl := udpBufferSysctls()
 	var low []string
-	if b.Receive < want {
+	if b.Receive > 0 && b.Receive < want {
 		low = append(low, lowBuffer("receive", b.Receive, receiveSysctl, b.ReceiveMax, want))
 	}
-	if b.Send < want {
+	if b.Send > 0 && b.Send < want {
 		low = append(low, lowBuffer("send", b.Send, sendSysctl, b.SendMax, want))
 	}
 	if len(low) == 0 {

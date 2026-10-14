@@ -570,8 +570,12 @@ func QUICDial(result string) {
 }
 
 func QUICUDPBuffers(address string, receive, send int) {
-	quicUDPReceiveBuffer.With(prometheus.Labels{"address": address}).Set(float64(receive))
-	quicUDPSendBuffer.With(prometheus.Labels{"address": address}).Set(float64(send))
+	if receive > 0 {
+		quicUDPReceiveBuffer.With(prometheus.Labels{"address": address}).Set(float64(receive))
+	}
+	if send > 0 {
+		quicUDPSendBuffer.With(prometheus.Labels{"address": address}).Set(float64(send))
+	}
 }
 
 func LinkSample(name string, labels map[string]string) float64 {
