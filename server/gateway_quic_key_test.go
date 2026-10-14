@@ -3,11 +3,17 @@
 package server
 
 import (
+	"context"
+	"encoding/hex"
+	"errors"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -23,6 +29,10 @@ func TestServerQUICKeyHelper(t *testing.T) {
 	cfg, dir := ownKeyServerConfig(t)
 	cfg.Server.Addresses = []string{"quic://127.0.0.1:0"}
 	cfg.Debug.GenerateOnly = false
+	if c == "generate" {
+		generateOnlyGateway(t, cfg, dir)
+		return
+	}
 	if c == "gateway" {
 		cfg.Server.Identifier = "gateway1"
 		cfg.Server.IsGatewayNode = true
@@ -52,12 +62,52 @@ func TestServerQUICKeyHelper(t *testing.T) {
 	}
 }
 
-func runQUICKeyHelper(t *testing.T, c string) {
+func generatedGatewayPin(t *testing.T, dir string) string {
+	t.Helper()
+	pin, err := os.ReadFile(filepath.Join(dir, "quic-tls.hash"))
+	require.NoError(t, err, "generate-only wrote no quic-tls.hash for a QUIC gateway")
+	key, err := common.ReadStaticKey(filepath.Join(dir, "quic-tls.key"))
+	require.NoError(t, err)
+	require.Equal(t, hex.EncodeToString(key.Hash())+"\n", string(pin))
+	return string(pin[:len(pin)-1])
+}
+
+func generateOnlyGateway(t *testing.T, cfg *config.Config, dir string) {
+	dir = os.Getenv("KP_QUIC_KEY_DIR")
+	cfg.Server.DataDir = dir
+	cfg.Server.IdentityPublicKeyFile = filepath.Join(dir, "id.pub")
+	cfg.Server.LinkPublicKeyFile = filepath.Join(dir, "link.pub")
+	cfg.Logging.File = filepath.Join(dir, "server.log")
+	cfg.Server.Identifier = "gateway1"
+	cfg.Server.IsGatewayNode = true
+	cfg.Server.Addresses = []string{"quic://" + os.Getenv("KP_QUIC_KEY_ADDR")}
+	cfg.Gateway = &config.Gateway{}
+	cfg.Debug.GenerateOnly = os.Getenv("KP_QUIC_KEY_START") == ""
+	require.NoError(t, cfg.FixupAndValidate())
+	s, err := New(cfg)
+	if cfg.Debug.GenerateOnly {
+		require.True(t, errors.Is(err, ErrGenerateOnly), "%v", err)
+		return
+	}
+	require.NoError(t, err)
+	defer s.Shutdown()
+	hash, err := hex.DecodeString(generatedGatewayPin(t, dir))
+	require.NoError(t, err)
+	u, err := url.Parse("quic://" + os.Getenv("KP_QUIC_KEY_ADDR"))
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := common.DialURL(u, ctx, nil, hash, nil)
+	require.NoError(t, err, "the gateway did not present the key generate-only pinned")
+	conn.Close()
+}
+
+func runQUICKeyHelper(t *testing.T, c string, env ...string) {
 	if runtime.GOOS == "windows" {
 		t.Skip("DataDir's 0700 permission check cannot pass on windows")
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestServerQUICKeyHelper$", "-test.count=1")
-	cmd.Env = append(os.Environ(), "KP_QUIC_KEY_CASE="+c)
+	cmd.Env = append(append(os.Environ(), "KP_QUIC_KEY_CASE="+c), env...)
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 }
@@ -68,4 +118,19 @@ func TestGatewayListensOnQUICWithOneLongTermKey(t *testing.T) {
 
 func TestMixKeepsPerEpochQUICKeys(t *testing.T) {
 	runQUICKeyHelper(t, "mix")
+}
+
+func TestGenerateOnlyWritesTheGatewayQUICKeyAndPin(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Chmod(dir, 0o700))
+	free, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	require.NoError(t, err)
+	addr := free.LocalAddr().String()
+	require.NoError(t, free.Close())
+	env := []string{"KP_QUIC_KEY_DIR=" + dir, "KP_QUIC_KEY_ADDR=" + addr}
+	runQUICKeyHelper(t, "generate", env...)
+	pin := generatedGatewayPin(t, dir)
+	runQUICKeyHelper(t, "generate", env...)
+	require.Equal(t, pin, generatedGatewayPin(t, dir), "generate-only replaced an existing QUIC key")
+	runQUICKeyHelper(t, "generate", append(env, "KP_QUIC_KEY_START=1")...)
 }
