@@ -119,7 +119,7 @@ full client mode where this ping tool starts it's own client daemon.`,
 	cmd.Flags().BoolVar(&cfg.RotateServices, "rotate-services", false, "spread the batch across every node offering the service, instead of pinning one")
 	cmd.Flags().BoolVar(&cfg.Strict, "strict", false, "fail the run on any outcome short of delivery, not only genuine mixnet loss")
 	cmd.Flags().BoolVar(&cfg.ThinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
-	cmd.Flags().StringVar(&cfg.LogLevel, "log-level", "DEBUG", "logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
+	cmd.Flags().StringVar(&cfg.LogLevel, "log-level", "INFO", "logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
 
 	// Mark required flags
 	cmd.MarkFlagRequired("service")
