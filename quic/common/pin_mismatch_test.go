@@ -31,3 +31,13 @@ func TestAddressesAfterPinMismatch(t *testing.T) {
 	require.Equal(t, []string{"quic://192.0.2.1:2", "quic://192.0.2.1:4"}, (&Options{PinMismatch: PinMismatchStrict}).AddressesAfterPinMismatch(addrs))
 	require.Len(t, addrs, 4)
 }
+
+func TestQUICPinMismatchesIgnoreAMarkForAnOlderEpoch(t *testing.T) {
+	var p, q [sha256.Size]byte
+	p[0], q[0] = 1, 2
+	var pins QUICPinMismatches
+	pins.Mark(p, 6)
+	pins.Mark(q, 5)
+	require.True(t, pins.Has(p, 6), "a mark for an older epoch wiped the current epoch's mismatches")
+	require.False(t, pins.Has(q, 5))
+}
