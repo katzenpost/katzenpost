@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -92,4 +93,29 @@ func TestHaltKillsAPluginIgnoringSIGTERM(t *testing.T) {
 	t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
 	go c.Halt()
 	waitDead(t, pid, 15*time.Second)
+}
+
+func TestDialFailureReapsPlugin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits out the 40 dial attempts")
+	}
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	c, err := startLeakHelper(t, "bound_not_listening")
+	if err == nil {
+		c.cmd.Process.Kill()
+		t.Fatal("Start succeeded against a socket that never accepts")
+	}
+	pid := c.cmd.Process.Pid
+	t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
+	if !strings.Contains(err.Error(), "gave up dialing") {
+		t.Fatalf("Start = %v; want a dial failure", err)
+	}
+	if alive(pid) {
+		t.Errorf("plugin still running after Start failed")
+	}
+	left, _ := filepath.Glob(filepath.Join(tmp, "kpplugin*"))
+	if len(left) != 0 {
+		t.Errorf("host socket dir left behind: %d", len(left))
+	}
 }
