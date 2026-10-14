@@ -349,7 +349,7 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string, lim
 		}
 	case "quic":
 		l.log.Noticef("Starting listener on: %q", addr)
-		keyed, ok := glue.(interface{ QUICKeys() *common.EpochKeys })
+		keyed, ok := glue.(interface{ QUICKeys() common.ListenerKeys })
 		if !ok {
 			return nil, errors.New("incoming: no QUIC keys for a quic listener")
 		}

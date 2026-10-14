@@ -429,6 +429,11 @@ type CertificateSource interface {
 	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
+type ListenerKeys interface {
+	CertificateSource
+	Hashes(epoch uint64) ([]byte, error)
+}
+
 func ListenWithEpochKeys(host string, identityPrivateKey sign.PrivateKey, keys CertificateSource, opts *Options) (*QuicListener, error) {
 	resetKey, err := statelessResetKey(identityPrivateKey)
 	if err != nil {

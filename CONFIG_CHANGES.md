@@ -83,8 +83,10 @@ always the same as "the file fails to parse".
 
 A TCP link carries PQ Noise directly on TCP, with no TLS. QUIC requires
 TLS 1.3, so a QUIC link is TLS 1.3 (a self-signed certificate pinned by
-its key hash: a node's per-epoch keys through its descriptor, an
-authority's one long-term key through its peers' configs) carrying the
+its key hash: a mix's or replica's per-epoch keys through its
+descriptor, a gateway's one long-term key through its descriptor and
+`client.toml`, an authority's one long-term key through its peers'
+configs) carrying the
 same PQ Noise session. The new optional `[QUIC]` table tunes that outer layer
 in `authority.toml`, `katzenpost.toml`, `replica.toml`, `courier.toml`
 and `client.toml` (kpclientd, which uses it to dial its gateway and the
@@ -187,8 +189,17 @@ recommended setting. A value that fails validation refuses the config.
   mismatch is handled as `PinMismatch` says. An entry without it is
   never dialed over QUIC; TCP still is. genconfig writes it for every
   authority of the current release on a QUIC network.
+- A gateway with a `quic://` listen address keeps one long-term QUIC
+  TLS key in `DataDir/quic-tls.key`, generated on its first start with
+  one, logs `QUIC key hash <hex>` at start, and presents that key to
+  every peer, nodes and clients alike. Its descriptor carries that one
+  hash every epoch, so nodes pin it through the consensus as before;
+  mixes, service nodes and replicas keep rotating per-epoch keys. A
+  TCP-only gateway neither reads nor creates the file. Losing the file
+  gives the gateway a new key: clients that pin the old hash then see
+  a pin mismatch until their `client.toml` is updated.
 - A node, replica or gateway with a QUIC address publishes its
-  per-epoch QUIC key hashes in its descriptor only when every authority
+  QUIC key hashes in its descriptor only when every authority
   entry in its config has a `QUICKeyHash`: only authorities of this
   release hold such a key, and only they accept the descriptor field.
   No dialer ever dials QUIC unpinned: a peer whose descriptor carries

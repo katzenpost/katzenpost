@@ -51,6 +51,10 @@ func (k *StaticKey) Hash() []byte {
 	return keyHash[:]
 }
 
+func (k *StaticKey) Hashes(uint64) ([]byte, error) {
+	return k.Hash(), nil
+}
+
 func (k *StaticKey) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	now := CurrentEpoch()
 	k.mu.Lock()

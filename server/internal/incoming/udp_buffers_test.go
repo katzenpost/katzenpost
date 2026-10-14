@@ -23,8 +23,8 @@ type quicCapGlue struct {
 	quicKeys    *common.EpochKeys
 }
 
-func (g *quicCapGlue) IdentityKey() sign.PrivateKey { return g.identityKey }
-func (g *quicCapGlue) QUICKeys() *common.EpochKeys  { return g.quicKeys }
+func (g *quicCapGlue) IdentityKey() sign.PrivateKey  { return g.identityKey }
+func (g *quicCapGlue) QUICKeys() common.ListenerKeys { return g.quicKeys }
 
 func gathered(t *testing.T, name string) bool {
 	families, err := prometheus.DefaultGatherer.Gather()

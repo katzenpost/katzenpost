@@ -105,7 +105,7 @@ type pki struct {
 
 	impl        cpki.MixNodeClient
 	descAddrMap map[string][]string
-	quicKeys    *common.EpochKeys
+	quicKeys    common.ListenerKeys
 
 	docs          map[uint64]*pkicache.Entry
 	rawDocs       map[uint64][]byte
@@ -1191,7 +1191,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		failedFetches: make(map[uint64]error),
 		advertising:   true,
 	}
-	if keyed, ok := glue.(interface{ QUICKeys() *common.EpochKeys }); ok {
+	if keyed, ok := glue.(interface{ QUICKeys() common.ListenerKeys }); ok {
 		p.quicKeys = keyed.QUICKeys()
 	}
 

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -86,7 +87,7 @@ type Server struct {
 	cryptoWorkers []*cryptoworker.Worker
 	periodic      *periodicTimer
 	mixKeys       glue.MixKeys
-	quicKeys      *common.EpochKeys
+	quicKeys      common.ListenerKeys
 	pki           glue.PKI
 	shutdownPKI   glue.PKI
 	listeners     []glue.Listener
@@ -480,7 +481,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	logStartupStep("mix keys")
 
-	if s.quicKeys, err = common.NewEpochKeys(filepath.Join(s.cfg.Server.DataDir, "quic"), common.CurrentEpoch); err != nil {
+	if s.quicKeys, err = s.newQUICKeys(); err != nil {
 		s.log.Errorf("Failed to initialize QUIC keys: %v", err)
 		return nil, err
 	}
@@ -685,7 +686,24 @@ func (g *serverGlue) MixKeys() glue.MixKeys {
 	return g.s.mixKeys
 }
 
-func (g *serverGlue) QUICKeys() *common.EpochKeys {
+func (s *Server) newQUICKeys() (common.ListenerKeys, error) {
+	addresses := s.cfg.Server.BindAddresses
+	if len(addresses) == 0 {
+		addresses = s.cfg.Server.Addresses
+	}
+	listensOnQUIC := slices.ContainsFunc(addresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") })
+	if !s.cfg.Server.IsGatewayNode || !listensOnQUIC {
+		return common.NewEpochKeys(filepath.Join(s.cfg.Server.DataDir, "quic"), common.CurrentEpoch)
+	}
+	key, err := common.LoadStaticKey(filepath.Join(s.cfg.Server.DataDir, "quic-tls.key"))
+	if err != nil {
+		return nil, err
+	}
+	s.log.Noticef("QUIC key hash %x", key.Hash())
+	return key, nil
+}
+
+func (g *serverGlue) QUICKeys() common.ListenerKeys {
 	return g.s.quicKeys
 }
 
