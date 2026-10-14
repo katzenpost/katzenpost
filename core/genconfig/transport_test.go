@@ -68,7 +68,7 @@ func TestGenConfigTransport(t *testing.T) {
 	for transport, want := range map[string][]string{
 		"":          tcp,
 		"tcp":       tcp,
-		"quic":      {"quic", "quic", "quic", "quic", "quic", "quic", "quic", "quic"},
+		"quic":      {"quic", "quic", "quic+tcp", "quic+tcp", "quic", "quic", "quic", "quic"},
 		"alternate": {"tcp", "quic+tcp", "tcp", "quic+tcp", "tcp", "quic", "tcp", "quic"},
 	} {
 		s := transportFixture(t, transport)
@@ -79,6 +79,9 @@ func TestGenConfigTransport(t *testing.T) {
 		for _, n := range s.NodeConfigs {
 			require.Equal(t, n.Server.Addresses, n.Server.BindAddresses)
 			got = append(got, addressSchemes(t, n.Server.Addresses))
+			if transport == "quic" {
+				require.Equal(t, []string{"quic"}, n.Server.InternalTransports, "a node on a QUIC network may dial a gateway over tcp")
+			}
 		}
 		require.Equal(t, want, got, "transport %q", transport)
 	}
