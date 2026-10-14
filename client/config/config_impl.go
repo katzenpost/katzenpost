@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 
 	"github.com/BurntSushi/toml"
 
@@ -19,10 +20,12 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -43,6 +46,9 @@ func (c *Config) PigeonholeGeometry() *pigeonholeGeo.Geometry {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if err := c.QUIC.Validate(); err != nil {
+		return fmt.Errorf("config: QUIC: %w", err)
+	}
 	if err := epochtime.ValidateConfigured(c.EpochDuration); err != nil {
 		return fmt.Errorf("config: EpochDuration: %v", err)
 	}
@@ -112,6 +118,9 @@ func (c *Config) FixupAndValidate() error {
 		for _, gw := range c.PinnedGateways.Gateways {
 			if err := utils.RejectDNSAddrs(gw.Addresses, c.AllowHostnameAddresses); err != nil {
 				return fmt.Errorf("config: PinnedGateway %q: %w", gw.Name, err)
+			}
+			if len(gw.QUICKeyHash) == 0 && slices.Contains(c.PreferedTransports, cpki.TransportQUIC) && slices.ContainsFunc(gw.Addresses, quicCommon.IsQUICAddress) {
+				return fmt.Errorf("config: PinnedGateway %q has a quic:// address but no QUICKeyHash; add the QUIC key hash its gateway logs at start, or remove the quic:// address", gw.Name)
 			}
 		}
 	}
@@ -226,6 +235,11 @@ func (p *Gateway) UnmarshalTOML(v interface{}) error {
 		return err
 	}
 	p.Addresses = addresses
+	if raw, present := data["QUICKeyHash"]; present {
+		if p.QUICKeyHash, err = vServerConfig.DecodeQUICKeyHash(raw); err != nil {
+			return fmt.Errorf("config: Gateway %w", err)
+		}
+	}
 	return nil
 }
 

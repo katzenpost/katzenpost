@@ -61,6 +61,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -161,6 +162,8 @@ type state struct {
 	// persistent outbound sessions to peer authorities, keyed by identifier.
 	peerConnsMu sync.Mutex
 	peerConns   map[string]*peerConn
+
+	quicPinMismatches common.QUICPinMismatches
 	// dialContextFn overrides the dialer for outbound peer connections; nil
 	// uses a default net.Dialer. Set in tests to inject a transport.
 	dialContextFn func(ctx context.Context, network, addr string) (net.Conn, error)

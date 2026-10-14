@@ -988,6 +988,12 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
+	case message.SetPreferredTransportsReply != nil:
+		select {
+		case t.eventSink <- message.SetPreferredTransportsReply:
+		case <-t.HaltCh():
+			return false
+		}
 
 		/**  Copy Channel API **/
 
@@ -1577,6 +1583,45 @@ func (t *ThinClient) GetDirectoryAuthorities() ([]*DirectoryAuthority, error) {
 			// Ignore PKI document updates while we wait for our reply.
 		default:
 			// Ignore other events.
+		}
+	}
+}
+
+func (t *ThinClient) SetPreferredTransports(transports []string) error {
+	queryID := t.NewQueryID()
+	req := &Request{
+		SetPreferredTransports: &SetPreferredTransports{
+			QueryID:    queryID,
+			Transports: transports,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	if err := t.writeMessage(req); err != nil {
+		return err
+	}
+
+	for {
+		var event Event
+		select {
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return errHalting
+		}
+
+		switch v := event.(type) {
+		case *SetPreferredTransportsReply:
+			if v.QueryID == nil || !bytes.Equal(v.QueryID[:], queryID[:]) {
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return nil
+		case *ConnectionStatusEvent:
+			t.setConnected(v.IsConnected)
 		}
 	}
 }

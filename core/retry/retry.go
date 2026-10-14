@@ -43,6 +43,8 @@ const (
 	DefaultJitter = 0.2
 )
 
+var ErrQUICKeyMismatch = errors.New("quic: peer QUIC key does not match its published hash")
+
 // Delay calculates the delay for a given retry attempt using exponential
 // backoff with jitter.
 func Delay(baseDelay, maxDelay time.Duration, jitter float64, attempt int) time.Duration {
@@ -67,7 +69,7 @@ func Delay(baseDelay, maxDelay time.Duration, jitter float64, attempt int) time.
 // retrying.  This includes network timeouts, connection refused, connection
 // reset, etc.
 func IsTransientError(err error) bool {
-	if err == nil {
+	if err == nil || errors.Is(err, ErrQUICKeyMismatch) {
 		return false
 	}
 

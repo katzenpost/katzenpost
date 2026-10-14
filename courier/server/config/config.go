@@ -14,6 +14,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -47,6 +49,8 @@ type Config struct {
 	PKIScheme string
 
 	EpochDuration *time.Duration
+
+	QUIC *quicCommon.Options
 
 	// EnvelopeNIKEScheme is the NIKE replica scheme for message envelopes.
 	EnvelopeScheme string
@@ -93,6 +97,9 @@ type Config struct {
 }
 
 func (c *Config) FixupAndValidate() error {
+	if err := c.QUIC.Validate(); err != nil {
+		return fmt.Errorf("config: QUIC: %w", err)
+	}
 	if err := epochtime.ValidateConfigured(c.EpochDuration); err != nil {
 		return fmt.Errorf("config: EpochDuration: %v", err)
 	}

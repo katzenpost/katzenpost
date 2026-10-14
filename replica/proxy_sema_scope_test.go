@@ -106,6 +106,7 @@ func setupSemaScopeTestServer(t *testing.T) *semaScopeTestEnv {
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	server.envelopeKeys, err = NewEnvelopeKeys(replicaScheme, server.logBackend.GetLogger("envelope keys"), dname, replicaEpoch)
 	require.NoError(t, err)
+	t.Cleanup(server.envelopeKeys.Halt)
 
 	st := &state{server: server, log: server.LogBackend().GetLogger("state")}
 	server.state = st

@@ -233,8 +233,9 @@ func (c *outgoingConn) worker() {
 		}
 
 		// Flatten the lists of addresses to Dial to.
-		dstAddrs := dialAddresses(c.co.glue.Config().Server.Addresses, c.dst)
-		if len(dstAddrs) == 0 {
+		dstAddrs := dialAddresses(c.co.glue.Config().Server, c.dst)
+		peer := c.co.glue.Config().QUIC.PeerDialer(&c.co.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
+		if !peer.AnyDialable(dstAddrs) {
 			// Should *NEVER* happen because descriptors currently MUST have
 			// at least once `tcp4` address to be considered valid.
 			c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
@@ -242,6 +243,9 @@ func (c *outgoingConn) worker() {
 		}
 
 		for _, addr := range dstAddrs {
+			if !peer.Dialable(addr) {
+				continue
+			}
 			select {
 			case <-time.After(c.retryDelay):
 				// Back off incrementally on reconnects.
@@ -267,8 +271,9 @@ func (c *outgoingConn) worker() {
 			}
 			c.log.Debugf("Dialing: %v", u.Host)
 
-			connectCtx, connectCancel := context.WithTimeout(dialCtx, dialer.Timeout)
-			conn, err := common.DialURL(u, connectCtx, dialer.DialContext)
+			dialStart := time.Now()
+			connectCtx, connectCancel := common.ConnectContext(dialCtx, dialer.Timeout)
+			conn, err := peer.Dial(connectCtx, u, dialer.DialContext)
 			connectCancel()
 			select {
 			case <-dialCtx.Done():
@@ -278,6 +283,10 @@ func (c *outgoingConn) worker() {
 				}
 				return
 			default:
+				countDial(u.Scheme, err)
+				if errors.Is(err, common.ErrQUICKeyMismatch) {
+					continue
+				}
 				if err != nil {
 					c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
 					continue
@@ -293,7 +302,7 @@ func (c *outgoingConn) worker() {
 			start := time.Now()
 
 			// Handle the new connection.
-			if c.onConnEstablished(conn, dialCtx.Done()) {
+			if c.onConnEstablished(conn, dialCtx.Done(), dialStart) {
 				// Canceled with a connection established.
 				c.log.Debugf("Existing connection canceled.")
 				instrument.CancelledOutgoing()
@@ -312,7 +321,23 @@ func (c *outgoingConn) worker() {
 	}
 }
 
-func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{}) (wasHalted bool) {
+func countDial(scheme string, err error) {
+	transport := "tcp"
+	if scheme == "quic" {
+		transport = "quic"
+	}
+	switch {
+	case errors.Is(err, common.ErrQUICKeyMismatch):
+		instrument.QUICDial("mismatch")
+		instrument.LinkFailure(transport, "outgoing", "pin_mismatch")
+	case err != nil:
+		instrument.LinkFailure(transport, "outgoing", "dial")
+	case transport == "quic":
+		instrument.QUICDial("pinned")
+	}
+}
+
+func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{}, dialStart time.Time) (wasHalted bool) {
 	defer func() {
 		c.log.Debugf("TCP connection closed. (wasHalted: %v)", wasHalted)
 		conn.Close()
@@ -338,6 +363,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
+	linkTransport := common.LinkTransport(conn)
 	handshakeStart := time.Now()
 	if err = w.Initialize(context.Background(), conn); err != nil {
 		handshakeElapsed := time.Since(handshakeStart)
@@ -349,6 +375,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		}
 		handshakeinstrument.HandshakeFailure("outgoing", state)
 		handshakeinstrument.HandshakeDuration("outgoing", "failure", handshakeElapsed)
+		instrument.LinkFailure(linkTransport, "outgoing", "handshake")
 
 		localAddr := ""
 		if conn.LocalAddr() != nil {
@@ -393,6 +420,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 	handshakeElapsed := time.Since(handshakeStart)
 	handshakeinstrument.HandshakeDuration("outgoing", "success", handshakeElapsed)
+	instrument.LinkEstablished(linkTransport, "outgoing")
+	instrument.LinkHandshake(linkTransport, "outgoing", time.Since(dialStart))
 	c.log.Debugf("Handshake completed in %v", handshakeElapsed)
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 

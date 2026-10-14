@@ -22,6 +22,7 @@ package config
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -36,6 +37,7 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -150,7 +152,27 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		addresses = append(addresses, s)
 	}
 	a.Addresses = addresses
+
+	if raw, present := data["QUICKeyHash"]; present {
+		quicKeyHash, err := DecodeQUICKeyHash(raw)
+		if err != nil {
+			return fmt.Errorf("Authority.%w", err)
+		}
+		a.QUICKeyHash = quicKeyHash
+	}
 	return nil
+}
+
+func DecodeQUICKeyHash(raw interface{}) (QUICKeyHash, error) {
+	encoded, ok := raw.(string)
+	if !ok {
+		return nil, errors.New("QUICKeyHash must be a hex string")
+	}
+	quicKeyHash, err := hex.DecodeString(encoded)
+	if err != nil || len(quicKeyHash) != pki.QUICKeyHashSize {
+		return nil, fmt.Errorf("QUICKeyHash must be %d hex-encoded bytes", pki.QUICKeyHashSize)
+	}
+	return quicKeyHash, nil
 }
 
 // Validate parses and checks the Server configuration.
@@ -244,6 +266,9 @@ func (sCfg *Server) validate() error {
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
+	if err := cfg.QUIC.Validate(); err != nil {
+		return fmt.Errorf("config: QUIC: %w", err)
+	}
 
 	if cfg.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/decoy"
@@ -85,6 +87,7 @@ type Server struct {
 	cryptoWorkers []*cryptoworker.Worker
 	periodic      *periodicTimer
 	mixKeys       glue.MixKeys
+	quicKeys      common.ListenerKeys
 	pki           glue.PKI
 	shutdownPKI   glue.PKI
 	listeners     []glue.Listener
@@ -468,6 +471,15 @@ func New(cfg *config.Config) (*Server, error) {
 	logStartupStep("link key initialization")
 
 	if s.cfg.Debug.GenerateOnly {
+		if s.isQUICGateway() {
+			key, err := s.gatewayQUICKey(common.LoadStaticKey)
+			if err != nil {
+				return nil, err
+			}
+			if err := key.WriteHash(filepath.Join(s.cfg.Server.DataDir, "quic-tls.hash")); err != nil {
+				return nil, err
+			}
+		}
 		return nil, ErrGenerateOnly
 	}
 
@@ -477,6 +489,11 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 	logStartupStep("mix keys")
+
+	if s.quicKeys, err = s.newQUICKeys(); err != nil {
+		s.log.Errorf("Failed to initialize QUIC keys: %v", err)
+		return nil, err
+	}
 
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
 	isOk := false
@@ -676,6 +693,38 @@ func (g *serverGlue) Management() *thwack.Server {
 
 func (g *serverGlue) MixKeys() glue.MixKeys {
 	return g.s.mixKeys
+}
+
+func (s *Server) isQUICGateway() bool {
+	addresses := s.cfg.Server.BindAddresses
+	if len(addresses) == 0 {
+		addresses = s.cfg.Server.Addresses
+	}
+	return s.cfg.Server.IsGatewayNode && slices.ContainsFunc(addresses, common.IsQUICAddress)
+}
+
+func (s *Server) gatewayQUICKey(load func(string) (*common.StaticKey, error)) (*common.StaticKey, error) {
+	path := filepath.Join(s.cfg.Server.DataDir, "quic-tls.key")
+	key, err := load(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("%s is missing and clients pin this gateway's QUIC key hash; restore that file from backup, or create a new key with -g or genkeypair --type quic and replace QUICKeyHash for this gateway in PinnedGateways in every client.toml", path)
+	}
+	if err != nil {
+		return nil, err
+	}
+	s.log.Noticef("QUIC key hash %x", key.Hash())
+	return key, nil
+}
+
+func (s *Server) newQUICKeys() (common.ListenerKeys, error) {
+	if !s.isQUICGateway() {
+		return common.NewEpochKeys(filepath.Join(s.cfg.Server.DataDir, "quic"), common.CurrentEpoch)
+	}
+	return s.gatewayQUICKey(common.ReadStaticKey)
+}
+
+func (g *serverGlue) QUICKeys() common.ListenerKeys {
+	return g.s.quicKeys
 }
 
 func (g *serverGlue) PKI() glue.PKI {

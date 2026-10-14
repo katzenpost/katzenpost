@@ -146,6 +146,16 @@ func vqQueryProbes() []vqQueryProbe {
 				return err
 			},
 		},
+		{
+			name:    "SetPreferredTransports",
+			queryID: func(req *Request) *[QueryIDLength]byte { return req.SetPreferredTransports.QueryID },
+			reply: func(id *[QueryIDLength]byte, code uint8) *Response {
+				return &Response{SetPreferredTransportsReply: &SetPreferredTransportsReply{QueryID: id, ErrorCode: code}}
+			},
+			call: func(tc *ThinClient) error {
+				return tc.SetPreferredTransports([]string{"quic", "tcp"})
+			},
+		},
 	}
 }
 
@@ -216,6 +226,7 @@ func vqSimpleResponses() []*Response {
 		{GetMessageBoxIndexCounterReply: &GetMessageBoxIndexCounterReply{}},
 		{GetPKIDocumentReply: &GetPKIDocumentReply{}},
 		{GetDirectoryAuthoritiesReply: &GetDirectoryAuthoritiesReply{}},
+		{SetPreferredTransportsReply: &SetPreferredTransportsReply{}},
 		{CreateCourierEnvelopesFromPayloadReply: &CreateCourierEnvelopesFromPayloadReply{}},
 		{CreateCourierEnvelopesFromPayloadsReply: &CreateCourierEnvelopesFromPayloadsReply{}},
 		{CreateCourierEnvelopesFromTombstoneRangeReply: &CreateCourierEnvelopesFromTombstoneRangeReply{}},

@@ -132,6 +132,7 @@ func TestIncomingConn(t *testing.T) {
 	epoch, _, _ := replicaCommon.ReplicaNow()
 	server.envelopeKeys, err = NewEnvelopeKeys(replicaScheme, server.logBackend.GetLogger("envelope keys"), dname, epoch)
 	require.NoError(t, err)
+	t.Cleanup(server.envelopeKeys.Halt)
 
 	st := &state{
 		server: server,

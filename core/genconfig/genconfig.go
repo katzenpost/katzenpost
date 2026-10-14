@@ -47,6 +47,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	rConfig "github.com/katzenpost/katzenpost/replica/config"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
@@ -65,6 +66,7 @@ const (
 	IdentityPrivateKeyFile = "identity.private.pem"
 	LinkPublicKeyFile      = "link.public.pem"
 	LinkPrivateKeyFile     = "link.private.pem"
+	QUICKeyFile            = "quic-tls.key"
 	CourierService         = "courier"
 	ClientIdentifier       = "client"
 	DebugLogLevel          = "DEBUG"
@@ -154,6 +156,11 @@ func (s *Katzenpost) olderReleaseEnv(node string) []string {
 	return env
 }
 
+func (s *Katzenpost) isCurrent(node string) bool {
+	version, ok := s.NodeVersions[node]
+	return !ok || version == CurrentVersion
+}
+
 func (s *Katzenpost) epochDuration() *time.Duration {
 	d, err := time.ParseDuration(s.EpochDuration)
 	if err != nil {
@@ -181,13 +188,18 @@ func (s *Katzenpost) kpclientdMetricsPort() uint16 {
 	return s.BasePort + kpclientdMetricsPortOffset
 }
 
-func (s *Katzenpost) peerAddr(identifier string, port uint16) string {
-	scheme := "tcp"
-	if s.Transport == "quic" || (s.Transport == "alternate" && s.peerCount%2 == 1) {
-		scheme = "quic"
-	}
+func (s *Katzenpost) peerAddrs(identifier string, port uint16, keepTCP, isGateway bool) []string {
+	tcp := fmt.Sprintf("tcp://%s:%d", identifier, port)
+	useQUIC := s.Transport == "quic" || (s.Transport == "alternate" && s.peerCount%2 == 1)
 	s.peerCount++
-	return fmt.Sprintf("%s://%s:%d", scheme, identifier, port)
+	if !useQUIC {
+		return []string{tcp}
+	}
+	addrs := []string{fmt.Sprintf("quic://%s:%d", identifier, port)}
+	if keepTCP && s.Transport == "alternate" || isGateway && s.Transport == "quic" {
+		addrs = append(addrs, tcp)
+	}
+	return addrs
 }
 
 // metricsScrapeAddr returns the host:port form a service writes into
@@ -537,13 +549,28 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 		idPubKey := CfgIdKey(s.NodeConfigs[i], s.OutDir)
 		linkPubKey := CfgLinkKey(s.NodeConfigs[i], s.OutDir, cfg.WireKEMScheme)
 
+		name := s.NodeConfigs[i].Server.Identifier
+		addresses := s.NodeConfigs[i].Server.Addresses
+		var quicKeyHash []byte
+		if slices.ContainsFunc(addresses, quicCommon.IsQUICAddress) {
+			if !s.isCurrent(name) {
+				addresses = slices.DeleteFunc(slices.Clone(addresses), quicCommon.IsQUICAddress)
+			} else {
+				quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, name, QUICKeyFile))
+				if err != nil {
+					return err
+				}
+				quicKeyHash = quicKey.Hash()
+			}
+		}
 		gateway := &cConfig.Gateway{
 			PKISignatureScheme: s.PkiSignatureScheme.Name(),
 			WireKEMScheme:      s.WireKEMScheme,
-			Name:               s.NodeConfigs[i].Server.Identifier,
+			Name:               name,
 			IdentityKey:        idPubKey,
 			LinkKey:            cConfig.LinkPublicKey{PublicKey: linkPubKey},
-			Addresses:          s.NodeConfigs[i].Server.Addresses,
+			Addresses:          addresses,
+			QUICKeyHash:        quicKeyHash,
 		}
 		gateways = append(gateways, gateway)
 	}
@@ -552,6 +579,9 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	}
 	cfg.PinnedGateways = &cConfig.Gateways{
 		Gateways: gateways,
+	}
+	if s.Transport == "quic" {
+		cfg.PreferedTransports = []string{cpki.TransportQUIC, cpki.TransportTCP}
 	}
 	err = SaveCfg(cfg, s.OutDir)
 	if err != nil {
@@ -623,7 +653,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	// hostname; opt in to hostname-permitting validation.
 	cfg.AllowHostnameAddresses = true
 
-	cfg.Addresses = []string{s.peerAddr(cfg.Identifier, s.LastPort)}
+	cfg.Addresses = s.peerAddrs(cfg.Identifier, s.LastPort, false, false)
 	s.LastPort++
 
 	cfg.MetricsAddress = metricsScrapeAddr(cfg.Identifier, s.LastPort)
@@ -698,9 +728,11 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// by net.Listen) point at the service's own hostname. Inside the
 	// container that resolves to the private bridge IP via /etc/hosts,
 	// so we never bind to 0.0.0.0.
-	addr := s.peerAddr(n, s.LastPort)
-	cfg.Server.Addresses = []string{addr}
-	cfg.Server.BindAddresses = []string{addr}
+	cfg.Server.Addresses = s.peerAddrs(n, s.LastPort, isGateway, isGateway)
+	cfg.Server.BindAddresses = cfg.Server.Addresses
+	if s.Transport == "quic" {
+		cfg.Server.InternalTransports = []string{cpki.TransportQUIC}
+	}
 	s.LastPort += 2
 	cfg.Server.DataDir = filepath.Join(s.BaseDir, n)
 
@@ -875,13 +907,18 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg := new(vConfig.Config)
 		cfg.SphinxGeometry = s.SphinxGeometry
 		authIdentifier := fmt.Sprintf(AuthNodeFormat, i)
+		pinsQUIC := (s.Transport == "quic" || s.Transport == "alternate") && s.isCurrent(authIdentifier)
+		addresses := s.peerAddrs(authIdentifier, s.LastPort, true, false)
+		if !pinsQUIC && s.Transport == "quic" {
+			addresses = append(addresses, fmt.Sprintf("tcp://%s:%d", authIdentifier, s.LastPort))
+		}
 		cfg.Server = &vConfig.Server{
 			WireKEMScheme:          s.WireKEMScheme,
 			PKISignatureScheme:     s.PkiSignatureScheme.Name(),
 			EpochDuration:          s.epochDuration(),
 			AllowHostnameAddresses: true, // docker-mixnet uses container hostnames
 			Identifier:             authIdentifier,
-			Addresses:              []string{s.peerAddr(authIdentifier, s.LastPort)},
+			Addresses:              addresses,
 			DataDir:                filepath.Join(s.BaseDir, authIdentifier),
 		}
 		os.MkdirAll(filepath.Join(s.OutDir, cfg.Server.Identifier), 0700)
@@ -913,6 +950,13 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			WireKEMScheme:      wirekem,
 			PKISignatureScheme: s.PkiSignatureScheme.Name(),
 			Addresses:          cfg.Server.Addresses,
+		}
+		if pinsQUIC {
+			quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, authIdentifier, QUICKeyFile))
+			if err != nil {
+				return err
+			}
+			authority.QUICKeyHash = quicKey.Hash()
 		}
 		s.Authorities[hash.Sum256From(idKey)] = authority
 	}

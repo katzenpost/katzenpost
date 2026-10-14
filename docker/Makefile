@@ -1,4 +1,4 @@
-.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports check-net-transport check-transport interop-ref-binaries interop-gate interop-env-check interop-report interop-matrix interop-combo client-check
+.PHONY: clean-caches clean clean-local clean-local-dryrun stop-all clean-testnets clean-image-% clean-container-% clean-images test test-distros test-distro-% rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart servicenode1-restart replica-restart replica-test config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate start-with-client-metrics print-url-grafana print-url-prometheus pumba-latency pumba-loss pumba-corrupt pumba-pause pumba-status pumba-stop selfcheck-cache-restore thin-client-sync pigeonhole-cp-genkey pigeonhole-cp-roundtrip check-ports check-net-transport check-transport check-running-transport interop-ref-binaries interop-gate interop-env-check interop-report interop-matrix interop-combo client-check perf-compare
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -36,6 +36,8 @@ help:
 	@echo " run-ping                  - send a ping over the testnet"
 	@echo " test                      - run every component's docker integration tests (requires the testnet to be up)"
 	@echo " check-transport           - check that each TRANSPORT value maps to the right genconfig --transport, without docker"
+	@echo " check-running-transport   - check that the running testnet's nodes listen on, and its links run over, the transports TRANSPORT asks for"
+	@echo " perf-compare              - run the namenlos-parameter network over TCP then QUIC: cpu, mem, net, pigeonhole latency, link metrics into perf_dir/report.md (mixnet-alpine only)"
 	@echo " interop-gate              - bring HEAD up with release binaries on interop_swap_groups (release_refs), require 6/6 signatures and every node listed, verify revisions, ping"
 	@echo " interop-combo combo=<name> - one upgrade combination: authorities-mixed|authorities-old|authorities-old-n1|nodes-mixed|nodes-old|nodes-old-n1|everything-mixed|everything-mixed-n1"
 	@echo " interop-matrix            - twelve combinations in turn: auth, the node groups, and every group, each against the last two tags and the last tag, with and without interop_all"
@@ -117,6 +119,7 @@ nike=x25519
 
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
+pkiScheme?=ed25519
 
 DISTROS=alpine debian-trixie ubuntu-26.04
 distro=alpine
@@ -277,7 +280,7 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--layers $(layers) \
 	--gateways $(gateways) --serviceNodes $(serviceNodes) --storageNodes $(storageNodes) \
 	--mu $(mu) --lambdaP $(lP) --lambdaL $(lL) --lambdaM $(lM) --lambdaR $(lR) \
-	--nike "$(nike)" --kem "$(kem)" \
+	--nike "$(nike)" --kem "$(kem)" --pkiScheme "$(pkiScheme)" \
 	--noMixDecoy=$(no_mixdecoy) --noGatewayDecoy=$(no_gatewaydecoy) \
 	$(noDecoyFlag) $(noClientDecoyFlag) $(noCourierReplicaDecoyFlag) $(noMetricsFlag) \
 	--epochDuration "$(epoch_duration)" $(if $(node_versions),--nodeVersions $(node_versions)) \
@@ -496,6 +499,60 @@ check-transport:
 			|| { echo "TRANSPORT=$${p%%:*} does not pass --transport $${p#*:} to genconfig"; exit 1; }; \
 	done
 	@! $(MAKE) -s -n TRANSPORT=udp config-only >/dev/null 2>&1 || { echo "TRANSPORT=udp was accepted"; exit 1; }
+
+check-running-transport:
+	@cd $(net_name) && quic=0 plain=0 fail=0; \
+	for cfg in */authority.toml */katzenpost.toml */replica.toml; do \
+		node=$${cfg%%/*}; own=$$(grep -m1 '^ *Addresses = ' $$cfg); \
+		case "$$own" in \
+		*quic://*) quic=$$((quic+1)); \
+			grep -qs 'Starting listener on: "quic://' $$node/*.log || { echo "$$node: no quic listener started"; fail=1; } ;; \
+		*) plain=$$((plain+1)) ;; \
+		esac; \
+		if [ $(genconfig_transport) = alternate ] && case "$$own" in *quic://*) true ;; *) false ;; esac \
+			&& { [ $$cfg = $$node/authority.toml ] || grep -q '^ *IsGatewayNode = true' $$cfg; }; then \
+			case "$$own" in *tcp://*) ;; *) echo "$$node: no tcp address"; fail=1 ;; esac; \
+		fi; \
+	done; \
+	case $(genconfig_transport) in \
+	tcp) [ $$quic -eq 0 ] && ! grep -rqs -e 'quic://' -e QUICKeyHash --include='*.toml' . ;; \
+	quic) [ $$plain -eq 0 ] ;; \
+	alternate) d=$$((quic - plain)); [ $$quic -gt 0 ] && [ $$plain -gt 0 ] && [ $${d#-} -le 1 ] ;; \
+	esac || { echo "$$quic nodes on quic and $$plain without do not match TRANSPORT=$(TRANSPORT)"; fail=1; }; \
+	if grep -rqs -e 'does not match its published hash' -e 'Failed to start listener' --include='*.log' .; then \
+		echo "a node failed to start a listener or refused a peer's QUIC key"; fail=1; \
+	fi; \
+	links() { grep -rahoE --include='*.log' "(^| )$$1 connection established\." . | wc -l; }; \
+	ltcp=$$(( $$(links tcp) + $$(links tcp4) + $$(links tcp6) )); lquic=$$(links quic); \
+	case $(genconfig_transport) in \
+	tcp) [ $$lquic -eq 0 ] && [ $$ltcp -gt 0 ] ;; \
+	quic) [ $$ltcp -eq 0 ] && [ $$lquic -gt 0 ] ;; \
+	alternate) [ $$ltcp -gt 0 ] && [ $$lquic -gt 0 ] ;; \
+	esac || { echo "links established: tcp $$ltcp, quic $$lquic do not match TRANSPORT=$(TRANSPORT)"; fail=1; }; \
+	echo "TRANSPORT=$(TRANSPORT): $$quic nodes on quic, $$plain without; links established: tcp $$ltcp, quic $$lquic"; \
+	auths=$$(ls */authority.toml | wc -l); \
+	pins=$$(grep -h '^ *QUICKeyHash = ' */authority.toml | sort -u | wc -l); \
+	dials='quic dial pinned to its configured QUIC key hash|quic dial unpinned|no QUIC key hash configured, not dialing'; \
+	pinned=$$(grep -rah --include='*.log' 'quic dial pinned to its configured QUIC key hash' . | wc -l); \
+	unpinned=$$(grep -rahE --include='*.log' 'quic dial unpinned|no QUIC key hash configured, not dialing' . | wc -l); \
+	first_pinned=0 first_unpinned=0; \
+	for f in $$(grep -rlE --include='*.log' "$$dials" .); do \
+		if grep -m1 -E "$$dials" $$f | grep -q 'quic dial pinned'; then first_pinned=$$((first_pinned+1)); else first_unpinned=$$((first_unpinned+1)); fi; \
+	done; \
+	case $(genconfig_transport) in \
+	tcp) [ $$pins -eq 0 ] && [ $$pinned -eq 0 ] ;; \
+	*) [ $$pins -lt $$auths ] || { [ $$pinned -gt 0 ] && [ $$unpinned -eq 0 ] && [ $$first_unpinned -eq 0 ]; } ;; \
+	esac || { echo "authority QUIC pins do not match TRANSPORT=$(TRANSPORT)"; fail=1; }; \
+	echo "authority QUIC pins: $$pins of $$auths authorities pinned; quic dials to authorities: $$pinned pinned, $$unpinned unpinned; first dial pinned in $$first_pinned logs, unpinned in $$first_unpinned"; \
+	exit $$fail
+
+perf_dir?=perf-compare
+perf_window?=300
+perf_interval?=10
+perf_writes?=20
+perf-compare:
+	perf_dir=$(perf_dir) perf_window=$(perf_window) perf_interval=$(perf_interval) perf_writes=$(perf_writes) \
+		ldflags_body='$(ldflags_body)' MAKE='$(MAKE)' $(sh) ./perf_compare.sh
 
 check-ports:
 	@for port in $$(seq $$(($(base_port) + 2000)) $$(($(base_port) + 2003))); do \

@@ -15,7 +15,6 @@ import (
 
 	httpCommon "github.com/katzenpost/katzenpost/quic/common"
 
-	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
@@ -245,15 +244,17 @@ func newListener(server *Server, id int, addr string) (*Listener, error) {
 				return nil, err
 			}
 		case "quic":
-			ql, err := quic.ListenAddr(u.Host, httpCommon.GenerateTLSConfig(), httpCommon.Config())
+			l.log.Noticef("Starting listener on: %q", addr)
+			var ql *httpCommon.QuicListener
+			ql, err = httpCommon.ListenWithEpochKeys(u.Host, server.identityPrivateKey, server.quicKeys, server.cfg.QUIC)
 			if err != nil {
 				l.log.Errorf("Failed to start Listener '%v': %v", addr, err)
 				return nil, err
 			}
-			// Wrap quic.Listener with httpCommon.QuicListener
-			// so it implements like net.Listener for a
-			// single QUIC Stream
-			l.l = &httpCommon.QuicListener{Listener: ql}
+			if warning := ql.UDPBuffers().Warning(); warning != "" {
+				l.log.Warningf("Listener %q: %s", addr, warning)
+			}
+			l.l = ql
 		default:
 			return nil, fmt.Errorf("Unsupported Listener scheme '%v': %v", addr, err)
 		}

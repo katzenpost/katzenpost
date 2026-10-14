@@ -147,6 +147,12 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 		dialFn = (&net.Dialer{Timeout: dialTimeout}).DialContext
 	}
 
+	var identity [hash.HashSize]byte
+	if peer.IdentityPublicKey != nil {
+		identity = hash.Sum256From(peer.IdentityPublicKey)
+	}
+	pinned := s.s.cfg.QUIC.PeerDialer(&s.quicPinMismatches, identity, peer.QUICKeyHash, s.log, peer.Identifier)
+
 	var errs []error
 	for _, a := range addrs {
 		u, err := url.Parse(a)
@@ -155,10 +161,14 @@ func (s *state) dialPeerAddrs(peer *config.Authority, addrs []string, dialTimeou
 			errs = append(errs, fmt.Errorf("invalid URL %s: %w", a, err))
 			continue
 		}
-		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
-		conn, err := common.DialURL(u, ctx, dialFn)
+		if !pinned.Dialable(a) {
+			continue
+		}
+		ctx, cancelFn := common.ConnectContext(context.Background(), dialTimeout)
+		conn, err := pinned.Dial(ctx, u, dialFn)
 		cancelFn()
 		if err == nil {
+			s.log.Debugf("peer %s: %s connection established.", peer.Identifier, u.Scheme)
 			return conn, nil
 		}
 		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)

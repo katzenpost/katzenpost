@@ -20,6 +20,8 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/proxy"
 	"github.com/katzenpost/katzenpost/client/transport"
+
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -162,6 +164,8 @@ type Gateway struct {
 	// Addresses are the URLs specifying the endpoints that can be used to reach the node.
 	// Valid schemes are tcp:// and quic:// for TCP and quic (UDP)
 	Addresses []string
+
+	QUICKeyHash vServerConfig.QUICKeyHash `toml:",omitempty"`
 }
 
 type Gateways struct {
@@ -200,6 +204,8 @@ type Config struct {
 	PKISignatureScheme string
 
 	EpochDuration *time.Duration
+
+	QUIC *quicCommon.Options
 
 	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
 	WireKEMScheme string

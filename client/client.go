@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
@@ -19,6 +21,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/client"
+	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -26,6 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
@@ -41,6 +45,9 @@ type Client struct {
 
 	conn *connection
 
+	preferredTransports atomic.Pointer[[]string]
+	quicPinMismatches   common.QUICPinMismatches
+
 	sphinx           *sphinx.Sphinx
 	geo              *geo.Geometry
 	wireKEMScheme    kem.Scheme
@@ -51,6 +58,49 @@ type Client struct {
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
+}
+
+var defaultTransports = slices.DeleteFunc(slices.Clone(cpki.ClientTransports), func(t string) bool { return t == cpki.TransportQUIC })
+
+func (c *Client) PreferredTransports() []string {
+	if p := c.preferredTransports.Load(); p != nil {
+		return *p
+	}
+	if c.cfg.PreferedTransports != nil {
+		return c.cfg.PreferedTransports
+	}
+	return defaultTransports
+}
+
+func (c *Client) votingAuthorities() []*vServerConfig.Authority {
+	if slices.Contains(c.cfg.PreferedTransports, cpki.TransportQUIC) {
+		return c.cfg.VotingAuthority.Peers
+	}
+	peers := make([]*vServerConfig.Authority, 0, len(c.cfg.VotingAuthority.Peers))
+	for _, peer := range c.cfg.VotingAuthority.Peers {
+		withoutQUIC := *peer
+		withoutQUIC.Addresses = slices.DeleteFunc(slices.Clone(peer.Addresses), common.IsQUICAddress)
+		peers = append(peers, &withoutQUIC)
+	}
+	return peers
+}
+
+func (c *Client) SetPreferredTransports(transports []string) error {
+	for i, t := range transports {
+		if !slices.Contains(cpki.ClientTransports, t) {
+			return fmt.Errorf("client: transport %q is not one of %v", t, cpki.ClientTransports)
+		}
+		if slices.Contains(transports[:i], t) {
+			return fmt.Errorf("client: transport %q repeats", t)
+		}
+	}
+	if len(transports) == 0 {
+		c.preferredTransports.Store(nil)
+		return nil
+	}
+	order := slices.Clone(transports)
+	c.preferredTransports.Store(&order)
+	return nil
 }
 
 func (c *Client) haltConnection() {
@@ -115,9 +165,10 @@ func (c *Client) Start() error {
 		PKISignatureScheme: signSchemes.ByName(c.cfg.PKISignatureScheme),
 		LinkKey:            pkilinkKey,
 		LogBackend:         c.logbackend,
-		Authorities:        c.cfg.VotingAuthority.Peers,
+		Authorities:        c.votingAuthorities(),
 		Geo:                c.cfg.SphinxGeometry,
-		DialContextFn:      nil,
+		DialContextFn:      c.DialContextFn,
+		QUIC:               c.cfg.QUIC.ForClient(),
 
 		MaxConsensusSize:        c.cfg.VotingAuthority.MaxConsensusSize,
 		MaxConsensusSizeSetting: "VotingAuthority.MaxConsensusSize",
@@ -157,11 +208,7 @@ func New(cfg *config.Config, logBackend *log.Backend) (*Client, error) {
 
 	// A per-connection tag (for Tor SOCKS5 stream isloation)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
-	dialFn := cfg.UpstreamProxyConfig().ToDialContext(proxyContext)
-	if dialFn == nil {
-		dialFn = defaultDialer.DialContext
-	}
-	c.DialContextFn = dialFn
+	c.DialContextFn = cfg.UpstreamProxyConfig().ToDialContext(proxyContext)
 
 	c.log = c.logbackend.GetLogger("katzenpost/client")
 

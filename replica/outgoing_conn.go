@@ -6,6 +6,7 @@ package replica
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -75,9 +76,10 @@ type outgoingConn struct {
 	// Touched only by the connection worker goroutine.
 	reauthFailures int
 
-	id          uint64
-	retryDelay  time.Duration
-	egressErrCh chan struct{}
+	id                uint64
+	retryDelay        time.Duration
+	egressErrCh       chan struct{}
+	quicPinMismatches *httpCommon.QUICPinMismatches
 
 	// sessionUp reports whether a handshaked session is currently
 	// carrying this peer's queue. False before the first handshake and
@@ -208,13 +210,7 @@ func (c *outgoingConn) worker() {
 			return
 		}
 
-		dstAddrs := c.getDestinationAddresses()
-		if len(dstAddrs) == 0 {
-			c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
-			return
-		}
-
-		if c.attemptConnectionToAddresses(dstAddrs, dialCtx, dialer, retryIncrement, maxRetryDelay) {
+		if c.attemptConnectionToAddresses(c.getDestinationAddresses(), dialCtx, dialer, retryIncrement, maxRetryDelay) {
 			return // Connection was canceled or we should exit
 		}
 	}
@@ -260,7 +256,15 @@ func (c *outgoingConn) drainToRetryQueue() {
 
 // attemptConnectionToAddresses tries to connect to each address with retry logic
 func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx context.Context, dialer net.Dialer, retryIncrement, maxRetryDelay time.Duration) bool {
+	peer := c.co.Server().cfg.QUIC.PeerDialer(c.quicPinMismatches, hash.Sum256(c.dst.IdentityKey), c.dst.QUICKeyHash, c.log, c.dst.Name)
+	if !peer.AnyDialable(dstAddrs) {
+		c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
+		return true
+	}
 	for _, addr := range dstAddrs {
+		if !peer.Dialable(addr) {
+			continue
+		}
 		c.drainToRetryQueue()
 		select {
 		case <-time.After(common.JitterDelay(c.retryDelay)):
@@ -279,7 +283,7 @@ func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx c
 			return true
 		}
 
-		if c.dialAndHandleConnection(addr, dialCtx, dialer, retryIncrement, maxRetryDelay) {
+		if c.dialAndHandleConnection(peer, addr, dialCtx, dialer, retryIncrement, maxRetryDelay) {
 			return true // Connection was canceled or we should exit
 		}
 	}
@@ -287,7 +291,7 @@ func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx c
 }
 
 // dialAndHandleConnection handles dialing to a single address and managing the connection
-func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Context, dialer net.Dialer, retryIncrement, maxRetryDelay time.Duration) bool {
+func (c *outgoingConn) dialAndHandleConnection(peer *httpCommon.PeerDialer, addr string, dialCtx context.Context, dialer net.Dialer, retryIncrement, maxRetryDelay time.Duration) bool {
 	// Dial.
 	u, err := url.Parse(addr)
 	if err != nil {
@@ -296,8 +300,8 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 	}
 	c.log.Debugf("Dialing: %v", u.Host)
 
-	connectCtx, connectCancel := context.WithTimeout(dialCtx, dialer.Timeout)
-	conn, err := httpCommon.DialURL(u, connectCtx, dialer.DialContext)
+	connectCtx, connectCancel := httpCommon.ConnectContext(dialCtx, dialer.Timeout)
+	conn, err := peer.Dial(connectCtx, u, dialer.DialContext)
 	connectCancel()
 	select {
 	case <-dialCtx.Done():
@@ -307,6 +311,9 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 		}
 		return true
 	default:
+		if errors.Is(err, httpCommon.ErrQUICKeyMismatch) {
+			return false
+		}
 		if err != nil {
 			c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
 			return false
@@ -809,6 +816,8 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, geo *geo.
 		ch:          make(chan commands.Command, co.Server().cfg.OutgoingQueueSize),
 		id:          atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 		egressErrCh: make(chan struct{}, 1),
+
+		quicPinMismatches: co.QUICPinMismatches(),
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("replica outgoing:%d", c.id))
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 // fakeConnector is a test-only GenericConnector that records every
@@ -20,6 +21,7 @@ import (
 // synchronize with the moment the courier has dispatched to both
 // intermediates before injecting fake replica replies.
 type fakeConnector struct {
+	mismatches   common.QUICPinMismatches
 	mu           sync.Mutex
 	sendErr      error
 	sendCalledCh chan uint8
@@ -38,6 +40,9 @@ func (f *fakeConnector) Server() *Server                 { return nil }
 func (f *fakeConnector) OnClosedConn(conn *outgoingConn) {}
 func (f *fakeConnector) CloseAllCh() chan interface{}    { return make(chan interface{}) }
 func (f *fakeConnector) ForceUpdate()                    {}
+func (f *fakeConnector) QUICPinMismatches() *common.QUICPinMismatches {
+	return &f.mismatches
+}
 
 func (f *fakeConnector) DispatchMessage(dest uint8, msg *commands.ReplicaMessage) error {
 	f.mu.Lock()

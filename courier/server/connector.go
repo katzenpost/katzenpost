@@ -19,6 +19,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 type Connector struct {
@@ -33,6 +34,12 @@ type Connector struct {
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
+
+	quicPinMismatches quicCommon.QUICPinMismatches
+}
+
+func (co *Connector) QUICPinMismatches() *quicCommon.QUICPinMismatches {
+	return &co.quicPinMismatches
 }
 
 // destToNodeID looks up a replica by its static ReplicaID and returns its identity key hash.

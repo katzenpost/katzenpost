@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	httpCommon "github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -279,7 +280,12 @@ func CreateTestGeometryECDH(forwardPayloadLength, nrHops int) *geo.Geometry {
 
 // mockConnector is a mock implementation of GenericConnector for testing
 type mockConnector struct {
-	server *Server
+	server            *Server
+	quicPinMismatches httpCommon.QUICPinMismatches
+}
+
+func (m *mockConnector) QUICPinMismatches() *httpCommon.QUICPinMismatches {
+	return &m.quicPinMismatches
 }
 
 // newMockConnector creates a new mock connector

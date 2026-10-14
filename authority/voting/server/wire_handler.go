@@ -36,14 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/wire/handshakeinstrument"
-	"github.com/katzenpost/katzenpost/quic/common"
 )
-
-// isQUICConn returns true if the connection is a QUIC connection
-func isQUICConn(conn net.Conn) bool {
-	_, ok := conn.(*common.QuicConn)
-	return ok
-}
 
 // firstCommandTimeout bounds how long the responder waits for the first command
 // after a completed handshake, distinct from and shorter than the per-command
@@ -115,16 +108,7 @@ func (s *Server) onConn(conn net.Conn) {
 		return
 	}
 
-	// wireConn.Close calls conn.Close. In quic, sends are nonblocking and Close
-	// tears down the connection before the response was sent. So this waits
-	// 100ms after the response has been served before closing the connection.
-	defer func() {
-		// Only delay for QUIC connections if needed
-		if isQUICConn(conn) {
-			<-time.After(time.Millisecond * 100)
-		}
-		wireConn.Close()
-	}()
+	defer wireConn.Close()
 
 	// Handshake.
 	handshakeTimeout := time.Duration(s.cfg.Server.HandshakeTimeoutSec) * time.Second
@@ -646,6 +630,13 @@ func (s *Server) onPostReplicaDescriptor(peerID string, cmd *commands.PostReplic
 		return resp
 	}
 
+	if err := pki.IsQUICKeyHashWellFormed(desc.QUICKeyHash); err != nil {
+		s.log.Noticef("Peer %s: Rejecting replica descriptor for node %s epoch %d: %s", strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(err.Error()))
+		instrument.DescriptorRejected("replica", "malformed")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
+
 	// Ensure that the descriptor is from an allowed peer.
 	if err := s.state.replicaAuthorizationError(desc); err != nil {
 		s.log.Errorf("Peer %s: rejecting replica descriptor name=%q ReplicaID=%d identity_hash=%x: %s",
@@ -793,6 +784,13 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 		return resp
 	}
 
+	if err := pki.IsQUICKeyHashWellFormed(desc.QUICKeyHash); err != nil {
+		s.log.Noticef("onPostDescriptor: Rejecting descriptor for node %s epoch %d from peer %s: %s", strconv.QuoteToASCII(desc.Name), cmd.Epoch, strconv.QuoteToASCII(peerID), strconv.QuoteToASCII(err.Error()))
+		instrument.DescriptorRejected("mix", "malformed")
+		resp.ErrorCode = commands.DescriptorInvalid
+		return resp
+	}
+
 	// Ensure that the descriptor is from an allowed peer.
 	s.log.Debugf("onPostDescriptor: Checking authorization for node %s from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
 	if err := s.state.descriptorAuthorizationError(desc); err != nil {
@@ -835,6 +833,10 @@ func (s *Server) onPostDescriptor(peerID string, cmd *commands.PostDescriptor, p
 		return resp
 	}
 	s.log.Debugf("onPostDescriptor: Successfully submitted descriptor for node %s to state worker from peer %s", strconv.QuoteToASCII(desc.Name), strconv.QuoteToASCII(peerID))
+
+	if desc.IsGatewayNode && len(desc.Addresses[pki.TransportQUIC]) > 0 && !hasProxyableAddress(desc) {
+		s.log.Warningf("onPostDescriptor: gateway %s has no tcp or onion address; clients behind a SOCKS proxy cannot reach it", strconv.QuoteToASCII(desc.Name))
+	}
 
 	// Return a successful response.
 	s.log.Noticef(
@@ -936,4 +938,13 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 
 	// not reached
+}
+
+func hasProxyableAddress(desc *pki.MixDescriptor) bool {
+	for _, transport := range []string{pki.TransportTCP, pki.TransportTCPv4, pki.TransportTCPv6, pki.TransportOnion} {
+		if len(desc.Addresses[transport]) > 0 {
+			return true
+		}
+	}
+	return false
 }

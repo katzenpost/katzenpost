@@ -484,6 +484,11 @@ type GetDirectoryAuthorities struct {
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 }
 
+type SetPreferredTransports struct {
+	QueryID    *[QueryIDLength]byte `cbor:"query_id"`
+	Transports []string             `cbor:"transports"`
+}
+
 // CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
 // The payload is automatically chunked and each chunk is wrapped in a CourierEnvelope.
 // Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
@@ -734,6 +739,8 @@ type Response struct {
 	// descriptors the daemon is configured with.
 	GetDirectoryAuthoritiesReply *GetDirectoryAuthoritiesReply `cbor:"get_directory_authorities_reply"`
 
+	SetPreferredTransportsReply *SetPreferredTransportsReply `cbor:"set_preferred_transports_reply"`
+
 	// Copy Channel API:
 
 	// CreateCourierEnvelopesFromPayloadReply is sent when the client daemon successfully creates courier envelopes from a payload.
@@ -814,6 +821,8 @@ type Request struct {
 	// GetDirectoryAuthorities asks the daemon for the directory authority
 	// descriptors it is configured with.
 	GetDirectoryAuthorities *GetDirectoryAuthorities `cbor:"get_directory_authorities"`
+
+	SetPreferredTransports *SetPreferredTransports `cbor:"set_preferred_transports"`
 
 	// CreateCourierEnvelopesFromPayload is used to create multiple CourierEnvelopes from a payload of any size.
 	CreateCourierEnvelopesFromPayload *CreateCourierEnvelopesFromPayload `cbor:"create_courier_envelopes_from_payload"`

@@ -29,6 +29,7 @@ func IntoThinResponse(r *Response) *thin.Response {
 		GetMessageBoxIndexCounterReply:       r.GetMessageBoxIndexCounterReply,
 		GetPKIDocumentReply:                  r.GetPKIDocumentReply,
 		GetDirectoryAuthoritiesReply:         r.GetDirectoryAuthoritiesReply,
+		SetPreferredTransportsReply:          r.SetPreferredTransportsReply,
 
 		// Copy Channel API:
 		CreateCourierEnvelopesFromPayloadReply:        r.CreateCourierEnvelopesFromPayloadReply,
@@ -86,6 +87,8 @@ type Response struct {
 
 	GetDirectoryAuthoritiesReply *thin.GetDirectoryAuthoritiesReply
 
+	SetPreferredTransportsReply *thin.SetPreferredTransportsReply
+
 	// Copy Channel API:
 
 	CreateCourierEnvelopesFromPayloadReply *thin.CreateCourierEnvelopesFromPayloadReply
@@ -121,6 +124,7 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		GetMessageBoxIndexCounter:       r.GetMessageBoxIndexCounter,
 		GetPKIDocument:                  r.GetPKIDocument,
 		GetDirectoryAuthorities:         r.GetDirectoryAuthorities,
+		SetPreferredTransports:          r.SetPreferredTransports,
 
 		// Copy Channel API:
 		CreateCourierEnvelopesFromPayload:        r.CreateCourierEnvelopesFromPayload,
@@ -170,6 +174,8 @@ type Request struct {
 	GetPKIDocument *thin.GetPKIDocument
 
 	GetDirectoryAuthorities *thin.GetDirectoryAuthorities
+
+	SetPreferredTransports *thin.SetPreferredTransports
 
 	// Copy Channel API:
 

@@ -18,6 +18,7 @@
 package server
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -25,9 +26,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
-	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -63,6 +64,7 @@ type Server struct {
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
 	linkKey            kem.PrivateKey
+	quicKey            *common.StaticKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -268,6 +270,85 @@ func dirauthStaticAuthorityAddresses(cfg *config.Config) []string {
 	return addrs
 }
 
+func (s *Server) startListeners(listenAddresses []string) {
+	for _, v := range listenAddresses {
+		// parse the Address line as a URL
+		u, err := url.Parse(v)
+		if err == nil {
+			switch u.Scheme {
+			case "tcp":
+				l, err := net.Listen("tcp", u.Host)
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				s.listeners = append(s.listeners, l)
+				s.Add(1)
+				s.state.Go(func() {
+					s.listenWorker(l)
+				})
+			case "quic":
+				s.log.Noticef("Starting listener on: %q", v)
+				key, err := s.quicStaticKey()
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				ql, err := common.ListenWithEpochKeys(u.Host, s.identityPrivateKey, key, s.cfg.QUIC)
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				if warning := ql.UDPBuffers().Warning(); warning != "" {
+					s.log.Warningf("Listener %q: %s", v, warning)
+				}
+				s.listeners = append(s.listeners, ql)
+				s.Add(1)
+				s.state.Go(func() {
+					s.listenWorker(ql)
+				})
+			default:
+				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
+				continue
+			}
+		}
+	}
+}
+
+func (s *Server) quicStaticKey() (*common.StaticKey, error) {
+	if s.quicKey != nil {
+		return s.quicKey, nil
+	}
+	path := filepath.Join(s.cfg.Server.DataDir, "quic-tls.key")
+	pinned := s.ownQUICKeyHash()
+	load := common.LoadStaticKey
+	if len(pinned) > 0 {
+		load = common.ReadStaticKey
+	}
+	key, err := load(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("%s is missing but this authority's own entry pins QUICKeyHash %x; restore that file from backup, or replace QUICKeyHash for this authority in every config that lists it", path, pinned)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(pinned) > 0 && !bytes.Equal(key.Hash(), pinned) {
+		return nil, fmt.Errorf("%s has QUIC key hash %x but this authority's own entry pins QUICKeyHash %x; restore the matching file, or replace QUICKeyHash for this authority in every config that lists it", path, key.Hash(), pinned)
+	}
+	s.log.Noticef("QUIC key hash %x", key.Hash())
+	s.quicKey = key
+	return key, nil
+}
+
+func (s *Server) ownQUICKeyHash() []byte {
+	for _, a := range s.cfg.Authorities {
+		if a.IdentityPublicKey != nil && a.IdentityPublicKey.Equal(s.identityPublicKey) {
+			return a.QUICKeyHash
+		}
+	}
+	return nil
+}
+
 func (s *Server) listenWorker(l net.Listener) {
 	addr := l.Addr()
 	s.log.Noticef("Listening on: %v", addr)
@@ -315,12 +396,22 @@ func (s *Server) listenWorker(l net.Listener) {
 				conn.Close()
 				continue
 			}
-		} else {
-			s.connSem <- struct{}{}
+			s.state.Go(func() {
+				defer func() { <-s.connSem }()
+				defer token.Release()
+				s.handleConn(conn)
+			})
+			continue
 		}
 		s.state.Go(func() {
-			defer func() { <-s.connSem }()
 			defer token.Release()
+			select {
+			case s.connSem <- struct{}{}:
+			case <-s.state.HaltCh():
+				conn.Close()
+				return
+			}
+			defer func() { <-s.connSem }()
 			s.handleConn(conn)
 		})
 	}
@@ -601,7 +692,22 @@ func New(cfg *config.Config) (*Server, error) {
 	linkPubKeyHash := hash.Sum256(linkBlob)
 	s.log.Noticef("Authority link public key hash is: %x", linkPubKeyHash[:])
 
+	listenAddresses := s.cfg.Server.Addresses
+	if len(s.cfg.Server.BindAddresses) > 0 {
+		listenAddresses = s.cfg.Server.BindAddresses
+	}
+	listensOnQUIC := slices.ContainsFunc(listenAddresses, common.IsQUICAddress)
+
 	if s.cfg.Debug.GenerateOnly {
+		if listensOnQUIC {
+			key, err := s.quicStaticKey()
+			if err != nil {
+				return nil, err
+			}
+			if err := key.WriteHash(filepath.Join(s.cfg.Server.DataDir, "quic-tls.hash")); err != nil {
+				return nil, err
+			}
+		}
 		return nil, ErrGenerateOnly
 	}
 
@@ -650,6 +756,12 @@ func New(cfg *config.Config) (*Server, error) {
 	s.peerSet = connlimit.NewPeerSet()
 	s.peerSet.Rebuild(dirauthStaticAuthorityAddresses(s.cfg))
 
+	if listensOnQUIC {
+		if _, err := s.quicStaticKey(); err != nil {
+			return nil, err
+		}
+	}
+
 	// Start up the state worker.
 	if s.state, err = newState(s); err != nil {
 		return nil, err
@@ -660,47 +772,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Start up the listeners.
-	listenAddresses := s.cfg.Server.Addresses
-	if len(s.cfg.Server.BindAddresses) > 0 {
-		listenAddresses = s.cfg.Server.BindAddresses
-	}
-	for _, v := range listenAddresses {
-		// parse the Address line as a URL
-		u, err := url.Parse(v)
-		if err == nil {
-			switch u.Scheme {
-			case "tcp":
-				l, err := net.Listen("tcp", u.Host)
-				if err != nil {
-					s.log.Errorf("Failed to start listener '%v': %v", v, err)
-					continue
-				}
-				s.listeners = append(s.listeners, l)
-				s.Add(1)
-				s.state.Go(func() {
-					s.listenWorker(l)
-				})
-			case "quic":
-				l, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), common.Config())
-				if err != nil {
-					s.log.Errorf("Failed to start listener '%v': %v", v, err)
-					continue
-				}
-				// Wrap quic.Listener with common.QuicListener
-				// so it implements like net.Listener for a
-				// single QUIC Stream
-				ql := common.QuicListener{Listener: l}
-				s.listeners = append(s.listeners, &ql)
-				s.Add(1)
-				s.state.Go(func() {
-					s.listenWorker(&ql)
-				})
-			default:
-				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
-				continue
-			}
-		}
-	}
+	s.startListeners(listenAddresses)
 	if len(s.listeners) == 0 {
 		s.log.Errorf("Failed to start all listeners.")
 		return nil, fmt.Errorf("authority: failed to start all listeners")

@@ -19,6 +19,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -32,6 +33,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -219,6 +222,12 @@ func (k LinkPublicKey) MarshalText() ([]byte, error) {
 	return []byte(kempem.ToPublicPEMString(k.PublicKey)), nil
 }
 
+type QUICKeyHash []byte
+
+func (h QUICKeyHash) MarshalText() ([]byte, error) {
+	return []byte(hex.EncodeToString(h)), nil
+}
+
 // Authority is the authority configuration for a peer.
 type Authority struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
@@ -241,6 +250,17 @@ type Authority struct {
 	// BindAddresses are the IP addresses to bind to for incoming connections.
 	// If left empty, Addresses will be used.
 	BindAddresses []string
+
+	QUICKeyHash QUICKeyHash `toml:",omitempty"`
+}
+
+func EveryAuthorityHasAQUICKeyHash(authorities []*Authority) bool {
+	for _, a := range authorities {
+		if len(a.QUICKeyHash) == 0 {
+			return false
+		}
+	}
+	return len(authorities) > 0
 }
 
 // Node is an authority mix node or provider entry.
@@ -480,6 +500,8 @@ type Config struct {
 	Topology        *Topology
 
 	SphinxGeometry *geo.Geometry
+
+	QUIC *quicCommon.Options
 
 	hash [32]byte
 }

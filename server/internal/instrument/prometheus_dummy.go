@@ -4,6 +4,8 @@
 package instrument
 
 import (
+	"time"
+
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 )
@@ -104,3 +106,13 @@ func SelfCheckResults(opsPerSecSolo, opsPerSecSaturated float64, numCPU int) {}
 
 // SetNodeReady is a no-op when the noprometheus build tag is set.
 func SetNodeReady(ready bool, epoch uint64) {}
+
+func LinkHandshake(transport, direction string, d time.Duration) {}
+
+func LinkEstablished(transport, direction string) {}
+
+func LinkFailure(transport, direction, reason string) {}
+
+func QUICDial(result string) {}
+
+func QUICUDPBuffers(address string, receive, send int) {}

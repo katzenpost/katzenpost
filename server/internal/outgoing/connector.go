@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -47,6 +48,8 @@ type connector struct {
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
+
+	quicPinMismatches common.QUICPinMismatches
 }
 
 func (co *connector) Halt() {

@@ -230,6 +230,7 @@ func (c *connection) getDescriptor() error {
 			LinkKey:       linkkey,
 			Addresses:     addressesFromURLs(gateway.Addresses),
 			IsGatewayNode: true,
+			QUICKeyHash:   gateway.QUICKeyHash,
 		}
 		ok = true
 		return nil
@@ -304,7 +305,8 @@ func (c *connection) doConnect(dialCtx context.Context) {
 	)
 
 	dialFn := c.client.DialContextFn
-	if dialFn == nil {
+	proxied := dialFn != nil
+	if !proxied {
 		dialFn = defaultDialer.DialContext
 	}
 
@@ -336,16 +338,16 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		// Build the list of candidate addresses, in decreasing order of
 		// preference, by transport.
 		var dstAddrs []string
-		transports := c.client.cfg.PreferedTransports
-		if transports == nil {
-			transports = cpki.ClientTransports
-		}
-		for _, t := range transports {
-			if v, ok := c.descriptor.Addresses[t]; ok {
-				dstAddrs = append(dstAddrs, v...)
+		for _, t := range c.client.PreferredTransports() {
+			for _, addr := range c.descriptor.Addresses[t] {
+				if u, err := url.Parse(addr); proxied && err == nil && u.Scheme == cpki.TransportQUIC {
+					continue
+				}
+				dstAddrs = append(dstAddrs, addr)
 			}
 		}
-		if len(dstAddrs) == 0 {
+		gateway := c.client.cfg.QUIC.ForClient().PeerDialer(&c.client.quicPinMismatches, hash.Sum256(c.descriptor.IdentityKey), c.descriptor.QUICKeyHash, c.log, c.descriptor.Name)
+		if !gateway.AnyDialable(dstAddrs) {
 			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
 			c.descriptor = nil // Give up till the next PKI fetch.
 			connErr = newConnectError("no suitable addresses found")
@@ -353,6 +355,9 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		}
 
 		for _, addr := range dstAddrs {
+			if !gateway.Dialable(addr) {
+				continue
+			}
 			select {
 			case <-time.After(time.Duration(atomic.LoadInt64(&c.retryDelay))):
 				// Back off the reconnect delay.
@@ -374,7 +379,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				continue
 			}
 
-			conn, err := common.DialURL(u, dialCtx, dialFn)
+			conn, err := gateway.Dial(dialCtx, u, dialFn)
 			select {
 			case <-c.HaltCh():
 				if conn != nil {
@@ -391,7 +396,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 					continue
 				}
 			}
-			c.log.Debugf("TCP connection established.")
+			c.log.Debugf("%v connection established.", u.Scheme)
 			// Disable Nagle so the PQ Noise handshake's finalisation
 			// NoOp does not wait on a coalesce timer; harmless on
 			// non-TCP transports. Also enable TCP keepalive so the

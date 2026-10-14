@@ -17,6 +17,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
@@ -49,6 +50,12 @@ type Connector struct {
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
+
+	quicPinMismatches quicCommon.QUICPinMismatches
+}
+
+func (co *Connector) QUICPinMismatches() *quicCommon.QUICPinMismatches {
+	return &co.quicPinMismatches
 }
 
 // retryCommand holds a command that needs to be retried when connections become available

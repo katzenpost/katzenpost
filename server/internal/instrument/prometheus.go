@@ -6,11 +6,13 @@ package instrument
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/katzenpost/katzenpost/common/metrics"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 )
 
@@ -231,6 +233,69 @@ var (
 			Help: "The epoch whose consensus the node_ready gauge was last computed against.",
 		},
 	)
+	linkHandshakeDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "katzenpost_link_handshake_duration_seconds",
+			Help:    "Seconds to set up a link that completed its wire handshake, by transport (tcp, quic) and direction. Outgoing links count from the dial, so a quic link includes its TLS 1.3 handshake; incoming links count from accept, after a quic listener has finished TLS.",
+			Buckets: prometheus.ExponentialBuckets(0.001, 2, 14),
+		},
+		[]string{"transport", "direction"},
+	)
+	linksEstablished = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_links_established_total",
+			Help: "Links that completed the wire handshake, by transport (tcp, quic) and direction (incoming, outgoing).",
+		},
+		[]string{"transport", "direction"},
+	)
+	linkFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_link_failures_total",
+			Help: "Links that failed before carrying traffic, by transport, direction and reason: dial (the transport could not connect), pin_mismatch (a quic peer presented a key not among its published QUIC key hashes), handshake (the wire handshake failed).",
+		},
+		[]string{"transport", "direction", "reason"},
+	)
+	quicDials = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_quic_dials_total",
+			Help: "Outgoing quic dials that reached the peer, by result: pinned (the key matched a published hash) or mismatch (the key matched none). A peer that published no hash is not dialed over quic.",
+		},
+		[]string{"result"},
+	)
+	quicUDPReceiveBuffer = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_quic_udp_receive_buffer_bytes",
+			Help: "SO_RCVBUF of a quic listener's UDP socket after quic-go sized it, by listen address, as the kernel reports it (Linux reports twice the size granted). quic-go wants 7 MiB; less drops datagrams under load.",
+		},
+		[]string{"address"},
+	)
+	quicUDPSendBuffer = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_quic_udp_send_buffer_bytes",
+			Help: "SO_SNDBUF of a quic listener's UDP socket after quic-go sized it, by listen address, as the kernel reports it (Linux reports twice the size granted). quic-go wants 7 MiB.",
+		},
+		[]string{"address"},
+	)
+	udpReceiveBufferErrors = prometheus.NewCounterFunc(
+		prometheus.CounterOpts{
+			Name: "katzenpost_udp_receive_buffer_errors_total",
+			Help: "UDP RcvbufErrors from /proc/net/snmp: datagrams the kernel dropped because a socket's receive buffer was full. It counts every UDP socket in the network namespace, not only this process's. Linux only.",
+		},
+		func() float64 {
+			receive, _, _ := common.UDPBufferErrors()
+			return float64(receive)
+		},
+	)
+	udpSendBufferErrors = prometheus.NewCounterFunc(
+		prometheus.CounterOpts{
+			Name: "katzenpost_udp_send_buffer_errors_total",
+			Help: "UDP SndbufErrors from /proc/net/snmp: datagrams the kernel could not queue because a socket's send buffer was full. It counts every UDP socket in the network namespace, not only this process's. Linux only.",
+		},
+		func() float64 {
+			_, send, _ := common.UDPBufferErrors()
+			return float64(send)
+		},
+	)
 )
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP
@@ -270,6 +335,16 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(selfCheckSphinxCores)
 	prometheus.MustRegister(nodeReady)
 	prometheus.MustRegister(nodeCurrentEpoch)
+	prometheus.MustRegister(linkHandshakeDuration)
+	prometheus.MustRegister(linksEstablished)
+	prometheus.MustRegister(linkFailures)
+	prometheus.MustRegister(quicDials)
+	prometheus.MustRegister(quicUDPReceiveBuffer)
+	prometheus.MustRegister(quicUDPSendBuffer)
+	if _, _, ok := common.UDPBufferErrors(); ok {
+		prometheus.MustRegister(udpReceiveBufferErrors)
+		prometheus.MustRegister(udpSendBufferErrors)
+	}
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress == "" {
@@ -476,4 +551,55 @@ func SetNodeReady(ready bool, epoch uint64) {
 		nodeReady.Set(0)
 	}
 	nodeCurrentEpoch.Set(float64(epoch))
+}
+
+func LinkHandshake(transport, direction string, d time.Duration) {
+	linkHandshakeDuration.With(prometheus.Labels{"transport": transport, "direction": direction}).Observe(d.Seconds())
+}
+
+func LinkEstablished(transport, direction string) {
+	linksEstablished.With(prometheus.Labels{"transport": transport, "direction": direction}).Inc()
+}
+
+func LinkFailure(transport, direction, reason string) {
+	linkFailures.With(prometheus.Labels{"transport": transport, "direction": direction, "reason": reason}).Inc()
+}
+
+func QUICDial(result string) {
+	quicDials.With(prometheus.Labels{"result": result}).Inc()
+}
+
+func QUICUDPBuffers(address string, receive, send int) {
+	if receive > 0 {
+		quicUDPReceiveBuffer.With(prometheus.Labels{"address": address}).Set(float64(receive))
+	}
+	if send > 0 {
+		quicUDPSendBuffer.With(prometheus.Labels{"address": address}).Set(float64(send))
+	}
+}
+
+func LinkSample(name string, labels map[string]string) float64 {
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return 0
+	}
+	total := 0.0
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			matched := 0
+			for _, l := range m.GetLabel() {
+				if v, ok := labels[l.GetName()]; ok && v == l.GetValue() {
+					matched++
+				}
+			}
+			if matched != len(labels) {
+				continue
+			}
+			total += m.GetCounter().GetValue() + m.GetGauge().GetValue() + float64(m.GetHistogram().GetSampleCount())
+		}
+	}
+	return total
 }

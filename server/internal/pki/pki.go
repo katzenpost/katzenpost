@@ -39,12 +39,14 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
+	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/quic/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
@@ -103,6 +105,7 @@ type pki struct {
 
 	impl        cpki.MixNodeClient
 	descAddrMap map[string][]string
+	quicKeys    common.ListenerKeys
 
 	docs          map[uint64]*pkicache.Entry
 	rawDocs       map[uint64][]byte
@@ -716,6 +719,11 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		ContactInfo:     p.glue.Config().Server.ContactInfo,
 		SoftwareVersion: cpki.ResolveSoftwareVersion(p.glue.Config().Server.SoftwareVersion, kpcommon.Version()),
 	}
+	if len(p.descAddrMap[cpki.TransportQUIC]) > 0 {
+		if desc.QUICKeyHash, err = p.quicKeyHash(doPublishEpoch); err != nil {
+			return err
+		}
+	}
 
 	if p.glue.Config().Server.IsGatewayNode {
 		// Only set the layer if the node is a provider. Otherwise, nodes
@@ -835,6 +843,18 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	return err
+}
+
+func (p *pki) quicKeyHash(epoch uint64) ([]byte, error) {
+	hashes, err := p.quicKeys.Hashes(epoch)
+	if err != nil {
+		return nil, err
+	}
+	if !vConfig.EveryAuthorityHasAQUICKeyHash(p.glue.Config().PKI.Voting.Authorities) {
+		p.log.Noticef("Withholding QUICKeyHash for epoch %d: not every authority has a QUICKeyHash", epoch)
+		return nil, nil
+	}
+	return hashes, nil
 }
 
 func (p *pki) entryForEpoch(epoch uint64) *pkicache.Entry {
@@ -1154,6 +1174,7 @@ func pkiClientConfig(g glue.Glue, kemscheme kem.Scheme, pkiSignatureScheme sign.
 		DialTimeoutSec:      g.Config().Debug.ConnectTimeout / 1000,
 		HandshakeTimeoutSec: g.Config().Debug.HandshakeTimeout / 1000,
 		LocalAddresses:      g.Config().Server.Addresses,
+		QUIC:                g.Config().QUIC,
 
 		MaxConsensusSize:        g.Config().PKI.Voting.MaxConsensusSize,
 		MaxConsensusSizeSetting: "PKI.Voting.MaxConsensusSize",
@@ -1169,6 +1190,9 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
 		advertising:   true,
+	}
+	if keyed, ok := glue.(interface{ QUICKeys() common.ListenerKeys }); ok {
+		p.quicKeys = keyed.QUICKeys()
 	}
 
 	var err error

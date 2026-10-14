@@ -79,6 +79,196 @@ always the same as "the file fails to parse".
 - Every authority, node and client of one network must agree on the
   period; nothing about it is carried in the PKI document.
 
+## QUIC links (every component except the thin client)
+
+A TCP link carries PQ Noise directly on TCP, with no TLS. QUIC requires
+TLS 1.3, so a QUIC link is TLS 1.3 (a self-signed certificate pinned by
+its key hash: a mix's or replica's per-epoch keys through its
+descriptor, a gateway's one long-term key through its descriptor and
+`client.toml`, an authority's one long-term key through its peers'
+configs) carrying the
+same PQ Noise session. The new optional `[QUIC]` table tunes that outer layer
+in `authority.toml`, `katzenpost.toml`, `replica.toml`, `courier.toml`
+and `client.toml` (kpclientd, which uses it to dial its gateway and the
+authorities). Every key is unset by default, and each default is the
+recommended setting. A value that fails validation refuses the config.
+
+```toml
+[QUIC]
+  ALPN = "h3"
+  CurvePreferences = ["X25519MLKEM768", "X25519"]
+  AddressValidation = "always"
+  KeepAlivePeriod = "45s"
+  KeepAliveJitter = 0.25
+  PinMismatch = "fallback"
+  CloseLinger = "30s"
+```
+
+- **Added** `ALPN` (string, at most 255 bytes; default `"h3"`). The
+  TLS ALPN protocol a link offers. Both ends must offer the same value
+  or the handshake fails, so it is a per-network setting: every
+  authority, node, replica, courier and client of one network must
+  agree. The ALPN is visible to passive observers: QUIC Initial
+  packets are encrypted with keys anyone can derive from the packet
+  itself, so the ClientHello, ALPN included, is effectively plaintext
+  on the wire. The default `"h3"`, which earlier releases also
+  offered, makes those hellos name HTTP/3 like much other QUIC
+  traffic; a value of the operator's choosing such as `"pqnoise"`
+  marks every link of the network as katzenpost to anyone watching.
+  Neither value hides katzenpost from active probing: anyone who
+  connects completes TLS with a self-signed certificate and finds no
+  HTTP/3 behind it. A value other than `"h3"` also breaks QUIC links
+  to nodes of earlier releases, which offer `"h3"` (TCP links are
+  unaffected).
+- **Added** `CurvePreferences` (string array; default unset). The TLS
+  key exchange groups in order of preference, by Go's names: `X25519`,
+  `X25519MLKEM768`, `SecP256r1MLKEM768`, `SecP384r1MLKEM1024`,
+  `CurveP256`, `CurveP384`, `CurveP521`. An unknown or repeated name
+  refuses the config. Unset keeps crypto/tls's default groups,
+  currently the post-quantum hybrid `X25519MLKEM768` first, on both
+  dial and listen, and that is the recommended setting. A dialer and a
+  listener with no group in common fail the handshake.
+- **Added** `AddressValidation` (`"always"`, `"under-load"` or
+  `"off"`; default `"always"`). QUIC Retry, RFC 9000 section 8.1.2,
+  on listeners. `"always"` answers every new connection with a Retry,
+  so a peer proves it receives at its source address before the
+  listener keeps any handshake state; it costs one round trip per new
+  connection. `"under-load"` retries only while 128 or more handshakes
+  are in flight. `"off"` never retries.
+- **Added** `KeepAlivePeriod` (Go duration string; default `"45s"` on
+  authorities, nodes, replicas and couriers, `"20s"` in `client.toml`
+  so consumer NAT UDP mappings survive) and `KeepAliveJitter` (a
+  fraction in `[0, 1)`; default `0.25`). Each connection draws its
+  period once, uniformly within period x (1 +/- jitter), when it is
+  dialed or accepted. quic-go fixes the period for the life of a
+  connection, so the jitter varies between connections, not between
+  the keepalives of one connection. `"0s"` disables keepalives. quic-go
+  never waits longer than half of the idle timeout, which is 2 minutes
+  on every link, so any drawn period above 60 s acts as 60 s; the
+  defaults stay below it (45 s +/- 25% is 33.75 s to 56.25 s), so
+  their jitter takes effect. TCP keepalives are unchanged at 3 minutes.
+- **Added** `PinMismatch` (`"fallback"` or `"strict"`; default
+  `"fallback"`). What a dialer does when a QUIC peer presents a TLS key
+  that matches none of the hashes pinned for it (an authority's
+  `QUICKeyHash`, or the QUIC key hashes in a node's, gateway's or
+  replica's descriptor). `"fallback"` stops using QUIC to that peer
+  for the rest of the epoch and dials its TCP addresses, which PQ
+  Noise authenticates on its own; a peer with no TCP address is not
+  dialed again until the next epoch. `"strict"` dials that peer only
+  over pinned QUIC for the rest of the epoch, so the link stays down
+  until the key matches, and an authority's descriptor upload to it is
+  given up for the epoch. Neither ever dials QUIC unpinned. Either way
+  the dialer logs a warning naming the peer and the first 4 bytes of
+  the presented and expected hashes, and counts
+  `katzenpost_outgoing_dial_failures_total{reason="pin_mismatch"}`;
+  nodes also count `katzenpost_link_failures_total{reason="pin_mismatch"}`
+  and `katzenpost_quic_dials_total{result="mismatch"}`. Whether QUIC
+  is tried at all is still decided by the transport order, not by this
+  key: `InternalTransports` in `katzenpost.toml` for links between
+  nodes, `PreferedTransports` (or a thin client's
+  `SetPreferredTransports`) in `client.toml` for the gateway, where QUIC
+  is off unless it is listed, the fixed
+  order `tcp`, `tcp4`, `tcp6`, `quic`, `ws`, `onion` for replicas and
+  couriers dialing a replica, and an authority entry's `Addresses` with
+  its `QUICKeyHash` for authorities. `PinMismatch` only acts once a
+  pinned QUIC dial has failed its pin.
+- **Added** `QUICKeyHash` (64 hex digits; default unset) to every
+  authority entry: `[[Authorities]]` in `authority.toml`,
+  `[[PKI.Voting.Authorities]]` in `katzenpost.toml`, `replica.toml`
+  and `courier.toml`, and `[[VotingAuthority.Peers]]` in
+  `client.toml`. It is the SHA-256 of the authority's QUIC TLS public
+  key (its SubjectPublicKeyInfo). Each authority with a `quic://`
+  listen address keeps one long-term QUIC TLS key in
+  `DataDir/quic-tls.key`, generated on its first start with one, and
+  logs `QUIC key hash <hex>` at start; copy that value into the
+  entries for it, next to its `LinkPublicKey`. Once the authority's
+  own entry in its `authority.toml` carries a `QUICKeyHash`, an
+  authority with a QUIC listener refuses to start when that file is
+  missing or holds a key with another hash, instead of generating a
+  key no peer pins. A TCP-only authority neither reads nor creates it. A QUIC dial
+  to an authority is pinned to the hash from the first dial, and a
+  mismatch is handled as `PinMismatch` says. An entry without it is
+  never dialed over QUIC; TCP still is. genconfig writes it for every
+  authority of the current release on a QUIC network.
+- A gateway with a `quic://` listen address keeps one long-term QUIC
+  TLS key in `DataDir/quic-tls.key`, logs `QUIC key hash <hex>` at
+  start, and presents that key to every peer, nodes and clients alike.
+  Its descriptor carries that one hash every epoch, so nodes pin it
+  through the consensus as before; mixes, service nodes and replicas
+  keep rotating per-epoch keys. A TCP-only gateway neither reads nor
+  creates the file. Only `-g`,
+  `genkeypair --type quic` and genconfig create it: a gateway with a
+  QUIC listener refuses to start when the file is missing, naming it,
+  instead of generating a key no client pins. Restore it from backup,
+  or create a new one and replace `QUICKeyHash` for that gateway in
+  `PinnedGateways` in every `client.toml`.
+- Generating QUIC keys and pins out of band: run an authority with a
+  `quic://` listen address, or a gateway with one, with `-g`. Besides
+  the identity and link keys it creates `DataDir/quic-tls.key`, keeps
+  an existing one, and writes `DataDir/quic-tls.hash`: the
+  `QUICKeyHash` as 64 lowercase hex digits and a newline, exactly as
+  it goes in TOML. An authority whose own entry already pins a hash
+  still refuses to start, `-g` included, when that file is missing.
+  `genkeypair --type quic --out <name>` makes the same pair offline as
+  `<name>.quic-tls.key` (install it as `DataDir/quic-tls.key`) and
+  `<name>.quic-tls.hash`; it refuses to overwrite either file and
+  rejects `--scheme`, since the key is always Ed25519. Roll pins out in this order: put `QUICKeyHash` in every authority
+  entry of every config first, since nodes, gateways and replicas
+  publish their descriptor hashes only once every authority entry has
+  one; nodes then publish theirs on their own; finally add each
+  gateway's hash to `PinnedGateways` in `client.toml`.
+- **Added** `QUICKeyHash` (64 hex digits; default unset) to
+  `[[PinnedGateways.Gateways]]` in `client.toml`: the hash that
+  gateway logs as `QUIC key hash <hex>`. A client that opts in to QUIC
+  (see `PreferedTransports`) and has no consensus dials that gateway's
+  `quic://` address pinned to it; once it has a
+  consensus it pins the gateway's descriptor instead, which carries
+  the same hash. When `PreferedTransports` lists `quic`, a pinned
+  gateway with a `quic://` address and no `QUICKeyHash` refuses the
+  config, naming the gateway, so a missing pin never turns into a
+  silent TCP dial; without `quic` the entry is accepted and its
+  `quic://` address skipped, as every dialer skips an unpinned one, so
+  pins can be rolled out one gateway at a time. A mismatch is handled as `PinMismatch` says. TCP
+  is dialed after QUIC only when the QUIC dial fails (UDP filtered or
+  dropped, nothing listening, handshake timeout) and the gateway also
+  lists a TCP address. genconfig writes it for every gateway with a
+  `quic://` address.
+- A node, replica or gateway with a QUIC address publishes its
+  QUIC key hashes in its descriptor only when every authority
+  entry in its config has a `QUICKeyHash`: only authorities of this
+  release hold such a key, and only they accept the descriptor field.
+  No dialer ever dials QUIC unpinned: a peer whose descriptor carries
+  no QUIC key hash is dialed only at its other addresses, so a gateway
+  with only QUIC addresses and no hash is not reachable. On a QUIC
+  network genconfig gives each gateway a TCP address too, for clients
+  whose UDP fails, sets nodes' `InternalTransports` to `["quic"]` so
+  links between nodes stay QUIC, and writes `PreferedTransports =
+  ["quic", "tcp"]` into `client.toml`; on a TCP or mixed network the
+  client keeps the default, without QUIC.
+- **Added** `CloseLinger` (Go duration string; default `"30s"`).
+  Closing a QUIC link delivers what was written before the close.
+  quic-go v0.63 offers no signal that the peer has acknowledged a
+  stream, so the end that closes first keeps the connection until the
+  peer finishes its own stream, and the end that closes second keeps
+  it until the peer closes the connection. Either wait ends after at
+  most `CloseLinger`, after which any data the peer has not read is
+  dropped. Unset or `"0s"` means the default, so zero does not
+  disable it as it does `KeepAlivePeriod`; a negative value refuses
+  the config. Earlier revisions waited up to 2 minutes, the QUIC idle
+  timeout. A TCP link hands unsent data to the kernel as before.
+- Not configurable: each QUIC listener logs one warning at start when
+  its UDP socket buffers are below the 7 MiB quic-go asks for, naming
+  the sysctl to raise (`net.core.rmem_max` and `net.core.wmem_max` on
+  Linux). It never fails start. Where the buffer sizes cannot be read
+  (any platform other than Unix) there is no warning. Nodes export the
+  buffers they got, where they can be read, as
+  `katzenpost_quic_udp_receive_buffer_bytes` and
+  `katzenpost_quic_udp_send_buffer_bytes` (by listen address) and, on
+  Linux, the kernel's UDP `RcvbufErrors` and `SndbufErrors` as
+  `katzenpost_udp_receive_buffer_errors_total` and
+  `katzenpost_udp_send_buffer_errors_total`. Those two count every UDP
+  socket in the network namespace, not only the node's.
+
 ## Directory authority (`authority.toml`)
 
 Source: `authority/voting/server/config/config.go`.
@@ -200,6 +390,11 @@ Source: `server/config/config.go`.
   systemd `TimeoutStopSec` comfortably above 40 minutes, for example `45min`.
   This option and `PersistMixKeysOnShutdown` are mutually exclusive; enabling
   both is a configuration error.
+- **Added** `InternalTransports` (string array; default unset, which
+  dials `tcp4`, then `tcp6`, then `quic`). The order in which the node
+  dials the transports another node publishes. Entries must be among
+  `tcp4`, `tcp6` and `quic`, none repeated, and a set list must not be
+  empty; a transport left out is never dialed.
 
 ### `[PKI.Voting]`
 
@@ -428,6 +623,27 @@ The client TOML had the most substantial reshape, driven by the
   the `kpclientd_metrics` build tag is set; production builds without
   the tag treat the field as inert. Convention is `127.0.0.1` only;
   binding to a public address is not supported.
+- **Changed** `PreferedTransports`: kpclientd dials QUIC only when it
+  lists `quic`. Unset, the order is `tcp`, `tcp4`, `tcp6`, `ws`,
+  `onion`, so a client never dials a gateway or an authority over QUIC
+  unless it opts in, even when `client.toml` carries their QUIC key
+  hashes; earlier releases tried `quic` after the TCP transports. To
+  use QUIC put `quic` first, for example `["quic", "tcp"]`: the
+  gateway is then dialed over pinned QUIC and over TCP only when that
+  dial fails. Authorities are dialed over QUIC only when `quic` is in
+  `PreferedTransports` in the file; `SetPreferredTransports` changes
+  the gateway order alone.
+- A thin client can now replace the order at run time with the `SetPreferredTransports` request
+  (CBOR `set_preferred_transports` with a `transports` list, answered
+  by `set_preferred_transports_reply`). Names must be among `tcp`,
+  `tcp4`, `tcp6`, `quic`, `ws` and `onion`, none repeated, or the reply
+  carries `ThinClientErrorInvalidRequest` and nothing changes. The order
+  applies from the next connection to the gateway; the current one is
+  kept. An empty list restores `PreferedTransports`, and a restart
+  forgets the change. The order is daemon-wide: one kpclientd keeps one
+  gateway connection for every thin client attached to it, so a
+  request from any application changes the gateway transports of all
+  of them.
 
 ### `[Debug]`
 

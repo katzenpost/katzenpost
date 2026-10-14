@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	authconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -84,6 +85,18 @@ func postReplicaAcceptedAuthorities(impl interface{}, epoch uint64) []string {
 func (p *PKIWorker) PKIDocument() *cpki.Document {
 	epoch, _, _ := epochtime.Now()
 	return p.entryForEpoch(epoch)
+}
+
+func (p *PKIWorker) quicKeyHash(epoch uint64) ([]byte, error) {
+	hashes, err := p.server.quicKeys.Hashes(epoch)
+	if err != nil {
+		return nil, err
+	}
+	if !authconfig.EveryAuthorityHasAQUICKeyHash(p.server.cfg.PKI.Voting.Authorities) {
+		p.server.log.Noticef("Withholding QUICKeyHash for epoch %d: not every authority has a QUICKeyHash", epoch)
+		return nil, nil
+	}
+	return hashes, nil
 }
 
 // entryForEpoch returns the PKI document for the specified epoch
@@ -432,6 +445,11 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		EnvelopeKeys:    envelopeKeys,
 		ContactInfo:     p.server.cfg.ContactInfo,
 		SoftwareVersion: cpki.ResolveSoftwareVersion(p.server.cfg.SoftwareVersion, kpcommon.Version()),
+	}
+	if len(p.descAddrMap[cpki.TransportQUIC]) > 0 {
+		if desc.QUICKeyHash, err = p.quicKeyHash(doPublishEpoch); err != nil {
+			return err
+		}
 	}
 
 	if err := cpki.IsReplicaDescriptorWellFormed(desc, doPublishEpoch); err != nil {

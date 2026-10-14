@@ -108,6 +108,8 @@ type Config struct {
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
 
+	QUIC *common.Options
+
 	// Geo is the geometry used for the Sphinx packet construction.
 	Geo *geo.Geometry
 
@@ -246,8 +248,9 @@ func (c *connection) Close() {
 }
 
 type connector struct {
-	cfg *Config
-	log *logging.Logger
+	cfg           *Config
+	log           *logging.Logger
+	pinMismatches common.QUICPinMismatches
 }
 
 func newConnector(cfg *Config) *connector {
@@ -290,7 +293,12 @@ func (p *connector) initSession(
 ) (*connection, error) {
 	usable := *peer
 	usable.Addresses = retry.FilterByLocalAddresses(p.cfg.LocalAddresses, peer.Addresses)
+	var identity [pki.PublicKeyHashSize]byte
+	if peer.IdentityPublicKey != nil {
+		identity = hash.Sum256From(peer.IdentityPublicKey)
+	}
 	peer = &usable
+	pinned := p.cfg.QUIC.PeerDialer(&p.pinMismatches, identity, peer.QUICKeyHash, p.log, peer.Identifier)
 
 	var conn net.Conn
 	var err error
@@ -311,7 +319,8 @@ func (p *connector) initSession(
 	p.log.Debugf("Client timeouts: dial=%v, handshake=%v, response=%v", dialTimeout, handshakeTimeout, responseTimeout)
 
 	dialFn := p.cfg.DialContextFn
-	if dialFn == nil {
+	proxied := dialFn != nil
+	if !proxied {
 		dialer := &net.Dialer{Timeout: dialTimeout}
 		dialFn = dialer.DialContext
 	}
@@ -326,11 +335,20 @@ func (p *connector) initSession(
 			lastErr = fmt.Errorf("%s: invalid URL %s: %v", peerInfo(), peer.Addresses[idx], err)
 			continue
 		}
+		if proxied && u.Scheme == pki.TransportQUIC {
+			lastErr = fmt.Errorf("%s: refusing to dial %s outside the configured dialer", peerInfo(), peer.Addresses[idx])
+			continue
+		}
 
-		ictx, cancelFn := context.WithTimeout(ctx, dialTimeout)
-		conn, err = common.DialURL(u, ictx, dialFn)
+		if !pinned.Dialable(peer.Addresses[idx]) {
+			continue
+		}
+
+		ictx, cancelFn := common.ConnectContext(ctx, dialTimeout)
+		conn, err = pinned.Dial(ictx, u, dialFn)
 		cancelFn()
 		if err == nil {
+			p.log.Debugf("%s: %s connection established.", peerInfo(), u.Scheme)
 			// Disable Nagle so handshake/finalisation messages do not
 			// wait on a coalesce timer; harmless on non-TCP transports.
 			if tcpConn, ok := conn.(*net.TCPConn); ok {
@@ -340,6 +358,10 @@ func (p *connector) initSession(
 			break
 		}
 
+		if errors.Is(err, common.ErrQUICKeyMismatch) {
+			lastErr = fmt.Errorf("%s: failed to connect to %s: %w", peerInfo(), peer.Addresses[idx], err)
+			continue
+		}
 		lastErr = fmt.Errorf("%s: failed to connect to %s: %v", peerInfo(), peer.Addresses[idx], err)
 		if i == len(peer.Addresses)-1 {
 			return nil, fmt.Errorf("%s: all connection attempts failed: %v", peerInfo(), lastErr)
@@ -496,7 +518,7 @@ func (p *connector) initSessionWithRetry(
 		}
 
 		lastErr = err
-		if !retry.IsTransientError(err) {
+		if ctx.Err() != nil || !retry.IsTransientError(err) {
 			return nil, err
 		}
 
@@ -559,10 +581,15 @@ type postPeerState struct {
 	peer          *config.Authority
 	accepted      bool
 	conflict      bool
+	pinMismatch   bool
 	lastErr       error
 	lastKind      postAttemptKind
 	attempts      int
 	nextAttemptAt time.Time
+}
+
+func (s *postPeerState) settled() bool {
+	return s.accepted || s.conflict || s.pinMismatch
 }
 
 type postSummary struct {
@@ -804,10 +831,7 @@ func peersNeedingCompletion(states map[string]*postPeerState) []*config.Authorit
 	peers := []*config.Authority{}
 
 	for _, state := range states {
-		if state.accepted {
-			continue
-		}
-		if state.conflict {
+		if state.settled() {
 			continue
 		}
 		peers = append(peers, state.peer)
@@ -820,10 +844,7 @@ func postStatesReadyForCompletion(states map[string]*postPeerState, now time.Tim
 	ready := []*postPeerState{}
 
 	for _, state := range states {
-		if state.accepted {
-			continue
-		}
-		if state.conflict {
+		if state.settled() {
 			continue
 		}
 		if state.nextAttemptAt.IsZero() || !state.nextAttemptAt.After(now) {
@@ -838,10 +859,7 @@ func nextPostAttemptAt(states map[string]*postPeerState) (time.Time, bool) {
 	var next time.Time
 
 	for _, state := range states {
-		if state.accepted {
-			continue
-		}
-		if state.conflict {
+		if state.settled() {
 			continue
 		}
 		if state.nextAttemptAt.IsZero() {
@@ -1058,6 +1076,10 @@ func (p *connector) postDescriptorWithCompletionRounds(
 				state.lastErr = result.err
 				state.lastKind = result.kind
 				state.attempts++
+				if p.cfg.QUIC.StrictPinMismatch() && errors.Is(result.err, common.ErrQUICKeyMismatch) {
+					state.pinMismatch = true
+					break
+				}
 
 				delay := descriptorPostRetryDelay(p.cfg, state.attempts)
 				state.nextAttemptAt = time.Now().Add(delay)

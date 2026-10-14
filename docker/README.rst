@@ -100,6 +100,11 @@ matter, and any other value stops make at once::
 A network keeps the transport it was generated with: ``start`` and ``wait``
 refuse a different ``TRANSPORT`` until ``make clean-local``.
 
+With ``QUIC`` or ``TCP+QUIC`` and every authority current, each authority
+votes the hashes of its per-epoch QUIC keys and the consensus carries them.
+A dial to an authority is unpinned until the dialer holds such a consensus and
+pinned after; ``make check-running-transport`` counts both kinds of dial.
+
 3. Distros, networks, and parallelism
 
 The default distro is ``alpine``. Any number of network deployments can coexist
