@@ -42,9 +42,8 @@ import (
 const (
 	InboundPacketsChannelSize = 1000
 	maxPluginParamsSize       = 4096
+	responseEnvelopeLength    = 4096
 )
-
-const responseEnvelopeLength = 4096
 
 // PluginChans maps from Recipient ID to channel.
 type PluginChans = map[[constants.RecipientIDLength]byte]chan interface{}
