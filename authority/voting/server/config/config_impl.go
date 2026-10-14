@@ -154,17 +154,25 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	a.Addresses = addresses
 
 	if raw, present := data["QUICKeyHash"]; present {
-		encoded, ok := raw.(string)
-		if !ok {
-			return errors.New("Authority.QUICKeyHash must be a hex string")
-		}
-		quicKeyHash, err := hex.DecodeString(encoded)
-		if err != nil || len(quicKeyHash) != pki.QUICKeyHashSize {
-			return fmt.Errorf("Authority.QUICKeyHash must be %d hex-encoded bytes", pki.QUICKeyHashSize)
+		quicKeyHash, err := DecodeQUICKeyHash(raw)
+		if err != nil {
+			return fmt.Errorf("Authority.%w", err)
 		}
 		a.QUICKeyHash = quicKeyHash
 	}
 	return nil
+}
+
+func DecodeQUICKeyHash(raw interface{}) (QUICKeyHash, error) {
+	encoded, ok := raw.(string)
+	if !ok {
+		return nil, errors.New("QUICKeyHash must be a hex string")
+	}
+	quicKeyHash, err := hex.DecodeString(encoded)
+	if err != nil || len(quicKeyHash) != pki.QUICKeyHashSize {
+		return nil, fmt.Errorf("QUICKeyHash must be %d hex-encoded bytes", pki.QUICKeyHashSize)
+	}
+	return quicKeyHash, nil
 }
 
 // Validate parses and checks the Server configuration.

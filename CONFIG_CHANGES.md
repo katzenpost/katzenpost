@@ -198,6 +198,18 @@ recommended setting. A value that fails validation refuses the config.
   TCP-only gateway neither reads nor creates the file. Losing the file
   gives the gateway a new key: clients that pin the old hash then see
   a pin mismatch until their `client.toml` is updated.
+- **Added** `QUICKeyHash` (64 hex digits; default unset) to
+  `[[PinnedGateways.Gateways]]` in `client.toml`: the hash that
+  gateway logs as `QUIC key hash <hex>`. A client with no consensus
+  dials that gateway's `quic://` address pinned to it; once it has a
+  consensus it pins the gateway's descriptor instead, which carries
+  the same hash. A pinned gateway with a `quic://` address and no
+  `QUICKeyHash` refuses the config, so a missing pin never turns into
+  a silent TCP dial. A mismatch is handled as `PinMismatch` says. TCP
+  is dialed after QUIC only when the QUIC dial fails (UDP filtered or
+  dropped, nothing listening, handshake timeout) and the gateway also
+  lists a TCP address. genconfig writes it for every gateway with a
+  `quic://` address.
 - A node, replica or gateway with a QUIC address publishes its
   QUIC key hashes in its descriptor only when every authority
   entry in its config has a `QUICKeyHash`: only authorities of this

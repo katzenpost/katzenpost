@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 
@@ -19,6 +21,7 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -115,6 +118,9 @@ func (c *Config) FixupAndValidate() error {
 		for _, gw := range c.PinnedGateways.Gateways {
 			if err := utils.RejectDNSAddrs(gw.Addresses, c.AllowHostnameAddresses); err != nil {
 				return fmt.Errorf("config: PinnedGateway %q: %w", gw.Name, err)
+			}
+			if len(gw.QUICKeyHash) == 0 && slices.ContainsFunc(gw.Addresses, func(addr string) bool { return strings.HasPrefix(addr, "quic://") }) {
+				return fmt.Errorf("config: PinnedGateway %q has a quic:// address but no QUICKeyHash; add the QUIC key hash its gateway logs at start, or remove the quic:// address", gw.Name)
 			}
 		}
 	}
@@ -229,6 +235,11 @@ func (p *Gateway) UnmarshalTOML(v interface{}) error {
 		return err
 	}
 	p.Addresses = addresses
+	if raw, present := data["QUICKeyHash"]; present {
+		if p.QUICKeyHash, err = vServerConfig.DecodeQUICKeyHash(raw); err != nil {
+			return fmt.Errorf("config: Gateway %w", err)
+		}
+	}
 	return nil
 }
 

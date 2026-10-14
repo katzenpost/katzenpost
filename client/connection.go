@@ -230,6 +230,7 @@ func (c *connection) getDescriptor() error {
 			LinkKey:       linkkey,
 			Addresses:     addressesFromURLs(gateway.Addresses),
 			IsGatewayNode: true,
+			QUICKeyHash:   gateway.QUICKeyHash,
 		}
 		ok = true
 		return nil

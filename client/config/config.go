@@ -164,6 +164,8 @@ type Gateway struct {
 	// Addresses are the URLs specifying the endpoints that can be used to reach the node.
 	// Valid schemes are tcp:// and quic:// for TCP and quic (UDP)
 	Addresses []string
+
+	QUICKeyHash vServerConfig.QUICKeyHash `toml:",omitempty"`
 }
 
 type Gateways struct {
