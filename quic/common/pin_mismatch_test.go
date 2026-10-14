@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/op/go-logging.v1"
 )
 
 func TestQUICPinMismatchesForgetAMismatchAtTheNextEpoch(t *testing.T) {
@@ -37,7 +38,7 @@ func TestPeerDialerDialable(t *testing.T) {
 		{&Options{PinMismatch: PinMismatchStrict}, false, true},
 	} {
 		var mismatches QUICPinMismatches
-		d := c.opts.PeerDialer(&mismatches, peer, hashes, nil, "peer")
+		d := c.opts.PeerDialer(&mismatches, peer, hashes, logging.MustGetLogger("test"), "peer")
 		require.True(t, d.Dialable("tcp://192.0.2.1:1"))
 		require.True(t, d.Dialable("quic://192.0.2.1:2"))
 		mismatches.Mark(peer, d.epoch)
@@ -55,4 +56,14 @@ func TestQUICPinMismatchesIgnoreAMarkForAnOlderEpoch(t *testing.T) {
 	pins.Mark(q, 5)
 	require.True(t, pins.Has(p, 6), "a mark for an older epoch wiped the current epoch's mismatches")
 	require.False(t, pins.Has(q, 5))
+}
+
+func TestPeerDialerSkipsQUICWithoutAPinnedHash(t *testing.T) {
+	var peer [sha256.Size]byte
+	var mismatches QUICPinMismatches
+	for _, opts := range []*Options{nil, {PinMismatch: PinMismatchStrict}} {
+		d := opts.PeerDialer(&mismatches, peer, nil, logging.MustGetLogger("test"), "peer")
+		require.True(t, d.Dialable("tcp://192.0.2.1:1"))
+		require.False(t, d.Dialable("quic://192.0.2.1:2"), "a peer with no QUIC key hash was dialable over unpinned quic")
+	}
 }

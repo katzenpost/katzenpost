@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"testing"
@@ -90,6 +91,7 @@ func newGatewayTestConnection(t *testing.T, upstream *config.UpstreamProxy) (*co
 		LinkKey:       []byte("linkkey"),
 		Addresses:     map[string][]string{cpki.TransportQUIC: {"quic://" + udp.LocalAddr().String()}},
 		IsGatewayNode: true,
+		QUICKeyHash:   bytes.Repeat([]byte{2}, cpki.QUICKeyHashSize),
 	}
 	conn.pkiEpoch = 42
 	return conn, udp
@@ -121,4 +123,11 @@ func TestConnectWithProxyNeverDialsQUIC(t *testing.T) {
 func TestConnectWithoutProxyDialsQUIC(t *testing.T) {
 	_, udp := newQUICGatewayConnection(t, &config.UpstreamProxy{})
 	require.True(t, receivesUDP(udp, 5*time.Second))
+}
+
+func TestConnectNeverDialsAnUnpinnedQUICGateway(t *testing.T) {
+	conn, udp := newGatewayTestConnection(t, &config.UpstreamProxy{})
+	conn.descriptor.QUICKeyHash = nil
+	startConnect(t, conn)
+	require.False(t, receivesUDP(udp, 2*time.Second), "a gateway that published no QUIC key hash was dialed over unpinned quic")
 }

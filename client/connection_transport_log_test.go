@@ -43,6 +43,8 @@ func TestConnectLogsItsTransport(t *testing.T) {
 	conn, _ := newGatewayTestConnection(t, &config.UpstreamProxy{})
 	conn.log = backend.GetLogger("client/conn")
 	conn.descriptor.Addresses = map[string][]string{cpki.TransportQUIC: {"quic://" + l.Addr().String()}}
+	conn.descriptor.QUICKeyHash, err = keys.Hashes(common.CurrentEpoch())
+	require.NoError(t, err)
 	startConnect(t, conn)
 
 	var logged string
