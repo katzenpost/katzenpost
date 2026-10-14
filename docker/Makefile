@@ -522,7 +522,7 @@ check-running-transport:
 	if grep -rqs -e 'does not match its published hash' -e 'Failed to start listener' --include='*.log' .; then \
 		echo "a node failed to start a listener or refused a peer's QUIC key"; fail=1; \
 	fi; \
-	links() { grep -rahoE --include='*.log' --exclude-dir=client "(^| )$$1 connection established\." . | wc -l; }; \
+	links() { grep -rahoE --include='*.log' "(^| )$$1 connection established\." . | wc -l; }; \
 	ltcp=$$(( $$(links tcp) + $$(links tcp4) + $$(links tcp6) )); lquic=$$(links quic); \
 	case $(genconfig_transport) in \
 	tcp) [ $$lquic -eq 0 ] && [ $$ltcp -gt 0 ] ;; \

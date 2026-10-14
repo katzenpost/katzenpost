@@ -188,6 +188,10 @@ func (s *Katzenpost) kpclientdMetricsPort() uint16 {
 	return s.BasePort + kpclientdMetricsPortOffset
 }
 
+func isQUICAddress(addr string) bool {
+	return strings.HasPrefix(addr, "quic://")
+}
+
 func (s *Katzenpost) peerAddrs(identifier string, port uint16, keepTCP, isGateway bool) []string {
 	tcp := fmt.Sprintf("tcp://%s:%d", identifier, port)
 	useQUIC := s.Transport == "quic" || (s.Transport == "alternate" && s.peerCount%2 == 1)
@@ -549,13 +553,28 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 		idPubKey := CfgIdKey(s.NodeConfigs[i], s.OutDir)
 		linkPubKey := CfgLinkKey(s.NodeConfigs[i], s.OutDir, cfg.WireKEMScheme)
 
+		name := s.NodeConfigs[i].Server.Identifier
+		addresses := s.NodeConfigs[i].Server.Addresses
+		var quicKeyHash []byte
+		if slices.ContainsFunc(addresses, isQUICAddress) {
+			if !s.isCurrent(name) {
+				addresses = slices.DeleteFunc(slices.Clone(addresses), isQUICAddress)
+			} else {
+				quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, name, QUICKeyFile))
+				if err != nil {
+					return err
+				}
+				quicKeyHash = quicKey.Hash()
+			}
+		}
 		gateway := &cConfig.Gateway{
 			PKISignatureScheme: s.PkiSignatureScheme.Name(),
 			WireKEMScheme:      s.WireKEMScheme,
-			Name:               s.NodeConfigs[i].Server.Identifier,
+			Name:               name,
 			IdentityKey:        idPubKey,
 			LinkKey:            cConfig.LinkPublicKey{PublicKey: linkPubKey},
-			Addresses:          s.NodeConfigs[i].Server.Addresses,
+			Addresses:          addresses,
+			QUICKeyHash:        quicKeyHash,
 		}
 		gateways = append(gateways, gateway)
 	}
@@ -564,6 +583,9 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 	}
 	cfg.PinnedGateways = &cConfig.Gateways{
 		Gateways: gateways,
+	}
+	if s.Transport == "quic" {
+		cfg.PreferedTransports = []string{cpki.TransportQUIC, cpki.TransportTCP}
 	}
 	err = SaveCfg(cfg, s.OutDir)
 	if err != nil {
