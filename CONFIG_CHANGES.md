@@ -206,7 +206,10 @@ recommended setting. A value that fails validation refuses the config.
   `QUICKeyHash` as 64 lowercase hex digits and a newline, exactly as
   it goes in TOML. An authority whose own entry already pins a hash
   still refuses to start, `-g` included, when that file is missing.
-  Roll pins out in this order: put `QUICKeyHash` in every authority
+  `genkeypair --type quic --out <name>` makes the same pair offline as
+  `<name>.quic-tls.key` (install it as `DataDir/quic-tls.key`) and
+  `<name>.quic-tls.hash`; it refuses to overwrite either file and
+  rejects `--scheme`, since the key is always Ed25519. Roll pins out in this order: put `QUICKeyHash` in every authority
   entry of every config first, since nodes, gateways and replicas
   publish their descriptor hashes only once every authority entry has
   one; nodes then publish theirs on their own; finally add each

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/utils"
+	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 const (
@@ -110,6 +112,23 @@ func generateSignKeypair(schemeName, outName string) {
 	}
 }
 
+func generateQUICKey(outName string) error {
+	keyout := fmt.Sprintf("%s.quic-tls.key", outName)
+	hashout := fmt.Sprintf("%s.quic-tls.hash", outName)
+
+	checkKeyFilesExist(keyout, hashout)
+
+	key, err := quicCommon.LoadStaticKey(keyout)
+	if err != nil {
+		return err
+	}
+	if err := key.WriteHash(hashout); err != nil {
+		return err
+	}
+	fmt.Printf("QUIC key hash %x\n", key.Hash())
+	return nil
+}
+
 // Config holds the command line configuration
 type Config struct {
 	KeyType    string
@@ -132,6 +151,9 @@ Supported key types:
 • NIKE: Non-Interactive Key Exchange keys for Sphinx packet encryption
 • KEM: Key Encapsulation Mechanism keys for post-quantum cryptography
 • Sign: Digital signature keys for authentication and integrity
+- QUIC: the long-term QUIC TLS key of an authority or gateway, written as
+  <out>.quic-tls.key, with its pin, the hex QUICKeyHash for the TOML
+  configs that list it, in <out>.quic-tls.hash; --scheme does not apply
 
 The tool generates both private and public key files in PEM format, which can
 be used by Katzenpost servers, clients, and other network components.`,
@@ -144,19 +166,26 @@ be used by Katzenpost servers, clients, and other network components.`,
   # Generate Ed25519 signature key pair
   genkeypair --type sign --scheme ed25519 --out server_sign
 
+  # Generate an authority's or gateway's long-term QUIC key and its pin;
+  # install the key as DataDir/quic-tls.key
+  genkeypair --type quic --out gateway1
+
   # Generate key pair with short flags
   genkeypair -t kem -s kyber1024 -o authority_kem
 
   # Generate default key pair (X25519 NIKE)
   genkeypair --out my_keys`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cfg.KeyType == "quic" && cmd.Flags().Changed("scheme") {
+				return errors.New("--scheme does not apply to --type quic, whose key is always Ed25519")
+			}
 			return runGenKeypair(cfg)
 		},
 	}
 
 	// Key generation flags
 	cmd.Flags().StringVarP(&cfg.KeyType, "type", "t", "kem",
-		"cryptographic key type (nike, kem, sign)")
+		"cryptographic key type (nike, kem, sign, quic)")
 	cmd.Flags().StringVarP(&cfg.SchemeName, "scheme", "s", "x25519",
 		"cryptographic scheme name")
 	cmd.Flags().StringVarP(&cfg.OutName, "out", "o", "out",
@@ -181,8 +210,10 @@ func runGenKeypair(cfg Config) error {
 		generateNikeKeypair(cfg.SchemeName, cfg.OutName)
 	case "sign":
 		generateSignKeypair(cfg.SchemeName, cfg.OutName)
+	case "quic":
+		return generateQUICKey(cfg.OutName)
 	default:
-		return fmt.Errorf("key type must be kem, nike or sign, got: %s", cfg.KeyType)
+		return fmt.Errorf("key type must be kem, nike, sign or quic, got: %s", cfg.KeyType)
 	}
 	return nil
 }
