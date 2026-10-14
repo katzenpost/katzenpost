@@ -17,7 +17,7 @@ require (
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20 v0.0.1
 	github.com/katzenpost/chacha20poly1305 v0.0.1
-	github.com/katzenpost/hpqc v0.0.91
+	github.com/katzenpost/hpqc v0.0.93
 	github.com/katzenpost/nyquist v0.0.13
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
 	github.com/leanovate/gopter v0.2.11
@@ -39,7 +39,7 @@ require (
 )
 
 require (
-	codeberg.org/vula/highctidh v1.0.2025051200 // indirect
+	codeberg.org/vula/highctidh v1.0.2026101300 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e // indirect
 	filippo.io/mlkem768 v0.0.0-20260214141301-2e7bebc7d88d // indirect
