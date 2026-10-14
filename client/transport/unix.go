@@ -4,7 +4,7 @@
 package transport
 
 import (
-	"errors"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 // UnixListenConfig configures a unix-domain-socket listener.
@@ -20,13 +20,20 @@ type UnixListenConfig struct {
 }
 
 func (c *UnixListenConfig) Validate() error {
-	for _, a := range append([]string{c.Address}, c.Addresses...) {
-		// "" or "@" would autobind a random abstract socket.
-		if a == "" || a == "@" {
-			return errors.New("transport: empty unix socket address")
+	_, err := c.addresses()
+	return err
+}
+
+func (c *UnixListenConfig) addresses() ([]string, error) {
+	addresses := append([]string{c.Address}, c.Addresses...)
+	for i, a := range addresses {
+		expanded, err := utils.ExpandUnixSocketPath(a)
+		if err != nil {
+			return nil, err
 		}
+		addresses[i] = expanded
 	}
-	return nil
+	return addresses, nil
 }
 
 // Listen creates a unix-domain-socket listener bound to c.Address.
