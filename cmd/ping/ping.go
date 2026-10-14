@@ -29,6 +29,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/fxamacker/cbor/v2"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
@@ -110,7 +111,7 @@ func sendPing(session *thin.ThinClient, service string, serviceDesc *common.Serv
 
 	payloadOK, replyPayload := replyDelivered(service, res.Payload, pingPayload)
 	if service != echoService {
-		o.reply = replyPayload
+		o.reply = res.Payload
 	}
 	if !payloadOK && printDiff {
 		fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
@@ -121,6 +122,23 @@ func sendPing(session *thin.ThinClient, service string, serviceDesc *common.Serv
 }
 
 const echoService = "echo"
+
+type firstReply struct {
+	once  sync.Once
+	reply []byte
+}
+
+func (f *firstReply) keep(reply []byte) {
+	if reply != nil {
+		f.once.Do(func() { f.reply = reply })
+	}
+}
+
+func (f *firstReply) print(w, notices io.Writer, log *logging.Logger, service string) {
+	if f.reply != nil {
+		fmt.Fprintf(w, "%s replied: %q\n", service, mixclient.PrintableReply(f.reply, notices, log))
+	}
+}
 
 func replyDelivered(service string, reply, sent []byte) (bool, []byte) {
 	if service != echoService {
@@ -166,8 +184,7 @@ func sendPings(session *thin.ThinClient, service string, services []*common.Serv
 
 	var tally counts
 	attrib := new(attribution)
-	var firstReply sync.Once
-	var reply []byte
+	first := new(firstReply)
 
 	wg := new(sync.WaitGroup)
 	sem := make(chan struct{}, concurrency)
@@ -186,9 +203,7 @@ func sendPings(session *thin.ThinClient, service string, services []*common.Serv
 		go func() {
 			o := sendPing(session, service, desc, timeout, slop, printDiff)
 			attrib.record(o)
-			if o.reply != nil {
-				firstReply.Do(func() { reply = o.reply })
-			}
+			first.keep(o.reply)
 			atomic.AddUint64(&tally[o.cat], 1)
 			if o.ok {
 				fmt.Printf("%s", successStyle.Render("!"))
@@ -202,9 +217,7 @@ func sendPings(session *thin.ThinClient, service string, services []*common.Serv
 
 	wg.Wait()
 	fmt.Printf("\n")
-	if reply != nil {
-		fmt.Printf("%s replied: %q\n", service, reply)
-	}
+	first.print(os.Stdout, os.Stderr, session.GetLogger("ping"), service)
 
 	passed := tally[catDelivered]
 	percent := (float64(passed) * float64(100)) / float64(count)
