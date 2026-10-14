@@ -110,7 +110,7 @@ func sendPing(session *thin.ThinClient, service string, serviceDesc *common.Serv
 
 	payloadOK, replyPayload := replyDelivered(service, res.Payload, pingPayload)
 	if service != echoService {
-		fmt.Printf("\n%s replied: %q\n", service, replyPayload)
+		o.reply = replyPayload
 	}
 	if !payloadOK && printDiff {
 		fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
@@ -166,6 +166,8 @@ func sendPings(session *thin.ThinClient, service string, services []*common.Serv
 
 	var tally counts
 	attrib := new(attribution)
+	var firstReply sync.Once
+	var reply []byte
 
 	wg := new(sync.WaitGroup)
 	sem := make(chan struct{}, concurrency)
@@ -184,6 +186,9 @@ func sendPings(session *thin.ThinClient, service string, services []*common.Serv
 		go func() {
 			o := sendPing(session, service, desc, timeout, slop, printDiff)
 			attrib.record(o)
+			if o.reply != nil {
+				firstReply.Do(func() { reply = o.reply })
+			}
 			atomic.AddUint64(&tally[o.cat], 1)
 			if o.ok {
 				fmt.Printf("%s", successStyle.Render("!"))
@@ -197,6 +202,9 @@ func sendPings(session *thin.ThinClient, service string, services []*common.Serv
 
 	wg.Wait()
 	fmt.Printf("\n")
+	if reply != nil {
+		fmt.Printf("%s replied: %q\n", service, reply)
+	}
 
 	passed := tally[catDelivered]
 	percent := (float64(passed) * float64(100)) / float64(count)
