@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -191,4 +192,32 @@ func TestProxyFetchHasDeadline(t *testing.T) {
 	require.NoError(t, err)
 	require.Positive(t, p.client.Timeout)
 	require.Positive(t, p.client.Transport.(*http.Transport).ResponseHeaderTimeout)
+}
+
+func TestProxyLogKeepsNoRequestContent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	levels := map[string]string{"default level": defaultFlag(t, "log_level"), "DEBUG": "DEBUG"}
+	for name, level := range levels {
+		for _, reachable := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s reachable=%v", name, reachable), func(t *testing.T) {
+				f := filepath.Join(t.TempDir(), "proxy.log")
+				p, _, err := proxyFor(t, "*", f, level)
+				require.NoError(t, err)
+				if reachable {
+					dialAnything(p)
+				}
+				req := &cborplugin.Request{ID: 1, Payload: []byte("GET " + srv.URL + "/secret-page HTTP/1.1\r\nHost: x\r\nCookie: sid=s3cr3t\r\n\r\n")}
+				err = p.OnCommand(req)
+				b, rerr := os.ReadFile(f)
+				require.NoError(t, rerr)
+				for _, secret := range []string{"secret-page", "s3cr3t", srv.URL[len("http://"):]} {
+					require.NotContainsf(t, string(b), secret, "log at %s:\n%s", level, string(b))
+					if err != nil {
+						require.NotContainsf(t, err.Error(), secret, "returned error is logged by the plugin server")
+					}
+				}
+			})
+		}
+	}
 }
