@@ -3,7 +3,10 @@
 package mixclient
 
 import (
+	"bytes"
+	"encoding/hex"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -47,5 +50,33 @@ func TestPrintableReplyKeepsOnlyPrintableASCIIAndLineFeeds(t *testing.T) {
 	for name, c := range cases {
 		reply := append([]byte(c[0]), make([]byte, 64)...)
 		require.Equal(t, c[1], string(PrintableReply(reply, io.Discard, l)), name)
+	}
+}
+
+func TestPrintableReplyNoticesWhatItChanged(t *testing.T) {
+	l, _ := replyLogger(t, "ERROR")
+	cases := map[string]struct{ reply, notice string }{
+		"clean":     {"hello\nworld\n", ""},
+		"ANSI":      {"\x1b[31mred", "removed 1 disallowed byte(s) from the reply\n"},
+		"bidi":      {"bidi\xe2\x80\xaeoverride", "removed 3 disallowed byte(s) from the reply\n"},
+		"interior":  {"a\x00b", "removed 1 disallowed byte(s) from the reply\n"},
+		"over-long": {strings.Repeat("m", 1500), "cut the reply at 1024 bytes\n"},
+		"both":      {"\x1b]52;c;aGk=\x07" + strings.Repeat("m", 1500), "removed 2 disallowed byte(s) from the reply\ncut the reply at 1024 bytes\n"},
+	}
+	for name, c := range cases {
+		var notices bytes.Buffer
+		PrintableReply(append([]byte(c.reply), make([]byte, 64)...), &notices, l)
+		require.Equal(t, c.notice, notices.String(), name)
+	}
+}
+
+func TestPrintableReplyLogsTheRawReplyInHexAtDebugOnly(t *testing.T) {
+	reply := append([]byte("\x1b[31mred"), make([]byte, 8)...)
+	for level, logged := range map[string]bool{"DEBUG": true, "INFO": false, "NOTICE": false, "ERROR": false} {
+		l, f := replyLogger(t, level)
+		PrintableReply(reply, io.Discard, l)
+		b, err := os.ReadFile(f)
+		require.NoError(t, err)
+		require.Equal(t, logged, strings.Contains(string(b), hex.EncodeToString(reply)), level)
 	}
 }
