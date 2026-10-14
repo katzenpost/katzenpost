@@ -44,6 +44,7 @@ type proxyClientConfig struct {
 	cfgFile  string
 	epName   string
 	logLevel string
+	listen   string
 	port     int
 	retry    int
 	delay    int
@@ -161,7 +162,9 @@ func newRootCommand() *cobra.Command {
 	cmd.Flags().StringVar(&cfg.cfgFile, "cfg", "proxy.toml", "thin client config file")
 	cmd.Flags().StringVar(&cfg.epName, "ep", "http", "endpoint name")
 	cmd.Flags().StringVar(&cfg.logLevel, "log_level", "NOTICE", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	cmd.Flags().IntVar(&cfg.port, "port", 8080, "port to listen on, on 127.0.0.1")
+	cmd.Flags().StringVar(&cfg.listen, "listen", "127.0.0.1:8080", "address to listen on")
+	cmd.Flags().IntVar(&cfg.port, "port", 0, "port to listen on, on 127.0.0.1")
+	cmd.Flags().MarkDeprecated("port", "use --listen 127.0.0.1:<port>")
 	cmd.Flags().IntVar(&cfg.retry, "retry", -1, "limit number of reconnection attempts")
 	cmd.Flags().IntVar(&cfg.delay, "delay", 30, "time to wait between connection attempts (seconds)>")
 	return cmd
@@ -183,8 +186,12 @@ func runProxyClient(cfg proxyClientConfig) {
 }
 
 func newHTTPServer(cfg proxyClientConfig, handler http.Handler) *http.Server {
+	addr := cfg.listen
+	if cfg.port != 0 {
+		addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.port))
+	}
 	return &http.Server{
-		Addr:              net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.port)),
+		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
