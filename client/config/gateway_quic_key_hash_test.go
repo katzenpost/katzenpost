@@ -52,22 +52,40 @@ func TestGatewayRejectsAMalformedQUICKeyHash(t *testing.T) {
 	}
 }
 
+var optedInToQUIC = []string{cpki.TransportQUIC, cpki.TransportTCP}
+
 func TestConfigRejectsAQUICPinnedGatewayWithoutAQUICKeyHash(t *testing.T) {
 	cfg := loadRawConfig(t)
+	cfg.PreferedTransports = optedInToQUIC
 	gw := new(Gateway)
 	require.NoError(t, gw.UnmarshalTOML(quicGatewayTOML(t, nil)))
 	cfg.PinnedGateways.Gateways = []*Gateway{gw}
-	require.Error(t, cfg.FixupAndValidate(), "a PinnedGateway with a quic address and no QUICKeyHash was accepted")
+	err := cfg.FixupAndValidate()
+	require.Error(t, err, "a client that opted in to quic accepted a PinnedGateway with a quic address and no QUICKeyHash")
+	require.ErrorContains(t, err, "gateway1")
 
 	cfg = loadRawConfig(t)
+	cfg.PreferedTransports = optedInToQUIC
 	pinned := new(Gateway)
 	require.NoError(t, pinned.UnmarshalTOML(quicGatewayTOML(t, hex.EncodeToString(bytes.Repeat([]byte{1}, cpki.QUICKeyHashSize)))))
 	cfg.PinnedGateways.Gateways = []*Gateway{pinned}
 	require.NoError(t, cfg.FixupAndValidate())
 
 	cfg = loadRawConfig(t)
+	cfg.PreferedTransports = optedInToQUIC
 	tcpOnly := new(Gateway)
 	require.NoError(t, tcpOnly.UnmarshalTOML(gatewayTOMLWithScheme(t, testSchemeName)))
 	cfg.PinnedGateways.Gateways = []*Gateway{tcpOnly}
 	require.NoError(t, cfg.FixupAndValidate())
+}
+
+func TestConfigAcceptsAnUnpinnedQUICGatewayWhenQUICIsOff(t *testing.T) {
+	for _, transports := range [][]string{nil, {cpki.TransportTCP}} {
+		cfg := loadRawConfig(t)
+		cfg.PreferedTransports = transports
+		gw := new(Gateway)
+		require.NoError(t, gw.UnmarshalTOML(quicGatewayTOML(t, nil)))
+		cfg.PinnedGateways.Gateways = []*Gateway{gw}
+		require.NoError(t, cfg.FixupAndValidate(), "a client without quic refused a PinnedGateway it will dial over tcp, PreferedTransports %v", transports)
+	}
 }

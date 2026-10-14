@@ -22,6 +22,11 @@ import (
 
 func pinnedGatewayConnection(t *testing.T, addresses ...string) (*connection, *net.UDPConn) {
 	t.Helper()
+	return gatewayFromClientTOML(t, hex.EncodeToString(bytes.Repeat([]byte{2}, cpki.QUICKeyHashSize)), addresses...)
+}
+
+func gatewayFromClientTOML(t *testing.T, quicKeyHash string, addresses ...string) (*connection, *net.UDPConn) {
+	t.Helper()
 	conn, udp := newGatewayTestConnection(t, &config.UpstreamProxy{})
 	idPub, _, err := signSchemes.ByName(testSchemeName).GenerateKey()
 	require.NoError(t, err)
@@ -31,16 +36,19 @@ func pinnedGatewayConnection(t *testing.T, addresses ...string) (*connection, *n
 	for _, a := range addresses {
 		addrs = append(addrs, a)
 	}
-	gw := new(config.Gateway)
-	require.NoError(t, gw.UnmarshalTOML(map[string]interface{}{
+	entry := map[string]interface{}{
 		"Name":               "gateway1",
 		"PKISignatureScheme": testSchemeName,
 		"IdentityKey":        signpem.ToPublicPEMString(idPub),
 		"WireKEMScheme":      "xwing",
 		"LinkKey":            kempem.ToPublicPEMString(linkPub),
 		"Addresses":          addrs,
-		"QUICKeyHash":        hex.EncodeToString(bytes.Repeat([]byte{2}, cpki.QUICKeyHashSize)),
-	}))
+	}
+	if quicKeyHash != "" {
+		entry["QUICKeyHash"] = quicKeyHash
+	}
+	gw := new(config.Gateway)
+	require.NoError(t, gw.UnmarshalTOML(entry))
 	conn.client.cfg.PinnedGateways.Gateways = []*config.Gateway{gw}
 	conn.client.cfg.PreferedTransports = []string{cpki.TransportQUIC, cpki.TransportTCP}
 	conn.descriptor = nil
@@ -74,4 +82,28 @@ func TestPinnedGatewayFallsBackToTCPWhenUDPFails(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("the client did not fall back to tcp after its quic dial got no answer")
 	}
+}
+
+func TestDefaultClientReachesAnUnpinnedQUICGatewayOverTCP(t *testing.T) {
+	tcp, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { tcp.Close() })
+	accepted := make(chan struct{})
+	go func() {
+		c, err := tcp.Accept()
+		if err == nil {
+			c.Close()
+			close(accepted)
+		}
+	}()
+	conn, udp := gatewayFromClientTOML(t, "", "tcp://"+tcp.Addr().String())
+	conn.client.cfg.PreferedTransports = nil
+	require.NoError(t, conn.client.cfg.FixupAndValidate())
+	startConnect(t, conn)
+	select {
+	case <-accepted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a client without quic did not reach its gateway over tcp")
+	}
+	require.False(t, receivesUDP(udp, time.Second), "a client without quic dialed its gateway over quic")
 }
