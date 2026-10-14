@@ -149,7 +149,7 @@ base_registries?=
 # repo's go.mod. The base Dockerfiles keep the same value as an ARG
 # default only so `podman build` works standalone.
 GO_VERSION?=$(shell grep '^go ' ../go.mod | cut -d' ' -f2)
-wirekem=xwing
+wirekem=KYBER768-X25519
 # Network directory under docker/. Defaults to the current distro's network
 # (e.g. mixnet-alpine), so `make distro=foo start` targets mixnet-foo just
 # like the test-distros legs. A custom net_name= still overrides it.
