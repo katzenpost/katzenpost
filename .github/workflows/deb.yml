@@ -3,6 +3,7 @@ name: Debian packages
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   merge_group:
 
@@ -10,7 +11,20 @@ permissions:
   contents: read
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - run: make check-version-test
+      - if: github.ref_type == 'tag'
+        run: make check-version tag="$GITHUB_REF_NAME"
+      - if: github.ref_type != 'tag'
+        run: make check-version
+
   changes:
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-latest
     outputs:
       packaging: ${{ steps.filter.outputs.packaging }}
@@ -93,7 +107,7 @@ jobs:
 
   deb-result:
     needs: deb
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.ref_type != 'tag' }}
     runs-on: ubuntu-latest
     steps:
       - name: Report the Debian package verdict

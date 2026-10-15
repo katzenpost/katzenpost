@@ -1,3 +1,21 @@
+katzenpost (0.0.107) unstable; urgency=medium
+
+  * Release 0.0.107.
+
+ -- Katzenpost <packages@katzenpost.network>  Thu, 15 Oct 2026 17:13:49 +0200
+
+katzenpost (0.0.106) unstable; urgency=medium
+
+  * Release 0.0.106.
+
+ -- Katzenpost <packages@katzenpost.network>  Thu, 15 Oct 2026 15:00:32 +0200
+
+katzenpost (0.0.105) unstable; urgency=medium
+
+  * Release 0.0.105.
+
+ -- Katzenpost <packages@katzenpost.network>  Mon, 12 Oct 2026 13:34:37 +0200
+
 katzenpost (0.0.104) unstable; urgency=medium
 
   * Package kpclientd, the Katzenpost thin client daemon.

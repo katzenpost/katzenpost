@@ -3,7 +3,7 @@ GO_VERSION := 1.27.1
 DEB_DISTROS ?= debian-13 debian-forky ubuntu-24.04 ubuntu-26.04
 
 .PHONY: deb deb-build deb-ci deb-test deb-image-ref deb-image \
-	deb-image-push deb-image-refs
+	deb-image-push deb-image-refs check-version check-version-test
 
 deb:
 	@$(MAKE) -C packaging/debian -f container.mk
@@ -32,3 +32,9 @@ deb-image:
 
 deb-image-push:
 	@packaging/container/deb-image.sh --push $(DISTRO)
+
+check-version:
+	@packaging/debian/check-version.sh debian/changelog "$(tag)"
+
+check-version-test:
+	@packaging/debian/check-version-test.sh
