@@ -1066,6 +1066,7 @@ rootshell: $(distro)_base.stamp
 test: wait
 	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_parallel=$(dockertest_parallel) dockertest-all
 	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_pki_raw
+	$(MAKE) -C ../client testargs=$(testargs) dockertest_race=$(dockertest_race) dockertest_timeout=$(dockertest_timeout) dockertest_kp_fa
 
 # Bring the testnet up on every supported distro (uses the shared build
 # cache). Serial by default; with `make -j N test-distros` each

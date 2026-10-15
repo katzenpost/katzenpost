@@ -1,0 +1,34 @@
+poacher-e03-3s.opus: 3 s of the interval signal (the "Lincolnshire
+Poacher" tune) of the Lincolnshire Poacher numbers station, ENIGMA E03,
+cut from a public domain recording on Wikimedia Commons. Mono, 48 kHz,
+Opus at 12 kbps in Ogg with 0.2 s pages: 18 pages, 5248 bytes.
+
+Source file page: https://commons.wikimedia.org/wiki/File:Poacher.ogg
+Original filename: Poacher.ogg (Ogg Vorbis, mono, 11025 Hz, 26.25 s,
+  158214 bytes, sha1 8dceba9a94797a91120724f134e54895b7c50d33)
+Description: A short, noisy clip of a transmission of Lincolnshire
+  Poacher, ENIGMA code E3.
+Author: Oona Raisanen (Wikipedia user Mysid); source: self-recorded in
+  2007
+License: Public domain, {{PD-self}} on the file page (LicenseShortName
+  "Public domain", AttributionRequired false); permission field: "Almost
+  certainly below threshhold of originality; synthesised speech and a
+  very simple MIDI of an out-of-copyright song cannot result in its own
+  copyright."
+  https://commons.wikimedia.org/wiki/Template:PD-self
+Fields read from the Commons API (imageinfo extmetadata and page
+wikitext, revision 1233171546) on 2026-10-14.
+This clip is likewise released into the public domain.
+
+Regenerate:
+
+  curl -o Poacher.ogg \
+    https://upload.wikimedia.org/wikipedia/commons/4/4a/Poacher.ogg
+  ffmpeg -ss 0.25 -t 3 -i Poacher.ogg -ac 1 -ar 48000 \
+    -c:a libopus -b:a 12k -fflags +bitexact -flags:a +bitexact \
+    -map_metadata -1 -page_duration 200000 -f ogg poacher-e03-3s.opus
+
+sha256 b3fbe4c535c94019c9d269f094681e15167ac23c4800cd757d7c5598de27ed22
+(ffmpeg 8.0.1 with libopus; two runs gave identical bytes. Other
+versions may encode differently; the tests read the file and do not
+depend on its hash.)
