@@ -80,6 +80,16 @@ type CBORPluginWorker struct {
 func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 	k.Lock()
 	defer k.Unlock()
+	select {
+	case <-k.HaltCh():
+		k.log.Debugf("Terminating gracefully. Dropping Kaetzchen request: %v", pkt.ID)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("cbor_kaetzchen_shutting_down")
+		instrument.KaetzchenRequestsDropped(1)
+		pkt.Dispose()
+		return
+	default:
+	}
 	handlerCh, ok := k.pluginChans[pkt.Recipient.ID]
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", pkt.ID)
@@ -89,6 +99,12 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 		return
 	}
 	select {
+	case <-k.HaltCh():
+		k.log.Debugf("Terminating gracefully. Dropping Kaetzchen request: %v", pkt.ID)
+		instrument.PacketsDropped()
+		instrument.PacketsDroppedByReason("cbor_kaetzchen_shutting_down")
+		instrument.KaetzchenRequestsDropped(1)
+		pkt.Dispose()
 	case handlerCh <- pkt:
 	default:
 		k.log.Debugf("Plugin queue full. Dropping Kaetzchen request: %v", pkt.ID)

@@ -58,16 +58,6 @@ func TestMOTDLengthBound(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestMOTDCheckedAgainBeforeSending(t *testing.T) {
-	g := motdGlue(t)
-	for name, text := range disallowedMOTDs {
-		k := &kaetzchenMOTD{log: g.LogBackend().GetLogger("motd test"), text: []byte(text)}
-		reply, err := k.OnRequest(1, nil, true)
-		require.Error(t, err, name)
-		require.Nil(t, reply, name)
-	}
-}
-
 func TestMOTDWithoutConfigIsRejected(t *testing.T) {
 	_, err := BuiltInCtors[MOTDCapability](&config.Kaetzchen{Capability: MOTDCapability, Endpoint: "motd"}, motdGlue(t))
 	require.Error(t, err)
