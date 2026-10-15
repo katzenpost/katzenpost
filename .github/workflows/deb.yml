@@ -107,7 +107,7 @@ jobs:
 
   deb-result:
     needs: deb
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.ref_type != 'tag' }}
     runs-on: ubuntu-latest
     steps:
       - name: Report the Debian package verdict

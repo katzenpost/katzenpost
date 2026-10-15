@@ -22,7 +22,8 @@ if [ -n "$tag" ]; then
     exit 0
 fi
 
-latest=$(git describe --tags --abbrev=0 --match 'v*.*.*')
+latest=$(git tag --merged HEAD --list 'v*.*.*' | sort -V | tail -n 1)
+test -n "$latest" || die "no v*.*.* tag reachable from HEAD"
 oldest=$(printf '%s\n%s\n' "$top" "${latest#v}" | sort -V | head -n 1)
 test "$oldest" = "${latest#v}" \
     || die "$changelog: top version $top is older than tag $latest"

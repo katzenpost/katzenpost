@@ -72,6 +72,15 @@ repo; tag v0.0.4; g -C "$dir" commit -q --allow-empty -m two; tag v0.0.5
 changelog 0.0.5
 expect pass "branch: the nearest tag is the latest"
 
+repo; tag v0.0.4; g -C "$dir" checkout -q -b side
+g -C "$dir" commit -q --allow-empty -m side; tag v0.0.9
+g -C "$dir" commit -q --allow-empty -m side2
+g -C "$dir" commit -q --allow-empty -m side3
+g -C "$dir" checkout -q main
+g -C "$dir" commit -q --allow-empty -m two; tag v0.0.5
+g -C "$dir" merge -q --no-ff -m merge side; changelog 0.0.5
+expect fail "branch: the highest merged tag counts, not the nearest"
+
 repo; tag v0.0.5; g -C "$dir" checkout -q -b side
 g -C "$dir" commit -q --allow-empty -m side; tag v0.0.9
 g -C "$dir" checkout -q main; changelog 0.0.5
