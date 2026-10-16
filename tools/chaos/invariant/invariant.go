@@ -144,8 +144,8 @@ func NoSurbReplyNoMatch(r *orchestrator.Result) Result {
 //
 //   - SurbIDCreated fires at every insertion into arqSurbIDMap.
 //   - SurbIDDelivered fires at terminal-success deletes:
-//     ARQActionComplete, CopyStatusSucceeded,
-//     payloadActionIdempotentSuccess, post-payload-success cleanup.
+//     CopyStatusSucceeded, payloadActionIdempotentSuccess,
+//     post-payload-success cleanup.
 //   - SurbIDRotated fires when an entry is removed from arqSurbIDMap
 //     because a new SURBID has taken its place (e.g. ACK-then-payload
 //     Copy command's old SURBID after the ACK).

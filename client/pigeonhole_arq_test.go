@@ -39,44 +39,21 @@ func TestCourierEnvelopeErrorToThinError(t *testing.T) {
 
 func TestComputeARQStateTransition(t *testing.T) {
 	tests := []struct {
-		name                         string
-		state                        ARQState
-		replyType                    uint8
-		errorCode                    uint8
-		isRead                       bool
-		noIdempotentBoxAlreadyExists bool
-		expectedAction               ARQAction
-		expectedNewState             ARQState
-		expectedShouldRemove         bool
+		name                 string
+		state                ARQState
+		replyType            uint8
+		errorCode            uint8
+		expectedAction       ARQAction
+		expectedNewState     ARQState
+		expectedShouldRemove bool
 	}{
-		// WaitingForACK + ACK + write (default idempotent) → complete immediately
+		// WaitingForACK + ACK → need payload (reads and writes alike; an
+		// ACK only means the courier has the envelope, not that a replica
+		// stored it)
 		{
-			name:                         "write ACK idempotent",
-			state:                        ARQStateWaitingForACK,
-			replyType:                    pigeonhole.ReplyTypeACK,
-			isRead:                       false,
-			noIdempotentBoxAlreadyExists: false,
-			expectedAction:               ARQActionComplete,
-			expectedNewState:             ARQStateWaitingForACK,
-			expectedShouldRemove:         true,
-		},
-		// WaitingForACK + ACK + write (non-idempotent) → need payload
-		{
-			name:                         "write ACK non-idempotent needs payload",
-			state:                        ARQStateWaitingForACK,
-			replyType:                    pigeonhole.ReplyTypeACK,
-			isRead:                       false,
-			noIdempotentBoxAlreadyExists: true,
-			expectedAction:               ARQActionSendNewSURB,
-			expectedNewState:             ARQStateACKReceived,
-			expectedShouldRemove:         false,
-		},
-		// WaitingForACK + ACK + read → need payload
-		{
-			name:                 "read ACK needs payload",
+			name:                 "ACK needs payload",
 			state:                ARQStateWaitingForACK,
 			replyType:            pigeonhole.ReplyTypeACK,
-			isRead:               true,
 			expectedAction:       ARQActionSendNewSURB,
 			expectedNewState:     ARQStateACKReceived,
 			expectedShouldRemove: false,
@@ -86,7 +63,6 @@ func TestComputeARQStateTransition(t *testing.T) {
 			name:                 "unexpected payload while waiting for ACK",
 			state:                ARQStateWaitingForACK,
 			replyType:            pigeonhole.ReplyTypePayload,
-			isRead:               true,
 			expectedAction:       ARQActionHandlePayload,
 			expectedNewState:     ARQStatePayloadReceived,
 			expectedShouldRemove: false,
@@ -96,7 +72,6 @@ func TestComputeARQStateTransition(t *testing.T) {
 			name:                 "payload received after ACK",
 			state:                ARQStateACKReceived,
 			replyType:            pigeonhole.ReplyTypePayload,
-			isRead:               true,
 			expectedAction:       ARQActionHandlePayload,
 			expectedNewState:     ARQStatePayloadReceived,
 			expectedShouldRemove: false,
@@ -106,7 +81,6 @@ func TestComputeARQStateTransition(t *testing.T) {
 			name:                 "duplicate ACK data not ready",
 			state:                ARQStateACKReceived,
 			replyType:            pigeonhole.ReplyTypeACK,
-			isRead:               true,
 			expectedAction:       ARQActionSendNewSURB,
 			expectedNewState:     ARQStateACKReceived,
 			expectedShouldRemove: false,
@@ -116,7 +90,6 @@ func TestComputeARQStateTransition(t *testing.T) {
 			name:                 "terminal state ignores ACK",
 			state:                ARQStatePayloadReceived,
 			replyType:            pigeonhole.ReplyTypeACK,
-			isRead:               true,
 			expectedAction:       ARQActionIgnore,
 			expectedNewState:     ARQStatePayloadReceived,
 			expectedShouldRemove: false,
@@ -125,7 +98,6 @@ func TestComputeARQStateTransition(t *testing.T) {
 			name:                 "terminal state ignores payload",
 			state:                ARQStatePayloadReceived,
 			replyType:            pigeonhole.ReplyTypePayload,
-			isRead:               true,
 			expectedAction:       ARQActionIgnore,
 			expectedNewState:     ARQStatePayloadReceived,
 			expectedShouldRemove: false,
@@ -136,7 +108,6 @@ func TestComputeARQStateTransition(t *testing.T) {
 			state:                ARQStateWaitingForACK,
 			replyType:            pigeonhole.ReplyTypeACK,
 			errorCode:            pigeonhole.EnvelopeErrorPropagationError,
-			isRead:               false,
 			expectedAction:       ARQActionError,
 			expectedNewState:     ARQStateWaitingForACK,
 			expectedShouldRemove: true,
@@ -146,21 +117,9 @@ func TestComputeARQStateTransition(t *testing.T) {
 			state:                ARQStateACKReceived,
 			replyType:            pigeonhole.ReplyTypePayload,
 			errorCode:            pigeonhole.EnvelopeErrorCacheCorruption,
-			isRead:               true,
 			expectedAction:       ARQActionError,
 			expectedNewState:     ARQStateACKReceived,
 			expectedShouldRemove: true,
-		},
-		// Write ACK non-idempotent with payload → handle payload
-		{
-			name:                         "write non-idempotent payload after ACK",
-			state:                        ARQStateACKReceived,
-			replyType:                    pigeonhole.ReplyTypePayload,
-			isRead:                       false,
-			noIdempotentBoxAlreadyExists: true,
-			expectedAction:               ARQActionHandlePayload,
-			expectedNewState:             ARQStatePayloadReceived,
-			expectedShouldRemove:         false,
 		},
 	}
 
@@ -170,8 +129,6 @@ func TestComputeARQStateTransition(t *testing.T) {
 				tt.state,
 				tt.replyType,
 				tt.errorCode,
-				tt.isRead,
-				tt.noIdempotentBoxAlreadyExists,
 			)
 			require.Equal(t, tt.expectedAction, result.Action, "wrong action")
 			require.Equal(t, tt.expectedNewState, result.NewState, "wrong new state")

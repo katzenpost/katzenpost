@@ -59,6 +59,37 @@ func TestDeterminePayloadErrorAction(t *testing.T) {
 		require.Equal(t, payloadActionReturnError, action)
 	})
 
+	t.Run("write temporary replica errors resend", func(t *testing.T) {
+		for _, code := range []uint8{
+			pigeonhole.ReplicaErrorReplicationFailed,
+			pigeonhole.ReplicaErrorStorageFull,
+			pigeonhole.ReplicaErrorDatabaseFailure,
+			pigeonhole.ReplicaErrorInternalError,
+		} {
+			for _, noIdem := range []bool{false, true} {
+				action := determinePayloadErrorAction(&replicaError{code: code}, false, false, noIdem)
+				require.Equal(t, payloadActionRetryWrite, action, "code=%d noIdempotent=%v", code, noIdem)
+			}
+		}
+	})
+
+	t.Run("write permanent replica errors return error", func(t *testing.T) {
+		for _, code := range []uint8{
+			pigeonhole.ReplicaErrorInvalidSignature,
+			pigeonhole.ReplicaErrorInvalidPayload,
+			pigeonhole.ReplicaErrorInvalidEpoch,
+			pigeonhole.ReplicaErrorInvalidBoxID,
+		} {
+			action := determinePayloadErrorAction(&replicaError{code: code}, false, false, false)
+			require.Equal(t, payloadActionReturnError, action, "code=%d", code)
+		}
+	})
+
+	t.Run("read ReplicationFailed is not a write retry", func(t *testing.T) {
+		action := determinePayloadErrorAction(&replicaError{code: pigeonhole.ReplicaErrorReplicationFailed}, true, false, false)
+		require.Equal(t, payloadActionReturnError, action)
+	})
+
 	t.Run("write BoxIDNotFound does not retry", func(t *testing.T) {
 		action := determinePayloadErrorAction(boxNotFound, false, false, false)
 		require.Equal(t, payloadActionReturnError, action)
