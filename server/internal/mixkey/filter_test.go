@@ -32,14 +32,20 @@ func TestReplayFilterMatchesBloom(t *testing.T) {
 }
 
 func TestReplayFilterRoundTrip(t *testing.T) {
-	f, err := newReplayFilter(rand.Reader, 12, 0.001)
+	// A fixed key and fixed tags keep the insertions deterministic. With
+	// random ones, a Bloom filter false positive on insertion (rare, but
+	// possible at any fill level) made the require.False below flake.
+	var key [16]byte
+	for i := range key {
+		key[i] = byte(i)
+	}
+	f, err := newReplayFilter(bytes.NewReader(key[:]), 12, 0.001)
 	require.NoError(t, err)
 	var seen [][TagLength]byte
 	for i := 0; i < 100; i++ {
 		var tag [TagLength]byte
-		_, err := rand.Read(tag[:])
-		require.NoError(t, err)
-		require.False(t, f.TestAndSet(tag[:]))
+		binary.BigEndian.PutUint64(tag[:], uint64(i))
+		require.False(t, f.TestAndSet(tag[:]), "tag %d", i)
 		seen = append(seen, tag)
 	}
 
