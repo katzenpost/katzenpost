@@ -52,6 +52,23 @@ func ReplicaErrorToString(code uint8) string {
 	}
 }
 
+// IsTemporaryWriteError reports whether a non-success replica error code
+// on a write describes a condition that may clear on a retry (disk
+// pressure, a momentary database or replica fault, or a failed proxy to
+// the box's shards). Every other code, including unknown ones, is
+// permanent, so a future replica error cannot silently cause an
+// unbounded retry loop.
+func IsTemporaryWriteError(code uint8) bool {
+	switch code {
+	case ReplicaErrorStorageFull,
+		ReplicaErrorDatabaseFailure,
+		ReplicaErrorInternalError,
+		ReplicaErrorReplicationFailed:
+		return true
+	}
+	return false
+}
+
 // Courier envelope reply type constants
 const (
 	// ReplyType field values for CourierEnvelopeReply

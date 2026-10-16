@@ -57,7 +57,7 @@ at their quiet setting describes the protocol alone.
 | `NoOrphan` | A tracked operation of a connected client can still make progress. |
 | `CancelIsFinal` | A cancelled operation is never tracked again. |
 | `NoStrayTimer` | An operation that is not tracked has no armed timer. |
-| `CompletionMatchesKind` | Only an idempotent write completes on an ACK; a read retries on BoxIDNotFound. |
+| `CompletionMatchesKind` | No operation completes on an ACK; a read retries on BoxIDNotFound and a write on a temporary replica error. |
 
 `NeverCompletes` and `NeverStale` are expected to fail and exist to produce a
 witness trace. Each invariant expected to hold was mutation-tested, by

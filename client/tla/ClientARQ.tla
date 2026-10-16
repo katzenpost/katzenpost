@@ -61,13 +61,16 @@ Symmetry == Permutations(Msgs)
 
 Gens == 0 .. MaxRetx
 
-\* read          - needs a payload reply after the ACK
-\* write_idem    - default write: the ACK alone completes it
-\* write_nonidem - write that needs a payload reply after the ACK
-MKinds == {"read", "write_idem", "write_nonidem"}
+\* Both kinds need a payload reply after the ACK: the ACK only says the
+\* courier has the envelope, and the payload carries the replica's answer.
+\*   read  - retries on BoxIDNotFound
+\*   write - retries on a temporary replica error
+MKinds == {"read", "write"}
 
-\* NOTFOUND is a payload reply that decrypts to BoxIDNotFound.
-ReplyKinds == {"ACK", "PAYLOAD", "ERROR", "NOTFOUND"}
+\* NOTFOUND is a payload reply that decrypts to BoxIDNotFound. TEMPFAIL is a
+\* payload reply that decrypts to a temporary replica error (for example
+\* ReplicationFailed; pigeonhole.IsTemporaryWriteError).
+ReplyKinds == {"ACK", "PAYLOAD", "ERROR", "NOTFOUND", "TEMPFAIL"}
 
 \* The state of one operation.
 Op == [kind      : MKinds,     \* fixed
@@ -148,9 +151,9 @@ Enqueued(r) ==
 Outcome(st, k, mk) ==
     CASE k = "ERROR"    -> "RESPOND"
       [] k = "NOTFOUND" -> IF mk = "read" THEN "WAIT_ACK" ELSE "RESPOND"
+      [] k = "TEMPFAIL" -> IF mk = "write" THEN "WAIT_ACK" ELSE "RESPOND"
       [] k = "PAYLOAD"  -> "RESPOND"
-      [] k = "ACK"      -> IF st = "WAIT_ACK" /\ mk = "write_idem"
-                           THEN "RESPOND" ELSE "ACK_RCVD"
+      [] k = "ACK"      -> "ACK_RCVD"
 
 -----------------------------------------------------------------------------
 \* The application.
@@ -300,12 +303,13 @@ NoOrphan ==
             \/ op[m].gen \in op[m].resendQ
             \/ \E j \in handling : j.m = m
 
-\* Only an idempotent write completes on an ACK, and a read never completes
-\* on BoxIDNotFound: it retries.
+\* No operation completes on an ACK, a read never completes on BoxIDNotFound
+\* and a write never completes on a temporary replica error: they retry.
 CompletionMatchesKind ==
     \A m \in Msgs :
-        /\ op[m].doneBy = "ACK" => op[m].kind = "write_idem"
+        /\ op[m].doneBy # "ACK"
         /\ op[m].doneBy = "NOTFOUND" => op[m].kind # "read"
+        /\ op[m].doneBy = "TEMPFAIL" => op[m].kind # "write"
 
 \* A cancelled operation is never tracked again.
 CancelIsFinal == \A m \in Msgs : op[m].cancelled => ~op[m].tracked
@@ -317,10 +321,10 @@ NoStrayTimer == \A m \in Msgs : op[m].timer => op[m].tracked
 \* that the behaviour it names is reachable and the properties above are not
 \* vacuous.
 
-\* Violated by an operation that completes on an ACK with exactly one reply.
+\* Violated by an operation that completes on a payload with exactly one reply.
 NeverCompletes ==
     \A m \in Msgs :
-        ~(op[m].doneBy = "ACK" /\ op[m].responses = 1 /\ ~op[m].cancelled)
+        ~(op[m].doneBy = "PAYLOAD" /\ op[m].responses = 1 /\ ~op[m].cancelled)
 
 \* Violated by a reply that arrives under a stale SURB id.
 NeverStale ==

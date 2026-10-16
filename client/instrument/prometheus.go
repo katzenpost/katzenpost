@@ -101,7 +101,7 @@ var (
 	surbIDDelivered = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_client_surb_id_delivered_total",
-			Help: "Number of SURB IDs that exited arqSurbIDMap via a terminal success path: ARQActionComplete (Write ACK), CopyStatusSucceeded, payloadActionIdempotentSuccess, or the post-payload-handling cleanup after a successful read. This is one of the four exit counters whose sum should equal created_total at steady state (the others are Rotated, GarbageCollected, and the error-deletes which are not yet counted).",
+			Help: "Number of SURB IDs that exited arqSurbIDMap via a terminal success path: CopyStatusSucceeded, payloadActionIdempotentSuccess, or the post-payload-handling cleanup after a successful read or write. This is one of the four exit counters whose sum should equal created_total at steady state (the others are Rotated, GarbageCollected, and the error-deletes which are not yet counted).",
 		},
 	)
 	surbIDReplyNoMatch = prometheus.NewCounter(
@@ -250,9 +250,9 @@ func SurbIDGarbageCollected() { surbIDGarbageCollected.Inc() }
 func SurbIDReplyMatched() { surbIDReplyMatched.Inc() }
 
 // SurbIDDelivered records the exit of a SURB ID from arqSurbIDMap via
-// a terminal-success delete: ARQActionComplete (Write ACK),
-// CopyStatusSucceeded, payloadActionIdempotentSuccess, or the
-// post-payload-handling cleanup after a successful read. The lifecycle
+// a terminal-success delete: CopyStatusSucceeded,
+// payloadActionIdempotentSuccess, or the post-payload-handling cleanup
+// after a successful read or write. The lifecycle
 // balance is: created = delivered + rotated + garbage_collected +
 // (uncounted error/cancel deletes). See instrument/prometheus.go for
 // the rationale on which exit each delete site belongs to.

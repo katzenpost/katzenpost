@@ -504,3 +504,36 @@ func TestHandleReplyDropsReplyWithoutEnvelopeHash(t *testing.T) {
 		})
 	})
 }
+
+// TestCourierCacheWriteRecoversFromReplicationFailed pins the courier side
+// of the two-phase write: an intermediate that fails to reach the box's
+// shards caches an empty-envelope ReplicationFailed, which the courier
+// answers with an ACK (nothing servable yet) so the client keeps
+// resending. The reply from a later re-dispatch replaces the cached
+// error and is served as a payload on the client's next resend.
+func TestCourierCacheWriteRecoversFromReplicationFailed(t *testing.T) {
+	courier := createTestCourier(t)
+	envHash := createTestEnvelopeHash()
+	setupCacheEntry(courier, envHash, 1)
+
+	courier.CacheReply(createTestErrorReply(&envHash, 0, pigeonhole.ReplicaErrorReplicationFailed, ""))
+	courier.CacheReply(createTestErrorReply(&envHash, 1, pigeonhole.ReplicaErrorReplicationFailed, ""))
+
+	courierEnv := &pigeonhole.CourierEnvelope{ReplyIndex: 0}
+	cacheEntry, _ := getCacheEntry(courier, envHash)
+	reply := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
+	require.Equal(t, pigeonhole.ReplyTypeACK, reply.EnvelopeReply.ReplyType,
+		"a failed write with no servable reply must keep the client polling")
+
+	stored := createTestReply(&envHash, 1, "sealed-write-reply")
+	courier.CacheReply(stored)
+
+	entry := verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, stored, entry.EnvelopeReplies[1], "the re-dispatch reply must replace the cached error")
+
+	courierEnv.ReplyIndex = 0
+	reply = courier.handleOldMessage(entry, &envHash, courierEnv)
+	require.Equal(t, pigeonhole.ReplyTypePayload, reply.EnvelopeReply.ReplyType)
+	require.Equal(t, uint8(1), reply.EnvelopeReply.ReplyIndex)
+	require.Equal(t, stored.EnvelopeReply, reply.EnvelopeReply.Payload)
+}

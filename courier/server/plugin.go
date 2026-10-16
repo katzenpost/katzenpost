@@ -364,12 +364,14 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 		e.log.Debugf("CacheReply: Reply from replica %d, intermediaries are: %v", reply.ReplicaID, entry.IntermediateReplicas)
 	}
 
-	// NOTE: We do NOT send immediate replies for read requests.
+	// NOTE: We do NOT send immediate replies, for reads or writes.
 	// The ARQ protocol requires:
 	// 1. Client sends first request with SURB #1 → Courier sends ACK on SURB #1
 	// 2. Client receives ACK, sends second request with SURB #2 (same envelope hash)
 	// 3. Courier returns cached payload on SURB #2 via handleOldMessage
 	// Trying to send the payload on SURB #1 would fail because the client has moved on to SURB #2.
+	// For a write the cached payload is the replica's storage outcome, which
+	// is how the client learns whether the write was actually stored.
 
 	e.dedupCacheLock.Lock()
 	defer e.dedupCacheLock.Unlock()
