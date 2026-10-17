@@ -42,13 +42,10 @@ func classifyReplicaErrorForCopyRead(code uint8) replicaErrorCategory {
 
 // classifyReplicaErrorForCopyWrite mirrors classifyReplicaErrorForCopyRead
 // for the Copy write path, without ReplicaErrorBoxIDNotFound, which is a
-// read-only outcome.
+// read-only outcome. It shares pigeonhole.IsTemporaryWriteError with the
+// client daemon's write ARQ.
 func classifyReplicaErrorForCopyWrite(code uint8) replicaErrorCategory {
-	switch code {
-	case pigeonhole.ReplicaErrorStorageFull,
-		pigeonhole.ReplicaErrorDatabaseFailure,
-		pigeonhole.ReplicaErrorInternalError,
-		pigeonhole.ReplicaErrorReplicationFailed:
+	if pigeonhole.IsTemporaryWriteError(code) {
 		return replicaErrorTemporary
 	}
 	return replicaErrorPermanent

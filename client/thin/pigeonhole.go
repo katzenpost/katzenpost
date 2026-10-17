@@ -451,11 +451,12 @@ func (t *ThinClient) EncryptWrite(plaintext []byte, writeCap *bacap.WriteCap, me
 // https://katzenpost.network/docs/pigeonhole_explained/#the-pigeonhole-arq
 // for the retransmission behavior and per-operation round-trip costs.
 //
-// A write completes on the courier's ACK, a single mixnet round trip, and
-// by default treats BoxAlreadyExists as idempotent success. A read is
-// two-phased: after the ACK the daemon collects the payload with a fresh
-// SURB, decrypts it, and returns the plaintext; by default a read retries
-// BoxIDNotFound until the box is written.
+// Reads and writes are both two-phased: the courier ACKs the query, and
+// the daemon then collects the replica's answer with a fresh SURB. A write
+// completes once a replica confirms the box is stored, retries temporary
+// replica failures, and by default treats BoxAlreadyExists as idempotent
+// success. A read decrypts the payload and returns the plaintext; by
+// default a read retries BoxIDNotFound until the box is written.
 //
 // Parameters:
 //   - readCap: Read capability (can be nil for write operations, required for reads)
@@ -522,11 +523,6 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCa
 // ErrBoxAlreadyExists when the replica reports that the destination
 // box has already been written, rather than swallowing the condition
 // as idempotent success.
-//
-// This variant costs an additional mixnet round trip: the
-// BoxAlreadyExists code is carried by the replica's reply rather than
-// the courier's ACK, so the daemon must dispatch a second SURB before
-// it can return the answer.
 //
 // An in-flight call may be cancelled via CancelResendingEncryptedMessage.
 func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {

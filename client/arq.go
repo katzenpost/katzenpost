@@ -34,12 +34,13 @@ const (
 	ARQStateWaitingForACK ARQState = 0
 
 	// ARQStateACKReceived indicates that an ACK has been received from the courier.
-	// For read queries, the client now needs to send another SURB to receive the payload.
-	// For write queries, this is the terminal state.
+	// The client now resends the same envelope with a fresh SURB to collect the
+	// replica's reply, which the courier caches: the data for a read, the
+	// storage outcome for a write.
 	ARQStateACKReceived ARQState = 1
 
 	// ARQStatePayloadReceived indicates that the payload has been received.
-	// This is the terminal state for read queries.
+	// This is the terminal state for reads and writes.
 	ARQStatePayloadReceived ARQState = 2
 )
 
@@ -49,8 +50,6 @@ type ARQAction int
 const (
 	// ARQActionSendNewSURB means send a new SURB to continue the protocol.
 	ARQActionSendNewSURB ARQAction = iota
-	// ARQActionComplete means the operation completed successfully.
-	ARQActionComplete
 	// ARQActionHandlePayload means the payload reply should be processed.
 	ARQActionHandlePayload
 	// ARQActionError means the reply contained an error code.
@@ -68,13 +67,17 @@ type ARQTransitionResult struct {
 }
 
 // computeARQStateTransition is the pure FSM logic for the pigeonhole ARQ protocol.
-// It determines what action to take based on the current state, reply type, and flags.
+// It determines what action to take based on the current state and reply type.
+//
+// Reads and writes follow the same two-phase exchange. The courier ACKs a new
+// envelope at once and dispatches it to the replicas in the background; the
+// client then resends the identical envelope until the courier serves the
+// cached replica reply as a payload. An ACK therefore never completes an
+// operation: a write is only reported as done once a replica has answered it.
 func computeARQStateTransition(
 	state ARQState,
 	replyType uint8,
 	errorCode uint8,
-	isRead bool,
-	noIdempotentBoxAlreadyExists bool,
 ) ARQTransitionResult {
 	// Error in reply → remove from tracking, report error
 	if errorCode != 0 {
@@ -89,15 +92,7 @@ func computeARQStateTransition(
 	switch state {
 	case ARQStateWaitingForACK:
 		if replyType == 0 { // ReplyTypeACK
-			// For default writes (idempotent), ACK is sufficient
-			if !isRead && !noIdempotentBoxAlreadyExists {
-				return ARQTransitionResult{
-					NewState:     state,
-					Action:       ARQActionComplete,
-					ShouldRemove: true,
-				}
-			}
-			// Reads and non-idempotent writes need a payload reply
+			// The courier has the envelope; collect the replica's reply.
 			return ARQTransitionResult{
 				NewState:     ARQStateACKReceived,
 				Action:       ARQActionSendNewSURB,
