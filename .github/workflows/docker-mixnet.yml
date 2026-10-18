@@ -95,6 +95,9 @@ jobs:
       - name: run all docker integration tests in parallel
         run: cd client && make dockertest-all
 
+      - name: run the kp-fa docker test
+        run: cd client && make dockertest_kp_fa
+
       - name: Dump kpclientd logs on failure
         if: failure()
         run: |

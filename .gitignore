@@ -21,6 +21,7 @@ cmd/server/server
 cmd/dirauth/dirauth
 cmd/fetch/fetch
 cmd/kpclientd/kpclientd
+cmd/kp-fa/kp-fa
 cmd/courier/courier
 cmd/replica/replica
 cmd/sphinx/sphinx
