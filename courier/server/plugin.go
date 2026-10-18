@@ -39,6 +39,7 @@ import (
 type CourierBookKeeping struct {
 	Epoch                uint64
 	CreatedAt            time.Time
+	LastAccessedAt       time.Time
 	QueryType            uint8
 	IntermediateReplicas [2]uint8 // Store the replica IDs that were contacted
 	EnvelopeReplies      [2]*commands.ReplicaMessageReply
@@ -399,6 +400,7 @@ func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
 
 // handleExistingEntry processes replies for existing cache entries
 func (e *Courier) handleExistingEntry(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply) {
+	entry.LastAccessedAt = time.Now()
 	e.log.Debugf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
 
 	replyIndex := e.findReplicaIndex(entry, reply.ReplicaID)
@@ -446,13 +448,18 @@ func (e *Courier) storeOrReplaceReply(entry *CourierBookKeeping, reply *commands
 	}
 }
 
-// pruneDedupCacheLocked removes entries whose age (now - CreatedAt) is
-// strictly greater than ttl. Returns the number of entries removed.
+// pruneDedupCacheLocked removes entries whose age (now - LastAccessedAt,
+// falling back to CreatedAt if LastAccessedAt is zero) is strictly greater
+// than ttl. Returns the number of entries removed.
 // The caller MUST hold e.dedupCacheLock.Lock().
 func (e *Courier) pruneDedupCacheLocked(now time.Time, ttl time.Duration) int {
 	pruned := 0
 	for key, entry := range e.dedupCache {
-		if now.Sub(entry.CreatedAt) > ttl {
+		lastActive := entry.LastAccessedAt
+		if lastActive.IsZero() {
+			lastActive = entry.CreatedAt
+		}
+		if now.Sub(lastActive) > ttl {
 			delete(e.dedupCache, key)
 			pruned++
 		}
@@ -821,10 +828,12 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	e.dedupCacheLock.Lock()
 	cacheEntry, ok := e.dedupCache[*envHash]
 	if !ok {
-		e.pruneDedupCacheLocked(time.Now(), DedupCacheTTL)
+		now := time.Now()
+		e.pruneDedupCacheLocked(now, DedupCacheTTL)
 		e.dedupCache[*envHash] = &CourierBookKeeping{
 			Epoch:                e.getCurrentEpoch(),
-			CreatedAt:            time.Now(),
+			CreatedAt:            now,
+			LastAccessedAt:       now,
 			QueryType:            queryType,
 			IntermediateReplicas: courierMessage.IntermediateReplicas,
 			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
@@ -838,6 +847,7 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	e.dedupCacheLock.Unlock()
 
 	e.dedupCacheLock.Lock()
+	cacheEntry.LastAccessedAt = time.Now()
 	redispatch := e.cacheEntryNeedsRedispatch(cacheEntry)
 	if redispatch {
 		cacheEntry.RedispatchAttempts++

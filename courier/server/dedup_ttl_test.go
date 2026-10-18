@@ -120,3 +120,49 @@ func TestDedupCacheTTLPrunePreservesReplyData(t *testing.T) {
 	entry := verifyCacheEntry(t, courier, envHash)
 	require.Same(t, reply, entry.EnvelopeReplies[0])
 }
+
+// TestDedupCacheTTLPruneProtectsActiveTwoPhaseExchange verifies that entries
+// whose CreatedAt exceeds TTL, but whose LastAccessedAt has been refreshed
+// by recent client polls or replica replies, are not prematurely pruned.
+func TestDedupCacheTTLPruneProtectsActiveTwoPhaseExchange(t *testing.T) {
+	courier := createTestCourier(t)
+	now := time.Now()
+
+	activeHash := createTestEnvelopeHashWithSuffix("A")
+	staleHash := createTestEnvelopeHashWithSuffix("B")
+	legacyHash := createTestEnvelopeHashWithSuffix("C")
+
+	courier.dedupCacheLock.Lock()
+	// Created > TTL ago, but accessed recently -> must NOT be pruned.
+	courier.dedupCache[activeHash] = &CourierBookKeeping{
+		CreatedAt:            now.Add(-2 * DedupCacheTTL),
+		LastAccessedAt:       now,
+		IntermediateReplicas: [2]uint8{0, 1},
+	}
+	// Created > TTL ago, and last accessed > TTL ago -> must be pruned.
+	courier.dedupCache[staleHash] = &CourierBookKeeping{
+		CreatedAt:            now.Add(-2 * DedupCacheTTL),
+		LastAccessedAt:       now.Add(-2 * DedupCacheTTL),
+		IntermediateReplicas: [2]uint8{0, 1},
+	}
+	// Created > TTL ago, LastAccessedAt zero (legacy/unspecified) -> fallback to CreatedAt, pruned.
+	courier.dedupCache[legacyHash] = &CourierBookKeeping{
+		CreatedAt:            now.Add(-2 * DedupCacheTTL),
+		IntermediateReplicas: [2]uint8{0, 1},
+	}
+
+	pruned := courier.pruneDedupCacheLocked(now, DedupCacheTTL)
+	courier.dedupCacheLock.Unlock()
+
+	require.Equal(t, 2, pruned, "stale and legacy entries should be pruned")
+
+	_, active := getCacheEntry(courier, activeHash)
+	require.True(t, active, "active entry with recent LastAccessedAt must be preserved")
+
+	_, stale := getCacheEntry(courier, staleHash)
+	require.False(t, stale, "stale entry must be evicted")
+
+	_, legacy := getCacheEntry(courier, legacyHash)
+	require.False(t, legacy, "legacy entry with stale CreatedAt must be evicted")
+}
+
