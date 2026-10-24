@@ -746,16 +746,13 @@ func (c *incomingConn) proxyToShardWithSlot(targetShard *pki.ReplicaDescriptor, 
 		instrument.ProxyAttemptEnd()
 	}()
 
-	// Queueing for the slot spent budget, so check whether enough
-	// time remains to finish this attempt's encapsulation before
-	// starting expensive crypto. Once a slot is won, we measure
-	// against this single attempt's floor (candidatesLeft=1) rather
-	// than dividing by remaining candidates; otherwise earlier
-	// candidates in a multi-holder sweep would be discarded even when
-	// they hold a slot and have sufficient time to finish. The network
-	// timeout inside proxyToShard still divides remaining time among
-	// candidatesLeft.
-	if proxyAttemptTimeout(deadline, 1, floor) <= 0 {
+	// Queueing for the slot spent budget, so the share is measured
+	// again now that the attempt can actually start. The floor applies
+	// as it did before the wait: a slot won too late to finish the
+	// encapsulation must be handed straight back rather than spent on
+	// a CTIDH1024 keygen and group action that can only end in a
+	// timeout.
+	if proxyAttemptTimeout(deadline, candidatesLeft, floor) <= 0 {
 		return nil, nil, nil, errProxySweepBudgetExhausted
 	}
 	return c.proxyToShard(targetShard, replicaEpoch, innerMessageBlob, scheme, nikeScheme, deadline, candidatesLeft)

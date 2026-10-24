@@ -75,21 +75,3 @@ func TestProxyAttemptTimeoutFloor(t *testing.T) {
 	require.Greater(t, proxyAttemptTimeout(tight, 1, 0), time.Second,
 		"a zero floor must not refuse anything")
 }
-
-// TestProxyAttemptTimeoutAcquiredSlotFloorSingleCandidate pins the rule that
-// once an attempt holds a worker slot, its crypto feasibility is tested
-// against its own floor (candidatesLeft=1), so that a multi-candidate sweep
-// does not spuriously discard an active attempt whose remaining time covers
-// its MKEM encapsulation.
-func TestProxyAttemptTimeoutAcquiredSlotFloorSingleCandidate(t *testing.T) {
-	const floor = 2500 * time.Millisecond
-	// Remaining time is 3s: covers 1 attempt (3s >= 2.5s), but would fail if
-	// divided across 2 candidates (1.5s < 2.5s).
-	deadline := time.Now().Add(3 * time.Second)
-
-	require.Zero(t, proxyAttemptTimeout(deadline, 2, floor),
-		"divided share across 2 candidates falls below floor")
-	require.Greater(t, proxyAttemptTimeout(deadline, 1, floor), 2*time.Second,
-		"single attempt holding the slot has sufficient time to complete encapsulation")
-}
-
