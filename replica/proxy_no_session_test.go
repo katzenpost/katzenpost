@@ -73,7 +73,7 @@ func noSessionProxyRequest(payload string) *commands.ReplicaMessage {
 func TestDispatchToPeerWithNoSessionFailsProxyRequest(t *testing.T) {
 	env := newNoSessionEnv(t)
 
-	msg := noSessionProxyRequest("a proxied read for a holder that is down")
+	msg := noSessionProxyRequest("a proxied write for a holder that is down")
 	waiter := env.proxyManager.RegisterProxyRequest(*msg.EnvelopeHash(), nil, nil, msg, env.peer, env.conn.dst.Name)
 
 	env.co.DispatchCommand(msg, &env.peer)
@@ -107,7 +107,7 @@ func TestDispatchToPeerWithSessionQueuesProxyRequest(t *testing.T) {
 	env := newNoSessionEnv(t)
 	env.conn.sessionUp.Store(true)
 
-	msg := noSessionProxyRequest("a proxied read for a holder that is up")
+	msg := noSessionProxyRequest("a proxied write for a holder that is up")
 	waiter := env.proxyManager.RegisterProxyRequest(*msg.EnvelopeHash(), nil, nil, msg, env.peer, env.conn.dst.Name)
 
 	env.co.DispatchCommand(msg, &env.peer)

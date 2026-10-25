@@ -74,21 +74,40 @@ func replicaEnvelopeKeys(doc *cpki.Document, replica1, replica2 uint8) ([]nike.P
 }
 
 // GetShardReplicas returns the replica numbers and public keys of boxid's two
-// shard replicas, so that a read is sent straight to them. It falls back to
-// GetRandomIntermediateReplicas when a shard replica is offline.
+// shard replicas, so that a read is sent straight to them. If a shard
+// replica is offline, a random other replica takes its place; it answers
+// box-not-found and the courier prefers the holder's reply.
 func GetShardReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint8, []nike.PublicKey, error) {
-	if doc != nil && doc.StorageReplicas != nil {
-		shards, err := replicaCommon.GetShards(boxid, doc)
-		if err == nil && len(shards) == 2 {
-			ids := [2]uint8{shards[0].ReplicaID, shards[1].ReplicaID}
-			keys, err := replicaEnvelopeKeys(doc, ids[0], ids[1])
+	if doc == nil {
+		return [2]uint8{}, nil, errors.New("PKI document is nil")
+	}
+	if len(doc.StorageReplicas) < 2 {
+		return [2]uint8{}, nil, fmt.Errorf("insufficient storage replicas: need at least 2 replicas: %w", ErrReplicaKeysNotReady)
+	}
+	shards, err := replicaCommon.GetShards(boxid, doc)
+	if err != nil {
+		return [2]uint8{}, nil, err
+	}
+	ids := [2]uint8{shards[0].ReplicaID}
+	if len(shards) > 1 {
+		ids[1] = shards[1].ReplicaID
+	} else {
+		for {
+			idx, err := CryptoRandIndex(len(doc.StorageReplicas))
 			if err != nil {
 				return [2]uint8{}, nil, err
 			}
-			return ids, keys, nil
+			if id := doc.StorageReplicas[idx].ReplicaID; id != ids[0] {
+				ids[1] = id
+				break
+			}
 		}
 	}
-	return GetRandomIntermediateReplicas(doc, boxid)
+	keys, err := replicaEnvelopeKeys(doc, ids[0], ids[1])
+	if err != nil {
+		return [2]uint8{}, nil, err
+	}
+	return ids, keys, nil
 }
 
 // GetRandomIntermediateReplicas returns two random replica numbers and their public keys.

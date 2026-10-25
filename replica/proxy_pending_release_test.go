@@ -61,7 +61,7 @@ func TestTimedOutProxyAttemptReleasesItsPendingEntry(t *testing.T) {
 	msg := &commands.ReplicaMessage{
 		SenderEPubKey: []byte{1, 2, 3, 4},
 		DEK:           &[60]byte{},
-		Ciphertext:    []byte("proxied read"),
+		Ciphertext:    []byte("proxied write"),
 	}
 	idHash := [32]byte{0xAA}
 
@@ -78,8 +78,8 @@ func TestTimedOutProxyAttemptReleasesItsPendingEntry(t *testing.T) {
 }
 
 // TestExhaustedProxySweepLeavesNothingPending is the same rule seen
-// across a whole sweep: once every holder has been tried and the read
-// has been answered, the manager holds nothing on that read's behalf.
+// across a whole sweep: once every holder has been tried and the write
+// has been answered, the manager holds nothing on that write's behalf.
 func TestExhaustedProxySweepLeavesNothingPending(t *testing.T) {
 	env := setupSemaScopeTestServer(t)
 	env.server.cfg.ProxyRequestTimeout = int(pendingReleaseSweepBudget / time.Second)
@@ -87,10 +87,10 @@ func TestExhaustedProxySweepLeavesNothingPending(t *testing.T) {
 	require.Greater(t, env.server.proxyManager.requestTimeout, pendingReleaseSweepBudget,
 		"the periodic cleanup must not be able to clear the entries within the sweep")
 
-	// A box this server does not shard, so serving the read means
+	// A box this server does not shard, so serving the write means
 	// proxying it to holders that never answer.
 	boxID := findBoxByShardMembership(t, env.server, env.doc, false)
-	proxyMsg := semaScopeValidReplicaMessage(t, env.server, boxID)
+	proxyMsg := semaScopeProxiedWriteMessage(t, env.server, boxID)
 
 	_, ok := env.inConn.onReplicaCommand(proxyMsg, env.emitter)
 	require.True(t, ok)
@@ -101,7 +101,7 @@ func TestExhaustedProxySweepLeavesNothingPending(t *testing.T) {
 		require.Equal(t, pigeonhole.ReplicaErrorReplicationFailed, req.ReplicaMessageReply.ErrorCode,
 			"a sweep no holder answered must say so rather than answer as if it had")
 	case <-time.After(pendingReleaseSweepBudget + sweepDeadlineSlack):
-		t.Fatal("the proxied read never returned")
+		t.Fatal("the proxied write never returned")
 	}
 
 	require.Zero(t, pendingProxyRequests(env.server.proxyManager),

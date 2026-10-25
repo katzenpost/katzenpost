@@ -233,10 +233,25 @@ func findBoxByShardMembership(t *testing.T, server *Server, doc *pki.Document, w
 // key, so handleReplicaMessage can decrypt and reach the shard logic.
 func semaScopeValidReplicaMessage(t *testing.T, server *Server, boxID [32]byte) *commands.ReplicaMessage {
 	t.Helper()
-	innerMsg := &pigeonhole.ReplicaInnerMessage{
+	return semaScopeEncapsulate(t, server, &pigeonhole.ReplicaInnerMessage{
 		MessageType: 0, // 0 = read
 		ReadMsg:     &pigeonhole.ReplicaRead{BoxID: boxID},
-	}
+	})
+}
+
+// semaScopeProxiedWriteMessage builds a genuine ReplicaMessage carrying a
+// write for the given box. For a box this server does not shard, serving
+// it means proxying it to a holder.
+func semaScopeProxiedWriteMessage(t *testing.T, server *Server, boxID [32]byte) *commands.ReplicaMessage {
+	t.Helper()
+	return semaScopeEncapsulate(t, server, &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1, // 1 = write
+		WriteMsg:    &pigeonhole.ReplicaWrite{BoxID: boxID},
+	})
+}
+
+func semaScopeEncapsulate(t *testing.T, server *Server, innerMsg *pigeonhole.ReplicaInnerMessage) *commands.ReplicaMessage {
+	t.Helper()
 	padded, err := pigeonhole.PadInnerMessageForEncryption(innerMsg, server.pigeonholeGeo)
 	require.NoError(t, err)
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
@@ -321,7 +336,7 @@ func TestReplicaMessageNotBlockedBySaturatedProxyPool(t *testing.T) {
 	require.NotEqual(t, uint8(0), reply.ErrorCode, "garbage crypto should yield an error reply")
 }
 
-// TestProxySaturationDoesNotBlockLocalRead drives a real proxied request
+// TestProxySaturationDoesNotBlockLocalRead drives a real proxied write
 // through the shard logic so that it genuinely pins the only proxy worker
 // slot, then proves a local (shard) read completes without waiting on the
 // pool. On the pre-fix code the local read's handler goroutine blocks on
@@ -329,17 +344,17 @@ func TestReplicaMessageNotBlockedBySaturatedProxyPool(t *testing.T) {
 func TestProxySaturationDoesNotBlockLocalRead(t *testing.T) {
 	env := setupSemaScopeTestServer(t)
 
-	// boxA: not sharded to this server -> proxied to a shard holder,
+	// boxA: not sharded to this server -> its write is proxied to a shard holder,
 	// which never replies through the mock connector, so the request
 	// blocks for ProxyRequestTimeout holding the sole proxy slot.
 	boxA := findBoxByShardMembership(t, env.server, env.doc, false)
 	// boxB: sharded to this server -> served locally.
 	boxB := findBoxByShardMembership(t, env.server, env.doc, true)
 
-	proxyMsg := semaScopeValidReplicaMessage(t, env.server, boxA)
+	proxyMsg := semaScopeProxiedWriteMessage(t, env.server, boxA)
 	localMsg := semaScopeValidReplicaMessage(t, env.server, boxB)
 
-	// Phase 1: launch the proxied read; it must acquire and hold the only
+	// Phase 1: launch the proxied write; it must acquire and hold the only
 	// proxy worker slot.
 	_, ok := env.inConn.onReplicaCommand(proxyMsg, env.emitter)
 	require.True(t, ok)

@@ -295,7 +295,7 @@ func TestGetShardReplicas(t *testing.T) {
 	require.Equal(t, [2]uint8{shards[0].ReplicaID, shards[1].ReplicaID}, ids)
 	require.Len(t, pubKeys, 2)
 
-	t.Run("fallsBackWhenShardOffline", func(t *testing.T) {
+	t.Run("replacesOfflineShardReplica", func(t *testing.T) {
 		offline := shards[0].ReplicaID
 		online := []*pki.ReplicaDescriptor{}
 		for _, r := range doc.StorageReplicas {
@@ -308,7 +308,8 @@ func TestGetShardReplicas(t *testing.T) {
 		ids, pubKeys, err := GetShardReplicas(&degraded, boxid)
 		require.NoError(t, err)
 		require.Len(t, pubKeys, 2)
-		require.NotContains(t, ids, offline)
-		require.NotContains(t, ids, shards[1].ReplicaID)
+		require.Equal(t, shards[1].ReplicaID, ids[0])
+		require.NotEqual(t, offline, ids[1])
+		require.NotEqual(t, ids[0], ids[1])
 	})
 }
