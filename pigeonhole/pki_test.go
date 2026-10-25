@@ -266,3 +266,49 @@ func TestGetRandomIntermediateReplicasNotReady(t *testing.T) {
 		})
 	}
 }
+
+func TestGetShardReplicas(t *testing.T) {
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	pub, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	keys := map[uint64][]byte{replicaEpoch: pub.Bytes()}
+	doc := &pki.Document{}
+	for i := 0; i < 5; i++ {
+		id := make([]byte, 32)
+		_, err := rand.Reader.Read(id)
+		require.NoError(t, err)
+		doc.StorageReplicas = append(doc.StorageReplicas, &pki.ReplicaDescriptor{
+			Name:         fmt.Sprintf("replica-%d", i),
+			ReplicaID:    uint8(i),
+			IdentityKey:  id,
+			EnvelopeKeys: keys,
+		})
+		doc.ConfiguredReplicaIdentityKeys = append(doc.ConfiguredReplicaIdentityKeys, id)
+	}
+	boxid := generateRandomBoxID(t)
+	shards, err := replicaCommon.GetShards(boxid, doc)
+	require.NoError(t, err)
+	require.Len(t, shards, 2)
+
+	ids, pubKeys, err := GetShardReplicas(doc, boxid)
+	require.NoError(t, err)
+	require.Equal(t, [2]uint8{shards[0].ReplicaID, shards[1].ReplicaID}, ids)
+	require.Len(t, pubKeys, 2)
+
+	t.Run("fallsBackWhenShardOffline", func(t *testing.T) {
+		offline := shards[0].ReplicaID
+		online := []*pki.ReplicaDescriptor{}
+		for _, r := range doc.StorageReplicas {
+			if r.ReplicaID != offline {
+				online = append(online, r)
+			}
+		}
+		degraded := *doc
+		degraded.StorageReplicas = online
+		ids, pubKeys, err := GetShardReplicas(&degraded, boxid)
+		require.NoError(t, err)
+		require.Len(t, pubKeys, 2)
+		require.NotContains(t, ids, offline)
+		require.NotContains(t, ids, shards[1].ReplicaID)
+	})
+}
