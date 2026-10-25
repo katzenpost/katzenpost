@@ -1588,8 +1588,6 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		arqMessage.State,
 		courierEnvelopeReply.ReplyType,
 		thinErrorCode,
-		arqMessage.IsRead,
-		arqMessage.NoIdempotentBoxAlreadyExists,
 	)
 
 	d.log.Debugf("handlePigeonholeARQReply: FSM transition: state=%d replyType=%d → action=%d newState=%d",
@@ -1605,16 +1603,6 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		d.finishARQMessage(arqMessage, conn, transition.ErrorCode, nil)
 		return
 
-	case ARQActionComplete:
-		d.log.Debugf("handlePigeonholeARQReply: Write ACK received, returning success (single round-trip)")
-		if !d.claimARQTerminal(arqMessage) {
-			return
-		}
-		instrument.SurbIDDelivered()
-
-		d.finishARQMessage(arqMessage, conn, thin.ThinClientSuccess, nil)
-		return
-
 	case ARQActionHandlePayload:
 		arqMessage.State = transition.NewState
 		d.handlePayloadReply(arqMessage, courierEnvelopeReply, conn)
@@ -1622,7 +1610,7 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	case ARQActionSendNewSURB:
 		arqMessage.State = transition.NewState
-		d.log.Debugf("handlePigeonholeARQReply: scheduling follow-up read via the Poisson queue (isRead=%v, state=%d)",
+		d.log.Debugf("handlePigeonholeARQReply: scheduling follow-up poll via the Poisson queue (isRead=%v, state=%d)",
 			arqMessage.IsRead, arqMessage.State)
 		d.scheduleARQFollowUp(arqMessage)
 		return
@@ -1950,6 +1938,7 @@ const (
 	payloadActionReturnError       payloadErrorAction = iota
 	payloadActionRetry                                // Retry (BoxIDNotFound on read)
 	payloadActionIdempotentSuccess                    // Treat as success (BoxAlreadyExists on write)
+	payloadActionRetryWrite                           // Resend the write (temporary replica error)
 )
 
 // determinePayloadErrorAction decides what to do with a decryption error
@@ -1968,6 +1957,14 @@ func determinePayloadErrorAction(err error, isRead bool, noRetryOnBoxIDNotFound 
 	// BoxAlreadyExists on write: idempotent success unless NoIdempotentBoxAlreadyExists is set
 	if re.code == pigeonhole.ReplicaErrorBoxAlreadyExists && !isRead && !noIdempotentBoxAlreadyExists {
 		return payloadActionIdempotentSuccess
+	}
+
+	// A temporary replica error on write (for example ReplicationFailed when
+	// the intermediate replica could not reach the box's shards): resend the
+	// envelope so the courier dispatches it again, rather than reporting a
+	// write that no replica stored.
+	if !isRead && pigeonhole.IsTemporaryWriteError(re.code) {
+		return payloadActionRetryWrite
 	}
 
 	return payloadActionReturnError
@@ -2004,6 +2001,13 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 		case payloadActionRetry:
 			d.log.Debugf("handlePayloadReply: box does not exist yet for read, scheduling Poisson-gated retry (attempt %d)",
 				arqMessage.Retransmissions+1)
+			arqMessage.State = ARQStateWaitingForACK
+			d.scheduleARQFollowUp(arqMessage)
+			return
+
+		case payloadActionRetryWrite:
+			d.log.Warningf("handlePayloadReply: write failed at the replicas (%s), scheduling Poisson-gated resend (attempt %d)",
+				err, arqMessage.Retransmissions+1)
 			arqMessage.State = ARQStateWaitingForACK
 			d.scheduleARQFollowUp(arqMessage)
 			return
