@@ -56,6 +56,21 @@ jobs:
           path: ${{ matrix.test-suite.path }}/coverage.out
           if-no-files-found: ignore
 
+  quic-mldsa:
+    runs-on: ubuntu-latest
+    name: test-quic-go1.27
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run QUIC tests, including ML-DSA-65
+        run: GORACE=history_size=7 go test -race -v -failfast -timeout 30m ./quic/... ./cmd/genkeypair
+
   check:
     runs-on: ubuntu-latest
     name: check

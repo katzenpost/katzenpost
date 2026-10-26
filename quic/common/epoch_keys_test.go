@@ -33,7 +33,7 @@ func (c *epochClock) now() uint64 { return c.epoch.Load() }
 
 func newTestEpochKeys(t testing.TB, dir string, clock *epochClock) *EpochKeys {
 	t.Helper()
-	keys, err := NewEpochKeys(dir, clock.now)
+	keys, err := NewEpochKeys(dir, clock.now, nil)
 	require.NoError(t, err)
 	return keys
 }

@@ -572,7 +572,7 @@ func (s *Server) initLinkKeys() error {
 
 func (s *Server) initQUICKeys() error {
 	var err error
-	s.quicKeys, err = httpCommon.NewEpochKeys(filepath.Join(s.cfg.DataDir, "quic"), httpCommon.CurrentEpoch)
+	s.quicKeys, err = httpCommon.NewEpochKeys(filepath.Join(s.cfg.DataDir, "quic"), httpCommon.CurrentEpoch, s.cfg.QUIC)
 	return err
 }
 

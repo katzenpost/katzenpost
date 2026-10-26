@@ -19,7 +19,7 @@ func TestReplicaPregeneratesItsQUICKeysWithoutAuthorityPins(t *testing.T) {
 	geometry := CreateTestGeometryCustom(schemes, 1234, 5)
 	cfg := CreateTestConfig(t, schemes, geometry, CreateTestTempDir(t, "replica_quic_pregen_test"), "replica1", []string{"quic://127.0.0.1:1"})
 	quicKeyDir := t.TempDir()
-	quicKeys, err := common.NewEpochKeys(quicKeyDir, common.CurrentEpoch)
+	quicKeys, err := common.NewEpochKeys(quicKeyDir, common.CurrentEpoch, nil)
 	require.NoError(t, err)
 	s := &Server{cfg: cfg, logBackend: logBackend, log: logBackend.GetLogger("replica"), quicKeys: quicKeys}
 	p := &PKIWorker{server: s}
