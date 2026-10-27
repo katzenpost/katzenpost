@@ -548,6 +548,14 @@ Source: `courier/server/config/config.go`.
   accepted as well as IP literals (the validator switched from
   `netip.ParseAddrPort` to `net.SplitHostPort` so a bridge-network
   courier may bind on its docker-compose hostname).
+- **Added** `MaxDedupCacheEntries` (int). Caps the number of envelopes
+  in the courier's dedup cache. Values of zero or less select the
+  default, `50000`. Each entry holds up to two replica replies of
+  about one Sphinx payload each, so the default bounds the cache to
+  roughly 210 MiB with a 2000 byte `UserForwardPayloadLength`. When the
+  cache is full the courier first drops expired entries, then the
+  oldest completed ones, and otherwise answers new envelopes with
+  `EnvelopeErrorCourierBusy`, which the client daemon retries.
 
 ### Defaults
 

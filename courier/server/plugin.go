@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/courier/server/config"
 	"github.com/katzenpost/katzenpost/courier/server/instrument"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
@@ -76,6 +78,11 @@ type Courier struct {
 
 	dedupCacheLock sync.RWMutex
 	dedupCache     map[[hash.HashSize]byte]*CourierBookKeeping
+
+	// maxDedupCacheEntries caps len(dedupCache); lastDedupSweep is when an
+	// insert last scanned the whole cache. Both are guarded by dedupCacheLock.
+	maxDedupCacheEntries int
+	lastDedupSweep       time.Time
 
 	copyCacheLock sync.RWMutex
 	copyCache     map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply
@@ -243,6 +250,15 @@ func copyFailedReply(replicaErr uint8, failedEnvelopeIndex uint64) *pigeonhole.C
 // envelope, short enough that dedupCache size stays bounded under load.
 const DedupCacheTTL = 5 * time.Minute
 
+// dedupSweepInterval bounds how often an insert may scan the whole
+// dedupCache, so a busy courier does not pay O(n) per new envelope.
+const dedupSweepInterval = time.Second
+
+// dedupEvictDivisor sets the eviction batch: a sweep of a full cache
+// evicts completed entries until a 1/dedupEvictDivisor share of the
+// cap is free again.
+const dedupEvictDivisor = 10
+
 // maxConcurrentReplicaDispatch caps the number of replica-dispatch
 // goroutines running at once. Each does only two SendMessage calls
 // (which enqueue into per-replica bounded sender queues), so a
@@ -268,19 +284,25 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 		panic(fmt.Sprintf("Failed to create pigeonhole geometry: %v", err))
 	}
 
+	maxDedupCacheEntries := s.cfg.MaxDedupCacheEntries
+	if maxDedupCacheEntries <= 0 {
+		maxDedupCacheEntries = config.DefaultMaxDedupCacheEntries
+	}
+
 	courier := &Courier{
-		server:         s,
-		log:            s.logBackend.GetLogger("courier"),
-		cmds:           cmds,
-		geo:            s.cfg.SphinxGeometry,
-		envelopeScheme: scheme,
-		pigeonholeGeo:  pigeonholeGeo,
-		dedupCache:     make(map[[hash.HashSize]byte]*CourierBookKeeping),
-		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
-		copyDedupCache: make(map[[hash.HashSize]byte]*CopyCommandState),
-		dispatchSem:    make(chan struct{}, maxConcurrentReplicaDispatch),
-		replyWriteSem:  make(chan struct{}, maxConcurrentReplyWrites),
-		inFlight:       make(map[[hash.HashSize]byte]struct{}),
+		server:               s,
+		log:                  s.logBackend.GetLogger("courier"),
+		cmds:                 cmds,
+		geo:                  s.cfg.SphinxGeometry,
+		envelopeScheme:       scheme,
+		pigeonholeGeo:        pigeonholeGeo,
+		dedupCache:           make(map[[hash.HashSize]byte]*CourierBookKeeping),
+		maxDedupCacheEntries: maxDedupCacheEntries,
+		copyCache:            make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
+		copyDedupCache:       make(map[[hash.HashSize]byte]*CopyCommandState),
+		dispatchSem:          make(chan struct{}, maxConcurrentReplicaDispatch),
+		replyWriteSem:        make(chan struct{}, maxConcurrentReplyWrites),
+		inFlight:             make(map[[hash.HashSize]byte]struct{}),
 	}
 	courier.processCopyCommandFn = courier.processCopyCommand
 	return courier
@@ -472,6 +494,53 @@ func (e *Courier) pruneDedupCacheLocked(now time.Time, ttl time.Duration) int {
 		}
 	}
 	return pruned
+}
+
+// makeDedupCacheRoomLocked reports whether a new entry fits under
+// maxDedupCacheEntries. At most once per dedupSweepInterval it removes
+// expired entries and, if the cache was full, evicts the completed
+// entries with the oldest SuccessfulReplyAt until a batch of the cap is
+// free. Unresolved entries are never evicted: they keep a retransmitted
+// envelope from being dispatched to the replicas again.
+// The caller MUST hold e.dedupCacheLock.Lock().
+func (e *Courier) makeDedupCacheRoomLocked(now time.Time) bool {
+	full := len(e.dedupCache) >= e.maxDedupCacheEntries
+	if now.Sub(e.lastDedupSweep) >= dedupSweepInterval {
+		e.lastDedupSweep = now
+		e.pruneDedupCacheLocked(now, DedupCacheTTL)
+		if full {
+			target := e.maxDedupCacheEntries - max(e.maxDedupCacheEntries/dedupEvictDivisor, 1)
+			if n := e.evictOldestSuccessfulLocked(len(e.dedupCache) - target); n > 0 {
+				instrument.DedupCacheEvicted(n)
+			}
+		}
+	}
+	return len(e.dedupCache) < e.maxDedupCacheEntries
+}
+
+// evictOldestSuccessfulLocked removes up to n entries holding a successful
+// reply, oldest SuccessfulReplyAt first, and returns how many it removed.
+// The caller MUST hold e.dedupCacheLock.Lock().
+func (e *Courier) evictOldestSuccessfulLocked(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	type aged struct {
+		key [hash.HashSize]byte
+		at  time.Time
+	}
+	var done []aged
+	for key, entry := range e.dedupCache {
+		if !entry.SuccessfulReplyAt.IsZero() {
+			done = append(done, aged{key, entry.SuccessfulReplyAt})
+		}
+	}
+	slices.SortFunc(done, func(a, b aged) int { return a.at.Compare(b.at) })
+	n = min(n, len(done))
+	for _, d := range done[:n] {
+		delete(e.dedupCache, d.key)
+	}
+	return n
 }
 
 func dedupCacheEntryExpired(entry *CourierBookKeeping, now time.Time, ttl time.Duration) bool {
@@ -847,8 +916,13 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 		ok = false
 	}
 	if !ok {
-		// Sweep the rest only on insertion; ordinary polls stay O(1).
-		e.pruneDedupCacheLocked(now, DedupCacheTTL)
+		// Sweep only on insertion; ordinary polls stay O(1).
+		if !e.makeDedupCacheRoomLocked(now) {
+			e.dedupCacheLock.Unlock()
+			e.log.Debugf("cacheHandleCourierEnvelope: dedup cache full, refusing envelope %x", envHash[:8])
+			instrument.DroppedByReason("dedup_cache_full")
+			return envelopeErrorReply(envHash, pigeonhole.EnvelopeErrorCourierBusy, courierMessage.ReplyIndex)
+		}
 		e.dedupCache[*envHash] = &CourierBookKeeping{
 			Epoch:                e.getCurrentEpoch(),
 			CreatedAt:            now,
@@ -1641,6 +1715,10 @@ func (e *Courier) dispatchTombstone(
 // createEnvelopeErrorReply creates a CourierEnvelopeReply with the specified error code
 func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8, replyIndex uint8) *pigeonhole.CourierQueryReply {
 	e.log.Errorf("Envelope operation failed with error code %d", errorCode)
+	return envelopeErrorReply(envHash, errorCode, replyIndex)
+}
+
+func envelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8, replyIndex uint8) *pigeonhole.CourierQueryReply {
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{

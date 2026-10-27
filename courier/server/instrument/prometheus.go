@@ -28,6 +28,12 @@ var (
 			Help: "Number of real messages sent to replicas",
 		},
 	)
+	dedupCacheEvicted = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_courier_dedup_cache_evicted_total",
+			Help: "Number of completed envelope dedup cache entries evicted before their TTL because the cache was full",
+		},
+	)
 	queueLength = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "katzenpost_courier_queue_length",
@@ -118,6 +124,7 @@ func StartPrometheusListener(address string, log *logging.Logger) {
 	registerOnce.Do(func() {
 		prometheus.MustRegister(decoysSent)
 		prometheus.MustRegister(messagesSent)
+		prometheus.MustRegister(dedupCacheEvicted)
 		prometheus.MustRegister(queueLength)
 		prometheus.MustRegister(messagesReceived)
 		prometheus.MustRegister(enqueueTotal)
@@ -146,6 +153,11 @@ func DecoysSent() {
 // MessagesSent increments the counter for real messages sent
 func MessagesSent() {
 	messagesSent.Inc()
+}
+
+// DedupCacheEvicted counts n dedup cache entries evicted to make room.
+func DedupCacheEvicted(n int) {
+	dedupCacheEvicted.Add(float64(n))
 }
 
 // QueueLength sets the queue depth gauge for a replica

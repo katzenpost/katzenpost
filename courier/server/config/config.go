@@ -21,6 +21,12 @@ import (
 const (
 	DefaultMaxQueueSize = 64 // Default outgoing connection queue size.
 
+	// DefaultMaxDedupCacheEntries caps the envelope dedup cache. An entry
+	// holds at most two replica replies of about one Sphinx payload each,
+	// so with the 2000 byte UserForwardPayloadLength of current networks
+	// the cap bounds the cache to roughly 210 MiB.
+	DefaultMaxDedupCacheEntries = 50000
+
 	// DefaultLogFile is the log file the courier falls back to when no
 	// Logging.File is configured. The courier is always launched as a
 	// CBOR plugin and announces its socket path on stdout, so logging
@@ -77,6 +83,12 @@ type Config struct {
 	// MaxQueueSize specifies the maximum number of messages that can be queued
 	// for an outgoing connection before blocking.
 	MaxQueueSize int
+
+	// MaxDedupCacheEntries caps the number of envelopes the courier keeps
+	// in its dedup cache. When the cache is full the courier evicts the
+	// oldest completed entries and, failing that, asks clients to retry
+	// new envelopes later.
+	MaxDedupCacheEntries int
 
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	// If empty, no metrics listener is started.
@@ -138,6 +150,9 @@ func (c *Config) FixupAndValidate() error {
 	}
 	if c.MaxQueueSize <= 0 {
 		c.MaxQueueSize = DefaultMaxQueueSize
+	}
+	if c.MaxDedupCacheEntries <= 0 {
+		c.MaxDedupCacheEntries = DefaultMaxDedupCacheEntries
 	}
 	if c.MetricsAddress != "" {
 		if _, _, err := net.SplitHostPort(c.MetricsAddress); err != nil {
