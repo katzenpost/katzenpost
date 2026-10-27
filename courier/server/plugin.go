@@ -356,14 +356,6 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 
 	e.log.Debugf("CacheReply called with envelope hash: %x from replica ID: %d", reply.EnvelopeHash, reply.ReplicaID)
 
-	// DEBUG: Log which replica sent this reply
-	e.dedupCacheLock.Lock()
-	entry, ok := e.dedupCache[*reply.EnvelopeHash]
-	e.dedupCacheLock.Unlock()
-	if ok {
-		e.log.Debugf("CacheReply: Reply from replica %d, intermediaries are: %v", reply.ReplicaID, entry.IntermediateReplicas)
-	}
-
 	// NOTE: We do NOT send immediate replies, for reads or writes.
 	// The ARQ protocol requires:
 	// 1. Client sends first request with SURB #1 → Courier sends ACK on SURB #1
@@ -376,9 +368,10 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	e.dedupCacheLock.Lock()
 	defer e.dedupCacheLock.Unlock()
 
-	entry2, ok2 := e.dedupCache[*reply.EnvelopeHash]
-	if ok2 {
-		e.handleExistingEntry(entry2, reply)
+	entry, ok := e.dedupCache[*reply.EnvelopeHash]
+	if ok {
+		e.log.Debugf("CacheReply: Reply from replica %d, intermediaries are: %v", reply.ReplicaID, entry.IntermediateReplicas)
+		e.handleExistingEntry(entry, reply)
 		e.logFinalCacheState(reply)
 	} else {
 		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
@@ -835,20 +828,21 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 		e.scheduleReplicaDispatch(envHash, courierMessage)
 		return e.ackReply(envHash, courierMessage.ReplyIndex)
 	}
-	e.dedupCacheLock.Unlock()
 
-	e.dedupCacheLock.Lock()
 	redispatch := e.cacheEntryNeedsRedispatch(cacheEntry)
 	if redispatch {
 		cacheEntry.RedispatchAttempts++
 	}
+	// CacheReply replaces stored replies but never mutates them, so a
+	// shallow copy is a consistent view to serve the poll from.
+	snapshot := *cacheEntry
 	e.dedupCacheLock.Unlock()
 	if redispatch {
-		e.log.Debugf("cacheHandleCourierEnvelope: cached entry for %x needs re-dispatch (attempt %d)", envHash[:8], cacheEntry.RedispatchAttempts)
+		e.log.Debugf("cacheHandleCourierEnvelope: cached entry for %x needs re-dispatch (attempt %d)", envHash[:8], snapshot.RedispatchAttempts)
 		e.scheduleReplicaDispatch(envHash, courierMessage)
 	}
 	e.log.Debugf("cacheHandleCourierEnvelope: found cached entry for %x, calling handleOldMessage", envHash)
-	return e.handleOldMessage(cacheEntry, envHash, courierMessage)
+	return e.handleOldMessage(&snapshot, envHash, courierMessage)
 }
 
 // describeIntermediaries renders the two intermediary replicas of a
