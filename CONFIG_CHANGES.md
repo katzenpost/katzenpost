@@ -551,8 +551,7 @@ Source: `courier/server/config/config.go`.
 - **Added** `MaxDedupCacheEntries` (int). Caps the number of envelopes
   in the courier's dedup cache. Values of zero or less select the
   default, `50000`. Each entry holds up to two replica replies of
-  about one Sphinx payload each, so the default bounds the cache to
-  roughly 210 MiB with a 2000 byte `UserForwardPayloadLength`. When the
+  1703 bytes each with a 2000 byte `UserForwardPayloadLength`. When the
   cache is full the courier first drops expired entries, then the
   oldest completed ones, and otherwise answers new envelopes with
   `EnvelopeErrorCourierBusy`, which the client daemon retries.

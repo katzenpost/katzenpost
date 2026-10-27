@@ -22,9 +22,9 @@ const (
 	DefaultMaxQueueSize = 64 // Default outgoing connection queue size.
 
 	// DefaultMaxDedupCacheEntries caps the envelope dedup cache. An entry
-	// holds at most two replica replies of about one Sphinx payload each,
-	// so with the 2000 byte UserForwardPayloadLength of current networks
-	// the cap bounds the cache to roughly 210 MiB.
+	// holds at most two replica replies of CalculateEnvelopeReplySizeRead
+	// bytes each, 1703 bytes with the 2000 byte UserForwardPayloadLength
+	// of current networks.
 	DefaultMaxDedupCacheEntries = 50000
 
 	// DefaultLogFile is the log file the courier falls back to when no
