@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -94,6 +95,9 @@ func (n *Network) AddStorage(replicas int) {
 	t := n.t
 	t.Helper()
 	require.False(t, n.started, "localnet: storage is added before Start")
+	if runtime.GOOS == "windows" {
+		t.Skip("replicas need unix permissions on their DataDir")
+	}
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
 	for i := range replicas {
