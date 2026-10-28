@@ -105,3 +105,58 @@ func TestReadNotFoundWhenOtherHolderIsSilent(t *testing.T) {
 	require.Equal(t, pigeonhole.ReplyTypePayload, reply.ReplyType)
 	require.Equal(t, []byte("not-found"), reply.Payload)
 }
+
+func repairHints(courier *Courier, dest uint8) []*commands.ReplicaDecoy {
+	return courier.server.connector.(*fakeConnector).sentHints(dest)
+}
+
+// TestReadSplitAnswerHintsHolder asks the holder that served a read to
+// repair its peer that answered box-not-found, once, whichever answers
+// first.
+func TestReadSplitAnswerHintsHolder(t *testing.T) {
+	for _, notFoundFirst := range []bool{true, false} {
+		courier := createTestCourier(t)
+		envelope, envHash := shardReadEntry(t, courier, time.Now())
+
+		replies := []func(){
+			func() { cacheReadReply(courier, envHash, 2, pigeonhole.ReplicaErrorBoxIDNotFound, "not-found") },
+			func() { cacheReadReply(courier, envHash, 0, pigeonhole.ReplicaSuccess, "box") },
+		}
+		if !notFoundFirst {
+			replies[0], replies[1] = replies[1], replies[0]
+		}
+		replies[0]()
+		require.Empty(t, repairHints(courier, 0), "hinted before both holders answered")
+		replies[1]()
+
+		hints := repairHints(courier, 0)
+		require.Len(t, hints, 1)
+		require.Equal(t, envHash, hints[0].RepairEnvelopeHash)
+		require.NotNil(t, hints[0].Cmds, "hint would be sent unpadded")
+		require.Empty(t, repairHints(courier, 2), "hinted the holder that lacks the box")
+
+		cacheReadReply(courier, envHash, 0, pigeonhole.ReplicaSuccess, "box")
+		cacheReadReply(courier, envHash, 2, pigeonhole.ReplicaErrorBoxIDNotFound, "not-found")
+		pollAt(courier, envelope, 0)
+		require.Len(t, repairHints(courier, 0), 1, "hinted more than once for one read")
+	}
+}
+
+func TestReadTombstoneSplitAnswerHintsHolder(t *testing.T) {
+	courier := createTestCourier(t)
+	_, envHash := shardReadEntry(t, courier, time.Now())
+	cacheReadReply(courier, envHash, 2, pigeonhole.ReplicaErrorTombstone, "tombstone")
+	cacheReadReply(courier, envHash, 0, pigeonhole.ReplicaErrorBoxIDNotFound, "not-found")
+	require.Len(t, repairHints(courier, 2), 1)
+}
+
+func TestReadAgreeingAnswersSendNoHint(t *testing.T) {
+	for _, code := range []uint8{pigeonhole.ReplicaSuccess, pigeonhole.ReplicaErrorBoxIDNotFound} {
+		courier := createTestCourier(t)
+		_, envHash := shardReadEntry(t, courier, time.Now())
+		cacheReadReply(courier, envHash, 2, code, "a")
+		cacheReadReply(courier, envHash, 0, code, "b")
+		require.Empty(t, repairHints(courier, 0))
+		require.Empty(t, repairHints(courier, 2))
+	}
+}

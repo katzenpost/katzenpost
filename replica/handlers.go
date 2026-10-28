@@ -47,6 +47,9 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 		return nil, false
 	case *commands.ReplicaDecoy:
 		instrument.IncomingDecoysReceived()
+		if cmd.RepairEnvelopeHash != nil {
+			c.l.server.repairFromHint(cmd.RepairEnvelopeHash)
+		}
 		decoyReply := &commands.ReplicaDecoy{
 			Cmds: commands.NewStorageReplicaCommands(c.geo, schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)),
 		}
@@ -204,9 +207,11 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			c.log.Errorf("REPLICA_HANDLER: failed to seal read reply: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
 		}
-		if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
+		switch readReply.ErrorCode {
+		case pigeonhole.ReplicaSuccess, pigeonhole.ReplicaErrorTombstone:
 			c.log.Debug("REPLICA_HANDLER: Found data locally")
-		} else {
+			c.l.server.readRepairs.remember(envelopeHash, &myCmd.BoxID, time.Now())
+		default:
 			c.log.Debugf("REPLICA_HANDLER: data not found locally (error code: %d)", readReply.ErrorCode)
 		}
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID)

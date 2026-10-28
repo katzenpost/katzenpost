@@ -77,21 +77,36 @@ func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, er
 }
 
 func (co *Connector) DispatchMessage(dest uint8, message *commands.ReplicaMessage) error {
-	id, err := co.destToNodeID(dest)
+	c, err := co.conn(dest)
 	if err != nil {
 		co.log.Errorf("DispatchMessage failure: %s", err)
 		return err
 	}
+	return c.dispatchMessage(message)
+}
 
+// DispatchRepairHint queues a repair hint for replica dest in place of
+// one of its decoys.
+func (co *Connector) DispatchRepairHint(dest uint8, hint *commands.ReplicaDecoy) error {
+	c, err := co.conn(dest)
+	if err != nil {
+		return err
+	}
+	return c.dispatch(&courierSenderRequest{ReplicaDecoy: hint, EnqueuedAt: time.Now()})
+}
+
+func (co *Connector) conn(dest uint8) (*outgoingConn, error) {
+	id, err := co.destToNodeID(dest)
+	if err != nil {
+		return nil, err
+	}
 	co.RLock()
+	defer co.RUnlock()
 	c, ok := co.conns[*id]
 	if !ok {
-		co.RUnlock()
-		co.log.Errorf("DispatchMessage failure: connection not found")
-		return errors.New("connection not found")
+		return nil, errors.New("connection not found")
 	}
-	co.RUnlock()
-	return c.dispatchMessage(message)
+	return c, nil
 }
 
 func (co *Connector) Halt() {

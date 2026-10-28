@@ -33,6 +33,7 @@ type GenericConnector interface {
 	QUICPinMismatches() *quicCommon.QUICPinMismatches
 
 	DispatchMessage(dest uint8, message *commands.ReplicaMessage) error
+	DispatchRepairHint(dest uint8, hint *commands.ReplicaDecoy) error
 }
 
 type Server struct {
@@ -181,6 +182,10 @@ func (s *Server) initLogging() error {
 
 func (s *Server) SendMessage(dest uint8, mesg *commands.ReplicaMessage) error {
 	return s.connector.DispatchMessage(dest, mesg)
+}
+
+func (s *Server) SendRepairHint(dest uint8, hint *commands.ReplicaDecoy) error {
+	return s.connector.DispatchRepairHint(dest, hint)
 }
 
 func (s *Server) ForceConnectorUpdate() {

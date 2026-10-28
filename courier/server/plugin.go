@@ -47,6 +47,10 @@ type CourierBookKeeping struct {
 	// RedispatchAttempts bounds how many times a client poll may
 	// trigger a fresh dispatch to the replicas for this envelope.
 	RedispatchAttempts int
+
+	// RepairHinted is set once a shard holder has been asked to repair
+	// its peer for this read.
+	RepairHinted bool
 }
 
 // CopyCommandState tracks the state of a copy command for idempotency.
@@ -375,11 +379,12 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	// is how the client learns whether the write was actually stored.
 
 	e.dedupCacheLock.Lock()
-	defer e.dedupCacheLock.Unlock()
-
 	entry2, ok2 := e.dedupCache[*reply.EnvelopeHash]
+	var hintDest uint8
+	var hint bool
 	if ok2 {
 		e.handleExistingEntry(entry2, reply)
+		hintDest, hint = repairHintTarget(entry2)
 		// Start the longer retention period only when a successful reply
 		// has actually been cached. Duplicates and client polls do not
 		// extend it, so the cache remains bounded.
@@ -395,6 +400,32 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	} else {
 		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
 	}
+	e.dedupCacheLock.Unlock()
+
+	if hint {
+		err := e.server.SendRepairHint(hintDest, &commands.ReplicaDecoy{Cmds: e.cmds, RepairEnvelopeHash: reply.EnvelopeHash})
+		if err != nil {
+			e.log.Debugf("CacheReply: repair hint to replica %d: %v", hintDest, err)
+		}
+	}
+}
+
+// repairHintTarget returns the shard holder to ask to repair its peer
+// when one holder answered a read with the box and the other with
+// box-not-found. It returns a holder at most once per entry.
+func repairHintTarget(entry *CourierBookKeeping) (uint8, bool) {
+	r := entry.EnvelopeReplies
+	if entry.RepairHinted || r[0] == nil || r[1] == nil {
+		return 0, false
+	}
+	for i := range r {
+		holds := r[i].ErrorCode == pigeonhole.ReplicaSuccess || r[i].ErrorCode == pigeonhole.ReplicaErrorTombstone
+		if holds && r[i^1].ErrorCode == pigeonhole.ReplicaErrorBoxIDNotFound {
+			entry.RepairHinted = true
+			return r[i].ReplicaID, true
+		}
+	}
+	return 0, false
 }
 
 // validateReply checks if the reply should be cached

@@ -277,6 +277,7 @@ func createTestCourier(t *testing.T) *Courier {
 	server.PKI, err = newPKIWorker(server, mockPKI, server.logBackend.GetLogger("courier-pkiworker"))
 	require.NoError(t, err)
 
+	server.connector = newFakeConnector()
 	courier := NewCourier(server, cmds, replicaScheme)
 	require.NotNil(t, courier)
 	require.NotNil(t, courier.dedupCache)
