@@ -58,7 +58,7 @@ func TestProxySlotAcquireIsBoundedBySweepDeadline(t *testing.T) {
 	go func() {
 		start := time.Now()
 		_, _, _, err := env.inConn.proxyToShardWithSlot(env.holders[0], replicaEpoch,
-			sweepDeadlineReadBlob(t, env), replicaCommon.MKEMNikeScheme, replicaCommon.NikeScheme,
+			sweepDeadlineWriteBlob(t, env), replicaCommon.MKEMNikeScheme, replicaCommon.NikeScheme,
 			deadline, 1)
 		done <- attempt{err: err, elapsed: time.Since(start)}
 	}()
@@ -78,7 +78,7 @@ func TestProxySlotAcquireIsBoundedBySweepDeadline(t *testing.T) {
 }
 
 // TestProxySweepEndsWithinBudgetUnderSaturation is the same rule seen
-// from the client's side: a proxied read arriving at a replica whose
+// from the client's side: a proxied write arriving at a replica whose
 // proxy worker pool is saturated must come back with an error inside
 // ProxyRequestTimeout, rather than queueing behind the pool until a
 // slot happens to free up.
@@ -89,11 +89,11 @@ func TestProxySweepEndsWithinBudgetUnderSaturation(t *testing.T) {
 	env.server.proxySema <- struct{}{}
 	defer func() { <-env.server.proxySema }()
 
-	// A box this server does not shard, so serving the read means
+	// A box this server does not shard, so serving the write means
 	// proxying it to a holder, which means taking a slot that will
 	// never come free.
 	boxID := findBoxByShardMembership(t, env.server, env.doc, false)
-	proxyMsg := semaScopeValidReplicaMessage(t, env.server, boxID)
+	proxyMsg := semaScopeProxiedWriteMessage(t, env.server, boxID)
 
 	_, ok := env.inConn.onReplicaCommand(proxyMsg, env.emitter)
 	require.True(t, ok)
@@ -104,21 +104,22 @@ func TestProxySweepEndsWithinBudgetUnderSaturation(t *testing.T) {
 		require.Equal(t, pigeonhole.ReplicaErrorReplicationFailed, req.ReplicaMessageReply.ErrorCode,
 			"a sweep that reached no holder must say so rather than answer as if it had")
 	case <-time.After(sweepDeadlineBudget + sweepDeadlineSlack):
-		t.Fatal("the proxied read never returned: the sweep is waiting on the proxy worker pool outside its budget")
+		t.Fatal("the proxied write never returned: the sweep is waiting on the proxy worker pool outside its budget")
 	}
 
 	require.Equal(t, 1, len(env.server.proxySema),
 		"the sweep must not have taken the pinned slot")
 }
 
-// sweepDeadlineReadBlob builds the padded inner message a proxied read
+// sweepDeadlineWriteBlob builds the padded inner message a proxied write
 // carries, so an attempt can be driven directly rather than through a
 // whole ReplicaMessage.
-func sweepDeadlineReadBlob(t *testing.T, env *semaScopeTestEnv) []byte {
+func sweepDeadlineWriteBlob(t *testing.T, env *semaScopeTestEnv) []byte {
 	t.Helper()
 	var boxID [32]byte
 	blob, err := pigeonhole.PadInnerMessageForEncryption(&pigeonhole.ReplicaInnerMessage{
-		ReadMsg: &pigeonhole.ReplicaRead{BoxID: boxID},
+		MessageType: 1, // 1 = write
+		WriteMsg:    &pigeonhole.ReplicaWrite{BoxID: boxID},
 	}, env.server.pigeonholeGeo)
 	require.NoError(t, err)
 	return blob

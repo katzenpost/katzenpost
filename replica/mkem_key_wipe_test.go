@@ -12,7 +12,6 @@ import (
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 
-	"github.com/katzenpost/katzenpost/pigeonhole"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -98,29 +97,12 @@ func (s *trackingNikeScheme) requireAllWiped(t *testing.T, what string) {
 	}
 }
 
-func TestProxyReadSweepWipesEphemeralKeys(t *testing.T) {
-	env := setupSemaScopeTestServer(t)
-	env.server.connector = newScriptedConnector(t, env,
-		holderScript{bare: true, errorCode: pigeonhole.ReplicaErrorBoxIDNotFound},
-		holderScript{errorCode: pigeonhole.ReplicaSuccess},
-	)
-	s := &trackingNikeScheme{Scheme: replicaCommon.NikeScheme}
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-
-	result := env.inConn.proxyReadSweep(env.holders, 0, replicaEpoch, sweepDeadlineReadBlob(t, env), mkem.NewScheme(s), s)
-	require.NotNil(t, result.readReply)
-	require.Len(t, s.keys, 2)
-
-	s.requireAllWiped(t, "proxyReadSweep")
-}
-
 func TestProxyToShardFailureWipesEphemeralKey(t *testing.T) {
 	env := setupSemaScopeTestServer(t)
-	env.server.connector = newScriptedConnector(t, env, holderScript{silent: true})
 	s := &trackingNikeScheme{Scheme: replicaCommon.NikeScheme}
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
-	_, key, _, err := env.inConn.proxyToShard(env.holders[0], replicaEpoch, sweepDeadlineReadBlob(t, env), mkem.NewScheme(s), s, time.Now().Add(5*time.Second), 1)
+	_, key, _, err := env.inConn.proxyToShard(env.holders[0], replicaEpoch, sweepDeadlineWriteBlob(t, env), mkem.NewScheme(s), s, time.Now().Add(5*time.Second), 1)
 	require.Error(t, err)
 	require.Nil(t, key)
 

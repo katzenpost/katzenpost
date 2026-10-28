@@ -99,6 +99,10 @@ type Server struct {
 	// decapSema bounds concurrent local MKEM decapsulations.
 	decapSema chan struct{}
 
+	// readRepairs remembers the boxes of recently served reads for
+	// courier repair hints.
+	readRepairs readRepairs
+
 	// firstShardCandidate overrides which of a box's shard holders a
 	// proxy sweep tries first. Nil in production, where the choice is
 	// random; see Server.proxyFirstCandidate. A test pins it to drive

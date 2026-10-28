@@ -47,6 +47,10 @@ type CourierBookKeeping struct {
 	// RedispatchAttempts bounds how many times a client poll may
 	// trigger a fresh dispatch to the replicas for this envelope.
 	RedispatchAttempts int
+
+	// RepairHinted is set once a shard holder has been asked to repair
+	// its peer for this read.
+	RepairHinted bool
 }
 
 // CopyCommandState tracks the state of a copy command for idempotency.
@@ -375,11 +379,12 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	// is how the client learns whether the write was actually stored.
 
 	e.dedupCacheLock.Lock()
-	defer e.dedupCacheLock.Unlock()
-
 	entry2, ok2 := e.dedupCache[*reply.EnvelopeHash]
+	var hintDest uint8
+	var hint bool
 	if ok2 {
 		e.handleExistingEntry(entry2, reply)
+		hintDest, hint = repairHintTarget(entry2)
 		// Start the longer retention period only when a successful reply
 		// has actually been cached. Duplicates and client polls do not
 		// extend it, so the cache remains bounded.
@@ -395,6 +400,32 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	} else {
 		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
 	}
+	e.dedupCacheLock.Unlock()
+
+	if hint {
+		err := e.server.SendRepairHint(hintDest, &commands.ReplicaDecoy{Cmds: e.cmds, RepairEnvelopeHash: reply.EnvelopeHash})
+		if err != nil {
+			e.log.Debugf("CacheReply: repair hint to replica %d: %v", hintDest, err)
+		}
+	}
+}
+
+// repairHintTarget returns the shard holder to ask to repair its peer
+// when one holder answered a read with the box and the other with
+// box-not-found. It returns a holder at most once per entry.
+func repairHintTarget(entry *CourierBookKeeping) (uint8, bool) {
+	r := entry.EnvelopeReplies
+	if entry.RepairHinted || r[0] == nil || r[1] == nil {
+		return 0, false
+	}
+	for i := range r {
+		holds := r[i].ErrorCode == pigeonhole.ReplicaSuccess || r[i].ErrorCode == pigeonhole.ReplicaErrorTombstone
+		if holds && r[i^1].ErrorCode == pigeonhole.ReplicaErrorBoxIDNotFound {
+			entry.RepairHinted = true
+			return r[i].ReplicaID, true
+		}
+	}
+	return 0, false
 }
 
 // validateReply checks if the reply should be cached
@@ -550,9 +581,11 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 		Ciphertext:    courierMessage.Ciphertext,
 	}
 	e.log.Debugf("handleCourierEnvelope: Sending message to first replica ID %d", firstReplicaID)
-	if err := e.server.SendMessage(firstReplicaID, replicaMsg1); err != nil {
-		e.log.Errorf("handleCourierEnvelope: Failed to send message to first replica %d: %s", firstReplicaID, err)
-		return fmt.Errorf("failed to dispatch to replica %d: %w", firstReplicaID, err)
+	// A replica that cannot be reached must not keep the envelope from
+	// the other one: a read is answered by either of its shard holders.
+	err1 := e.server.SendMessage(firstReplicaID, replicaMsg1)
+	if err1 != nil {
+		e.log.Errorf("handleCourierEnvelope: Failed to send message to first replica %d: %s", firstReplicaID, err1)
 	}
 
 	secondReplicaID := courierMessage.IntermediateReplicas[1]
@@ -567,12 +600,15 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 		Ciphertext:    courierMessage.Ciphertext,
 	}
 	e.log.Debugf("handleCourierEnvelope: Sending message to second replica ID %d", secondReplicaID)
-	if err := e.server.SendMessage(secondReplicaID, replicaMsg2); err != nil {
-		e.log.Errorf("handleCourierEnvelope: Failed to send message to second replica %d: %s", secondReplicaID, err)
-		return fmt.Errorf("failed to dispatch to replica %d: %w", secondReplicaID, err)
+	err2 := e.server.SendMessage(secondReplicaID, replicaMsg2)
+	if err2 != nil {
+		e.log.Errorf("handleCourierEnvelope: Failed to send message to second replica %d: %s", secondReplicaID, err2)
+	}
+	if err1 != nil && err2 != nil {
+		return fmt.Errorf("failed to dispatch to replicas %d and %d: %w", firstReplicaID, secondReplicaID, errors.Join(err1, err2))
 	}
 
-	e.log.Debugf("handleCourierEnvelope: Successfully dispatched messages to both replicas")
+	e.log.Debugf("handleCourierEnvelope: Dispatched messages to replicas")
 	return nil
 }
 
@@ -707,6 +743,16 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		} else {
 			payload = nil
 		}
+	}
+
+	// Hold back a box-not-found while the other replica may still answer
+	// with the box: ACK it so the client polls again.
+	served := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
+	if len(payload) > 0 && served != nil && served.ErrorCode == pigeonhole.ReplicaErrorBoxIDNotFound &&
+		cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] == nil &&
+		time.Since(cacheEntry.CreatedAt) < notFoundHoldWindow {
+		e.log.Debugf("handleOldMessage: holding box-not-found for %x until the other replica answers", envHash[:8])
+		payload = nil
 	}
 
 	// An empty payload means no servable reply is available yet: either no
@@ -906,6 +952,14 @@ func (e *Courier) describeIntermediaries(entry *CourierBookKeeping) string {
 }
 
 const redispatchGrace = 30 * time.Second
+
+// notFoundHoldWindow bounds how long a read's box-not-found reply is held
+// back while the other replica has not answered. A read goes to both of a
+// box's shard holders, and one that missed the box's replication answers
+// box-not-found, possibly before the holder that has it answers with the
+// box. Serving the first reply would report a stored box as missing, which
+// a client that does not retry on box-not-found takes as final.
+const notFoundHoldWindow = 30 * time.Second
 
 // maxRedispatchAttempts caps client-poll-triggered dispatches per
 // envelope so an aggressive ARQ cannot amplify replica load unboundedly.

@@ -49,6 +49,67 @@ func CryptoRandIndex(n int) (int, error) {
 
 var ErrReplicaKeysNotReady = errors.New("replica envelope keys not ready")
 
+// replicaEnvelopeKeys returns the current replica epoch envelope keys of two replicas.
+func replicaEnvelopeKeys(doc *cpki.Document, replica1, replica2 uint8) ([]nike.PublicKey, error) {
+	replicaPubKeys := make([]nike.PublicKey, 2)
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	for i, replicaNum := range [2]uint8{replica1, replica2} {
+		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
+		if err != nil {
+			return nil, err
+		}
+		keyBytes, exists := desc.EnvelopeKeys[replicaEpoch]
+		if !exists {
+			return nil, fmt.Errorf("no envelope key found for replica %d at epoch %d: %w", replicaNum, replicaEpoch, ErrReplicaKeysNotReady)
+		}
+		if len(keyBytes) == 0 {
+			return nil, fmt.Errorf("empty envelope key for replica %d at epoch %d: %w", replicaNum, replicaEpoch, ErrReplicaKeysNotReady)
+		}
+		replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal key for replica %d (keySize=%d): %w", replicaNum, len(keyBytes), err)
+		}
+	}
+	return replicaPubKeys, nil
+}
+
+// GetShardReplicas returns the replica numbers and public keys of boxid's two
+// shard replicas, so that a read is sent straight to them. If a shard
+// replica is offline, a random other replica takes its place; it answers
+// box-not-found and the courier prefers the holder's reply.
+func GetShardReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint8, []nike.PublicKey, error) {
+	if doc == nil {
+		return [2]uint8{}, nil, errors.New("PKI document is nil")
+	}
+	if len(doc.StorageReplicas) < 2 {
+		return [2]uint8{}, nil, fmt.Errorf("insufficient storage replicas: need at least 2 replicas: %w", ErrReplicaKeysNotReady)
+	}
+	shards, err := replicaCommon.GetShards(boxid, doc)
+	if err != nil {
+		return [2]uint8{}, nil, err
+	}
+	ids := [2]uint8{shards[0].ReplicaID}
+	if len(shards) > 1 {
+		ids[1] = shards[1].ReplicaID
+	} else {
+		for {
+			idx, err := CryptoRandIndex(len(doc.StorageReplicas))
+			if err != nil {
+				return [2]uint8{}, nil, err
+			}
+			if id := doc.StorageReplicas[idx].ReplicaID; id != ids[0] {
+				ids[1] = id
+				break
+			}
+		}
+	}
+	keys, err := replicaEnvelopeKeys(doc, ids[0], ids[1])
+	if err != nil {
+		return [2]uint8{}, nil, err
+	}
+	return ids, keys, nil
+}
+
 // GetRandomIntermediateReplicas returns two random replica numbers and their public keys.
 func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint8, []nike.PublicKey, error) {
 	if doc == nil {
@@ -86,29 +147,6 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		allReplicaIDs[i] = replica.ReplicaID
 	}
 
-	getReplicaPubKeys := func(replica1, replica2 uint8) ([]nike.PublicKey, error) {
-		replicaPubKeys := make([]nike.PublicKey, 2)
-		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-		for i, replicaNum := range [2]uint8{replica1, replica2} {
-			desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
-			if err != nil {
-				return nil, err
-			}
-			keyBytes, exists := desc.EnvelopeKeys[replicaEpoch]
-			if !exists {
-				return nil, fmt.Errorf("no envelope key found for replica %d at epoch %d: %w", replicaNum, replicaEpoch, ErrReplicaKeysNotReady)
-			}
-			if len(keyBytes) == 0 {
-				return nil, fmt.Errorf("empty envelope key for replica %d at epoch %d: %w", replicaNum, replicaEpoch, ErrReplicaKeysNotReady)
-			}
-			replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to unmarshal key for replica %d (keySize=%d): %w", replicaNum, len(keyBytes), err)
-			}
-		}
-		return replicaPubKeys, nil
-	}
-
 	// Helper to pick a random ReplicaID from allReplicaIDs, excluding certain IDs
 	pickRandomReplicaID := func(exclude ...uint8) (uint8, error) {
 		for {
@@ -135,7 +173,7 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return [2]uint8{}, nil, errors.New("insufficient storage replicas: need at least 2 replicas")
 	case numReplicas == 2:
 		// With only 2 replicas, use both of their ReplicaIDs
-		replicaPubKeys, err := getReplicaPubKeys(allReplicaIDs[0], allReplicaIDs[1])
+		replicaPubKeys, err := replicaEnvelopeKeys(doc, allReplicaIDs[0], allReplicaIDs[1])
 		if err != nil {
 			return [2]uint8{}, nil, err
 		}
@@ -163,7 +201,7 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 			}
 		}
 
-		replicaPubKeys, err := getReplicaPubKeys(replica1, replica2)
+		replicaPubKeys, err := replicaEnvelopeKeys(doc, replica1, replica2)
 		if err != nil {
 			return [2]uint8{}, nil, err
 		}
@@ -182,7 +220,7 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 			return [2]uint8{}, nil, err
 		}
 
-		replicaPubKeys, err := getReplicaPubKeys(replica1, replica2)
+		replicaPubKeys, err := replicaEnvelopeKeys(doc, replica1, replica2)
 		if err != nil {
 			return [2]uint8{}, nil, err
 		}
