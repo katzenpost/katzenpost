@@ -49,7 +49,7 @@ func main() {
 			}
 			defer c.Close()
 			ph := ps.NewThinPigeonhole(c)
-			dir, err := directory.NewClient(ph, nil, pollInterval)
+			dir, err := directory.NewAll(ph, nil, pollInterval)
 			if err != nil {
 				return err
 			}

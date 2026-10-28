@@ -227,3 +227,52 @@ func TestMalformedRequests(t *testing.T) {
 	require.NoError(t, ps.Unmarshal(f.dir.Handle([]byte("junk")), &reply))
 	require.Equal(t, ps.StatusInvalidRequest, reply.Status)
 }
+
+func TestAllSpansDirectories(t *testing.T) {
+	f := newFixture(t)
+	// A second, independent directory.
+	pub, priv, err := ps.DefaultNIKE.GenerateKeyPair()
+	require.NoError(t, err)
+	pk2 := &ps.PluginKey{Scheme: ps.DefaultNIKE, Public: pub, Private: priv}
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	d2, err := directory.New(directory.Config{
+		Key: pk2, DBPath: filepath.Join(t.TempDir(), "d2.db"),
+		RefreshInterval: time.Hour, Log: logBackend.GetLogger("d2"),
+	}, f.net)
+	require.NoError(t, err)
+	t.Cleanup(func() { d2.Close() })
+	f.net.AddService(ps.DirectoryCapability, [32]byte{0xde}, ps.DirectoryCapability, ps.PluginParams(pk2),
+		func(_ context.Context, p []byte) []byte { return d2.Handle(p) })
+
+	ctx := testCtx(t)
+	k := serviceKey(t)
+	adv, err := directory.NewAll(f.net, k, poll)
+	require.NoError(t, err)
+	require.NoError(t, adv.Advertise(ctx, descriptor(k, 2)))
+
+	// Each directory on its own holds it.
+	for _, node := range []byte{0xdd, 0xde} {
+		nodes, err := f.net.Services(ps.DirectoryCapability)
+		require.NoError(t, err)
+		for i := range nodes {
+			if nodes[i].NodeIDHash[0] != node {
+				continue
+			}
+			c, err := directory.NewClientFor(f.net, &nodes[i], nil, poll)
+			require.NoError(t, err)
+			_, err = c.Lookup(ctx, k.ID())
+			require.NoError(t, err)
+		}
+	}
+
+	reader, err := directory.NewAll(f.net, nil, poll)
+	require.NoError(t, err)
+	got, err := reader.Lookup(ctx, k.ID())
+	require.NoError(t, err)
+	require.Len(t, got.Routers, 2)
+	require.Eventually(t, func() bool {
+		all, err := reader.List(ctx)
+		return err == nil && len(all) == 1
+	}, 30*time.Second, 100*time.Millisecond, "the merged list holds the service once")
+}

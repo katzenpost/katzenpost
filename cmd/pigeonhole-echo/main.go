@@ -55,7 +55,7 @@ func main() {
 			if err != nil {
 				return err
 			}
-			adv, err := directory.NewClient(ph, key, pollInterval)
+			adv, err := directory.NewAll(ph, key, pollInterval)
 			if err != nil {
 				return err
 			}
