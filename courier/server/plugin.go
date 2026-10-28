@@ -714,6 +714,16 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		}
 	}
 
+	// Hold back a box-not-found while the other replica may still answer
+	// with the box: ACK it so the client polls again.
+	served := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
+	if len(payload) > 0 && served != nil && served.ErrorCode == pigeonhole.ReplicaErrorBoxIDNotFound &&
+		cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] == nil &&
+		time.Since(cacheEntry.CreatedAt) < notFoundHoldWindow {
+		e.log.Debugf("handleOldMessage: holding box-not-found for %x until the other replica answers", envHash[:8])
+		payload = nil
+	}
+
 	// An empty payload means no servable reply is available yet: either no
 	// replica reply has arrived, or an intermediate returned a transport
 	// error with no forwardable ciphertext. ACK it and let the client
@@ -911,6 +921,14 @@ func (e *Courier) describeIntermediaries(entry *CourierBookKeeping) string {
 }
 
 const redispatchGrace = 30 * time.Second
+
+// notFoundHoldWindow bounds how long a read's box-not-found reply is held
+// back while the other replica has not answered. A read goes to both of a
+// box's shard holders, and one that missed the box's replication answers
+// box-not-found, possibly before the holder that has it answers with the
+// box. Serving the first reply would report a stored box as missing, which
+// a client that does not retry on box-not-found takes as final.
+const notFoundHoldWindow = 30 * time.Second
 
 // maxRedispatchAttempts caps client-poll-triggered dispatches per
 // envelope so an aggressive ARQ cannot amplify replica load unboundedly.
