@@ -1375,11 +1375,29 @@ func (t *ThinClient) eventSinkWorker() {
 			// stalls the fan-out (and, like Python's callback
 			// model, the reader pipeline behind it) — HaltCh
 			// remains the escape hatch so Close() still works.
+			// While it waits, it still serves sink changes: a caller
+			// that has its reply stops reading and then removes its
+			// sink, or adds one for a follow-up request.
 			for drain := range drains {
-				select {
-				case <-t.HaltCh():
-					return
-				case drain <- event:
+			deliver:
+				for {
+					select {
+					case <-t.HaltCh():
+						return
+					case drain <- event:
+						break deliver
+					case removed := <-t.drainRemove:
+						delete(drains, removed)
+						if removed == drain {
+							break deliver
+						}
+					case added := <-t.drainAdd:
+						if cap(added) == 0 {
+							t.log.Warning("Attempting to add unbuffered channel to eventSink drains - ignoring")
+							continue
+						}
+						drains[added] = struct{}{}
+					}
 				}
 			}
 		}
