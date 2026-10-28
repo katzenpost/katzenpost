@@ -12,6 +12,7 @@ package localnet
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -87,7 +88,11 @@ type Network struct {
 // New builds a network's keys and gateway. Add its services, then Start it.
 func New(t testing.TB) *Network {
 	t.Helper()
-	dir := t.TempDir()
+	// Not t.TempDir: the daemon, thin clients and servers never close their
+	// log files, and Windows cannot remove an open file.
+	dir, err := os.MkdirTemp("", "localnet")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	logBackend, err := log.New(filepath.Join(dir, "localnet.log"), "DEBUG", false)
 	require.NoError(t, err)
 	g := geo.GeometryFromUserForwardPayloadLength(mixNIKE, UserForwardPayloadLength, true, mixLayers+2)
