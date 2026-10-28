@@ -923,8 +923,8 @@ type VoucherDeriveStream struct {
 	Voucher []byte `cbor:"voucher"`
 }
 
-// BoxSeal seals Plaintext to PublicKey with hpqc protocols/box over the NIKE
-// named by NIKEScheme. It is served synchronously by the daemon with no
+// BoxSeal seals Plaintext to PublicKey with hpqc protocols/sealedbox over the
+// NIKE named by NIKEScheme. It is served synchronously by the daemon with no
 // mixnet IO. The reply type is BoxSealReply.
 type BoxSeal struct {
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`

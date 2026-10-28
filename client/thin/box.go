@@ -8,7 +8,7 @@ import (
 	"errors"
 )
 
-// BoxSeal seals plaintext to a NIKE public key with hpqc protocols/box.
+// BoxSeal seals plaintext to a NIKE public key with hpqc protocols/sealedbox.
 // The daemon does the cryptography with no mixnet IO. nikeScheme names the
 // recipient's NIKE, e.g. "X25519-CTIDH1024".
 func (t *ThinClient) BoxSeal(nikeScheme string, publicKey, plaintext []byte) ([]byte, error) {

@@ -12,8 +12,8 @@ import (
 	"github.com/katzenpost/katzenpost/client/thin"
 )
 
-// boxSeal is pure cryptography served by hpqc/protocols/box, with no mixnet
-// IO; it replies synchronously like the voucher handlers.
+// boxSeal is pure cryptography served by hpqc/protocols/sealedbox, with no
+// mixnet IO; it replies synchronously like the voucher handlers.
 func (d *Daemon) boxSeal(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
