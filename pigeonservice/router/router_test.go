@@ -89,7 +89,7 @@ func openLinkMessage(t *testing.T, svc *ps.ServiceKey, msg []byte) []byte {
 	t.Helper()
 	var lm ps.LinkMessage
 	require.NoError(t, ps.Unmarshal(msg, &lm))
-	v, err := box.NewScheme(svc.Scheme).Open(svc.Private, lm.Forward)
+	v, err := box.NewScheme(svc.Scheme).Open(svc.Private, svc.Public, lm.Forward)
 	require.NoError(t, err)
 	return v
 }

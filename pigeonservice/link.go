@@ -105,5 +105,5 @@ func openForward(key *ServiceKey, msg []byte) ([]byte, error) {
 	if len(lm.Forward) == 0 {
 		return nil, errors.New("pigeonservice: empty link message")
 	}
-	return box.NewScheme(key.Scheme).Open(key.Private, lm.Forward)
+	return box.NewScheme(key.Scheme).Open(key.Private, key.Public, lm.Forward)
 }

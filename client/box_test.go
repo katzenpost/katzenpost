@@ -29,7 +29,7 @@ func TestDaemonBoxSeal(t *testing.T) {
 	require.NotNil(t, reply)
 	require.Equal(t, thin.ThinClientSuccess, reply.ErrorCode)
 
-	got, err := box.NewScheme(nike).Open(priv, reply.Ciphertext)
+	got, err := box.NewScheme(nike).Open(priv, pub, reply.Ciphertext)
 	require.NoError(t, err)
 	require.Equal(t, []byte("voucher"), got)
 }

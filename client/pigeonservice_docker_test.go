@@ -147,7 +147,7 @@ func TestPigeonServiceRouter(t *testing.T) {
 	require.NoError(t, err)
 	var lm ps.LinkMessage
 	require.NoError(t, ps.Unmarshal(msg, &lm))
-	opened, err := box.NewScheme(key.Scheme).Open(key.Private, lm.Forward)
+	opened, err := box.NewScheme(key.Scheme).Open(key.Private, key.Public, lm.Forward)
 	require.NoError(t, err)
 	require.Equal(t, voucher, opened)
 }
