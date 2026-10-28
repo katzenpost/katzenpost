@@ -235,3 +235,51 @@ func TestDedupCacheCapSweepIsRateLimited(t *testing.T) {
 	_, ok = getCacheEntry(courier, *stale)
 	require.False(t, ok)
 }
+
+// TestDedupCacheCapEvictedWriteRepliesBoxAlreadyExists pins the client
+// visible outcome when a write's successful reply is evicted after the
+// initial ACK but before the follow-up poll. The courier cannot recreate
+// the end-to-end encrypted success reply, so the poll dispatches the same
+// envelope again and the replicas, which already hold the box, answer
+// BoxAlreadyExists. That reply, not the original success, is what the
+// client then receives.
+func TestDedupCacheCapEvictedWriteRepliesBoxAlreadyExists(t *testing.T) {
+	courier := newCappedTestCourier(t, 3)
+	defer courier.Halt()
+
+	envelope := capTestEnvelope("write")
+	ack := courier.cacheHandleCourierEnvelope(0, envelope)
+	require.Equal(t, pigeonhole.ReplyTypeACK, ack.EnvelopeReply.ReplyType)
+	envHash := envelope.EnvelopeHash()
+
+	now := time.Now()
+	markSuccessful(t, courier, envHash, now.Add(-10*time.Minute))
+	for i := 0; i < 2; i++ {
+		h := insertEnvelope(t, courier, fmt.Sprintf("newer-%d", i))
+		markSuccessful(t, courier, h, now.Add(-time.Duration(2-i)*time.Minute))
+	}
+
+	allowSweep(courier)
+	insertEnvelope(t, courier, "new")
+	_, ok := getCacheEntry(courier, *envHash)
+	require.False(t, ok, "the oldest successful write must be evicted")
+
+	allowSweep(courier)
+	poll := courier.cacheHandleCourierEnvelope(0, envelope)
+	require.Equal(t, pigeonhole.EnvelopeErrorSuccess, poll.EnvelopeReply.ErrorCode)
+	require.Equal(t, pigeonhole.ReplyTypeACK, poll.EnvelopeReply.ReplyType, "the stored success is gone")
+	require.Empty(t, poll.EnvelopeReply.Payload)
+	entry, ok := getCacheEntry(courier, *envHash)
+	require.True(t, ok, "the poll recreates the entry and dispatches again")
+	require.True(t, entry.SuccessfulReplyAt.IsZero())
+
+	courier.CacheReply(&commands.ReplicaMessageReply{
+		EnvelopeHash:  envHash,
+		ReplicaID:     0,
+		ErrorCode:     pigeonhole.ReplicaErrorBoxAlreadyExists,
+		EnvelopeReply: []byte("already-exists"),
+	})
+	poll = courier.cacheHandleCourierEnvelope(0, envelope)
+	require.Equal(t, pigeonhole.ReplyTypePayload, poll.EnvelopeReply.ReplyType)
+	require.Equal(t, []byte("already-exists"), poll.EnvelopeReply.Payload)
+}

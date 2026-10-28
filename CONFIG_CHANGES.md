@@ -554,7 +554,11 @@ Source: `courier/server/config/config.go`.
   1703 bytes each with a 2000 byte `UserForwardPayloadLength`. When the
   cache is full the courier first drops expired entries, then the
   oldest completed ones, and otherwise answers new envelopes with
-  `EnvelopeErrorCourierBusy`, which the client daemon retries.
+  `EnvelopeErrorCourierBusy`, which the client daemon retries. A write
+  whose completed entry is dropped before the client polls for it is
+  dispatched again and answered `BoxAlreadyExists`, which
+  `StartResendingEncryptedMessageReturnBoxExists` reports as
+  `ErrBoxAlreadyExists`.
 
 ### Defaults
 

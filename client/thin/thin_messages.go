@@ -346,7 +346,9 @@ type StartResendingEncryptedMessage struct {
 	// NoIdempotentBoxAlreadyExists controls whether BoxAlreadyExists errors on writes
 	// are treated as idempotent success. By default (false), BoxAlreadyExists is treated
 	// as success (the write already happened). Set to true to return BoxAlreadyExists
-	// as an error instead.
+	// as an error instead. The error can then also report this request's own write,
+	// when the courier no longer holds its result and dispatches it again; see
+	// ThinClient.StartResendingEncryptedMessageReturnBoxExists.
 	NoIdempotentBoxAlreadyExists bool `cbor:"no_idempotent_box_already_exists,omitempty"`
 }
 

@@ -524,6 +524,15 @@ func (t *ThinClient) StartResendingEncryptedMessageNoRetry(readCap *bacap.ReadCa
 // box has already been written, rather than swallowing the condition
 // as idempotent success.
 //
+// ErrBoxAlreadyExists does not prove that another writer stored the box.
+// The courier keeps a write's result only for a bounded time, and evicts
+// the oldest results early when its dedup cache is full. If the result of
+// this call's own write is gone when the daemon polls for it, the courier
+// dispatches the write again and the replicas, which already hold the box,
+// answer BoxAlreadyExists. Switching couriers mid-operation has the same
+// effect. A caller that must tell its own write from a conflicting one can
+// read the box back and compare.
+//
 // An in-flight call may be cancelled via CancelResendingEncryptedMessage.
 func (t *ThinClient) StartResendingEncryptedMessageReturnBoxExists(readCap *bacap.ReadCap, writeCap *bacap.WriteCap, messageBoxIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (*StartResendingResult, error) {
 	return t.startResendingEncryptedMessageImpl(context.Background(), readCap, writeCap, messageBoxIndex, replyIndex, envelopeDescriptor, messageCiphertext, envelopeHash, false, true)
