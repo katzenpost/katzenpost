@@ -803,3 +803,39 @@ func (e *BoxSealReply) String() string {
 	}
 	return "BoxSealReply: success"
 }
+
+// StartResendingMessageReply is the reply to a StartResendingMessage request.
+type StartResendingMessageReply struct {
+	QueryID   *[QueryIDLength]byte `cbor:"query_id"`
+	MessageID *[32]byte            `cbor:"message_id"`
+	Payload   []byte               `cbor:"payload"`
+	ErrorCode uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the StartResendingMessageReply.
+func (e *StartResendingMessageReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("StartResendingMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("StartResendingMessageReply: %d bytes", len(e.Payload))
+}
+
+// CancelResendingMessageReply is the reply to a CancelResendingMessage request.
+type CancelResendingMessageReply struct {
+	QueryID   *[QueryIDLength]byte `cbor:"query_id"`
+	ErrorCode uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the CancelResendingMessageReply.
+func (e *CancelResendingMessageReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CancelResendingMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "CancelResendingMessageReply: success"
+}

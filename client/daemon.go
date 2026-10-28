@@ -384,7 +384,8 @@ func isLocalRequest(r *Request) bool {
 		r.VoucherInduct != nil ||
 		r.VoucherOpen != nil ||
 		r.VoucherDeriveStream != nil ||
-		r.BoxSeal != nil
+		r.BoxSeal != nil ||
+		r.CancelResendingMessage != nil
 }
 
 // recoverDispatch contains a panicking request handler. A single thin
@@ -441,6 +442,8 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.voucherDeriveStream(request)
 	case request.BoxSeal != nil:
 		d.boxSeal(request)
+	case request.CancelResendingMessage != nil:
+		d.cancelResendingMessage(request)
 	default:
 		d.log.Error("dispatchLocal: dropping request with no recognised local variant")
 	}
@@ -462,6 +465,8 @@ func (d *Daemon) dispatchMixnet(request *Request) {
 		d.startResendingEncryptedMessage(request)
 	case request.StartResendingCopyCommand != nil:
 		d.startResendingCopyCommand(request)
+	case request.StartResendingMessage != nil:
+		d.startResendingMessage(request)
 	default:
 		d.log.Error("dispatchMixnet: dropping request with no recognised mixnet variant")
 	}

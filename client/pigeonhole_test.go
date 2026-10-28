@@ -244,6 +244,8 @@ func (m *mockIncomingConn) toIncomingConn(l *listener, logBackend *log.Backend) 
 				VoucherOpenReply:                              thinResp.VoucherOpenReply,
 				VoucherDeriveStreamReply:                      thinResp.VoucherDeriveStreamReply,
 				BoxSealReply:                                  thinResp.BoxSealReply,
+				StartResendingMessageReply:                    thinResp.StartResendingMessageReply,
+				CancelResendingMessageReply:                   thinResp.CancelResendingMessageReply,
 				SetPreferredTransportsReply:                   thinResp.SetPreferredTransportsReply,
 			}
 			m.responseCh <- resp

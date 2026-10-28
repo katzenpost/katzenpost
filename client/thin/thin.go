@@ -1048,6 +1048,18 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
+	case message.StartResendingMessageReply != nil:
+		select {
+		case t.eventSink <- message.StartResendingMessageReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.CancelResendingMessageReply != nil:
+		select {
+		case t.eventSink <- message.CancelResendingMessageReply:
+		case <-t.HaltCh():
+			return false
+		}
 
 	default:
 		t.log.Errorf("bug: received invalid thin client message: %v", message)

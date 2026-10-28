@@ -1535,6 +1535,11 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		return
 	}
 
+	if arqMessage.MessageType == ARQMessageTypePlain {
+		d.handlePlainARQReply(arqMessage, surbPayload, conn)
+		return
+	}
+
 	// Parse the CourierQueryReply
 	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(surbPayload)
 	if err != nil {

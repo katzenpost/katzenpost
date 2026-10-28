@@ -43,6 +43,9 @@ func IntoThinResponse(r *Response) *thin.Response {
 		VoucherDeriveStreamReply: r.VoucherDeriveStreamReply,
 
 		BoxSealReply: r.BoxSealReply,
+
+		StartResendingMessageReply:  r.StartResendingMessageReply,
+		CancelResendingMessageReply: r.CancelResendingMessageReply,
 	}
 }
 
@@ -110,6 +113,10 @@ type Response struct {
 	VoucherDeriveStreamReply *thin.VoucherDeriveStreamReply
 
 	BoxSealReply *thin.BoxSealReply
+
+	StartResendingMessageReply *thin.StartResendingMessageReply
+
+	CancelResendingMessageReply *thin.CancelResendingMessageReply
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
@@ -142,6 +149,9 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		VoucherDeriveStream: r.VoucherDeriveStream,
 
 		BoxSeal: r.BoxSeal,
+
+		StartResendingMessage:  r.StartResendingMessage,
+		CancelResendingMessage: r.CancelResendingMessage,
 
 		SessionToken: r.SessionToken,
 		SendMessage:  r.SendMessage,
@@ -202,6 +212,10 @@ type Request struct {
 	VoucherDeriveStream *thin.VoucherDeriveStream
 
 	BoxSeal *thin.BoxSeal
+
+	StartResendingMessage *thin.StartResendingMessage
+
+	CancelResendingMessage *thin.CancelResendingMessage
 
 	SessionToken *thin.SessionToken
 
