@@ -7,7 +7,7 @@ import (
 	"errors"
 
 	"github.com/katzenpost/hpqc/nike/schemes"
-	"github.com/katzenpost/hpqc/protocols/box"
+	"github.com/katzenpost/hpqc/protocols/sealedbox"
 
 	"github.com/katzenpost/katzenpost/client/thin"
 )
@@ -51,5 +51,5 @@ func sealBox(req *thin.BoxSeal) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return box.NewScheme(scheme).Seal(pub, req.Plaintext)
+	return sealedbox.NewScheme(scheme).Seal(pub, req.Plaintext)
 }

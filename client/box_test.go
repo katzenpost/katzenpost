@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/nike/hybrid"
-	"github.com/katzenpost/hpqc/protocols/box"
+	"github.com/katzenpost/hpqc/protocols/sealedbox"
 
 	"github.com/katzenpost/katzenpost/client/thin"
 )
@@ -29,7 +29,7 @@ func TestDaemonBoxSeal(t *testing.T) {
 	require.NotNil(t, reply)
 	require.Equal(t, thin.ThinClientSuccess, reply.ErrorCode)
 
-	got, err := box.NewScheme(nike).Open(priv, pub, reply.Ciphertext)
+	got, err := sealedbox.NewScheme(nike).Open(priv, pub, reply.Ciphertext)
 	require.NoError(t, err)
 	require.Equal(t, []byte("voucher"), got)
 }
