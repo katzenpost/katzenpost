@@ -30,9 +30,13 @@ const (
 	voucherDedupTTL = time.Hour
 	// incomingQueueSize bounds the vouchers waiting to be accepted.
 	incomingQueueSize = 256
-	// rescanInterval is how often the service looks for new routers.
-	rescanInterval = 10 * time.Minute
+	// DefaultRegisterTimeout is the default time a registration has to
+	// complete, longer than the router's default induction deadline.
+	DefaultRegisterTimeout = 15 * time.Minute
 )
+
+// rescanInterval is how often the service looks for new routers.
+var rescanInterval = 10 * time.Minute
 
 // LoadServiceKey loads the service's keypair from dataDir, generating one
 // on first use.
@@ -60,7 +64,11 @@ type Config struct {
 	MaxConcurrentSessions int
 	// Retention is how long a sent message is kept rewritten.
 	Retention time.Duration
-	Log       *logging.Logger
+	// RegisterTimeout is how long a registration with a router has to
+	// complete before it is abandoned and retried on the next rescan;
+	// zero means DefaultRegisterTimeout.
+	RegisterTimeout time.Duration
+	Log             *logging.Logger
 }
 
 // Handler serves one session. The session ends when OnSession returns.
@@ -184,6 +192,9 @@ func NewService(cfg Config, ph Pigeonhole) (*Service, error) {
 	}
 	if cfg.Retention <= 0 {
 		cfg.Retention = 7 * 24 * time.Hour
+	}
+	if cfg.RegisterTimeout <= 0 {
+		cfg.RegisterTimeout = DefaultRegisterTimeout
 	}
 	db, err := bolt.Open(filepath.Join(cfg.DataDir, "service.db"), 0600, &bolt.Options{Timeout: time.Second})
 	if err != nil {
@@ -508,7 +519,9 @@ func (s *Service) registerAll() {
 				delete(s.registering, node.NodeIDHash)
 				s.mu.Unlock()
 			}()
-			conn, err := Register(s.ctx, s.ph, s.key, &node, s.cfg.PollInterval)
+			ctx, cancel := context.WithTimeout(s.ctx, s.cfg.RegisterTimeout)
+			defer cancel()
+			conn, err := Register(ctx, s.ph, s.key, &node, s.cfg.PollInterval)
 			if err != nil {
 				if s.ctx.Err() == nil {
 					s.log.Warningf("registering with router %x: %v", node.NodeIDHash[:8], err)

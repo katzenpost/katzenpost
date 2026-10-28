@@ -336,3 +336,46 @@ func TestDialFallsBackToAnotherRouter(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "echo: hi", string(got))
 }
+
+// TestServiceRetriesAbandonedRegistration has the router accept a
+// registration and never induct it, as when its induction times out. The
+// service gives up at RegisterTimeout and links on its next rescan.
+func TestServiceRetriesAbandonedRegistration(t *testing.T) {
+	defer ps.SetRescanInterval(100 * time.Millisecond)()
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+	net := phtest.NewNetwork()
+	key := pluginKey(t)
+	r, err := router.New(router.Config{
+		Key: key, DBPath: filepath.Join(t.TempDir(), "router.db"),
+		PollInterval: poll, Retention: time.Hour, Log: logBackend.GetLogger("router"),
+	}, net)
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+	var registers atomic.Int32
+	net.AddService(ps.RouterCapability, [32]byte{0xa0}, ps.RouterCapability, ps.PluginParams(key),
+		func(_ context.Context, p []byte) []byte {
+			var req ps.RouterRequest
+			if ps.Unmarshal(p, &req) == nil && req.Register != nil && registers.Add(1) == 1 {
+				reply, _ := ps.Marshal(&ps.RouterReply{Status: ps.StatusOK})
+				return reply
+			}
+			return r.Handle(p)
+		})
+
+	dataDir := t.TempDir()
+	svcKey, err := ps.LoadServiceKey(dataDir)
+	require.NoError(t, err)
+	svc, err := ps.NewService(ps.Config{
+		Key: svcKey, DataDir: dataDir, PollInterval: poll, Retention: time.Hour,
+		RegisterTimeout: 3 * time.Second, Log: logBackend.GetLogger("service"),
+	}, net)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(testCtx(t))
+	go svc.Run(ctx, ps.HandlerFunc(func(context.Context, *ps.Session) {}))
+	t.Cleanup(func() { cancel(); svc.Close() })
+
+	require.Eventually(t, func() bool { return len(svc.Descriptor().Routers) == 1 },
+		20*time.Second, 50*time.Millisecond)
+	require.Equal(t, int32(2), registers.Load())
+}
