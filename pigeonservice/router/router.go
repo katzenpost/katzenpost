@@ -71,7 +71,11 @@ type Router struct {
 	mu          sync.Mutex
 	links       map[ps.ServiceID]*link
 	registering map[[32]byte]bool
-	routed      map[[32]byte]time.Time
+	// pending queues vouchers for services whose link is still being
+	// inducted: a service learns its link is open before the router has
+	// finished inducting, and may advertise and be routed to at once.
+	pending map[ps.ServiceID]chan []byte
+	routed  map[[32]byte]time.Time
 }
 
 // New opens the router's database and resumes its links.
@@ -93,6 +97,7 @@ func New(cfg Config, ph ps.Pigeonhole) (*Router, error) {
 		cancel:      cancel,
 		links:       make(map[ps.ServiceID]*link),
 		registering: make(map[[32]byte]bool),
+		pending:     make(map[ps.ServiceID]chan []byte),
 		routed:      make(map[[32]byte]time.Time),
 	}
 	if err := r.load(); err != nil {
@@ -125,7 +130,7 @@ func (r *Router) load() error {
 			if err != nil {
 				return err
 			}
-			r.startLink(ps.ServiceID(k), conn)
+			r.startLink(ps.ServiceID(k), conn, nil)
 			return nil
 		})
 	})
@@ -146,15 +151,22 @@ func (r *Router) save(id ps.ServiceID, conn *ps.Conn) error {
 }
 
 // startLink installs a link, replacing any older link to the same service.
+// A non-nil queue holds vouchers routed while the link was being inducted.
 // The caller must not hold r.mu.
-func (r *Router) startLink(id ps.ServiceID, conn *ps.Conn) {
+func (r *Router) startLink(id ps.ServiceID, conn *ps.Conn, queue chan []byte) {
+	if queue == nil {
+		queue = make(chan []byte, linkQueueSize)
+	}
 	ctx, stop := context.WithCancel(r.ctx)
-	l := &link{id: id, conn: conn, queue: make(chan []byte, linkQueueSize), stop: stop}
+	l := &link{id: id, conn: conn, queue: queue, stop: stop}
 	r.mu.Lock()
 	if old, ok := r.links[id]; ok {
 		old.stop()
 	}
 	r.links[id] = l
+	if r.pending[id] == queue {
+		delete(r.pending, id)
+	}
 	r.mu.Unlock()
 	r.wg.Add(1)
 	go r.writeLink(ctx, l)
@@ -244,15 +256,19 @@ func (r *Router) route(req *ps.RouteRequest) uint8 {
 			delete(r.routed, k)
 		}
 	}
-	l, ok := r.links[req.ServiceID]
-	if !ok {
+	var queue chan []byte
+	if l, ok := r.links[req.ServiceID]; ok {
+		queue = l.queue
+	} else if q, ok := r.pending[req.ServiceID]; ok {
+		queue = q
+	} else {
 		return ps.StatusUnknownService
 	}
 	if _, seen := r.routed[key]; seen {
 		return ps.StatusOK
 	}
 	select {
-	case l.queue <- req.Ciphertext:
+	case queue <- req.Ciphertext:
 		r.routed[key] = now
 		return ps.StatusOK
 	default:
@@ -274,9 +290,14 @@ func (r *Router) register(req *ps.RegisterRequest) uint8 {
 		return ps.StatusOK
 	}
 	r.registering[key] = true
+	id := ps.IDFromPublicKey(req.PublicKey)
+	queue, ok := r.pending[id]
+	if !ok {
+		queue = make(chan []byte, linkQueueSize)
+		r.pending[id] = queue
+	}
 	r.mu.Unlock()
 
-	id := ps.IDFromPublicKey(req.PublicKey)
 	voucher := append([]byte(nil), req.Voucher...)
 	r.wg.Add(1)
 	go func() {
@@ -288,13 +309,16 @@ func (r *Router) register(req *ps.RegisterRequest) uint8 {
 			}
 			r.mu.Lock()
 			delete(r.registering, key)
+			if r.pending[id] == queue {
+				delete(r.pending, id)
+			}
 			r.mu.Unlock()
 			return
 		}
 		if err := r.save(id, conn); err != nil {
 			r.log.Errorf("saving link: %v", err)
 		}
-		r.startLink(id, conn)
+		r.startLink(id, conn, queue)
 		r.log.Noticef("opened a link with service %x", id[:8])
 	}()
 	return ps.StatusOK

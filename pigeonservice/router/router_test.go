@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/protocols/box"
+	"github.com/katzenpost/hpqc/protocols/sealedbox"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	ps "github.com/katzenpost/katzenpost/pigeonservice"
@@ -89,7 +89,7 @@ func openLinkMessage(t *testing.T, svc *ps.ServiceKey, msg []byte) []byte {
 	t.Helper()
 	var lm ps.LinkMessage
 	require.NoError(t, ps.Unmarshal(msg, &lm))
-	v, err := box.NewScheme(svc.Scheme).Open(svc.Private, svc.Public, lm.Forward)
+	v, err := sealedbox.NewScheme(svc.Scheme).Open(svc.Private, svc.Public, lm.Forward)
 	require.NoError(t, err)
 	return v
 }
@@ -108,6 +108,27 @@ func TestRegisterAndRoute(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, v, openLinkMessage(t, f.svc, got))
 	}
+}
+
+// TestRouteWhileInducting routes to a service that has seen its link open
+// but whose router is still finishing the induction: the voucher is held
+// and written once the link is installed.
+func TestRouteWhileInducting(t *testing.T) {
+	f := newFixture(t)
+	ctx := testCtx(t)
+	f.net.TombstoneGate = make(chan struct{})
+
+	link, err := ps.Register(ctx, f.net, f.svc, &f.node, poll)
+	require.NoError(t, err)
+	require.False(t, f.router.Linked(f.svc.ID()))
+
+	require.NoError(t, ps.Route(ctx, f.net, f.descriptor(), bytesOf(5)))
+	close(f.net.TombstoneGate)
+
+	got, err := link.Recv(ctx)
+	require.NoError(t, err)
+	require.Equal(t, bytesOf(5), openLinkMessage(t, f.svc, got))
+	require.True(t, f.router.Linked(f.svc.ID()))
 }
 
 func TestRetransmittedRouteIsForwardedOnce(t *testing.T) {

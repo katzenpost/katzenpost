@@ -15,7 +15,7 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/nike/schemes"
-	"github.com/katzenpost/hpqc/protocols/box"
+	"github.com/katzenpost/hpqc/protocols/sealedbox"
 	"github.com/katzenpost/hpqc/voucher"
 
 	"github.com/katzenpost/katzenpost/pigeonservice"
@@ -52,6 +52,9 @@ type Network struct {
 	Repeat int
 	// Writes counts box writes, tombstones included.
 	Writes int
+	// TombstoneGate, when set, holds every tombstone until it is closed,
+	// standing in for a slow round trip through the mixnet.
+	TombstoneGate chan struct{}
 }
 
 // NewNetwork returns an empty network.
@@ -159,6 +162,12 @@ func (n *Network) Read(ctx context.Context, readCap *bacap.ReadCap, idx *bacap.M
 }
 
 func (n *Network) Tombstone(ctx context.Context, writeCap *bacap.WriteCap, idx *bacap.MessageBoxIndex) error {
+	if n.TombstoneGate != nil {
+		select {
+		case <-n.TombstoneGate:
+		case <-ctx.Done():
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -232,7 +241,7 @@ func (n *Network) BoxSeal(nikeScheme string, publicKey, plaintext []byte) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	return box.NewScheme(scheme).Seal(pub, plaintext)
+	return sealedbox.NewScheme(scheme).Seal(pub, plaintext)
 }
 
 func (n *Network) Request(ctx context.Context, node *[32]byte, name []byte, payload []byte) ([]byte, error) {
