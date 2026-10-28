@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 

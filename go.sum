@@ -260,8 +260,8 @@ github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5 h1:n+9aUwSmnz97
 github.com/katzenpost/circl v1.3.8-0.20260413165442-e2d217fd59f5/go.mod h1:9KxLMK17ZLjofnmpVp4Sm315uIF3BAWHVk32EFDRicU=
 github.com/katzenpost/falcon v0.1.0 h1:+WkID41Y6CaWAQE3ijCIfZHu7eHHy8DvAFWCnrW1XDw=
 github.com/katzenpost/falcon v0.1.0/go.mod h1:HtOnkNvwpvTJ3fuXmy4BNw4A8Jg2QetpmkvOPOnOwyU=
-github.com/katzenpost/hpqc v0.0.93 h1:Sw0nqx7pa0toiGBpDVOQw3E0HaYmOfjlKLf8ZwEw66o=
-github.com/katzenpost/hpqc v0.0.93/go.mod h1:VPPU42YplQ1/BD9d5UhEJ6pQ61ijbXcUnqFhDLQBFDw=
+github.com/katzenpost/hpqc v0.0.94-0.20261028005209-61bd93594dc9 h1:a8ZIhgYhjX3ioJ40snMVzMjcjNE46SykmQaLGCw9Mw0=
+github.com/katzenpost/hpqc v0.0.94-0.20261028005209-61bd93594dc9/go.mod h1:VPPU42YplQ1/BD9d5UhEJ6pQ61ijbXcUnqFhDLQBFDw=
 github.com/katzenpost/nyquist v0.0.13 h1:U4Ogik5WuBoy9l7HFTUGXdc2B/3Xa3QLoK7vTDOPAbw=
 github.com/katzenpost/nyquist v0.0.13/go.mod h1:6DgFOY5YLt9jy2skOpeaM4Rpha2xZ1Vufg5kOzV23Gw=
 github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e h1:cbftK8/GNGA8ye2e2VWkVPLnO/62UadJmG3ddEa6ElU=
@@ -348,8 +348,6 @@ github.com/prometheus/procfs v0.20.1 h1:XwbrGOIplXW/AU3YhIhLODXMJYyC1isLFfYCsTEy
 github.com/prometheus/procfs v0.20.1/go.mod h1:o9EMBZGRyvDrSPH1RqdxhojkuXstoe4UlK79eF5TGGo=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0 h1:APacT+iIaNF6fd8AGEiN3bT/Jtkd2jz4v4TzM7MFjy0=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0/go.mod h1:3IOHRbJIc+L6YKMwfDtJAM9Vj9k0YY4muhuyUYk5tbk=
-github.com/quic-go/qpack v0.6.0 h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=
-github.com/quic-go/qpack v0.6.0/go.mod h1:lUpLKChi8njB4ty2bFLX2x4gzDqXwUpaO1DP9qMDZII=
 github.com/quic-go/quic-go v0.63.0 h1:LIFGHI4PFUhhw2dDD1ARHdCff143ffMHwZtbnbuJ78A=
 github.com/quic-go/quic-go v0.63.0/go.mod h1:RAro2j2yN9a9EiPACLHT9IB2NXCvGQmmo/alT0yYI0w=
 github.com/rfjakob/eme v1.2.0 h1:8dAHL+WVAw06+7DkRKnRiFp1JL3QjcJEZFqDnndUaSI=

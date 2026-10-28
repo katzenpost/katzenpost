@@ -13,9 +13,9 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/chacha20poly1305"
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
