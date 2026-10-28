@@ -7,6 +7,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -14,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/protocols/box"
+	"github.com/katzenpost/hpqc/protocols/sealedbox"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	ps "github.com/katzenpost/katzenpost/pigeonservice"
@@ -27,7 +28,9 @@ import (
 // trips through the mixnet.
 
 const (
-	pigeonserviceTimeout = 30 * time.Minute
+	// pigeonserviceTimeout stays well inside the suite's go test timeout,
+	// so a stalled step fails with its own error instead of a panic.
+	pigeonserviceTimeout = 20 * time.Minute
 	pigeonservicePoll    = 5 * time.Second
 )
 
@@ -71,6 +74,7 @@ func TestPigeonServicePlainARQ(t *testing.T) {
 // looks it up, finds it in the snapshot stream, and checks that a forged
 // advertisement is refused.
 func TestPigeonServiceDirectory(t *testing.T) {
+	skipInShortMode(t)
 	ph := pigeonserviceThin(t)
 	ctx := pigeonserviceCtx(t)
 	key := newServiceKey(t)
@@ -122,6 +126,7 @@ func TestPigeonServiceDirectory(t *testing.T) {
 // TestPigeonServiceRouter registers a service with a voucher router, routes
 // a sealed voucher through it, and reads it off the link.
 func TestPigeonServiceRouter(t *testing.T) {
+	skipInShortMode(t)
 	ph := pigeonserviceThin(t)
 	ctx := pigeonserviceCtx(t)
 	key := newServiceKey(t)
@@ -147,7 +152,7 @@ func TestPigeonServiceRouter(t *testing.T) {
 	require.NoError(t, err)
 	var lm ps.LinkMessage
 	require.NoError(t, ps.Unmarshal(msg, &lm))
-	opened, err := box.NewScheme(key.Scheme).Open(key.Private, key.Public, lm.Forward)
+	opened, err := sealedbox.NewScheme(key.Scheme).Open(key.Private, key.Public, lm.Forward)
 	require.NoError(t, err)
 	require.Equal(t, voucher, opened)
 }
@@ -157,6 +162,7 @@ func TestPigeonServiceRouter(t *testing.T) {
 // the contact voucher handshake, more clients at once than the service
 // serves concurrently.
 func TestPigeonServiceEcho(t *testing.T) {
+	skipInShortMode(t)
 	ctx := pigeonserviceCtx(t)
 	logBackend, err := log.New("", defaultTestLogLevel, false)
 	require.NoError(t, err)
@@ -202,6 +208,7 @@ func TestPigeonServiceEcho(t *testing.T) {
 		t.Logf("the service has not advertised a router yet: %v", err)
 		time.Sleep(10 * time.Second)
 	}
+	t.Logf("the directory lists the service with %d routers", len(d.Routers))
 
 	const clients = limit + 1
 	var wg sync.WaitGroup
@@ -212,19 +219,21 @@ func TestPigeonServiceEcho(t *testing.T) {
 			defer wg.Done()
 			conn, err := ps.Dial(ctx, clientPh, d, "client", pigeonservicePoll)
 			if err != nil {
-				errs <- err
+				errs <- fmt.Errorf("client %d: dial: %w", i, err)
 				return
 			}
+			t.Logf("client %d: connected", i)
 			msg := []byte{'h', 'i', ' ', byte('a' + i)}
 			if err := conn.Send(ctx, msg); err != nil {
-				errs <- err
+				errs <- fmt.Errorf("client %d: send: %w", i, err)
 				return
 			}
 			reply, err := conn.Recv(ctx)
 			if err != nil {
-				errs <- err
+				errs <- fmt.Errorf("client %d: receive: %w", i, err)
 				return
 			}
+			t.Logf("client %d: echoed", i)
 			if string(reply) != "echo: "+string(msg) {
 				errs <- &unexpectedReply{got: string(reply)}
 			}
