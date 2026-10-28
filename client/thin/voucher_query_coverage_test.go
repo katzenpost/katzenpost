@@ -234,6 +234,7 @@ func vqSimpleResponses() []*Response {
 		{VoucherInductReply: &VoucherInductReply{}},
 		{VoucherOpenReply: &VoucherOpenReply{}},
 		{VoucherDeriveStreamReply: &VoucherDeriveStreamReply{}},
+		{BoxSealReply: &BoxSealReply{}},
 	}
 }
 

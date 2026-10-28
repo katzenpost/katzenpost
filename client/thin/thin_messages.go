@@ -766,6 +766,9 @@ type Response struct {
 
 	// VoucherDeriveStreamReply carries the derived VoucherStream caps.
 	VoucherDeriveStreamReply *VoucherDeriveStreamReply `cbor:"voucher_derive_stream_reply"`
+
+	// BoxSealReply carries a sealed box.
+	BoxSealReply *BoxSealReply `cbor:"box_seal_reply"`
 }
 
 // Request is the thin client's request message to the client daemon.
@@ -849,6 +852,9 @@ type Request struct {
 
 	// VoucherDeriveStream derives the VoucherStream caps from a Voucher.
 	VoucherDeriveStream *VoucherDeriveStream `cbor:"voucher_derive_stream"`
+
+	// BoxSeal seals a plaintext to a NIKE public key.
+	BoxSeal *BoxSeal `cbor:"box_seal"`
 }
 
 // The Contact Voucher request types. Each is served synchronously by the
@@ -901,4 +907,17 @@ type VoucherDeriveStream struct {
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 	// Voucher is the 32-byte token.
 	Voucher []byte `cbor:"voucher"`
+}
+
+// BoxSeal seals Plaintext to PublicKey with hpqc protocols/box over the NIKE
+// named by NIKEScheme. It is served synchronously by the daemon with no
+// mixnet IO. The reply type is BoxSealReply.
+type BoxSeal struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// NIKEScheme names the recipient's NIKE, e.g. "X25519-CTIDH1024".
+	NIKEScheme string `cbor:"nike_scheme"`
+	// PublicKey is the recipient's NIKE public key.
+	PublicKey []byte `cbor:"public_key"`
+	// Plaintext is the data to seal.
+	Plaintext []byte `cbor:"plaintext"`
 }

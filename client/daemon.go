@@ -383,7 +383,8 @@ func isLocalRequest(r *Request) bool {
 		r.VoucherMint != nil ||
 		r.VoucherInduct != nil ||
 		r.VoucherOpen != nil ||
-		r.VoucherDeriveStream != nil
+		r.VoucherDeriveStream != nil ||
+		r.BoxSeal != nil
 }
 
 // recoverDispatch contains a panicking request handler. A single thin
@@ -438,6 +439,8 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.voucherOpen(request)
 	case request.VoucherDeriveStream != nil:
 		d.voucherDeriveStream(request)
+	case request.BoxSeal != nil:
+		d.boxSeal(request)
 	default:
 		d.log.Error("dispatchLocal: dropping request with no recognised local variant")
 	}

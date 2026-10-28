@@ -112,6 +112,30 @@ func TestVoucherDeriveStreamReturnsTheDaemonReply(t *testing.T) {
 	require.Equal(t, []byte("read cap"), reply.VoucherReadCap)
 }
 
+func TestBoxSealReturnsTheDaemonReply(t *testing.T) {
+	tc, server := dialFakeDaemon(t)
+	serveOneReply(t, server, func(req *Request) *Response {
+		require.Equal(t, "X25519-CTIDH1024", req.BoxSeal.NIKEScheme)
+		return &Response{BoxSealReply: &BoxSealReply{
+			QueryID: req.BoxSeal.QueryID, Ciphertext: []byte("box"),
+		}}
+	})
+	ct, err := tc.BoxSeal("X25519-CTIDH1024", []byte("pk"), []byte("voucher"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("box"), ct)
+}
+
+func TestBoxSealReturnsTheDaemonError(t *testing.T) {
+	tc, server := dialFakeDaemon(t)
+	serveOneReply(t, server, func(req *Request) *Response {
+		return &Response{BoxSealReply: &BoxSealReply{
+			QueryID: req.BoxSeal.QueryID, ErrorCode: ThinClientErrorInvalidRequest,
+		}}
+	})
+	_, err := tc.BoxSeal("nope", []byte("pk"), []byte("voucher"))
+	require.Error(t, err)
+}
+
 func TestGetPKIDocumentRawReturnsThePayloadAndEpoch(t *testing.T) {
 	tc, server := dialFakeDaemon(t)
 	serveOneReply(t, server, func(req *Request) *Response {

@@ -785,3 +785,21 @@ func (e *VoucherDeriveStreamReply) String() string {
 	}
 	return "VoucherDeriveStreamReply: success"
 }
+
+// BoxSealReply is the reply to a BoxSeal request.
+type BoxSealReply struct {
+	QueryID    *[QueryIDLength]byte `cbor:"query_id"`
+	Ciphertext []byte               `cbor:"ciphertext"`
+	ErrorCode  uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the BoxSealReply.
+func (e *BoxSealReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("BoxSealReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "BoxSealReply: success"
+}
