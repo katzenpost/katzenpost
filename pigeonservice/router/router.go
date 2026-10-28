@@ -33,6 +33,14 @@ const (
 
 	// displayName is the name the router gives itself in a WhoReply.
 	displayName = "voucher router"
+
+	// DefaultMaxInductions is the default bound on registrations being
+	// inducted at once.
+	DefaultMaxInductions = 64
+
+	// DefaultInductTimeout is the default time a registration has to
+	// complete its induction.
+	DefaultInductTimeout = 10 * time.Minute
 )
 
 var linksBucket = []byte("links")
@@ -47,7 +55,15 @@ type Config struct {
 	PollInterval time.Duration
 	// Retention is how long a forwarded voucher is kept rewritten.
 	Retention time.Duration
-	Log       *logging.Logger
+	// MaxInductions bounds the registrations being inducted at once; a
+	// registration beyond it is refused with StatusBusy. Zero or less
+	// selects DefaultMaxInductions.
+	MaxInductions int
+	// InductTimeout is how long a registration has to complete its
+	// induction before the router abandons it. Zero or less selects
+	// DefaultInductTimeout.
+	InductTimeout time.Duration
+	Log           *logging.Logger
 }
 
 type link struct {
@@ -68,9 +84,13 @@ type Router struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	mu          sync.Mutex
-	links       map[ps.ServiceID]*link
+	mu    sync.Mutex
+	links map[ps.ServiceID]*link
+	// registering holds the vouchers being inducted, and registered the
+	// vouchers inducted within DedupTTL, so a retransmitted registration
+	// is acknowledged without being inducted again.
 	registering map[[32]byte]bool
+	registered  map[[32]byte]time.Time
 	// pending queues vouchers for services whose link is still being
 	// inducted: a service learns its link is open before the router has
 	// finished inducting, and may advertise and be routed to at once.
@@ -87,6 +107,12 @@ func New(cfg Config, ph ps.Pigeonhole) (*Router, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.MaxInductions <= 0 {
+		cfg.MaxInductions = DefaultMaxInductions
+	}
+	if cfg.InductTimeout <= 0 {
+		cfg.InductTimeout = DefaultInductTimeout
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Router{
 		cfg:         cfg,
@@ -97,6 +123,7 @@ func New(cfg Config, ph ps.Pigeonhole) (*Router, error) {
 		cancel:      cancel,
 		links:       make(map[ps.ServiceID]*link),
 		registering: make(map[[32]byte]bool),
+		registered:  make(map[[32]byte]time.Time),
 		pending:     make(map[ps.ServiceID]chan []byte),
 		routed:      make(map[[32]byte]time.Time),
 	}
@@ -284,10 +311,20 @@ func (r *Router) register(req *ps.RegisterRequest) uint8 {
 		return ps.StatusInvalidRequest
 	}
 	key := hash.Sum256(req.Voucher)
+	now := time.Now()
 	r.mu.Lock()
-	if r.registering[key] {
+	for k, at := range r.registered {
+		if now.Sub(at) > DedupTTL {
+			delete(r.registered, k)
+		}
+	}
+	if _, done := r.registered[key]; done || r.registering[key] {
 		r.mu.Unlock()
 		return ps.StatusOK
+	}
+	if len(r.registering) >= r.cfg.MaxInductions {
+		r.mu.Unlock()
+		return ps.StatusBusy
 	}
 	r.registering[key] = true
 	id := ps.IDFromPublicKey(req.PublicKey)
@@ -302,7 +339,9 @@ func (r *Router) register(req *ps.RegisterRequest) uint8 {
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		conn, err := ps.Induct(r.ctx, r.ph, voucher, displayName, r.cfg.PollInterval)
+		ctx, cancel := context.WithTimeout(r.ctx, r.cfg.InductTimeout)
+		defer cancel()
+		conn, err := ps.Induct(ctx, r.ph, voucher, displayName, r.cfg.PollInterval)
 		if err != nil {
 			if r.ctx.Err() == nil {
 				r.log.Errorf("inducting a service: %v", err)
@@ -319,6 +358,10 @@ func (r *Router) register(req *ps.RegisterRequest) uint8 {
 			r.log.Errorf("saving link: %v", err)
 		}
 		r.startLink(id, conn, queue)
+		r.mu.Lock()
+		delete(r.registering, key)
+		r.registered[key] = time.Now()
+		r.mu.Unlock()
 		r.log.Noticef("opened a link with service %x", id[:8])
 	}()
 	return ps.StatusOK

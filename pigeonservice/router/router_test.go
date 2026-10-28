@@ -6,6 +6,7 @@ package router_test
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,13 +45,19 @@ type fixture struct {
 	svc    *ps.ServiceKey
 	pk     *ps.PluginKey
 	dbPath string
+	tune   func(*router.Config)
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	return newTunedFixture(t, nil)
+}
+
+func newTunedFixture(t *testing.T, tune func(*router.Config)) *fixture {
+	t.Helper()
 	net := phtest.NewNetwork()
 	svc, pk := newKey(t)
-	f := &fixture{net: net, svc: svc, pk: pk, dbPath: filepath.Join(t.TempDir(), "router.db")}
+	f := &fixture{net: net, svc: svc, pk: pk, dbPath: filepath.Join(t.TempDir(), "router.db"), tune: tune}
 	f.startRouter(t)
 	node := [32]byte{0xaa}
 	net.AddService(ps.RouterCapability, node, ps.RouterCapability, ps.PluginParams(pk),
@@ -65,13 +72,17 @@ func (f *fixture) startRouter(t *testing.T) {
 	t.Helper()
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
-	r, err := router.New(router.Config{
+	cfg := router.Config{
 		Key:          f.pk,
 		DBPath:       f.dbPath,
 		PollInterval: poll,
 		Retention:    time.Hour,
 		Log:          logBackend.GetLogger("router"),
-	}, f.net)
+	}
+	if f.tune != nil {
+		f.tune(&cfg)
+	}
+	r, err := router.New(cfg, f.net)
 	require.NoError(t, err)
 	f.router = r
 	t.Cleanup(func() { r.Close() })
@@ -212,6 +223,103 @@ func TestLinksSurviveRestart(t *testing.T) {
 	got, err = link.Recv(ctx)
 	require.NoError(t, err)
 	require.Equal(t, bytesOf(2), openLinkMessage(t, f.svc, got), "the restarted router resumes the link where it left off")
+}
+
+// stalledRegistrations returns correctly signed registrations of n
+// vouchers whose contact boxes are never written.
+func (f *fixture) stalledRegistrations(t *testing.T, n int) [][]byte {
+	t.Helper()
+	payloads := make([][]byte, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range payloads {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := &ps.RegisterRequest{NIKEScheme: f.svc.Scheme.Name(), PublicKey: f.svc.Public.Bytes(), Voucher: bytesOf(byte(0x80 + i))}
+			if errs[i] = f.svc.SignRegister(f.pk.Public, req); errs[i] == nil {
+				payloads[i], errs[i] = ps.Marshal(&ps.RouterRequest{Register: req})
+			}
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
+		require.NoError(t, err)
+	}
+	return payloads
+}
+
+func (f *fixture) handleStatus(t *testing.T, payload []byte) uint8 {
+	t.Helper()
+	var reply ps.RouterReply
+	require.NoError(t, ps.Unmarshal(f.router.Handle(payload), &reply))
+	return reply.Status
+}
+
+// TestStalledRegistrationsAreBounded sends many registrations that never
+// complete. The router inducts at most MaxInductions at once and refuses
+// the rest as busy, so they hold no goroutine or pending state.
+func TestStalledRegistrationsAreBounded(t *testing.T) {
+	const limit = 3
+	f := newTunedFixture(t, func(cfg *router.Config) {
+		cfg.MaxInductions = limit
+		cfg.InductTimeout = time.Hour
+	})
+	payloads := f.stalledRegistrations(t, 12)
+
+	for i, payload := range payloads {
+		want := ps.StatusOK
+		if i >= limit {
+			want = ps.StatusBusy
+		}
+		require.Equal(t, want, f.handleStatus(t, payload), "registration %d", i)
+	}
+	registering, pending := f.router.Inductions()
+	require.Equal(t, limit, registering)
+	require.Equal(t, 1, pending)
+	require.Equal(t, ps.StatusOK, f.handleStatus(t, payloads[0]), "a retransmission is not refused")
+}
+
+// TestStalledRegistrationsTimeOut checks that a registration that never
+// completes is abandoned at InductTimeout, freeing its slot and its
+// pending queue for the next registration.
+func TestStalledRegistrationsTimeOut(t *testing.T) {
+	const limit = 2
+	f := newTunedFixture(t, func(cfg *router.Config) {
+		cfg.MaxInductions = limit
+		cfg.InductTimeout = 200 * time.Millisecond
+	})
+	payloads := f.stalledRegistrations(t, limit+1)
+	for _, payload := range payloads[:limit] {
+		require.Equal(t, ps.StatusOK, f.handleStatus(t, payload))
+	}
+
+	require.Eventually(t, func() bool {
+		registering, pending := f.router.Inductions()
+		return registering == 0 && pending == 0
+	}, 10*time.Second, poll, "stalled inductions are abandoned at their deadline")
+	require.Equal(t, ps.StatusOK, f.handleStatus(t, payloads[limit]), "the freed slots admit a new registration")
+}
+
+// TestCompletedRegistrationIsReleased checks that a successful induction
+// gives up its slot, while a retransmission of it is still acknowledged
+// without a second induction.
+func TestCompletedRegistrationIsReleased(t *testing.T) {
+	f := newTunedFixture(t, func(cfg *router.Config) { cfg.MaxInductions = 1 })
+	ctx := testCtx(t)
+	f.net.Repeat = 3
+	_, err := ps.Register(ctx, f.net, f.svc, &f.node, poll)
+	require.NoError(t, err)
+	f.net.Repeat = 1
+	require.Eventually(t, func() bool {
+		registering, pending := f.router.Inductions()
+		return f.router.Linked(f.svc.ID()) && registering == 0 && pending == 0
+	}, 10*time.Second, poll)
+
+	other, _ := newKey(t)
+	_, err = ps.Register(ctx, f.net, other, &f.node, poll)
+	require.NoError(t, err, "the released slot admits the next registration")
+	require.Eventually(t, func() bool { return f.router.Linked(other.ID()) }, 10*time.Second, poll)
 }
 
 func bytesOf(b byte) []byte {
