@@ -16,20 +16,24 @@ import (
 var ErrMessageTooLarge = errors.New("pigeonservice: message larger than one box")
 
 // Conn is a two-way Pigeonhole connection: a stream this side writes and a
-// stream the peer writes. Send and Recv may be called concurrently with each
-// other, but each from one goroutine at a time.
+// stream the peer writes. Send and Recv may be called concurrently.
 type Conn struct {
 	ph           Pigeonhole
 	pollInterval time.Duration
+	writeCap     *bacap.WriteCap
+	readCap      *bacap.ReadCap
 
-	sendMu   sync.Mutex
-	writeCap *bacap.WriteCap
+	// sendMu and recvMu serialize sends and receives; they are held for
+	// as long as an operation takes.
+	sendMu sync.Mutex
+	recvMu sync.Mutex
+
+	// mu guards the state below and is only held briefly.
+	mu       sync.Mutex
 	writeIdx *bacap.MessageBoxIndex
+	readIdx  *bacap.MessageBoxIndex
 	sent     []sentBox
-
-	recvMu  sync.Mutex
-	readCap *bacap.ReadCap
-	readIdx *bacap.MessageBoxIndex
+	changed  func(*Conn)
 }
 
 type sentBox struct {
@@ -49,6 +53,25 @@ func newConn(ph Pigeonhole, wc *bacap.WriteCap, widx *bacap.MessageBoxIndex, rc 
 	}
 }
 
+// OnChange sets a function called after every Send, Recv and Refresh. A
+// Conn restored from state saved before a Send would write that Send's box
+// again, where the write is a silent no-op, so state must be saved after
+// each one.
+func (c *Conn) OnChange(f func(*Conn)) {
+	c.mu.Lock()
+	c.changed = f
+	c.mu.Unlock()
+}
+
+func (c *Conn) notify() {
+	c.mu.Lock()
+	f := c.changed
+	c.mu.Unlock()
+	if f != nil {
+		f(c)
+	}
+}
+
 // Send writes msg to the next box of this side's stream.
 func (c *Conn) Send(ctx context.Context, msg []byte) error {
 	if len(msg) == 0 {
@@ -59,16 +82,23 @@ func (c *Conn) Send(ctx context.Context, msg []byte) error {
 	}
 	c.sendMu.Lock()
 	defer c.sendMu.Unlock()
-	next, err := WriteRetry(ctx, c.ph, c.writeCap, c.writeIdx, msg)
+
+	c.mu.Lock()
+	idx := c.writeIdx
+	c.mu.Unlock()
+	next, err := WriteRetry(ctx, c.ph, c.writeCap, idx, msg)
 	if err != nil {
 		return err
 	}
-	idx, err := c.writeIdx.MarshalBinary()
+	idxBytes, err := idx.MarshalBinary()
 	if err != nil {
 		return err
 	}
-	c.sent = append(c.sent, sentBox{Index: idx, Plaintext: msg, At: time.Now()})
+	c.mu.Lock()
+	c.sent = append(c.sent, sentBox{Index: idxBytes, Plaintext: msg, At: time.Now()})
 	c.writeIdx = next
+	c.mu.Unlock()
+	c.notify()
 	return nil
 }
 
@@ -77,16 +107,20 @@ func (c *Conn) Recv(ctx context.Context) ([]byte, error) {
 	c.recvMu.Lock()
 	defer c.recvMu.Unlock()
 	for {
-		msg, next, err := ReadWait(ctx, c.ph, c.readCap, c.readIdx, c.pollInterval)
-		if errors.Is(err, ErrTombstone) {
-			c.readIdx = next
-			continue
-		}
-		if err != nil {
+		c.mu.Lock()
+		idx := c.readIdx
+		c.mu.Unlock()
+		msg, next, err := ReadWait(ctx, c.ph, c.readCap, idx, c.pollInterval)
+		if err != nil && !errors.Is(err, ErrTombstone) {
 			return nil, err
 		}
+		c.mu.Lock()
 		c.readIdx = next
-		return msg, nil
+		c.mu.Unlock()
+		c.notify()
+		if err == nil {
+			return msg, nil
+		}
 	}
 }
 
@@ -95,18 +129,19 @@ func (c *Conn) Recv(ctx context.Context) ([]byte, error) {
 // one to two replica epochs; calling Refresh once a replica epoch keeps a
 // box readable for as long as retention allows. Rewrites are idempotent.
 func (c *Conn) Refresh(ctx context.Context, retention time.Duration) error {
-	c.sendMu.Lock()
-	defer c.sendMu.Unlock()
 	cutoff := time.Now().Add(-retention)
-	kept := c.sent[:0]
+	c.mu.Lock()
+	kept := make([]sentBox, 0, len(c.sent))
 	for _, b := range c.sent {
-		if b.At.Before(cutoff) {
-			continue
+		if !b.At.Before(cutoff) {
+			kept = append(kept, b)
 		}
-		kept = append(kept, b)
 	}
 	c.sent = kept
-	for _, b := range c.sent {
+	c.mu.Unlock()
+	c.notify()
+
+	for _, b := range kept {
 		idx, err := bacap.NewEmptyMessageBoxIndexFromBytes(b.Index)
 		if err != nil {
 			return err
@@ -129,10 +164,8 @@ type ConnState struct {
 
 // State returns the Conn's state for persistence.
 func (c *Conn) State() (*ConnState, error) {
-	c.sendMu.Lock()
-	defer c.sendMu.Unlock()
-	c.recvMu.Lock()
-	defer c.recvMu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	s := &ConnState{Sent: append([]sentBox(nil), c.sent...)}
 	var err error
 	if s.WriteCap, err = c.writeCap.MarshalBinary(); err != nil {
