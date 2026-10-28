@@ -127,6 +127,65 @@ func TestServiceEndToEnd(t *testing.T) {
 	}
 }
 
+// TestServiceOverSlowNetwork runs the docker echo scenario with mixnet-like
+// latency: clients dial as soon as the directory lists one router, while
+// the service is still linking with the others, and more clients come than
+// the service serves at once.
+func TestServiceOverSlowNetwork(t *testing.T) {
+	w := newWorld(t)
+	w.net.Latency = 10 * time.Millisecond
+	const limit = 2
+	svc := w.service(t, t.TempDir(), limit)
+	ctx, cancel := context.WithCancel(testCtx(t))
+	defer cancel()
+	go svc.Run(ctx, ps.HandlerFunc(func(ctx context.Context, s *ps.Session) {
+		defer s.Close()
+		echoOnce(t, ctx, s)
+	}))
+	t.Cleanup(func() { cancel(); svc.Close() })
+
+	reader, err := directory.NewClient(w.net, nil, poll)
+	require.NoError(t, err)
+	var d *ps.ServiceDescriptor
+	require.Eventually(t, func() bool {
+		d, err = reader.Lookup(ctx, svc.ID())
+		return err == nil && len(d.Routers) > 0
+	}, 30*time.Second, poll)
+
+	const clients = limit + 1
+	var wg sync.WaitGroup
+	errs := make(chan error, clients)
+	for i := range clients {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			conn, err := ps.Dial(ctx, w.net, d, "client", poll)
+			if err != nil {
+				errs <- err
+				return
+			}
+			msg := []byte{byte('a' + i)}
+			if err := conn.Send(ctx, msg); err != nil {
+				errs <- err
+				return
+			}
+			got, err := conn.Recv(ctx)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if string(got) != "echo: "+string(msg) {
+				errs <- context.Canceled
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+}
+
 func TestServiceBoundsConcurrentSessions(t *testing.T) {
 	w := newWorld(t)
 	const limit = 2

@@ -11,7 +11,9 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	mrand "math/rand/v2"
 	"sync"
+	"time"
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/nike/schemes"
@@ -55,6 +57,26 @@ type Network struct {
 	// TombstoneGate, when set, holds every tombstone until it is closed,
 	// standing in for a slow round trip through the mixnet.
 	TombstoneGate chan struct{}
+	// Latency, when set, delays every write, read, tombstone and request
+	// by between half and one and a half times its value, so tests see
+	// the interleavings a real mixnet round trip allows.
+	Latency time.Duration
+}
+
+// delay waits out one round trip of Latency.
+func (n *Network) delay(ctx context.Context) error {
+	if n.Latency <= 0 {
+		return ctx.Err()
+	}
+	d := n.Latency/2 + time.Duration(mrand.Int64N(int64(n.Latency)+1))
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // NewNetwork returns an empty network.
@@ -131,7 +153,7 @@ func (n *Network) put(writeCap *bacap.WriteCap, idx *bacap.MessageBoxIndex, s st
 }
 
 func (n *Network) Write(ctx context.Context, writeCap *bacap.WriteCap, idx *bacap.MessageBoxIndex, plaintext []byte) (*bacap.MessageBoxIndex, error) {
-	if err := ctx.Err(); err != nil {
+	if err := n.delay(ctx); err != nil {
 		return nil, err
 	}
 	if len(plaintext) > n.MaxBox {
@@ -144,7 +166,7 @@ func (n *Network) Write(ctx context.Context, writeCap *bacap.WriteCap, idx *baca
 }
 
 func (n *Network) Read(ctx context.Context, readCap *bacap.ReadCap, idx *bacap.MessageBoxIndex) ([]byte, *bacap.MessageBoxIndex, error) {
-	if err := ctx.Err(); err != nil {
+	if err := n.delay(ctx); err != nil {
 		return nil, nil, err
 	}
 	plaintext, tombstone, ok := n.Box(readCap, idx)
@@ -168,7 +190,7 @@ func (n *Network) Tombstone(ctx context.Context, writeCap *bacap.WriteCap, idx *
 		case <-ctx.Done():
 		}
 	}
-	if err := ctx.Err(); err != nil {
+	if err := n.delay(ctx); err != nil {
 		return err
 	}
 	return n.put(writeCap, idx, stored{tombstone: true})
@@ -252,6 +274,9 @@ func (n *Network) Request(ctx context.Context, node *[32]byte, name []byte, payl
 	if !ok {
 		<-ctx.Done()
 		return nil, ctx.Err()
+	}
+	if err := n.delay(ctx); err != nil {
+		return nil, err
 	}
 	var reply []byte
 	for range max(repeat, 1) {
