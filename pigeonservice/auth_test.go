@@ -78,3 +78,14 @@ func TestWireRoundTrip(t *testing.T) {
 	require.Nil(t, got.Lookup)
 	require.Equal(t, d.ID(), ps.IDFromPublicKey([]byte{1, 2, 3}))
 }
+
+func TestUnmarshalAcceptsZeroPaddingOnly(t *testing.T) {
+	b, err := ps.Marshal(&ps.RouterReply{Status: ps.StatusBusy})
+	require.NoError(t, err)
+
+	var r ps.RouterReply
+	require.NoError(t, ps.Unmarshal(append(b, make([]byte, 2000)...), &r))
+	require.Equal(t, ps.StatusBusy, r.Status)
+
+	require.ErrorIs(t, ps.Unmarshal(append(b, 0, 0, 1), &r), ps.ErrTrailingData)
+}

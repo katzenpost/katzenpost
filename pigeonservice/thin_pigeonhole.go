@@ -12,6 +12,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 
 	"github.com/katzenpost/katzenpost/client/thin"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
 type thinPigeonhole struct {
@@ -193,8 +194,21 @@ func (p *thinPigeonhole) Services(capability string) ([]ServiceNode, error) {
 		nodes = append(nodes, ServiceNode{
 			NodeIDHash: hash.Sum256(d.MixDescriptor.IdentityKey),
 			Endpoint:   d.RecipientQueueID,
-			Params:     d.MixDescriptor.Kaetzchen[capability],
+			Params:     serviceParams(d.MixDescriptor, capability),
 		})
 	}
 	return nodes, nil
+}
+
+// serviceParams merges what a service node publishes for one capability:
+// the server's own entry and the data the service advertises.
+func serviceParams(desc *cpki.MixDescriptor, capability string) map[string]any {
+	params := map[string]any{}
+	for k, v := range desc.Kaetzchen[capability] {
+		params[k] = v
+	}
+	for k, v := range desc.KaetzchenAdvertizedData[capability] {
+		params[k] = v
+	}
+	return params
 }

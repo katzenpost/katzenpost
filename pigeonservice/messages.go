@@ -4,6 +4,8 @@
 package pigeonservice
 
 import (
+	"errors"
+
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -162,7 +164,21 @@ func Marshal(v any) ([]byte, error) {
 	return ccbor.Marshal(v)
 }
 
-// Unmarshal decodes CBOR into v.
+// ErrTrailingData reports bytes after a CBOR item that are not padding.
+var ErrTrailingData = errors.New("pigeonservice: trailing data after CBOR")
+
+// Unmarshal decodes one CBOR item into v. Sphinx payloads arrive padded to
+// their full length, so trailing zero bytes are accepted; anything else
+// after the item is an error.
 func Unmarshal(b []byte, v any) error {
-	return cbor.Unmarshal(b, v)
+	rest, err := cbor.UnmarshalFirst(b, v)
+	if err != nil {
+		return err
+	}
+	for _, c := range rest {
+		if c != 0 {
+			return ErrTrailingData
+		}
+	}
+	return nil
 }
