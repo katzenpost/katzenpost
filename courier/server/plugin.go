@@ -39,6 +39,7 @@ import (
 type CourierBookKeeping struct {
 	Epoch                uint64
 	CreatedAt            time.Time
+	SuccessfulReplyAt    time.Time
 	QueryType            uint8
 	IntermediateReplicas [2]uint8 // Store the replica IDs that were contacted
 	EnvelopeReplies      [2]*commands.ReplicaMessageReply
@@ -379,6 +380,17 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	entry2, ok2 := e.dedupCache[*reply.EnvelopeHash]
 	if ok2 {
 		e.handleExistingEntry(entry2, reply)
+		// Start the longer retention period only when a successful reply
+		// has actually been cached. Duplicates and client polls do not
+		// extend it, so the cache remains bounded.
+		if entry2.SuccessfulReplyAt.IsZero() {
+			for _, cached := range entry2.EnvelopeReplies {
+				if cached != nil && cached.ErrorCode == 0 {
+					entry2.SuccessfulReplyAt = time.Now()
+					break
+				}
+			}
+		}
 		e.logFinalCacheState(reply)
 	} else {
 		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
@@ -446,18 +458,27 @@ func (e *Courier) storeOrReplaceReply(entry *CourierBookKeeping, reply *commands
 	}
 }
 
-// pruneDedupCacheLocked removes entries whose age (now - CreatedAt) is
-// strictly greater than ttl. Returns the number of entries removed.
+// pruneDedupCacheLocked removes unresolved entries after ttl from creation.
+// A successful reply stays available for CopyDedupCacheTTL from its arrival,
+// independently of client polls or duplicate replica replies. Returns the
+// number of entries removed.
 // The caller MUST hold e.dedupCacheLock.Lock().
 func (e *Courier) pruneDedupCacheLocked(now time.Time, ttl time.Duration) int {
 	pruned := 0
 	for key, entry := range e.dedupCache {
-		if now.Sub(entry.CreatedAt) > ttl {
+		if dedupCacheEntryExpired(entry, now, ttl) {
 			delete(e.dedupCache, key)
 			pruned++
 		}
 	}
 	return pruned
+}
+
+func dedupCacheEntryExpired(entry *CourierBookKeeping, now time.Time, ttl time.Duration) bool {
+	if !entry.SuccessfulReplyAt.IsZero() {
+		return now.Sub(entry.SuccessfulReplyAt) > CopyDedupCacheTTL
+	}
+	return now.Sub(entry.CreatedAt) > ttl
 }
 
 // pruneCopyDedupCacheLocked removes completed copy entries whose age
@@ -824,12 +845,18 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	// check-then-act race that was previously masked only by
 	// OnCommand being single-threaded.
 	e.dedupCacheLock.Lock()
+	now := time.Now()
 	cacheEntry, ok := e.dedupCache[*envHash]
+	if ok && dedupCacheEntryExpired(cacheEntry, now, DedupCacheTTL) {
+		delete(e.dedupCache, *envHash)
+		ok = false
+	}
 	if !ok {
-		e.pruneDedupCacheLocked(time.Now(), DedupCacheTTL)
+		// Sweep the rest only on insertion; ordinary polls stay O(1).
+		e.pruneDedupCacheLocked(now, DedupCacheTTL)
 		e.dedupCache[*envHash] = &CourierBookKeeping{
 			Epoch:                e.getCurrentEpoch(),
-			CreatedAt:            time.Now(),
+			CreatedAt:            now,
 			QueryType:            queryType,
 			IntermediateReplicas: courierMessage.IntermediateReplicas,
 			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
@@ -840,9 +867,6 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 		e.scheduleReplicaDispatch(envHash, courierMessage)
 		return e.ackReply(envHash, courierMessage.ReplyIndex)
 	}
-	e.dedupCacheLock.Unlock()
-
-	e.dedupCacheLock.Lock()
 	redispatch := e.cacheEntryNeedsRedispatch(cacheEntry)
 	if redispatch {
 		cacheEntry.RedispatchAttempts++
