@@ -169,3 +169,28 @@ func TestRefreshRestoresGarbageCollectedBoxes(t *testing.T) {
 	_, _, ok = net.Box(rc, idx)
 	require.False(t, ok)
 }
+
+func TestPendingStateRoundTrip(t *testing.T) {
+	net := phtest.NewNetwork()
+	ctx := testCtx(t)
+	pending, err := ps.Mint(ctx, net, "client")
+	require.NoError(t, err)
+	st, err := pending.State()
+	require.NoError(t, err)
+	b, err := ps.Marshal(st)
+	require.NoError(t, err)
+	var st2 ps.PendingState
+	require.NoError(t, ps.Unmarshal(b, &st2))
+	restored, err := ps.RestorePending(&st2)
+	require.NoError(t, err)
+	require.Equal(t, pending.Voucher, restored.Voucher)
+
+	inductor, err := ps.Induct(ctx, net, restored.Voucher, "service", poll)
+	require.NoError(t, err)
+	joiner, err := restored.Await(ctx, net, poll)
+	require.NoError(t, err)
+	require.NoError(t, joiner.Send(ctx, []byte("restored")))
+	got, err := inductor.Recv(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []byte("restored"), got)
+}

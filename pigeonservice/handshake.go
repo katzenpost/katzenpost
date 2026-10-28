@@ -97,6 +97,47 @@ func Mint(ctx context.Context, ph Pigeonhole, displayName string) (*Pending, err
 	}, nil
 }
 
+// PendingState is the persistent form of a Pending.
+type PendingState struct {
+	Voucher    []byte
+	SecretKey  []byte
+	WriteCap   []byte
+	ReplyCap   []byte
+	ReplyIndex []byte
+}
+
+// State returns the Pending's state for persistence.
+func (p *Pending) State() (*PendingState, error) {
+	s := &PendingState{Voucher: p.Voucher, SecretKey: p.secretKey, WriteCap: p.writeCap}
+	var err error
+	if s.ReplyCap, err = p.replyCap.MarshalBinary(); err != nil {
+		return nil, err
+	}
+	if s.ReplyIndex, err = p.replyIndex.MarshalBinary(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// RestorePending rebuilds a Pending from its persistent state.
+func RestorePending(s *PendingState) (*Pending, error) {
+	rc, err := bacap.ReadCapFromBytes(s.ReplyCap)
+	if err != nil {
+		return nil, err
+	}
+	idx, err := bacap.NewEmptyMessageBoxIndexFromBytes(s.ReplyIndex)
+	if err != nil {
+		return nil, err
+	}
+	return &Pending{
+		Voucher:    s.Voucher,
+		secretKey:  s.SecretKey,
+		writeCap:   s.WriteCap,
+		replyCap:   rc,
+		replyIndex: idx,
+	}, nil
+}
+
 // Await waits for the inductor's reply and returns the connection it opens.
 func (p *Pending) Await(ctx context.Context, ph Pigeonhole, pollInterval time.Duration) (*Conn, error) {
 	sealed, _, err := ReadWait(ctx, ph, p.replyCap, p.replyIndex, pollInterval)
