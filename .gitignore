@@ -34,6 +34,10 @@ cmd/genkeypair/genkeypair
 cmd/http-proxy-client/http-proxy-client
 cmd/http-proxy-server/http-proxy-server
 cmd/echo-plugin/echo-plugin
+cmd/voucher-router/voucher-router
+cmd/service-directory/service-directory
+cmd/pigeonhole-echo/pigeonhole-echo
+cmd/pigeonhole-voucher/pigeonhole-voucher
 memspool/server/cmd/memspool/memspool
 panda/server/cmd/panda_server/panda_server
 reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server
