@@ -336,3 +336,38 @@ func mustMarshal(t *testing.T, v any) []byte {
 	require.NoError(t, err)
 	return b
 }
+
+func TestLinkBacklogIsBounded(t *testing.T) {
+	f := newTunedFixture(t, func(c *router.Config) { c.MaxRetained = 2 })
+	ctx := testCtx(t)
+	_, err := ps.Register(ctx, f.net, f.svc, &f.node, poll)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return f.router.Linked(f.svc.ID()) }, 10*time.Second, poll)
+
+	require.NoError(t, ps.Route(ctx, f.net, f.descriptor(), bytesOf(1)))
+	require.NoError(t, ps.Route(ctx, f.net, f.descriptor(), bytesOf(2)))
+	var se *ps.StatusError
+	require.ErrorAs(t, ps.Route(ctx, f.net, f.descriptor(), bytesOf(3)), &se)
+	require.Equal(t, ps.StatusBusy, se.Status)
+}
+
+// TestReregistrationTakesOverRouting has a service that lost its link
+// register again: vouchers routed while the new link is inducted go to it,
+// not to the old link nobody reads.
+func TestReregistrationTakesOverRouting(t *testing.T) {
+	f := newFixture(t)
+	ctx := testCtx(t)
+	_, err := ps.Register(ctx, f.net, f.svc, &f.node, poll)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return f.router.Linked(f.svc.ID()) }, 10*time.Second, poll)
+
+	f.net.TombstoneGate = make(chan struct{})
+	link, err := ps.Register(ctx, f.net, f.svc, &f.node, poll)
+	require.NoError(t, err)
+	require.NoError(t, ps.Route(ctx, f.net, f.descriptor(), bytesOf(9)))
+	close(f.net.TombstoneGate)
+
+	got, err := link.Recv(ctx)
+	require.NoError(t, err)
+	require.Equal(t, bytesOf(9), openLinkMessage(t, f.svc, got))
+}

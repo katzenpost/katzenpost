@@ -95,7 +95,7 @@ func (c *Conn) Send(ctx context.Context, msg []byte) error {
 		return err
 	}
 	c.mu.Lock()
-	c.sent = append(c.sent, sentBox{Index: idxBytes, Plaintext: msg, At: time.Now()})
+	c.sent = append(c.sent, sentBox{Index: idxBytes, Plaintext: append([]byte(nil), msg...), At: time.Now()})
 	c.writeIdx = next
 	c.mu.Unlock()
 	c.notify()
@@ -122,6 +122,13 @@ func (c *Conn) Recv(ctx context.Context) ([]byte, error) {
 			return msg, nil
 		}
 	}
+}
+
+// Retained returns how many sent boxes Refresh still rewrites.
+func (c *Conn) Retained() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.sent)
 }
 
 // Refresh rewrites every box sent within retention, restoring any a replica

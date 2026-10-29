@@ -41,6 +41,10 @@ const (
 	// DefaultInductTimeout is the default time a registration has to
 	// complete its induction.
 	DefaultInductTimeout = 10 * time.Minute
+
+	// DefaultMaxRetained is the default bound on the vouchers one link
+	// keeps rewritten.
+	DefaultMaxRetained = 4096
 )
 
 var linksBucket = []byte("links")
@@ -63,7 +67,11 @@ type Config struct {
 	// induction before the router abandons it. Zero or less selects
 	// DefaultInductTimeout.
 	InductTimeout time.Duration
-	Log           *logging.Logger
+	// MaxRetained bounds the vouchers one link keeps rewritten; routes to
+	// a link holding that many are refused with StatusBusy until they
+	// pass retention. Zero or less selects DefaultMaxRetained.
+	MaxRetained int
+	Log         *logging.Logger
 }
 
 type link struct {
@@ -71,6 +79,8 @@ type link struct {
 	conn  *ps.Conn
 	queue chan []byte
 	stop  context.CancelFunc
+	// done is closed when the link's writer has stopped.
+	done chan struct{}
 }
 
 // Router routes sealed vouchers to services.
@@ -112,6 +122,9 @@ func New(cfg Config, ph ps.Pigeonhole) (*Router, error) {
 	}
 	if cfg.InductTimeout <= 0 {
 		cfg.InductTimeout = DefaultInductTimeout
+	}
+	if cfg.MaxRetained <= 0 {
+		cfg.MaxRetained = DefaultMaxRetained
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Router{
@@ -179,17 +192,16 @@ func (r *Router) save(id ps.ServiceID, conn *ps.Conn) error {
 
 // startLink installs a link, replacing any older link to the same service.
 // A non-nil queue holds vouchers routed while the link was being inducted.
-// The caller must not hold r.mu.
+// Vouchers still queued for the older link move to the new one. The caller
+// must not hold r.mu.
 func (r *Router) startLink(id ps.ServiceID, conn *ps.Conn, queue chan []byte) {
 	if queue == nil {
 		queue = make(chan []byte, linkQueueSize)
 	}
 	ctx, stop := context.WithCancel(r.ctx)
-	l := &link{id: id, conn: conn, queue: queue, stop: stop}
+	l := &link{id: id, conn: conn, queue: queue, stop: stop, done: make(chan struct{})}
 	r.mu.Lock()
-	if old, ok := r.links[id]; ok {
-		old.stop()
-	}
+	old := r.links[id]
 	r.links[id] = l
 	if r.pending[id] == queue {
 		delete(r.pending, id)
@@ -197,12 +209,39 @@ func (r *Router) startLink(id ps.ServiceID, conn *ps.Conn, queue chan []byte) {
 	r.mu.Unlock()
 	r.wg.Add(1)
 	go r.writeLink(ctx, l)
+	if old != nil {
+		old.stop()
+		<-old.done
+		// The old writer may have saved its link last.
+		if err := r.save(id, conn); err != nil {
+			r.log.Errorf("saving link: %v", err)
+		}
+		r.requeue(old.queue, l.queue)
+	}
+}
+
+// requeue moves the vouchers waiting in from to to, dropping any that do
+// not fit.
+func (r *Router) requeue(from, to chan []byte) {
+	for {
+		select {
+		case c := <-from:
+			select {
+			case to <- c:
+			default:
+				r.log.Warningf("dropping a voucher: link queue full")
+			}
+		default:
+			return
+		}
+	}
 }
 
 // writeLink writes the vouchers routed to one service, in order, and keeps
 // them rewritten until they pass retention.
 func (r *Router) writeLink(ctx context.Context, l *link) {
 	defer r.wg.Done()
+	defer close(l.done)
 	refresh := time.NewTicker(refreshInterval(r.cfg.Retention))
 	defer refresh.Stop()
 	for {
@@ -223,9 +262,15 @@ func (r *Router) writeLink(ctx context.Context, l *link) {
 				continue
 			}
 			if err := l.conn.Send(ctx, msg); err != nil {
-				if ctx.Err() == nil {
-					r.log.Errorf("writing link: %v", err)
+				if ctx.Err() != nil {
+					// Stopped: hand it to whoever takes over the queue.
+					select {
+					case l.queue <- ciphertext:
+					default:
+					}
+					return
 				}
+				r.log.Errorf("writing link: %v", err)
 				continue
 			}
 			if err := r.save(l.id, l.conn); err != nil {
@@ -283,11 +328,16 @@ func (r *Router) route(req *ps.RouteRequest) uint8 {
 			delete(r.routed, k)
 		}
 	}
+	// A registration being inducted replaces the link the service has, if
+	// any: a service registers again when it has lost that link.
 	var queue chan []byte
-	if l, ok := r.links[req.ServiceID]; ok {
-		queue = l.queue
-	} else if q, ok := r.pending[req.ServiceID]; ok {
+	if q, ok := r.pending[req.ServiceID]; ok {
 		queue = q
+	} else if l, ok := r.links[req.ServiceID]; ok {
+		if l.conn.Retained()+len(l.queue) >= r.cfg.MaxRetained {
+			return ps.StatusBusy
+		}
+		queue = l.queue
 	} else {
 		return ps.StatusUnknownService
 	}
@@ -351,7 +401,11 @@ func (r *Router) register(req *ps.RegisterRequest) uint8 {
 			if r.pending[id] == queue {
 				delete(r.pending, id)
 			}
+			old := r.links[id]
 			r.mu.Unlock()
+			if old != nil {
+				r.requeue(queue, old.queue)
+			}
 			return
 		}
 		if err := r.save(id, conn); err != nil {
