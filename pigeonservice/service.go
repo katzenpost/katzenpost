@@ -33,6 +33,9 @@ const (
 	// DefaultRegisterTimeout is the default time a registration has to
 	// complete, longer than the router's default induction deadline.
 	DefaultRegisterTimeout = 15 * time.Minute
+	// DefaultHandshakeTimeout is the default time a client's voucher has
+	// to be inducted before Run gives up on it.
+	DefaultHandshakeTimeout = 10 * time.Minute
 )
 
 // rescanInterval is how often the service looks for new routers.
@@ -68,7 +71,10 @@ type Config struct {
 	// complete before it is abandoned and retried on the next rescan;
 	// zero means DefaultRegisterTimeout.
 	RegisterTimeout time.Duration
-	Log             *logging.Logger
+	// HandshakeTimeout is how long Run waits for a client's handshake;
+	// zero means DefaultHandshakeTimeout.
+	HandshakeTimeout time.Duration
+	Log              *logging.Logger
 }
 
 // Handler serves one session. The session ends when OnSession returns.
@@ -195,6 +201,9 @@ func NewService(cfg Config, ph Pigeonhole) (*Service, error) {
 	}
 	if cfg.RegisterTimeout <= 0 {
 		cfg.RegisterTimeout = DefaultRegisterTimeout
+	}
+	if cfg.HandshakeTimeout <= 0 {
+		cfg.HandshakeTimeout = DefaultHandshakeTimeout
 	}
 	db, err := bolt.Open(filepath.Join(cfg.DataDir, "service.db"), 0600, &bolt.Options{Timeout: time.Second})
 	if err != nil {
@@ -415,7 +424,9 @@ func (s *Service) Run(ctx context.Context, h Handler) error {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			sess, err := in.Handshake(ctx)
+			hctx, cancel := context.WithTimeout(ctx, s.cfg.HandshakeTimeout)
+			sess, err := in.Handshake(hctx)
+			cancel()
 			if err != nil {
 				if ctx.Err() == nil {
 					s.log.Warningf("handshake with a client: %v", err)
@@ -423,6 +434,10 @@ func (s *Service) Run(ctx context.Context, h Handler) error {
 				return
 			}
 			h.OnSession(ctx, sess)
+			// Sessions interrupted by shutdown are kept for the next Listen.
+			if ctx.Err() == nil {
+				_ = sess.Close()
+			}
 		}()
 	}
 }

@@ -379,3 +379,35 @@ func TestServiceRetriesAbandonedRegistration(t *testing.T) {
 		20*time.Second, 50*time.Millisecond)
 	require.Equal(t, int32(2), registers.Load())
 }
+
+// TestBogusVoucherDoesNotHoldASlot routes a voucher nobody will ever write
+// box 0 for. Its handshake times out and frees the only session slot.
+func TestBogusVoucherDoesNotHoldASlot(t *testing.T) {
+	w := newWorld(t)
+	dataDir := t.TempDir()
+	key, err := ps.LoadServiceKey(dataDir)
+	require.NoError(t, err)
+	adv, err := directory.NewClient(w.net, key, poll)
+	require.NoError(t, err)
+	svc, err := ps.NewService(ps.Config{
+		Key: key, DataDir: dataDir, Advertiser: adv, PollInterval: poll,
+		MaxConcurrentSessions: 1, HandshakeTimeout: 2 * time.Second,
+		Retention: time.Hour, Log: w.log.GetLogger("service"),
+	}, w.net)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(testCtx(t))
+	defer cancel()
+	go svc.Run(ctx, ps.HandlerFunc(func(ctx context.Context, s *ps.Session) { echoOnce(t, ctx, s) }))
+	t.Cleanup(func() { cancel(); svc.Close() })
+
+	d := w.lookupLinked(t, svc.ID(), 2)
+	require.NoError(t, ps.Route(ctx, w.net, d, make([]byte, 32)))
+	for _, name := range []string{"alice", "bob"} {
+		conn, err := ps.Dial(ctx, w.net, d, name, poll)
+		require.NoError(t, err)
+		require.NoError(t, conn.Send(ctx, []byte(name)))
+		got, err := conn.Recv(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "echo: "+name, string(got))
+	}
+}
