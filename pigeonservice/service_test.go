@@ -417,3 +417,33 @@ func TestBogusVoucherDoesNotHoldASlot(t *testing.T) {
 		require.Equal(t, "echo: "+name, string(got))
 	}
 }
+
+// TestVoucherSurvivesRestart stops a service after it has read a client's
+// voucher but before handling it. The restarted service still answers.
+func TestVoucherSurvivesRestart(t *testing.T) {
+	w := newWorld(t)
+	dir := t.TempDir()
+	svc := w.service(t, dir, 4)
+	ctx := testCtx(t)
+	l, err := svc.Listen(ctx)
+	require.NoError(t, err)
+	d := w.lookupLinked(t, svc.ID(), 2)
+
+	pending, err := ps.Mint(ctx, w.net, "alice")
+	require.NoError(t, err)
+	require.NoError(t, ps.Route(ctx, w.net, d, pending.Voucher))
+	_, err = l.Accept(ctx)
+	require.NoError(t, err)
+	require.NoError(t, svc.Close())
+
+	again := w.service(t, dir, 4)
+	rctx, cancel := context.WithCancel(ctx)
+	go again.Run(rctx, ps.HandlerFunc(func(ctx context.Context, s *ps.Session) { echoOnce(t, ctx, s) }))
+	t.Cleanup(func() { cancel(); again.Close() })
+	conn, err := pending.Await(ctx, w.net, poll)
+	require.NoError(t, err)
+	require.NoError(t, conn.Send(ctx, []byte("hi")))
+	got, err := conn.Recv(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "echo: hi", string(got))
+}

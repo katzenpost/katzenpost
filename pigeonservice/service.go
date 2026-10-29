@@ -22,6 +22,9 @@ import (
 var (
 	linksBucket    = []byte("links")
 	sessionsBucket = []byte("sessions")
+	// vouchersBucket holds the vouchers read from links and not yet
+	// handled, so a crash does not lose one a router has acknowledged.
+	vouchersBucket = []byte("vouchers")
 )
 
 const (
@@ -117,6 +120,10 @@ func (in *Incoming) Handshake(ctx context.Context) (*Session, error) {
 	s := in.service
 	conn, err := Induct(ctx, s.ph, in.voucher, s.cfg.DisplayName, s.cfg.PollInterval)
 	if err != nil {
+		// A handshake cut short by shutdown is tried again after a restart.
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			s.forgetVoucher(in.voucher)
+		}
 		return nil, err
 	}
 	sess := &Session{Conn: conn, service: s}
@@ -126,6 +133,7 @@ func (in *Incoming) Handshake(ctx context.Context) (*Session, error) {
 	if err := s.addSession(sess); err != nil {
 		return nil, err
 	}
+	s.forgetVoucher(in.voucher)
 	return sess, nil
 }
 
@@ -170,6 +178,7 @@ type Service struct {
 	registering map[[32]byte]bool
 	sessions    map[[16]byte]*Session
 	vouchers    map[[32]byte]time.Time
+	unhandled   [][]byte
 	listening   bool
 }
 
@@ -268,6 +277,17 @@ func (s *Service) restore() error {
 		if err != nil {
 			return err
 		}
+		vouchers, err := tx.CreateBucketIfNotExists(vouchersBucket)
+		if err != nil {
+			return err
+		}
+		if err := vouchers.ForEach(func(k, v []byte) error {
+			s.vouchers[[32]byte(k)] = time.Now()
+			s.unhandled = append(s.unhandled, append([]byte(nil), v...))
+			return nil
+		}); err != nil {
+			return err
+		}
 		if err := links.ForEach(func(_, v []byte) error {
 			var sl storedLink
 			if err := Unmarshal(v, &sl); err != nil {
@@ -312,12 +332,40 @@ func (s *Service) put(bucket, key []byte, v any) {
 }
 
 func (s *Service) saveLink(l *linkState) {
+	s.saveLinkWith(l, nil)
+}
+
+// saveLinkWith saves a link together with a voucher just read from it, in
+// one transaction, so the voucher is not lost once the read index moves.
+func (s *Service) saveLinkWith(l *linkState, voucher []byte) {
 	st, err := l.conn.State()
+	if err == nil {
+		var blob []byte
+		blob, err = Marshal(&storedLink{NodeIDHash: l.node.NodeIDHash, Endpoint: l.node.Endpoint, Conn: *st})
+		if err == nil {
+			err = s.db.Update(func(tx *bolt.Tx) error {
+				if voucher != nil {
+					key := hash.Sum256(voucher)
+					if err := tx.Bucket(vouchersBucket).Put(key[:], voucher); err != nil {
+						return err
+					}
+				}
+				return tx.Bucket(linksBucket).Put(l.node.NodeIDHash[:], blob)
+			})
+		}
+	}
 	if err != nil {
 		s.log.Errorf("saving a link: %v", err)
-		return
 	}
-	s.put(linksBucket, l.node.NodeIDHash[:], &storedLink{NodeIDHash: l.node.NodeIDHash, Endpoint: l.node.Endpoint, Conn: *st})
+}
+
+func (s *Service) forgetVoucher(voucher []byte) {
+	key := hash.Sum256(voucher)
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(vouchersBucket).Delete(key[:])
+	}); err != nil {
+		s.log.Errorf("forgetting a voucher: %v", err)
+	}
 }
 
 func (s *Service) saveSession(sess *Session) {
@@ -372,6 +420,8 @@ func (s *Service) Listen(ctx context.Context) (*Listener, error) {
 	for _, sess := range s.sessions {
 		restored = append(restored, sess)
 	}
+	unhandled := s.unhandled
+	s.unhandled = nil
 	s.mu.Unlock()
 
 	for _, sess := range restored {
@@ -383,6 +433,13 @@ func (s *Service) Listen(ctx context.Context) (*Listener, error) {
 		for _, sess := range restored {
 			select {
 			case s.incoming <- &Incoming{service: s, restored: sess}:
+			case <-s.ctx.Done():
+				return
+			}
+		}
+		for _, v := range unhandled {
+			select {
+			case s.incoming <- &Incoming{service: s, voucher: v}:
 			case <-s.ctx.Done():
 				return
 			}
@@ -442,8 +499,9 @@ func (s *Service) Run(ctx context.Context, h Handler) error {
 	}
 }
 
+// startLink starts reading a link. readLink saves the link itself, with
+// each voucher it reads.
 func (s *Service) startLink(l *linkState) {
-	l.conn.OnChange(func(*Conn) { s.saveLink(l) })
 	s.wg.Add(1)
 	go s.readLink(l)
 }
@@ -460,13 +518,14 @@ func (s *Service) readLink(l *linkState) {
 			return
 		}
 		voucher, err := openForward(s.key, msg)
-		if err != nil {
-			s.log.Warningf("a router forwarded something that does not open: %v", err)
+		if err != nil || len(voucher) != 32 || s.seen(voucher) {
+			if err != nil {
+				s.log.Warningf("a router forwarded something that does not open: %v", err)
+			}
+			s.saveLink(l)
 			continue
 		}
-		if len(voucher) != 32 || s.seen(voucher) {
-			continue
-		}
+		s.saveLinkWith(l, voucher)
 		select {
 		case s.incoming <- &Incoming{service: s, voucher: voucher}:
 		case <-s.ctx.Done():
