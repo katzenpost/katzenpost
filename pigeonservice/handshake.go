@@ -4,6 +4,7 @@
 package pigeonservice
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"time"
@@ -97,7 +98,8 @@ func Mint(ctx context.Context, ph Pigeonhole, displayName string) (*Pending, err
 	}, nil
 }
 
-// PendingState is the persistent form of a Pending.
+// PendingState is the persistent form of a Pending. It holds the voucher's
+// secret key: store it where only its owner can read it.
 type PendingState struct {
 	Voucher    []byte
 	SecretKey  []byte
@@ -108,7 +110,7 @@ type PendingState struct {
 
 // State returns the Pending's state for persistence.
 func (p *Pending) State() (*PendingState, error) {
-	s := &PendingState{Voucher: p.Voucher, SecretKey: p.secretKey, WriteCap: p.writeCap}
+	s := &PendingState{Voucher: bytes.Clone(p.Voucher), SecretKey: bytes.Clone(p.secretKey), WriteCap: bytes.Clone(p.writeCap)}
 	var err error
 	if s.ReplyCap, err = p.replyCap.MarshalBinary(); err != nil {
 		return nil, err
@@ -130,9 +132,9 @@ func RestorePending(s *PendingState) (*Pending, error) {
 		return nil, err
 	}
 	return &Pending{
-		Voucher:    s.Voucher,
-		secretKey:  s.SecretKey,
-		writeCap:   s.WriteCap,
+		Voucher:    bytes.Clone(s.Voucher),
+		secretKey:  bytes.Clone(s.SecretKey),
+		writeCap:   bytes.Clone(s.WriteCap),
 		replyCap:   rc,
 		replyIndex: idx,
 	}, nil
@@ -200,7 +202,10 @@ func Induct(ctx context.Context, ph Pigeonhole, voucher []byte, displayName stri
 	if _, err := WriteRetry(ctx, ph, vwc, box1, inducted.SealedReply); err != nil {
 		return nil, err
 	}
-	// Box 0 is spent: tombstone it so the voucher cannot be inducted again.
-	_ = ph.Tombstone(ctx, vwc, box0)
+	// Box 0 is spent: tombstone it so the voucher cannot be inducted again,
+	// which would open a session the joiner never learns of. The joiner
+	// already has its reply, so the connection is returned either way.
+	for ph.Tombstone(ctx, vwc, box0) != nil && sleep(ctx, retryInterval) == nil {
+	}
 	return newConn(ph, wc, first, peer, peer.GetMessageBoxIndex(), pollInterval), nil
 }
