@@ -24,6 +24,9 @@ import (
 	"github.com/katzenpost/katzenpost/pigeonservice/directory"
 )
 
+// idleTimeout ends a session whose client has sent nothing for this long.
+const idleTimeout = time.Hour
+
 func main() {
 	var (
 		thinConfig   string
@@ -79,7 +82,9 @@ func main() {
 			defer stop()
 			err = svc.Run(ctx, ps.HandlerFunc(func(ctx context.Context, s *ps.Session) {
 				for {
-					msg, err := s.Recv(ctx)
+					rctx, cancel := context.WithTimeout(ctx, idleTimeout)
+					msg, err := s.Recv(rctx)
+					cancel()
 					if err != nil {
 						return
 					}
