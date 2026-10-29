@@ -177,6 +177,33 @@ func TestWithdraw(t *testing.T) {
 	listEventually(t, f.client(t, nil), 0)
 }
 
+// TestAdvertiseReplayedAfterWithdraw replays an advertisement, as a
+// delayed ARQ retransmission would, after the service withdrew.
+func TestAdvertiseReplayedAfterWithdraw(t *testing.T) {
+	f := newFixture(t)
+	k := serviceKey(t)
+	adv := &ps.AdvertiseRequest{Descriptor: *descriptor(k, 1), Seq: 10}
+	require.NoError(t, k.SignAdvertise(f.pk.Public, adv))
+	require.Equal(t, ps.StatusOK, handle(t, f, &ps.DirectoryRequest{Advertise: adv}).Status)
+	wd := &ps.WithdrawRequest{ServiceID: k.ID(), Seq: 11}
+	require.NoError(t, k.SignWithdraw(f.pk.Public, wd))
+	require.Equal(t, ps.StatusOK, handle(t, f, &ps.DirectoryRequest{Withdraw: wd}).Status)
+	require.Equal(t, ps.StatusOK, handle(t, f, &ps.DirectoryRequest{Withdraw: wd}).Status)
+
+	require.Equal(t, ps.StatusStale, handle(t, f, &ps.DirectoryRequest{Advertise: adv}).Status)
+	_, err := f.client(t, nil).Lookup(testCtx(t), k.ID())
+	var se *ps.StatusError
+	require.ErrorAs(t, err, &se)
+	require.Equal(t, ps.StatusUnknownService, se.Status)
+
+	again := &ps.AdvertiseRequest{Descriptor: *descriptor(k, 2), Seq: 12}
+	require.NoError(t, k.SignAdvertise(f.pk.Public, again))
+	require.Equal(t, ps.StatusOK, handle(t, f, &ps.DirectoryRequest{Advertise: again}).Status)
+	got, err := f.client(t, nil).Lookup(testCtx(t), k.ID())
+	require.NoError(t, err)
+	require.Len(t, got.Routers, 2)
+}
+
 func TestSnapshotSpansBoxesAndOldOnesAreTombstoned(t *testing.T) {
 	f := newFixture(t)
 	ctx := testCtx(t)

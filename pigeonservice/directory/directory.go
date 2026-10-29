@@ -49,6 +49,9 @@ type Config struct {
 type entry struct {
 	Descriptor ps.ServiceDescriptor
 	Seq        uint64
+	// Withdrawn keeps the Seq of a withdrawal so older advertisements
+	// cannot bring the descriptor back.
+	Withdrawn bool `cbor:",omitempty"`
 }
 
 // snapshotState locates a published snapshot.
@@ -205,7 +208,7 @@ func (d *Directory) advertise(req *ps.AdvertiseRequest) uint8 {
 			return err
 		}
 		if old != nil && old.Seq >= req.Seq {
-			if old.Seq == req.Seq && sameDescriptor(&old.Descriptor, &req.Descriptor) {
+			if !old.Withdrawn && old.Seq == req.Seq && sameDescriptor(&old.Descriptor, &req.Descriptor) {
 				// A retransmission of the request already applied.
 				return nil
 			}
@@ -250,10 +253,16 @@ func (d *Directory) withdraw(req *ps.WithdrawRequest) uint8 {
 			return nil
 		}
 		if old.Seq >= req.Seq {
-			result = ps.StatusStale
+			if !old.Withdrawn || old.Seq != req.Seq {
+				result = ps.StatusStale
+			}
 			return nil
 		}
-		return tx.Bucket(descriptorsBucket).Delete(req.ServiceID[:])
+		blob, err := ps.Marshal(&entry{Descriptor: old.Descriptor, Seq: req.Seq, Withdrawn: true})
+		if err != nil {
+			return err
+		}
+		return tx.Bucket(descriptorsBucket).Put(req.ServiceID[:], blob)
 	})
 	if err != nil {
 		d.log.Errorf("withdrawing a descriptor: %v", err)
@@ -276,7 +285,7 @@ func (d *Directory) lookup(id ps.ServiceID) *ps.DirectoryReply {
 		d.log.Errorf("looking up a descriptor: %v", err)
 		return status(ps.StatusInternalError)
 	}
-	if found == nil {
+	if found == nil || found.Withdrawn {
 		return status(ps.StatusUnknownService)
 	}
 	return &ps.DirectoryReply{Status: ps.StatusOK, Descriptor: &found.Descriptor}
@@ -325,7 +334,9 @@ func (d *Directory) descriptors() ([]ps.ServiceDescriptor, error) {
 			if err := ps.Unmarshal(v, &e); err != nil {
 				return err
 			}
-			all = append(all, e.Descriptor)
+			if !e.Withdrawn {
+				all = append(all, e.Descriptor)
+			}
 			return nil
 		})
 	})
