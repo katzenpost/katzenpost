@@ -326,8 +326,14 @@ func TestDialFallsBackToAnotherRouter(t *testing.T) {
 	r, err := router.New(router.Config{Key: unlinked, DBPath: filepath.Join(t.TempDir(), "r.db"), PollInterval: poll, Log: w.log.GetLogger("r")}, w.net)
 	require.NoError(t, err)
 	t.Cleanup(func() { r.Close() })
-	w.net.AddService("other_router", [32]byte{0xee}, "other_router", nil, func(_ context.Context, p []byte) []byte { return r.Handle(p) })
-	d.Routers = append([]ps.RouterRef{{NodeIDHash: [32]byte{0xee}, Endpoint: "other_router"}}, d.Routers...)
+	w.net.AddService(ps.RouterCapability, [32]byte{0xee}, "other_router", ps.PluginParams(unlinked), func(_ context.Context, p []byte) []byte { return r.Handle(p) })
+	// A router the PKI does not list, as a lying directory might name,
+	// is skipped: this one would acknowledge the voucher and drop it.
+	w.net.AddService("evil", [32]byte{0xbb}, "evil", nil, func(context.Context, []byte) []byte {
+		reply, _ := ps.Marshal(&ps.RouterReply{Status: ps.StatusOK})
+		return reply
+	})
+	d.Routers = append([]ps.RouterRef{{NodeIDHash: [32]byte{0xbb}, Endpoint: "evil"}, {NodeIDHash: [32]byte{0xee}, Endpoint: "other_router"}}, d.Routers...)
 
 	conn, err := ps.Dial(ctx, w.net, d, "carol", poll)
 	require.NoError(t, err)

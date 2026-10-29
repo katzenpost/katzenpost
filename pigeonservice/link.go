@@ -70,9 +70,22 @@ func routerRequest(ctx context.Context, ph Pigeonhole, node *[32]byte, endpoint,
 	return nil
 }
 
+// routeTimeout is how long Route waits for one router before trying the
+// next.
+const routeTimeout = 5 * time.Minute
+
 // Route seals voucher to the service d describes and hands it to one of the
-// service's routers, trying each in turn until one accepts it.
+// service's routers, trying each in turn until one accepts it. Only routers
+// the PKI lists are tried: descriptors come from untrusted directories.
 func Route(ctx context.Context, ph Pigeonhole, d *ServiceDescriptor, voucher []byte) error {
+	nodes, err := ph.Services(RouterCapability)
+	if err != nil {
+		return err
+	}
+	inPKI := make(map[RouterRef]bool, len(nodes))
+	for _, n := range nodes {
+		inPKI[RouterRef{NodeIDHash: n.NodeIDHash, Endpoint: string(n.Endpoint)}] = true
+	}
 	sealed, err := ph.BoxSeal(d.NIKEScheme, d.PublicKey, voucher)
 	if err != nil {
 		return err
@@ -84,7 +97,12 @@ func Route(ctx context.Context, ph Pigeonhole, d *ServiceDescriptor, voucher []b
 	lastErr := ErrNoRouter
 	for i := range d.Routers {
 		r := &d.Routers[i]
-		err := routerRequest(ctx, ph, &r.NodeIDHash, []byte(r.Endpoint), payload)
+		if !inPKI[*r] {
+			continue
+		}
+		rctx, cancel := context.WithTimeout(ctx, routeTimeout)
+		err := routerRequest(rctx, ph, &r.NodeIDHash, []byte(r.Endpoint), payload)
+		cancel()
 		if err == nil {
 			return nil
 		}

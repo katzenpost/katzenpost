@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"time"
 
@@ -91,8 +92,8 @@ func (a *All) Lookup(ctx context.Context, id ps.ServiceID) (*ps.ServiceDescripto
 	return nil, errors.Join(errs...)
 }
 
-// List merges every directory's snapshot, keeping for each service the
-// descriptor that lists the most routers.
+// List merges every directory's snapshot, listing for each service every
+// router any directory names, so one directory cannot hide the others'.
 func (a *All) List(ctx context.Context) ([]ps.ServiceDescriptor, error) {
 	best := map[ps.ServiceID]ps.ServiceDescriptor{}
 	var errs []error
@@ -106,9 +107,18 @@ func (a *All) List(ctx context.Context) ([]ps.ServiceDescriptor, error) {
 			continue
 		}
 		for _, d := range descs {
-			if old, ok := best[d.ID()]; !ok || len(d.Routers) > len(old.Routers) {
+			old, ok := best[d.ID()]
+			if !ok {
+				d.Routers = slices.Clone(d.Routers)
 				best[d.ID()] = d
+				continue
 			}
+			for _, r := range d.Routers {
+				if !slices.Contains(old.Routers, r) {
+					old.Routers = append(old.Routers, r)
+				}
+			}
+			best[d.ID()] = old
 		}
 	}
 	if len(errs) == len(a.clients) {
