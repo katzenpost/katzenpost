@@ -770,6 +770,15 @@ type Response struct {
 	// BoxSealReply carries a sealed box.
 	BoxSealReply *BoxSealReply `cbor:"box_seal_reply"`
 
+	// NIKEGenerateKeyPairReply carries a fresh NIKE keypair.
+	NIKEGenerateKeyPairReply *NIKEGenerateKeyPairReply `cbor:"nike_generate_key_pair_reply"`
+
+	// NIKEDeriveSecretReply carries a NIKE shared secret.
+	NIKEDeriveSecretReply *NIKEDeriveSecretReply `cbor:"nike_derive_secret_reply"`
+
+	// BoxOpenReply carries an opened sealed box.
+	BoxOpenReply *BoxOpenReply `cbor:"box_open_reply"`
+
 	// StartResendingMessageReply carries the service's reply to a
 	// StartResendingMessage.
 	StartResendingMessageReply *StartResendingMessageReply `cbor:"start_resending_message_reply"`
@@ -863,6 +872,15 @@ type Request struct {
 	// BoxSeal seals a plaintext to a NIKE public key.
 	BoxSeal *BoxSeal `cbor:"box_seal"`
 
+	// NIKEGenerateKeyPair generates a NIKE keypair.
+	NIKEGenerateKeyPair *NIKEGenerateKeyPair `cbor:"nike_generate_key_pair"`
+
+	// NIKEDeriveSecret derives a NIKE shared secret.
+	NIKEDeriveSecret *NIKEDeriveSecret `cbor:"nike_derive_secret"`
+
+	// BoxOpen opens a sealed box with a NIKE private key.
+	BoxOpen *BoxOpen `cbor:"box_open"`
+
 	// StartResendingMessage sends a payload to a mixnet service and
 	// retransmits it until the service replies.
 	StartResendingMessage *StartResendingMessage `cbor:"start_resending_message"`
@@ -934,6 +952,39 @@ type BoxSeal struct {
 	PublicKey []byte `cbor:"public_key"`
 	// Plaintext is the data to seal.
 	Plaintext []byte `cbor:"plaintext"`
+}
+
+// BoxOpen opens Ciphertext, a box sealed with BoxSeal, with PrivateKey over
+// the NIKE named by NIKEScheme. The reply type is BoxOpenReply.
+type BoxOpen struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// NIKEScheme names the recipient's NIKE, e.g. "X25519-CTIDH1024".
+	NIKEScheme string `cbor:"nike_scheme"`
+	// PrivateKey is the recipient's NIKE private key.
+	PrivateKey []byte `cbor:"private_key"`
+	// Ciphertext is the sealed box.
+	Ciphertext []byte `cbor:"ciphertext"`
+}
+
+// NIKEGenerateKeyPair generates a keypair for the NIKE named by NIKEScheme.
+// The reply type is NIKEGenerateKeyPairReply.
+type NIKEGenerateKeyPair struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// NIKEScheme names the NIKE, e.g. "X25519-CTIDH1024".
+	NIKEScheme string `cbor:"nike_scheme"`
+}
+
+// NIKEDeriveSecret derives the shared secret of PrivateKey and PublicKey over
+// the NIKE named by NIKEScheme. A degenerate (all zero) secret is an error.
+// The reply type is NIKEDeriveSecretReply.
+type NIKEDeriveSecret struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// NIKEScheme names the NIKE, e.g. "X25519-CTIDH1024".
+	NIKEScheme string `cbor:"nike_scheme"`
+	// PrivateKey is our NIKE private key.
+	PrivateKey []byte `cbor:"private_key"`
+	// PublicKey is the peer's NIKE public key.
+	PublicKey []byte `cbor:"public_key"`
 }
 
 // StartResendingMessage sends Payload to the service at DestinationIdHash and

@@ -42,7 +42,10 @@ func IntoThinResponse(r *Response) *thin.Response {
 		VoucherOpenReply:         r.VoucherOpenReply,
 		VoucherDeriveStreamReply: r.VoucherDeriveStreamReply,
 
-		BoxSealReply: r.BoxSealReply,
+		BoxSealReply:             r.BoxSealReply,
+		NIKEGenerateKeyPairReply: r.NIKEGenerateKeyPairReply,
+		NIKEDeriveSecretReply:    r.NIKEDeriveSecretReply,
+		BoxOpenReply:             r.BoxOpenReply,
 
 		StartResendingMessageReply:  r.StartResendingMessageReply,
 		CancelResendingMessageReply: r.CancelResendingMessageReply,
@@ -114,6 +117,12 @@ type Response struct {
 
 	BoxSealReply *thin.BoxSealReply
 
+	NIKEGenerateKeyPairReply *thin.NIKEGenerateKeyPairReply
+
+	NIKEDeriveSecretReply *thin.NIKEDeriveSecretReply
+
+	BoxOpenReply *thin.BoxOpenReply
+
 	StartResendingMessageReply *thin.StartResendingMessageReply
 
 	CancelResendingMessageReply *thin.CancelResendingMessageReply
@@ -148,7 +157,10 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		VoucherOpen:         r.VoucherOpen,
 		VoucherDeriveStream: r.VoucherDeriveStream,
 
-		BoxSeal: r.BoxSeal,
+		BoxSeal:             r.BoxSeal,
+		NIKEGenerateKeyPair: r.NIKEGenerateKeyPair,
+		NIKEDeriveSecret:    r.NIKEDeriveSecret,
+		BoxOpen:             r.BoxOpen,
 
 		StartResendingMessage:  r.StartResendingMessage,
 		CancelResendingMessage: r.CancelResendingMessage,
@@ -212,6 +224,12 @@ type Request struct {
 	VoucherDeriveStream *thin.VoucherDeriveStream
 
 	BoxSeal *thin.BoxSeal
+
+	NIKEGenerateKeyPair *thin.NIKEGenerateKeyPair
+
+	NIKEDeriveSecret *thin.NIKEDeriveSecret
+
+	BoxOpen *thin.BoxOpen
 
 	StartResendingMessage *thin.StartResendingMessage
 

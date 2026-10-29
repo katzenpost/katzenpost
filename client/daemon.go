@@ -385,6 +385,9 @@ func isLocalRequest(r *Request) bool {
 		r.VoucherOpen != nil ||
 		r.VoucherDeriveStream != nil ||
 		r.BoxSeal != nil ||
+		r.NIKEGenerateKeyPair != nil ||
+		r.NIKEDeriveSecret != nil ||
+		r.BoxOpen != nil ||
 		r.CancelResendingMessage != nil
 }
 
@@ -442,6 +445,12 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.voucherDeriveStream(request)
 	case request.BoxSeal != nil:
 		d.boxSeal(request)
+	case request.NIKEGenerateKeyPair != nil:
+		d.nikeGenerateKeyPair(request)
+	case request.NIKEDeriveSecret != nil:
+		d.nikeDeriveSecret(request)
+	case request.BoxOpen != nil:
+		d.boxOpen(request)
 	case request.CancelResendingMessage != nil:
 		d.cancelResendingMessage(request)
 	default:

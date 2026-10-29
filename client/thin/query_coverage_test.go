@@ -136,6 +136,58 @@ func TestBoxSealReturnsTheDaemonError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestNIKEGenerateKeyPairReturnsTheDaemonReply(t *testing.T) {
+	tc, server := dialFakeDaemon(t)
+	serveOneReply(t, server, func(req *Request) *Response {
+		require.Equal(t, "X25519-CTIDH1024", req.NIKEGenerateKeyPair.NIKEScheme)
+		return &Response{NIKEGenerateKeyPairReply: &NIKEGenerateKeyPairReply{
+			QueryID: req.NIKEGenerateKeyPair.QueryID, PublicKey: []byte("pub"), PrivateKey: []byte("priv"),
+		}}
+	})
+	pub, priv, err := tc.NIKEGenerateKeyPair("X25519-CTIDH1024")
+	require.NoError(t, err)
+	require.Equal(t, []byte("pub"), pub)
+	require.Equal(t, []byte("priv"), priv)
+}
+
+func TestNIKEDeriveSecretReturnsTheDaemonReply(t *testing.T) {
+	tc, server := dialFakeDaemon(t)
+	serveOneReply(t, server, func(req *Request) *Response {
+		require.Equal(t, []byte("priv"), req.NIKEDeriveSecret.PrivateKey)
+		require.Equal(t, []byte("pub"), req.NIKEDeriveSecret.PublicKey)
+		return &Response{NIKEDeriveSecretReply: &NIKEDeriveSecretReply{
+			QueryID: req.NIKEDeriveSecret.QueryID, SharedSecret: []byte("ss"),
+		}}
+	})
+	ss, err := tc.NIKEDeriveSecret("X25519-CTIDH1024", []byte("priv"), []byte("pub"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("ss"), ss)
+}
+
+func TestBoxOpenReturnsTheDaemonReply(t *testing.T) {
+	tc, server := dialFakeDaemon(t)
+	serveOneReply(t, server, func(req *Request) *Response {
+		require.Equal(t, []byte("box"), req.BoxOpen.Ciphertext)
+		return &Response{BoxOpenReply: &BoxOpenReply{
+			QueryID: req.BoxOpen.QueryID, Plaintext: []byte("voucher"),
+		}}
+	})
+	pt, err := tc.BoxOpen("X25519-CTIDH1024", []byte("priv"), []byte("box"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("voucher"), pt)
+}
+
+func TestBoxOpenReturnsTheDaemonError(t *testing.T) {
+	tc, server := dialFakeDaemon(t)
+	serveOneReply(t, server, func(req *Request) *Response {
+		return &Response{BoxOpenReply: &BoxOpenReply{
+			QueryID: req.BoxOpen.QueryID, ErrorCode: ThinClientErrorInvalidRequest,
+		}}
+	})
+	_, err := tc.BoxOpen("X25519-CTIDH1024", []byte("priv"), []byte("box"))
+	require.Error(t, err)
+}
+
 func TestGetPKIDocumentRawReturnsThePayloadAndEpoch(t *testing.T) {
 	tc, server := dialFakeDaemon(t)
 	serveOneReply(t, server, func(req *Request) *Response {

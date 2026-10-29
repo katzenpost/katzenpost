@@ -1048,6 +1048,24 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
+	case message.NIKEGenerateKeyPairReply != nil:
+		select {
+		case t.eventSink <- message.NIKEGenerateKeyPairReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.NIKEDeriveSecretReply != nil:
+		select {
+		case t.eventSink <- message.NIKEDeriveSecretReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.BoxOpenReply != nil:
+		select {
+		case t.eventSink <- message.BoxOpenReply:
+		case <-t.HaltCh():
+			return false
+		}
 	case message.StartResendingMessageReply != nil:
 		select {
 		case t.eventSink <- message.StartResendingMessageReply:
