@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: © 2026 David Stainton
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[build-system]
+requires = ["flit_core >=3.11"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "pigeonhole-rns"
+version = "0.0.1"
+description = "Pigeonhole storage replica and client for Reticulum mesh networks."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-only"
+authors = [{ name = "David Stainton" }]
+dependencies = [
+    "rns>=1.0",
+    "hpqc>=0.0.93",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+pigeonhole-rns = "pigeonhole_rns.cli:main"
+
+[tool.flit.module]
+name = "pigeonhole_rns"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
