@@ -88,6 +88,18 @@ class Engine:
     def bridges(self, reachable: Iterable[bytes]) -> List[bytes]:
         return [d for d in reachable if d in self.peers and self.peers[d].bridge and d != self.self_dest]
 
+    def bridge_targets(self, box_id: bytes, reachable: Iterable[bytes]) -> List[bytes]:
+        """Where a stored box goes so that it reaches the mixnet: the local
+        Katzenpost replica on a bridge, else the first reachable bridge in
+        the box's order. The mixnet never pulls from the mesh, so every
+        holder sends, and all pick the same bridge."""
+        if self.is_bridge:
+            return [BRIDGE]
+        return placement.order(box_id, self.bridges(reachable), self.identity_of)[:1]
+
+    def is_bridge_dst(self, dst: bytes) -> bool:
+        return dst == BRIDGE or (dst in self.peers and self.peers[dst].bridge)
+
     # ---- verification ----
 
     def verify(self, q: wire.Query) -> int:
@@ -104,13 +116,12 @@ class Engine:
 
     def accept(self, q: wire.Query, reachable: Iterable[bytes]) -> int:
         """Verify, store, and enqueue forwards to the first k reachable in
-        the box's order, and to the local Katzenpost replica on a bridge."""
+        the box's order and to a bridge."""
         code = self.verify(q)
         if code != wire.SUCCESS:
             return code
         dsts = [d for d in self.targets(q.box_id, reachable) if d != self.self_dest]
-        if self.is_bridge:
-            dsts.append(BRIDGE)
+        dsts += self.bridge_targets(q.box_id, reachable)
         return self.store.put(q.box_id, q.signature, q.ciphertext, epoch_now(self.now()), dsts)
 
     def handle_write(self, data: bytes, reachable: Iterable[bytes]) -> bytes:
@@ -192,6 +203,7 @@ class Engine:
             q = wire.Query(wire.WRITE, box_id, r.signature, r.ciphertext or b"")
             if self.verify(q) == wire.SUCCESS:
                 dsts = [d for d in self.targets(box_id, reachable) if d != self.self_dest]
+                dsts += self.bridge_targets(box_id, reachable)
                 self.store.put(box_id, r.signature, r.ciphertext or b"", epoch_now(self.now()), dsts)
 
     # ---- forwarding and handoff ----
@@ -222,18 +234,23 @@ class Engine:
         return done
 
     def handoff(self, reachable: Iterable[bytes]) -> int:
-        """For every held box whose owners, in this replica's view, do not
-        include it: enqueue to owners not yet acknowledged, and drop the
-        copy once both owners have acknowledged and nothing is queued.
+        """For every held box: enqueue to a bridge if none has taken it yet.
+        For one whose owners, in this replica's view, do not include it:
+        enqueue to owners not yet acknowledged, and drop the copy once both
+        owners and the bridge, if one is queued, have acknowledged.
         Tombstones are never dropped. Returns how many copies were dropped."""
         reachable = set(reachable)
         dropped = 0
         for box_id in self.store.box_ids():
+            acked = self.store.acked(box_id)
+            queued = self.store.queued(box_id)
+            if not any(self.is_bridge_dst(d) for d in acked | queued):
+                for bdst in self.bridge_targets(box_id, reachable):
+                    self.store.enqueue(box_id, bdst)
+                    queued.add(bdst)
             owners = self.owners(box_id)
             if self.self_dest in owners:
                 continue
-            acked = self.store.acked(box_id)
-            queued = self.store.queued(box_id)
             for o in owners:
                 if o in reachable and o not in acked and o not in queued:
                     self.store.enqueue(box_id, o)
@@ -241,7 +258,7 @@ class Engine:
             box = self.store.get(box_id)
             if box is None or box.is_tombstone:
                 continue
-            if len(owners) == self.k and all(o in acked for o in owners) and not (queued - {BRIDGE}):
+            if len(owners) == self.k and all(o in acked for o in owners) and not queued:
                 self.store.drop(box_id)
                 dropped += 1
         return dropped

@@ -134,3 +134,75 @@ def test_bridge_push_and_pull(tmp_path):
     assert r.code == wire.SUCCESS and r.ciphertext == oct_
     assert e.store.get(other) is not None, "a pulled box lives on the mesh afterwards"
     assert wire.decode_reply(e.handle_peek(wire.encode_read(other))).code == wire.SUCCESS
+
+
+R5 = b"r5" * 8
+IDS[R5] = b"I" + R5
+
+
+def engine_with_bridge(tmp_path):
+    e = engine(tmp_path)
+    e.heard(R5, IDS[R5], True)
+    return e
+
+
+def test_write_reaches_one_bridge_from_any_entry(tmp_path):
+    e = engine_with_bridge(tmp_path)
+    _, box, sig, ct = seal()
+    e.handle_write(wire.encode_write(box, sig, ct), reachable=[R2, R3, R4, R5])
+    assert R5 in e.store.queued(box), "a non-bridge entry still sends to the bridge"
+    assert e.store.queued(box) == (set(e.targets(box, [R2, R3, R4, R5])) - {ME}) | {R5}
+    assert BRIDGE not in e.store.queued(box)
+
+
+def test_no_bridge_reachable_queues_nothing_extra(tmp_path):
+    e = engine_with_bridge(tmp_path)
+    _, box, sig, ct = seal()
+    e.handle_write(wire.encode_write(box, sig, ct), reachable=[R2, R3, R4])
+    assert e.store.queued(box) == set(e.targets(box, [R2, R3, R4])) - {ME}
+    assert e.handoff(reachable=[R2, R3, R4]) == 0
+    assert R5 not in e.store.queued(box)
+
+
+def test_bridge_reachable_later_gets_the_box_once(tmp_path):
+    e = engine_with_bridge(tmp_path)
+    _, box, sig, ct = seal()
+    e.handle_write(wire.encode_write(box, sig, ct), reachable=[R2, R3, R4])
+    e.handoff(reachable=[R2, R3, R4, R5])
+    assert R5 in e.store.queued(box)
+    e.forward_due([R2, R3, R4, R5], lambda dst, b, s, c: wire.SUCCESS)
+    assert R5 in e.store.acked(box)
+    e.handoff(reachable=[R2, R3, R4, R5])
+    assert R5 not in e.store.queued(box), "a bridge that acknowledged is not sent to again"
+
+
+def test_stand_in_keeps_copy_until_bridge_acks(tmp_path):
+    e = engine_with_bridge(tmp_path)
+    _, box, sig, ct = seal()
+    e.handle_write(wire.encode_write(box, sig, ct), reachable=[])
+    owners = e.owners(box)
+    if ME in owners:
+        return
+    e.handoff(reachable=set(owners) | {R5})
+    assert e.store.queued(box) == set(owners) | {R5}
+    e.forward_due(set(owners) | {R5}, lambda dst, b, s, c: wire.SUCCESS if dst in owners else None)
+    assert e.handoff(reachable=set(owners) | {R5}) == 0
+    assert e.store.get(box) is not None, "both owners hold it, but the mixnet does not yet"
+    e.clock[0] += 3600
+    e.forward_due(set(owners) | {R5}, lambda dst, b, s, c: wire.SUCCESS)
+    assert e.handoff(reachable=set(owners) | {R5}) == 1
+
+
+def test_bridge_replica_keeps_copy_until_pushed(tmp_path):
+    e = engine(tmp_path, is_bridge=True)
+    _, box, sig, ct = seal()
+    e.handle_write(wire.encode_write(box, sig, ct), reachable=[])
+    owners = e.owners(box)
+    if ME in owners:
+        return
+    e.handoff(reachable=owners)
+    e.forward_due(owners, lambda dst, b, s, c: wire.SUCCESS if dst != BRIDGE else None)
+    assert e.handoff(reachable=owners) == 0
+    e.clock[0] += 3600
+    e.forward_due(owners, lambda dst, b, s, c: wire.SUCCESS)
+    assert e.handoff(reachable=owners) == 1
