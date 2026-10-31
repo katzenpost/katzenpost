@@ -17,8 +17,8 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
