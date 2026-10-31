@@ -47,8 +47,10 @@ class Replica:
         self.destination.register_request_handler("peek", response_generator=self._on_peek, allow=RNS.Destination.ALLOW_ALL)
 
         self.bridge = BridgeSocket(bridge_socket) if bridge_socket else None
-        # Box plaintext is length prefixed by the client and the AEAD adds a tag.
-        ciphertext_size = box_plaintext_size + 4 + 16
+        # Box plaintext is length prefixed by the client and the AEAD adds a
+        # tag. A size of zero accepts any, for a bridge that defers to the
+        # mixnet replica's geometry check.
+        ciphertext_size = box_plaintext_size + 4 + 16 if box_plaintext_size > 0 else None
         self.engine = engine.Engine(
             Store(os.path.join(storage_dir, "boxes.sqlite")),
             bytes(self.destination.hash),

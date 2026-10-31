@@ -40,3 +40,17 @@ Katzenpost replica on the same host.
 
 The end to end test starts two replica processes on a local TCP interface
 and drives a client through write, read, forward, delete and tombstone.
+
+## Bridge test against the docker mixnet
+
+    make -C docker start wait
+    make -C docker reticulum-test
+
+`genconfig --bridgeReplica 1`, which the docker Makefile passes by default,
+gives replica1 a bridge socket in its DataDir. `reticulum-test` starts a
+container on the host network running a mesh replica bridged to that
+socket and `tests/docker_bot.py`, then runs `TestReticulumBridge` in
+`client/`: a mixnet client writes a box, drops a job for the bot, the bot
+reads the box through the mesh (pulled over the bridge) and answers on
+another stream (pushed over the bridge), and the mixnet client reads the
+answer.

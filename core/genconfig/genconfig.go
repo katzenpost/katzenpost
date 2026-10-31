@@ -278,6 +278,7 @@ type Config struct {
 	UnwrapDelay              int
 	NumSphinxWorkers         int
 	ProxyWorkerCount         int
+	BridgeReplica            int
 	ProxyRequestTimeout      int
 	// SessionGracePeriod controls how long kpclientd preserves
 	// per-app state after a thin client's socket drops without a
@@ -343,6 +344,7 @@ type Katzenpost struct {
 	UnwrapDelay             int
 	NumSphinxWorkers        int
 	ProxyWorkerCount        int
+	BridgeReplica           int
 	ProxyRequestTimeout     int
 	// SessionGracePeriod is written into the generated kpclientd
 	// client.toml so the daemon's per-app reap interval is tunable
@@ -661,6 +663,12 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 
 	cfg.DataDir = filepath.Join(s.BaseDir, cfg.Identifier)
 	os.MkdirAll(filepath.Join(s.OutDir, cfg.Identifier), 0700)
+
+	// The bridge replica serves a Reticulum mesh replica over a unix
+	// socket in its DataDir, which the docker harness bind mounts.
+	if s.BridgeReplica == s.ReplicaNodeIdx+1 {
+		cfg.BridgeSocket = filepath.Join(cfg.DataDir, "bridge.sock")
+	}
 
 	// Set timeout values explicitly to use common config defaults
 	cfg.ConnectTimeout = config.DefaultConnectTimeout
@@ -1163,6 +1171,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.UnwrapDelay = cfg.UnwrapDelay
 	s.NumSphinxWorkers = cfg.NumSphinxWorkers
 	s.ProxyWorkerCount = cfg.ProxyWorkerCount
+	s.BridgeReplica = cfg.BridgeReplica
 	s.ProxyRequestTimeout = cfg.ProxyRequestTimeout
 	s.SessionGracePeriod = cfg.SessionGracePeriod
 	s.PersistMixKeysOnShutdownDir = cfg.PersistMixKeysOnShutdownDir

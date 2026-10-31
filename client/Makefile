@@ -121,3 +121,10 @@ all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_n
 
 clientdaemon:
 	cd ../cmd/kpclientd; go build
+
+# Mixnet client to Reticulum client through a bridge; needs `make -C ../docker reticulum-start`.
+reticulum_jobs?=/go/katzenpost/docker/mixnet-$(distro)/reticulum/jobs
+dockertest_reticulum:
+	cd ../docker && make $(distro)_base.stamp
+	$(docker) run -w /go/katzenpost/client ${docker_args} -e KATZENPOST_RETICULUM_JOBS=$(reticulum_jobs) $(image) \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestReticulumBridge"
