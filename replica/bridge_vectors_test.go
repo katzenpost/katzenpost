@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/katzenpost/katzenpost/pigeonhole"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 // The bridge socket vectors shared with pigeonhole_rns, the mesh replica in
@@ -36,6 +37,14 @@ type bridgeVectors struct {
 	Malformed []struct {
 		Name    string `json:"name"`
 		Payload string `json:"payload"`
+	}
+	Boxes []struct {
+		Name           string `json:"name"`
+		CiphertextSize int    `json:"ciphertext_size"`
+		BoxID          string `json:"box_id"`
+		Signature      string `json:"signature"`
+		Ciphertext     string `json:"ciphertext"`
+		Expect         uint8  `json:"expect"`
 	}
 }
 
@@ -99,6 +108,18 @@ func TestBridgeSocketVectors(t *testing.T) {
 	for _, m := range v.Malformed {
 		if _, _, _, ok := decodeBridgeQuery(unhex(t, m.Payload)); ok {
 			t.Errorf("%s: accepted", m.Name)
+		}
+	}
+	// What a replica answers a write with: the one verification rule, which
+	// the write handler and the bridge share.
+	for _, b := range v.Boxes {
+		w := &pigeonhole.ReplicaWrite{Payload: unhex(t, b.Ciphertext)}
+		copy(w.BoxID[:], unhex(t, b.BoxID))
+		copy(w.Signature[:], unhex(t, b.Signature))
+		w.PayloadLen = uint32(len(w.Payload))
+		geo := &pgeo.Geometry{MaxPlaintextPayloadLength: b.CiphertextSize - 4 - 16} // less the length prefix and the AEAD tag
+		if got := verifyReplicaWrite(w, geo); got != b.Expect {
+			t.Errorf("%s: code %d, want %d", b.Name, got, b.Expect)
 		}
 	}
 }

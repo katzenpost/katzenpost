@@ -276,7 +276,7 @@ ifneq ($(kpclientd_build_tags),)
   kpclientd_tags_flag=-tags "$(kpclientd_build_tags)"
 endif
 
-# The replica that serves a Reticulum bridge socket (see reticulum-start); 0 for none.
+# The replica that serves a Reticulum bridge socket in its DataDir, for pigeonhole_rns (github.com/katzenpost/pigeonhole_rns); 0 for none.
 bridge_replica?=1
 genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --nodes $(mixes) \
 	--layers $(layers) \
@@ -1224,34 +1224,3 @@ client-check: | $(cache_dir)
 	timeout 120 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/fetch.$(distro) -f /namenlos-client/client/thinclient.toml \
 	  && timeout 900 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/ping.$(distro) --thin -c /namenlos-client/client/thinclient.toml -s echo -n $(npings) $(ping_args); st=$$?; $(docker) rm -f namenlos-client 2>/dev/null; exit $$st
 
-# Reticulum bridge test: a container on the host network running a
-# Pigeonhole mesh replica bridged to replica$(bridge_replica) through
-# the unix socket in that replica's DataDir, and a bot that answers
-# jobs the client docker test drops into $(net_name)/reticulum/jobs.
-# The mesh replica is pigeonhole_rns (github.com/katzenpost/pigeonhole_rns);
-# point pigeonhole_rns at a checkout, by default one beside this repository.
-pigeonhole_rns?=$(shell readlink -f ../../pigeonhole_rns)
-reticulum_image=katzenpost-reticulum
-reticulum_container=$(compose_project_name)_reticulum
-reticulum_dir=$(net_name)/reticulum
-
-reticulum_base.stamp: $(pigeonhole_rns)/Dockerfile
-	$(docker) build -t $(reticulum_image) -f $(pigeonhole_rns)/Dockerfile $(pigeonhole_rns)
-	touch $@
-
-reticulum-start: reticulum_base.stamp $(net_name)/running.stamp
-	mkdir -p $(reticulum_dir)/rns $(reticulum_dir)/jobs $(reticulum_dir)/store
-	-$(docker) rm -f $(reticulum_container) >/dev/null 2>&1
-	$(docker) run -d --name $(reticulum_container) --network=host --user $(docker_user) \
-		--volume $(pigeonhole_rns):/pigeonhole_rns $(mount_net_name) $(reticulum_image) \
-		sh /pigeonhole_rns/tests/docker_entry.sh /$(net_name) $(bridge_replica)
-
-reticulum-stop:
-	-$(docker) rm -f $(reticulum_container)
-
-reticulum-logs:
-	$(docker) logs -f $(reticulum_container)
-
-reticulum-test: reticulum-start
-	$(MAKE) -C ../client testargs=$(testargs) dockertest_timeout=$(dockertest_timeout) \
-		reticulum_jobs=/go/katzenpost/docker/$(reticulum_dir)/jobs dockertest_reticulum

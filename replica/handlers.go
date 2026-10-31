@@ -20,6 +20,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
@@ -395,47 +396,45 @@ func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *p
 	return nil
 }
 
+// verifyReplicaWrite is the one rule for a box offered to this replica, by a
+// client, a peer or the bridge: the Box ID parses as an Ed25519 key, the
+// signature verifies under it over the ciphertext, and the ciphertext is
+// exactly the geometry's box size unless it is a tombstone (empty).
+func verifyReplicaWrite(w *pigeonhole.ReplicaWrite, geo *pgeo.Geometry) uint8 {
+	s := ed25519.Scheme()
+	key, err := s.UnmarshalBinaryPublicKey(w.BoxID[:])
+	if err != nil {
+		return pigeonhole.ReplicaErrorInvalidBoxID
+	}
+	if len(w.Payload) != 0 && geo != nil && len(w.Payload) != geo.CalculateBoxCiphertextLength() {
+		return pigeonhole.ReplicaErrorInvalidPayload
+	}
+	if !s.Verify(key, w.Payload, w.Signature[:], nil) {
+		return pigeonhole.ReplicaErrorInvalidSignature
+	}
+	return pigeonhole.ReplicaSuccess
+}
+
 func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
 	c.log.Debug("Handling replica write request")
 
 	// Check if this is a tombstone (empty payload)
 	isTombstone := replicaWrite.PayloadLen == 0 || len(replicaWrite.Payload) == 0
 
+	if code := verifyReplicaWrite(replicaWrite, c.l.server.pigeonholeGeo); code != pigeonhole.ReplicaSuccess {
+		c.log.Errorf("handleReplicaWrite refused: %s", pigeonhole.ReplicaErrorToString(code))
+		return &pigeonhole.ReplicaWriteReply{ErrorCode: code}
+	}
+
 	var reply *pigeonhole.ReplicaWriteReply
 	if isTombstone {
 		reply = c.handleTombstone(replicaWrite)
 	} else {
-		// Validate payload size against geometry limits.
-		// The payload is BACAP ciphertext, which must be exactly the expected size.
-		expectedCiphertextSize := c.l.server.pigeonholeGeo.CalculateBoxCiphertextLength()
-		if len(replicaWrite.Payload) != expectedCiphertextSize {
-			c.log.Errorf("handleReplicaWrite invalid payload size: got %d bytes, expected exactly %d bytes",
-				len(replicaWrite.Payload), expectedCiphertextSize)
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorInvalidPayload,
-			}
-		}
-
-		// Normal write path
-		s := ed25519.Scheme()
-		verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
-		if err != nil {
-			c.log.Errorf("handleReplicaWrite failed to unmarshal BoxID as public key: %v", err)
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorInvalidBoxID,
-			}
-		}
-		if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
-			c.log.Error("handleReplicaWrite signature verification failed")
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
-			}
-		}
 		// Convert trunnel type to wire command for state handling.
 		// state.handleReplicaWrite performs the check-and-put atomically
 		// under a per-BoxID lock; no pre-check is needed here.
 		wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, nil)
-		err = c.l.server.state.handleReplicaWrite(wireWrite)
+		err := c.l.server.state.handleReplicaWrite(wireWrite)
 		if err != nil {
 			// Check if this is the "already exists" case - this is expected during replication
 			if errors.Is(err, ErrBoxAlreadyExists) {
@@ -469,25 +468,9 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 func (c *incomingConn) handleTombstone(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
 	c.log.Debug("Processing tombstone")
 
-	// Verify the signature against an empty payload
-	s := ed25519.Scheme()
-	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
-	if err != nil {
-		c.log.Errorf("handleTombstone failed to unmarshal BoxID as public key: %v", err)
-		return &pigeonhole.ReplicaWriteReply{
-			ErrorCode: pigeonhole.ReplicaErrorInvalidBoxID,
-		}
-	}
-
-	if !s.Verify(verifyKey, []byte{}, replicaWrite.Signature[:], nil) {
-		c.log.Error("handleTombstone signature verification failed")
-		return &pigeonhole.ReplicaWriteReply{
-			ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
-		}
-	}
-
-	// Store the tombstone (empty payload with signature) in the database
-	err = c.l.server.state.handleReplicaTombstone(replicaWrite.BoxID, replicaWrite.Signature)
+	// Store the tombstone (empty payload with signature) in the database;
+	// handleReplicaWrite verified the signature over the empty payload.
+	err := c.l.server.state.handleReplicaTombstone(replicaWrite.BoxID, replicaWrite.Signature)
 	if err != nil {
 		c.log.Errorf("handleTombstone storage failed: %v", err)
 		return &pigeonhole.ReplicaWriteReply{

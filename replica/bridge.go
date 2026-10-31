@@ -19,12 +19,10 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike/schemes"
-	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/pigeonhole"
-	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -223,30 +221,6 @@ func encodeBridgeReadReply(r *pigeonhole.ReplicaReadReply) []byte {
 		out = append(out, r.Payload...)
 	}
 	return out
-}
-
-// verifyReplicaWrite checks a box the way the write handler does, without
-// storing it: the ciphertext is exactly the geometry's box size unless it
-// is a tombstone, and the signature verifies under the Box ID.
-func verifyReplicaWrite(w *pigeonhole.ReplicaWrite, geo *pgeo.Geometry) uint8 {
-	s := ed25519.Scheme()
-	key, err := s.UnmarshalBinaryPublicKey(w.BoxID[:])
-	if err != nil {
-		return pigeonhole.ReplicaErrorInvalidBoxID
-	}
-	if len(w.Payload) == 0 {
-		if !s.Verify(key, []byte{}, w.Signature[:], nil) {
-			return pigeonhole.ReplicaErrorInvalidSignature
-		}
-		return pigeonhole.ReplicaSuccess
-	}
-	if geo != nil && len(w.Payload) != geo.CalculateBoxCiphertextLength() {
-		return pigeonhole.ReplicaErrorInvalidPayload
-	}
-	if !s.Verify(key, w.Payload, w.Signature[:], nil) {
-		return pigeonhole.ReplicaErrorInvalidSignature
-	}
-	return pigeonhole.ReplicaSuccess
 }
 
 func (b *BridgeListener) isShard(shards []*pki.ReplicaDescriptor) (bool, error) {

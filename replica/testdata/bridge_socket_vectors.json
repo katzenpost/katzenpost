@@ -1,5 +1,5 @@
 {
- "description": "Bridge socket between a Katzenpost replica and a Pigeonhole mesh replica: each message is a big endian u32 length then the payload. Queries: READ=0 | box_id(32); WRITE=1 | box_id(32) | signature(64) | ciphertext (empty for a tombstone). Replies: code(1) and, for a found box, signature(64) | ciphertext.",
+ "description": "Bridge socket between a Katzenpost replica and a Pigeonhole mesh replica: each message is a big endian u32 length then the payload. Queries: READ=0 | box_id(32); WRITE=1 | box_id(32) | signature(64) | ciphertext (empty for a tombstone). Replies: code(1) and, for a found box, signature(64) | ciphertext. Boxes: what a replica answers a write with, given the box ciphertext size.",
  "queries": [
   {
    "name": "read",
@@ -83,6 +83,56 @@
   {
    "name": "unknown_kind",
    "payload": "070102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+  }
+ ],
+ "boxes": [
+  {
+   "name": "valid",
+   "ciphertext_size": 120,
+   "box_id": "e99b15980fc590f74df19bbfeca7b5b8060646e28bb92d7181ddba065d0da4dd",
+   "signature": "8cdaac3cc7a4cc9042fc444f1d538acf2e2159c8271daab04f4eb56123f3eecbe531b4d7701a94b61373032dc5907b27e5f29209090b4abf3640ba6c2e0d190e",
+   "ciphertext": "0bfeb9b6e574341f4281b48dc05e631132806b0cf07a26e0b82e679805812ef8b458f972cfc35d5e21c36d56233bad0678e973a4aaae2fcc2048cd88c92831411cf540f9989fe09e8f1c2aecaf2307a8a6e385fea1e667b98c8bc18012d61206daada697b4c462b7e9b7521c97ea637b3515cb2b5ef8717f",
+   "expect": 0
+  },
+  {
+   "name": "tombstone",
+   "ciphertext_size": 120,
+   "box_id": "b67b4a2adec289fea8df7cecd3238f872e09e8b933362d9906be35c281ac7045",
+   "signature": "0555e18b47252c2a94e31026a86d037ceb96613cda9db70d85555d7f03f85d8ef0b48b9bc6b8ae89a76bad09bbfc23d390043905ce8c69cb516fd2199e232b06",
+   "ciphertext": "",
+   "expect": 0
+  },
+  {
+   "name": "bad_signature",
+   "ciphertext_size": 120,
+   "box_id": "e99b15980fc590f74df19bbfeca7b5b8060646e28bb92d7181ddba065d0da4dd",
+   "signature": "8ddaac3cc7a4cc9042fc444f1d538acf2e2159c8271daab04f4eb56123f3eecbe531b4d7701a94b61373032dc5907b27e5f29209090b4abf3640ba6c2e0d190e",
+   "ciphertext": "0bfeb9b6e574341f4281b48dc05e631132806b0cf07a26e0b82e679805812ef8b458f972cfc35d5e21c36d56233bad0678e973a4aaae2fcc2048cd88c92831411cf540f9989fe09e8f1c2aecaf2307a8a6e385fea1e667b98c8bc18012d61206daada697b4c462b7e9b7521c97ea637b3515cb2b5ef8717f",
+   "expect": 3
+  },
+  {
+   "name": "tampered_ciphertext",
+   "ciphertext_size": 120,
+   "box_id": "e99b15980fc590f74df19bbfeca7b5b8060646e28bb92d7181ddba065d0da4dd",
+   "signature": "8cdaac3cc7a4cc9042fc444f1d538acf2e2159c8271daab04f4eb56123f3eecbe531b4d7701a94b61373032dc5907b27e5f29209090b4abf3640ba6c2e0d190e",
+   "ciphertext": "0bfeb9b6e574341e4281b48dc05e631132806b0cf07a26e0b82e679805812ef8b458f972cfc35d5e21c36d56233bad0678e973a4aaae2fcc2048cd88c92831411cf540f9989fe09e8f1c2aecaf2307a8a6e385fea1e667b98c8bc18012d61206daada697b4c462b7e9b7521c97ea637b3515cb2b5ef8717f",
+   "expect": 3
+  },
+  {
+   "name": "not_a_key",
+   "ciphertext_size": 120,
+   "box_id": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "signature": "8cdaac3cc7a4cc9042fc444f1d538acf2e2159c8271daab04f4eb56123f3eecbe531b4d7701a94b61373032dc5907b27e5f29209090b4abf3640ba6c2e0d190e",
+   "ciphertext": "0bfeb9b6e574341f4281b48dc05e631132806b0cf07a26e0b82e679805812ef8b458f972cfc35d5e21c36d56233bad0678e973a4aaae2fcc2048cd88c92831411cf540f9989fe09e8f1c2aecaf2307a8a6e385fea1e667b98c8bc18012d61206daada697b4c462b7e9b7521c97ea637b3515cb2b5ef8717f",
+   "expect": 3
+  },
+  {
+   "name": "wrong_size",
+   "ciphertext_size": 120,
+   "box_id": "e99b15980fc590f74df19bbfeca7b5b8060646e28bb92d7181ddba065d0da4dd",
+   "signature": "8cdaac3cc7a4cc9042fc444f1d538acf2e2159c8271daab04f4eb56123f3eecbe531b4d7701a94b61373032dc5907b27e5f29209090b4abf3640ba6c2e0d190e",
+   "ciphertext": "0bfeb9b6e574341f4281b48dc05e631132806b0cf07a26e0b82e679805812ef8b458f972cfc35d5e21c36d56233bad0678e973a4aaae2fcc2048cd88c92831411cf540f9989fe09e8f1c2aecaf2307a8a6e385fea1e667b98c8bc18012d61206daada697b4c462b7e9b7521c97ea637b3515cb2b5ef871",
+   "expect": 5
   }
  ]
 }
