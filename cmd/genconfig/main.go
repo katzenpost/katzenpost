@@ -70,6 +70,8 @@ performance optimization and security requirements.`,
 		"number of service nodes with plugins (storage, HTTP proxy, etc.)")
 	cmd.Flags().IntVar(&cfg.NrStorageNodes, "storageNodes", genconfig.NrStorageNodes,
 		"number of storage replica nodes for Pigeonhole system")
+	cmd.Flags().IntVar(&cfg.BridgeReplica, "bridgeReplica", 0,
+		"1-based index of the storage replica that serves a Reticulum bridge socket in its DataDir (0 for none)")
 
 	// Authority and voting flags
 	cmd.Flags().BoolVarP(&cfg.Voting, "voting", "v", false,

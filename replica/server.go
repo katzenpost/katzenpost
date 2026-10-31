@@ -90,6 +90,9 @@ type Server struct {
 	// The message handlers read it rather than re-deriving it per request.
 	pigeonholeGeo *pgeo.Geometry
 
+	// bridge serves a co-located Reticulum mesh replica when configured.
+	bridge *BridgeListener
+
 	// Proxy request manager for handling async proxy requests
 	proxyManager *ProxyRequestManager
 
@@ -204,6 +207,9 @@ func (s *Server) halt() {
 	// Then halt all listeners to stop accepting new connections
 	for _, listener := range s.listeners {
 		listener.Halt()
+	}
+	if s.bridge != nil {
+		s.bridge.Halt()
 	}
 
 	// Listener.Halt closes closeAllCh and waits for the connection
@@ -647,6 +653,16 @@ func (s *Server) startServices(pkiClient pki.ReplicaNodeClient) error {
 			return err
 		}
 		s.listeners = append(s.listeners, l)
+	}
+
+	if s.cfg.BridgeSocket != "" {
+		s.log.Noticef("start bridge listener on %s", s.cfg.BridgeSocket)
+		bridge, err := newBridgeListener(s, s.cfg.BridgeSocket)
+		if err != nil {
+			s.log.Errorf("Failed to spawn bridge listener on %s: %v", s.cfg.BridgeSocket, err)
+			return err
+		}
+		s.bridge = bridge
 	}
 
 	return nil
