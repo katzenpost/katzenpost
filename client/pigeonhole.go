@@ -155,9 +155,8 @@ func (d *Daemon) encryptRead(request *Request) {
 
 	// Create the EnvelopeDescriptor with replica epoch
 	envHash := courierEnvelope.EnvelopeHash()
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 	envelopeDesc := &EnvelopeDescriptor{
-		Epoch:       replicaEpoch,
+		Epoch:       courierEnvelope.Epoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
@@ -321,9 +320,8 @@ func (d *Daemon) encryptWrite(request *Request) {
 
 	// Create the EnvelopeDescriptor with replica epoch
 	envHash := courierEnvelope.EnvelopeHash()
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 	envelopeDesc := &EnvelopeDescriptor{
-		Epoch:       replicaEpoch,
+		Epoch:       courierEnvelope.Epoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
@@ -442,11 +440,18 @@ func writeInnerMessage(write *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaInnerM
 
 // buildCourierEnvelope MKEM-encrypts a ReplicaInnerMessage to the two
 // intermediate replicas responsible for boxID and wraps the result in a
-// CourierEnvelope carrying the supplied replicaEpoch. Shared by every
+// CourierEnvelope carrying the document-derived replicaEpoch. A mismatched
+// supplied epoch is refused before encapsulation. Shared by every
 // caller that produces envelopes from a constructed inner message:
 // single-payload chunking, multi-destination chunking, and tombstone
 // ranges.
 func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, boxID *[bacap.BoxIDSize]byte, msg *pigeonhole.ReplicaInnerMessage) (*pigeonhole.CourierEnvelope, error) {
+	if doc == nil {
+		return nil, fmt.Errorf("PKI document is nil")
+	}
+	if replicaEpoch != replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch) {
+		return nil, fmt.Errorf("replica epoch %d does not match PKI document epoch %d", replicaEpoch, doc.Epoch)
+	}
 	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get intermediate replicas: %w", err)

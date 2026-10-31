@@ -49,7 +49,9 @@ func CryptoRandIndex(n int) (int, error) {
 
 var ErrReplicaKeysNotReady = errors.New("replica envelope keys not ready")
 
-// GetRandomIntermediateReplicas returns two random replica numbers and their public keys.
+// GetRandomIntermediateReplicas returns two random replica numbers and their public
+// keys for the replica epoch of this document. Callers must keep the document
+// snapshot through envelope construction; the wall clock is not a key selector.
 func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint8, []nike.PublicKey, error) {
 	if doc == nil {
 		return [2]uint8{}, nil, errors.New("PKI document is nil")
@@ -88,7 +90,7 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 
 	getReplicaPubKeys := func(replica1, replica2 uint8) ([]nike.PublicKey, error) {
 		replicaPubKeys := make([]nike.PublicKey, 2)
-		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+		replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 		for i, replicaNum := range [2]uint8{replica1, replica2} {
 			desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
 			if err != nil {
