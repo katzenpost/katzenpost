@@ -99,7 +99,6 @@ func TestBridgeWriteThenRead(t *testing.T) {
 	// A forged signature is refused before anything is stored.
 	bad := *w
 	bad.Signature[0] ^= 1
-	bad.BoxID[0] ^= 1
 	require.Equal(t, []byte{pigeonhole.ReplicaErrorInvalidSignature}, b.handle(bridgeWriteQuery(&bad)))
 
 	// A wrong sized payload is refused.
