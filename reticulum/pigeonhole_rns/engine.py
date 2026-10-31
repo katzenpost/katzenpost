@@ -19,6 +19,9 @@ from .store import Store
 BRIDGE = b"bridge"
 
 EPOCH_SECONDS = 7 * 24 * 3600
+# Katzenpost replicas count epochs from 2017-06-01 UTC; a bridged box must
+# fall in the same epoch on both sides.
+EPOCH_BASE = 1496275200
 
 # Retry backoff for forwards, in seconds.
 BACKOFF_BASE = 5.0
@@ -26,7 +29,7 @@ BACKOFF_CAP = 600.0
 
 
 def epoch_now(now: Optional[float] = None) -> int:
-    return int((time.time() if now is None else now) // EPOCH_SECONDS)
+    return int(((time.time() if now is None else now) - EPOCH_BASE) // EPOCH_SECONDS)
 
 
 @dataclass
