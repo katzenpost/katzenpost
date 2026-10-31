@@ -147,6 +147,10 @@ const (
 
 	// ARQMessageTypeCopyCommand is for copy command operations.
 	ARQMessageTypeCopyCommand ARQMessageType = 1
+
+	// ARQMessageTypePlain is for StartResendingMessage: a payload sent to
+	// any mixnet service, where the first reply ends the exchange.
+	ARQMessageTypePlain ARQMessageType = 2
 )
 
 // ARQMessage is used by ARQ for automatic retransmission of Pigeonhole messages.
