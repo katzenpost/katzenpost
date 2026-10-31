@@ -331,6 +331,12 @@ func TestEventStringNilReceiver(t *testing.T) {
 		(*VoucherInductReply)(nil),
 		(*VoucherOpenReply)(nil),
 		(*VoucherDeriveStreamReply)(nil),
+		(*BoxSealReply)(nil),
+		(*NIKEGenerateKeyPairReply)(nil),
+		(*NIKEDeriveSecretReply)(nil),
+		(*BoxOpenReply)(nil),
+		(*StartResendingMessageReply)(nil),
+		(*CancelResendingMessageReply)(nil),
 	} {
 		var out string
 		require.NotPanics(t, func() { out = s.String() }, "%T", s)

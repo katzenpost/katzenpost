@@ -766,6 +766,25 @@ type Response struct {
 
 	// VoucherDeriveStreamReply carries the derived VoucherStream caps.
 	VoucherDeriveStreamReply *VoucherDeriveStreamReply `cbor:"voucher_derive_stream_reply"`
+
+	// BoxSealReply carries a sealed box.
+	BoxSealReply *BoxSealReply `cbor:"box_seal_reply"`
+
+	// NIKEGenerateKeyPairReply carries a fresh NIKE keypair.
+	NIKEGenerateKeyPairReply *NIKEGenerateKeyPairReply `cbor:"nike_generate_key_pair_reply"`
+
+	// NIKEDeriveSecretReply carries a NIKE shared secret.
+	NIKEDeriveSecretReply *NIKEDeriveSecretReply `cbor:"nike_derive_secret_reply"`
+
+	// BoxOpenReply carries an opened sealed box.
+	BoxOpenReply *BoxOpenReply `cbor:"box_open_reply"`
+
+	// StartResendingMessageReply carries the service's reply to a
+	// StartResendingMessage.
+	StartResendingMessageReply *StartResendingMessageReply `cbor:"start_resending_message_reply"`
+
+	// CancelResendingMessageReply acknowledges a CancelResendingMessage.
+	CancelResendingMessageReply *CancelResendingMessageReply `cbor:"cancel_resending_message_reply"`
 }
 
 // Request is the thin client's request message to the client daemon.
@@ -849,6 +868,25 @@ type Request struct {
 
 	// VoucherDeriveStream derives the VoucherStream caps from a Voucher.
 	VoucherDeriveStream *VoucherDeriveStream `cbor:"voucher_derive_stream"`
+
+	// BoxSeal seals a plaintext to a NIKE public key.
+	BoxSeal *BoxSeal `cbor:"box_seal"`
+
+	// NIKEGenerateKeyPair generates a NIKE keypair.
+	NIKEGenerateKeyPair *NIKEGenerateKeyPair `cbor:"nike_generate_key_pair"`
+
+	// NIKEDeriveSecret derives a NIKE shared secret.
+	NIKEDeriveSecret *NIKEDeriveSecret `cbor:"nike_derive_secret"`
+
+	// BoxOpen opens a sealed box with a NIKE private key.
+	BoxOpen *BoxOpen `cbor:"box_open"`
+
+	// StartResendingMessage sends a payload to a mixnet service and
+	// retransmits it until the service replies.
+	StartResendingMessage *StartResendingMessage `cbor:"start_resending_message"`
+
+	// CancelResendingMessage stops a StartResendingMessage.
+	CancelResendingMessage *CancelResendingMessage `cbor:"cancel_resending_message"`
 }
 
 // The Contact Voucher request types. Each is served synchronously by the
@@ -901,4 +939,74 @@ type VoucherDeriveStream struct {
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 	// Voucher is the 32-byte token.
 	Voucher []byte `cbor:"voucher"`
+}
+
+// BoxSeal seals Plaintext to PublicKey with hpqc protocols/sealedbox over the
+// NIKE named by NIKEScheme. It is served synchronously by the daemon with no
+// mixnet IO. The reply type is BoxSealReply.
+type BoxSeal struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// NIKEScheme names the recipient's NIKE, e.g. "X25519-CTIDH1024".
+	NIKEScheme string `cbor:"nike_scheme"`
+	// PublicKey is the recipient's NIKE public key.
+	PublicKey []byte `cbor:"public_key"`
+	// Plaintext is the data to seal.
+	Plaintext []byte `cbor:"plaintext"`
+}
+
+// BoxOpen opens Ciphertext, a box sealed with BoxSeal, with PrivateKey over
+// the NIKE named by NIKEScheme. The reply type is BoxOpenReply.
+type BoxOpen struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// NIKEScheme names the recipient's NIKE, e.g. "X25519-CTIDH1024".
+	NIKEScheme string `cbor:"nike_scheme"`
+	// PrivateKey is the recipient's NIKE private key.
+	PrivateKey []byte `cbor:"private_key"`
+	// Ciphertext is the sealed box.
+	Ciphertext []byte `cbor:"ciphertext"`
+}
+
+// NIKEGenerateKeyPair generates a keypair for the NIKE named by NIKEScheme.
+// The reply type is NIKEGenerateKeyPairReply.
+type NIKEGenerateKeyPair struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// NIKEScheme names the NIKE, e.g. "X25519-CTIDH1024".
+	NIKEScheme string `cbor:"nike_scheme"`
+}
+
+// NIKEDeriveSecret derives the shared secret of PrivateKey and PublicKey over
+// the NIKE named by NIKEScheme. A degenerate (all zero) secret is an error.
+// The reply type is NIKEDeriveSecretReply.
+type NIKEDeriveSecret struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// NIKEScheme names the NIKE, e.g. "X25519-CTIDH1024".
+	NIKEScheme string `cbor:"nike_scheme"`
+	// PrivateKey is our NIKE private key.
+	PrivateKey []byte `cbor:"private_key"`
+	// PublicKey is the peer's NIKE public key.
+	PublicKey []byte `cbor:"public_key"`
+}
+
+// StartResendingMessage sends Payload to the service at DestinationIdHash and
+// RecipientQueueID, and retransmits it with a fresh SURB on the daemon's
+// Poisson schedule until the service replies. The first reply ends the
+// exchange and is returned unchanged in StartResendingMessageReply, so the
+// service must treat a repeated payload as idempotent.
+type StartResendingMessage struct {
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// MessageID names the exchange for CancelResendingMessage.
+	MessageID *[32]byte `cbor:"message_id"`
+	// DestinationIdHash is the hash of the service node's identity key.
+	DestinationIdHash *[32]byte `cbor:"destination_id_hash"`
+	// RecipientQueueID is the service's endpoint on that node.
+	RecipientQueueID []byte `cbor:"recipient_queue_id"`
+	// Payload is sent unchanged in every transmission.
+	Payload []byte `cbor:"payload"`
+}
+
+// CancelResendingMessage stops the StartResendingMessage named by MessageID.
+// The reply type is CancelResendingMessageReply.
+type CancelResendingMessage struct {
+	QueryID   *[QueryIDLength]byte `cbor:"query_id"`
+	MessageID *[32]byte            `cbor:"message_id"`
 }

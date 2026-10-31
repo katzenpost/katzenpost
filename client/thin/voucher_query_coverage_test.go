@@ -234,6 +234,12 @@ func vqSimpleResponses() []*Response {
 		{VoucherInductReply: &VoucherInductReply{}},
 		{VoucherOpenReply: &VoucherOpenReply{}},
 		{VoucherDeriveStreamReply: &VoucherDeriveStreamReply{}},
+		{BoxSealReply: &BoxSealReply{}},
+		{NIKEGenerateKeyPairReply: &NIKEGenerateKeyPairReply{}},
+		{NIKEDeriveSecretReply: &NIKEDeriveSecretReply{}},
+		{BoxOpenReply: &BoxOpenReply{}},
+		{StartResendingMessageReply: &StartResendingMessageReply{}},
+		{CancelResendingMessageReply: &CancelResendingMessageReply{}},
 	}
 }
 

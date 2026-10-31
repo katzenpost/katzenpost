@@ -273,6 +273,31 @@ func TestPureEventStrings(t *testing.T) {
 			event: &VoucherDeriveStreamReply{VoucherReadCap: []byte("r")},
 			want:  "VoucherDeriveStreamReply: success",
 		},
+		{
+			name:  "box seal reply error",
+			event: &BoxSealReply{ErrorCode: 200},
+			want:  "BoxSealReply (error: Unknown thin client error code: 200)",
+		},
+		{
+			name:  "box seal reply success",
+			event: &BoxSealReply{Ciphertext: []byte("c")},
+			want:  "BoxSealReply: success",
+		},
+		{
+			name:  "start resending message reply error",
+			event: &StartResendingMessageReply{ErrorCode: 200},
+			want:  "StartResendingMessageReply (error: Unknown thin client error code: 200)",
+		},
+		{
+			name:  "start resending message reply success",
+			event: &StartResendingMessageReply{Payload: []byte("abc")},
+			want:  "StartResendingMessageReply: 3 bytes",
+		},
+		{
+			name:  "cancel resending message reply success",
+			event: &CancelResendingMessageReply{},
+			want:  "CancelResendingMessageReply: success",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
