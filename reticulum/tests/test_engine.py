@@ -185,7 +185,7 @@ def test_stand_in_keeps_copy_until_bridge_acks(tmp_path):
         return
     e.handoff(reachable=set(owners) | {R5})
     assert e.store.queued(box) == set(owners) | {R5}
-    e.forward_due(set(owners) | {R5}, lambda dst, b, s, c: wire.SUCCESS if dst in owners else None)
+    e.forward_due(set(owners) | {R5}, lambda dst, b, s, c: wire.SUCCESS if dst != R5 else None)
     assert e.handoff(reachable=set(owners) | {R5}) == 0
     assert e.store.get(box) is not None, "both owners hold it, but the mixnet does not yet"
     e.clock[0] += 3600

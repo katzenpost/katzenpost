@@ -16,6 +16,7 @@ authors = [{ name = "David Stainton" }]
 dependencies = [
     "rns>=1.0",
     "hpqc>=0.0.93",
+    "cbor2>=5.4",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +24,7 @@ test = ["pytest>=8.0"]
 
 [project.scripts]
 pigeonhole-rns = "pigeonhole_rns.cli:main"
+pigeonhole-chat = "pigeonhole_rns.chat.cli:main"
 
 [tool.flit.module]
 name = "pigeonhole_rns"
