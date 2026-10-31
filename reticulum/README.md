@@ -33,37 +33,13 @@ Katzenpost replica on the same host.
     pigeonhole-rns --config ~/.reticulum write --writecap <hex> --index 0 "yo what up"
     pigeonhole-rns --config ~/.reticulum read  --readcap <hex>  --index 0
 
-## Group chat
-
-`pigeonhole_rns.chat` is katzenqt's group chat protocol over mesh boxes,
-so a group can have members on a mixnet running katzenqt and members on a
-mesh running this. The member state machine is katzenqt's own, copied
-unchanged from `katzenqt/src/katzenqt/groupchat` (`chat/member/SOURCES`
-names the commit), so cryptlib's proofs and trace replay apply to it here
-too. Around it: the wire formats (`chat/wire.py`), a client without IO after
-pigeonhole_protocols' engine (`chat/engine.py`), a backend over the mesh
-client or in memory (`chat/backend.py`), SQLite state (`chat/store.py`) and
-the client that carries the engine's work out on threads (`chat/client.py`).
-
-    pigeonhole-chat --config ~/.reticulum --state ~/chat --name alice --box-size 1000
-
-reads commands on standard input (`create g`, `join g`, `induct g CODE`,
-`send g hello`, `show g`, `members g`, `scan g`) and prints lines as they
-arrive. Joining is by contact voucher: the joiner's `join` mints a code,
-written to `voucher-g.txt` under its state directory, which a member pastes
-into `induct`. Messages that do not fit one box are not sent yet.
-
 ## Test
 
     pytest
     python tests/e2e_two_replicas.py --run-dir /some/scratch/dir
-    python tests/e2e_chat.py --run-dir /some/scratch/dir
 
-The end to end tests start two replica processes on a local TCP interface.
-The first drives a client through write, read, forward, delete and
-tombstone; the second runs two chat clients through founding a group,
-joining by voucher and talking. `tests/test_chat.py` runs the same chat
-flows in process against a simulated Pigeonhole in virtual time.
+The end to end test starts two replica processes on a local TCP interface
+and drives a client through write, read, forward, delete and tombstone.
 
 ## Bridge test against the docker mixnet
 
