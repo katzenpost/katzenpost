@@ -163,6 +163,8 @@ func (d *Daemon) encryptRead(request *Request) {
 	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
+	ownedDescriptor := preparationDescriptor{bytes: envelopeDescriptorBytes}
+	defer ownedDescriptor.dispose()
 	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to serialize envelope descriptor: %v", err)
@@ -184,7 +186,7 @@ func (d *Daemon) encryptRead(request *Request) {
 		return
 	}
 
-	conn.sendResponse(&Response{
+	ownedDescriptor.enqueue(conn, &Response{
 		AppID: request.AppID,
 		EncryptReadReply: &thin.EncryptReadReply{
 			QueryID:             request.EncryptRead.QueryID,
@@ -328,6 +330,8 @@ func (d *Daemon) encryptWrite(request *Request) {
 	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
+	ownedDescriptor := preparationDescriptor{bytes: envelopeDescriptorBytes}
+	defer ownedDescriptor.dispose()
 	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to serialize envelope descriptor: %v", err)
@@ -349,7 +353,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 		return
 	}
 
-	conn.sendResponse(&Response{
+	ownedDescriptor.enqueue(conn, &Response{
 		AppID: request.AppID,
 		EncryptWriteReply: &thin.EncryptWriteReply{
 			QueryID:             request.EncryptWrite.QueryID,
