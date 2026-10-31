@@ -163,8 +163,12 @@ func (d *Daemon) encryptRead(request *Request) {
 	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
-	ownedDescriptor := preparationDescriptor{bytes: envelopeDescriptorBytes}
-	defer ownedDescriptor.dispose()
+	sent := false
+	defer func() {
+		if !sent {
+			utils.ExplicitBzero(envelopeDescriptorBytes)
+		}
+	}()
 	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptRead: failed to serialize envelope descriptor: %v", err)
@@ -186,7 +190,7 @@ func (d *Daemon) encryptRead(request *Request) {
 		return
 	}
 
-	ownedDescriptor.enqueue(conn, &Response{
+	sent = conn.sendResponse(&Response{
 		AppID: request.AppID,
 		EncryptReadReply: &thin.EncryptReadReply{
 			QueryID:             request.EncryptRead.QueryID,
@@ -196,7 +200,7 @@ func (d *Daemon) encryptRead(request *Request) {
 			NextMessageBoxIndex: next.Index(),
 			ErrorCode:           thin.ThinClientSuccess,
 		},
-	})
+	}) == nil
 }
 
 func (d *Daemon) sendEncryptReadError(request *Request, errorCode uint8) {
@@ -330,8 +334,12 @@ func (d *Daemon) encryptWrite(request *Request) {
 	envelopePrivateKey.Reset()
 
 	envelopeDescriptorBytes, err := envelopeDesc.Bytes()
-	ownedDescriptor := preparationDescriptor{bytes: envelopeDescriptorBytes}
-	defer ownedDescriptor.dispose()
+	sent := false
+	defer func() {
+		if !sent {
+			utils.ExplicitBzero(envelopeDescriptorBytes)
+		}
+	}()
 	utils.ExplicitBzero(envelopeDesc.EnvelopeKey)
 	if err != nil {
 		d.log.Errorf("encryptWrite: failed to serialize envelope descriptor: %v", err)
@@ -353,7 +361,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 		return
 	}
 
-	ownedDescriptor.enqueue(conn, &Response{
+	sent = conn.sendResponse(&Response{
 		AppID: request.AppID,
 		EncryptWriteReply: &thin.EncryptWriteReply{
 			QueryID:             request.EncryptWrite.QueryID,
@@ -363,7 +371,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 			NextMessageBoxIndex: next.Index(),
 			ErrorCode:           thin.ThinClientSuccess,
 		},
-	})
+	}) == nil
 }
 
 func (d *Daemon) sendEncryptWriteError(request *Request, errorCode uint8) {
@@ -444,18 +452,11 @@ func writeInnerMessage(write *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaInnerM
 
 // buildCourierEnvelope MKEM-encrypts a ReplicaInnerMessage to the two
 // intermediate replicas responsible for boxID and wraps the result in a
-// CourierEnvelope carrying the document-derived replicaEpoch. A mismatched
-// supplied epoch is refused before encapsulation. Shared by every
+// CourierEnvelope carrying the document's replica epoch. Shared by every
 // caller that produces envelopes from a constructed inner message:
 // single-payload chunking, multi-destination chunking, and tombstone
 // ranges.
-func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, boxID *[bacap.BoxIDSize]byte, msg *pigeonhole.ReplicaInnerMessage) (*pigeonhole.CourierEnvelope, error) {
-	if doc == nil {
-		return nil, fmt.Errorf("PKI document is nil")
-	}
-	if replicaEpoch != replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch) {
-		return nil, fmt.Errorf("replica epoch %d does not match PKI document epoch %d", replicaEpoch, doc.Epoch)
-	}
+func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, boxID *[bacap.BoxIDSize]byte, msg *pigeonhole.ReplicaInnerMessage) (*pigeonhole.CourierEnvelope, error) {
 	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get intermediate replicas: %w", err)
@@ -475,7 +476,7 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, replicaEpoch uint64, b
 		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
 		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
 		ReplyIndex:           0,
-		Epoch:                replicaEpoch,
+		Epoch:                replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch),
 		SenderPubkeyLen:      uint16(len(senderPubkey)),
 		SenderPubkey:         senderPubkey,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
@@ -520,7 +521,6 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	// Derive the replica epoch from the PKI doc we just used for replica
 	// selection: wall-clock-based ReplicaNow() could diverge from
 	// doc.Epoch around a mixnet-epoch boundary.
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 
 	pos, err := req.DestWriteCap.PositionAt(req.DestStartIndex)
 	if err != nil {
@@ -542,7 +542,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
+		envelope, err := d.buildCourierEnvelope(doc, &write.BoxID, writeInnerMessage(write))
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayload: %v", err)
 			d.sendCreateCourierEnvelopesFromPayloadError(request, notReadyErrorCode(err))
@@ -640,7 +640,6 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 	// Derive the replica epoch from the PKI doc, matching the keys
 	// the client selected for this batch. See the note in
 	// createCourierEnvelopesFromPayload.
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 
 	// Create a fresh encoder and restore buffer from previous call if provided
 	encoder := pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry())
@@ -704,7 +703,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 			}
 			d.log.Debugf("createCourierEnvelopesFromPayloads: dest=%d, Idx64=%d", destIdx, pos.Index().Idx64)
 
-			envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &write.BoxID, writeInnerMessage(write))
+			envelope, err := d.buildCourierEnvelope(doc, &write.BoxID, writeInnerMessage(write))
 			if err != nil {
 				d.log.Errorf("createCourierEnvelopesFromPayloads: %v", err)
 				d.sendCreateCourierEnvelopesFromPayloadsError(request, notReadyErrorCode(err))
@@ -824,7 +823,6 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 		return
 	}
 
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 	var courierEnvelopes []*pigeonhole.CourierEnvelope
 
 	for i := uint32(0); i < maxCount; i++ {
@@ -836,7 +834,7 @@ func (d *Daemon) createCourierEnvelopesFromTombstoneRange(request *Request) {
 			return
 		}
 
-		envelope, err := d.buildCourierEnvelope(doc, replicaEpoch, &tombstone.BoxID, writeInnerMessage(tombstone))
+		envelope, err := d.buildCourierEnvelope(doc, &tombstone.BoxID, writeInnerMessage(tombstone))
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromTombstoneRange: %v", err)
 			d.sendCreateCourierEnvelopesFromTombstoneRangeError(request, notReadyErrorCode(err))
