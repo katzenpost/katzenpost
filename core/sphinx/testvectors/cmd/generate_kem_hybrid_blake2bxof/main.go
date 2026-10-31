@@ -1,11 +1,11 @@
 // main.go - Generates KEM-Sphinx full-packet test vectors for the X25519 +
-// ML-KEM-768 hybrid combiner KEM, for the Lean port in CryptWalker
-// (https://github.com/katzenpost/CryptWalker).
+// ML-KEM-768 hybrid combiner KEM, for the Lean port in Cryptlib
+// (https://github.com/katzenpost/cryptlib).
 //
 // A copy of ../generate_kem_hybrid/main.go with only the KEM construction
 // changed. That one builds the combiner with adapter.SHA256v1, a portable
-// stand-in for CryptWalker's earlier lack of BLAKE2b/BLAKE2Xb; now that
-// CryptWalker has it (KEM/Schemes.lean's kemMLKEM768X25519Blake2b), this
+// stand-in for Cryptlib's earlier lack of BLAKE2b/BLAKE2Xb; now that
+// Cryptlib has it (Cryptlib/Primitives/KEM/Schemes.lean's kemMLKEM768X25519Blake2b), this
 // builds with adapter.BLAKE2bXOF instead, matching hpqc's registered
 // "MLKEM768-X25519" scheme (kem/schemes) exactly.
 //
