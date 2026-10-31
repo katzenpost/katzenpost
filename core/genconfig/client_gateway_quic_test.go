@@ -52,7 +52,7 @@ func TestGenConfigPinsEveryQUICGatewayInClientTOML(t *testing.T) {
 				continue
 			}
 			require.NotEmpty(t, gw.QUICKeyHash, "transport %s: client.toml does not pin %s's QUIC key", transport, gw.Name)
-			key, err := quicCommon.ReadStaticKey(filepath.Join(s.OutDir, gw.Name, QUICKeyFile))
+			key, err := quicCommon.ReadStaticKey(filepath.Join(s.OutDir, gw.Name, QUICKeyFile), nil)
 			require.NoError(t, err)
 			require.Equal(t, hex.EncodeToString(key.Hash()), gw.QUICKeyHash, "transport %s: %s", transport, gw.Name)
 			require.Contains(t, gw.Addresses, "tcp://"+strings.TrimPrefix(gw.Addresses[0], "quic://"), "transport %s: %s has no tcp address for a client whose UDP fails", transport, gw.Name)

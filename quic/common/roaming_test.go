@@ -109,7 +109,7 @@ func roamingPair(t *testing.T, dialOpts *Options) (*QuicListener, *rebindingRela
 	t.Helper()
 	_, identityPrivateKey, err := signschemes.ByName(testIdentityScheme).GenerateKey()
 	require.NoError(t, err)
-	key, err := LoadStaticKey(filepath.Join(t.TempDir(), "quic-tls.key"))
+	key, err := LoadStaticKey(filepath.Join(t.TempDir(), "quic-tls.key"), nil)
 	require.NoError(t, err)
 	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, key, nil)
 	require.NoError(t, err)

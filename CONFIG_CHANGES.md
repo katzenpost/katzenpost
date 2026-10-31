@@ -102,6 +102,7 @@ recommended setting. A value that fails validation refuses the config.
   KeepAliveJitter = 0.25
   PinMismatch = "fallback"
   CloseLinger = "30s"
+  Signature = "Ed25519"
 ```
 
 - **Added** `ALPN` (string, at most 255 bytes; default `"h3"`). The
@@ -256,6 +257,24 @@ recommended setting. A value that fails validation refuses the config.
   disable it as it does `KeepAlivePeriod`; a negative value refuses
   the config. Earlier revisions waited up to 2 minutes, the QUIC idle
   timeout. A TCP link hands unsent data to the kernel as before.
+- **Added** `Signature` (`"Ed25519"` or `"ML-DSA-65"`; default
+  `"Ed25519"`). The scheme of the key that signs this end's QUIC
+  certificate and TLS 1.3 handshake. `"ML-DSA-65"` makes a self-signed
+  X.509 certificate with an ML-DSA-65 key (OID 2.16.840.1.101.3.4.3.18)
+  and signs the handshake with signature scheme `mldsa65` (0x0905). It
+  needs every component built with Go 1.27 or later: a binary built
+  with Go 1.26 refuses the setting, and a client built with Go 1.26
+  cannot complete a handshake with an ML-DSA-65 listener. Pins are
+  unchanged, the SHA-256 of the certificate's SubjectPublicKeyInfo, so
+  a dialer needs no setting of its own. Per-epoch keys of each scheme
+  are kept in separate files, so changing the setting makes new keys
+  and the pins of the epochs already published stop matching until
+  the next descriptor is published; a mismatch is handled as
+  `PinMismatch` says. An authority's or gateway's long-term
+  `quic-tls.key` is read as a seed of the configured scheme, so
+  changing the setting changes its `QUICKeyHash`, which must then be
+  replaced everywhere it is pinned; `genkeypair --type quic --scheme
+  ML-DSA-65` writes a new key and its hash.
 - Not configurable: each QUIC listener logs one warning at start when
   its UDP socket buffers are below the 7 MiB quic-go asks for, naming
   the sysctl to raise (`net.core.rmem_max` and `net.core.wmem_max` on

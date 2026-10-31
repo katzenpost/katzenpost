@@ -558,7 +558,7 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 			if !s.isCurrent(name) {
 				addresses = slices.DeleteFunc(slices.Clone(addresses), quicCommon.IsQUICAddress)
 			} else {
-				quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, name, QUICKeyFile))
+				quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, name, QUICKeyFile), nil)
 				if err != nil {
 					return err
 				}
@@ -1014,7 +1014,7 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			Addresses:          cfg.Server.Addresses,
 		}
 		if pinsQUIC {
-			quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, authIdentifier, QUICKeyFile))
+			quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, authIdentifier, QUICKeyFile), nil)
 			if err != nil {
 				return err
 			}
