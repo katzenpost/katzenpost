@@ -1,0 +1,88 @@
+{
+ "description": "Bridge socket between a Katzenpost replica and a Pigeonhole mesh replica: each message is a big endian u32 length then the payload. Queries: READ=0 | box_id(32); WRITE=1 | box_id(32) | signature(64) | ciphertext (empty for a tombstone). Replies: code(1) and, for a found box, signature(64) | ciphertext.",
+ "queries": [
+  {
+   "name": "read",
+   "kind": 0,
+   "box_id": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+   "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+   "frame": "00000021000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+  },
+  {
+   "name": "write",
+   "kind": 1,
+   "box_id": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+   "signature": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "ciphertext": "61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573",
+   "payload": "010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573",
+   "frame": "0000008a010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573"
+  },
+  {
+   "name": "tombstone",
+   "kind": 1,
+   "box_id": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+   "signature": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "ciphertext": "",
+   "payload": "010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "frame": "00000061010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
+  }
+ ],
+ "replies": [
+  {
+   "name": "found",
+   "code": 0,
+   "payload": "00a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573",
+   "frame": "0000006a00a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573",
+   "signature": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "ciphertext": "61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573"
+  },
+  {
+   "name": "stored",
+   "code": 0,
+   "payload": "00",
+   "frame": "0000000100"
+  },
+  {
+   "name": "not_found",
+   "code": 1,
+   "payload": "01",
+   "frame": "0000000101"
+  },
+  {
+   "name": "tombstone",
+   "code": 11,
+   "payload": "0b",
+   "frame": "000000010b"
+  },
+  {
+   "name": "already_exists",
+   "code": 10,
+   "payload": "0a",
+   "frame": "000000010a"
+  },
+  {
+   "name": "invalid_payload",
+   "code": 5,
+   "payload": "05",
+   "frame": "0000000105"
+  }
+ ],
+ "malformed": [
+  {
+   "name": "read_short",
+   "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+  },
+  {
+   "name": "read_trailing",
+   "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2078"
+  },
+  {
+   "name": "write_no_signature",
+   "payload": "010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadae"
+  },
+  {
+   "name": "unknown_kind",
+   "payload": "070102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+  }
+ ]
+}

@@ -1228,20 +1228,23 @@ client-check: | $(cache_dir)
 # Pigeonhole mesh replica bridged to replica$(bridge_replica) through
 # the unix socket in that replica's DataDir, and a bot that answers
 # jobs the client docker test drops into $(net_name)/reticulum/jobs.
+# The mesh replica is pigeonhole_rns (github.com/katzenpost/pigeonhole_rns);
+# point pigeonhole_rns at a checkout, by default one beside this repository.
+pigeonhole_rns?=$(shell readlink -f ../../pigeonhole_rns)
 reticulum_image=katzenpost-reticulum
 reticulum_container=$(compose_project_name)_reticulum
 reticulum_dir=$(net_name)/reticulum
 
-reticulum_base.stamp: Dockerfile.reticulum
-	$(docker) build -t $(reticulum_image) -f Dockerfile.reticulum .
+reticulum_base.stamp: $(pigeonhole_rns)/Dockerfile
+	$(docker) build -t $(reticulum_image) -f $(pigeonhole_rns)/Dockerfile $(pigeonhole_rns)
 	touch $@
 
 reticulum-start: reticulum_base.stamp $(net_name)/running.stamp
 	mkdir -p $(reticulum_dir)/rns $(reticulum_dir)/jobs $(reticulum_dir)/store
 	-$(docker) rm -f $(reticulum_container) >/dev/null 2>&1
 	$(docker) run -d --name $(reticulum_container) --network=host --user $(docker_user) \
-		--volume $(shell readlink -f ..):/go/katzenpost $(mount_net_name) $(reticulum_image) \
-		sh /go/katzenpost/reticulum/tests/docker_entry.sh /$(net_name) $(bridge_replica)
+		--volume $(pigeonhole_rns):/pigeonhole_rns $(mount_net_name) $(reticulum_image) \
+		sh /pigeonhole_rns/tests/docker_entry.sh /$(net_name) $(bridge_replica)
 
 reticulum-stop:
 	-$(docker) rm -f $(reticulum_container)

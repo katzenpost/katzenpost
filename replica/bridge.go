@@ -176,26 +176,44 @@ func writeBridgeFrame(w io.Writer, p []byte) error {
 }
 
 func (b *BridgeListener) handle(q []byte) []byte {
-	if len(q) < 1+bacap.BoxIDSize {
+	kind, boxID, w, ok := decodeBridgeQuery(q)
+	switch {
+	case !ok:
 		return []byte{pigeonhole.ReplicaErrorInvalidPayload}
+	case kind == bridgeQueryRead:
+		return encodeBridgeReadReply(b.read(boxID))
+	default:
+		return []byte{b.write(w)}
 	}
-	var boxID [bacap.BoxIDSize]byte
+}
+
+// decodeBridgeQuery parses a query frame: the kind, the Box ID, and for a
+// write the ReplicaWrite it carries. A read of the wrong length, a write
+// without a whole signature, and an unknown kind are not ok.
+func decodeBridgeQuery(q []byte) (kind byte, boxID *[bacap.BoxIDSize]byte, w *pigeonhole.ReplicaWrite, ok bool) {
+	if len(q) < 1+bacap.BoxIDSize {
+		return 0, nil, nil, false
+	}
+	boxID = new([bacap.BoxIDSize]byte)
 	copy(boxID[:], q[1:1+bacap.BoxIDSize])
 	switch q[0] {
 	case bridgeQueryRead:
-		return encodeBridgeReadReply(b.read(&boxID))
+		if len(q) != 1+bacap.BoxIDSize {
+			return 0, nil, nil, false
+		}
+		return bridgeQueryRead, boxID, nil, true
 	case bridgeQueryWrite:
 		rest := q[1+bacap.BoxIDSize:]
 		if len(rest) < bacap.SignatureSize {
-			return []byte{pigeonhole.ReplicaErrorInvalidPayload}
+			return 0, nil, nil, false
 		}
-		w := &pigeonhole.ReplicaWrite{BoxID: boxID}
+		w = &pigeonhole.ReplicaWrite{BoxID: *boxID}
 		copy(w.Signature[:], rest[:bacap.SignatureSize])
 		w.Payload = append([]byte(nil), rest[bacap.SignatureSize:]...)
 		w.PayloadLen = uint32(len(w.Payload))
-		return []byte{b.write(w)}
+		return bridgeQueryWrite, boxID, w, true
 	}
-	return []byte{pigeonhole.ReplicaErrorInvalidPayload}
+	return 0, nil, nil, false
 }
 
 func encodeBridgeReadReply(r *pigeonhole.ReplicaReadReply) []byte {
