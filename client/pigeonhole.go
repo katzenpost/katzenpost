@@ -1577,6 +1577,14 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	courierEnvelopeReply := courierQueryReply.EnvelopeReply
 
+	// A busy courier did not take the envelope; resend it after a backoff
+	// without changing state or failing the operation.
+	if pigeonhole.IsTemporaryEnvelopeError(courierEnvelopeReply.ErrorCode) {
+		d.log.Warningf("handlePigeonholeARQReply: courier busy (error code %d), resending later", courierEnvelopeReply.ErrorCode)
+		d.rearmARQRetry(arqMessage)
+		return
+	}
+
 	// The courier reports failures in its own EnvelopeError namespace, whose
 	// values 1-4 collide with the replica error codes the client interprets in
 	// this same field (e.g. EnvelopeErrorInvalidEpoch == ReplicaErrorDatabaseFailure

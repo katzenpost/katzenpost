@@ -218,5 +218,7 @@ type ARQMessage struct {
 	// NoIdempotentBoxAlreadyExists disables treating BoxAlreadyExists as idempotent success
 	// for write operations. When true, BoxAlreadyExists is returned as an error.
 	// When false (default), BoxAlreadyExists is treated as success (the write already happened).
+	// When true, it can also report this operation's own write if the courier evicted the
+	// stored result before the follow-up poll and dispatched the write again.
 	NoIdempotentBoxAlreadyExists bool
 }
