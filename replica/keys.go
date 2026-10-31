@@ -31,6 +31,10 @@ type EnvelopeKeys struct {
 
 	keysLock *sync.RWMutex
 	keys     map[uint64]*replicaCommon.EnvelopeKey
+	// leases counts requests still using a key; a pruned key with
+	// leases is parked in retired and wiped by the last Release.
+	leases  map[uint64]int
+	retired map[uint64]*replicaCommon.EnvelopeKey
 }
 
 func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, epoch uint64) (*EnvelopeKeys, error) {
@@ -138,7 +142,11 @@ func (k *EnvelopeKeys) Prune() bool {
 			k.log.Debugf("Purging expired key for epoch: %v", key)
 			// Remove key files from disk
 			keypair.PurgeKeyFiles(k.datadir, k.scheme, key)
-			keypair.PrivateKey.Reset()
+			if k.leases[key] > 0 {
+				k.retired[key] = keypair
+			} else {
+				keypair.PrivateKey.Reset()
+			}
 			delete(k.keys, key)
 			didPrune = true
 		}
@@ -154,6 +162,38 @@ func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*replicaCommon.EnvelopeK
 		return nil, errors.New("key for given replica epoch doesn't exist")
 	}
 	return keypair, nil
+}
+
+// Acquire returns the keypair for replicaEpoch and holds it against
+// Prune until the matching Release.
+func (k *EnvelopeKeys) Acquire(replicaEpoch uint64) (*replicaCommon.EnvelopeKey, error) {
+	k.keysLock.Lock()
+	defer k.keysLock.Unlock()
+	keypair, ok := k.keys[replicaEpoch]
+	if !ok {
+		return nil, errors.New("key for given replica epoch doesn't exist")
+	}
+	if k.leases == nil {
+		k.leases = make(map[uint64]int)
+		k.retired = make(map[uint64]*replicaCommon.EnvelopeKey)
+	}
+	k.leases[replicaEpoch]++
+	return keypair, nil
+}
+
+// Release drops one Acquire; the last release of a pruned key wipes it.
+func (k *EnvelopeKeys) Release(replicaEpoch uint64) {
+	k.keysLock.Lock()
+	defer k.keysLock.Unlock()
+	k.leases[replicaEpoch]--
+	if k.leases[replicaEpoch] > 0 {
+		return
+	}
+	delete(k.leases, replicaEpoch)
+	if keypair, ok := k.retired[replicaEpoch]; ok {
+		keypair.PrivateKey.Reset()
+		delete(k.retired, replicaEpoch)
+	}
 }
 
 // EnsureKey returns the keypair for replicaEpoch, generating it on

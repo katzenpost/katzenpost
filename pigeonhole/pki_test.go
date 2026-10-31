@@ -266,3 +266,24 @@ func TestGetRandomIntermediateReplicasNotReady(t *testing.T) {
 		})
 	}
 }
+
+// A cached document from the previous replica epoch carries keys for
+// that epoch; key selection must follow the document, not the clock,
+// since the envelope's Epoch field is derived from the document.
+func TestGetRandomIntermediateReplicasUsesDocumentEpoch(t *testing.T) {
+	doc := createTestPKIDocument(t, 4)
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	require.Equal(t, replicaEpoch, replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch))
+	for _, r := range doc.StorageReplicas {
+		r.EnvelopeKeys = map[uint64][]byte{replicaEpoch - 1: r.EnvelopeKeys[replicaEpoch]}
+	}
+	doc.Epoch -= uint64(replicaCommon.ReplicaEpochPeriod / epochtime.Period())
+	require.Equal(t, replicaEpoch-1, replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch))
+
+	boxid := &[32]byte{}
+	_, err := rand.Reader.Read(boxid[:])
+	require.NoError(t, err)
+	_, keys, err := GetRandomIntermediateReplicas(doc, boxid)
+	require.NoError(t, err)
+	require.Len(t, keys, 2)
+}

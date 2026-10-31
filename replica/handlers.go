@@ -155,6 +155,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Errorf("handleReplicaMessage decapsulation failed across epoch window (current=%d): %s", replicaEpoch, err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0)
 	}
+	defer c.l.server.envelopeKeys.Release(successEpoch)
 	if successEpoch != replicaEpoch {
 		c.log.Debugf("handleReplicaMessage decapsulated with non-current epoch key: replica_epoch=%d decap_epoch=%d",
 			replicaEpoch, successEpoch)
@@ -258,7 +259,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Debug("REPLICA_HANDLER: This replica is NOT a shard - PROXYING read request to appropriate shard")
 		// Release before parking on the proxy path (it has its own pool).
 		releaseDecap()
-		reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
+		reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash, keypair)
 		c.log.Debug("REPLICA_HANDLER: Successfully completed proxy read request")
 		return reply
 	case msg.WriteMsg != nil:
@@ -324,7 +325,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Debug("REPLICA_HANDLER: This replica is NOT a shard - proxying write to shard")
 		// Release before parking on the proxy path (it has its own pool).
 		releaseDecap()
-		return c.proxyWriteRequest(myCmd, senderpubkey, envelopeHash)
+		return c.proxyWriteRequest(myCmd, senderpubkey, envelopeHash, keypair)
 	default:
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0)
@@ -841,7 +842,7 @@ func (c *incomingConn) proxyReadSweep(shards []*pki.ReplicaDescriptor, first int
 
 // proxyReadRequest forwards a read request to the appropriate shard replica
 // and returns the reply that should be sent back to the original client
-func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, originalSenderPubkey nike.PublicKey, originalEnvelopeHash *[32]byte) *commands.ReplicaMessageReply {
+func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, originalSenderPubkey nike.PublicKey, originalEnvelopeHash *[32]byte, keypair *replicaCommon.EnvelopeKey) *commands.ReplicaMessageReply {
 	// Input validation
 	if replicaRead == nil {
 		c.log.Error("PROXY_REQUEST: replicaRead is nil")
@@ -877,13 +878,10 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		c.log.Errorf("proxyReadRequest: choosing the first shard candidate failed: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
-	// Get current replica epoch and keypair
+	// replicaEpoch picks the holder's key for the proxied hop. The
+	// reply to the client is sealed with keypair, the key that
+	// decapsulated its request, which need not be the current one.
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: failed to get keypair: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
 
 	// Create MKEM scheme
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
@@ -946,7 +944,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 // and returns the reply that should be sent back to the original client.
 // This is used when an intermediate replica receives a write for a BoxID
 // that it doesn't shard - it proxies to a shard replica to get the actual result.
-func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, originalSenderPubkey nike.PublicKey, originalEnvelopeHash *[32]byte) *commands.ReplicaMessageReply {
+func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, originalSenderPubkey nike.PublicKey, originalEnvelopeHash *[32]byte, keypair *replicaCommon.EnvelopeKey) *commands.ReplicaMessageReply {
 	// Input validation
 	if replicaWrite == nil {
 		c.log.Error("proxyWriteRequest: replicaWrite is nil")
@@ -982,13 +980,10 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		c.log.Errorf("proxyWriteRequest: choosing the first shard candidate failed: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
-	// Get current replica epoch and keypair
+	// replicaEpoch picks the holder's key for the proxied hop. The
+	// reply to the client is sealed with keypair, the key that
+	// decapsulated its request, which need not be the current one.
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
-	if err != nil {
-		c.log.Errorf("proxyWriteRequest: failed to get keypair: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
 
 	// Create MKEM scheme
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)

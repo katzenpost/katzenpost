@@ -88,7 +88,9 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 
 	getReplicaPubKeys := func(replica1, replica2 uint8) ([]nike.PublicKey, error) {
 		replicaPubKeys := make([]nike.PublicKey, 2)
-		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+		// Derive the epoch from the document, as callers do for the
+		// envelope and its descriptor, so the keys match the epoch sent.
+		replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 		for i, replicaNum := range [2]uint8{replica1, replica2} {
 			desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
 			if err != nil {
