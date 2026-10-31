@@ -147,6 +147,10 @@ const (
 
 	// ARQMessageTypeCopyCommand is for copy command operations.
 	ARQMessageTypeCopyCommand ARQMessageType = 1
+
+	// ARQMessageTypePlain is for StartResendingMessage: a payload sent to
+	// any mixnet service, where the first reply ends the exchange.
+	ARQMessageTypePlain ARQMessageType = 2
 )
 
 // ARQMessage is used by ARQ for automatic retransmission of Pigeonhole messages.
@@ -214,5 +218,7 @@ type ARQMessage struct {
 	// NoIdempotentBoxAlreadyExists disables treating BoxAlreadyExists as idempotent success
 	// for write operations. When true, BoxAlreadyExists is returned as an error.
 	// When false (default), BoxAlreadyExists is treated as success (the write already happened).
+	// When true, it can also report this operation's own write if the courier evicted the
+	// stored result before the follow-up poll and dispatched the write again.
 	NoIdempotentBoxAlreadyExists bool
 }

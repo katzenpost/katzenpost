@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"

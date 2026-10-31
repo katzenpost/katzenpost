@@ -1,5 +1,5 @@
 // main.go - Generates KEM-Sphinx full-packet test vectors, for the Lean port
-// in CryptWalker (https://github.com/katzenpost/CryptWalker).
+// in Cryptlib (https://github.com/katzenpost/cryptlib).
 //
 // Structurally parallel to sphinx_vectors_test.go's
 // NoTestBuildFileVectorSphinx/buildVectorSphinx (the NIKE-Sphinx vector
@@ -9,7 +9,7 @@
 //
 // The KEM is X25519 via hpqc's NIKE-to-KEM adapter using the portable
 // sha256-v1 PRF (adapter.SHA256v1), not the deployed BLAKE2b-XOF one --
-// matching CryptWalker's KEM/Adapter.lean, which only has sha256-v1 ported.
+// matching Cryptlib/Primitives/KEM/Adapter.lean, which only has sha256-v1 ported.
 //
 // Run from the repository root:
 //

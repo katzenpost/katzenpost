@@ -41,7 +41,7 @@ func TestQUICListenerExportsUDPBuffers(t *testing.T) {
 	incomingSample("katzenpost_links_established_total", "quic")
 	_, identityKey, err := signSchemes.ByName(testSchemeName).GenerateKey()
 	require.NoError(t, err)
-	quicKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
+	quicKeys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch, nil)
 	require.NoError(t, err)
 	g := &quicCapGlue{capGlue: newCapGlue(t), identityKey: identityKey, quicKeys: quicKeys}
 	gl, err := New(g, make(chan interface{}), 0, "quic://127.0.0.1:0", nil, nil)

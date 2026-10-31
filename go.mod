@@ -17,7 +17,7 @@ require (
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/katzenpost/chacha20 v0.0.1
 	github.com/katzenpost/chacha20poly1305 v0.0.1
-	github.com/katzenpost/hpqc v0.0.93
+	github.com/katzenpost/hpqc v0.0.94
 	github.com/katzenpost/nyquist v0.0.13
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
 	github.com/leanovate/gopter v0.2.11
@@ -87,7 +87,6 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
-	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/rfjakob/eme v1.2.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.10.0 // indirect

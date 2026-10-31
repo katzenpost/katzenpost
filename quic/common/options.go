@@ -25,6 +25,7 @@ type Options struct {
 	KeepAliveJitter   *float64
 	PinMismatch       string
 	CloseLinger       time.Duration
+	Signature         string
 
 	client bool
 }
@@ -100,6 +101,9 @@ func (o *Options) Validate() error {
 	}
 	if o.CloseLinger < 0 {
 		return errors.New("quic: CloseLinger is negative")
+	}
+	if err := validateSignature(o.Signature); err != nil {
+		return err
 	}
 	return nil
 }

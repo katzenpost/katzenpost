@@ -31,7 +31,7 @@ func TestGenkeypairWritesAQUICKeyAndItsPin(t *testing.T) {
 	require.NoError(t, runGenkeypairArgs("--type", "quic", "--out", out), "genkeypair refused --type quic")
 	pin, err := os.ReadFile(out + ".quic-tls.hash")
 	require.NoError(t, err)
-	key, err := common.ReadStaticKey(out + ".quic-tls.key")
+	key, err := common.ReadStaticKey(out+".quic-tls.key", nil)
 	require.NoError(t, err)
 	require.Equal(t, hex.EncodeToString(key.Hash())+"\n", string(pin))
 
@@ -62,8 +62,8 @@ func TestGenkeypairRefusesToOverwriteAQUICKey(t *testing.T) {
 	}
 }
 
-func TestGenkeypairRejectsASchemeForQUIC(t *testing.T) {
+func TestGenkeypairRejectsAnUnknownQUICScheme(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "gateway1")
-	require.Error(t, runGenkeypairArgs("--type", "quic", "--scheme", "ed25519", "--out", out))
+	require.Error(t, runGenkeypairArgs("--type", "quic", "--scheme", "x25519", "--out", out))
 	require.NoFileExists(t, out+".quic-tls.key")
 }

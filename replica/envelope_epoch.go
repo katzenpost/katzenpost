@@ -6,7 +6,7 @@ package replica
 import (
 	"fmt"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )

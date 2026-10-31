@@ -10,9 +10,9 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/rand"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
@@ -1535,6 +1535,11 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		return
 	}
 
+	if arqMessage.MessageType == ARQMessageTypePlain {
+		d.handlePlainARQReply(arqMessage, surbPayload, conn)
+		return
+	}
+
 	// Parse the CourierQueryReply
 	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(surbPayload)
 	if err != nil {
@@ -1571,6 +1576,14 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	}
 
 	courierEnvelopeReply := courierQueryReply.EnvelopeReply
+
+	// A busy courier did not take the envelope; resend it after a backoff
+	// without changing state or failing the operation.
+	if pigeonhole.IsTemporaryEnvelopeError(courierEnvelopeReply.ErrorCode) {
+		d.log.Warningf("handlePigeonholeARQReply: courier busy (error code %d), resending later", courierEnvelopeReply.ErrorCode)
+		d.rearmARQRetry(arqMessage)
+		return
+	}
 
 	// The courier reports failures in its own EnvelopeError namespace, whose
 	// values 1-4 collide with the replica error codes the client interprets in

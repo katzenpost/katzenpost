@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"

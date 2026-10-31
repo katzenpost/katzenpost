@@ -3,7 +3,7 @@
 package common
 
 import (
-	"crypto/ed25519"
+	"crypto"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -13,7 +13,7 @@ import (
 )
 
 type StaticKey struct {
-	tlsPrivateKey ed25519.PrivateKey
+	tlsPrivateKey crypto.Signer
 	keyHash       [sha256.Size]byte
 
 	mu          sync.Mutex
@@ -21,28 +21,37 @@ type StaticKey struct {
 	certificate *tls.Certificate
 }
 
-func LoadStaticKey(path string) (*StaticKey, error) {
+func LoadStaticKey(path string, opts *Options) (*StaticKey, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
 	seed, err := loadOrGenerateSeed(path)
 	if err != nil {
 		return nil, err
 	}
-	return staticKeyFromSeed(seed)
+	return staticKeyFromSeed(opts.signature(), seed)
 }
 
-func ReadStaticKey(path string) (*StaticKey, error) {
+func ReadStaticKey(path string, opts *Options) (*StaticKey, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
 	seed, err := readSeed(path)
 	if err != nil {
 		return nil, err
 	}
-	return staticKeyFromSeed(seed)
+	return staticKeyFromSeed(opts.signature(), seed)
 }
 
-func staticKeyFromSeed(seed []byte) (*StaticKey, error) {
-	tlsPrivateKey := ed25519.NewKeyFromSeed(seed)
+func staticKeyFromSeed(signature string, seed []byte) (*StaticKey, error) {
+	tlsPrivateKey, err := newTLSKey(signature, seed)
 	clear(seed)
+	if err != nil {
+		return nil, err
+	}
 	spki, err := x509.MarshalPKIXPublicKey(tlsPrivateKey.Public())
 	if err != nil {
-		clear(tlsPrivateKey)
+		wipeTLSKey(tlsPrivateKey)
 		return nil, err
 	}
 	return &StaticKey{tlsPrivateKey: tlsPrivateKey, keyHash: sha256.Sum256(spki)}, nil

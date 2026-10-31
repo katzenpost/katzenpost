@@ -21,7 +21,7 @@ import (
 func TestConnectLogsItsTransport(t *testing.T) {
 	_, identityPrivateKey, err := signSchemes.ByName(testSchemeName).GenerateKey()
 	require.NoError(t, err)
-	keys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch)
+	keys, err := common.NewEpochKeys(t.TempDir(), common.CurrentEpoch, nil)
 	require.NoError(t, err)
 	l, err := common.ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, keys, nil)
 	require.NoError(t, err)
