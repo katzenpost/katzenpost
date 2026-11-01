@@ -105,8 +105,9 @@ func Route(ctx context.Context, ph common.Pigeonhole, d *common.ServiceDescripto
 	return lastErr
 }
 
-// openForward opens a sealed voucher a router forwarded.
-func openForward(key *common.ServiceKey, msg []byte) ([]byte, error) {
+// OpenForward opens a sealed voucher a router forwarded over a link, as the
+// service whose key opens it.
+func OpenForward(key *common.ServiceKey, msg []byte) ([]byte, error) {
 	var lm LinkMessage
 	if err := common.Unmarshal(msg, &lm); err != nil {
 		return nil, err
