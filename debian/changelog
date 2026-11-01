@@ -1,3 +1,10 @@
+katzenpost (0.0.110) unstable; urgency=medium
+
+  * Release 0.0.110: pigeonservice split into common, voucher_router and
+    discovery; the service framework moves to pigeonhole_protocols.
+
+ -- Katzenpost <packages@katzenpost.network>  Sun, 01 Nov 2026 13:38:39 +0000
+
 katzenpost (0.0.109) unstable; urgency=medium
 
   * Release 0.0.109.
