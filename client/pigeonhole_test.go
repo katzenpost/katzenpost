@@ -263,7 +263,7 @@ func (m *mockIncomingConn) toIncomingConn(l *listener, logBackend *log.Backend) 
 func createMockPKIDocument(t *testing.T) *cpki.Document {
 	loadCTIDHFixtures()
 	currentEpoch, _, _ := epochtime.Now()
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(currentEpoch)
 
 	// Create 2 replica descriptors using pre-generated CTIDH keypair fixtures
 	replicaDescriptors := make([]*cpki.ReplicaDescriptor, 2)
@@ -279,6 +279,7 @@ func createMockPKIDocument(t *testing.T) *cpki.Document {
 
 		replicaDescriptors[i] = &cpki.ReplicaDescriptor{
 			Name:        fmt.Sprintf("replica-%d", i),
+			ReplicaID:   uint8(i),
 			IdentityKey: identityKey,
 			EnvelopeKeys: map[uint64][]byte{
 				replicaEpoch: pubKeyBytes,
