@@ -38,6 +38,7 @@ type fixture struct {
 	dir    *discovery.Directory
 	pk     *common.PluginKey
 	dbPath string
+	tune   func(*discovery.Config)
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -60,12 +61,16 @@ func (f *fixture) start(t *testing.T) {
 	t.Helper()
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
-	d, err := discovery.New(discovery.Config{
+	cfg := discovery.Config{
 		Key:             f.pk,
 		DBPath:          f.dbPath,
 		RefreshInterval: time.Hour,
 		Log:             logBackend.GetLogger("directory"),
-	}, f.net)
+	}
+	if f.tune != nil {
+		f.tune(&cfg)
+	}
+	d, err := discovery.New(cfg, f.net)
 	require.NoError(t, err)
 	f.dir = d
 	t.Cleanup(func() { d.Close() })
@@ -101,8 +106,8 @@ func TestAdvertiseLookupList(t *testing.T) {
 	f := newFixture(t)
 	ctx := testCtx(t)
 	a, b := serviceKey(t), serviceKey(t)
-	require.NoError(t, f.client(t, a).Advertise(ctx, descriptor(a, 2)))
-	require.NoError(t, f.client(t, b).Advertise(ctx, descriptor(b, 3)))
+	advertise(t, f.client(t, a), ctx, descriptor(a, 2))
+	advertise(t, f.client(t, b), ctx, descriptor(b, 3))
 
 	reader := f.client(t, nil)
 	got, err := reader.Lookup(ctx, a.ID())
@@ -122,8 +127,8 @@ func TestReadvertiseReplaces(t *testing.T) {
 	ctx := testCtx(t)
 	k := serviceKey(t)
 	c := f.client(t, k)
-	require.NoError(t, c.Advertise(ctx, descriptor(k, 1)))
-	require.NoError(t, c.Advertise(ctx, descriptor(k, 4)))
+	advertise(t, c, ctx, descriptor(k, 1))
+	advertise(t, c, ctx, descriptor(k, 4))
 	got, err := f.client(t, nil).Lookup(ctx, k.ID())
 	require.NoError(t, err)
 	require.Len(t, got.Routers, 4)
@@ -133,16 +138,16 @@ func TestStaleAndReplayedAdvertise(t *testing.T) {
 	f := newFixture(t)
 	ctx := testCtx(t)
 	k := serviceKey(t)
-	require.NoError(t, f.client(t, k).Advertise(ctx, descriptor(k, 2)))
+	advertise(t, f.client(t, k), ctx, descriptor(k, 2))
 
 	// An old advertisement, e.g. replayed by someone who saw it, loses.
-	old := &discovery.AdvertiseRequest{Descriptor: *descriptor(k, 1), Seq: 1}
+	old := &discovery.AdvertiseRequest{Descriptor: *descriptor(k, 1), Seq: 1, Expiry: in(time.Hour)}
 	require.NoError(t, discovery.SignAdvertise(k, f.pk.Public, old))
 	reply := handle(t, f, &discovery.DirectoryRequest{Advertise: old})
 	require.Equal(t, common.StatusStale, reply.Status)
 
 	// A retransmission of the request in effect is acknowledged again.
-	again := &discovery.AdvertiseRequest{Descriptor: *descriptor(k, 3), Seq: 1 << 62}
+	again := &discovery.AdvertiseRequest{Descriptor: *descriptor(k, 3), Seq: 1 << 62, Expiry: in(time.Hour)}
 	require.NoError(t, discovery.SignAdvertise(k, f.pk.Public, again))
 	require.Equal(t, common.StatusOK, handle(t, f, &discovery.DirectoryRequest{Advertise: again}).Status)
 	require.Equal(t, common.StatusOK, handle(t, f, &discovery.DirectoryRequest{Advertise: again}).Status)
@@ -161,7 +166,7 @@ func TestWithdraw(t *testing.T) {
 	ctx := testCtx(t)
 	k := serviceKey(t)
 	c := f.client(t, k)
-	require.NoError(t, c.Advertise(ctx, descriptor(k, 1)))
+	advertise(t, c, ctx, descriptor(k, 1))
 	listEventually(t, f.client(t, nil), 1)
 
 	// Only the service can withdraw it.
@@ -183,7 +188,7 @@ func TestWithdraw(t *testing.T) {
 func TestAdvertiseReplayedAfterWithdraw(t *testing.T) {
 	f := newFixture(t)
 	k := serviceKey(t)
-	adv := &discovery.AdvertiseRequest{Descriptor: *descriptor(k, 1), Seq: 10}
+	adv := &discovery.AdvertiseRequest{Descriptor: *descriptor(k, 1), Seq: 10, Expiry: in(time.Hour)}
 	require.NoError(t, discovery.SignAdvertise(k, f.pk.Public, adv))
 	require.Equal(t, common.StatusOK, handle(t, f, &discovery.DirectoryRequest{Advertise: adv}).Status)
 	wd := &discovery.WithdrawRequest{ServiceID: k.ID(), Seq: 11}
@@ -197,7 +202,7 @@ func TestAdvertiseReplayedAfterWithdraw(t *testing.T) {
 	require.ErrorAs(t, err, &se)
 	require.Equal(t, common.StatusUnknownService, se.Status)
 
-	again := &discovery.AdvertiseRequest{Descriptor: *descriptor(k, 2), Seq: 12}
+	again := &discovery.AdvertiseRequest{Descriptor: *descriptor(k, 2), Seq: 12, Expiry: in(time.Hour)}
 	require.NoError(t, discovery.SignAdvertise(k, f.pk.Public, again))
 	require.Equal(t, common.StatusOK, handle(t, f, &discovery.DirectoryRequest{Advertise: again}).Status)
 	got, err := f.client(t, nil).Lookup(testCtx(t), k.ID())
@@ -210,13 +215,13 @@ func TestSnapshotSpansBoxesAndOldOnesAreTombstoned(t *testing.T) {
 	ctx := testCtx(t)
 	for range 5 {
 		k := serviceKey(t)
-		require.NoError(t, f.client(t, k).Advertise(ctx, descriptor(k, 3)))
+		advertise(t, f.client(t, k), ctx, descriptor(k, 3))
 	}
 	listEventually(t, f.client(t, nil), 5)
 
 	first := handle(t, f, &discovery.DirectoryRequest{List: &discovery.ListRequest{}})
 	k := serviceKey(t)
-	require.NoError(t, f.client(t, k).Advertise(ctx, descriptor(k, 1)))
+	advertise(t, f.client(t, k), ctx, descriptor(k, 1))
 	listEventually(t, f.client(t, nil), 6)
 
 	second := handle(t, f, &discovery.DirectoryRequest{List: &discovery.ListRequest{}})
@@ -232,7 +237,7 @@ func TestStateSurvivesRestart(t *testing.T) {
 	f := newFixture(t)
 	ctx := testCtx(t)
 	k := serviceKey(t)
-	require.NoError(t, f.client(t, k).Advertise(ctx, descriptor(k, 2)))
+	advertise(t, f.client(t, k), ctx, descriptor(k, 2))
 	listEventually(t, f.client(t, nil), 1)
 
 	require.NoError(t, f.dir.Close())
@@ -277,7 +282,8 @@ func TestAllSpansDirectories(t *testing.T) {
 	k := serviceKey(t)
 	adv, err := discovery.NewAll(f.net, k, poll)
 	require.NoError(t, err)
-	require.NoError(t, adv.Advertise(ctx, descriptor(k, 2)))
+	_, err = adv.Advertise(ctx, descriptor(k, 2), in(time.Hour))
+	require.NoError(t, err)
 
 	// Each directory on its own holds it.
 	for _, node := range []byte{0xdd, 0xde} {

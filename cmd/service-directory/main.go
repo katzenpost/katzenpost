@@ -21,8 +21,9 @@ import (
 
 func main() {
 	var (
-		cfg     plugin.Config
-		refresh time.Duration
+		cfg        plugin.Config
+		refresh    time.Duration
+		maxEntries int
 	)
 	cmd := &cobra.Command{
 		Use:   "service-directory",
@@ -39,6 +40,7 @@ func main() {
 					Key:             key,
 					DBPath:          filepath.Join(cfg.DataDir, "service_directory.db"),
 					RefreshInterval: refresh,
+					MaxEntries:      maxEntries,
 					Log:             log,
 				}, ph)
 				if err != nil {
@@ -54,6 +56,7 @@ func main() {
 	cmd.Flags().StringVar(&cfg.DataDir, "data_dir", "", "directory holding the directory's key and database")
 	cmd.Flags().StringVar(&cfg.ThinConfig, "thin_config", "", "thin client config of the kpclientd to use")
 	cmd.Flags().DurationVar(&refresh, "refresh", 24*time.Hour, "longest a snapshot goes unrewritten")
-	cmd.SetArgs(kpcommon.NormalizeLegacyLongFlags(cmd, os.Args[1:], "log_dir", "log_level", "data_dir", "thin_config"))
+	cmd.Flags().IntVar(&maxEntries, "max_entries", discovery.DefaultMaxEntries, "most services listed at once")
+	cmd.SetArgs(kpcommon.NormalizeLegacyLongFlags(cmd, os.Args[1:], "log_dir", "log_level", "data_dir", "thin_config", "max_entries"))
 	kpcommon.ExecuteWithFang(cmd)
 }
