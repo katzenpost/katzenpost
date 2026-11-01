@@ -100,11 +100,6 @@ dockertest_copy_onto_already_existing_box_error:
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -timeout $(dockertest_timeout) -run "TestCopyOntoAlreadyExistingBoxError"
 
-dockertest_pigeonservice:
-	cd ../docker && make $(distro)_base.stamp
-	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test $(dockertest_race) -v -parallel $(dockertest_parallel) -timeout $(dockertest_timeout) -run "TestPigeonService"
-
 dockertest_pki_raw:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client ${docker_args} $(image) \
