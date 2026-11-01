@@ -96,3 +96,24 @@ func TestGenerateWipesKeyWhenWriteFails(t *testing.T) {
 		requirePrivateKeyWiped(t, k, "Generate left the key it failed to write in memory")
 	}
 }
+
+func TestPruneDefersWipeUntilLeasesRelease(t *testing.T) {
+	keys := newTestEnvelopeKeys(t, nikeschemes.ByName("X25519"))
+	epoch, _, _ := replicaCommon.ReplicaNow()
+	require.NoError(t, keys.Generate(epoch-20))
+	first, err := keys.acquireKey(epoch - 20)
+	require.NoError(t, err)
+	second, err := keys.acquireKey(epoch - 20)
+	require.NoError(t, err)
+	before := first.PrivateKey.Bytes()
+
+	require.True(t, keys.pruneBefore(epoch))
+	_, err = keys.acquireKey(epoch - 20)
+	require.Error(t, err, "pruned key must not be acquirable")
+	require.Equal(t, before, first.PrivateKey.Bytes(), "leased key wiped by Prune")
+
+	first.Release()
+	require.Equal(t, before, first.PrivateKey.Bytes(), "key wiped while still leased")
+	second.Release()
+	requirePrivateKeyWiped(t, first.PrivateKey, "last Release left the retired key in memory")
+}

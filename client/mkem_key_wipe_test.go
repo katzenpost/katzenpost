@@ -136,8 +136,7 @@ func TestBuildCourierEnvelopeWipesEphemeralKey(t *testing.T) {
 	tombstone, err := pigeonhole.NewTombstone(writeCap.Start())
 	require.NoError(t, err)
 
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
-	_, err = d.buildCourierEnvelope(doc, replicaEpoch, &tombstone.BoxID, writeInnerMessage(tombstone))
+	_, err = d.buildCourierEnvelope(doc, &tombstone.BoxID, writeInnerMessage(tombstone))
 	require.NoError(t, err)
 
 	s.requireAllWiped(t, "buildCourierEnvelope")

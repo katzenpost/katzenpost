@@ -7,8 +7,6 @@ import (
 	"fmt"
 
 	"github.com/katzenpost/hpqc/protocols/mkem"
-
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 // ValidEnvelopeEpochWindow is the symmetric tolerance the replica
@@ -45,7 +43,9 @@ func epochWindowDeltas(window int64) []int64 {
 
 // tryDecapsulateAcrossEpochWindow attempts MKEM decapsulation using
 // each envelope keypair in the replica's epoch-tolerance window.
-// Returns the decrypted plaintext plus the replica-epoch whose keypair
+// On success the caller owns the returned lease and must Release it after
+// reply sealing, including all error/refusal exits. Failed candidates release
+// their leases here. Returns plaintext plus the replica-epoch whose keypair
 // succeeded, or a non-nil error if no available key can decapsulate
 // the ciphertext.
 //
@@ -61,7 +61,7 @@ func tryDecapsulateAcrossEpochWindow(
 	scheme *mkem.Scheme,
 	ct *mkem.Ciphertext,
 	currentEpoch uint64,
-) ([]byte, *replicaCommon.EnvelopeKey, uint64, error) {
+) ([]byte, *envelopeKeyLease, uint64, error) {
 	var lastErr error
 	for _, delta := range epochWindowDeltas(int64(ValidEnvelopeEpochWindow)) {
 		if delta < 0 && uint64(-delta) > currentEpoch {
@@ -70,12 +70,13 @@ func tryDecapsulateAcrossEpochWindow(
 			continue
 		}
 		epoch := uint64(int64(currentEpoch) + delta)
-		keypair, err := keys.GetKeypair(epoch)
+		keypair, err := keys.acquireKey(epoch)
 		if err != nil {
 			continue
 		}
 		plaintext, err := scheme.Decapsulate(keypair.PrivateKey, ct)
 		if err != nil {
+			keypair.Release()
 			lastErr = err
 			continue
 		}
