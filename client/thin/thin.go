@@ -553,9 +553,13 @@ func (t *ThinClient) Disconnect() error {
 		return nil
 	}
 	// Close the connection first to unblock any blocked reads,
-	// then halt workers.
+	// then halt workers. The reader goroutine may already have closed
+	// conn after a daemon hangup, so a second close is not an error.
 	err := conn.Close()
 	t.Halt()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
 	return err
 }
 
