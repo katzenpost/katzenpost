@@ -14,11 +14,7 @@ func (r *Router) Inductions() (registering, pending int) {
 }
 
 // SetNow replaces the clock leases are judged by.
-func (r *Router) SetNow(now func() time.Time) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.now = now
-}
+func (r *Router) SetNow(now func() time.Time) { r.clock.Store(&now) }
 
 // Sweep forgets expired links and leases now.
 func (r *Router) Sweep() { r.sweep() }

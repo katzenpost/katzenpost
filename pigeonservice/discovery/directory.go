@@ -16,6 +16,7 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -90,7 +91,8 @@ type Directory struct {
 	ph  common.Pigeonhole
 	db  *bolt.DB
 	log *logging.Logger
-	now func() time.Time
+	// clock judges leases; tests replace it.
+	clock atomic.Pointer[func() time.Time]
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -123,11 +125,12 @@ func New(cfg Config, ph common.Pigeonhole) (*Directory, error) {
 		ph:     ph,
 		db:     db,
 		log:    cfg.Log,
-		now:    time.Now,
 		ctx:    ctx,
 		cancel: cancel,
 		dirty:  make(chan struct{}, 1),
 	}
+	now := time.Now
+	d.clock.Store(&now)
 	err = db.Update(func(tx *bolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists(descriptorsBucket); err != nil {
 			return err
@@ -155,6 +158,8 @@ func New(cfg Config, ph common.Pigeonhole) (*Directory, error) {
 	d.markDirty()
 	return d, nil
 }
+
+func (d *Directory) now() time.Time { return (*d.clock.Load())() }
 
 // Close stops publishing and closes the database.
 func (d *Directory) Close() error {

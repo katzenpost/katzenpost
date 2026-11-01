@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -118,7 +119,8 @@ type Router struct {
 	ph  common.Pigeonhole
 	db  *bolt.DB
 	log *logging.Logger
-	now func() time.Time
+	// clock judges leases; tests replace it.
+	clock atomic.Pointer[func() time.Time]
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -166,7 +168,6 @@ func New(cfg Config, ph common.Pigeonhole) (*Router, error) {
 		ph:          ph,
 		db:          db,
 		log:         cfg.Log,
-		now:         time.Now,
 		ctx:         ctx,
 		cancel:      cancel,
 		links:       make(map[common.ServiceID]*link),
@@ -176,6 +177,8 @@ func New(cfg Config, ph common.Pigeonhole) (*Router, error) {
 		pending:     make(map[common.ServiceID]chan []byte),
 		routed:      make(map[[32]byte]time.Time),
 	}
+	now := time.Now
+	r.clock.Store(&now)
 	if err := r.load(); err != nil {
 		db.Close()
 		cancel()
@@ -186,6 +189,8 @@ func New(cfg Config, ph common.Pigeonhole) (*Router, error) {
 	go r.sweeper()
 	return r, nil
 }
+
+func (r *Router) now() time.Time { return (*r.clock.Load())() }
 
 // Close stops the router's link writers and closes its database.
 func (r *Router) Close() error {

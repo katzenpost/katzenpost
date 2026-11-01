@@ -4,6 +4,7 @@
 package discovery_test
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,14 +14,23 @@ import (
 	"github.com/katzenpost/katzenpost/pigeonservice/discovery"
 )
 
-type clock struct{ t time.Time }
+// clock is a settable clock for leases, safe to move while the plugin's
+// goroutines read it.
+type clock struct{ unix atomic.Int64 }
 
-func (c *clock) now() time.Time            { return c.t }
-func (c *clock) at(d time.Duration) uint64 { return uint64(c.t.Add(d).Unix()) }
+func newClock() *clock {
+	c := &clock{}
+	c.unix.Store(time.Now().UnixNano())
+	return c
+}
+
+func (c *clock) now() time.Time            { return time.Unix(0, c.unix.Load()) }
+func (c *clock) at(d time.Duration) uint64 { return uint64(c.now().Add(d).Unix()) }
+func (c *clock) advance(d time.Duration)   { c.unix.Add(int64(d)) }
 
 func (f *fixture) withClock(t *testing.T) *clock {
 	t.Helper()
-	c := &clock{t: time.Now()}
+	c := newClock()
 	f.dir.SetNow(c.now)
 	return c
 }
@@ -42,14 +52,14 @@ func TestEntryExpires(t *testing.T) {
 	require.Equal(t, c.at(time.Hour), granted)
 	listEventually(t, f.client(t, nil), 1)
 
-	c.t = c.t.Add(2 * time.Hour)
+	c.advance(2 * time.Hour)
 	_, err = f.client(t, nil).Lookup(ctx, k.ID())
 	require.Equal(t, common.StatusUnknownService, statusOf(t, err))
 	f.dir.Republish()
 	listEventually(t, f.client(t, nil), 0)
 	require.Equal(t, 1, f.dir.Entries(), "the entry is kept until a replay could no longer be in date")
 
-	c.t = c.t.Add(discovery.MaxEntryTTL + common.MaxClockSkew)
+	c.advance(discovery.MaxEntryTTL + common.MaxClockSkew)
 	f.dir.Republish()
 	require.Eventually(t, func() bool { return f.dir.Entries() == 0 }, 10*time.Second, poll)
 }
@@ -62,10 +72,10 @@ func TestReadvertiseRenews(t *testing.T) {
 	cl := f.client(t, k)
 	_, err := cl.Advertise(ctx, descriptor(k, 1), c.at(time.Hour))
 	require.NoError(t, err)
-	c.t = c.t.Add(50 * time.Minute)
+	c.advance(50 * time.Minute)
 	_, err = cl.Advertise(ctx, descriptor(k, 1), c.at(2*time.Hour))
 	require.NoError(t, err)
-	c.t = c.t.Add(90 * time.Minute)
+	c.advance(90 * time.Minute)
 	got, err := f.client(t, nil).Lookup(ctx, k.ID())
 	require.NoError(t, err)
 	require.Len(t, got.Routers, 1)
@@ -98,7 +108,7 @@ func TestMaxEntries(t *testing.T) {
 	_, err = f.client(t, b).Advertise(ctx, descriptor(b, 1), c.at(time.Hour))
 	require.Equal(t, common.StatusBusy, statusOf(t, err))
 
-	c.t = c.t.Add(2 * time.Hour)
+	c.advance(2 * time.Hour)
 	_, err = f.client(t, b).Advertise(ctx, descriptor(b, 1), c.at(time.Hour))
 	require.NoError(t, err, "an expired entry frees its slot")
 }
@@ -118,7 +128,7 @@ func TestReplayAfterPurge(t *testing.T) {
 	require.Equal(t, common.StatusOK, handle(t, f, &discovery.DirectoryRequest{Withdraw: wd}).Status)
 	require.Equal(t, common.StatusStale, handle(t, f, &discovery.DirectoryRequest{Advertise: adv}).Status)
 
-	c.t = c.t.Add(discovery.MaxEntryTTL + common.MaxClockSkew + time.Second)
+	c.advance(discovery.MaxEntryTTL + common.MaxClockSkew + time.Second)
 	f.dir.Republish()
 	require.Eventually(t, func() bool { return f.dir.Entries() == 0 }, 10*time.Second, poll)
 	require.Equal(t, common.StatusInvalidRequest, handle(t, f, &discovery.DirectoryRequest{Advertise: adv}).Status)

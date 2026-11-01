@@ -4,6 +4,7 @@
 package voucher_router_test
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,19 +14,26 @@ import (
 	"github.com/katzenpost/katzenpost/pigeonservice/voucher_router"
 )
 
-// clock is a settable clock for the router's leases.
-type clock struct{ t time.Time }
+// clock is a settable clock for leases, safe to move while the plugin's
+// goroutines read it.
+type clock struct{ unix atomic.Int64 }
 
-func (c *clock) now() time.Time { return c.t }
-
-func (f *fixture) withClock(t *testing.T) *clock {
-	t.Helper()
-	c := &clock{t: time.Now()}
-	f.router.SetNow(c.now)
+func newClock() *clock {
+	c := &clock{}
+	c.unix.Store(time.Now().UnixNano())
 	return c
 }
 
-func (c *clock) at(d time.Duration) uint64 { return uint64(c.t.Add(d).Unix()) }
+func (c *clock) now() time.Time            { return time.Unix(0, c.unix.Load()) }
+func (c *clock) at(d time.Duration) uint64 { return uint64(c.now().Add(d).Unix()) }
+func (c *clock) advance(d time.Duration)   { c.unix.Add(int64(d)) }
+
+func (f *fixture) withClock(t *testing.T) *clock {
+	t.Helper()
+	c := newClock()
+	f.router.SetNow(c.now)
+	return c
+}
 
 func (f *fixture) register(t *testing.T, expiry uint64) *voucher_router.Conn {
 	t.Helper()
@@ -49,13 +57,13 @@ func TestLinkExpires(t *testing.T) {
 	ctx := testCtx(t)
 	f.register(t, c.at(time.Hour))
 
-	c.t = c.t.Add(2 * time.Hour)
+	c.advance(2 * time.Hour)
 	require.False(t, f.router.Linked(f.svc.ID()))
 	require.Equal(t, common.StatusUnknownService, statusOf(t, voucher_router.Route(ctx, f.net, f.descriptor(), bytesOf(1))))
 	f.router.Sweep()
 	require.Equal(t, 1, f.router.Leases(), "the lease is kept until a replay could no longer be in date")
 
-	c.t = c.t.Add(voucher_router.MaxLinkTTL + common.MaxClockSkew)
+	c.advance(voucher_router.MaxLinkTTL + common.MaxClockSkew)
 	f.router.Sweep()
 	require.Equal(t, 0, f.router.Leases())
 
@@ -68,9 +76,9 @@ func TestRenewExtendsLink(t *testing.T) {
 	ctx := testCtx(t)
 	link := f.register(t, c.at(time.Hour))
 
-	c.t = c.t.Add(50 * time.Minute)
+	c.advance(50 * time.Minute)
 	require.NoError(t, voucher_router.Renew(ctx, f.net, f.svc, &f.node, c.at(2*time.Hour)))
-	c.t = c.t.Add(90 * time.Minute)
+	c.advance(90 * time.Minute)
 	f.router.Sweep()
 	require.True(t, f.router.Linked(f.svc.ID()))
 	require.NoError(t, voucher_router.Route(ctx, f.net, f.descriptor(), bytesOf(3)))
@@ -83,7 +91,7 @@ func TestRenewExtendsLink(t *testing.T) {
 	f.router.SetNow(c.now)
 	require.True(t, f.router.Linked(f.svc.ID()), "the renewed lease is on disk")
 
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	require.Equal(t, common.StatusUnknownService, statusOf(t, voucher_router.Renew(ctx, f.net, f.svc, &f.node, c.at(time.Hour))), "an expired link is not renewed")
 }
 
@@ -136,7 +144,7 @@ func TestMaxLinks(t *testing.T) {
 	_, err := voucher_router.Register(ctx, f.net, other, &f.node, poll, c.at(time.Hour))
 	require.Equal(t, common.StatusBusy, statusOf(t, err))
 
-	c.t = c.t.Add(2 * time.Hour)
+	c.advance(2 * time.Hour)
 	f.router.Sweep()
 	_, err = voucher_router.Register(ctx, f.net, other, &f.node, poll, c.at(time.Hour))
 	require.NoError(t, err, "an expired link frees its slot")

@@ -10,11 +10,7 @@ import (
 )
 
 // SetNow replaces the clock leases are judged by.
-func (d *Directory) SetNow(now func() time.Time) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.now = now
-}
+func (d *Directory) SetNow(now func() time.Time) { d.clock.Store(&now) }
 
 // Republish purges forgotten entries and publishes a fresh snapshot.
 func (d *Directory) Republish() { d.markDirty() }
