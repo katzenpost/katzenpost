@@ -42,6 +42,16 @@ func TestCBORPluginUndecodableReplyHelper(t *testing.T) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	// The test opens the gate once it holds the client, so the failure cannot
+	// unregister the client before the test has seen it.
+	if gate := os.Getenv("GO_CBOR_PLUGIN_HELPER_GATE"); gate != "" {
+		for {
+			if _, err := os.Stat(gate); err == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	if _, err := conn.Write([]byte{0xff, 0xff, 0xff, 0xff}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -54,6 +64,8 @@ func TestCBORPluginWorkerStopsAFailedPlugin(t *testing.T) {
 		t.Skip("plugins talk over unix domain sockets")
 	}
 	t.Setenv("GO_WANT_CBOR_PLUGIN_HELPER", "1")
+	gate := filepath.Join(t.TempDir(), "gate")
+	t.Setenv("GO_CBOR_PLUGIN_HELPER_GATE", gate)
 
 	_, idKey, err := testSignatureScheme.GenerateKey()
 	require.NoError(t, err)
@@ -82,6 +94,7 @@ func TestCBORPluginWorkerStopsAFailedPlugin(t *testing.T) {
 	require.Len(t, k.clients, 1)
 	client := k.clients[0]
 	k.Unlock()
+	require.NoError(t, os.WriteFile(gate, nil, 0o600))
 
 	var endpoint [constants.RecipientIDLength]byte
 	copy(endpoint[:], "undecodable")
