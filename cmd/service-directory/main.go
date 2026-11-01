@@ -14,9 +14,9 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	kpcommon "github.com/katzenpost/katzenpost/common"
-	ps "github.com/katzenpost/katzenpost/pigeonservice"
-	"github.com/katzenpost/katzenpost/pigeonservice/directory"
-	"github.com/katzenpost/katzenpost/pigeonservice/plugin"
+	"github.com/katzenpost/katzenpost/pigeonservice/common"
+	"github.com/katzenpost/katzenpost/pigeonservice/common/plugin"
+	"github.com/katzenpost/katzenpost/pigeonservice/discovery"
 )
 
 func main() {
@@ -29,13 +29,13 @@ func main() {
 		Short: "Katzenpost service directory plugin",
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg.Name = "service_directory"
-			busy, err := ps.Marshal(&ps.DirectoryReply{Status: ps.StatusBusy})
+			busy, err := common.Marshal(&discovery.DirectoryReply{Status: common.StatusBusy})
 			if err != nil {
 				panic(err)
 			}
 			cfg.Busy = busy
-			cfg.Start = func(ph ps.Pigeonhole, key *ps.PluginKey, log *logging.Logger) (plugin.Handler, func(), error) {
-				d, err := directory.New(directory.Config{
+			cfg.Start = func(ph common.Pigeonhole, key *common.PluginKey, log *logging.Logger) (plugin.Handler, func(), error) {
+				d, err := discovery.New(discovery.Config{
 					Key:             key,
 					DBPath:          filepath.Join(cfg.DataDir, "service_directory.db"),
 					RefreshInterval: refresh,
