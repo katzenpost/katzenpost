@@ -5,7 +5,9 @@
 // descriptors pigeonhole services advertise. It answers a lookup of one
 // descriptor directly, and a request for all of them with the read cap of a
 // Pigeonhole stream holding a snapshot, which it rewrites whenever a
-// descriptor changes and at least once per refresh interval.
+// descriptor changes and at least once per refresh interval. A descriptor
+// is a lease: the service renews it before it expires, or withdraws it,
+// and the directory forgets one whose lease has passed.
 package discovery
 
 import (
@@ -32,6 +34,16 @@ var (
 // publishDelay gathers a burst of changes into one snapshot.
 const publishDelay = 2 * time.Second
 
+const (
+	// MaxEntryTTL is the longest lease a directory grants a descriptor: a
+	// service advertises again within it or drops out of the directory.
+	MaxEntryTTL = 24 * time.Hour
+
+	// DefaultMaxEntries is the default bound on the descriptors a directory
+	// holds.
+	DefaultMaxEntries = 4096
+)
+
 // Config configures a Directory.
 type Config struct {
 	// Key is the directory's NIKE keypair, published in the PKI.
@@ -42,16 +54,27 @@ type Config struct {
 	// well under a replica epoch so the snapshot outlives garbage
 	// collection.
 	RefreshInterval time.Duration
-	Log             *logging.Logger
+	// MaxEntries bounds the descriptors held; an advertisement of a new
+	// service beyond it is refused with StatusBusy. Zero or less selects
+	// DefaultMaxEntries.
+	MaxEntries int
+	Log        *logging.Logger
 }
 
 type entry struct {
 	Descriptor common.ServiceDescriptor
 	Seq        uint64
-	// Withdrawn keeps the Seq of a withdrawal so older advertisements
-	// cannot bring the descriptor back.
+	// Expiry is when the lease ends, Unix seconds; zero once withdrawn.
+	Expiry uint64
+	// Keep is when the entry may be forgotten: until then it keeps the
+	// Seq, so older advertisements cannot bring the descriptor back.
+	Keep uint64
+	// Withdrawn says the service withdrew the descriptor.
 	Withdrawn bool `cbor:",omitempty"`
 }
+
+// live says the entry is a descriptor clients may see at now.
+func (e *entry) live(now uint64) bool { return e != nil && !e.Withdrawn && e.Expiry > now }
 
 // snapshotState locates a published snapshot.
 type snapshotState struct {
@@ -67,6 +90,7 @@ type Directory struct {
 	ph  common.Pigeonhole
 	db  *bolt.DB
 	log *logging.Logger
+	now func() time.Time
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -86,6 +110,9 @@ func New(cfg Config, ph common.Pigeonhole) (*Directory, error) {
 	if cfg.RefreshInterval <= 0 {
 		cfg.RefreshInterval = 24 * time.Hour
 	}
+	if cfg.MaxEntries <= 0 {
+		cfg.MaxEntries = DefaultMaxEntries
+	}
 	db, err := bolt.Open(cfg.DBPath, 0600, &bolt.Options{Timeout: time.Second})
 	if err != nil {
 		return nil, err
@@ -96,6 +123,7 @@ func New(cfg Config, ph common.Pigeonhole) (*Directory, error) {
 		ph:     ph,
 		db:     db,
 		log:    cfg.Log,
+		now:    time.Now,
 		ctx:    ctx,
 		cancel: cancel,
 		dirty:  make(chan struct{}, 1),
@@ -169,7 +197,7 @@ func (d *Directory) handle(payload []byte) *DirectoryReply {
 	}
 	switch {
 	case req.Advertise != nil:
-		return status(d.advertise(req.Advertise))
+		return d.advertise(req.Advertise)
 	case req.Withdraw != nil:
 		return status(d.withdraw(req.Withdraw))
 	case req.Lookup != nil:
@@ -195,26 +223,46 @@ func (d *Directory) get(tx *bolt.Tx, id common.ServiceID) (*entry, error) {
 	return &e, nil
 }
 
-func (d *Directory) advertise(req *AdvertiseRequest) uint8 {
+func (d *Directory) advertise(req *AdvertiseRequest) *DirectoryReply {
 	if err := VerifyAdvertise(d.cfg.Key, req); err != nil {
-		return common.StatusBadMAC
+		return status(common.StatusBadMAC)
+	}
+	now := d.now()
+	keep, ok := common.CheckLease(now, req.Expiry, MaxEntryTTL)
+	if !ok {
+		return status(common.StatusInvalidRequest)
 	}
 	id := req.Descriptor.ID()
 	result := common.StatusOK
+	expiry := req.Expiry
 	err := d.db.Update(func(tx *bolt.Tx) error {
 		old, err := d.get(tx, id)
 		if err != nil {
 			return err
 		}
 		if old != nil && old.Seq >= req.Seq {
-			if !old.Withdrawn && old.Seq == req.Seq && sameDescriptor(&old.Descriptor, &req.Descriptor) {
+			if old.live(uint64(now.Unix())) && old.Seq == req.Seq && sameDescriptor(&old.Descriptor, &req.Descriptor) {
 				// A retransmission of the request already applied.
+				expiry = old.Expiry
 				return nil
 			}
 			result = common.StatusStale
 			return nil
 		}
-		blob, err := common.Marshal(&entry{Descriptor: req.Descriptor, Seq: req.Seq})
+		if !old.live(uint64(now.Unix())) {
+			n, err := d.countLive(tx, uint64(now.Unix()))
+			if err != nil {
+				return err
+			}
+			if n >= d.cfg.MaxEntries {
+				result = common.StatusBusy
+				return nil
+			}
+		}
+		if old != nil {
+			keep = max(keep, old.Keep)
+		}
+		blob, err := common.Marshal(&entry{Descriptor: req.Descriptor, Seq: req.Seq, Expiry: req.Expiry, Keep: keep})
 		if err != nil {
 			return err
 		}
@@ -222,12 +270,28 @@ func (d *Directory) advertise(req *AdvertiseRequest) uint8 {
 	})
 	if err != nil {
 		d.log.Errorf("storing a descriptor: %v", err)
-		return common.StatusInternalError
+		return status(common.StatusInternalError)
 	}
-	if result == common.StatusOK {
-		d.markDirty()
+	if result != common.StatusOK {
+		return status(result)
 	}
-	return result
+	d.markDirty()
+	return &DirectoryReply{Status: common.StatusOK, Expiry: expiry}
+}
+
+func (d *Directory) countLive(tx *bolt.Tx, now uint64) (int, error) {
+	n := 0
+	err := tx.Bucket(descriptorsBucket).ForEach(func(_, v []byte) error {
+		var e entry
+		if err := common.Unmarshal(v, &e); err != nil {
+			return err
+		}
+		if e.live(now) {
+			n++
+		}
+		return nil
+	})
+	return n, err
 }
 
 func sameDescriptor(a, b *common.ServiceDescriptor) bool {
@@ -257,7 +321,7 @@ func (d *Directory) withdraw(req *WithdrawRequest) uint8 {
 			}
 			return nil
 		}
-		blob, err := common.Marshal(&entry{Descriptor: old.Descriptor, Seq: req.Seq, Withdrawn: true})
+		blob, err := common.Marshal(&entry{Descriptor: old.Descriptor, Seq: req.Seq, Keep: old.Keep, Withdrawn: true})
 		if err != nil {
 			return err
 		}
@@ -284,10 +348,10 @@ func (d *Directory) lookup(id common.ServiceID) *DirectoryReply {
 		d.log.Errorf("looking up a descriptor: %v", err)
 		return status(common.StatusInternalError)
 	}
-	if found == nil || found.Withdrawn {
+	if !found.live(uint64(d.now().Unix())) {
 		return status(common.StatusUnknownService)
 	}
-	return &DirectoryReply{Status: common.StatusOK, Descriptor: &found.Descriptor}
+	return &DirectoryReply{Status: common.StatusOK, Descriptor: &found.Descriptor, Expiry: found.Expiry}
 }
 
 func (d *Directory) list() *DirectoryReply {
@@ -318,6 +382,7 @@ func (d *Directory) publisher() {
 				return
 			}
 		}
+		d.purge()
 		if err := d.publish(); err != nil && d.ctx.Err() == nil {
 			d.log.Errorf("publishing a snapshot: %v", err)
 			d.markDirty()
@@ -325,15 +390,47 @@ func (d *Directory) publisher() {
 	}
 }
 
+// purge forgets the entries whose Keep has passed.
+func (d *Directory) purge() {
+	now := uint64(d.now().Unix())
+	err := d.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(descriptorsBucket)
+		var gone [][]byte
+		err := b.ForEach(func(k, v []byte) error {
+			var e entry
+			if err := common.Unmarshal(v, &e); err != nil {
+				return err
+			}
+			if e.Keep <= now {
+				gone = append(gone, bytes.Clone(k))
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		for _, k := range gone {
+			if err := b.Delete(k); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		d.log.Errorf("purging descriptors: %v", err)
+	}
+}
+
 func (d *Directory) descriptors() ([]common.ServiceDescriptor, error) {
 	var all []common.ServiceDescriptor
+	now := uint64(d.now().Unix())
 	err := d.db.View(func(tx *bolt.Tx) error {
 		return tx.Bucket(descriptorsBucket).ForEach(func(_, v []byte) error {
 			var e entry
 			if err := common.Unmarshal(v, &e); err != nil {
 				return err
 			}
-			if !e.Withdrawn {
+			if e.live(now) {
 				all = append(all, e.Descriptor)
 			}
 			return nil

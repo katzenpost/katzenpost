@@ -6,7 +6,6 @@ package discovery
 import (
 	"context"
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/katzenpost/hpqc/bacap"
@@ -22,9 +21,6 @@ type Client struct {
 	pub          nike.PublicKey
 	key          *common.ServiceKey
 	pollInterval time.Duration
-
-	mu  sync.Mutex
-	seq uint64
 }
 
 var (
@@ -76,27 +72,24 @@ func (c *Client) request(ctx context.Context, req *DirectoryRequest) (*Directory
 	return &reply, nil
 }
 
-func (c *Client) nextSeq() uint64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.seq = max(c.seq+1, uint64(time.Now().UnixNano()))
-	return c.seq
-}
-
-// Advertise publishes d, replacing any earlier descriptor for its service.
-func (c *Client) Advertise(ctx context.Context, d *common.ServiceDescriptor) error {
+// Advertise publishes d until expiry, replacing any earlier descriptor for
+// its service, and returns the expiry granted.
+func (c *Client) Advertise(ctx context.Context, d *common.ServiceDescriptor, expiry uint64) (uint64, error) {
 	if c.key == nil {
-		return errors.New("directory: advertising needs a service key")
+		return 0, errors.New("directory: advertising needs a service key")
 	}
 	if d.ID() != c.key.ID() {
-		return errors.New("directory: descriptor is not this service's")
+		return 0, errors.New("directory: descriptor is not this service's")
 	}
-	req := &AdvertiseRequest{Descriptor: *d, Seq: c.nextSeq()}
+	req := &AdvertiseRequest{Descriptor: *d, Seq: common.NextSeq(), Expiry: expiry}
 	if err := SignAdvertise(c.key, c.pub, req); err != nil {
-		return err
+		return 0, err
 	}
-	_, err := c.request(ctx, &DirectoryRequest{Advertise: req})
-	return err
+	reply, err := c.request(ctx, &DirectoryRequest{Advertise: req})
+	if err != nil {
+		return 0, err
+	}
+	return reply.Expiry, nil
 }
 
 // Withdraw removes this service's descriptor.
@@ -104,7 +97,7 @@ func (c *Client) Withdraw(ctx context.Context, id common.ServiceID) error {
 	if c.key == nil || id != c.key.ID() {
 		return errors.New("directory: withdrawing needs the service's key")
 	}
-	req := &WithdrawRequest{ServiceID: id, Seq: c.nextSeq()}
+	req := &WithdrawRequest{ServiceID: id, Seq: common.NextSeq()}
 	if err := SignWithdraw(c.key, c.pub, req); err != nil {
 		return err
 	}
