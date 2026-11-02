@@ -4,7 +4,9 @@
 package discovery_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -29,4 +31,13 @@ func snapshotPos(t *testing.T, r *discovery.DirectoryReply) (*bacap.ReadCap, *ba
 	idx, err := bacap.NewEmptyMessageBoxIndexFromBytes(r.StartIndex)
 	require.NoError(t, err)
 	return rc, idx
+}
+
+// in is a lease expiry d from now.
+func in(d time.Duration) uint64 { return uint64(time.Now().Add(d).Unix()) }
+
+func advertise(t *testing.T, c *discovery.Client, ctx context.Context, d *common.ServiceDescriptor) {
+	t.Helper()
+	_, err := c.Advertise(ctx, d, in(time.Hour))
+	require.NoError(t, err)
 }

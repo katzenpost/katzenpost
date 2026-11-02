@@ -24,6 +24,7 @@ func main() {
 		cfg          plugin.Config
 		pollInterval time.Duration
 		retention    time.Duration
+		maxLinks     int
 	)
 	cmd := &cobra.Command{
 		Use:   "voucher-router",
@@ -41,6 +42,7 @@ func main() {
 					DBPath:       filepath.Join(cfg.DataDir, "voucher_router.db"),
 					PollInterval: pollInterval,
 					Retention:    retention,
+					MaxLinks:     maxLinks,
 					Log:          log,
 				}, ph)
 				if err != nil {
@@ -57,6 +59,7 @@ func main() {
 	cmd.Flags().StringVar(&cfg.ThinConfig, "thin_config", "", "thin client config of the kpclientd to use")
 	cmd.Flags().DurationVar(&pollInterval, "poll_interval", common.DefaultPollInterval, "how often a pending Pigeonhole read is retried")
 	cmd.Flags().DurationVar(&retention, "retention", 7*24*time.Hour, "how long a forwarded voucher is kept rewritten")
-	cmd.SetArgs(kpcommon.NormalizeLegacyLongFlags(cmd, os.Args[1:], "log_dir", "log_level", "data_dir", "thin_config", "poll_interval"))
+	cmd.Flags().IntVar(&maxLinks, "max_links", voucher_router.DefaultMaxLinks, "most services linked at once")
+	cmd.SetArgs(kpcommon.NormalizeLegacyLongFlags(cmd, os.Args[1:], "log_dir", "log_level", "data_dir", "thin_config", "poll_interval", "max_links"))
 	kpcommon.ExecuteWithFang(cmd)
 }

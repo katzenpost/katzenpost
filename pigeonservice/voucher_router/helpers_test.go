@@ -5,6 +5,7 @@ package voucher_router_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -20,3 +21,6 @@ func readPos(t *testing.T, st *voucher_router.ConnState) (*bacap.ReadCap, *bacap
 	require.NoError(t, err)
 	return rc, idx
 }
+
+// in is a lease expiry d from now.
+func in(d time.Duration) uint64 { return uint64(time.Now().Add(d).Unix()) }

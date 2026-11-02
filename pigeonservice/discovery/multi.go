@@ -46,19 +46,23 @@ func NewAll(ph common.Pigeonhole, key *common.ServiceKey, pollInterval time.Dura
 	return a, nil
 }
 
-// Advertise publishes d at every directory. It fails only if no directory
-// took it.
-func (a *All) Advertise(ctx context.Context, d *common.ServiceDescriptor) error {
+// Advertise publishes d at every directory and returns the shortest lease
+// granted. It fails only if no directory took it.
+func (a *All) Advertise(ctx context.Context, d *common.ServiceDescriptor, expiry uint64) (uint64, error) {
 	var errs []error
+	granted := expiry
 	for _, c := range a.clients {
-		if err := c.Advertise(ctx, d); err != nil {
+		got, err := c.Advertise(ctx, d, expiry)
+		if err != nil {
 			errs = append(errs, err)
+			continue
 		}
+		granted = min(granted, got)
 	}
 	if len(errs) == len(a.clients) {
-		return errors.Join(errs...)
+		return 0, errors.Join(errs...)
 	}
-	return nil
+	return granted, nil
 }
 
 // Withdraw removes the service's descriptor from every directory.

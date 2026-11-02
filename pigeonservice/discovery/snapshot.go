@@ -14,8 +14,10 @@ import (
 )
 
 // Advertiser publishes service descriptors where clients can find them.
+// Advertise asks for a lease until expiry (see common.LeaseExpiry) and
+// returns the expiry granted.
 type Advertiser interface {
-	Advertise(ctx context.Context, d *common.ServiceDescriptor) error
+	Advertise(ctx context.Context, d *common.ServiceDescriptor, expiry uint64) (uint64, error)
 	Withdraw(ctx context.Context, id common.ServiceID) error
 }
 

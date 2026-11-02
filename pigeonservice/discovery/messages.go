@@ -21,11 +21,13 @@ type DirectoryRequest struct {
 	List      *ListRequest      `cbor:",omitempty"`
 }
 
-// AdvertiseRequest publishes or replaces a service's descriptor. Seq must
-// exceed the Seq of the descriptor it replaces.
+// AdvertiseRequest publishes or replaces a service's descriptor, leased
+// until Expiry, Unix seconds. Seq must exceed the Seq of the descriptor it
+// replaces.
 type AdvertiseRequest struct {
 	Descriptor common.ServiceDescriptor
 	Seq        uint64
+	Expiry     uint64
 	MAC        []byte
 }
 
@@ -48,6 +50,8 @@ type ListRequest struct{}
 // DirectoryReply is the directory's answer to a DirectoryRequest.
 type DirectoryReply struct {
 	Status uint8
+	// Expiry is the lease granted to an Advertise.
+	Expiry uint64 `cbor:",omitempty"`
 	// Descriptor answers a Lookup.
 	Descriptor *common.ServiceDescriptor `cbor:",omitempty"`
 	// ReadCap and StartIndex locate the snapshot stream, answering a List.

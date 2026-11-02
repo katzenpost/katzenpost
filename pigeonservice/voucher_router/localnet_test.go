@@ -82,7 +82,7 @@ func TestLocalnetRouter(t *testing.T) {
 	nodes, err := ph.Services(voucher_router.RouterCapability)
 	require.NoError(t, err)
 	require.Len(t, nodes, 1)
-	link, err := voucher_router.Register(ctx, ph, key, &nodes[0], localnetPoll)
+	link, err := voucher_router.Register(ctx, ph, key, &nodes[0], localnetPoll, common.LeaseExpiry(voucher_router.MaxLinkTTL))
 	require.NoError(t, err)
 
 	desc := &common.ServiceDescriptor{

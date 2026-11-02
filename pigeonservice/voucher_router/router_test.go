@@ -109,7 +109,7 @@ func TestRegisterAndRoute(t *testing.T) {
 	f := newFixture(t)
 	ctx := testCtx(t)
 
-	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll)
+	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll, in(time.Hour))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return f.router.Linked(f.svc.ID()) }, 10*time.Second, poll)
 
@@ -129,7 +129,7 @@ func TestRouteWhileInducting(t *testing.T) {
 	ctx := testCtx(t)
 	f.net.TombstoneGate = make(chan struct{})
 
-	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll)
+	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll, in(time.Hour))
 	require.NoError(t, err)
 	require.False(t, f.router.Linked(f.svc.ID()))
 
@@ -145,7 +145,7 @@ func TestRouteWhileInducting(t *testing.T) {
 func TestRetransmittedRouteIsForwardedOnce(t *testing.T) {
 	f := newFixture(t)
 	ctx := testCtx(t)
-	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll)
+	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll, in(time.Hour))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return f.router.Linked(f.svc.ID()) }, 10*time.Second, poll)
 
@@ -165,7 +165,7 @@ func TestRetransmittedRouteIsForwardedOnce(t *testing.T) {
 func TestRetransmittedRegisterInductsOnce(t *testing.T) {
 	f := newFixture(t)
 	f.net.Repeat = 3
-	link, err := voucher_router.Register(testCtx(t), f.net, f.svc, &f.node, poll)
+	link, err := voucher_router.Register(testCtx(t), f.net, f.svc, &f.node, poll, in(time.Hour))
 	require.NoError(t, err)
 	require.NotNil(t, link)
 	require.Eventually(t, func() bool { return f.router.Linked(f.svc.ID()) }, 10*time.Second, poll)
@@ -207,7 +207,7 @@ func TestMalformedRequests(t *testing.T) {
 func TestLinksSurviveRestart(t *testing.T) {
 	f := newFixture(t)
 	ctx := testCtx(t)
-	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll)
+	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll, in(time.Hour))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return f.router.Linked(f.svc.ID()) }, 10*time.Second, poll)
 	require.NoError(t, voucher_router.Route(ctx, f.net, f.descriptor(), bytesOf(1)))
@@ -231,12 +231,16 @@ func (f *fixture) stalledRegistrations(t *testing.T, n int) [][]byte {
 	t.Helper()
 	payloads := make([][]byte, n)
 	errs := make([]error, n)
+	seqs := make([]uint64, n)
+	for i := range seqs {
+		seqs[i] = common.NextSeq()
+	}
 	var wg sync.WaitGroup
 	for i := range payloads {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			req := &voucher_router.RegisterRequest{NIKEScheme: f.svc.Scheme.Name(), PublicKey: f.svc.Public.Bytes(), Voucher: bytesOf(byte(0x80 + i))}
+			req := &voucher_router.RegisterRequest{NIKEScheme: f.svc.Scheme.Name(), PublicKey: f.svc.Public.Bytes(), Voucher: bytesOf(byte(0x80 + i)), Seq: seqs[i], Expiry: in(time.Hour)}
 			if errs[i] = voucher_router.SignRegister(f.svc, f.pk.Public, req); errs[i] == nil {
 				payloads[i], errs[i] = common.Marshal(&voucher_router.RouterRequest{Register: req})
 			}
@@ -308,7 +312,7 @@ func TestCompletedRegistrationIsReleased(t *testing.T) {
 	f := newTunedFixture(t, func(cfg *voucher_router.Config) { cfg.MaxInductions = 1 })
 	ctx := testCtx(t)
 	f.net.Repeat = 3
-	_, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll)
+	_, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll, in(time.Hour))
 	require.NoError(t, err)
 	f.net.Repeat = 1
 	require.Eventually(t, func() bool {
@@ -317,7 +321,7 @@ func TestCompletedRegistrationIsReleased(t *testing.T) {
 	}, 10*time.Second, poll)
 
 	other, _ := newKey(t)
-	_, err = voucher_router.Register(ctx, f.net, other, &f.node, poll)
+	_, err = voucher_router.Register(ctx, f.net, other, &f.node, poll, in(time.Hour))
 	require.NoError(t, err, "the released slot admits the next registration")
 	require.Eventually(t, func() bool { return f.router.Linked(other.ID()) }, 10*time.Second, poll)
 }
@@ -340,7 +344,7 @@ func mustMarshal(t *testing.T, v any) []byte {
 func TestLinkBacklogIsBounded(t *testing.T) {
 	f := newTunedFixture(t, func(c *voucher_router.Config) { c.MaxRetained = 2 })
 	ctx := testCtx(t)
-	_, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll)
+	_, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll, in(time.Hour))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return f.router.Linked(f.svc.ID()) }, 10*time.Second, poll)
 
@@ -357,12 +361,12 @@ func TestLinkBacklogIsBounded(t *testing.T) {
 func TestReregistrationTakesOverRouting(t *testing.T) {
 	f := newFixture(t)
 	ctx := testCtx(t)
-	_, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll)
+	_, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll, in(time.Hour))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return f.router.Linked(f.svc.ID()) }, 10*time.Second, poll)
 
 	f.net.TombstoneGate = make(chan struct{})
-	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll)
+	link, err := voucher_router.Register(ctx, f.net, f.svc, &f.node, poll, in(time.Hour))
 	require.NoError(t, err)
 	require.NoError(t, voucher_router.Route(ctx, f.net, f.descriptor(), bytesOf(9)))
 	close(f.net.TombstoneGate)
