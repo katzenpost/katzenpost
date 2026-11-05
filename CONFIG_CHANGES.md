@@ -534,8 +534,9 @@ Source: `replica/config/config.go`.
 - **Added** `BoxPayloadLengths` (list of int). **[breaking]** for
   networks with a Reticulum bridge (`BridgeSocket`): plaintext payload
   lengths of the extra box sizes the replica stores besides the
-  default geometry's, such as a mesh's smaller profile (e.g.
-  `[400]`). Box ID and signature sizes do not change; a box of
+  default geometry's. They must match the box profile of each
+  Reticulum mesh the bridges serve, as pigeonhole_protocols publishes
+  it. Box ID and signature sizes do not change; a box of
   plaintext length `n` has a ciphertext of `n + 20` bytes. Each length
   must be positive and less than the default `MaxPlaintextPayloadLength`,
   or the config is refused. Every replica must be upgraded to this

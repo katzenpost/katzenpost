@@ -155,8 +155,8 @@ func TestBridgeSocket(t *testing.T) {
 	require.Equal(t, []byte{pigeonhole.ReplicaErrorInvalidPayload}, reply)
 }
 
-// A box of a listed smaller size, from a mesh's profile, is stored and read
-// back like a default box; unlisted it is refused.
+// A box of a listed smaller size, here a generic 400 bytes of plaintext, is
+// stored and read back like a default box; unlisted it is refused.
 func TestBridgeExtraBoxSize(t *testing.T) {
 	s, _ := newBridgeTestServer(t)
 	b := &BridgeListener{server: s, log: s.LogBackend().GetLogger("bridge"), closeAllCh: make(chan interface{})}
