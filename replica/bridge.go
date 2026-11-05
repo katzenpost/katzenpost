@@ -34,7 +34,8 @@ import (
 // A query is a type byte, 0 for a read and 1 for a write, the 32 byte
 // Box ID, and for a write the 64 byte signature and the ciphertext (empty
 // for a tombstone). A reply is a replica error code, and for a found box
-// the signature and the ciphertext.
+// the signature and the ciphertext. A box's ciphertext is the default
+// geometry's box size or the size for one of BoxPayloadLengths.
 const (
 	bridgeQueryRead  = 0
 	bridgeQueryWrite = 1
@@ -243,7 +244,7 @@ func (b *BridgeListener) isShard(shards []*pki.ReplicaDescriptor) (bool, error) 
 // meaning accepted for delivery through the connector's retry queue.
 func (b *BridgeListener) write(w *pigeonhole.ReplicaWrite) uint8 {
 	s := b.server
-	if code := verifyReplicaWrite(w, s.pigeonholeGeo); code != pigeonhole.ReplicaSuccess {
+	if code := verifyReplicaWrite(w, s.pigeonholeGeo, s.cfg.BoxPayloadLengths); code != pigeonhole.ReplicaSuccess {
 		return code
 	}
 	doc := s.PKIWorker.LastCachedPKIDocument()

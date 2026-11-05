@@ -531,6 +531,18 @@ Source: `replica/config/config.go`.
   so a full replica can still be reclaimed. (Renamed from
   `MinFreeStorageBytes` for the same units-friendliness reason; the
   stale name is silently ignored.)
+- **Added** `BoxPayloadLengths` (list of int). **[breaking]** for
+  networks with a Reticulum bridge (`BridgeSocket`): plaintext payload
+  lengths of the extra box sizes the replica stores besides the
+  default geometry's, such as a mesh's smaller profile (e.g.
+  `[400]`). Box ID and signature sizes do not change; a box of
+  plaintext length `n` has a ciphertext of `n + 20` bytes. Each length
+  must be positive and less than the default `MaxPlaintextPayloadLength`,
+  or the config is refused. Every replica must be upgraded to this
+  version and list the same lengths before any bridge forwards
+  non-default-size boxes: a replica without them refuses such a box,
+  from the bridge or by replication, with `ReplicaErrorInvalidPayload`.
+  Empty (the default) keeps the single default size.
 - **Removed** `ReplicationQueueLength` (int). No longer consumed. The
   replica decodes via the lenient common loader, so a leftover
   `ReplicationQueueLength` is silently ignored and does not block

@@ -154,3 +154,27 @@ func TestBridgeSocket(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte{pigeonhole.ReplicaErrorInvalidPayload}, reply)
 }
+
+// A box of a listed smaller size, from a mesh's profile, is stored and read
+// back like a default box; unlisted it is refused.
+func TestBridgeExtraBoxSize(t *testing.T) {
+	s, _ := newBridgeTestServer(t)
+	b := &BridgeListener{server: s, log: s.LogBackend().GetLogger("bridge"), closeAllCh: make(chan interface{})}
+	b.conn = &incomingConn{l: &Listener{server: s, closeAllCh: b.closeAllCh}, log: b.log, geo: s.cfg.SphinxGeometry}
+
+	_, w := sealTestBox(t, &pgeo.Geometry{MaxPlaintextPayloadLength: 400}, []byte("from the mesh"))
+	require.Equal(t, 420, len(w.Payload))
+
+	require.Equal(t, []byte{pigeonhole.ReplicaErrorInvalidPayload}, b.handle(bridgeWriteQuery(w)))
+
+	s.cfg.BoxPayloadLengths = []int{400}
+	require.Equal(t, []byte{pigeonhole.ReplicaSuccess}, b.handle(bridgeWriteQuery(w)))
+	reply := b.handle(bridgeReadQuery(w.BoxID))
+	require.Equal(t, uint8(pigeonhole.ReplicaSuccess), reply[0])
+	require.True(t, bytes.Equal(w.Signature[:], reply[1:65]))
+	require.True(t, bytes.Equal(w.Payload, reply[65:]))
+
+	// The default size is still taken.
+	_, d := sealTestBox(t, s.pigeonholeGeo, []byte("default"))
+	require.Equal(t, []byte{pigeonhole.ReplicaSuccess}, b.handle(bridgeWriteQuery(d)))
+}
