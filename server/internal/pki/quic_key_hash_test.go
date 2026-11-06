@@ -82,7 +82,7 @@ func publishedDescriptorAndKeys(t *testing.T, schemeName string, addresses []str
 func publishedDescriptorLogged(t *testing.T, schemeName string, addresses []string, authorities []*vConfig.Authority, quicKeyDir, logFile string) (*cpki.MixDescriptor, *common.EpochKeys, *log.Backend) {
 	t.Helper()
 	setEpochClock(t, 1000, time.Second)
-	quicKeys, err := common.NewEpochKeys(quicKeyDir, common.CurrentEpoch)
+	quicKeys, err := common.NewEpochKeys(quicKeyDir, common.CurrentEpoch, nil)
 	require.NoError(t, err)
 	idPub, idKey := fixedIdentityKey(t, schemeName)
 	linkScheme := kemSchemes.ByName("xwing")

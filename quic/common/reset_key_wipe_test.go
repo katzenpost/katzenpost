@@ -26,8 +26,6 @@ func (k *copyingIdentityKey) MarshalBinary() ([]byte, error) {
 	return identitySecretCopy, nil
 }
 
-func (k *copyingIdentityKey) Public() crypto.PublicKey { return k.PrivateKey.Public() }
-
 func (k *copyingIdentityKey) Sign(r io.Reader, d []byte, o crypto.SignerOpts) ([]byte, error) {
 	return k.PrivateKey.Sign(r, d, o)
 }

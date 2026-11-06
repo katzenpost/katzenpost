@@ -83,7 +83,15 @@ const (
 	EnvelopeErrorCacheCorruption  uint8 = 2 // Cache data corruption detected
 	EnvelopeErrorPropagationError uint8 = 3 // Error propagating request to replicas
 	EnvelopeErrorInvalidEpoch     uint8 = 4 // Envelope's replica epoch is outside the accepted window
+	EnvelopeErrorCourierBusy      uint8 = 5 // Courier cannot take new envelopes right now; retry later
 )
+
+// IsTemporaryEnvelopeError reports whether a courier envelope error code
+// describes a condition that clears on its own, so the client should
+// resend the same envelope later instead of failing the operation.
+func IsTemporaryEnvelopeError(code uint8) bool {
+	return code == EnvelopeErrorCourierBusy
+}
 
 // CopyCommandReply status codes. The Copy command is async: the courier
 // acknowledges receipt immediately with InProgress and processes the

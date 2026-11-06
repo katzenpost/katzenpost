@@ -94,6 +94,11 @@ type Config struct {
 	// These Addresses are not advertised in the PKI.
 	BindAddresses []string
 
+	// BridgeSocket, when set, is the absolute path of a unix socket on
+	// which this replica serves a Reticulum mesh replica on the same host:
+	// boxes the mesh pushes in, and boxes it pulls out. Empty disables it.
+	BridgeSocket string `toml:",omitempty"`
+
 	// ConnectTimeout specifies the maximum time a connection can take to
 	// establish a TCP/IP connection in milliseconds.
 	ConnectTimeout int
@@ -226,6 +231,9 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 		return err
 	}
 
+	if c.BridgeSocket != "" && !filepath.IsAbs(c.BridgeSocket) {
+		return fmt.Errorf("config: Server: BridgeSocket '%v' is not an absolute path", c.BridgeSocket)
+	}
 	if err := c.validateDataDirectory(); err != nil {
 		return err
 	}

@@ -785,3 +785,112 @@ func (e *VoucherDeriveStreamReply) String() string {
 	}
 	return "VoucherDeriveStreamReply: success"
 }
+
+// BoxSealReply is the reply to a BoxSeal request.
+type BoxSealReply struct {
+	QueryID    *[QueryIDLength]byte `cbor:"query_id"`
+	Ciphertext []byte               `cbor:"ciphertext"`
+	ErrorCode  uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the BoxSealReply.
+func (e *BoxSealReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("BoxSealReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "BoxSealReply: success"
+}
+
+// NIKEGenerateKeyPairReply is the reply to a NIKEGenerateKeyPair request.
+type NIKEGenerateKeyPairReply struct {
+	QueryID    *[QueryIDLength]byte `cbor:"query_id"`
+	PublicKey  []byte               `cbor:"public_key"`
+	PrivateKey []byte               `cbor:"private_key"`
+	ErrorCode  uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the NIKEGenerateKeyPairReply.
+func (e *NIKEGenerateKeyPairReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("NIKEGenerateKeyPairReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "NIKEGenerateKeyPairReply: success"
+}
+
+// NIKEDeriveSecretReply is the reply to a NIKEDeriveSecret request.
+type NIKEDeriveSecretReply struct {
+	QueryID      *[QueryIDLength]byte `cbor:"query_id"`
+	SharedSecret []byte               `cbor:"shared_secret"`
+	ErrorCode    uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the NIKEDeriveSecretReply.
+func (e *NIKEDeriveSecretReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("NIKEDeriveSecretReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "NIKEDeriveSecretReply: success"
+}
+
+// BoxOpenReply is the reply to a BoxOpen request.
+type BoxOpenReply struct {
+	QueryID   *[QueryIDLength]byte `cbor:"query_id"`
+	Plaintext []byte               `cbor:"plaintext"`
+	ErrorCode uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the BoxOpenReply.
+func (e *BoxOpenReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("BoxOpenReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "BoxOpenReply: success"
+}
+
+// StartResendingMessageReply is the reply to a StartResendingMessage request.
+type StartResendingMessageReply struct {
+	QueryID   *[QueryIDLength]byte `cbor:"query_id"`
+	MessageID *[32]byte            `cbor:"message_id"`
+	Payload   []byte               `cbor:"payload"`
+	ErrorCode uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the StartResendingMessageReply.
+func (e *StartResendingMessageReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("StartResendingMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("StartResendingMessageReply: %d bytes", len(e.Payload))
+}
+
+// CancelResendingMessageReply is the reply to a CancelResendingMessage request.
+type CancelResendingMessageReply struct {
+	QueryID   *[QueryIDLength]byte `cbor:"query_id"`
+	ErrorCode uint8                `cbor:"error_code"`
+}
+
+// String returns a string representation of the CancelResendingMessageReply.
+func (e *CancelResendingMessageReply) String() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CancelResendingMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "CancelResendingMessageReply: success"
+}

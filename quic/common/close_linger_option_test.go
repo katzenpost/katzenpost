@@ -47,7 +47,7 @@ func lingerPair(t *testing.T, opts *Options) (net.Conn, net.Conn) {
 	t.Helper()
 	_, identityPrivateKey, err := signschemes.ByName(testIdentityScheme).GenerateKey()
 	require.NoError(t, err)
-	key, err := LoadStaticKey(filepath.Join(t.TempDir(), "quic-tls.key"))
+	key, err := LoadStaticKey(filepath.Join(t.TempDir(), "quic-tls.key"), nil)
 	require.NoError(t, err)
 	l, err := ListenWithEpochKeys("127.0.0.1:0", identityPrivateKey, key, opts)
 	require.NoError(t, err)

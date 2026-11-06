@@ -41,8 +41,8 @@ func newShardReadHarness(t *testing.T, readCap *bacap.ReadCap, index []byte, noR
 	require.NoError(t, err)
 
 	loadCTIDHFixtures()
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	epoch, _, _ := epochtime.Now()
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(epoch)
 	doc := &cpki.Document{Epoch: epoch}
 	for i := uint8(0); i < 2; i++ {
 		doc.StorageReplicas = append(doc.StorageReplicas, &cpki.ReplicaDescriptor{

@@ -25,7 +25,7 @@ func generatedQUICPin(t *testing.T, dir string) string {
 	t.Helper()
 	pin, err := os.ReadFile(filepath.Join(dir, "quic-tls.hash"))
 	require.NoError(t, err, "generate-only wrote no quic-tls.hash")
-	key, err := common.ReadStaticKey(filepath.Join(dir, "quic-tls.key"))
+	key, err := common.ReadStaticKey(filepath.Join(dir, "quic-tls.key"), nil)
 	require.NoError(t, err)
 	require.Equal(t, hex.EncodeToString(key.Hash())+"\n", string(pin))
 	return string(bytes.TrimSpace(pin))

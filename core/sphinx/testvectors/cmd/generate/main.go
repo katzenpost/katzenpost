@@ -1,10 +1,10 @@
 // main.go - Generates cross-implementation test vectors for the Sphinx
 // primitive layer (Hash, MAC, Stream cipher, SPRP, KDF, ChaCha20), for the
-// Lean port in CryptWalker (https://github.com/katzenpost/CryptWalker).
+// Lean port in Cryptlib (https://github.com/katzenpost/cryptlib).
 //
 // Mirrors the envelope format used by
 // github.com/katzenpost/hpqc/testvectors/cmd/generate, so the Lean-side
-// parser code can be copy-adapted from CryptWalker's existing test.lean
+// parser code can be copy-adapted from Cryptlib's existing test.lean
 // files.
 //
 // Run from the repository root:

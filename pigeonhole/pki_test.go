@@ -132,7 +132,7 @@ func validateSuccessfulResult(t *testing.T, doc *pki.Document, replicaIndices [2
 	require.NotEqual(t, replicaPubKeys[0].Bytes(), replicaPubKeys[1].Bytes(), "Public keys should be different")
 
 	// Verify public keys match the selected replicas
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 	for i, replicaIndex := range replicaIndices {
 		expectedKeyBytes := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
 		actualKeyBytes, err := replicaPubKeys[i].MarshalBinary()
@@ -232,9 +232,10 @@ func TestGetRandomIntermediateReplicas(t *testing.T) {
 }
 
 func TestGetRandomIntermediateReplicasNotReady(t *testing.T) {
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	normalEpoch, _, _ := epochtime.Now()
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(normalEpoch)
 	docWithKeys := func(keys map[uint64][]byte) *pki.Document {
-		doc := &pki.Document{}
+		doc := &pki.Document{Epoch: normalEpoch}
 		for i := 0; i < 2; i++ {
 			id := make([]byte, 32)
 			_, err := rand.Reader.Read(id)
@@ -268,11 +269,12 @@ func TestGetRandomIntermediateReplicasNotReady(t *testing.T) {
 }
 
 func TestGetShardReplicas(t *testing.T) {
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	normalEpoch, _, _ := epochtime.Now()
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(normalEpoch)
 	pub, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
 	require.NoError(t, err)
 	keys := map[uint64][]byte{replicaEpoch: pub.Bytes()}
-	doc := &pki.Document{}
+	doc := &pki.Document{Epoch: normalEpoch}
 	for i := 0; i < 5; i++ {
 		id := make([]byte, 32)
 		_, err := rand.Reader.Read(id)

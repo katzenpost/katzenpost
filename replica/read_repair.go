@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"container/list"
 	"sync"
 	"time"
 
@@ -29,35 +30,31 @@ type readRepair struct {
 }
 
 // readRepairs maps the envelope hashes of recently served reads to the
-// boxes they read. Its zero value is ready to use.
+// boxes they read, one queued record per hash, oldest first. Its zero
+// value is ready to use.
 type readRepairs struct {
 	mu    sync.Mutex
-	boxes map[[32]byte]readRepair
-	order []readRepair
+	boxes map[[32]byte]*list.Element
+	order list.List
 }
 
 func (r *readRepairs) remember(envHash, boxID *[32]byte, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.boxes == nil {
-		r.boxes = make(map[[32]byte]readRepair)
+		r.boxes = make(map[[32]byte]*list.Element)
 	}
-	for len(r.order) > 0 && (len(r.boxes) >= maxReadRepairs || now.Sub(r.order[0].at) > readRepairTTL) {
-		r.forgetOldest()
+	if e, ok := r.boxes[*envHash]; ok {
+		r.forget(e)
 	}
-	e := readRepair{envHash: *envHash, boxID: *boxID, at: now}
-	r.boxes[e.envHash] = e
-	r.order = append(r.order, e)
+	for e := r.order.Front(); e != nil && (r.order.Len() >= maxReadRepairs || now.Sub(e.Value.(readRepair).at) > readRepairTTL); e = r.order.Front() {
+		r.forget(e)
+	}
+	r.boxes[*envHash] = r.order.PushBack(readRepair{envHash: *envHash, boxID: *boxID, at: now})
 }
 
-// forgetOldest drops the oldest queued read, unless its envelope hash
-// was remembered again since.
-func (r *readRepairs) forgetOldest() {
-	old := r.order[0]
-	r.order = r.order[1:]
-	if cur, ok := r.boxes[old.envHash]; ok && cur.at.Equal(old.at) {
-		delete(r.boxes, old.envHash)
-	}
+func (r *readRepairs) forget(e *list.Element) {
+	delete(r.boxes, r.order.Remove(e).(readRepair).envHash)
 }
 
 // take returns and forgets the box a read was served for.
@@ -68,11 +65,12 @@ func (r *readRepairs) take(envHash *[32]byte, now time.Time) ([32]byte, bool) {
 	if !ok {
 		return [32]byte{}, false
 	}
-	delete(r.boxes, *envHash)
-	if now.Sub(e.at) > readRepairTTL {
+	r.forget(e)
+	rr := e.Value.(readRepair)
+	if now.Sub(rr.at) > readRepairTTL {
 		return [32]byte{}, false
 	}
-	return e.boxID, true
+	return rr.boxID, true
 }
 
 // repairFromHint handles a courier's hint that a shard peer answered

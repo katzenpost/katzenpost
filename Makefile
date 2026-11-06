@@ -2,7 +2,7 @@
 include $(dir $(lastword $(MAKEFILE_LIST)))ci.mk
 include $(dir $(lastword $(MAKEFILE_LIST)))packaging/debian/targets.mk
 
-.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping motd courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd map sphinx replica
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping motd courier echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd voucher-router service-directory map sphinx replica
 
 build_version?=$(shell git describe --tags --always --dirty 2>/dev/null)
 build_ldflags=-s -w -X github.com/katzenpost/katzenpost/common.BuildVersion=$(build_version)
@@ -97,7 +97,7 @@ ifneq (,$(wildcard vendor))
 	go mod vendor
 endif
 
-all: server dirauth genconfig ping motd courier replica echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd sphinx
+all: server dirauth genconfig ping motd courier replica echo-plugin fetch genkeypair geometry http-proxy-client http-proxy-server kpclientd voucher-router service-directory sphinx
 
 server:
 	cd cmd/server; go build -trimpath -ldflags "$(build_ldflags)"
@@ -138,6 +138,12 @@ http-proxy-server:
 kpclientd:
 	cd cmd/kpclientd; go build -trimpath -ldflags "$(build_ldflags)"
 
+voucher-router:
+	cd cmd/voucher-router; go build -trimpath -ldflags "$(build_ldflags)"
+
+service-directory:
+	cd cmd/service-directory; go build -trimpath -ldflags "$(build_ldflags)"
+
 sphinx:
 	cd cmd/sphinx; go build -trimpath -ldflags "$(build_ldflags)"
 
@@ -150,6 +156,7 @@ clean:
 		cmd/genkeypair/genkeypair cmd/geometry/geometry \
 		cmd/http-proxy-client/http-proxy-client cmd/http-proxy-server/http-proxy-server \
 		cmd/kpclientd/kpclientd \
+		cmd/voucher-router/voucher-router cmd/service-directory/service-directory \
 		cmd/sphinx/sphinx cmd/replica/replica cmd/copycat/copycat
 
 sphincsplus:
@@ -174,8 +181,10 @@ test-unit: test-config
 	cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Running courier unit tests..."
 	cd courier && GORACE=history_size=7 go test -coverprofile=coverage.out -v -failfast -timeout 30m ./...
-
-
+	@echo "Running pigeonhole unit tests..."
+	cd pigeonhole && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	@echo "Running pigeonservice unit tests..."
+	cd pigeonservice && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "All unit tests completed successfully!"
 
 # Run replica unit tests

@@ -17,7 +17,7 @@ import (
 
 func fixedEpochKeys(t *testing.T, epoch uint64) (*common.EpochKeys, []byte) {
 	t.Helper()
-	keys, err := common.NewEpochKeys(t.TempDir(), func() uint64 { return epoch })
+	keys, err := common.NewEpochKeys(t.TempDir(), func() uint64 { return epoch }, nil)
 	require.NoError(t, err)
 	hashes, err := keys.Hashes(epoch)
 	require.NoError(t, err)

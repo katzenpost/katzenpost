@@ -11,15 +11,16 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	"github.com/katzenpost/katzenpost/replica/instrument"
 )
 
@@ -157,6 +158,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Errorf("handleReplicaMessage decapsulation failed across epoch window (current=%d): %s", replicaEpoch, err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0)
 	}
+	defer keypair.Release()
 	if successEpoch != replicaEpoch {
 		c.log.Debugf("handleReplicaMessage decapsulated with non-current epoch key: replica_epoch=%d decap_epoch=%d",
 			replicaEpoch, successEpoch)
@@ -278,7 +280,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Debug("REPLICA_HANDLER: This replica is NOT a shard - proxying write to shard")
 		// Release before parking on the proxy path (it has its own pool).
 		releaseDecap()
-		return c.proxyWriteRequest(myCmd, senderpubkey, envelopeHash)
+		return c.proxyWriteRequest(myCmd, senderpubkey, envelopeHash, keypair.PrivateKey)
 	default:
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0)
@@ -350,47 +352,45 @@ func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *p
 	return nil
 }
 
+// verifyReplicaWrite is the one rule for a box offered to this replica, by a
+// client, a peer or the bridge: the Box ID parses as an Ed25519 key, the
+// signature verifies under it over the ciphertext, and the ciphertext is
+// exactly the geometry's box size unless it is a tombstone (empty).
+func verifyReplicaWrite(w *pigeonhole.ReplicaWrite, geo *pgeo.Geometry) uint8 {
+	s := ed25519.Scheme()
+	key, err := s.UnmarshalBinaryPublicKey(w.BoxID[:])
+	if err != nil {
+		return pigeonhole.ReplicaErrorInvalidBoxID
+	}
+	if len(w.Payload) != 0 && geo != nil && len(w.Payload) != geo.CalculateBoxCiphertextLength() {
+		return pigeonhole.ReplicaErrorInvalidPayload
+	}
+	if !s.Verify(key, w.Payload, w.Signature[:], nil) {
+		return pigeonhole.ReplicaErrorInvalidSignature
+	}
+	return pigeonhole.ReplicaSuccess
+}
+
 func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
 	c.log.Debug("Handling replica write request")
 
 	// Check if this is a tombstone (empty payload)
 	isTombstone := replicaWrite.PayloadLen == 0 || len(replicaWrite.Payload) == 0
 
+	if code := verifyReplicaWrite(replicaWrite, c.l.server.pigeonholeGeo); code != pigeonhole.ReplicaSuccess {
+		c.log.Errorf("handleReplicaWrite refused: %s", pigeonhole.ReplicaErrorToString(code))
+		return &pigeonhole.ReplicaWriteReply{ErrorCode: code}
+	}
+
 	var reply *pigeonhole.ReplicaWriteReply
 	if isTombstone {
 		reply = c.handleTombstone(replicaWrite)
 	} else {
-		// Validate payload size against geometry limits.
-		// The payload is BACAP ciphertext, which must be exactly the expected size.
-		expectedCiphertextSize := c.l.server.pigeonholeGeo.CalculateBoxCiphertextLength()
-		if len(replicaWrite.Payload) != expectedCiphertextSize {
-			c.log.Errorf("handleReplicaWrite invalid payload size: got %d bytes, expected exactly %d bytes",
-				len(replicaWrite.Payload), expectedCiphertextSize)
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorInvalidPayload,
-			}
-		}
-
-		// Normal write path
-		s := ed25519.Scheme()
-		verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
-		if err != nil {
-			c.log.Errorf("handleReplicaWrite failed to unmarshal BoxID as public key: %v", err)
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorInvalidBoxID,
-			}
-		}
-		if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
-			c.log.Error("handleReplicaWrite signature verification failed")
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
-			}
-		}
 		// Convert trunnel type to wire command for state handling.
 		// state.handleReplicaWrite performs the check-and-put atomically
 		// under a per-BoxID lock; no pre-check is needed here.
 		wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, nil)
-		err = c.l.server.state.handleReplicaWrite(wireWrite)
+		err := c.l.server.state.handleReplicaWrite(wireWrite)
 		if err != nil {
 			// Check if this is the "already exists" case - this is expected during replication
 			if errors.Is(err, ErrBoxAlreadyExists) {
@@ -424,25 +424,9 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 func (c *incomingConn) handleTombstone(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
 	c.log.Debug("Processing tombstone")
 
-	// Verify the signature against an empty payload
-	s := ed25519.Scheme()
-	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
-	if err != nil {
-		c.log.Errorf("handleTombstone failed to unmarshal BoxID as public key: %v", err)
-		return &pigeonhole.ReplicaWriteReply{
-			ErrorCode: pigeonhole.ReplicaErrorInvalidBoxID,
-		}
-	}
-
-	if !s.Verify(verifyKey, []byte{}, replicaWrite.Signature[:], nil) {
-		c.log.Error("handleTombstone signature verification failed")
-		return &pigeonhole.ReplicaWriteReply{
-			ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
-		}
-	}
-
-	// Store the tombstone (empty payload with signature) in the database
-	err = c.l.server.state.handleReplicaTombstone(replicaWrite.BoxID, replicaWrite.Signature)
+	// Store the tombstone (empty payload with signature) in the database;
+	// handleReplicaWrite verified the signature over the empty payload.
+	err := c.l.server.state.handleReplicaTombstone(replicaWrite.BoxID, replicaWrite.Signature)
 	if err != nil {
 		c.log.Errorf("handleTombstone storage failed: %v", err)
 		return &pigeonhole.ReplicaWriteReply{
@@ -453,6 +437,41 @@ func (c *incomingConn) handleTombstone(replicaWrite *pigeonhole.ReplicaWrite) *p
 	c.log.Debug("Tombstone processed successfully")
 	return &pigeonhole.ReplicaWriteReply{
 		ErrorCode: pigeonhole.ReplicaSuccess,
+	}
+}
+
+// buildRepairWrite synthesizes a wire ReplicaWrite from a successfully
+// proxied read reply. BACAP boxes are self-authenticating (the signature
+// verifies against the BoxID), so replaying one as a write is safe.
+func buildRepairWrite(readReply *pigeonhole.ReplicaReadReply, cmds *commands.Commands) *commands.ReplicaWrite {
+	boxID := &[32]byte{}
+	copy(boxID[:], readReply.BoxID[:])
+	signature := &[64]byte{}
+	copy(signature[:], readReply.Signature[:])
+	return &commands.ReplicaWrite{
+		Cmds:      cmds,
+		BoxID:     boxID,
+		Signature: signature,
+		Payload:   readReply.Payload,
+	}
+}
+
+// readRepair replicates a successfully proxied box to the shard holders
+// that answered box-not-found for it. Those holders missed the box's
+// original replication, and this heals the divergence lazily on the
+// read path. Holders that failed to answer at all are deliberately not
+// passed here: silence is evidence about the link, not about storage.
+// The connector's retry queue provides delivery with dedup once a
+// holder returns; on a fixed-throughput mesh link the repair write
+// displaces a decoy, so the traffic shape is unchanged.
+func (c *incomingConn) readRepair(readReply *pigeonhole.ReplicaReadReply, holders []*pki.ReplicaDescriptor) {
+	scheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+	cmds := commands.NewStorageReplicaCommands(c.l.server.cfg.SphinxGeometry, scheme)
+	write := buildRepairWrite(readReply, cmds)
+	for _, holder := range holders {
+		idHash := hash.Sum256(holder.IdentityKey)
+		c.log.Noticef("Read-repair: replicating box to %s, which reported it missing", holder.Name)
+		c.l.server.connector.DispatchCommand(write, &idHash)
 	}
 }
 
@@ -678,11 +697,109 @@ func (c *incomingConn) proxyToShardWithSlot(targetShard *pki.ReplicaDescriptor, 
 	return c.proxyToShard(targetShard, replicaEpoch, innerMessageBlob, scheme, nikeScheme, deadline, candidatesLeft)
 }
 
+// proxyReadResult is what one failover sweep across a box's shard
+// holders produced.
+type proxyReadResult struct {
+	// readReply is the answer to hand back to the client: the first
+	// authoritative one if a holder gave us one, otherwise the last
+	// non-authoritative one seen. Nil if no holder answered at all.
+	readReply *pigeonhole.ReplicaReadReply
+
+	// missingBox holds the shard holders that answered
+	// ReplicaErrorBoxIDNotFound. These, and only these, are known to
+	// be missing a box their co-holder may have, so these and only
+	// these are candidates for read-repair.
+	missingBox []*pki.ReplicaDescriptor
+
+	// bareReply is the last reply that arrived with no envelope, from
+	// a holder that failed before it could encrypt anything. Kept only
+	// to surface its error code when no holder produced a readReply.
+	bareReply *commands.ReplicaMessageReply
+}
+
+// decryptProxyReadReply unseals one shard holder's reply and returns
+// the read reply inside it. A non-nil error means this exchange was
+// unusable (undecryptable, malformed, or carrying no read reply),
+// which says nothing about what the holder stores.
+func (c *incomingConn) decryptProxyReadReply(reply *commands.ReplicaMessageReply, mkemPrivateKey nike.PrivateKey, targetEnvelopeKey nike.PublicKey, scheme *mkem.Scheme) (*pigeonhole.ReplicaReadReply, error) {
+	decrypted, err := scheme.DecryptEnvelope(mkemPrivateKey, targetEnvelopeKey, reply.EnvelopeReply)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt proxy reply envelope: %v", err)
+	}
+	replyBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(decrypted)
+	if err != nil {
+		return nil, fmt.Errorf("extract padded reply inner message: %v", err)
+	}
+	inner, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(replyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse proxy reply inner message: %v", err)
+	}
+	if inner.ReadReply == nil {
+		return nil, errors.New("proxy reply does not contain a read reply")
+	}
+	return inner.ReadReply, nil
+}
+
+// proxyReadSweep tries the randomly chosen holder first and then the
+// rest, and reports both the answer and which holders are missing the
+// box. One sick shard replica must degrade to its live peer rather
+// than into a client-visible error.
+//
+// The distinction the caller needs is between a holder that did not
+// answer and a holder that answered "I do not have it", because only
+// the second is evidence about storage. Silence means the link is
+// congested or the peer is down; pushing a full-payload repair write
+// at such a peer only deepens whatever caused the silence. A
+// box-not-found answer, by contrast, is a holder demonstrably missing
+// a box its co-holder may hold, which is the divergence read-repair
+// exists to heal, and it must not end the sweep or the co-holder is
+// never asked.
+func (c *incomingConn) proxyReadSweep(shards []*pki.ReplicaDescriptor, first int, replicaEpoch uint64, innerMessageBlob []byte, scheme *mkem.Scheme, nikeScheme nike.Scheme) proxyReadResult {
+	var result proxyReadResult
+	deadline := c.proxySweepBudget()
+	order := proxyShardOrder(shards, first)
+	for i, candidate := range order {
+		reply, mkemPrivateKey, targetEnvelopeKey, err := c.proxyToShardWithSlot(candidate, replicaEpoch, innerMessageBlob, scheme, nikeScheme, deadline, len(order)-i)
+		if err != nil {
+			c.log.Errorf("proxyReadRequest: proxy to %s failed: %v", candidate.Name, err)
+			continue
+		}
+		if len(reply.EnvelopeReply) == 0 {
+			mkemPrivateKey.Reset()
+			c.log.Warningf("proxyReadRequest: %s replied without an envelope, error code %d", candidate.Name, reply.ErrorCode)
+			result.bareReply = reply
+			continue
+		}
+		readReply, err := c.decryptProxyReadReply(reply, mkemPrivateKey, targetEnvelopeKey, scheme)
+		mkemPrivateKey.Reset()
+		if err != nil {
+			c.log.Errorf("proxyReadRequest: unusable reply from %s: %v", candidate.Name, err)
+			continue
+		}
+
+		result.readReply = readReply
+		switch readReply.ErrorCode {
+		case pigeonhole.ReplicaSuccess, pigeonhole.ReplicaErrorTombstone:
+			// Authoritative. A tombstone is the true state of the box
+			// rather than a miss, so it ends the sweep and provokes no
+			// repair.
+			c.log.Debugf("proxyReadRequest: %s answered authoritatively with error code %d", candidate.Name, readReply.ErrorCode)
+			return result
+		case pigeonhole.ReplicaErrorBoxIDNotFound:
+			c.log.Noticef("proxyReadRequest: %s does not hold the box, trying the next holder", candidate.Name)
+			result.missingBox = append(result.missingBox, candidate)
+		default:
+			c.log.Warningf("proxyReadRequest: %s answered with error code %d, trying the next holder", candidate.Name, readReply.ErrorCode)
+		}
+	}
+	return result
+}
+
 // proxyWriteRequest forwards a write request to the appropriate shard replica
 // and returns the reply that should be sent back to the original client.
 // This is used when an intermediate replica receives a write for a BoxID
 // that it doesn't shard - it proxies to a shard replica to get the actual result.
-func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, originalSenderPubkey nike.PublicKey, originalEnvelopeHash *[32]byte) *commands.ReplicaMessageReply {
+func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, originalSenderPubkey nike.PublicKey, originalEnvelopeHash *[32]byte, requestReplyKey nike.PrivateKey) *commands.ReplicaMessageReply {
 	// Input validation
 	if replicaWrite == nil {
 		c.log.Error("proxyWriteRequest: replicaWrite is nil")
@@ -718,13 +835,9 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 		c.log.Errorf("proxyWriteRequest: choosing the first shard candidate failed: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
 	}
-	// Get current replica epoch and keypair
+	// Forward using current holder keys; reply using the original request's
+	// decapsulation key, whose lease the handler retains through this wait.
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
-	if err != nil {
-		c.log.Errorf("proxyWriteRequest: failed to get keypair: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
 
 	// Create MKEM scheme
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
@@ -806,7 +919,7 @@ func (c *incomingConn) proxyWriteRequest(replicaWrite *pigeonhole.ReplicaWrite, 
 			c.log.Errorf("proxyWriteRequest: failed to pad write reply: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
 		}
-		envelopeReply, err := scheme.EnvelopeReply(keypair.PrivateKey, originalSenderPubkey, newReplyInnerMessageBlob)
+		envelopeReply, err := scheme.EnvelopeReply(requestReplyKey, originalSenderPubkey, newReplyInnerMessageBlob)
 		if err != nil {
 			c.log.Errorf("proxyWriteRequest: failed to seal write reply: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)

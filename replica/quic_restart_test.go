@@ -35,7 +35,7 @@ func runQuicRestartChild(t *testing.T, addr string) {
 	require.NoError(t, err)
 	backend, err := log.New("", "ERROR", false)
 	require.NoError(t, err)
-	quicKeys, err := common.NewEpochKeys(filepath.Join(filepath.Dir(os.Getenv(quicRestartChildKey)), "quic"), common.CurrentEpoch)
+	quicKeys, err := common.NewEpochKeys(filepath.Join(filepath.Dir(os.Getenv(quicRestartChildKey)), "quic"), common.CurrentEpoch, nil)
 	require.NoError(t, err)
 	server := &Server{cfg: &config.Config{}, logBackend: backend, identityPrivateKey: identityPrivateKey, quicKeys: quicKeys}
 	_, err = newListener(server, 0, "quic://"+addr)

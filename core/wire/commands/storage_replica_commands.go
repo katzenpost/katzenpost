@@ -11,8 +11,8 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 
 	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
