@@ -400,14 +400,15 @@ func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *p
 // verifyReplicaWrite is the one rule for a box offered to this replica, by a
 // client, a peer or the bridge: the Box ID parses as an Ed25519 key, the
 // signature verifies under it over the ciphertext, and the ciphertext is
-// exactly the geometry's box size unless it is a tombstone (empty).
-func verifyReplicaWrite(w *pigeonhole.ReplicaWrite, geo *pgeo.Geometry) uint8 {
+// exactly the box size of the geometry or of one of the extra plaintext
+// lengths (BoxPayloadLengths), unless it is a tombstone (empty).
+func verifyReplicaWrite(w *pigeonhole.ReplicaWrite, geo *pgeo.Geometry, extra []int) uint8 {
 	s := ed25519.Scheme()
 	key, err := s.UnmarshalBinaryPublicKey(w.BoxID[:])
 	if err != nil {
 		return pigeonhole.ReplicaErrorInvalidBoxID
 	}
-	if len(w.Payload) != 0 && geo != nil && len(w.Payload) != geo.CalculateBoxCiphertextLength() {
+	if len(w.Payload) != 0 && geo != nil && !isBoxSize(len(w.Payload), geo, extra) {
 		return pigeonhole.ReplicaErrorInvalidPayload
 	}
 	if !s.Verify(key, w.Payload, w.Signature[:], nil) {
@@ -416,13 +417,25 @@ func verifyReplicaWrite(w *pigeonhole.ReplicaWrite, geo *pgeo.Geometry) uint8 {
 	return pigeonhole.ReplicaSuccess
 }
 
+func isBoxSize(n int, geo *pgeo.Geometry, extra []int) bool {
+	if n == geo.CalculateBoxCiphertextLength() {
+		return true
+	}
+	for _, l := range extra {
+		if n == (&pgeo.Geometry{MaxPlaintextPayloadLength: l}).CalculateBoxCiphertextLength() {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
 	c.log.Debug("Handling replica write request")
 
 	// Check if this is a tombstone (empty payload)
 	isTombstone := replicaWrite.PayloadLen == 0 || len(replicaWrite.Payload) == 0
 
-	if code := verifyReplicaWrite(replicaWrite, c.l.server.pigeonholeGeo); code != pigeonhole.ReplicaSuccess {
+	if code := verifyReplicaWrite(replicaWrite, c.l.server.pigeonholeGeo, c.l.server.cfg.BoxPayloadLengths); code != pigeonhole.ReplicaSuccess {
 		c.log.Errorf("handleReplicaWrite refused: %s", pigeonhole.ReplicaErrorToString(code))
 		return &pigeonhole.ReplicaWriteReply{ErrorCode: code}
 	}

@@ -13,12 +13,15 @@ import (
 
 	"golang.org/x/net/idna"
 
+	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
+
 	"github.com/katzenpost/katzenpost/common/config"
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 
 	quicCommon "github.com/katzenpost/katzenpost/quic/common"
 )
@@ -98,6 +101,13 @@ type Config struct {
 	// which this replica serves a Reticulum mesh replica on the same host:
 	// boxes the mesh pushes in, and boxes it pulls out. Empty disables it.
 	BridgeSocket string `toml:",omitempty"`
+
+	// BoxPayloadLengths lists the plaintext payload lengths of box sizes
+	// this replica stores besides the default geometry's, such as a
+	// Reticulum mesh's smaller profile forwarded by a bridge. Only the
+	// payload differs; each must be positive and less than the default.
+	// Every replica on the network must list the same lengths.
+	BoxPayloadLengths []int `toml:",omitempty"`
 
 	// ConnectTimeout specifies the maximum time a connection can take to
 	// establish a TCP/IP connection in milliseconds.
@@ -233,6 +243,9 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 
 	if c.BridgeSocket != "" && !filepath.IsAbs(c.BridgeSocket) {
 		return fmt.Errorf("config: Server: BridgeSocket '%v' is not an absolute path", c.BridgeSocket)
+	}
+	if err := c.validateBoxPayloadLengths(); err != nil {
+		return err
 	}
 	if err := c.validateDataDirectory(); err != nil {
 		return err
@@ -462,6 +475,27 @@ func (c *Config) setupDefaultAddress() error {
 		return err
 	}
 	c.Addresses = []string{"tcp://" + addr.String() + defaultAddress}
+	return nil
+}
+
+func (c *Config) validateBoxPayloadLengths() error {
+	if len(c.BoxPayloadLengths) == 0 {
+		return nil
+	}
+	scheme := nikeSchemes.ByName(c.ReplicaNIKEScheme)
+	if scheme == nil || c.SphinxGeometry == nil {
+		return errors.New("config: BoxPayloadLengths needs SphinxGeometry and a valid ReplicaNIKEScheme")
+	}
+	pg, err := pgeo.NewGeometryFromSphinx(c.SphinxGeometry, scheme)
+	if err != nil {
+		return fmt.Errorf("config: BoxPayloadLengths: %w", err)
+	}
+	for _, n := range c.BoxPayloadLengths {
+		// A box larger than the default would not fit the envelopes.
+		if n <= 0 || n >= pg.MaxPlaintextPayloadLength {
+			return fmt.Errorf("config: BoxPayloadLengths: %d is not in (0, %d)", n, pg.MaxPlaintextPayloadLength)
+		}
+	}
 	return nil
 }
 
