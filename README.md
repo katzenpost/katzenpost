@@ -4,21 +4,28 @@
 [![linux unit tests](https://github.com/katzenpost/katzenpost/actions/workflows/linux.yml/badge.svg?branch=main)](https://github.com/katzenpost/katzenpost/actions/workflows/linux.yml)
 [![Release](https://img.shields.io/github/v/release/katzenpost/katzenpost)](https://github.com/katzenpost/katzenpost/releases/latest)
 
-The servers and client daemon of the [Katzenpost](https://katzenpost.network) post-quantum mix
-network: the mix server, the directory authority, the courier and replica that carry
-[Pigeonhole](https://katzenpost.network/docs/pigeonhole_explained/)'s asynchronous
-communication, and `kpclientd`. The design is in the
-[Echomix paper](https://arxiv.org/abs/2501.02933). Katzenpost is pre-alpha and has not been
-audited.
+This repository holds two things for the [Katzenpost](https://katzenpost.network) post-quantum
+mix network:
+
+1. `kpclientd`, the client daemon through which applications reach the mixnet, shipped as the
+   `kpclientd` package;
+2. everything else, which is mostly server-side mixnet infrastructure: the mix server, the
+   directory authority, the courier and replica that carry
+   [Pigeonhole](https://katzenpost.network/docs/pigeonhole_explained/)'s asynchronous
+   communication, and the operator tools, shipped as the `katzenpost` package.
+
+The design is in the [Echomix paper](https://arxiv.org/abs/2501.02933). Katzenpost is
+pre-alpha and has not been audited.
 
 ![An application talks to kpclientd, which sends Sphinx packets through the gateway and the mix layers to a service node, whose courier relays Pigeonhole messages to the replicas. The directory authorities publish the PKI document that every node and client reads.](docs/architecture.svg)
 
-## Use the mixnet
+## kpclientd
 
 Applications such as [katzenqt](https://github.com/katzenpost/katzenqt) and
-[hushphone](https://github.com/katzenpost/hushphone) connect to `kpclientd`. The
-[latest release](https://github.com/katzenpost/katzenpost/releases/latest) has `kpclientd` debs
-for Debian 13, Debian forky and Ubuntu 24.04 and 26.04, configured for namenlos, the public
+[hushphone](https://github.com/katzenpost/hushphone) connect to `kpclientd`; to write one, use
+[thin_client](https://github.com/katzenpost/thin_client). The
+[latest release](https://github.com/katzenpost/katzenpost/releases/latest) has `kpclientd`
+debs for Debian 13, Debian forky and Ubuntu 24.04 and 26.04, configured for namenlos, the public
 network, and archives for Linux, macOS and Windows:
 
 ```sh
@@ -35,12 +42,10 @@ mkdir -p "$XDG_RUNTIME_DIR/katzenpost"
 cmd/kpclientd/kpclientd -c docker/client-configs/namenlos.toml
 ```
 
-To write an application, use [thin_client](https://github.com/katzenpost/thin_client).
+## Server-side infrastructure
 
-## Run a network
-
-The `katzenpost` deb installs the servers and tools, with `kpserver@`, `kpauthority@` and
-`kpreplica@` as systemd template units, shipped disabled. See the
+The `katzenpost` deb installs the servers and operator tools, with `kpserver@`, `kpauthority@`
+and `kpreplica@` as systemd template units, shipped disabled. See the
 [admin guide](https://katzenpost.network/docs/admin_guide/), [kno](https://github.com/katzenpost/kno),
 which builds and checks a network, and [CONFIG_CHANGES.md](CONFIG_CHANGES.md) when you upgrade.
 To run a test network on one machine with podman or docker:
