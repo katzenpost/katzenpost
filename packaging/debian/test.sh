@@ -7,7 +7,7 @@ for b in clientd config server dirauth courier replica genconfig \
     test -x "/usr/bin/kp$b" \
         || { printf '%s\n' "missing kp$b" >&2; exit 1; }
 done
-for p in $(dpkg-query -L katzenpost | grep '^/usr/bin/'); do
+for p in $(dpkg-query -L katzenpost kpclientd | grep '^/usr/bin/'); do
     case ${p#/usr/bin/} in
     kp*) ;;
     *) printf '%s\n' "$p is not prefixed with kp" >&2; exit 1 ;;
@@ -16,8 +16,15 @@ done
 test -x /usr/bin/ping
 dpkg-query -S /usr/bin/ping | grep -q iputils-ping
 
-test -f /etc/katzenpost/kpclientd.toml
-test -f /etc/katzenpost/thinclient.toml
+for f in /usr/bin/kpclientd /etc/katzenpost/kpclientd.toml \
+         /etc/katzenpost/thinclient.toml \
+         /usr/lib/systemd/system/kpclientd.service \
+         /usr/lib/systemd/user/kpclientd.service; do
+    test -f "$f" && test "$(dpkg-query -S "$f" | cut -d: -f1)" = kpclientd \
+        || { printf '%s\n' "$f is not in the kpclientd package" >&2; exit 1; }
+done
+test "$(dpkg-query -L kpclientd | grep -c '^/usr/bin/')" = 1 \
+    || { printf '%s\n' "kpclientd ships more than kpclientd" >&2; exit 1; }
 for d in server authority replica; do
     test -d "/etc/katzenpost/$d" \
         || { printf '%s\n' "missing /etc/katzenpost/$d" >&2; exit 1; }

@@ -1,3 +1,10 @@
+katzenpost (0.0.111) unstable; urgency=medium
+
+  * Split into two packages: kpclientd, the client daemon, and katzenpost,
+    the servers and tools.
+
+ -- Katzenpost <packages@katzenpost.network>  Fri, 06 Nov 2026 10:00:00 +0000
+
 katzenpost (0.0.110) unstable; urgency=medium
 
   * Release 0.0.110: pigeonservice split into common, voucher_router and
