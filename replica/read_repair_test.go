@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 
@@ -152,6 +152,33 @@ func TestReadRepairsForgetOldest(t *testing.T) {
 	r.remember(&h, &h, now)
 	_, ok = r.take(&h, now.Add(readRepairTTL+time.Second))
 	require.False(t, ok, "an expired read was repaired")
+}
+
+// TestReadRepairsOneRecordPerHash remembers one read more often than the
+// bound allows, then remembers and takes it repeatedly: one record stays
+// queued at most, and the other reads are kept.
+func TestReadRepairsOneRecordPerHash(t *testing.T) {
+	var r readRepairs
+	now := time.Now()
+	other := [32]byte{9}
+	r.remember(&other, &other, now)
+	h := [32]byte{1}
+	for i := 0; i < maxReadRepairs+10; i++ {
+		r.remember(&h, &h, now)
+	}
+	require.Equal(t, 2, r.order.Len())
+	require.Len(t, r.boxes, 2)
+	_, ok := r.take(&other, now)
+	require.True(t, ok, "repeated reads of one hash evicted another")
+
+	for i := 0; i < maxReadRepairs+10; i++ {
+		r.remember(&h, &h, now)
+		got, ok := r.take(&h, now)
+		require.True(t, ok)
+		require.Equal(t, h, got)
+	}
+	require.Zero(t, r.order.Len())
+	require.Empty(t, r.boxes)
 }
 
 func TestBuildRepairWrite(t *testing.T) {

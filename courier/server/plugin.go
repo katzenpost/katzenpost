@@ -790,7 +790,8 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		e.log.Debugf("Found reply [len:%d err:%d] at requested index %d for %v", len(payload), entry.ErrorCode, courierMessage.ReplyIndex, envHash)
 		oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1]
 		otherServable := oentry != nil && len(oentry.EnvelopeReply) > 0
-		otherSupersedes := len(payload) == 0 || (entry.ErrorCode == pigeonhole.ReplicaErrorBoxIDNotFound && oentry != nil && oentry.ErrorCode == pigeonhole.ReplicaSuccess)
+		otherSupersedes := len(payload) == 0 || (entry.ErrorCode == pigeonhole.ReplicaErrorBoxIDNotFound && oentry != nil &&
+			(oentry.ErrorCode == pigeonhole.ReplicaSuccess || oentry.ErrorCode == pigeonhole.ReplicaErrorTombstone))
 		if otherServable && otherSupersedes {
 			e.log.Debugf("entry at idx %v is empty or box-not-found [len:%d err:%d]; using other index with [len:%d err:%d]", courierMessage.ReplyIndex, len(payload), entry.ErrorCode, len(oentry.EnvelopeReply), oentry.ErrorCode)
 			courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1

@@ -142,6 +142,21 @@ func TestReadSplitAnswerHintsHolder(t *testing.T) {
 	}
 }
 
+// TestReadNotFoundThenTombstone serves the other holder's tombstone, not
+// the box-not-found, at either index.
+func TestReadNotFoundThenTombstone(t *testing.T) {
+	courier := createTestCourier(t)
+	envelope, envHash := shardReadEntry(t, courier, time.Now())
+
+	cacheReadReply(courier, envHash, 2, pigeonhole.ReplicaErrorBoxIDNotFound, "not-found")
+	cacheReadReply(courier, envHash, 0, pigeonhole.ReplicaErrorTombstone, "tombstone")
+	for _, idx := range []uint8{0, 1} {
+		reply := pollAt(courier, envelope, idx)
+		require.Equal(t, pigeonhole.ReplyTypePayload, reply.ReplyType)
+		require.Equal(t, []byte("tombstone"), reply.Payload, "poll at %d", idx)
+	}
+}
+
 func TestReadTombstoneSplitAnswerHintsHolder(t *testing.T) {
 	courier := createTestCourier(t)
 	_, envHash := shardReadEntry(t, courier, time.Now())
