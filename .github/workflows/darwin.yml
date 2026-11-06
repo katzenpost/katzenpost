@@ -9,8 +9,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
-        arch: [amd64, arm64]
+        runner:
+          - { os: macos-15, arch: arm64 }
+          - { os: macos-latest, arch: arm64 }
+          - { os: macos-15-intel, arch: amd64 }
         go-version: ["1.26.x"]
         test-suite:
           - { name: "authority", path: "authority", timeout: "30m" }
@@ -20,8 +22,8 @@ jobs:
           - { name: "server", path: "server", timeout: "30m" }
           - { name: "pigeonhole", path: "pigeonhole", timeout: "30m" }
           - { name: "pigeonservice", path: "pigeonservice", timeout: "30m" }
-    runs-on: ${{ matrix.os }}
-    name: test-${{ matrix.test-suite.name }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner.os }}
+    name: test-${{ matrix.test-suite.name }}-${{ matrix.runner.os }}-${{ matrix.runner.arch }}
     steps:
       - name: Install Go
         uses: actions/setup-go@v5
@@ -37,10 +39,10 @@ jobs:
           path: |
             ~/Library/Caches/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          key: ${{ matrix.runner.os }}-${{ matrix.runner.arch }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-go-${{ matrix.go-version }}-
-            ${{ runner.os }}-${{ matrix.arch }}-go-
+            ${{ matrix.runner.os }}-${{ matrix.runner.arch }}-go-${{ matrix.go-version }}-
+            ${{ matrix.runner.os }}-${{ matrix.runner.arch }}-go-
 
       - name: Generate mixnet configuration
         run: cd cmd/genconfig && go build && ./genconfig --wirekem KYBER768-X25519 --port 35000 --voting --baseDir /conf --outDir ../../docker/mixnet-alpine/
