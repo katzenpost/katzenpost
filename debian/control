@@ -8,22 +8,34 @@ Standards-Version: 4.7.2
 Homepage: https://katzenpost.network/
 Rules-Requires-Root: no
 
+Package: kpclientd
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Breaks: katzenpost (<< 0.0.111~)
+Replaces: katzenpost (<< 0.0.111~)
+Description: client daemon of the Katzenpost mix network
+ kpclientd connects to a Katzenpost mix network and lets client
+ applications send and receive messages through it over a local socket.
+ .
+ It gets a system and a user unit, both shipped disabled and unstarted.
+ kpclientd.toml and thinclient.toml hold no secrets and are conffiles;
+ editing them points the client daemon at another network.
+
 Package: katzenpost
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: Katzenpost mix network
- Every katzenpost binary, each installed under a kp prefix so that no
- generic name is claimed in /usr/bin: kpserver, kpdirauth, kpcourier and
- kpreplica, the kpclientd client daemon, and the kpconfig, kpgenconfig,
+Recommends: kpclientd
+Description: mix network servers and tools of Katzenpost
+ The katzenpost binaries for running a mix network, each installed under
+ a kp prefix so that no generic name is claimed in /usr/bin: kpserver,
+ kpdirauth, kpcourier and kpreplica, and the kpconfig, kpgenconfig,
  kpgenkeypair, kpgeometry, kpsphinx, kpping, kpmotd, kpfetch,
- kpecho-plugin and kphttp-proxy tools.
+ kpecho-plugin and kphttp-proxy tools. The client daemon is in the
+ kpclientd package.
  .
- kpclientd gets a system and a user unit, and kpserver, kpauthority and
- kpreplica are template units, so one host can run several of each. Every
- unit ships disabled and unstarted.
+ kpserver, kpauthority and kpreplica are template units, so one host can
+ run several of each. Every unit ships disabled and unstarted.
  .
  An instance named foo reads /etc/katzenpost/<role>/foo.toml and keeps its
  state in /var/lib/katzenpost/<role>/foo, mode 0700, so two instances
- never share a directory. kpclientd.toml and thinclient.toml hold no
- secrets and are conffiles; editing them points the client daemon at
- another network.
+ never share a directory.
