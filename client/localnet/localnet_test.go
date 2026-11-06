@@ -14,7 +14,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 
 	"github.com/katzenpost/katzenpost/client/localnet"
-	ps "github.com/katzenpost/katzenpost/pigeonservice"
+	"github.com/katzenpost/katzenpost/pigeonservice/common"
 )
 
 func testCtx(t *testing.T) context.Context {
@@ -50,19 +50,19 @@ func TestPigeonholeRoundTrip(t *testing.T) {
 	n.AddStorage(3)
 	n.Start()
 
-	ph := ps.NewThinPigeonhole(n.ThinClient())
+	ph := common.NewThinPigeonhole(n.ThinClient())
 	ctx := testCtx(t)
 	wc, rc, first, err := ph.NewStream()
 	require.NoError(t, err)
 	idx := first
 	for _, m := range []string{"first box", "second box"} {
-		idx, err = ps.WriteRetry(ctx, ph, wc, idx, []byte(m))
+		idx, err = common.WriteRetry(ctx, ph, wc, idx, []byte(m))
 		require.NoError(t, err)
 	}
 	idx = first
 	for _, m := range []string{"first box", "second box"} {
 		var got []byte
-		got, idx, err = ps.ReadWait(ctx, ph, rc, idx, 100*time.Millisecond)
+		got, idx, err = common.ReadWait(ctx, ph, rc, idx, 100*time.Millisecond)
 		require.NoError(t, err)
 		require.Equal(t, m, string(got))
 	}
