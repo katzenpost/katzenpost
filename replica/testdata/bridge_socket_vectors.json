@@ -1,5 +1,5 @@
 {
- "description": "Bridge socket between a Katzenpost replica and a Pigeonhole mesh replica: each message is a big endian u32 length then the payload. Queries: READ=0 | box_id(32); WRITE=1 | box_id(32) | signature(64) | ciphertext (empty for a tombstone). Replies: code(1) and, for a found box, signature(64) | ciphertext. Boxes: what a replica answers a write with, given the box ciphertext size.",
+ "description": "Bridge socket between a Katzenpost replica and a Pigeonhole mesh replica: each message is a big endian u32 length then the payload. Queries: READ=0 | box_id(32); WRITE=1 | box_id(32) | signature(64) | ciphertext (empty for a tombstone). Replies: code(1) and, for a found box, signature(64) | ciphertext. SUBSCRIBE=2 | since_epoch(u64 big endian) turns the connection into a stream of announces, with no reply: epoch(u64 big endian) | box_id(32) | signature(64) | ciphertext (empty for a tombstone), first every box stored in a kept epoch at or after since_epoch, then each newly stored box. Boxes: what a replica answers a write with, given the box ciphertext size.",
  "queries": [
   {
    "name": "read",
@@ -83,6 +83,14 @@
   {
    "name": "unknown_kind",
    "payload": "070102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+  },
+  {
+   "name": "subscribe_short",
+   "payload": "0200000000000b76"
+  },
+  {
+   "name": "subscribe_trailing",
+   "payload": "0200000000000b760000"
   }
  ],
  "boxes": [
@@ -133,6 +141,40 @@
    "signature": "8cdaac3cc7a4cc9042fc444f1d538acf2e2159c8271daab04f4eb56123f3eecbe531b4d7701a94b61373032dc5907b27e5f29209090b4abf3640ba6c2e0d190e",
    "ciphertext": "0bfeb9b6e574341f4281b48dc05e631132806b0cf07a26e0b82e679805812ef8b458f972cfc35d5e21c36d56233bad0678e973a4aaae2fcc2048cd88c92831411cf540f9989fe09e8f1c2aecaf2307a8a6e385fea1e667b98c8bc18012d61206daada697b4c462b7e9b7521c97ea637b3515cb2b5ef871",
    "expect": 5
+  }
+ ],
+ "subscribe": [
+  {
+   "name": "from_zero",
+   "since": 0,
+   "payload": "020000000000000000",
+   "frame": "00000009020000000000000000"
+  },
+  {
+   "name": "from_epoch",
+   "since": 2934,
+   "payload": "020000000000000b76",
+   "frame": "00000009020000000000000b76"
+  }
+ ],
+ "announces": [
+  {
+   "name": "box",
+   "epoch": 2934,
+   "box_id": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+   "signature": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "ciphertext": "61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573",
+   "payload": "0000000000000b760102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573",
+   "frame": "000000910000000000000b760102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573"
+  },
+  {
+   "name": "tombstone",
+   "epoch": 2934,
+   "box_id": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+   "signature": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "ciphertext": "",
+   "payload": "0000000000000b760102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "frame": "000000680000000000000b760102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
   }
  ]
 }
