@@ -46,3 +46,19 @@ func TestFixupAndValidatePreservesExplicitLogFile(t *testing.T) {
 	require.NoError(t, cfg.FixupAndValidate())
 	require.Equal(t, "/var/log/katzenpost/courier.log", cfg.Logging.File)
 }
+
+func TestFixupAndValidateDefaultsMaxDedupCacheEntries(t *testing.T) {
+	cfg := newValidCourierConfig()
+	require.NoError(t, cfg.FixupAndValidate())
+	require.Equal(t, DefaultMaxDedupCacheEntries, cfg.MaxDedupCacheEntries)
+
+	cfg = newValidCourierConfig()
+	cfg.MaxDedupCacheEntries = -1
+	require.NoError(t, cfg.FixupAndValidate())
+	require.Equal(t, DefaultMaxDedupCacheEntries, cfg.MaxDedupCacheEntries)
+
+	cfg = newValidCourierConfig()
+	cfg.MaxDedupCacheEntries = 1234
+	require.NoError(t, cfg.FixupAndValidate())
+	require.Equal(t, 1234, cfg.MaxDedupCacheEntries)
+}

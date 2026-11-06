@@ -16,12 +16,12 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	kemPEM "github.com/katzenpost/hpqc/kem/pem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
 	nikePem "github.com/katzenpost/hpqc/nike/pem"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signPem "github.com/katzenpost/hpqc/sign/pem"

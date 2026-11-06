@@ -53,6 +53,20 @@ func (c *epochPKIClient) Deserialize(raw []byte) (*cpki.Document, error) {
 	return &cpki.Document{Epoch: binary.BigEndian.Uint64(raw), SphinxGeometryHash: c.geometryHash}, nil
 }
 
+// epochNow is the current epoch, after waiting out a boundary about to pass:
+// these tests take the epoch here and expect the worker, started a moment
+// later, to see the same one. Katzenpost epochs are 20 minutes aligned to
+// the hour, so CI runs that start at :00, :20 or :40 crossed it.
+func epochNow(t *testing.T) uint64 {
+	t.Helper()
+	epoch, _, till := epochtime.Now()
+	if till < 10*time.Second {
+		time.Sleep(till + 100*time.Millisecond)
+		epoch, _, _ = epochtime.Now()
+	}
+	return epoch
+}
+
 func newRefetchPKI(t *testing.T, timeSync bool, cached ...uint64) (*pki, *countingConsensusGetter) {
 	cfg, err := config.LoadFile(testClientTOML)
 	require.NoError(t, err)
@@ -80,7 +94,7 @@ func newRefetchPKI(t *testing.T, timeSync bool, cached ...uint64) (*pki, *counti
 }
 
 func TestPKIWorkerRefetchesCachedDocumentOnReconnect(t *testing.T) {
-	epoch, _, _ := epochtime.Now()
+	epoch := epochNow(t)
 	p, g := newRefetchPKI(t, false, epoch, epoch+1)
 	p.Go(p.worker)
 	require.Eventually(t, func() bool { return g.count(epoch) >= 1 }, 5*time.Second, 10*time.Millisecond)
@@ -107,6 +121,7 @@ func waitPKIPass(t *testing.T, passes <-chan uint64) uint64 {
 
 func TestPKIWorkerRefetchesCachedDocumentOnEpochChange(t *testing.T) {
 	period := epochtime.Period()
+	epochNow(t)
 	_, elapsed, _ := epochtime.Now()
 	p, g := newRefetchPKI(t, true)
 	p.clockSkew = -int64(((period - elapsed) + (period - nextFetchTill()/2)) / time.Second)
@@ -135,7 +150,7 @@ func TestPKIWorkerRefetchesCachedDocumentOnEpochChange(t *testing.T) {
 }
 
 func TestPKIWorkerFetchesWithoutCache(t *testing.T) {
-	epoch, _, _ := epochtime.Now()
+	epoch := epochNow(t)
 	p, g := newRefetchPKI(t, false)
 	p.Go(p.worker)
 	require.Eventually(t, func() bool { return g.count(epoch) >= 1 }, 5*time.Second, 10*time.Millisecond)
@@ -144,7 +159,7 @@ func TestPKIWorkerFetchesWithoutCache(t *testing.T) {
 }
 
 func TestPKIWorkerKeepsVerifiedDocumentsAcrossTheBoundary(t *testing.T) {
-	epoch, _, _ := epochtime.Now()
+	epoch := epochNow(t)
 	p, g := newRefetchPKI(t, true)
 	for _, e := range []uint64{epoch, epoch + 1, epoch + 2} {
 		p.docs.Store(e, &CachedDoc{

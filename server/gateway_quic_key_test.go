@@ -54,7 +54,7 @@ func TestServerQUICKeyHelper(t *testing.T) {
 		return
 	}
 	if c == "gateway" {
-		_, err := common.LoadStaticKey(path)
+		_, err := common.LoadStaticKey(path, nil)
 		require.NoError(t, err)
 	}
 	s, err := New(cfg)
@@ -71,7 +71,7 @@ func TestServerQUICKeyHelper(t *testing.T) {
 		require.NotEqual(t, now, next, "a mix stopped rotating its QUIC keys")
 		return
 	}
-	key, err := common.ReadStaticKey(path)
+	key, err := common.ReadStaticKey(path, nil)
 	require.NoError(t, err, "a QUIC gateway kept no long-term quic-tls.key")
 	for _, e := range []uint64{epoch, epoch + 1, epoch + 5} {
 		hashes, err := s.quicKeys.Hashes(e)
@@ -84,7 +84,7 @@ func generatedGatewayPin(t *testing.T, dir string) string {
 	t.Helper()
 	pin, err := os.ReadFile(filepath.Join(dir, "quic-tls.hash"))
 	require.NoError(t, err, "generate-only wrote no quic-tls.hash for a QUIC gateway")
-	key, err := common.ReadStaticKey(filepath.Join(dir, "quic-tls.key"))
+	key, err := common.ReadStaticKey(filepath.Join(dir, "quic-tls.key"), nil)
 	require.NoError(t, err)
 	require.Equal(t, hex.EncodeToString(key.Hash())+"\n", string(pin))
 	return string(pin[:len(pin)-1])

@@ -89,7 +89,7 @@ func TestGenConfigWritesEpochDuration(t *testing.T) {
 		dir, err := genNetwork(t, c.flag)
 		require.NoError(t, err)
 		got := generatedEpochDurations(t, dir)
-		require.Len(t, got, 3+1+1+NrNodes+NrGateways+2*NrServiceNodes+NrStorageNodes)
+		require.Len(t, got, 3+1+1+1+NrNodes+NrGateways+2*NrServiceNodes+NrStorageNodes) // the extra 1 is pigeonservice/thinclient.toml
 		for name, d := range got {
 			if filepath.Base(name) == "thinclient.toml" {
 				require.Nil(t, d, name)

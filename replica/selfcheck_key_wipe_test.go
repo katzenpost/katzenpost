@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/rand"
 )
 

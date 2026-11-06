@@ -1042,6 +1042,42 @@ func (t *ThinClient) dispatchMessage(message *Response) bool {
 		case <-t.HaltCh():
 			return false
 		}
+	case message.BoxSealReply != nil:
+		select {
+		case t.eventSink <- message.BoxSealReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.NIKEGenerateKeyPairReply != nil:
+		select {
+		case t.eventSink <- message.NIKEGenerateKeyPairReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.NIKEDeriveSecretReply != nil:
+		select {
+		case t.eventSink <- message.NIKEDeriveSecretReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.BoxOpenReply != nil:
+		select {
+		case t.eventSink <- message.BoxOpenReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.StartResendingMessageReply != nil:
+		select {
+		case t.eventSink <- message.StartResendingMessageReply:
+		case <-t.HaltCh():
+			return false
+		}
+	case message.CancelResendingMessageReply != nil:
+		select {
+		case t.eventSink <- message.CancelResendingMessageReply:
+		case <-t.HaltCh():
+			return false
+		}
 
 	default:
 		t.log.Errorf("bug: received invalid thin client message: %v", message)
@@ -1357,11 +1393,29 @@ func (t *ThinClient) eventSinkWorker() {
 			// stalls the fan-out (and, like Python's callback
 			// model, the reader pipeline behind it) — HaltCh
 			// remains the escape hatch so Close() still works.
+			// While it waits, it still serves sink changes: a caller
+			// that has its reply stops reading and then removes its
+			// sink, or adds one for a follow-up request.
 			for drain := range drains {
-				select {
-				case <-t.HaltCh():
-					return
-				case drain <- event:
+			deliver:
+				for {
+					select {
+					case <-t.HaltCh():
+						return
+					case drain <- event:
+						break deliver
+					case removed := <-t.drainRemove:
+						delete(drains, removed)
+						if removed == drain {
+							break deliver
+						}
+					case added := <-t.drainAdd:
+						if cap(added) == 0 {
+							t.log.Warning("Attempting to add unbuffered channel to eventSink drains - ignoring")
+							continue
+						}
+						drains[added] = struct{}{}
+					}
 				}
 			}
 		}

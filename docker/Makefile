@@ -276,6 +276,8 @@ ifneq ($(kpclientd_build_tags),)
   kpclientd_tags_flag=-tags "$(kpclientd_build_tags)"
 endif
 
+# The replica that serves a Reticulum bridge socket in its DataDir, for pigeonhole_rns (github.com/katzenpost/pigeonhole_rns); 0 for none.
+bridge_replica?=1
 genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --nodes $(mixes) \
 	--layers $(layers) \
 	--gateways $(gateways) --serviceNodes $(serviceNodes) --storageNodes $(storageNodes) \
@@ -292,7 +294,8 @@ genconfig_args= --wirekem $(wirekem) --addr $(bind_addr) --nrVoting $(auths) --n
 	--proxyWorkerCount $(proxyWorkerCount) --proxyRequestTimeout $(proxyRequestTimeout) \
 	--persistMixKeysOnShutdownDir "$(persistMixKeysOnShutdownDir)" \
 	--contactInfo "$(contactInfo)" --softwareVersion "$(softwareVersion)" \
-	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level) $(coverFlag)
+	--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level) $(coverFlag) \
+	--bridgeReplica $(bridge_replica)
 
 # Pumba network chaos. Off by default; invoke `make pumba-latency` or
 # `make pumba-loss` to start a sidecar that applies `tc netem` qdiscs in
@@ -421,7 +424,7 @@ export kpclientd_build_tags kpclientd_tags_flag pyroscope_dirauth_tags pyroscope
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 
-testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/replica.$(distro) $(net_name)/courier.$(distro) $(net_name)/kpclientd.$(distro) $(net_name)/fetch.$(distro) | $(net_name) $(cache_dir)
+testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/replica.$(distro) $(net_name)/courier.$(distro) $(net_name)/kpclientd.$(distro) $(net_name)/fetch.$(distro) $(net_name)/voucher_router.$(distro) $(net_name)/service_directory.$(distro) | $(net_name) $(cache_dir)
 
 $(net_name):
 	mkdir -vp $(net_name)
@@ -829,6 +832,12 @@ $(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_d
 $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/echo_server.$(distro)'
 
+$(net_name)/voucher_router.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd cmd/voucher-router; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/voucher_router.$(distro)'
+
+$(net_name)/service_directory.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd cmd/service-directory; go build -trimpath -ldflags ${ldflags} -o /$(net_name)/service_directory.$(distro)'
+
 $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/dirauth && go build $(pyroscope_dirauth_tags) -trimpath $(cover_flags) -ldflags ${ldflags} -o /$(net_name)/dirauth.$(distro)'
 
@@ -1220,3 +1229,4 @@ client-check: | $(cache_dir)
 	@for i in $$(seq 1 60); do [ -S namenlos-client/kpclientd.sock ] && break; sleep 1; done; [ -S namenlos-client/kpclientd.sock ] || { echo "client-check: kpclientd did not open its socket within 60s" >&2; $(docker) logs namenlos-client 2>&1 | tail -50; $(docker) rm -f namenlos-client; exit 1; }
 	timeout 120 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/fetch.$(distro) -f /namenlos-client/client/thinclient.toml \
 	  && timeout 900 $(docker) run --rm --network=host -v `pwd`/namenlos-client:/namenlos-client katzenpost-$(distro)_base /namenlos-client/ping.$(distro) --thin -c /namenlos-client/client/thinclient.toml -s echo -n $(npings) $(ping_args); st=$$?; $(docker) rm -f namenlos-client 2>/dev/null; exit $$st
+

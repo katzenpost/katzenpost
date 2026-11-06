@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
@@ -152,4 +152,18 @@ func TestReadRepairsForgetOldest(t *testing.T) {
 	r.remember(&h, &h, now)
 	_, ok = r.take(&h, now.Add(readRepairTTL+time.Second))
 	require.False(t, ok, "an expired read was repaired")
+}
+
+func TestBuildRepairWrite(t *testing.T) {
+	readReply := &pigeonhole.ReplicaReadReply{
+		ErrorCode: pigeonhole.ReplicaSuccess,
+		Payload:   []byte("box payload"),
+	}
+	readReply.BoxID[0] = 0xaa
+	readReply.Signature[0] = 0xbb
+
+	w := buildRepairWrite(readReply, nil)
+	require.Equal(t, readReply.BoxID[:], w.BoxID[:])
+	require.Equal(t, readReply.Signature[:], w.Signature[:])
+	require.Equal(t, readReply.Payload, w.Payload)
 }
