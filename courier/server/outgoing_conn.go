@@ -132,10 +132,13 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *outgoingConn) dispatchMessage(mesg *commands.ReplicaMessage) error {
-	req := &courierSenderRequest{
+	return c.dispatch(&courierSenderRequest{
 		ReplicaMessage: mesg,
 		EnqueuedAt:     time.Now(),
-	}
+	})
+}
+
+func (c *outgoingConn) dispatch(req *courierSenderRequest) error {
 	select {
 	case c.sender.in <- req:
 		instrument.EnqueueTotal(c.name)

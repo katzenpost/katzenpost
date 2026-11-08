@@ -48,6 +48,9 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 		return nil, false
 	case *commands.ReplicaDecoy:
 		instrument.IncomingDecoysReceived()
+		if cmd.RepairEnvelopeHash != nil {
+			c.l.server.repairFromHint(cmd.RepairEnvelopeHash)
+		}
 		decoyReply := &commands.ReplicaDecoy{
 			Cmds: commands.NewStorageReplicaCommands(c.geo, schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)),
 		}
@@ -67,7 +70,7 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command, emitter *delaye
 		c.log.Debugf("Processing ReplicaMessage command with ciphertext length: %d", len(cmd.Ciphertext))
 		// Handle asynchronously so proxy requests don't block the
 		// command loop. The proxy worker semaphore is acquired only
-		// inside proxyReadRequest/proxyWriteRequest for the blocking
+		// inside proxyWriteRequest for the blocking
 		// shard round-trip, so local reads and writes never wait
 		// behind in-flight proxied traffic (no head-of-line blocking).
 		recvAt := time.Now()
@@ -190,78 +193,30 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		myCmd := msg.ReadMsg
 		c.log.Debug("REPLICA_HANDLER: Processing decrypted ReplicaRead command")
 
-		// Check if this replica is in the shard for this BoxID
-		// Only shard members should read locally - intermediate replicas must proxy
-		shards, err := replicaCommon.GetShards(&myCmd.BoxID, doc)
+		readReply := c.handleReplicaRead(myCmd)
+		// Always encrypt the reply (success or error) so the client can decrypt and see the error code
+		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+			ReadReply: readReply,
+		}
+		// Pad read reply so tombstone reads are indistinguishable from normal reads
+		replyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&replyInnerMessage, c.l.server.pigeonholeGeo)
 		if err != nil {
-			c.log.Errorf("handleReplicaMessage read failed to get shards: %s", err)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0)
+			c.log.Errorf("REPLICA_HANDLER: failed to pad read reply: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
 		}
-
-		if len(shards) == 0 {
-			c.log.Error("handleReplicaMessage read failed, zero shards available")
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0)
-		}
-
-		myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
+		envelopeReply, err := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
 		if err != nil {
-			c.log.Errorf("handleReplicaMessage read failed to marshal identity key: %s", err)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0)
+			c.log.Errorf("REPLICA_HANDLER: failed to seal read reply: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
 		}
-
-		isShard := false
-		for _, shard := range shards {
-			if hmac.Equal(shard.IdentityKey, myIdentityKey) {
-				isShard = true
-				break
-			}
+		switch readReply.ErrorCode {
+		case pigeonhole.ReplicaSuccess, pigeonhole.ReplicaErrorTombstone:
+			c.log.Debug("REPLICA_HANDLER: Found data locally")
+			c.l.server.readRepairs.remember(envelopeHash, &myCmd.BoxID, time.Now())
+		default:
+			c.log.Debugf("REPLICA_HANDLER: data not found locally (error code: %d)", readReply.ErrorCode)
 		}
-
-		// Serve the read locally when this replica is a shard for the box,
-		// OR when the request was already proxied to us by another replica.
-		// In the latter case the proxying replica chose us as the holder;
-		// honour that decision and never re-proxy a proxied request, which
-		// would permit unbounded proxy depth and cycles across replicas
-		// with divergent shard views. A non-holder that is proxied to
-		// simply returns not-found, and the proxying replica fails over to
-		// the other holder (or the client retries once views converge).
-		if isShard || c.peerIsReplica {
-			if isShard {
-				c.log.Debug("REPLICA_HANDLER: This replica IS a shard - reading locally")
-			} else {
-				c.log.Debug("REPLICA_HANDLER: Proxied read from a replica peer - reading locally, not re-proxying")
-			}
-			readReply := c.handleReplicaRead(myCmd)
-			// Always encrypt the reply (success or error) so the client can decrypt and see the error code
-			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-				ReadReply: readReply,
-			}
-			// Pad read reply so tombstone reads are indistinguishable from normal reads
-			replyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&replyInnerMessage, c.l.server.pigeonholeGeo)
-			if err != nil {
-				c.log.Errorf("REPLICA_HANDLER: failed to pad read reply: %s", err)
-				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
-			}
-			envelopeReply, err := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-			if err != nil {
-				c.log.Errorf("REPLICA_HANDLER: failed to seal read reply: %s", err)
-				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, replicaID)
-			}
-			if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
-				c.log.Debug("REPLICA_HANDLER: Found data locally")
-			} else {
-				c.log.Debugf("REPLICA_HANDLER: data not found locally (error code: %d)", readReply.ErrorCode)
-			}
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID)
-		}
-
-		// This replica is NOT in the shard - proxy to the correct replica
-		c.log.Debug("REPLICA_HANDLER: This replica is NOT a shard - PROXYING read request to appropriate shard")
-		// Release before parking on the proxy path (it has its own pool).
-		releaseDecap()
-		reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash, keypair.PrivateKey)
-		c.log.Debug("REPLICA_HANDLER: Successfully completed proxy read request")
-		return reply
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID)
 	case msg.WriteMsg != nil:
 		myCmd := msg.WriteMsg
 		c.log.Debug("Processing decrypted ReplicaWrite command")
@@ -838,105 +793,6 @@ func (c *incomingConn) proxyReadSweep(shards []*pki.ReplicaDescriptor, first int
 		}
 	}
 	return result
-}
-
-// proxyReadRequest forwards a read request to the appropriate shard replica
-// and returns the reply that should be sent back to the original client
-func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, originalSenderPubkey nike.PublicKey, originalEnvelopeHash *[32]byte, requestReplyKey nike.PrivateKey) *commands.ReplicaMessageReply {
-	// Input validation
-	if replicaRead == nil {
-		c.log.Error("PROXY_REQUEST: replicaRead is nil")
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
-
-	c.log.Debug("PROXY_REQUEST: Starting proxy")
-
-	// Get PKI document
-	doc := c.l.server.PKIWorker.LastCachedPKIDocument()
-	if doc == nil {
-		c.log.Error("proxyReadRequest: no PKI document available")
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
-
-	// Get replica ID
-	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: failed to get replica ID: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
-
-	// Calculate shards for this BoxID
-	shards, err := replicaCommon.GetShards(&replicaRead.BoxID, doc)
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: failed to get shards: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
-
-	// Select the shard to try first; random unless a test has pinned it.
-	idx, err := c.l.server.proxyFirstCandidate(len(shards))
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: choosing the first shard candidate failed: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
-	// Forward using current holder keys; reply using the original request's
-	// decapsulation key, whose lease the handler retains through this wait.
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-
-	// Create MKEM scheme
-	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-	scheme := mkem.NewScheme(nikeScheme)
-
-	// Create the inner message containing the read request, then length-
-	// prefix-and-pad so the peer replica's ExtractMessageFromPaddedPayload
-	// recovers the exact bytes after MKEM decryption.
-	innerMessage := pigeonhole.ReplicaInnerMessage{
-		ReadMsg: replicaRead,
-	}
-	innerMessageBlob, err := pigeonhole.PadInnerMessageForEncryption(&innerMessage, c.l.server.pigeonholeGeo)
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: failed to pad inner message: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0)
-	}
-
-	// Each candidate attempt takes a proxy worker slot only for its own
-	// duration; see proxyToShardWithSlot. Local reads and writes never
-	// contend for this semaphore, so a burst of proxied traffic cannot
-	// starve local operations.
-	result := c.proxyReadSweep(shards, idx, replicaEpoch, innerMessageBlob, scheme, nikeScheme)
-	if result.readReply == nil {
-		// Nobody produced a usable answer. Prefer a holder's own outer
-		// error code over a generic one when we have it.
-		if result.bareReply != nil {
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, result.bareReply.ErrorCode, originalEnvelopeHash, []byte{}, replicaID)
-		}
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorReplicationFailed, originalEnvelopeHash, []byte{}, replicaID)
-	}
-
-	// Read-repair, gated twice over: only a holder that answered
-	// box-not-found is known to be missing anything, and only a
-	// successful read hands us a copy worth replaying. If every holder
-	// answered not-found there is no good copy, and the guard below
-	// correctly repairs nobody.
-	if len(result.missingBox) > 0 && result.readReply.ErrorCode == pigeonhole.ReplicaSuccess {
-		c.readRepair(result.readReply, result.missingBox)
-	}
-
-	// Re-encrypt the read reply for the original client, padded so
-	// tombstone reads are indistinguishable from normal reads.
-	newReplyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-		ReadReply: result.readReply,
-	}
-	newReplyInnerMessageBlob, err := pigeonhole.PadReplyInnerMessageForEncryption(&newReplyInnerMessage, c.l.server.pigeonholeGeo)
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: failed to pad read reply: %s", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-	}
-	envelopeReply, err := scheme.EnvelopeReply(requestReplyKey, originalSenderPubkey, newReplyInnerMessageBlob)
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: failed to seal read reply: %s", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID)
-	}
-	return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, result.readReply.ErrorCode, originalEnvelopeHash, envelopeReply.Envelope, replicaID)
 }
 
 // proxyWriteRequest forwards a write request to the appropriate shard replica

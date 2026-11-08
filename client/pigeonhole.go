@@ -1139,7 +1139,11 @@ func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, d
 	} else {
 		boxid = &msg.WriteMsg.BoxID
 	}
-	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxid)
+	getReplicas := pigeonhole.GetRandomIntermediateReplicas
+	if isRead {
+		getReplicas = pigeonhole.GetShardReplicas
+	}
+	intermediateReplicas, replicaPubKeys, err := getReplicas(doc, boxid)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -777,8 +777,7 @@ func (c *outgoingConn) handleCommand(response commands.Command) bool {
 // counted drop is the honest version of what was already happening.
 //
 // The box is not abandoned: an under-replicated box is healed by
-// read-repair when it is next read, and by Rebalance over longer
-// outages.
+// Rebalance over longer outages.
 func (c *outgoingConn) handleReplicaWriteReply(reply *commands.ReplicaWriteReply) {
 	switch classifyReplicationReply(reply.ErrorCode) {
 	case replicationReplyOK:

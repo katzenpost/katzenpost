@@ -39,7 +39,7 @@ func TestDrainToRetryQueueSkipsProxyRequests(t *testing.T) {
 	c.ch <- &commands.ReplicaMessage{
 		SenderEPubKey: []byte{1, 2, 3, 4},
 		DEK:           &[60]byte{},
-		Ciphertext:    []byte("a proxied read nobody is waiting for any more"),
+		Ciphertext:    []byte("a proxied write nobody is waiting for any more"),
 	}
 	c.ch <- writeCmd(2)
 

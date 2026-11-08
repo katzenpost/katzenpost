@@ -108,6 +108,8 @@ type replyingConnector struct {
 	courier *Courier
 }
 
+func (c *replyingConnector) DispatchRepairHint(uint8, *commands.ReplicaDecoy) error { return nil }
+
 func (c *replyingConnector) DispatchMessage(dest uint8, msg *commands.ReplicaMessage) error {
 	go c.courier.HandleReply(&commands.ReplicaMessageReply{
 		EnvelopeHash: msg.EnvelopeHash(),
