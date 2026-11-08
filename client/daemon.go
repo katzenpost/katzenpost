@@ -17,8 +17,8 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	hpqcRand "github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/common"
@@ -383,7 +383,12 @@ func isLocalRequest(r *Request) bool {
 		r.VoucherMint != nil ||
 		r.VoucherInduct != nil ||
 		r.VoucherOpen != nil ||
-		r.VoucherDeriveStream != nil
+		r.VoucherDeriveStream != nil ||
+		r.BoxSeal != nil ||
+		r.NIKEGenerateKeyPair != nil ||
+		r.NIKEDeriveSecret != nil ||
+		r.BoxOpen != nil ||
+		r.CancelResendingMessage != nil
 }
 
 // recoverDispatch contains a panicking request handler. A single thin
@@ -438,6 +443,16 @@ func (d *Daemon) dispatchLocal(request *Request) {
 		d.voucherOpen(request)
 	case request.VoucherDeriveStream != nil:
 		d.voucherDeriveStream(request)
+	case request.BoxSeal != nil:
+		d.boxSeal(request)
+	case request.NIKEGenerateKeyPair != nil:
+		d.nikeGenerateKeyPair(request)
+	case request.NIKEDeriveSecret != nil:
+		d.nikeDeriveSecret(request)
+	case request.BoxOpen != nil:
+		d.boxOpen(request)
+	case request.CancelResendingMessage != nil:
+		d.cancelResendingMessage(request)
 	default:
 		d.log.Error("dispatchLocal: dropping request with no recognised local variant")
 	}
@@ -459,6 +474,8 @@ func (d *Daemon) dispatchMixnet(request *Request) {
 		d.startResendingEncryptedMessage(request)
 	case request.StartResendingCopyCommand != nil:
 		d.startResendingCopyCommand(request)
+	case request.StartResendingMessage != nil:
+		d.startResendingMessage(request)
 	default:
 		d.log.Error("dispatchMixnet: dropping request with no recognised mixnet variant")
 	}

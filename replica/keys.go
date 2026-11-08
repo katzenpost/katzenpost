@@ -31,6 +31,7 @@ type EnvelopeKeys struct {
 
 	keysLock *sync.RWMutex
 	keys     map[uint64]*replicaCommon.EnvelopeKey
+	leases   map[*replicaCommon.EnvelopeKey]*envelopeKeyUse
 }
 
 func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, epoch uint64) (*EnvelopeKeys, error) {
@@ -124,21 +125,30 @@ func (k *EnvelopeKeys) Generate(replicaEpoch uint64) error {
 		}
 		return err
 	}
+	if old := k.keys[replicaEpoch]; old != nil {
+		k.retireKeyLocked(old)
+	}
 	k.keys[replicaEpoch] = keypair
 	return nil
 }
 
 func (k *EnvelopeKeys) Prune() bool {
 	epoch, _, _ := replicaCommon.ReplicaNow()
+	return k.pruneBefore(epoch)
+}
+
+// pruneBefore applies the same retirement rule at an explicit replica epoch.
+// Keeping the clock read at the caller permits deterministic boundary tests.
+func (k *EnvelopeKeys) pruneBefore(epoch uint64) bool {
 	didPrune := false
 	k.keysLock.Lock()
 	defer k.keysLock.Unlock()
 	for key, keypair := range k.keys {
-		if key < epoch-1 {
+		if epoch > 0 && key < epoch-1 {
 			k.log.Debugf("Purging expired key for epoch: %v", key)
 			// Remove key files from disk
 			keypair.PurgeKeyFiles(k.datadir, k.scheme, key)
-			keypair.PrivateKey.Reset()
+			k.retireKeyLocked(keypair)
 			delete(k.keys, key)
 			didPrune = true
 		}
@@ -146,6 +156,8 @@ func (k *EnvelopeKeys) Prune() bool {
 	return didPrune
 }
 
+// GetKeypair borrows a cached pair for publication of its public key. Private
+// operations that can overlap retirement must use acquireKey and Release.
 func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*replicaCommon.EnvelopeKey, error) {
 	k.keysLock.RLock()
 	defer k.keysLock.RUnlock()

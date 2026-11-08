@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/thin"
@@ -136,8 +136,7 @@ func TestBuildCourierEnvelopeWipesEphemeralKey(t *testing.T) {
 	tombstone, err := pigeonhole.NewTombstone(writeCap.Start())
 	require.NoError(t, err)
 
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
-	_, err = d.buildCourierEnvelope(doc, replicaEpoch, &tombstone.BoxID, writeInnerMessage(tombstone))
+	_, err = d.buildCourierEnvelope(doc, &tombstone.BoxID, writeInnerMessage(tombstone))
 	require.NoError(t, err)
 
 	s.requireAllWiped(t, "buildCourierEnvelope")

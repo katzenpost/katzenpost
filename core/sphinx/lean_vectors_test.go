@@ -42,7 +42,7 @@ import (
 // kem_selftest.lean: Lean builds, Lean unwraps).
 //
 // testdata/lean_nike_vectors.json and testdata/lean_kem_vectors.json close that gap:
-// CryptWalker/Sphinx/gen_nike_vectors.lean and gen_kem_vectors.lean build packets (and SURBs)
+// Cryptlib/Protocols/Sphinx/gen_nike_vectors.lean and gen_kem_vectors.lean build packets (and SURBs)
 // with the Lean port's creation side, unwrap them with Lean's own Unwrap once as a sanity
 // check, and dump the result in the same hexSphinxTest JSON shape used elsewhere. The two
 // tests below unwrap those same packets with Go's real Unwrap/DecryptSURBPayload instead,
@@ -144,8 +144,8 @@ func TestLeanKEMVectors(t *testing.T) {
 // TestLeanMLKEM768X25519Vectors is TestLeanKEMVectors's counterpart for the X25519 + ML-KEM-768
 // hybrid combiner. As generate_kem_hybrid/main.go, this builds the combiner directly with
 // adapter.SHA256v1 rather than using hpqc's registered "MLKEM768-X25519" (which defaults to the
-// deployed BLAKE2b-XOF PRF, not ported to CryptWalker's Lean side) -- matching
-// CryptWalker's kemMLKEM768X25519 (KEM/Schemes.lean) exactly.
+// deployed BLAKE2b-XOF PRF, not ported to Cryptlib's Lean side) -- matching
+// Cryptlib's kemMLKEM768X25519 (Cryptlib/Primitives/KEM/Schemes.lean) exactly.
 func TestLeanMLKEM768X25519Vectors(t *testing.T) {
 	k, err := combiner.New("MLKEM768-X25519-sha256v1", []kem.Scheme{
 		adapter.FromNIKEWithPRF(ecdhnike.Scheme(rand.Reader), adapter.SHA256v1),
@@ -166,7 +166,7 @@ func TestLeanMLKEM768X25519Vectors(t *testing.T) {
 }
 
 // TestLeanMLKEM768X25519BLAKE2bXOFVectors is TestLeanMLKEM768X25519Vectors's counterpart under
-// the deployed BLAKE2b-XOF adapter PRF, now that CryptWalker's Lean port has it
+// the deployed BLAKE2b-XOF adapter PRF, now that Cryptlib's Lean port has it
 // (KEM/Schemes.lean's kemMLKEM768X25519Blake2b) -- matching hpqc's registered "MLKEM768-X25519"
 // scheme exactly, not just a portable stand-in.
 func TestLeanMLKEM768X25519BLAKE2bXOFVectors(t *testing.T) {

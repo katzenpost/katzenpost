@@ -4,7 +4,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -112,13 +111,13 @@ func generateSignKeypair(schemeName, outName string) {
 	}
 }
 
-func generateQUICKey(outName string) error {
+func generateQUICKey(signature, outName string) error {
 	keyout := fmt.Sprintf("%s.quic-tls.key", outName)
 	hashout := fmt.Sprintf("%s.quic-tls.hash", outName)
 
 	checkKeyFilesExist(keyout, hashout)
 
-	key, err := quicCommon.LoadStaticKey(keyout)
+	key, err := quicCommon.LoadStaticKey(keyout, &quicCommon.Options{Signature: signature})
 	if err != nil {
 		return err
 	}
@@ -153,7 +152,8 @@ Supported key types:
 • Sign: Digital signature keys for authentication and integrity
 - QUIC: the long-term QUIC TLS key of an authority or gateway, written as
   <out>.quic-tls.key, with its pin, the hex QUICKeyHash for the TOML
-  configs that list it, in <out>.quic-tls.hash; --scheme does not apply
+  configs that list it, in <out>.quic-tls.hash; --scheme is Ed25519 (the
+  default) or ML-DSA-65, and must match QUIC.Signature in the server config
 
 The tool generates both private and public key files in PEM format, which can
 be used by Katzenpost servers, clients, and other network components.`,
@@ -170,14 +170,17 @@ be used by Katzenpost servers, clients, and other network components.`,
   # install the key as DataDir/quic-tls.key
   genkeypair --type quic --out gateway1
 
+  # The same, with an ML-DSA-65 key
+  genkeypair --type quic --scheme ML-DSA-65 --out gateway1
+
   # Generate key pair with short flags
   genkeypair -t kem -s kyber1024 -o authority_kem
 
   # Generate default key pair (X25519 NIKE)
   genkeypair --out my_keys`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cfg.KeyType == "quic" && cmd.Flags().Changed("scheme") {
-				return errors.New("--scheme does not apply to --type quic, whose key is always Ed25519")
+			if cfg.KeyType == "quic" && !cmd.Flags().Changed("scheme") {
+				cfg.SchemeName = quicCommon.SignatureEd25519
 			}
 			return runGenKeypair(cfg)
 		},
@@ -211,7 +214,7 @@ func runGenKeypair(cfg Config) error {
 	case "sign":
 		generateSignKeypair(cfg.SchemeName, cfg.OutName)
 	case "quic":
-		return generateQUICKey(cfg.OutName)
+		return generateQUICKey(cfg.SchemeName, cfg.OutName)
 	default:
 		return fmt.Errorf("key type must be kem, nike, sign or quic, got: %s", cfg.KeyType)
 	}

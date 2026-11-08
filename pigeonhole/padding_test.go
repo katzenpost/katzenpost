@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 
 	"github.com/katzenpost/katzenpost/pigeonhole/geo"
 )

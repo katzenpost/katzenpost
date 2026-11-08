@@ -325,7 +325,7 @@ func (s *Server) quicStaticKey() (*common.StaticKey, error) {
 	if len(pinned) > 0 {
 		load = common.ReadStaticKey
 	}
-	key, err := load(path)
+	key, err := load(path, s.cfg.QUIC)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("%s is missing but this authority's own entry pins QUICKeyHash %x; restore that file from backup, or replace QUICKeyHash for this authority in every config that lists it", path, pinned)
 	}

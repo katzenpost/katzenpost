@@ -54,24 +54,26 @@ import (
 )
 
 const (
-	BindAddr               = "0.0.0.0"
-	NrLayers               = 3
-	NrNodes                = 6
-	NrGateways             = 1
-	NrServiceNodes         = 1
-	NrStorageNodes         = 5
-	NrAuthorities          = 3
-	ServerLogFile          = "katzenpost.log"
-	IdentityPublicKeyFile  = "identity.public.pem"
-	IdentityPrivateKeyFile = "identity.private.pem"
-	LinkPublicKeyFile      = "link.public.pem"
-	LinkPrivateKeyFile     = "link.private.pem"
-	QUICKeyFile            = "quic-tls.key"
-	CourierService         = "courier"
-	ClientIdentifier       = "client"
-	DebugLogLevel          = "DEBUG"
-	AuthNodeFormat         = "auth%d"
-	WritingLogFormat       = "writing %s"
+	BindAddr                = "0.0.0.0"
+	NrLayers                = 3
+	NrNodes                 = 6
+	NrGateways              = 1
+	NrServiceNodes          = 1
+	NrStorageNodes          = 5
+	NrAuthorities           = 3
+	ServerLogFile           = "katzenpost.log"
+	IdentityPublicKeyFile   = "identity.public.pem"
+	IdentityPrivateKeyFile  = "identity.private.pem"
+	LinkPublicKeyFile       = "link.public.pem"
+	LinkPrivateKeyFile      = "link.private.pem"
+	QUICKeyFile             = "quic-tls.key"
+	CourierService          = "courier"
+	VoucherRouterService    = "voucher_router"
+	ServiceDirectoryService = "service_directory"
+	ClientIdentifier        = "client"
+	DebugLogLevel           = "DEBUG"
+	AuthNodeFormat          = "auth%d"
+	WritingLogFormat        = "writing %s"
 
 	// DockerNetwork is the bridge network the generated docker-compose puts
 	// every katzenpost service on. Each service declares a hostname equal
@@ -278,6 +280,7 @@ type Config struct {
 	UnwrapDelay              int
 	NumSphinxWorkers         int
 	ProxyWorkerCount         int
+	BridgeReplica            int
 	ProxyRequestTimeout      int
 	// SessionGracePeriod controls how long kpclientd preserves
 	// per-app state after a thin client's socket drops without a
@@ -343,6 +346,7 @@ type Katzenpost struct {
 	UnwrapDelay             int
 	NumSphinxWorkers        int
 	ProxyWorkerCount        int
+	BridgeReplica           int
 	ProxyRequestTimeout     int
 	// SessionGracePeriod is written into the generated kpclientd
 	// client.toml so the daemon's per-app reap interval is tunable
@@ -556,7 +560,7 @@ func (s *Katzenpost) GenClient2Cfg(net, addr string) error {
 			if !s.isCurrent(name) {
 				addresses = slices.DeleteFunc(slices.Clone(addresses), quicCommon.IsQUICAddress)
 			} else {
-				quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, name, QUICKeyFile))
+				quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, name, QUICKeyFile), nil)
 				if err != nil {
 					return err
 				}
@@ -661,6 +665,12 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 
 	cfg.DataDir = filepath.Join(s.BaseDir, cfg.Identifier)
 	os.MkdirAll(filepath.Join(s.OutDir, cfg.Identifier), 0700)
+
+	// The bridge replica serves a Reticulum mesh replica over a unix
+	// socket in its DataDir, which the docker harness bind mounts.
+	if s.BridgeReplica == s.ReplicaNodeIdx+1 {
+		cfg.BridgeSocket = filepath.Join(cfg.DataDir, "bridge.sock")
+	}
 
 	// Set timeout values explicitly to use common config defaults
 	cfg.ConnectTimeout = config.DefaultConnectTimeout
@@ -871,7 +881,12 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, proxyCfg}
+		pigeonPlugins, err := s.genPigeonservicePlugins(cfg.Server.Identifier)
+		if err != nil {
+			return err
+		}
+
+		cfg.ServiceNode.CBORPluginKaetzchen = append([]*sConfig.CBORPluginKaetzchen{courierPluginCfg, proxyCfg}, pigeonPlugins...)
 
 		cfg.Debug.NumKaetzchenWorkers = 4
 
@@ -895,6 +910,61 @@ func (s *Katzenpost) GenNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	_ = CfgLinkKey(cfg, s.OutDir, s.WireKEMScheme)
 	log.Print("GenNodeConfig end")
 	return cfg.FixupAndValidate()
+}
+
+// genPigeonservicePlugins configures the voucher router and the service
+// directory on one service node. Both reach Pigeonhole through the testnet's
+// kpclientd, dialling it across the docker bridge with their own thin
+// client config.
+func (s *Katzenpost) genPigeonservicePlugins(identifier string) ([]*sConfig.CBORPluginKaetzchen, error) {
+	thinCfg, err := s.genPigeonserviceThinCfg()
+	if err != nil {
+		return nil, err
+	}
+	var plugins []*sConfig.CBORPluginKaetzchen
+	for _, p := range []struct{ capability, binary string }{
+		{VoucherRouterService, "voucher_router"},
+		{ServiceDirectoryService, "service_directory"},
+	} {
+		if err := os.MkdirAll(filepath.Join(s.OutDir, identifier, p.capability), 0700); err != nil {
+			return nil, err
+		}
+		plugins = append(plugins, &sConfig.CBORPluginKaetzchen{
+			Capability:     p.capability,
+			Endpoint:       p.capability,
+			Command:        s.BaseDir + "/" + p.binary + s.BinSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				"log_dir":     s.BaseDir + "/" + identifier,
+				"log_level":   DebugLogLevel,
+				"data_dir":    s.BaseDir + "/" + identifier + "/" + p.capability,
+				"thin_config": thinCfg,
+			},
+		})
+	}
+	return plugins, nil
+}
+
+// genPigeonserviceThinCfg writes the thin client config the pigeonservice
+// plugins dial kpclientd with, and returns its path inside the containers.
+func (s *Katzenpost) genPigeonserviceThinCfg() (string, error) {
+	const name = "pigeonservice/thinclient.toml"
+	dial, err := thinDialConfigFor("tcp", fmt.Sprintf("kpclientd:%d", s.BasePort+kpclientdPublishedPortOffset))
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Join(s.OutDir, "pigeonservice"), 0700); err != nil {
+		return "", err
+	}
+	f, err := os.Create(filepath.Join(s.OutDir, name))
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if err := toml.NewEncoder(f).Encode(&thin.Config{Dial: dial}); err != nil {
+		return "", err
+	}
+	return s.BaseDir + "/" + name, nil
 }
 
 func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int, wirekem string) error {
@@ -952,7 +1022,7 @@ func (s *Katzenpost) GenVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			Addresses:          cfg.Server.Addresses,
 		}
 		if pinsQUIC {
-			quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, authIdentifier, QUICKeyFile))
+			quicKey, err := quicCommon.LoadStaticKey(filepath.Join(s.OutDir, authIdentifier, QUICKeyFile), nil)
 			if err != nil {
 				return err
 			}
@@ -1163,6 +1233,7 @@ func InitializeKatzenpost(cfg *Config) *Katzenpost {
 	s.UnwrapDelay = cfg.UnwrapDelay
 	s.NumSphinxWorkers = cfg.NumSphinxWorkers
 	s.ProxyWorkerCount = cfg.ProxyWorkerCount
+	s.BridgeReplica = cfg.BridgeReplica
 	s.ProxyRequestTimeout = cfg.ProxyRequestTimeout
 	s.SessionGracePeriod = cfg.SessionGracePeriod
 	s.PersistMixKeysOnShutdownDir = cfg.PersistMixKeysOnShutdownDir

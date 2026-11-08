@@ -49,7 +49,7 @@ func TestSphinxGeometryCartesianProduct(t *testing.T) {
 		nikeCases = append(nikeCases, newCase)
 	}
 
-	kemName := []interface{}{"x25519", "x448", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH1024-X448", "MLKEM768", "sntrup4591761", "FrodoKEM-640-SHAKE", "Xwing", "MLKEM768-X25519", "MLKEM768-X448"}
+	kemName := []interface{}{"x25519", "x448", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH1024-X448", "MLKEM768", "sntrup4591761", "FrodoKEM-640-SHAKE", "Xwing", "MLKEM768-X25519", "MLKEM1024-X448"}
 
 	c2 := cartesian.Iter(kemName, nrHops, payloadSize)
 

@@ -49,7 +49,7 @@ func TestAuthorityRefusesToRegenerateAPinnedQUICKey(t *testing.T) {
 
 func TestAuthorityRefusesAQUICKeyItsOwnEntryDoesNotPin(t *testing.T) {
 	s := quicKeyServer(t, bytes.Repeat([]byte{2}, 32))
-	_, err := common.LoadStaticKey(filepath.Join(s.cfg.Server.DataDir, "quic-tls.key"))
+	_, err := common.LoadStaticKey(filepath.Join(s.cfg.Server.DataDir, "quic-tls.key"), nil)
 	require.NoError(t, err)
 	_, err = s.quicStaticKey()
 	require.ErrorContains(t, err, "QUICKeyHash", "a quic-tls.key whose hash differs from this authority's own QUICKeyHash was used")
@@ -57,7 +57,7 @@ func TestAuthorityRefusesAQUICKeyItsOwnEntryDoesNotPin(t *testing.T) {
 
 func TestAuthorityQUICKeyMatchingItsOwnEntryLoads(t *testing.T) {
 	s := quicKeyServer(t, nil)
-	key, err := common.LoadStaticKey(filepath.Join(s.cfg.Server.DataDir, "quic-tls.key"))
+	key, err := common.LoadStaticKey(filepath.Join(s.cfg.Server.DataDir, "quic-tls.key"), nil)
 	require.NoError(t, err)
 	s.cfg.Authorities[1].QUICKeyHash = key.Hash()
 	loaded, err := s.quicStaticKey()

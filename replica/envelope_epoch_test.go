@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -72,6 +72,7 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForCurrent(t *testing.T) {
 
 	pt, decapKp, epoch, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, decapCt, current)
 	require.NoError(t, err)
+	defer decapKp.Release()
 	require.Equal(t, payload, pt)
 	require.Equal(t, current, epoch, "should report which epoch's key succeeded")
 	require.NotNil(t, decapKp, "returned keypair must be non-nil on success (reply encryption depends on it)")
@@ -102,6 +103,7 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForPrevious(t *testing.T) {
 
 	pt, decapKp, epoch, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, decapCt, current)
 	require.NoError(t, err)
+	defer decapKp.Release()
 	require.Equal(t, payload, pt)
 	require.Equal(t, current-1, epoch)
 	require.Equal(t, prevKp.PublicKey, decapKp.PublicKey)
@@ -130,6 +132,7 @@ func TestTryDecapsulateAcrossEpochWindowSucceedsForNext(t *testing.T) {
 
 	pt, decapKp, epoch, err := tryDecapsulateAcrossEpochWindow(keys, mscheme, decapCt, current)
 	require.NoError(t, err)
+	defer decapKp.Release()
 	require.Equal(t, payload, pt)
 	require.Equal(t, current+1, epoch)
 	require.Equal(t, nextKp.PublicKey, decapKp.PublicKey)
@@ -233,6 +236,7 @@ func TestTryDecapsulateSkipsAbsentNeighbours(t *testing.T) {
 
 	plaintext, gotKeypair, gotEpoch, err := tryDecapsulateAcrossEpochWindow(keys, scheme, ct, currentEpoch)
 	require.NoError(t, err)
+	defer gotKeypair.Release()
 	require.Equal(t, payload, plaintext)
 	require.Equal(t, currentEpoch, gotEpoch)
 	require.Equal(t, keypair.PublicKey.Bytes(), gotKeypair.PublicKey.Bytes())

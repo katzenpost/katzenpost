@@ -3,7 +3,7 @@
 package common
 
 import (
-	"crypto/ed25519"
+	"crypto"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -26,21 +26,24 @@ const (
 	epochKeysAhead  = 2
 )
 
-var epochKeyFileRe = regexp.MustCompile(`^quic-tls-(\d+)\.key$`)
+const seedSize = 32
+
+var epochKeyFileRe = regexp.MustCompile(`^quic-tls-(?:mldsa65-)?(\d+)\.key$`)
 
 type epochKey struct {
-	tlsPrivateKey ed25519.PrivateKey
+	tlsPrivateKey crypto.Signer
 	certificate   *tls.Certificate
 	keyHash       [sha256.Size]byte
 }
 
 type EpochKeys struct {
-	diskMu   sync.Mutex
-	mu       sync.Mutex
-	dir      string
-	now      func() uint64
-	keys     map[uint64]*epochKey
-	prunedAt uint64
+	diskMu    sync.Mutex
+	mu        sync.Mutex
+	dir       string
+	signature string
+	now       func() uint64
+	keys      map[uint64]*epochKey
+	prunedAt  uint64
 }
 
 func CurrentEpoch() uint64 {
@@ -48,8 +51,11 @@ func CurrentEpoch() uint64 {
 	return epoch
 }
 
-func NewEpochKeys(dir string, now func() uint64) (*EpochKeys, error) {
-	k := &EpochKeys{dir: dir, now: now, keys: make(map[uint64]*epochKey), prunedAt: now()}
+func NewEpochKeys(dir string, now func() uint64, opts *Options) (*EpochKeys, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
+	k := &EpochKeys{dir: dir, signature: opts.signature(), now: now, keys: make(map[uint64]*epochKey), prunedAt: now()}
 	if err := k.purgeStaleFiles(k.prunedAt); err != nil {
 		return nil, err
 	}
@@ -61,6 +67,9 @@ func inWindow(epoch, now uint64) bool {
 }
 
 func (k *EpochKeys) keyFile(epoch uint64) string {
+	if k.signature == SignatureMLDSA65 {
+		return filepath.Join(k.dir, fmt.Sprintf("quic-tls-mldsa65-%d.key", epoch))
+	}
 	return filepath.Join(k.dir, fmt.Sprintf("quic-tls-%d.key", epoch))
 }
 
@@ -98,7 +107,7 @@ func (k *EpochKeys) prune(now uint64) error {
 		if inWindow(epoch, now) {
 			continue
 		}
-		clear(key.tlsPrivateKey)
+		wipeTLSKey(key.tlsPrivateKey)
 		delete(k.keys, epoch)
 	}
 	k.mu.Unlock()
@@ -118,9 +127,9 @@ func readSeed(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(seed) != ed25519.SeedSize {
+	if len(seed) != seedSize {
 		clear(seed)
-		return nil, fmt.Errorf("quic: TLS key file %s is %d bytes, want %d", path, len(seed), ed25519.SeedSize)
+		return nil, fmt.Errorf("quic: TLS key file %s is %d bytes, want %d", path, len(seed), seedSize)
 	}
 	return seed, nil
 }
@@ -130,7 +139,7 @@ func loadOrGenerateSeed(path string) ([]byte, error) {
 	if !errors.Is(err, os.ErrNotExist) {
 		return seed, err
 	}
-	seed = make([]byte, ed25519.SeedSize)
+	seed = make([]byte, seedSize)
 	if _, err := rand.Read(seed); err != nil {
 		return nil, err
 	}
@@ -171,7 +180,7 @@ func epochStart(epoch uint64) time.Time {
 	return epochtime.Epoch.Add(time.Duration(epoch) * epochtime.Period())
 }
 
-func epochCertificate(epoch uint64, tlsPrivateKey ed25519.PrivateKey) (*tls.Certificate, error) {
+func epochCertificate(epoch uint64, tlsPrivateKey crypto.Signer) (*tls.Certificate, error) {
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
 	if err != nil {
 		return nil, err
@@ -219,16 +228,19 @@ func (k *EpochKeys) loadOrGenerate(epoch uint64) (*epochKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	tlsPrivateKey := ed25519.NewKeyFromSeed(seed)
+	tlsPrivateKey, err := newTLSKey(k.signature, seed)
 	clear(seed)
+	if err != nil {
+		return nil, err
+	}
 	certificate, err := epochCertificate(epoch, tlsPrivateKey)
 	if err != nil {
-		clear(tlsPrivateKey)
+		wipeTLSKey(tlsPrivateKey)
 		return nil, err
 	}
 	spki, err := x509.MarshalPKIXPublicKey(tlsPrivateKey.Public())
 	if err != nil {
-		clear(tlsPrivateKey)
+		wipeTLSKey(tlsPrivateKey)
 		return nil, err
 	}
 	return &epochKey{tlsPrivateKey: tlsPrivateKey, certificate: certificate, keyHash: sha256.Sum256(spki)}, nil
