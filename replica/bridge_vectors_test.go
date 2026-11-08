@@ -41,6 +41,7 @@ type bridgeVectors struct {
 	Boxes []struct {
 		Name           string `json:"name"`
 		CiphertextSize int    `json:"ciphertext_size"`
+		ExtraLengths   []int  `json:"extra_payload_lengths"`
 		BoxID          string `json:"box_id"`
 		Signature      string `json:"signature"`
 		Ciphertext     string `json:"ciphertext"`
@@ -118,7 +119,7 @@ func TestBridgeSocketVectors(t *testing.T) {
 		copy(w.Signature[:], unhex(t, b.Signature))
 		w.PayloadLen = uint32(len(w.Payload))
 		geo := &pgeo.Geometry{MaxPlaintextPayloadLength: b.CiphertextSize - 4 - 16} // less the length prefix and the AEAD tag
-		if got := verifyReplicaWrite(w, geo); got != b.Expect {
+		if got := verifyReplicaWrite(w, geo, b.ExtraLengths); got != b.Expect {
 			t.Errorf("%s: code %d, want %d", b.Name, got, b.Expect)
 		}
 	}
