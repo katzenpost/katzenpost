@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"encoding/binary"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cockroachdb/pebble"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/bacap"
@@ -36,9 +38,26 @@ import (
 // for a tombstone). A reply is a replica error code, and for a found box
 // the signature and the ciphertext. A box's ciphertext is the default
 // geometry's box size or the size for one of BoxPayloadLengths.
+//
+// A subscribe query, type byte 2 and a big endian u64 replica epoch,
+// turns the connection into a stream: the replica sends, with no reply
+// expected, one announce frame for each box it stores in a kept epoch at
+// or after that epoch, oldest epoch first, then one for each box it newly
+// stores, tombstones included. An announce is the replica epoch the box
+// is stored under, the Box ID, the signature and the ciphertext (empty
+// for a tombstone). Boxes may be announced more than once. If the bridge
+// falls behind the replica closes the stream; the bridge subscribes again
+// from the last epoch it saw.
 const (
-	bridgeQueryRead  = 0
-	bridgeQueryWrite = 1
+	bridgeQueryRead      = 0
+	bridgeQueryWrite     = 1
+	bridgeQuerySubscribe = 2
+
+	// bridgeStreamQueue bounds the announces waiting on a slow bridge.
+	bridgeStreamQueue = 4096
+
+	// bridgeWriteTimeout closes a stream the bridge stops reading.
+	bridgeWriteTimeout = time.Minute
 
 	// bridgeMaxFrame bounds a frame; a box is a few KB.
 	bridgeMaxFrame = 1 << 20
@@ -141,11 +160,141 @@ func (b *BridgeListener) serve(c net.Conn) {
 			}
 			return
 		}
+		if since, ok := decodeBridgeSubscribe(query); ok {
+			b.stream(c, since)
+			return
+		}
 		if err := writeBridgeFrame(c, b.handle(query)); err != nil {
 			b.log.Debugf("bridge write: %v", err)
 			return
 		}
 	}
+}
+
+// stream announces stored boxes to a subscribed bridge until it hangs
+// up, falls behind, or the listener halts.
+func (b *BridgeListener) stream(c net.Conn, since uint64) {
+	st := b.server.state
+	ch := st.subscribeStored(bridgeStreamQueue)
+	defer st.unsubscribeStored(ch)
+
+	// The bridge sends nothing more; reading notices it hang up.
+	c.SetReadDeadline(time.Time{})
+	gone := make(chan struct{})
+	go func() {
+		io.Copy(io.Discard, c)
+		close(gone)
+	}()
+	announce := func(epoch uint64, box *pigeonhole.Box) error {
+		c.SetWriteDeadline(time.Now().Add(bridgeWriteTimeout))
+		return writeBridgeFrame(c, encodeBridgeAnnounce(epoch, box))
+	}
+	if err := st.storedSince(since, announce); err != nil {
+		b.log.Debugf("bridge stream: %v", err)
+		return
+	}
+	for {
+		select {
+		case sb, ok := <-ch:
+			if !ok {
+				b.log.Warning("bridge stream: bridge fell behind, closing")
+				return
+			}
+			if err := announce(sb.epoch, sb.box); err != nil {
+				b.log.Debugf("bridge stream: %v", err)
+				return
+			}
+		case <-gone:
+			return
+		}
+	}
+}
+
+func decodeBridgeSubscribe(q []byte) (since uint64, ok bool) {
+	if len(q) != 9 || q[0] != bridgeQuerySubscribe {
+		return 0, false
+	}
+	return binary.BigEndian.Uint64(q[1:]), true
+}
+
+func encodeBridgeAnnounce(epoch uint64, box *pigeonhole.Box) []byte {
+	out := binary.BigEndian.AppendUint64(nil, epoch)
+	out = append(out, box.BoxID[:]...)
+	out = append(out, box.Signature[:]...)
+	return append(out, box.Payload...)
+}
+
+// storedBox is a box this replica just stored, for subscribed bridges.
+type storedBox struct {
+	epoch uint64
+	box   *pigeonhole.Box
+}
+
+func (s *state) subscribeStored(n int) chan storedBox {
+	ch := make(chan storedBox, n)
+	s.storedMu.Lock()
+	defer s.storedMu.Unlock()
+	if s.storedSubs == nil {
+		s.storedSubs = make(map[chan storedBox]struct{})
+	}
+	s.storedSubs[ch] = struct{}{}
+	return ch
+}
+
+func (s *state) unsubscribeStored(ch chan storedBox) {
+	s.storedMu.Lock()
+	defer s.storedMu.Unlock()
+	if _, ok := s.storedSubs[ch]; ok {
+		delete(s.storedSubs, ch)
+		close(ch)
+	}
+}
+
+// announceStored never blocks a write: a subscriber whose queue is full
+// is dropped, its channel closed, and must subscribe again.
+func (s *state) announceStored(epoch uint64, box *pigeonhole.Box) {
+	s.storedMu.Lock()
+	defer s.storedMu.Unlock()
+	for ch := range s.storedSubs {
+		select {
+		case ch <- storedBox{epoch, box}:
+		default:
+			delete(s.storedSubs, ch)
+			close(ch)
+		}
+	}
+}
+
+// storedSince calls f with each box stored in a kept epoch at or after
+// since, oldest epoch first.
+func (s *state) storedSince(since uint64, f func(uint64, *pigeonhole.Box) error) error {
+	if s.db == nil {
+		return ErrDBClosed
+	}
+	it, err := s.db.NewIter(&pebble.IterOptions{})
+	if err != nil {
+		return err
+	}
+	defer it.Close()
+	kept := keptEpochs(currentReplicaEpoch())
+	for i := len(kept) - 1; i >= 0; i-- {
+		ep := kept[i]
+		if ep < since {
+			continue
+		}
+		prefix := epochPrefix(ep)
+		for it.SeekGE(prefix); it.Valid() && bytes.HasPrefix(it.Key(), prefix); it.Next() {
+			// BoxFromBytes copies, so the box outlives the iterator.
+			box, err := pigeonhole.BoxFromBytes(it.Value())
+			if err != nil {
+				return err
+			}
+			if err := f(ep, box); err != nil {
+				return err
+			}
+		}
+	}
+	return it.Error()
 }
 
 func readBridgeFrame(r io.Reader) ([]byte, error) {

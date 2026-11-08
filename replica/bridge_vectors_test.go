@@ -34,6 +34,21 @@ type bridgeVectors struct {
 		Payload    string `json:"payload"`
 		Frame      string `json:"frame"`
 	}
+	Subscribe []struct {
+		Name    string `json:"name"`
+		Since   uint64 `json:"since"`
+		Payload string `json:"payload"`
+		Frame   string `json:"frame"`
+	}
+	Announces []struct {
+		Name       string `json:"name"`
+		Epoch      uint64 `json:"epoch"`
+		BoxID      string `json:"box_id"`
+		Signature  string `json:"signature"`
+		Ciphertext string `json:"ciphertext"`
+		Payload    string `json:"payload"`
+		Frame      string `json:"frame"`
+	}
 	Malformed []struct {
 		Name    string `json:"name"`
 		Payload string `json:"payload"`
@@ -106,8 +121,36 @@ func TestBridgeSocketVectors(t *testing.T) {
 			t.Errorf("%s: reply %x, want %s", r.Name, got, r.Payload)
 		}
 	}
+	frame := func(p []byte) []byte {
+		var f bytes.Buffer
+		if err := writeBridgeFrame(&f, p); err != nil {
+			t.Fatal(err)
+		}
+		return f.Bytes()
+	}
+	for _, q := range v.Subscribe {
+		payload := unhex(t, q.Payload)
+		if since, ok := decodeBridgeSubscribe(payload); !ok || since != q.Since {
+			t.Errorf("%s: decoded since %d ok=%v", q.Name, since, ok)
+		}
+		if !bytes.Equal(frame(payload), unhex(t, q.Frame)) {
+			t.Errorf("%s: frame differs", q.Name)
+		}
+	}
+	for _, a := range v.Announces {
+		box := &pigeonhole.Box{Payload: unhex(t, a.Ciphertext)}
+		copy(box.BoxID[:], unhex(t, a.BoxID))
+		copy(box.Signature[:], unhex(t, a.Signature))
+		got := encodeBridgeAnnounce(a.Epoch, box)
+		if !bytes.Equal(got, unhex(t, a.Payload)) || !bytes.Equal(frame(got), unhex(t, a.Frame)) {
+			t.Errorf("%s: announce %x, want %s", a.Name, got, a.Payload)
+		}
+	}
 	for _, m := range v.Malformed {
-		if _, _, _, ok := decodeBridgeQuery(unhex(t, m.Payload)); ok {
+		p := unhex(t, m.Payload)
+		_, _, _, ok := decodeBridgeQuery(p)
+		_, sub := decodeBridgeSubscribe(p)
+		if ok || sub {
 			t.Errorf("%s: accepted", m.Name)
 		}
 	}

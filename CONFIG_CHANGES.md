@@ -531,6 +531,14 @@ Source: `replica/config/config.go`.
   so a full replica can still be reclaimed. (Renamed from
   `MinFreeStorageBytes` for the same units-friendliness reason; the
   stale name is silently ignored.)
+- **Added** `BridgeSocket` (string). Absolute path of a unix socket
+  serving a Reticulum mesh replica (pigeonhole_rns) on the same host.
+  Empty, the default, disables it. Besides box reads and writes the
+  socket offers a subscribe query that streams every box this replica
+  stores, tombstones included, so the bridge can push mixnet writes
+  onto the mesh. The wire format is in `replica/bridge.go` and
+  `replica/testdata/bridge_socket_vectors.json`. Not breaking: the
+  read and write queries are unchanged.
 - **Added** `BoxPayloadLengths` (list of int). **[breaking]** for
   networks with a Reticulum bridge (`BridgeSocket`): plaintext payload
   lengths of the extra box sizes the replica stores besides the

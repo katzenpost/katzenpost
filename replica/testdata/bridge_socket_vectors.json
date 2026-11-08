@@ -1,5 +1,5 @@
 {
- "description": "Bridge socket between a Katzenpost replica and a Pigeonhole mesh replica: each message is a big endian u32 length then the payload. Queries: READ=0 | box_id(32); WRITE=1 | box_id(32) | signature(64) | ciphertext (empty for a tombstone). Replies: code(1) and, for a found box, signature(64) | ciphertext. Boxes: what a replica answers a write with, given the default box ciphertext size and any extra_payload_lengths, the plaintext lengths of the other box sizes it stores (absent means none); a box of plaintext length n has a ciphertext of n + 20 bytes.",
+ "description": "Bridge socket between a Katzenpost replica and a Pigeonhole mesh replica: each message is a big endian u32 length then the payload. Queries: READ=0 | box_id(32); WRITE=1 | box_id(32) | signature(64) | ciphertext (empty for a tombstone). Replies: code(1) and, for a found box, signature(64) | ciphertext. SUBSCRIBE=2 | since_epoch(u64 big endian) turns the connection into a stream of announces, with no reply: epoch(u64 big endian) | box_id(32) | signature(64) | ciphertext (empty for a tombstone), first every box stored in a kept epoch at or after since_epoch, then each newly stored box. Boxes: what a replica answers a write with, given the default box ciphertext size and any extra_payload_lengths, the plaintext lengths of the other box sizes it stores (absent means none); a box of plaintext length n has a ciphertext of n + 20 bytes.",
  "queries": [
   {
    "name": "read",
@@ -83,6 +83,14 @@
   {
    "name": "unknown_kind",
    "payload": "070102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+  },
+  {
+   "name": "subscribe_short",
+   "payload": "0200000000000b76"
+  },
+  {
+   "name": "subscribe_trailing",
+   "payload": "0200000000000b760000"
   }
  ],
  "boxes": [
@@ -175,6 +183,40 @@
    "signature": "d942429101eef142327811ebb97ba4666338274812b2f7ae10f6b1e8fcdbc6d1dfd36ffc130004587cf48b04f701dbbbbb2cfc909cbfbdcab577af5b8a062c00",
    "ciphertext": "a45898cdd9f932c21f3a3c563819a3216370636a7aa74bc4ced2f8ecdb3768d88478b8edf9d912e23f1a1c76183983014350434a5a876be4eef2d8ccfb",
    "expect": 5
+  }
+ ],
+ "subscribe": [
+  {
+   "name": "from_zero",
+   "since": 0,
+   "payload": "020000000000000000",
+   "frame": "00000009020000000000000000"
+  },
+  {
+   "name": "from_epoch",
+   "since": 2934,
+   "payload": "020000000000000b76",
+   "frame": "00000009020000000000000b76"
+  }
+ ],
+ "announces": [
+  {
+   "name": "box",
+   "epoch": 2934,
+   "box_id": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+   "signature": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "ciphertext": "61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573",
+   "payload": "0000000000000b760102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573",
+   "frame": "000000910000000000000b760102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf61207365616c656420626f78206f6620736f6d652066697865642073697a652c203430206279746573"
+  },
+  {
+   "name": "tombstone",
+   "epoch": 2934,
+   "box_id": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+   "signature": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "ciphertext": "",
+   "payload": "0000000000000b760102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+   "frame": "000000680000000000000b760102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20a0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeafa0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
   }
  ]
 }
