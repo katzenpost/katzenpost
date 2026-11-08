@@ -20,12 +20,26 @@ import (
 // publish to VoucherStream box 0, the rendezvous stream caps, and the reply
 // keypair; persist VoucherSecretKey to open the inductor's reply later.
 func (t *ThinClient) VoucherMint(messageWriteCap []byte, displayName string) (*VoucherMintReply, error) {
+	return t.VoucherMintForm(messageWriteCap, displayName, 0)
+}
+
+// VoucherMintForm mints a Voucher, as VoucherMint does, in the chosen
+// VoucherPayload form. form is VoucherFormLong, to join a group whose
+// inductors only read the long form, or VoucherFormCompact; 0 lets the daemon
+// choose, which is the compact form. messageWriteCap is the joiner's
+// MessageStream write cap and displayName the joiner's chosen name. The
+// returned reply carries the Voucher, the payload to publish to VoucherStream
+// box 0, the rendezvous stream caps and the reply keypair. It returns an
+// error if the request cannot be written, the client halts, or the daemon
+// rejects the request (for instance a malformed write cap).
+func (t *ThinClient) VoucherMintForm(messageWriteCap []byte, displayName string, form uint8) (*VoucherMintReply, error) {
 	queryID := t.NewQueryID()
 	req := &Request{
 		VoucherMint: &VoucherMint{
 			QueryID:         queryID,
 			MessageWriteCap: messageWriteCap,
 			DisplayName:     displayName,
+			Form:            form,
 		},
 	}
 	eventSink := t.EventSink()
