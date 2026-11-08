@@ -29,8 +29,7 @@ the versions of katzenpost, hpqc, thin_client and katzenqt that work together.
 
 ## Repository layout
 
-See [repository-layout.md](repository-layout.md) for a tour of the directories, and
-[cryptography.md](cryptography.md) for the protocols and the schemes they can use.
+See [cryptography.md](cryptography.md) for the protocols and the schemes they can use.
 
 ## Generated code
 

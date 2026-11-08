@@ -57,8 +57,8 @@ make -C docker stop
 
 ## Docs
 
-- [Engineering Katzenpost](docs/ENGINEERING.md): building, testing, CI and releases, with a
-  [repository tour](docs/repository-layout.md) and notes on the [cryptography](docs/cryptography.md)
+- [Engineering Katzenpost](docs/ENGINEERING.md): building, testing, CI and releases, with
+  notes on the [cryptography](docs/cryptography.md)
 - [Documentation](https://katzenpost.network/docs/), [specifications](https://katzenpost.network/docs/specs/),
   [threat model](https://katzenpost.network/research/Threat_Model_Doc.pdf) and
   [literature review](https://katzenpost.network/research/Literature_overview__website_version.pdf)
