@@ -67,3 +67,28 @@ func TestPigeonholeRoundTrip(t *testing.T) {
 		require.Equal(t, m, string(got))
 	}
 }
+
+// TestRedialAfterDrop drops the daemon's link to the gateway and shows the
+// daemon redials it from the consensus and still completes a round trip.
+func TestRedialAfterDrop(t *testing.T) {
+	n := localnet.New(t)
+	n.AddHandler("echo", nil, bytes.Clone)
+	n.Start()
+
+	c := n.ThinClient()
+	svc, err := c.GetService("echo")
+	require.NoError(t, err)
+	node := hash.Sum256(svc.MixDescriptor.IdentityKey)
+
+	n.DropGatewayLinks()
+
+	// The daemon redials 2s after a drop and backs off to 17s after a
+	// failed dial, so 15s is enough only if the first redial succeeds.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	payload := []byte("after the drop")
+	reply, err := c.StartResendingMessage(ctx, &node, svc.RecipientQueueID, payload)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(reply), len(payload))
+	require.Equal(t, payload, reply[:len(payload)])
+}
