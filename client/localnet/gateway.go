@@ -64,6 +64,9 @@ func newGateway(auth *authority, g *geo.Geometry, log *logging.Logger) (*gateway
 	if err != nil {
 		return nil, err
 	}
+	// The daemon redials a dropped link at the consensus address, so it
+	// must be the real one; the mixes and service node are never dialed.
+	auth.gateway.desc.Addresses = map[string][]string{"tcp": {"tcp://" + ln.Addr().String()}}
 	return &gateway{
 		auth:    auth,
 		geo:     g,

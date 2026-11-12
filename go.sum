@@ -270,8 +270,8 @@ github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 h1:TsKxH0
 github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8/go.mod h1:Hmcrwom7jcEmGdo0CsyuJNnldPeyS+M07FuCbo7I8fw=
 github.com/katzenpost/sphincsplus v0.0.2 h1:W1UWejLK62Lk0uK2R08H/sWEaQrRHWCaMEKO181SoOE=
 github.com/katzenpost/sphincsplus v0.0.2/go.mod h1:ChO9+ojgCH1yEuplGgW4mSI1FwZWtyEmEkG1xL3w264=
-github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520215053-47e926d8264d h1:mjXmMwB8NRO0+NoUGj9zys2vm02Ia9on0lZE5gVr4X8=
-github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520215053-47e926d8264d/go.mod h1:CcVAF5BHgQtHH3lFCmwl3t2KKcXih+8ZcjLbxg8z3D0=
+github.com/katzenpost/sqisign/bindings/go v0.0.0-20261112155012-cb950003cf40 h1:ctH8yCdXji4G5mo16UE/Ydsxhh0rY22hSzZWKADvsr0=
+github.com/katzenpost/sqisign/bindings/go v0.0.0-20261112155012-cb950003cf40/go.mod h1:CcVAF5BHgQtHH3lFCmwl3t2KKcXih+8ZcjLbxg8z3D0=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=

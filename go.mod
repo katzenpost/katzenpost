@@ -69,7 +69,7 @@ require (
 	github.com/katzenpost/falcon v0.1.0 // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2 // indirect
-	github.com/katzenpost/sqisign/bindings/go v0.0.0-20260520215053-47e926d8264d // indirect
+	github.com/katzenpost/sqisign/bindings/go v0.0.0-20261112155012-cb950003cf40 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
