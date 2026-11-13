@@ -298,8 +298,10 @@ type Debug struct {
 	// an explicit non-zero value overrides.
 	NumKaetzchenWorkers int
 
-	// SchedulerExternalMemoryQueue will enable the experimental external
-	// memory queue that is backed by disk.
+	// SchedulerExternalMemoryQueue selected the old on-disk scheduler queue.
+	//
+	// Deprecated: ignored; the scheduler queue is always in memory.  It is
+	// still decoded so the scheduler can log that it is ignored.
 	SchedulerExternalMemoryQueue bool
 
 	// SchedulerQueueSize is the maximum allowed scheduler queue size before

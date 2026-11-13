@@ -261,16 +261,10 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 	}
 
 	if glue.Config().Debug.SchedulerExternalMemoryQueue {
-		sch.log.Noticef("Initializing external memory queue.")
-		var err error
-		sch.q, err = newBoltQueue(glue)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		sch.log.Noticef("Initializing memory queue.")
-		sch.q = newMemoryQueue(glue, sch.log)
+		sch.log.Noticef("SchedulerExternalMemoryQueue is ignored; the on-disk queue was removed.")
 	}
+	sch.log.Noticef("Initializing memory queue.")
+	sch.q = newMemoryQueue(glue, sch.log)
 
 	sch.Go(sch.pipeWorker)
 	sch.Go(sch.worker)

@@ -462,6 +462,12 @@ v0.0.71→main window.
   `katzenpost_server_selfcheck_sphinx_*` gauges so the chosen
   values are visible to Prometheus.
 
+- **Deprecated** `SchedulerExternalMemoryQueue` (bool). The on-disk
+  (BoltDB) scheduler queue has been removed; the scheduler queue is
+  always in memory. The key is still accepted; when it is `true` the
+  server logs a notice at startup and ignores it. Operators can delete
+  the key and any old `external_queue.db` file.
+
 ### Defaults
 
 - `defaultSchedulerSlack` raised from `150` to `450` ms.
