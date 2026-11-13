@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -41,7 +42,7 @@ func TestGatewayLegacySpoolDBStillLoads(t *testing.T) {
   PKISignatureScheme = "Ed25519"
   Identifier = "gateway.example.com"
   Addresses = [ "tcp://127.0.0.1:29483" ]
-  DataDir = "%s"
+  DataDir = '%s'
   IsGatewayNode = true
 
 [Logging]
@@ -63,7 +64,7 @@ func TestGatewayLegacySpoolDBStillLoads(t *testing.T) {
 
 	for _, tc := range []struct{ name, extra string }{
 		{"no gateway table", ""},
-		{"bolt backend", "\n[Gateway]\n  [Gateway.SpoolDB]\n    Backend = \"bolt\"\n    [Gateway.SpoolDB.Bolt]\n      SpoolDB = \"" + dir + "/spool.db\"\n"},
+		{"bolt backend", "\n[Gateway]\n  [Gateway.SpoolDB]\n    Backend = \"bolt\"\n    [Gateway.SpoolDB.Bolt]\n      SpoolDB = '" + filepath.Join(dir, "spool.db") + "'\n"},
 		{"relative bolt path", "\n[Gateway]\n  [Gateway.SpoolDB]\n    Backend = \"bolt\"\n    [Gateway.SpoolDB.Bolt]\n      SpoolDB = \"spool.db\"\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
