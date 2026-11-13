@@ -435,38 +435,10 @@ Source: `server/config/config.go`.
   storage is no longer supported. As above, a leftover
   `[Gateway.SQLDB]` table is silently ignored rather than rejected, so
   the operator must remove it to regain a config that reflects reality.
-- **Deprecated** `[Gateway.SpoolDB]` table (and its
-  `[Gateway.SpoolDB.Bolt]` inner table). The user message spool is now
-  kept in memory, so spooled messages no longer survive a restart and
-  the gateway no longer writes `spool.db`. The table is still accepted
-  but ignored; when it is present the gateway logs a notice at startup.
-  **[breaking]** The first start after the upgrade does not read the
-  existing `spool.db`: every message still queued in it is dropped at
-  once. To upgrade safely:
-  1. Check the old backlog. With the gateway stopped,
-     `bbolt stats spool.db` (from `go.etcd.io/bbolt/cmd/bbolt`) reports
-     its bucket count: one bucket per queued message, plus one per
-     recipient and two fixed ones. The file size says little, since
-     BoltDB files do not shrink. The backlog only holds messages for clients that were
-     connected at the last vacuum and had not fetched them yet.
-  2. Upgrade while that backlog is small, for example at low traffic.
-     Pigeonhole clients re-request replies they did not receive, so
-     the dropped messages are recovered by the clients' retransmission.
-  3. Once the new gateway is running, delete the table from the config
-     and delete `spool.db`.
-- **Added** `SpoolMaxRecipientBytes` (int, bytes; default `16777216`,
-  16 MiB) and `SpoolMaxBytes` (int, bytes; default `536870912`,
-  512 MiB). They bound the in-memory spool per recipient and in total,
-  counting message and SURB ID bytes. `0` or omitted takes the default;
-  negative values refuse the config. A message that would pass either
-  limit is refused and dropped, counted in
-  `katzenpost_dropped_reason_total` as `gateway_spool_recipient_full`
-  or `gateway_spool_full`, with a warning logged at most once a minute.
-  Queued messages are never evicted to make room, because a client
-  acknowledges the head it was shown by advancing the spool, and
-  evicting that head would make the advance discard a message the
-  client never saw. `katzenpost_gateway_spool_bytes` reports the bytes
-  held.
+- **Ignored** `[Gateway.SpoolDB]` table (and `[Gateway.SpoolDB.Bolt]`).
+  The spool is kept in memory; the table still loads but has no effect.
+- **Added** `SpoolMaxRecipientBytes` (default 16 MiB) and `SpoolMaxBytes`
+  (default 512 MiB): byte limits on the spool per recipient and in total.
 
 ### `[Debug]`
 
@@ -488,11 +460,8 @@ v0.0.71→main window.
   `katzenpost_server_selfcheck_sphinx_*` gauges so the chosen
   values are visible to Prometheus.
 
-- **Deprecated** `SchedulerExternalMemoryQueue` (bool). The on-disk
-  (BoltDB) scheduler queue has been removed; the scheduler queue is
-  always in memory. The key is still accepted; when it is `true` the
-  server logs a notice at startup and ignores it. Operators can delete
-  the key and any old `external_queue.db` file.
+- **Ignored** `SchedulerExternalMemoryQueue` (bool). The scheduler queue
+  is always in memory; the key still loads but has no effect.
 
 ### Defaults
 
