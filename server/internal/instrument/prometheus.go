@@ -115,6 +115,12 @@ var (
 			Help: "Number of total dropped mixed packets",
 		},
 	)
+	gatewaySpoolBytes = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_gateway_spool_bytes",
+			Help: "Bytes of messages held in the gateway spool",
+		},
+	)
 	mixQueueSize = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Name: "katzenpost_mix_queue_size",
@@ -318,6 +324,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(kaetzchenResponsesDropped)
 	prometheus.MustRegister(mixPacketsDropped)
 	prometheus.MustRegister(mixQueueSize)
+	prometheus.MustRegister(gatewaySpoolBytes)
 	prometheus.MustRegister(pkiDocs)
 	prometheus.MustRegister(cancelledOutgoingConns)
 	prometheus.MustRegister(fetchedPKIDocs)
@@ -431,6 +438,11 @@ func InvalidPacketsDropped() {
 // MixQueueSize observes the size of the mix queue
 func MixQueueSize(size uint64) {
 	mixQueueSize.Observe(float64(size))
+}
+
+// GatewaySpoolBytes sets the number of bytes held in the gateway spool.
+func GatewaySpoolBytes(n int) {
+	gatewaySpoolBytes.Set(float64(n))
 }
 
 // PKIDocs increments the counter for the number of PKI docs per epoch

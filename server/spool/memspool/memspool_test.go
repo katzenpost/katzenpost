@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/server/spool"
 )
 
 type ignoreSet = map[[sConstants.RecipientIDLength]byte]interface{}
@@ -48,7 +49,7 @@ func requireGet(t *testing.T, s interface {
 
 // The scenario of the old boltspool test.
 func TestStoreAndGet(t *testing.T) {
-	s := New()
+	s := New(1<<20, 1<<20)
 	defer s.Close()
 	const u = "allan"
 
@@ -65,7 +66,7 @@ func TestStoreAndGet(t *testing.T) {
 }
 
 func TestAdvanceAndRemaining(t *testing.T) {
-	s := New()
+	s := New(1<<20, 1<<20)
 	defer s.Close()
 	const u = "u"
 
@@ -91,7 +92,7 @@ func TestAdvanceAndRemaining(t *testing.T) {
 }
 
 func TestSURBIDs(t *testing.T) {
-	s := New()
+	s := New(1<<20, 1<<20)
 	defer s.Close()
 	const u = "u"
 
@@ -107,7 +108,7 @@ func TestSURBIDs(t *testing.T) {
 }
 
 func TestInvalidUsername(t *testing.T) {
-	s := New()
+	s := New(1<<20, 1<<20)
 	defer s.Close()
 	for _, u := range [][]byte{nil, {}, make([]byte, sConstants.RecipientIDLength+1)} {
 		require.EqualError(t, s.StoreMessage(u, []byte("m")), fmt.Sprintf("spool: invalid username: `%v`", u))
@@ -117,7 +118,7 @@ func TestInvalidUsername(t *testing.T) {
 }
 
 func TestUsersAreSeparate(t *testing.T) {
-	s := New()
+	s := New(1<<20, 1<<20)
 	defer s.Close()
 	require.NoError(t, s.StoreMessage([]byte("a"), []byte("for a")))
 	require.NoError(t, s.StoreMessage([]byte("b"), []byte("for b")))
@@ -129,7 +130,7 @@ func TestUsersAreSeparate(t *testing.T) {
 }
 
 func TestVacuumExpired(t *testing.T) {
-	s := New()
+	s := New(1<<20, 1<<20)
 	defer s.Close()
 	for _, u := range []string{"keep", "drop", "also-drop"} {
 		require.NoError(t, s.StoreMessage([]byte(u), []byte(u)))
@@ -145,7 +146,7 @@ func TestVacuumExpired(t *testing.T) {
 }
 
 func TestCopies(t *testing.T) {
-	s := New()
+	s := New(1<<20, 1<<20)
 	defer s.Close()
 	in := []byte("abc")
 	id := surbID(9)
@@ -159,7 +160,7 @@ func TestCopies(t *testing.T) {
 }
 
 func TestClosed(t *testing.T) {
-	s := New()
+	s := New(1<<20, 1<<20)
 	require.NoError(t, s.StoreMessage([]byte("u"), []byte("m")))
 	s.Close()
 	require.Error(t, s.StoreMessage([]byte("u"), []byte("m")))
@@ -172,7 +173,7 @@ func TestClosed(t *testing.T) {
 
 // Run with -race: stores, gets, removes and vacuums from many goroutines.
 func TestConcurrent(t *testing.T) {
-	s := New()
+	s := New(1<<20, 1<<20)
 	defer s.Close()
 	const users, perUser = 8, 200
 	var wg sync.WaitGroup
@@ -202,4 +203,82 @@ func TestConcurrent(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+}
+
+func spoolBytes(t *testing.T, s spool.Spool) int {
+	t.Helper()
+	m := s.(*memSpool)
+	m.Lock()
+	defer m.Unlock()
+	return m.bytes
+}
+
+func TestRecipientLimit(t *testing.T) {
+	s := New(10, 100)
+	defer s.Close()
+	require.NoError(t, s.StoreMessage([]byte("u"), []byte("1234")))
+	require.NoError(t, s.StoreMessage([]byte("u"), []byte("5678")))
+	err := s.StoreMessage([]byte("u"), []byte("abc"))
+	require.ErrorIs(t, err, spool.ErrRecipientFull)
+	require.EqualError(t, err, "spool: recipient spool is full: 8 bytes queued, 3 more would pass the 10 byte limit")
+	require.NoError(t, s.StoreMessage([]byte("u"), []byte("ab")), "exactly at the limit is allowed")
+	require.NoError(t, s.StoreMessage([]byte("other"), []byte("1234567890")), "the limit is per recipient")
+
+	// The refused message left the queue as it was.
+	requireGet(t, s, "u", false, "1234", nil, 1)
+	requireGet(t, s, "u", true, "5678", nil, 1)
+	requireGet(t, s, "u", true, "ab", nil, 0)
+}
+
+func TestTotalLimit(t *testing.T) {
+	s := New(10, 15)
+	defer s.Close()
+	require.NoError(t, s.StoreMessage([]byte("a"), []byte("12345678")))
+	require.NoError(t, s.StoreMessage([]byte("b"), []byte("123456")))
+	require.ErrorIs(t, s.StoreMessage([]byte("c"), []byte("12")), spool.ErrFull)
+	require.NoError(t, s.StoreMessage([]byte("c"), []byte("1")))
+	require.Equal(t, 15, spoolBytes(t, s))
+	requireGet(t, s, "c", false, "1", nil, 0)
+}
+
+func TestSURBIDCountsTowardsLimit(t *testing.T) {
+	s := New(sConstants.SURBIDLength+1, 100)
+	defer s.Close()
+	require.ErrorIs(t, s.StoreSURBReply([]byte("u"), surbID(1), []byte("ab")), spool.ErrRecipientFull)
+	require.NoError(t, s.StoreSURBReply([]byte("u"), surbID(1), []byte("a")))
+	require.Equal(t, sConstants.SURBIDLength+1, spoolBytes(t, s))
+}
+
+// Advance, Remove and VacuumExpired give back the bytes they drop.
+func TestReleaseBytes(t *testing.T) {
+	s := New(4, 8)
+	defer s.Close()
+	fill := func(u string) {
+		t.Helper()
+		require.NoError(t, s.StoreMessage([]byte(u), []byte("12")))
+		require.NoError(t, s.StoreMessage([]byte(u), []byte("34")))
+		require.ErrorIs(t, s.StoreMessage([]byte(u), []byte("5")), spool.ErrRecipientFull)
+	}
+	fill("a")
+	fill("b")
+	require.ErrorIs(t, s.StoreMessage([]byte("c"), []byte("5")), spool.ErrFull)
+
+	// Peeking frees nothing; advancing frees the dropped head.
+	requireGet(t, s, "a", false, "12", nil, 1)
+	require.Equal(t, 8, spoolBytes(t, s))
+	requireGet(t, s, "a", true, "34", nil, 0)
+	require.Equal(t, 6, spoolBytes(t, s))
+	require.NoError(t, s.StoreMessage([]byte("a"), []byte("56")))
+	requireGet(t, s, "a", true, "56", nil, 0)
+	requireGet(t, s, "a", true, "", nil, 0)
+	require.Equal(t, 4, spoolBytes(t, s))
+
+	require.NoError(t, s.Remove([]byte("b")))
+	require.Equal(t, 0, spoolBytes(t, s))
+	fill("b")
+
+	require.NoError(t, s.StoreMessage([]byte("c"), []byte("1234")))
+	require.NoError(t, s.VacuumExpired(ignoreSet{key("c"): nil}))
+	require.Equal(t, 4, spoolBytes(t, s))
+	fill("a")
 }

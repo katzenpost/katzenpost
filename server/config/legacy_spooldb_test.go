@@ -62,6 +62,17 @@ func TestGatewayLegacySpoolDBStillLoads(t *testing.T) {
 	cfgText := fmt.Sprintf(base, testingSchemeName, dir, testingSchemeName,
 		strings.ReplaceAll(pem.ToPublicPEMString(linkPubKey), "\n", "\\n"))
 
+	t.Run("explicit limits", func(t *testing.T) {
+		cfg, err := Load([]byte(cfgText + "\n[Gateway]\n  SpoolMaxRecipientBytes = 1000\n  SpoolMaxBytes = 5000\n"))
+		require.NoError(t, err)
+		require.Equal(t, 1000, cfg.Gateway.SpoolMaxRecipientBytes)
+		require.Equal(t, 5000, cfg.Gateway.SpoolMaxBytes)
+	})
+	t.Run("negative limit", func(t *testing.T) {
+		_, err := Load([]byte(cfgText + "\n[Gateway]\n  SpoolMaxBytes = -1\n"))
+		require.ErrorContains(t, err, "must not be negative")
+	})
+
 	for _, tc := range []struct{ name, extra string }{
 		{"no gateway table", ""},
 		{"bolt backend", "\n[Gateway]\n  [Gateway.SpoolDB]\n    Backend = \"bolt\"\n    [Gateway.SpoolDB.Bolt]\n      SpoolDB = '" + filepath.Join(dir, "spool.db") + "'\n"},
@@ -72,6 +83,8 @@ func TestGatewayLegacySpoolDBStillLoads(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, cfg.Gateway)
 			require.Equal(t, tc.extra == "", cfg.Gateway.SpoolDB == nil, "SpoolDB is set only when the operator wrote it")
+			require.Equal(t, DefaultSpoolMaxRecipientBytes, cfg.Gateway.SpoolMaxRecipientBytes)
+			require.Equal(t, DefaultSpoolMaxBytes, cfg.Gateway.SpoolMaxBytes)
 		})
 	}
 }

@@ -68,6 +68,11 @@ const (
 	defaultKaetzchenDelay    = 750       // 750 ms.
 	defaultManagementSocket  = "management_sock"
 
+	// DefaultSpoolMaxRecipientBytes and DefaultSpoolMaxBytes bound the
+	// in-memory gateway spool.
+	DefaultSpoolMaxRecipientBytes = 16 << 20  // 16 MiB.
+	DefaultSpoolMaxBytes          = 512 << 20 // 512 MiB.
+
 	// BackendBolt is the old BoltDB spool backend.
 	//
 	// Deprecated: the gateway spool is kept in memory; SpoolDB is ignored.
@@ -567,6 +572,16 @@ type Gateway struct {
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
 	AltAddresses map[string][]string
 
+	// SpoolMaxRecipientBytes is the most message bytes the in-memory spool
+	// holds for one recipient; a message that would pass it is refused.
+	// Omit (or set to 0) for DefaultSpoolMaxRecipientBytes.
+	SpoolMaxRecipientBytes int
+
+	// SpoolMaxBytes is the most message bytes the in-memory spool holds in
+	// total; a message that would pass it is refused.  Omit (or set to 0)
+	// for DefaultSpoolMaxBytes.
+	SpoolMaxBytes int
+
 	// SpoolDB is the old on-disk spool configuration.
 	//
 	// Deprecated: the spool is kept in memory and this is ignored; it is
@@ -681,6 +696,19 @@ func (kCfg *CBORPluginKaetzchen) validate() error {
 		return fmt.Errorf("config: Kaetzchen: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
 	}
 
+	return nil
+}
+
+func (gCfg *Gateway) fixupAndValidate() error {
+	if gCfg.SpoolMaxRecipientBytes < 0 || gCfg.SpoolMaxBytes < 0 {
+		return errors.New("config: Gateway: SpoolMaxRecipientBytes and SpoolMaxBytes must not be negative")
+	}
+	if gCfg.SpoolMaxRecipientBytes == 0 {
+		gCfg.SpoolMaxRecipientBytes = DefaultSpoolMaxRecipientBytes
+	}
+	if gCfg.SpoolMaxBytes == 0 {
+		gCfg.SpoolMaxBytes = DefaultSpoolMaxBytes
+	}
 	return nil
 }
 
@@ -848,6 +876,9 @@ func (cfg *Config) FixupAndValidate() error {
 	if cfg.Server.IsGatewayNode {
 		if cfg.Gateway == nil {
 			cfg.Gateway = &Gateway{}
+		}
+		if err := cfg.Gateway.fixupAndValidate(); err != nil {
+			return err
 		}
 	} else if cfg.Gateway != nil {
 		return errors.New("config: Gateway block set when not a Gateway")
