@@ -432,10 +432,15 @@ Source: `server/config/config.go`.
   silently ignored at load (BurntSushi is lenient); the operator action
   is to delete it, since the functionality it configured is gone.
 - **Removed** `[Gateway.SQLDB]` table. **[breaking]** SQL-backed
-  storage is no longer supported; only the BoltDB spool
-  (`[Gateway.SpoolDB.Bolt]`) remains. As above, a leftover
+  storage is no longer supported. As above, a leftover
   `[Gateway.SQLDB]` table is silently ignored rather than rejected, so
   the operator must remove it to regain a config that reflects reality.
+- **Deprecated** `[Gateway.SpoolDB]` table (and its
+  `[Gateway.SpoolDB.Bolt]` inner table). The user message spool is now
+  kept in memory, so spooled messages no longer survive a restart and
+  the gateway no longer writes `spool.db`. The table is still accepted
+  but ignored; when it is present the gateway logs a notice at startup.
+  Operators can delete the table and any old `spool.db` file.
 
 ### `[Debug]`
 
@@ -465,8 +470,8 @@ v0.0.71→main window.
 
 - The exported constants `BackendSQL` and `BackendExtern` are gone.
   Operators using `Backend = "sql"` or `Backend = "extern"` in either
-  the SpoolDB or UserDB tables must drop those settings; only `"bolt"`
-  is now valid.
+  the SpoolDB or UserDB tables must drop those settings. The SpoolDB
+  table is now ignored altogether (see `[Server.Gateway]` above).
 
 ### Management socket commands
 

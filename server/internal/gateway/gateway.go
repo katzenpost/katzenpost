@@ -4,7 +4,6 @@
 package gateway
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -14,12 +13,11 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/spool"
-	"github.com/katzenpost/katzenpost/server/spool/boltspool"
+	"github.com/katzenpost/katzenpost/server/spool/memspool"
 )
 
 const InboundPacketsChannelSize = 1000
@@ -240,16 +238,10 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 		}
 	}()
 
-	var err error
-	switch cfg.Gateway.SpoolDB.Backend {
-	case config.BackendBolt:
-		p.spool, err = boltspool.New(cfg.Gateway.SpoolDB.Bolt.SpoolDB)
-	default:
-		err = fmt.Errorf("gateway: Unknown SpoolDB backend: %v", cfg.Gateway.SpoolDB.Backend)
+	if cfg.Gateway.SpoolDB != nil {
+		p.log.Noticef("The user message spool is kept in memory; the [Gateway.SpoolDB] settings are ignored and can be removed.")
 	}
-	if err != nil {
-		return nil, err
-	}
+	p.spool = memspool.New()
 
 	// Start the workers.
 	for i := 0; i < cfg.Debug.NumGatewayWorkers; i++ {
