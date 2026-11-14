@@ -248,16 +248,26 @@ func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 	}
 }
 
-// warnOldSpoolDB warns once if the on-disk spool of older versions is still
-// there: its messages are not read, so the operator should know they are lost.
-func (p *gateway) warnOldSpoolDB(cfg *config.Config) {
+// removeOldSpoolDB deletes the on-disk spool of older versions, which is no
+// longer read; clients fetch the messages it held again from storage.
+func (p *gateway) removeOldSpoolDB(cfg *config.Config) {
 	path := filepath.Join(cfg.Server.DataDir, "spool.db") // The old default.
 	if sdb := cfg.Gateway.SpoolDB; sdb != nil && sdb.Bolt != nil && sdb.Bolt.SpoolDB != "" {
 		path = sdb.Bolt.SpoolDB
 	}
-	if fi, err := os.Stat(path); err == nil && fi.Mode().IsRegular() && fi.Size() > 0 {
-		p.log.Warningf("Old spool database %s (%d bytes) is no longer read; any messages still queued in it are lost. It can be deleted.", path, fi.Size())
+	// Older versions refused a relative path, so one never named a spool.
+	if !filepath.IsAbs(path) {
+		return
 	}
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return
+	}
+	if err := os.Remove(path); err != nil {
+		p.log.Warningf("Failed to remove the old spool file %s: %v", path, err)
+		return
+	}
+	p.log.Noticef("Removed the old spool file %s (%d bytes); the spool is kept in memory.", path, fi.Size())
 }
 
 // New constructs a new provider instance.
@@ -280,7 +290,7 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 	if cfg.Gateway.SpoolDB != nil {
 		p.log.Noticef("The user message spool is kept in memory; the [Gateway.SpoolDB] settings are ignored and can be removed.")
 	}
-	p.warnOldSpoolDB(cfg)
+	p.removeOldSpoolDB(cfg)
 	p.spool = memspool.New(cfg.Gateway.SpoolMaxRecipientBytes, cfg.Gateway.SpoolMaxBytes)
 	p.log.Noticef("User message spool limits: %d bytes per recipient, %d bytes in total.", cfg.Gateway.SpoolMaxRecipientBytes, cfg.Gateway.SpoolMaxBytes)
 

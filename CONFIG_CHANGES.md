@@ -437,10 +437,9 @@ Source: `server/config/config.go`.
   the operator must remove it to regain a config that reflects reality.
 - **Ignored** `[Gateway.SpoolDB]` table (and `[Gateway.SpoolDB.Bolt]`).
   The spool is kept in memory; the table still loads but has no effect.
-  Messages still queued in an existing spool.db when this version first
-  starts are lost, because the code that read it has been removed.
-  Before upgrading, drain the backlog with the old binary by letting
-  clients fetch their mail, or accept the loss; then delete the file.
+  On first start the gateway deletes the old spool.db, dropping any
+  messages still queued in it; this is safe because clients retrieve
+  their messages again from storage.
 - **Added** `SpoolMaxRecipientBytes` (default 16 MiB) and `SpoolMaxBytes`
   (default 512 MiB): byte limits on the spool per recipient and in total,
   each at least one maximum-size spooled message (SURB-Reply payload
