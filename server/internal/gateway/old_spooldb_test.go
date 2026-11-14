@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -108,4 +109,24 @@ func TestRemoveOldSpoolDB(t *testing.T) {
 		require.Contains(t, out, "WARN", out)
 		require.Contains(t, out, "Failed to remove the old spool file "+path, out)
 	})
+}
+
+func TestWarnSpoolDBConfig(t *testing.T) {
+	for _, spoolDB := range []*config.SpoolDB{nil, {}, bolt("/var/lib/katzenpost/spool.db")} {
+		logPath := filepath.Join(t.TempDir(), "gateway.log")
+		logBackend, err := log.New(logPath, "INFO", false)
+		require.NoError(t, err)
+		p := &gateway{log: logBackend.GetLogger("gateway")}
+		p.warnSpoolDBConfig(&config.Config{Gateway: &config.Gateway{SpoolDB: spoolDB}})
+		logBackend.Close()
+		b, err := os.ReadFile(logPath)
+		require.NoError(t, err)
+		if spoolDB == nil {
+			require.Empty(t, string(b))
+			continue
+		}
+		require.Equal(t, 1, strings.Count(string(b), " WARN "), string(b))
+		require.Contains(t, string(b), "[Gateway.SpoolDB] is deprecated", string(b))
+		require.Contains(t, string(b), "next release will refuse to start", string(b))
+	}
 }

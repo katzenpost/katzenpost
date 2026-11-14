@@ -248,6 +248,13 @@ func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 	}
 }
 
+// warnSpoolDBConfig warns that a [Gateway.SpoolDB] table is deprecated.
+func (p *gateway) warnSpoolDBConfig(cfg *config.Config) {
+	if cfg.Gateway.SpoolDB != nil {
+		p.log.Warningf("[Gateway.SpoolDB] is deprecated and has no effect: the spool is kept in memory. The next release will refuse to start while it is present, so remove it from the config.")
+	}
+}
+
 // removeOldSpoolDB deletes the on-disk spool of older versions, which is no
 // longer read; clients fetch the messages it held again from storage.
 func (p *gateway) removeOldSpoolDB(cfg *config.Config) {
@@ -287,9 +294,7 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 		}
 	}()
 
-	if cfg.Gateway.SpoolDB != nil {
-		p.log.Noticef("The user message spool is kept in memory; the [Gateway.SpoolDB] settings are ignored and can be removed.")
-	}
+	p.warnSpoolDBConfig(cfg)
 	p.removeOldSpoolDB(cfg)
 	p.spool = memspool.New(cfg.Gateway.SpoolMaxRecipientBytes, cfg.Gateway.SpoolMaxBytes)
 	p.log.Noticef("User message spool limits: %d bytes per recipient, %d bytes in total.", cfg.Gateway.SpoolMaxRecipientBytes, cfg.Gateway.SpoolMaxBytes)

@@ -435,8 +435,10 @@ Source: `server/config/config.go`.
   storage is no longer supported. As above, a leftover
   `[Gateway.SQLDB]` table is silently ignored rather than rejected, so
   the operator must remove it to regain a config that reflects reality.
-- **Ignored** `[Gateway.SpoolDB]` table (and `[Gateway.SpoolDB.Bolt]`).
-  The table still loads but has no effect. The gateway spool is now in
+- **Deprecated** `[Gateway.SpoolDB]` table (and `[Gateway.SpoolDB.Bolt]`).
+  The table still loads but has no effect, and the gateway logs a
+  warning when it is present; the next release will refuse to start
+  with it, so remove it from the config. The gateway spool is now in
   memory, so queued messages are lost on restart, and the old spool.db
   is deleted on first start. This loss is harmless because clients
   retrieve the data again from the storage replicas.
