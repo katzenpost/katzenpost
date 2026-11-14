@@ -432,10 +432,20 @@ Source: `server/config/config.go`.
   silently ignored at load (BurntSushi is lenient); the operator action
   is to delete it, since the functionality it configured is gone.
 - **Removed** `[Gateway.SQLDB]` table. **[breaking]** SQL-backed
-  storage is no longer supported; only the BoltDB spool
-  (`[Gateway.SpoolDB.Bolt]`) remains. As above, a leftover
+  storage is no longer supported. As above, a leftover
   `[Gateway.SQLDB]` table is silently ignored rather than rejected, so
   the operator must remove it to regain a config that reflects reality.
+- **Deprecated** `[Gateway.SpoolDB]` table (and `[Gateway.SpoolDB.Bolt]`).
+  The table still loads but has no effect, and the gateway logs a
+  warning when it is present; the next release will refuse to start
+  with it, so remove it from the config. The gateway spool is now in
+  memory, so queued messages are lost on restart, and the old spool.db
+  is deleted on first start. This loss is harmless because clients
+  retrieve the data again from the storage replicas.
+- **Added** `SpoolMaxRecipientBytes` (default 16 MiB) and `SpoolMaxBytes`
+  (default 512 MiB): byte limits on the spool per recipient and in total,
+  each at least one maximum-size spooled message (SURB-Reply payload
+  plus SURB ID).
 
 ### `[Debug]`
 
@@ -457,6 +467,9 @@ v0.0.71→main window.
   `katzenpost_server_selfcheck_sphinx_*` gauges so the chosen
   values are visible to Prometheus.
 
+- **Ignored** `SchedulerExternalMemoryQueue` (bool). The scheduler queue
+  is always in memory; the key still loads but has no effect.
+
 ### Defaults
 
 - `defaultSchedulerSlack` raised from `150` to `450` ms.
@@ -465,8 +478,8 @@ v0.0.71→main window.
 
 - The exported constants `BackendSQL` and `BackendExtern` are gone.
   Operators using `Backend = "sql"` or `Backend = "extern"` in either
-  the SpoolDB or UserDB tables must drop those settings; only `"bolt"`
-  is now valid.
+  the SpoolDB or UserDB tables must drop those settings. The SpoolDB
+  table is now ignored altogether (see `[Server.Gateway]` above).
 
 ### Management socket commands
 

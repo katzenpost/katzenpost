@@ -57,6 +57,9 @@ func MixPacketsDropped() {}
 // MixQueueSize observes the size of the mix queue
 func MixQueueSize(size uint64) {}
 
+// GatewaySpoolBytes sets the number of bytes held in the gateway spool.
+func GatewaySpoolBytes(n int) {}
+
 // OutgoingPacketsDropped increments the counter for the number of packets dropped by outgoing worker
 func OutgoingPacketsDropped() {}
 

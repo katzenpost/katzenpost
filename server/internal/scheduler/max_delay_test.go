@@ -61,6 +61,7 @@ type maxDelayHarness struct {
 	conn    *hopRecorder
 	geo     *geo.Geometry
 	logPath string
+	dataDir string
 	nextID  atomic.Uint64
 }
 
@@ -93,7 +94,7 @@ func newMaxDelayHarnessWith(t *testing.T, adjust func(*config.Config)) *maxDelay
 	sch, err := New(&maxDelayGlue{cfg: cfg, logBE: logBE, conn: conn})
 	require.NoError(t, err)
 	t.Cleanup(sch.Halt)
-	return &maxDelayHarness{sch: sch, conn: conn, geo: g, logPath: logPath}
+	return &maxDelayHarness{sch: sch, conn: conn, geo: g, logPath: logPath, dataDir: cfg.Server.DataDir}
 }
 
 func (h *maxDelayHarness) logged(t *testing.T) string {
@@ -243,4 +244,11 @@ func TestSchedulerWarnsOnWildConsensusOncePerChange(t *testing.T) {
 	require.Equal(t, 2, strings.Count(logged, warn(5000)))
 	require.Equal(t, 1, strings.Count(logged, warn(math.MaxUint64)))
 	require.Equal(t, 3, strings.Count(logged, "WARN"))
+}
+
+func TestSchedulerIgnoresExternalMemoryQueue(t *testing.T) {
+	h := newMaxDelayHarnessWith(t, func(c *config.Config) { c.Debug.SchedulerExternalMemoryQueue = true })
+	h.requireAccepts(t, 0)
+	require.Contains(t, h.logged(t), "SchedulerExternalMemoryQueue is ignored")
+	require.NoFileExists(t, filepath.Join(h.dataDir, "external_queue.db"))
 }
