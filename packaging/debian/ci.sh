@@ -10,7 +10,7 @@ mkdir -p "$debs"
 cd "$root"
 
 need_tools=
-for tool in dpkg-buildpackage dh curl git ping; do
+for tool in dpkg-buildpackage dh curl git ping lintian; do
     command -v "$tool" >/dev/null || need_tools=1
 done
 if [ -n "$need_tools" ]; then
@@ -18,7 +18,7 @@ if [ -n "$need_tools" ]; then
     apt install -y --no-install-recommends \
         build-essential debhelper dpkg-dev \
         ca-certificates curl git \
-        iputils-ping systemd
+        iputils-ping lintian systemd
 fi
 
 if ! /usr/local/go/bin/go version 2>/dev/null | grep -q "go$go_version"; then
@@ -33,9 +33,12 @@ PATH=/usr/local/go/bin:$PATH
 export PATH
 
 "$root/packaging/debian/build.sh"
-cp "$root"/dist/katzenpost_*.deb "$debs"/
+lintian --fail-on error "$root"/dist/*.deb
+cp "$root"/dist/*.deb "$debs"/
 
 apt update
-apt install -y "$debs"/katzenpost_*.deb
+apt install -y "$debs"/katzenpost_*.deb "$debs"/kpclientd_*.deb
 "$root/packaging/debian/test.sh"
+apt purge -y katzenpost kpclientd
+"$root/packaging/debian/upgrade-test.sh"
 "$root/packaging/debian/assert-reproducible.sh"

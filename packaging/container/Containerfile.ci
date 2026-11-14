@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		build-essential ca-certificates curl debhelper dpkg-dev \
-		git iputils-ping make systemd \
+		git iputils-ping lintian make systemd \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN arch=$(dpkg --print-architecture) \

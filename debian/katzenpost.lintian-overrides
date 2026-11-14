@@ -1,0 +1,2 @@
+# DataDog/zstd, a Go module kpreplica depends on, bundles the zstd C sources.
+embedded-library libzstd [usr/bin/kpreplica]

@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-export GOFLAGS := -trimpath -buildvcs=false
+export GOFLAGS := -trimpath -buildvcs=false -buildmode=pie
 export SOURCE_DATE_EPOCH ?= $(shell dpkg-parsechangelog -STimestamp)
 export build_version := $(shell dpkg-parsechangelog -SVersion)
 
@@ -15,7 +15,7 @@ override_dh_auto_test:
 	:
 
 override_dh_auto_install:
-	install -d debian/katzenpost/usr/bin
+	install -d debian/katzenpost/usr/bin debian/kpclientd/usr/bin
 	for d in cmd/*/; do \
 		b=$$(basename $$d); \
 		test -x $$d$$b || continue; \
@@ -23,7 +23,11 @@ override_dh_auto_install:
 		kp*) n=$$b ;; \
 		*) n=kp$$b ;; \
 		esac; \
-		install -m0755 $$d$$b debian/katzenpost/usr/bin/$$n; \
+		case $$b in \
+		kpclientd) p=kpclientd ;; \
+		*) p=katzenpost ;; \
+		esac; \
+		install -m0755 $$d$$b debian/$$p/usr/bin/$$n; \
 	done
 
 override_dh_auto_clean:
