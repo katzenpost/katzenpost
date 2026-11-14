@@ -63,10 +63,17 @@ func TestGatewayLegacySpoolDBStillLoads(t *testing.T) {
 		strings.ReplaceAll(pem.ToPublicPEMString(linkPubKey), "\n", "\\n"))
 
 	t.Run("explicit limits", func(t *testing.T) {
-		cfg, err := Load([]byte(cfgText + "\n[Gateway]\n  SpoolMaxRecipientBytes = 1000\n  SpoolMaxBytes = 5000\n"))
+		// One maximum-size entry is 32+2574+16 = 2622 bytes in this geometry.
+		cfg, err := Load([]byte(cfgText + "\n[Gateway]\n  SpoolMaxRecipientBytes = 2622\n  SpoolMaxBytes = 5000\n"))
 		require.NoError(t, err)
-		require.Equal(t, 1000, cfg.Gateway.SpoolMaxRecipientBytes)
+		require.Equal(t, 2622, cfg.Gateway.SpoolMaxRecipientBytes)
 		require.Equal(t, 5000, cfg.Gateway.SpoolMaxBytes)
+	})
+	t.Run("limit below one message", func(t *testing.T) {
+		for _, extra := range []string{"SpoolMaxRecipientBytes = 2621", "SpoolMaxBytes = 2621"} {
+			_, err := Load([]byte(cfgText + "\n[Gateway]\n  " + extra + "\n"))
+			require.ErrorContains(t, err, "must be at least 2622 bytes", extra)
+		}
 	})
 	t.Run("negative limit", func(t *testing.T) {
 		_, err := Load([]byte(cfgText + "\n[Gateway]\n  SpoolMaxBytes = -1\n"))

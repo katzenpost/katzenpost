@@ -40,6 +40,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/server/internal/maxdelay"
@@ -699,7 +700,7 @@ func (kCfg *CBORPluginKaetzchen) validate() error {
 	return nil
 }
 
-func (gCfg *Gateway) fixupAndValidate() error {
+func (gCfg *Gateway) fixupAndValidate(g *geo.Geometry) error {
 	if gCfg.SpoolMaxRecipientBytes < 0 || gCfg.SpoolMaxBytes < 0 {
 		return errors.New("config: Gateway: SpoolMaxRecipientBytes and SpoolMaxBytes must not be negative")
 	}
@@ -708,6 +709,11 @@ func (gCfg *Gateway) fixupAndValidate() error {
 	}
 	if gCfg.SpoolMaxBytes == 0 {
 		gCfg.SpoolMaxBytes = DefaultSpoolMaxBytes
+	}
+	// The largest spooled entry is a SURB-Reply: tagged payload plus SURB ID.
+	minBytes := g.PayloadTagLength + g.ForwardPayloadLength + sConstants.SURBIDLength
+	if gCfg.SpoolMaxRecipientBytes < minBytes || gCfg.SpoolMaxBytes < minBytes {
+		return fmt.Errorf("config: Gateway: SpoolMaxRecipientBytes and SpoolMaxBytes must be at least %d bytes, one maximum-size spooled message", minBytes)
 	}
 	return nil
 }
@@ -877,7 +883,7 @@ func (cfg *Config) FixupAndValidate() error {
 		if cfg.Gateway == nil {
 			cfg.Gateway = &Gateway{}
 		}
-		if err := cfg.Gateway.fixupAndValidate(); err != nil {
+		if err := cfg.Gateway.fixupAndValidate(cfg.SphinxGeometry); err != nil {
 			return err
 		}
 	} else if cfg.Gateway != nil {

@@ -5,6 +5,8 @@ package gateway
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +17,7 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -245,6 +248,18 @@ func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 	}
 }
 
+// warnOldSpoolDB warns once if the on-disk spool of older versions is still
+// there: its messages are not read, so the operator should know they are lost.
+func (p *gateway) warnOldSpoolDB(cfg *config.Config) {
+	path := filepath.Join(cfg.Server.DataDir, "spool.db") // The old default.
+	if sdb := cfg.Gateway.SpoolDB; sdb != nil && sdb.Bolt != nil && sdb.Bolt.SpoolDB != "" {
+		path = sdb.Bolt.SpoolDB
+	}
+	if fi, err := os.Stat(path); err == nil && fi.Mode().IsRegular() && fi.Size() > 0 {
+		p.log.Warningf("Old spool database %s (%d bytes) is no longer read; any messages still queued in it are lost. It can be deleted.", path, fi.Size())
+	}
+}
+
 // New constructs a new provider instance.
 func New(glue glue.Glue) (glue.Gateway, error) {
 	p := &gateway{
@@ -265,6 +280,7 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 	if cfg.Gateway.SpoolDB != nil {
 		p.log.Noticef("The user message spool is kept in memory; the [Gateway.SpoolDB] settings are ignored and can be removed.")
 	}
+	p.warnOldSpoolDB(cfg)
 	p.spool = memspool.New(cfg.Gateway.SpoolMaxRecipientBytes, cfg.Gateway.SpoolMaxBytes)
 	p.log.Noticef("User message spool limits: %d bytes per recipient, %d bytes in total.", cfg.Gateway.SpoolMaxRecipientBytes, cfg.Gateway.SpoolMaxBytes)
 
