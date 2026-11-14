@@ -436,10 +436,10 @@ Source: `server/config/config.go`.
   `[Gateway.SQLDB]` table is silently ignored rather than rejected, so
   the operator must remove it to regain a config that reflects reality.
 - **Ignored** `[Gateway.SpoolDB]` table (and `[Gateway.SpoolDB.Bolt]`).
-  The spool is kept in memory; the table still loads but has no effect.
-  On first start the gateway deletes the old spool.db, dropping any
-  messages still queued in it; this is safe because clients retrieve
-  their messages again from storage.
+  The table still loads but has no effect. The gateway spool is now in
+  memory, so queued messages are lost on restart, and the old spool.db
+  is deleted on first start. This loss is harmless because clients
+  retrieve the data again from the storage replicas.
 - **Added** `SpoolMaxRecipientBytes` (default 16 MiB) and `SpoolMaxBytes`
   (default 512 MiB): byte limits on the spool per recipient and in total,
   each at least one maximum-size spooled message (SURB-Reply payload
