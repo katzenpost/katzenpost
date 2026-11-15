@@ -40,8 +40,10 @@ So the changelog entry is merged first and the tag pushed afterwards.
    ```
 
 4. The tag push runs the version check in `deb.yml` and the docker mixnet
-   integration tests; `interop-releases.yml` tests the two newest tags
-   nightly. Watch them at https://github.com/katzenpost/katzenpost/actions.
+   integration tests, and `release.yml` creates the GitHub release for the
+   tag with the kpclientd .deb (amd64 and arm64, built by
+   `make deb-kpclientd`) and its SHA256SUMS; `interop-releases.yml` tests
+   the two newest tags nightly. Watch them at https://github.com/katzenpost/katzenpost/actions.
 
 A tag pushed without its changelog entry is not moved or re-tagged: add the
 entry for the next version and tag that instead.

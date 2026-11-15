@@ -2,7 +2,7 @@ GO_VERSION := 1.27.1
 
 DEB_DISTROS ?= debian-13 debian-forky ubuntu-24.04 ubuntu-26.04
 
-.PHONY: deb deb-build deb-ci deb-test deb-image-ref deb-image \
+.PHONY: deb deb-build deb-ci deb-test deb-kpclientd deb-image-ref deb-image \
 	deb-image-push deb-image-refs check-version check-version-test
 
 deb:
@@ -10,6 +10,9 @@ deb:
 
 deb-build:
 	@packaging/debian/build.sh
+
+deb-kpclientd:
+	@packaging/debian/kpclientd-deb.sh
 
 deb-ci:
 	@packaging/debian/ci.sh
