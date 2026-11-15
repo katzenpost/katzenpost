@@ -44,7 +44,7 @@ func writeReplyAfterACK(t *testing.T, replicaErr uint8, noIdempotentBoxAlreadyEx
 
 	l := newSchedulerListener()
 	d, _ := newARQTestDaemon(t, l)
-	d.client = &Client{cfg: cfg, sphinx: sphinxInstance, pki: &pki{}}
+	d.client = &Client{cfg: cfg, sphinx: sphinxInstance, pki: &pki{log: d.logbackend.GetLogger("pki")}}
 	d.client.pki.c = d.client
 	d.client.pki.docs.Store(epoch, &CachedDoc{Doc: doc})
 	conn := newTestIncomingConn(0x5C, 1, 1)
