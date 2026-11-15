@@ -1,0 +1,61 @@
+name: Release
+
+# A v* tag builds the kpclientd .deb and publishes it, with SHA256SUMS, on the
+# GitHub release for that tag. A pull request touching this file or the
+# package script only builds the debs.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - packaging/debian/kpclientd-deb.sh
+
+permissions:
+  contents: read
+
+jobs:
+  kpclientd-deb:
+    strategy:
+      fail-fast: false
+      matrix:
+        # kpclientd needs cgo, so each architecture builds on its own runner.
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.27.1
+      - if: github.ref_type == 'tag'
+        run: make check-version tag="$GITHUB_REF_NAME"
+      - run: make deb-kpclientd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kpclientd-${{ matrix.runner }}
+          path: dist/kpclientd_*.deb
+
+  release:
+    needs: kpclientd-deb
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kpclientd-*
+          merge-multiple: true
+          path: dist
+      - run: (cd dist && sha256sum kpclientd_*.deb > SHA256SUMS)
+      # The notes are the body of the top debian/changelog entry.
+      - run: awk 'NR > 1 && /^ -- /{exit} NR > 1' debian/changelog > notes.md
+      - run: |
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md
+          gh release upload "$TAG" dist/* --clobber
