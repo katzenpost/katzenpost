@@ -152,9 +152,6 @@ func (c *Client) ComposeSphinxPacketWithRoute(request *Request) (pkt []byte, sur
 		return nil, nil, 0, nil, err
 	}
 
-	payload := make([]byte, c.geo.UserForwardPayloadLength)
-	copy(payload, requestPayload)
-
 	for attempt := 0; attempt < maxPathSelectionAttempts; attempt++ {
 		// Check if we're shutting down to avoid races
 		select {
@@ -222,7 +219,7 @@ func (c *Client) ComposeSphinxPacketWithRoute(request *Request) (pkt []byte, sur
 				return pkt, k, then.Sub(now), rt, err
 			} else {
 				blob := make([]byte, c.geo.ForwardPayloadLength)
-				copy(blob, payload)
+				copy(blob, requestPayload)
 
 				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, blob)
 				if err != nil {

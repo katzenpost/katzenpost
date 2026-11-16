@@ -210,6 +210,10 @@ type ARQMessage struct {
 	// MessageBoxIndex is the current message box index being operated on (only for read operations).
 	MessageBoxIndex []byte
 
+	// readPos is MessageBoxIndex resolved on ReadCap when the request was
+	// validated, so the reply need not walk the stream to it again.
+	readPos *bacap.ReadPosition
+
 	// NoRetryOnBoxIDNotFound disables automatic retries on BoxIDNotFound for read operations.
 	// When true, BoxIDNotFound is returned immediately. When false (default), reads retry
 	// without bound until the box is written or the operation is cancelled.
