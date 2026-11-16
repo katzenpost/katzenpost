@@ -12,6 +12,7 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -117,6 +118,21 @@ func (c *replyingConnector) DispatchMessage(dest uint8, msg *commands.ReplicaMes
 	return nil
 }
 
+// recordingConnector is replyingConnector that also keeps each dispatched
+// message and its destination.
+type recordingConnector struct {
+	replyingConnector
+	mu   sync.Mutex
+	sent map[uint8]*commands.ReplicaMessage
+}
+
+func (c *recordingConnector) DispatchMessage(dest uint8, msg *commands.ReplicaMessage) error {
+	c.mu.Lock()
+	c.sent[dest] = msg
+	c.mu.Unlock()
+	return c.replyingConnector.DispatchMessage(dest, msg)
+}
+
 func TestTryReadFromShardReplicaWipesEphemeralKey(t *testing.T) {
 	courier := createTestCourier(t)
 	conn := newFakeConnector()
@@ -136,16 +152,22 @@ func TestTryReadFromShardReplicaWipesEphemeralKey(t *testing.T) {
 func TestWriteTombstonesToTempChannelWipesEphemeralKey(t *testing.T) {
 	courier := createTestCourier(t)
 	courier.server.PKI.Halt()
-	courier.server.connector = &replyingConnector{fakeConnector: *newFakeConnector(), courier: courier}
+	conn := &recordingConnector{
+		replyingConnector: replyingConnector{fakeConnector: *newFakeConnector(), courier: courier},
+		sent:              make(map[uint8]*commands.ReplicaMessage),
+	}
+	courier.server.connector = conn
 	s := &trackingNikeScheme{Scheme: courier.envelopeScheme}
 	courier.envelopeScheme = s
 
 	now, _, _ := epochtime.Now()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	doc := &pki.Document{Epoch: now}
+	replicaPrivs := make(map[uint8]nike.PrivateKey)
 	for i := 0; i < 2; i++ {
-		pub, _, err := s.Scheme.GenerateKeyPair()
+		pub, priv, err := s.Scheme.GenerateKeyPair()
 		require.NoError(t, err)
+		replicaPrivs[uint8(i)] = priv
 		idKey := make([]byte, 32)
 		_, err = rand.Reader.Read(idKey)
 		require.NoError(t, err)
@@ -166,4 +188,20 @@ func TestWriteTombstonesToTempChannelWipesEphemeralKey(t *testing.T) {
 	courier.writeTombstonesToTempChannel(writeCap, [][bacap.BoxIDSize]byte{tombstone.BoxID})
 
 	s.requireAllWiped(t, "writeTombstonesToTempChannel")
+
+	// Each replica must decapsulate what it was sent: SenderEPubKey has to
+	// be the public half of the ephemeral key that sealed the DEKs.
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	require.Len(t, conn.sent, 2)
+	for dest, msg := range conn.sent {
+		ephPub, err := s.Scheme.UnmarshalBinaryPublicKey(msg.SenderEPubKey)
+		require.NoError(t, err)
+		_, err = mkem.NewScheme(s.Scheme).Decapsulate(replicaPrivs[dest], &mkem.Ciphertext{
+			EphemeralPublicKey: ephPub,
+			DEKCiphertexts:     [][]byte{msg.DEK[:]},
+			Envelope:           msg.Ciphertext,
+		})
+		require.NoError(t, err, "replica %d cannot decapsulate its tombstone", dest)
+	}
 }
