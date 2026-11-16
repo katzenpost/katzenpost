@@ -78,7 +78,7 @@ const (
 	publicKeyHashSize = 32
 )
 
-func MixPublishDeadline() time.Duration { return epochtime.Period() / 8 }
+func MixPublishDeadline() time.Duration { return pki.MixPublishDeadline() }
 
 func AuthorityVoteDeadline() time.Duration { return MixPublishDeadline() + epochtime.Period()/8 }
 

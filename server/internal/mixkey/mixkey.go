@@ -28,7 +28,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
@@ -58,10 +57,6 @@ const (
 )
 
 var ErrReplayStateLost = errors.New("mixkey: persisted key has no usable replay filter")
-
-var dbOptions = &bolt.Options{
-	NoFreelistSync: true,
-}
 
 // MixKey is a Katzenpost server mix key.
 type MixKey struct {

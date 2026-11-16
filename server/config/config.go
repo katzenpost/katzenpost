@@ -40,6 +40,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/connlimit"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/server/internal/maxdelay"
@@ -66,10 +67,16 @@ const (
 	defaultGatewayDelay      = 500       // 500 ms.
 	defaultServiceDelay      = 500       // 500 ms.
 	defaultKaetzchenDelay    = 750       // 750 ms.
-	defaultSpoolDB           = "spool.db"
 	defaultManagementSocket  = "management_sock"
 
-	// BackendBolt is a BoltDB based backend.
+	// DefaultSpoolMaxRecipientBytes and DefaultSpoolMaxBytes bound the
+	// in-memory gateway spool.
+	DefaultSpoolMaxRecipientBytes = 16 << 20  // 16 MiB.
+	DefaultSpoolMaxBytes          = 512 << 20 // 512 MiB.
+
+	// BackendBolt is the old BoltDB spool backend.
+	//
+	// Deprecated: the gateway spool is kept in memory; SpoolDB is ignored.
 	BackendBolt = "bolt"
 )
 
@@ -297,8 +304,10 @@ type Debug struct {
 	// an explicit non-zero value overrides.
 	NumKaetzchenWorkers int
 
-	// SchedulerExternalMemoryQueue will enable the experimental external
-	// memory queue that is backed by disk.
+	// SchedulerExternalMemoryQueue selected the old on-disk scheduler queue.
+	//
+	// Deprecated: ignored; the scheduler queue is always in memory.  It is
+	// still decoded so the scheduler can log that it is ignored.
 	SchedulerExternalMemoryQueue bool
 
 	// SchedulerQueueSize is the maximum allowed scheduler queue size before
@@ -564,24 +573,35 @@ type Gateway struct {
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
 	AltAddresses map[string][]string
 
-	// SpoolDB is the user message spool configuration.
+	// SpoolMaxRecipientBytes is the most message bytes the in-memory spool
+	// holds for one recipient; a message that would pass it is refused.
+	// Omit (or set to 0) for DefaultSpoolMaxRecipientBytes.
+	SpoolMaxRecipientBytes int
+
+	// SpoolMaxBytes is the most message bytes the in-memory spool holds in
+	// total; a message that would pass it is refused.  Omit (or set to 0)
+	// for DefaultSpoolMaxBytes.
+	SpoolMaxBytes int
+
+	// SpoolDB is the old on-disk spool configuration.
+	//
+	// Deprecated: the spool is kept in memory and this is ignored; it is
+	// still decoded so the gateway can log that it is ignored.
 	SpoolDB *SpoolDB
 }
 
-// SpoolDB is the user message spool configuration.
+// SpoolDB is the old on-disk spool configuration, now ignored.
 type SpoolDB struct {
-	// Backend is the active spool backend.  If left empty, the BoltSpoolDB
-	// backend will be used (`bolt`).
+	// Backend was the spool backend (`bolt`).
 	Backend string
 
 	// BoltDB backed spool (`bolt`).
 	Bolt *BoltSpoolDB
 }
 
-// BoltSpoolDB is the BolTDB implementation of the spool.
+// BoltSpoolDB was the BoltDB spool configuration, now ignored.
 type BoltSpoolDB struct {
-	// SpoolDB is the path to the user message spool.  If left empty, it will
-	// use `spool.db` under the DataDir.
+	// SpoolDB was the path to the BoltDB spool file.
 	SpoolDB string
 }
 
@@ -680,23 +700,22 @@ func (kCfg *CBORPluginKaetzchen) validate() error {
 	return nil
 }
 
-func (pCfg *Gateway) applyDefaults(sCfg *Server) {
-	if pCfg.SpoolDB == nil {
-		pCfg.SpoolDB = &SpoolDB{}
+func (gCfg *Gateway) fixupAndValidate(g *geo.Geometry) error {
+	if gCfg.SpoolMaxRecipientBytes < 0 || gCfg.SpoolMaxBytes < 0 {
+		return errors.New("config: Gateway: SpoolMaxRecipientBytes and SpoolMaxBytes must not be negative")
 	}
-	if pCfg.SpoolDB.Backend == "" {
-		pCfg.SpoolDB.Backend = BackendBolt
+	if gCfg.SpoolMaxRecipientBytes == 0 {
+		gCfg.SpoolMaxRecipientBytes = DefaultSpoolMaxRecipientBytes
 	}
-	switch pCfg.SpoolDB.Backend {
-	case BackendBolt:
-		if pCfg.SpoolDB.Bolt == nil {
-			pCfg.SpoolDB.Bolt = &BoltSpoolDB{}
-		}
-		if pCfg.SpoolDB.Bolt.SpoolDB == "" {
-			pCfg.SpoolDB.Bolt.SpoolDB = filepath.Join(sCfg.DataDir, defaultSpoolDB)
-		}
-	default:
+	if gCfg.SpoolMaxBytes == 0 {
+		gCfg.SpoolMaxBytes = DefaultSpoolMaxBytes
 	}
+	// The largest spooled entry is a SURB-Reply: tagged payload plus SURB ID.
+	minBytes := g.PayloadTagLength + g.ForwardPayloadLength + sConstants.SURBIDLength
+	if gCfg.SpoolMaxRecipientBytes < minBytes || gCfg.SpoolMaxBytes < minBytes {
+		return fmt.Errorf("config: Gateway: SpoolMaxRecipientBytes and SpoolMaxBytes must be at least %d bytes, one maximum-size spooled message", minBytes)
+	}
+	return nil
 }
 
 func (pCfg *ServiceNode) validate() error {
@@ -719,19 +738,6 @@ func (pCfg *ServiceNode) validate() error {
 		}
 		capaMap[v.Capability] = true
 	}
-	return nil
-}
-
-func (pCfg *Gateway) validate() error {
-	switch pCfg.SpoolDB.Backend {
-	case BackendBolt:
-		if !filepath.IsAbs(pCfg.SpoolDB.Bolt.SpoolDB) {
-			return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB.Bolt.SpoolDB)
-		}
-	default:
-		return fmt.Errorf("config: Provider: Invalid SpoolDB Backend: '%v'", pCfg.SpoolDB.Backend)
-	}
-
 	return nil
 }
 
@@ -877,8 +883,7 @@ func (cfg *Config) FixupAndValidate() error {
 		if cfg.Gateway == nil {
 			cfg.Gateway = &Gateway{}
 		}
-		cfg.Gateway.applyDefaults(cfg.Server)
-		if err := cfg.Gateway.validate(); err != nil {
+		if err := cfg.Gateway.fixupAndValidate(cfg.SphinxGeometry); err != nil {
 			return err
 		}
 	} else if cfg.Gateway != nil {
