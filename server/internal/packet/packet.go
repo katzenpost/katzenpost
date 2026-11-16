@@ -59,8 +59,6 @@ type Packet struct {
 
 	MustForward   bool
 	MustTerminate bool
-
-	rawPacketPool sync.Pool
 }
 
 // NewDelay returns the new Delay from time.Now and pkt.RecvAt
@@ -173,16 +171,8 @@ func (pkt *Packet) copyToRaw(b []byte) error {
 		return fmt.Errorf("invalid Sphinx packet size: %v\n%s", len(b), errInfo)
 	}
 
-	// The common case of standard packet sizes uses a pool allocator
-	// to store the raw packets.
-	pkt.Raw = pkt.rawPacketPool.Get().([]byte)
-
-	// Sanity check, just in case the pool allocator is doing something dumb.
-	if len(pkt.Raw) != len(b) {
-		panic("BUG: Pool allocated rawPkt has incorrect size")
-	}
-
-	// Copy the raw packet into pkt's buffer.
+	// Copy the raw packet into pkt's own buffer.
+	pkt.Raw = make([]byte, len(b))
 	copy(pkt.Raw, b)
 
 	return nil
@@ -191,7 +181,6 @@ func (pkt *Packet) copyToRaw(b []byte) error {
 func (pkt *Packet) disposeRaw() {
 	if len(pkt.Raw) == pkt.Geometry.PacketLength {
 		utils.ExplicitBzero(pkt.Raw)
-		pkt.rawPacketPool.Put(pkt.Raw) // nolint: megacheck
 	}
 	pkt.Raw = nil
 }
@@ -210,12 +199,6 @@ func NewWithID(raw []byte, id uint64, g *geo.Geometry) (*Packet, error) {
 	pkt := v.(*Packet)
 	pkt.Geometry = g
 	pkt.ID = id
-	pkt.rawPacketPool = sync.Pool{
-		New: func() interface{} {
-			b := make([]byte, pkt.Geometry.PacketLength)
-			return b
-		},
-	}
 	if err := pkt.copyToRaw(raw); err != nil {
 		pkt.Dispose()
 		return nil, err
@@ -321,12 +304,6 @@ func NewPacketFromSURB(surb, payload []byte, geo *geo.Geometry) (*Packet, error)
 	}
 
 	respPkt.MustForward = true
-	respPkt.rawPacketPool = sync.Pool{
-		New: func() interface{} {
-			b := make([]byte, geo.PacketLength)
-			return b
-		},
-	}
 
 	return respPkt, nil
 }
