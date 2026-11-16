@@ -38,7 +38,6 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
-	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -58,9 +57,9 @@ func recheckInterval() time.Duration { return epochtime.Period() / 16 }
 
 func pkiEarlyConnectSlack() time.Duration { return epochtime.Period() / 8 }
 
-func PublishDeadline() time.Duration { return vServer.MixPublishDeadline() }
+func PublishDeadline() time.Duration { return cpki.MixPublishDeadline() }
 
-func nextFetchTill() time.Duration { return epochtime.Period() - vServer.PublishConsensusDeadline() }
+func nextFetchTill() time.Duration { return epochtime.Period() - cpki.PublishConsensusDeadline() }
 
 // descriptorUploadSafety is the wall-clock margin we leave
 // before MixPublishDeadline so a slow upload still finishes
@@ -478,7 +477,7 @@ func (p *pki) updateTimer(timer *time.Timer) {
 	}
 
 	// It is after the consensus publication deadline.
-	if elapsed > vServer.PublishConsensusDeadline() {
+	if elapsed > cpki.PublishConsensusDeadline() {
 		p.log.Debugf("After deadline for next epoch publication")
 		if p.entryForEpoch(now+1) == nil {
 			p.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval())
@@ -496,7 +495,7 @@ func (p *pki) updateTimer(timer *time.Timer) {
 			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval())
 			timer.Reset(recheckInterval())
 		} else {
-			interval := vServer.PublishConsensusDeadline() - elapsed
+			interval := cpki.PublishConsensusDeadline() - elapsed
 			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, interval)
 			timer.Reset(interval)
 		}

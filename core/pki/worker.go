@@ -15,6 +15,9 @@ import (
 
 const NumPKIDocsToFetch = 3
 
+// MixPublishDeadline is when mixes must have uploaded their descriptors.
+func MixPublishDeadline() time.Duration { return epochtime.Period() / 8 }
+
 // PublishConsensusDeadline is when the authority publishes the consensus
 func PublishConsensusDeadline() time.Duration { return 5 * (epochtime.Period() / 8) }
 
