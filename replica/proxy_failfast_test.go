@@ -110,7 +110,7 @@ func TestDispatchCommandFailsProxyRequestInsteadOfQueueing(t *testing.T) {
 	msg := &commands.ReplicaMessage{
 		SenderEPubKey: []byte{1, 2, 3, 4},
 		DEK:           &[60]byte{},
-		Ciphertext:    []byte("proxied read"),
+		Ciphertext:    []byte("proxied write"),
 	}
 	waiter := proxyManager.RegisterProxyRequest(*msg.EnvelopeHash(), nil, nil, msg, peer, "storagereplicaA")
 

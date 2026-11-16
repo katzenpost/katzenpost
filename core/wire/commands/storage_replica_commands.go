@@ -172,8 +172,15 @@ func (c *ReplicaWriteReply) Length() int {
 }
 
 // ReplicaDecoy is a decoy message type used by replicas and couriers.
+//
+// A courier may set RepairEnvelopeHash to ask a replica that served a
+// read to replicate the box it read to its shard peers. The hint rides
+// in a decoy so that it looks like one on the wire, and so that a
+// replica that does not know it ignores it.
 type ReplicaDecoy struct {
 	Cmds *Commands
+
+	RepairEnvelopeHash *[32]byte
 }
 
 func (c *ReplicaDecoy) String() string { return "ReplicaDecoy" }
@@ -181,6 +188,10 @@ func (c *ReplicaDecoy) String() string { return "ReplicaDecoy" }
 func (c *ReplicaDecoy) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(replicaDecoy)
+	if c.RepairEnvelopeHash != nil {
+		binary.BigEndian.PutUint32(out[2:6], 32)
+		out = append(out, c.RepairEnvelopeHash[:]...)
+	}
 
 	// optional traffic padding
 	if c.Cmds == nil {
@@ -190,12 +201,16 @@ func (c *ReplicaDecoy) ToBytes() []byte {
 }
 
 func (c *ReplicaDecoy) Length() int {
-	return cmdOverhead
+	return cmdOverhead + 32
 }
 
 func replicaDecoyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	r := new(ReplicaDecoy)
 	r.Cmds = cmds
+	if len(b) == 32 {
+		r.RepairEnvelopeHash = new([32]byte)
+		copy(r.RepairEnvelopeHash[:], b)
+	}
 	return r, nil
 }
 

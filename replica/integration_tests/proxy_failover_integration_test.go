@@ -35,7 +35,7 @@ func waitForReplicasReady(t *testing.T, env *testEnvironment) {
 }
 
 // nonShardReplicas picks two replicas that do not hold the box, so a
-// read addressed to them is forced down the proxy path.
+// write addressed to them is forced down the proxy path.
 func nonShardReplicas(t *testing.T, env *testEnvironment, sharding *shardingResult, replicaEpoch uint64) ([2]uint8, []nike.PublicKey) {
 	t.Helper()
 	currentEpoch, _, _ := epochtime.Now()
@@ -66,19 +66,15 @@ func nonShardReplicas(t *testing.T, env *testEnvironment, sharding *shardingResu
 	return indices, pubKeys
 }
 
-// proxyRead sends a read for boxID to replicas that do not hold it, so
-// they must proxy to the holders, and returns the decrypted reply.
-func proxyRead(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte, indices [2]uint8, pubKeys []nike.PublicKey, replicaEpoch uint64) *pigeonhole.ReplicaMessageReplyInnerMessage {
+// sendEnvelope encapsulates inner to the given replicas, sends it
+// through the courier and returns the decrypted reply.
+func sendEnvelope(t *testing.T, env *testEnvironment, inner *pigeonhole.ReplicaInnerMessage, indices [2]uint8, pubKeys []nike.PublicKey, replicaEpoch uint64) *pigeonhole.ReplicaMessageReplyInnerMessage {
 	t.Helper()
 
-	readMsg := &pigeonhole.ReplicaInnerMessage{
-		MessageType: 0, // 0 = read
-		ReadMsg:     &pigeonhole.ReplicaRead{BoxID: *boxID},
-	}
-	paddedReadMsg, err := pigeonhole.PadInnerMessageForEncryption(readMsg, env.geometry)
+	padded, err := pigeonhole.PadInnerMessageForEncryption(inner, env.geometry)
 	require.NoError(t, err)
 
-	privKey, ciphertext, err := mkemNikeScheme.Encapsulate(pubKeys, paddedReadMsg)
+	privKey, ciphertext, err := mkemNikeScheme.Encapsulate(pubKeys, padded)
 	require.NoError(t, err)
 	senderPubkeyBytes := privKey.Public().Bytes()
 
@@ -98,24 +94,23 @@ func proxyRead(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte,
 	require.NotNil(t, reply, "courier must return a reply")
 	if len(reply.Payload) == 0 {
 		reply = waitForReplicaResponse(t, env, envelope)
-		require.NotNil(t, reply, "must receive the proxied response after waiting")
+		require.NotNil(t, reply, "must receive the replica's response after waiting")
 	}
-	require.Greater(t, len(reply.Payload), 0, "a proxied read must return an envelope")
+	require.Greater(t, len(reply.Payload), 0, "the replica must return an envelope")
 
 	replicaPubKey := env.replicaKeys[indices[reply.ReplyIndex]][replicaEpoch]
 	rawInner, err := mkemNikeScheme.DecryptEnvelope(privKey, replicaPubKey, reply.Payload)
 	require.NoError(t, err)
 	innerBytes, err := pigeonhole.ExtractMessageFromPaddedPayload(rawInner)
 	require.NoError(t, err)
-	inner, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
+	replyInner, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(innerBytes)
 	require.NoError(t, err)
-	require.NotNil(t, inner.ReadReply)
-	return inner
+	return replyInner
 }
 
-// writeBoxToShards writes one BACAP box to both of its shard holders
-// through the courier, and returns the box ID and the plaintext.
-func writeBoxToShards(t *testing.T, env *testEnvironment, writer *writerSide, payload []byte, replicaEpoch uint64) (*[bacap.BoxIDSize]byte, *shardingResult) {
+// bacapWrite encrypts payload into the writer's next BACAP box and
+// returns the box ID and the write to send.
+func bacapWrite(t *testing.T, env *testEnvironment, writer *writerSide, payload []byte) (*[bacap.BoxIDSize]byte, *pigeonhole.ReplicaInnerMessage) {
 	t.Helper()
 
 	padded, err := pigeonhole.CreatePaddedPayload(payload, env.geometry.MaxPlaintextPayloadLength+4)
@@ -127,7 +122,7 @@ func writeBoxToShards(t *testing.T, env *testEnvironment, writer *writerSide, pa
 
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
-	writeMsg := &pigeonhole.ReplicaInnerMessage{
+	return &boxID, &pigeonhole.ReplicaInnerMessage{
 		MessageType: 1, // 1 = write
 		WriteMsg: &pigeonhole.ReplicaWrite{
 			BoxID:      boxID,
@@ -136,62 +131,10 @@ func writeBoxToShards(t *testing.T, env *testEnvironment, writer *writerSide, pa
 			Payload:    ciphertext,
 		},
 	}
-
-	sharding := getShardingInfo(t, env, &boxID)
-	paddedWrite, err := pigeonhole.PadInnerMessageForEncryption(writeMsg, env.geometry)
-	require.NoError(t, err)
-	privKey, mkemCiphertext, err := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, paddedWrite)
-	require.NoError(t, err)
-	senderPubkeyBytes := privKey.Public().Bytes()
-
-	envelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: sharding.ReplicaIndices,
-		Dek1:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[0]),
-		Dek2:                 [mkem.DEKSize]byte(mkemCiphertext.DEKCiphertexts[1]),
-		ReplyIndex:           0,
-		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-	}
-	require.NotNil(t, injectCourierEnvelope(t, env, envelope))
-
-	// The courier ACKs before the shards have durably stored the write.
-	time.Sleep(15 * time.Second)
-	return &boxID, sharding
-}
-
-// TestProxyReadNotFoundWhenNoHolderHasBox drives the exhausted sweep
-// through real replicas: no holder has the box, so every candidate
-// answers box-not-found and the honest answer must reach the client
-// rather than the generic replication-failed code that a sweep with no
-// usable reply produces.
-func TestProxyReadNotFoundWhenNoHolderHasBox(t *testing.T) {
-	env := setupTestEnvironment6Replicas(t)
-	defer env.cleanup()
-	waitForReplicasReady(t, env)
-
-	// A box ID from a fresh capability that is never written.
-	owner, err := bacap.NewWriteCap(rand.Reader)
-	require.NoError(t, err)
-	reader := &readerSide{owner.ReadCap(), owner.GetMessageBoxIndex()}
-	boxID := reader.boxID(t)
-
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	sharding := getShardingInfo(t, env, boxID)
-	indices, pubKeys := nonShardReplicas(t, env, sharding, replicaEpoch)
-
-	t.Logf("FAILOVER_TEST: reading unwritten box %x via non-shard replicas %d and %d",
-		boxID[:8], indices[0], indices[1])
-	inner := proxyRead(t, env, boxID, indices, pubKeys, replicaEpoch)
-
-	require.Equal(t, pigeonhole.ReplicaErrorBoxIDNotFound, inner.ReadReply.ErrorCode,
-		"a box no holder has must come back as box-not-found, not as a sweep failure")
 }
 
 // TestProxyFailsOverWhenHolderIsDown takes one shard holder out and
-// reads the box through a replica that holds neither copy. The read
+// writes the box through replicas that hold neither copy. The write
 // must degrade to the surviving holder rather than into a client-visible
 // error, and it must do so well inside ProxyRequestTimeout: a request
 // that cannot be handed to a peer at all is failed immediately rather
@@ -200,7 +143,7 @@ func TestProxyReadNotFoundWhenNoHolderHasBox(t *testing.T) {
 // The sweep is pinned at the downed holder so that it is genuinely
 // tried. Left to its usual random choice the live holder leads half the
 // time, answers at once, and the test passes having exercised no
-// failover and timed nothing but a healthy read.
+// failover and timed nothing but a healthy write.
 func TestProxyFailsOverWhenHolderIsDown(t *testing.T) {
 	env := setupTestEnvironment6Replicas(t)
 	defer env.cleanup()
@@ -213,11 +156,10 @@ func TestProxyFailsOverWhenHolderIsDown(t *testing.T) {
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	payload := []byte("failover must degrade to the surviving holder")
-	_, sharding := writeBoxToShards(t, env, writer, payload, replicaEpoch)
+	boxID, writeMsg := bacapWrite(t, env, writer, payload)
+	sharding := getShardingInfo(t, env, boxID)
 
-	boxID := reader.boxID(t)
-
-	// Take one holder out. The other still has the box.
+	// Take one holder out. The other stays up.
 	downed := sharding.ReplicaIndices[0]
 	t.Logf("FAILOVER_TEST: shutting down holder replica %d, leaving replica %d",
 		downed, sharding.ReplicaIndices[1])
@@ -234,10 +176,11 @@ func TestProxyFailsOverWhenHolderIsDown(t *testing.T) {
 
 	timeout := time.Duration(env.replicaConfigs[indices[0]].ProxyRequestTimeout) * time.Second
 	start := time.Now()
-	inner := proxyRead(t, env, boxID, indices, pubKeys, replicaEpoch)
+	inner := sendEnvelope(t, env, writeMsg, indices, pubKeys, replicaEpoch)
 	elapsed := time.Since(start)
 
-	require.Equal(t, pigeonhole.ReplicaSuccess, inner.ReadReply.ErrorCode,
+	require.NotNil(t, inner.WriteReply)
+	require.Equal(t, pigeonhole.ReplicaSuccess, inner.WriteReply.ErrorCode,
 		"one downed holder must degrade to its live peer, not into an error")
 	// The sweep budget is divided among the candidates, so a first
 	// holder that was waited out rather than failed fast would alone
@@ -245,7 +188,17 @@ func TestProxyFailsOverWhenHolderIsDown(t *testing.T) {
 	// is the courier's response polling, not the proxy.
 	require.Less(t, elapsed, timeout/4,
 		"an unreachable holder must fail fast, not consume its share of the sweep budget")
-	t.Logf("FAILOVER_TEST: proxied read completed in %v against a %v budget", elapsed, timeout)
+	t.Logf("FAILOVER_TEST: proxied write completed in %v against a %v budget", elapsed, timeout)
+
+	// Read straight from both shard holders: the courier still reaches
+	// the live one although the other is down.
+	readMsg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 0, // 0 = read
+		ReadMsg:     &pigeonhole.ReplicaRead{BoxID: *boxID},
+	}
+	inner = sendEnvelope(t, env, readMsg, sharding.ReplicaIndices, sharding.ReplicaPubKeys, replicaEpoch)
+	require.NotNil(t, inner.ReadReply)
+	require.Equal(t, pigeonhole.ReplicaSuccess, inner.ReadReply.ErrorCode)
 
 	paddedPlaintext := reader.open(t, *boxID, inner.ReadReply.Payload, inner.ReadReply.Signature[:])
 	plaintext, err := pigeonhole.ExtractMessageFromPaddedPayload(paddedPlaintext)

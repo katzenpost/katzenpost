@@ -290,3 +290,25 @@ func TestPostReplicaDescriptor(t *testing.T) {
 	require.Equal(t, d.Epoch, cmd.Epoch)
 	require.Equal(t, d.Payload, cmd.Payload)
 }
+
+func TestReplicaDecoyRepairHint(t *testing.T) {
+	t.Parallel()
+
+	nike := ecdh.Scheme(rand.Reader)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, 1234, true, 5)
+	cmds := NewStorageReplicaCommands(geo, nike)
+
+	envHash := &[32]byte{1, 2, 3}
+	hint := (&ReplicaDecoy{Cmds: cmds, RepairEnvelopeHash: envHash}).ToBytes()
+	plain := (&ReplicaDecoy{Cmds: cmds}).ToBytes()
+	require.Equal(t, len(plain), len(hint))
+
+	cmd, err := cmds.FromBytes(hint)
+	require.NoError(t, err)
+	require.Equal(t, envHash, cmd.(*ReplicaDecoy).RepairEnvelopeHash)
+	require.Equal(t, hint, cmd.ToBytes())
+
+	cmd, err = cmds.FromBytes(plain)
+	require.NoError(t, err)
+	require.Nil(t, cmd.(*ReplicaDecoy).RepairEnvelopeHash)
+}

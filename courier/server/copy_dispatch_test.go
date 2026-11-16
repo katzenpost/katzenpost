@@ -26,12 +26,14 @@ type fakeConnector struct {
 	sendErr      error
 	sendCalledCh chan uint8
 	lastSent     map[uint8]*commands.ReplicaMessage
+	hints        map[uint8][]*commands.ReplicaDecoy
 }
 
 func newFakeConnector() *fakeConnector {
 	return &fakeConnector{
 		sendCalledCh: make(chan uint8, 4),
 		lastSent:     make(map[uint8]*commands.ReplicaMessage),
+		hints:        make(map[uint8][]*commands.ReplicaDecoy),
 	}
 }
 
@@ -59,6 +61,19 @@ func (f *fakeConnector) DispatchMessage(dest uint8, msg *commands.ReplicaMessage
 	default:
 	}
 	return nil
+}
+
+func (f *fakeConnector) DispatchRepairHint(dest uint8, hint *commands.ReplicaDecoy) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hints[dest] = append(f.hints[dest], hint)
+	return nil
+}
+
+func (f *fakeConnector) sentHints(dest uint8) []*commands.ReplicaDecoy {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*commands.ReplicaDecoy(nil), f.hints[dest]...)
 }
 
 // buildTestCourierEnvelope constructs a minimal CourierEnvelope with

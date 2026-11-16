@@ -6,7 +6,6 @@ package replica
 import (
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/blake2b"
@@ -33,7 +32,7 @@ type holderScript struct {
 // read-repair write was sent and to whom.
 //
 // Responses are scripted in dispatch order rather than per peer,
-// because proxyReadRequest picks its first candidate at random
+// because the sweep picks its first candidate at random
 // (CryptoRandIndex). A test that pinned behaviour to a named holder
 // would pass or fail on the coin flip; scripting the sweep positions
 // describes the scenario the test actually means.
@@ -180,24 +179,14 @@ func (sc *scriptedConnector) repairWrites() map[[32]byte]*commands.ReplicaWrite 
 	return writes
 }
 
-// proxyReadThroughSweep drives a real proxied read for a box this
-// server does not shard, and returns the reply the client would see.
-func proxyReadThroughSweep(t *testing.T, env *semaScopeTestEnv) *commands.ReplicaMessageReply {
+// proxyReadThroughSweep has the bridge read a box this server does not
+// shard, which sweeps the box's holders, and returns the reply the mesh
+// would see.
+func proxyReadThroughSweep(t *testing.T, env *semaScopeTestEnv) *pigeonhole.ReplicaReadReply {
 	t.Helper()
 	boxID := findBoxByShardMembership(t, env.server, env.doc, false)
-	msg := semaScopeValidReplicaMessage(t, env.server, boxID)
-
-	_, ok := env.inConn.onReplicaCommand(msg, env.emitter)
-	require.True(t, ok)
-
-	select {
-	case req := <-env.dummyOut:
-		require.NotNil(t, req.ReplicaMessageReply)
-		return req.ReplicaMessageReply
-	case <-time.After(60 * time.Second):
-		t.Fatal("no reply emitted for the proxied read")
-		return nil
-	}
+	b := &BridgeListener{server: env.server, conn: env.inConn}
+	return b.read(&boxID)
 }
 
 // TestReadRepairFiresOnBoxNotFound is the positive half of the trigger
@@ -321,4 +310,24 @@ func TestAllBareRepliesSurfaceTheHoldersErrorCode(t *testing.T) {
 	require.Equal(t, uint8(pigeonhole.ReplicaErrorInvalidEpoch), reply.ErrorCode,
 		"the holder's own error code must reach the client, not a generic sweep failure")
 	require.Empty(t, sc.repairWrites())
+}
+
+func TestProxyReadSweepWipesEphemeralKeys(t *testing.T) {
+	env := setupSemaScopeTestServer(t)
+	env.server.connector = newScriptedConnector(t, env,
+		holderScript{bare: true, errorCode: pigeonhole.ReplicaErrorBoxIDNotFound},
+		holderScript{errorCode: pigeonhole.ReplicaSuccess},
+	)
+	s := &trackingNikeScheme{Scheme: replicaCommon.NikeScheme}
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	blob, err := pigeonhole.PadInnerMessageForEncryption(&pigeonhole.ReplicaInnerMessage{
+		ReadMsg: &pigeonhole.ReplicaRead{},
+	}, env.server.pigeonholeGeo)
+	require.NoError(t, err)
+
+	result := env.inConn.proxyReadSweep(env.holders, 0, replicaEpoch, blob, mkem.NewScheme(s), s)
+	require.NotNil(t, result.readReply)
+	require.Len(t, s.keys, 2)
+
+	s.requireAllWiped(t, "proxyReadSweep")
 }
