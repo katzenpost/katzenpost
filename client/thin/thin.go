@@ -553,9 +553,13 @@ func (t *ThinClient) Disconnect() error {
 		return nil
 	}
 	// Close the connection first to unblock any blocked reads,
-	// then halt workers.
+	// then halt workers. The reader goroutine may already have closed
+	// conn after a daemon hangup, so a second close is not an error.
 	err := conn.Close()
 	t.Halt()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
 	return err
 }
 
@@ -594,7 +598,12 @@ func (t *ThinClient) Close() error {
 	// exit when HaltCh() is closed, and consumers should also monitor HaltCh()
 	// to know when to stop reading from eventSink.
 	t.Halt()
-	return conn.Close()
+	// The reader goroutine closes conn itself when the daemon hangs up
+	// in response to ThinClose, so a second close is not an error.
+	if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		return err
+	}
+	return nil
 }
 
 // Dial establishes a connection to the client daemon and initializes the client.

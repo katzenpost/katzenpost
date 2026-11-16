@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/epochtime/periodtest"
+	"github.com/katzenpost/katzenpost/core/pki"
 )
 
 func TestPeriodDerivedParity(t *testing.T) {
@@ -31,5 +32,8 @@ func TestPeriodDerivedParity(t *testing.T) {
 			}
 			require.Equal(t, want, c.got, c.name)
 		}
+		// Mixes take these from core/pki without importing the authority.
+		require.Equal(t, MixPublishDeadline(), pki.MixPublishDeadline())
+		require.Equal(t, PublishConsensusDeadline(), pki.PublishConsensusDeadline())
 	})
 }

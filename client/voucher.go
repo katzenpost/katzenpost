@@ -37,7 +37,11 @@ func (d *Daemon) voucherMint(request *Request) {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
 		return
 	}
-	result, err := voucher.VoucherMint(
+	mint := voucher.VoucherMintCompact
+	if request.VoucherMint.Form == thin.VoucherFormLong {
+		mint = voucher.VoucherMintLong
+	}
+	result, err := mint(
 		request.VoucherMint.MessageWriteCap,
 		request.VoucherMint.DisplayName,
 		nil,

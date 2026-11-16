@@ -19,7 +19,19 @@
 package spool
 
 import (
+	"errors"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+)
+
+var (
+	// ErrRecipientFull is returned when storing would take a recipient's
+	// spool over its byte limit.
+	ErrRecipientFull = errors.New("spool: recipient spool is full")
+
+	// ErrFull is returned when storing would take the whole spool over its
+	// byte limit.
+	ErrFull = errors.New("spool: spool is full")
 )
 
 // Spool is the interface provided by all user messgage spool implementations.

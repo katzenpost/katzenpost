@@ -133,6 +133,11 @@ type state struct {
 	// reads it with a single atomic load; tombstones are never gated
 	// by it because they free space.
 	storageFull atomic.Bool
+
+	// storedMu guards storedSubs, the bridge streams told of each box
+	// this replica stores.
+	storedMu   sync.Mutex
+	storedSubs map[chan storedBox]struct{}
 }
 
 // acquireBoxLock returns a locked per-BoxID mutex. The caller MUST
@@ -423,6 +428,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		s.log.Errorf("state: Failed to write to database: %s", err)
 		return err
 	}
+	s.announceStored(cur, box)
 	s.log.Debug("state: Successfully handled replica write")
 	return nil
 }
@@ -460,6 +466,7 @@ func (s *state) handleReplicaTombstone(boxID [32]uint8, signature [64]uint8) err
 		s.log.Errorf("state: Failed to write tombstone to database: %s", err)
 		return err
 	}
+	s.announceStored(cur, box)
 
 	s.log.Debug("state: Successfully stored tombstone")
 	return nil

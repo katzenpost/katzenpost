@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"os"
 	"testing"
 
 	"github.com/BurntSushi/toml"
@@ -156,4 +157,18 @@ func TestApplyRuntimeDefaults(t *testing.T) {
 			require.Equal(t, tc.wantTimeoutSec, c.ProxyRequestTimeout, "ProxyRequestTimeout")
 		})
 	}
+}
+
+func TestBoxPayloadLengths(t *testing.T) {
+	raw, err := os.ReadFile("testdata/replica.toml")
+	require.NoError(t, err)
+	load := func(lengths string) error {
+		_, err := Load(append([]byte("BoxPayloadLengths = "+lengths+"\n"), raw...), false)
+		return err
+	}
+	require.NoError(t, load("[]"))
+	require.NoError(t, load("[400, 100]"))
+	require.Error(t, load("[0]"))
+	require.Error(t, load("[-1]"))
+	require.Error(t, load("[1000000]"))
 }

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 250" width="880" height="250" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
+  <title>Katzenpost components: an application reaches the mixnet through kpclientd</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f8fa; stroke: #57606a; stroke-width: 1.2; }
+    .ext { fill: none; stroke: #8c959f; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .t { fill: #1f2328; }
+    .s { fill: #57606a; font-size: 11px; }
+    .ln { stroke: #57606a; stroke-width: 1.4; fill: none; }
+    .pki { stroke: #8c959f; stroke-width: 1.1; stroke-dasharray: 4 4; fill: none; }
+    .ah { fill: #57606a; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .box { fill: #161b22; stroke: #8b949e; }
+      .ext { stroke: #6e7681; }
+      .t { fill: #e6edf3; }
+      .s { fill: #8b949e; }
+      .ln { stroke: #8b949e; }
+      .pki { stroke: #6e7681; }
+      .ah { fill: #8b949e; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="880" height="250"/>
+
+  <!-- directory authorities -->
+  <rect class="box" x="330" y="14" width="220" height="44" rx="6"/>
+  <text class="t" x="440" y="34" text-anchor="middle">directory authorities</text>
+  <text class="s" x="440" y="50" text-anchor="middle">dirauth: vote on the PKI document</text>
+  <path class="pki" d="M330 50 C 250 70, 225 90, 225 128" marker-end="url(#a)"/>
+  <path class="pki" d="M440 58 L440 128" marker-end="url(#a)"/>
+  <path class="pki" d="M550 50 C 640 70, 660 90, 660 128" marker-end="url(#a)"/>
+  <text class="s" x="452" y="100">PKI document</text>
+
+  <!-- application, outside this repository -->
+  <rect class="ext" x="10" y="130" width="96" height="56" rx="6"/>
+  <text class="t" x="58" y="153" text-anchor="middle">application</text>
+  <text class="s" x="58" y="170" text-anchor="middle">thin client</text>
+
+  <!-- kpclientd -->
+  <rect class="box" x="130" y="130" width="96" height="56" rx="6"/>
+  <text class="t" x="178" y="153" text-anchor="middle">kpclientd</text>
+  <text class="s" x="178" y="170" text-anchor="middle">client daemon</text>
+
+  <!-- mixnet -->
+  <rect class="box" x="250" y="130" width="380" height="56" rx="6"/>
+  <text class="t" x="440" y="153" text-anchor="middle">gateway → mix → mix → mix</text>
+  <text class="s" x="440" y="170" text-anchor="middle">server: each mix layer routes Sphinx packets</text>
+
+  <!-- service node -->
+  <rect class="box" x="654" y="130" width="100" height="56" rx="6"/>
+  <text class="t" x="704" y="153" text-anchor="middle">service node</text>
+  <text class="s" x="704" y="170" text-anchor="middle">courier, plugins</text>
+
+  <!-- replicas -->
+  <rect class="box" x="778" y="130" width="92" height="56" rx="6"/>
+  <text class="t" x="824" y="153" text-anchor="middle">replicas</text>
+  <text class="s" x="824" y="170" text-anchor="middle">Pigeonhole</text>
+
+  <path class="ln" d="M106 158 L128 158" marker-end="url(#a)"/>
+  <path class="ln" d="M226 158 L248 158" marker-end="url(#a)"/>
+  <path class="ln" d="M630 158 L652 158" marker-end="url(#a)"/>
+  <path class="ln" d="M754 158 L776 158" marker-start="url(#a)" marker-end="url(#a)"/>
+
+  <text class="s" x="440" y="214" text-anchor="middle">Replies return to the client through the mixnet on SURBs.</text>
+  <text class="s" x="440" y="232" text-anchor="middle">Dashed box: not in this repository (see thin_client and katzenqt).</text>
+</svg>

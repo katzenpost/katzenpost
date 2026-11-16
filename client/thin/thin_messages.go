@@ -905,7 +905,23 @@ type VoucherMint struct {
 	MessageWriteCap []byte `cbor:"message_write_cap"`
 	// DisplayName is the joiner's chosen display name.
 	DisplayName string `cbor:"display_name"`
+	// Form is the VoucherPayload form to mint: VoucherFormLong or
+	// VoucherFormCompact. Zero, which is left off the wire, means
+	// VoucherFormCompact.
+	Form uint8 `cbor:"form,omitempty"`
 }
+
+// The VoucherPayload forms a VoucherMint request can ask for.
+const (
+	// VoucherFormLong is the long form: the signed CBOR map that inductors
+	// from before the compact form read. Its reply is the MKEM ciphertext in
+	// VoucherStream box 1.
+	VoucherFormLong uint8 = 1
+	// VoucherFormCompact is the compact form: the signed CBOR array. Its
+	// reply is a sealed box framed over VoucherStream boxes 1 on. The daemon
+	// mints it when no form is given.
+	VoucherFormCompact uint8 = 2
+)
 
 // VoucherInduct verifies a published VoucherPayload and seals a reply to the
 // joiner. The reply type is VoucherInductReply.

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -408,4 +409,26 @@ func TestVqBlockingSendMessageWithResultGivesUpOnceTheReplyIsOverdue(t *testing.
 	require.ErrorIs(t, err, ErrReplyOverdue)
 	require.NotNil(t, res)
 	require.Equal(t, time.Second, res.ReplyETA)
+}
+
+func TestVoucherMintFormOnTheWire(t *testing.T) {
+	for _, form := range []uint8{0, VoucherFormLong, VoucherFormCompact} {
+		tc, server := dialFakeDaemon(t)
+		got := make(chan *Request, 1)
+		vqServeReplies(t, server, func(req *Request) []*Response {
+			got <- req
+			return []*Response{{VoucherMintReply: &VoucherMintReply{QueryID: req.VoucherMint.QueryID}}}
+		})
+		_, err := tc.VoucherMintForm([]byte("write cap"), "alice", form)
+		require.NoError(t, err)
+		require.Equal(t, form, (<-got).VoucherMint.Form)
+	}
+
+	// Absent when 0, so daemons that predate the field decode it unchanged.
+	blob, err := cbor.Marshal(&VoucherMint{DisplayName: "alice"})
+	require.NoError(t, err)
+	require.NotContains(t, string(blob), "form")
+	blob, err = cbor.Marshal(&VoucherMint{DisplayName: "alice", Form: VoucherFormLong})
+	require.NoError(t, err)
+	require.Contains(t, string(blob), "form")
 }

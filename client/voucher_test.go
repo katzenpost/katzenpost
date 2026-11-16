@@ -14,6 +14,7 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/voucher"
 
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/thin"
@@ -177,4 +178,34 @@ func TestDaemonVoucherOpen_WrongKey(t *testing.T) {
 	resp := awaitResponse(t, responseCh)
 	require.NotNil(t, resp.VoucherOpenReply)
 	require.Equal(t, thin.ThinClientErrorVoucherSealOpenFailed, resp.VoucherOpenReply.ErrorCode)
+}
+
+func TestDaemonVoucherMintForm(t *testing.T) {
+	for _, tc := range []struct {
+		form uint8
+		want int
+	}{{0, 2}, {thin.VoucherFormLong, 1}, {thin.VoucherFormCompact, 2}} {
+		d, appID, responseCh := newVoucherTestDaemon(t)
+		bob := bobWriteCapBytes(t)
+		d.voucherMint(&Request{AppID: appID, VoucherMint: &thin.VoucherMint{
+			MessageWriteCap: bob, DisplayName: "bob", Form: tc.form,
+		}})
+		mint := awaitResponse(t, responseCh).VoucherMintReply
+		require.Equal(t, thin.ThinClientSuccess, mint.ErrorCode)
+		v, err := voucher.PayloadVersion(mint.VoucherPayload)
+		require.NoError(t, err)
+		require.Equal(t, tc.want, v, "form %d", tc.form)
+
+		d.voucherInduct(&Request{AppID: appID, VoucherInduct: &thin.VoucherInduct{
+			Voucher: mint.Voucher, VoucherPayload: mint.VoucherPayload, WhoReply: []byte("who"),
+		}})
+		induct := awaitResponse(t, responseCh).VoucherInductReply
+		require.Equal(t, thin.ThinClientSuccess, induct.ErrorCode)
+		d.voucherOpen(&Request{AppID: appID, VoucherOpen: &thin.VoucherOpen{
+			VoucherSecretKey: mint.VoucherSecretKey, SealedReply: induct.SealedReply, MessageWriteCap: bob,
+		}})
+		open := awaitResponse(t, responseCh).VoucherOpenReply
+		require.Equal(t, thin.ThinClientSuccess, open.ErrorCode)
+		require.Equal(t, []byte("who"), open.WhoReply)
+	}
 }
