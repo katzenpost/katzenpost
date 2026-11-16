@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
@@ -17,6 +18,40 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
+
+// replicaKeyCacheMax bounds the parsed-key cache; a PKI document holds a
+// few replicas with a few epochs' keys each.
+const replicaKeyCacheMax = 64
+
+var replicaKeyCache = struct {
+	sync.Mutex
+	m map[string]nike.PublicKey
+}{m: make(map[string]nike.PublicKey)}
+
+// ParseReplicaEnvelopeKey parses a replica envelope public key, caching
+// the result by its bytes: parsing a CTIDH key validates it, which costs
+// tens of milliseconds, and the same few keys are used for every envelope.
+// Keyed by the bytes, a changed PKI key is never served from the cache.
+// Callers must not mutate the returned key.
+func ParseReplicaEnvelopeKey(b []byte) (nike.PublicKey, error) {
+	replicaKeyCache.Lock()
+	pk, ok := replicaKeyCache.m[string(b)]
+	replicaKeyCache.Unlock()
+	if ok {
+		return pk, nil
+	}
+	pk, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(b)
+	if err != nil {
+		return nil, err
+	}
+	replicaKeyCache.Lock()
+	if len(replicaKeyCache.m) >= replicaKeyCacheMax {
+		clear(replicaKeyCache.m)
+	}
+	replicaKeyCache.m[string(b)] = pk
+	replicaKeyCache.Unlock()
+	return pk, nil
+}
 
 // CryptoRandIndex returns a uniformly-distributed int in [0, n) using
 // hpqc's cryptographic Reader. Rejection sampling at the top of the
@@ -103,7 +138,7 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 			if len(keyBytes) == 0 {
 				return nil, fmt.Errorf("empty envelope key for replica %d at epoch %d: %w", replicaNum, replicaEpoch, ErrReplicaKeysNotReady)
 			}
-			replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
+			replicaPubKeys[i], err = ParseReplicaEnvelopeKey(keyBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to unmarshal key for replica %d (keySize=%d): %w", replicaNum, len(keyBytes), err)
 			}

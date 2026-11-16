@@ -469,7 +469,7 @@ func (d *Daemon) buildCourierEnvelope(doc *cpki.Document, boxID *[bacap.BoxIDSiz
 	if err != nil {
 		return nil, fmt.Errorf("failed to encapsulate: %w", err)
 	}
-	senderPubkey := mkemPrivateKey.Public().Bytes()
+	senderPubkey := mkemCiphertext.EphemeralPublicKey.Bytes()
 	mkemPrivateKey.Reset()
 	return &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
@@ -1162,7 +1162,7 @@ func createEnvelopeFromMessageWithPadding(msg *pigeonhole.ReplicaInnerMessage, d
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to encapsulate: %w", err)
 	}
-	mkemPublicKey := mkemPrivateKey.Public()
+	mkemPublicKey := mkemCiphertext.EphemeralPublicKey
 
 	var dek1, dek2 [60]uint8
 	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])

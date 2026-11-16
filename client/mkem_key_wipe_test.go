@@ -47,6 +47,7 @@ type trackingNikeScheme struct {
 	nike.Scheme
 	mu   sync.Mutex
 	keys []*trackedNikeKey
+	pubs [][]byte
 }
 
 func (s *trackingNikeScheme) track(p nike.PrivateKey) nike.PrivateKey {
@@ -69,6 +70,9 @@ func (s *trackingNikeScheme) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey,
 	if err != nil {
 		return nil, nil, err
 	}
+	s.mu.Lock()
+	s.pubs = append(s.pubs, pub.Bytes())
+	s.mu.Unlock()
 	return pub, s.track(priv), nil
 }
 
@@ -136,8 +140,9 @@ func TestBuildCourierEnvelopeWipesEphemeralKey(t *testing.T) {
 	tombstone, err := pigeonhole.NewTombstone(writeCap.Start())
 	require.NoError(t, err)
 
-	_, err = d.buildCourierEnvelope(doc, &tombstone.BoxID, writeInnerMessage(tombstone))
+	env, err := d.buildCourierEnvelope(doc, &tombstone.BoxID, writeInnerMessage(tombstone))
 	require.NoError(t, err)
+	require.Equal(t, [][]byte{env.SenderPubkey}, s.pubs, "SenderPubkey must be the encapsulation's ephemeral key")
 
 	s.requireAllWiped(t, "buildCourierEnvelope")
 }
