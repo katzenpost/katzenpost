@@ -1440,7 +1440,7 @@ func (e *Courier) tryReadFromShardReplica(
 		Cmds:               e.cmds,
 		PigeonholeGeometry: e.pigeonholeGeo,
 		Scheme:             e.envelopeScheme,
-		SenderEPubKey:      mkemPrivateKey.Public().Bytes(),
+		SenderEPubKey:      mkemCiphertext.EphemeralPublicKey.Bytes(),
 		DEK:                (*[mkem.DEKSize]byte)(mkemCiphertext.DEKCiphertexts[0]),
 		Ciphertext:         mkemCiphertext.Envelope,
 	}
@@ -1599,7 +1599,7 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 			e.log.Errorf("writeTombstone: encapsulate: %v", err)
 			continue
 		}
-		mkemPublicKey := mkemPrivateKey.Public()
+		mkemPublicKey := mkemCiphertext.EphemeralPublicKey
 
 		// Build per-replica ReplicaMessages (all share SenderEPubKey +
 		// Envelope, so they produce the same EnvelopeHash; reply demux
