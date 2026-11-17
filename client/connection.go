@@ -798,15 +798,21 @@ func (c *connection) onConnStatusChange(err error) {
 		return
 	}
 
+	// descriptor is only written by the connect worker, which is also our caller.
+	name := "(unknown)"
+	if c.descriptor != nil {
+		name = c.descriptor.Name
+	}
+
 	if err == nil {
 		c.isConnected.Store(true)
 		if c.client.pki != nil {
 			c.client.pki.onConnected()
 		}
 		instrument.GatewayConnected(true)
-		c.log.Notice("Connected to gateway.")
+		c.log.Noticef("Connected to gateway %s.", name)
 	} else {
-		c.log.Infof("Lost connection to gateway: %s", err.Error())
+		c.log.Infof("Lost connection to gateway %s: %s", name, err.Error())
 		c.isConnected.Store(false)
 		instrument.GatewayConnected(false)
 		// Force drain the channels used to poke the loop.
