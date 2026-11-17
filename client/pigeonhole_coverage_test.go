@@ -231,6 +231,7 @@ func TestCreateEnvelopeFromMessage(t *testing.T) {
 	require.NotNil(t, env)
 	require.NotNil(t, privKey)
 	require.NotEmpty(t, env.Ciphertext)
+	require.Equal(t, privKey.Public().Bytes(), env.SenderPubkey, "SenderPubkey must be the encapsulation's ephemeral key")
 }
 
 func TestStartResendingEncryptedMessageNoConnection(t *testing.T) {

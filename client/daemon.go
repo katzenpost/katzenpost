@@ -600,6 +600,16 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	conn.sendResponse(response)
 }
 
+// replyOrder puts the replica named by the reply's ReplyIndex first, so
+// the usual reply decrypts with one DH; ReplyIndex is only a hint, and
+// the other replica is still tried.
+func replyOrder(nums [2]uint8, replyIndex uint8) []uint8 {
+	if replyIndex == 1 {
+		return []uint8{nums[1], nums[0]}
+	}
+	return nums[:]
+}
+
 // decryptMKEMEnvelope decrypts the MKEM envelope and returns the inner message
 // tryDecryptMKEMWithReplicas attempts MKEM decryption using each replica's public key
 // in order, returning the decrypted payload and the replica number that succeeded.
@@ -647,7 +657,7 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 			d.log.Errorf("MKEM DECRYPT: no usable replicaPubKeyBytes in replicaEpoch:%v", replicaEpoch)
 			continue
 		}
-		replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
+		replicaPubKey, err := pigeonhole.ParseReplicaEnvelopeKey(replicaPubKeyBytes)
 		if err != nil {
 			d.log.Errorf("MKEM DECRYPT: can't parse replicaPubKey: %v", err)
 			continue
@@ -658,7 +668,7 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	// Try decryption with each replica's key
 	rawInnerMsg, replicaNum, err := tryDecryptMKEMWithReplicas(
 		replicaCommon.MKEMNikeScheme, privateKey, env.Payload,
-		envelopeDesc.ReplicaNums[:], replicaPubKeys,
+		replyOrder(envelopeDesc.ReplicaNums, env.ReplyIndex), replicaPubKeys,
 	)
 	if err != nil {
 		d.log.Errorf("MKEM DECRYPT FAILED with all possible replicas")

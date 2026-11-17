@@ -9,7 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/protocols/mkem"
 
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -89,4 +91,52 @@ func TestTryDecryptMKEMWithReplicas(t *testing.T) {
 		require.Equal(t, replyPayload, decrypted)
 		require.Equal(t, uint8(0), replicaNum)
 	})
+}
+
+type dhCountingScheme struct {
+	nike.Scheme
+	n int
+}
+
+func (s *dhCountingScheme) DeriveSecret(p nike.PrivateKey, pub nike.PublicKey) []byte {
+	s.n++
+	return s.Scheme.DeriveSecret(p, pub)
+}
+
+func TestReplyOrderUsesReplyIndex(t *testing.T) {
+	loadCTIDHFixtures()
+	counting := &dhCountingScheme{Scheme: replicaCommon.NikeScheme}
+	mkemScheme := mkem.NewScheme(counting)
+	envelopePub, envelopePriv := ctidhFixtures[2].Pub, ctidhFixtures[2].Priv
+	replicaPubKeys := map[uint8]nike.PublicKey{5: ctidhFixtures[0].Pub, 7: ctidhFixtures[1].Pub}
+	nums := [2]uint8{5, 7}
+	payload := []byte("reply")
+
+	reply7, err := mkemScheme.EnvelopeReply(ctidhFixtures[1].Priv, envelopePub, payload)
+	require.NoError(t, err)
+	counting.n = 0
+	got, replicaNum, err := tryDecryptMKEMWithReplicas(mkemScheme, envelopePriv, reply7.Envelope, replyOrder(nums, 1), replicaPubKeys)
+	require.NoError(t, err)
+	require.Equal(t, payload, got)
+	require.Equal(t, uint8(7), replicaNum)
+	require.Equal(t, 1, counting.n, "a reply from ReplicaNums[1] with ReplyIndex 1 needs one DH")
+
+	// A wrong hint still decrypts, through the fallback.
+	reply5, err := mkemScheme.EnvelopeReply(ctidhFixtures[0].Priv, envelopePub, payload)
+	require.NoError(t, err)
+	got, replicaNum, err = tryDecryptMKEMWithReplicas(mkemScheme, envelopePriv, reply5.Envelope, replyOrder(nums, 1), replicaPubKeys)
+	require.NoError(t, err)
+	require.Equal(t, payload, got)
+	require.Equal(t, uint8(5), replicaNum)
+}
+
+func TestParseReplicaEnvelopeKeyFollowsKeyBytes(t *testing.T) {
+	loadCTIDHFixtures()
+	for _, f := range ctidhFixtures[:2] {
+		pk, err := pigeonhole.ParseReplicaEnvelopeKey(f.PubBytes)
+		require.NoError(t, err)
+		require.Equal(t, f.PubBytes, pk.Bytes(), "a changed PKI key must not be served from the cache")
+	}
+	_, err := pigeonhole.ParseReplicaEnvelopeKey([]byte("short"))
+	require.Error(t, err)
 }
