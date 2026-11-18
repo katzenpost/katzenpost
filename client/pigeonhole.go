@@ -1294,9 +1294,11 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 	}
 
 	isRead := req.ReadCap != nil
+	var readPos *bacap.ReadPosition
 	if isRead && len(req.MessageBoxIndex) > 0 {
 		// Refuse an index the reply could never be opened at.
-		if _, err := readPosition(req.ReadCap, req.MessageBoxIndex); err != nil {
+		var err error
+		if readPos, err = readPosition(req.ReadCap, req.MessageBoxIndex); err != nil {
 			d.log.Errorf("startResendingEncryptedMessage: %v", err)
 			d.sendStartResendingEncryptedMessageError(request, positionErrorCode(err))
 			return
@@ -1329,6 +1331,7 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		State:                        ARQStateWaitingForACK,
 		ReadCap:                      req.ReadCap,
 		MessageBoxIndex:              req.MessageBoxIndex,
+		readPos:                      readPos,
 		NoRetryOnBoxIDNotFound:       req.NoRetryOnBoxIDNotFound,
 		NoIdempotentBoxAlreadyExists: req.NoIdempotentBoxAlreadyExists,
 	}
@@ -2196,10 +2199,13 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 
 		// Perform BACAP decryption if this is a read operation
 		if arqMessage.IsRead && arqMessage.ReadCap != nil && arqMessage.MessageBoxIndex != nil {
-			pos, err := readPosition(arqMessage.ReadCap, arqMessage.MessageBoxIndex)
-			if err != nil {
-				d.log.Errorf("decryptPigeonholeReply: %v", err)
-				return nil, fmt.Errorf("%w: %v", errBACAPDecryptionFailed, err)
+			pos := arqMessage.readPos
+			if pos == nil {
+				var err error
+				if pos, err = readPosition(arqMessage.ReadCap, arqMessage.MessageBoxIndex); err != nil {
+					d.log.Errorf("decryptPigeonholeReply: %v", err)
+					return nil, fmt.Errorf("%w: %v", errBACAPDecryptionFailed, err)
+				}
 			}
 			d.log.Debugf("decryptPigeonholeReply: Performing BACAP decryption, Idx64=%d", pos.Index().Idx64)
 
