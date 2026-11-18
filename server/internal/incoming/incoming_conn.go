@@ -565,7 +565,7 @@ func (c *incomingConn) onSendRetrievePacket(cmd *commands.SendRetrievePacket) er
 	copy(surbIDar[:], surbID)
 	respCmd := &commands.SendRetrievePacketReply{
 		Geo:  c.geo,
-		Cmds: commands.NewMixnetCommands(c.geo),
+		Cmds: c.w.GetCommands(),
 
 		SURBID:  surbIDar,
 		Payload: msg,
@@ -600,7 +600,7 @@ func (c *incomingConn) senderWorker() {
 		case <-c.closeConnectionCh:
 			return
 		case <-heartbeat.C:
-			cmd := &commands.NoOp{Cmds: commands.NewMixnetCommands(c.geo)}
+			cmd := &commands.NoOp{Cmds: c.w.GetCommands()}
 			if err := c.w.SendCommand(context.Background(), cmd); err != nil {
 				c.log.Debugf("senderWorker: NoOp send failed: %v", err)
 				return
@@ -652,7 +652,7 @@ func (c *incomingConn) senderWorker() {
 			}
 			cmd := &commands.Message{
 				Geo:      c.geo,
-				Cmds:     commands.NewMixnetCommands(c.geo),
+				Cmds:     c.w.GetCommands(),
 				Sequence: mySeq,
 				Payload:  msg,
 			}

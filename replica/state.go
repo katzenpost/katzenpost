@@ -423,8 +423,9 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	}
 	copy(box.BoxID[:], replicaWrite.BoxID[:])
 	copy(box.Signature[:], replicaWrite.Signature[:])
-	s.log.Debugf("state: Attempting to write %d bytes to database at replica epoch %d", len(box.Bytes()), cur)
-	if err := s.db.Set(boxKey(cur, box.BoxID[:]), box.Bytes(), nil); err != nil {
+	blob := box.Bytes()
+	s.log.Debugf("state: Attempting to write %d bytes to database at replica epoch %d", len(blob), cur)
+	if err := s.db.Set(boxKey(cur, box.BoxID[:]), blob, nil); err != nil {
 		s.log.Errorf("state: Failed to write to database: %s", err)
 		return err
 	}
