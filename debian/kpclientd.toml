@@ -146,6 +146,46 @@ yOI8nTetqeDu+SnWnhY7eQ==
     PKISignatureScheme = "Ed25519 Sphincs+"
     Addresses = ["tcp://193.5.87.219:65534"]
 
+  [[PinnedGateways.Gateways]]
+    WireKEMScheme = "KYBER768-X25519"
+    PKISignatureScheme = "Ed25519 Sphincs+"
+    Name = "waulandgateway"
+    Addresses = ["tcp://185.108.77.114:28182"]
+    IdentityKey = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
+T7iz8J/GZSEW/ElzCQc8lxnssdmo7XhdcftRQdb/PBDn3OmZHkYzl4zKKQR3r6MW
++TwMZbEPeXWWCGGhX0JRakVKnSrdq05bsCP6jSAOk0lmpYiPy1A9seepX9EI16fk
+-----END ED25519 SPHINCS+ PUBLIC KEY-----
+"""
+    LinkKey = """-----BEGIN KYBER768-X25519 PUBLIC KEY-----
+gUvH4BGfHv4bvyDxEGwmlqUmFkThSlUDDNiSUaoW7yDLEsAh0C3XPHfERQ7+XHyZ
+BJu6yzzWesk7hAfUZbH+YB0eiQ9LcHmt+kFYU3Z8kT008jwSug/ghn4Bk088zM7x
+Cr7bGM/GyTu6x7pKiGFs95VpOoA8Ip2NZy1nmsdvc1fZEHHCRQLX8AXftSkSBoks
+1YQDR4Ddo1lvZwGIMFE7wTn+6g1q4gvrJHz3HBkD8ZaDFCmbAKcyZiNsZEQSZRUI
+8M4VnBx5rIFKQnOkHI6L0UdtBqyzsxdSLGvfiyHJuxWcaAUfuZ7tVoLSdTDhVVwP
+cXTm4zH6GrPKOW1HOn6RMC6eoZ2dQESb18tEsEGuCIcuehwgK4+oplY6uE3ugzWu
+Fjw9dqACW5GjKhewsab8iL7kMhennKoKzIlljCXd0FEV6IK4dEPJ0gy2eLhxWqIS
+xsIzliGZVUzycK5dN2UscWkFFrhfOGNe9YwbpxwsrFXnVEuOph1qyDlcCIPxwaX7
+AyAj63LHxJy9wsRrZIISWJQddXecd7IOlla5gXmywM2AWWmQqndy+Rt74n+UgEcf
+cAFLq4f2KxNg5ADsgJoeaQtqWpBUoyD0tGe0ZojIqAtYpylp93jR2DXEZ1bjGlz0
+UVL5eKLwOwx6gn0egzdxSinhVZXiInN18ay+q7a+SVC6yXYp04QFi35qylSKKc1s
+u1RV3DsjN0D4tiFXmQMZ6FFO98RTAWWhsYbOi4bsYTxGIHb+XL/6nCjta6r0k641
+2K5M5TKNERfFMA+BM6WekBDlCl7MdnFeYIWHPFGsHFFj+09X60MhTDx750/rWBC9
++UIDAhvnQxq4TAM7U7p1ZH6VVHo46xdjup1wkEnAIAvsOopfiEKpAwQ+dJHsso7D
+xitAZ2ePqUz0mKVZ+CIF+FcQISCOOIp/p39t2bk0iZvdyZ9YR3tDBnCpGxMfwr6F
+NgYYdCtjxCzyGm+TVTyp1sFLIC75soxEklOtnFSmZFx03KfndIsY8ILlas8yHL4z
+1WY49gqJF57ewFezvBURuZB7KD5jPDQE6GZ51LHesjdYxa/1QnGdAZ235YzXRGLR
+9c0bXGYa+0/hFpjllSnt86n/Y4waiId2qaPB4j2URmQnQH2KJLbydg7a00L+mCEk
+5GTD1JqUi6tWxkuYPAGBgmXewZp+GWDKOmk8DC+U6HgYaAvH+Cj4K8I7nLK6zISc
+ylKHbED1OhFLa3G29bm+mgy6qTa+DGTPo51wKiYqKKodZrUE1RtlFsKeMmYRGgH1
+fIFS94+/oyKFOCkhpjmOus58BYUq8DrGcsw1JJl/ES26Z4rAtIQ1CmyeGr2B4BdA
+9KxoAsoYNK0FnCFF8EaIZnOw9ZC2ShOiFsbN0HwU0BBu9Aij6317jFErQCVfgnFP
+WqQiImlKknDBKSO1+xYrVWX6Kqlh4H2X7JyRExv7GIQs0TgzDLm+FWOZc3n4ci3L
+enLveBhZV1TWwDGlUhlI+o9+y4HylVuLBEOj4ErYYFn/VZUkwE240LiDyiDZiC1C
+Rzda5Fm6aAq2s75lIMb6k2ambIrqgHbV1L+b43DzgGklC47m4jXz3hQypkRjd+az
+hLryK+04ZlapmZfnHC9FCg==
+-----END KYBER768-X25519 PUBLIC KEY-----
+"""
+
 
 [SphinxGeometry]
   PacketLength = 3082
@@ -377,7 +417,7 @@ xdjIiFZLivym1DKLBX6A2w==
 Identifier = "windfall"
 PKISignatureScheme = "Ed25519 Sphincs+"
 WireKEMScheme = "KYBER768-X25519"
-Addresses = ["tcp://74.50.67.182:40002"]
+Addresses = ["tcp://162.35.41.202:40002"]
 IdentityPublicKey = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 +oxlrZurSc3JD/eJsRmSabtFVsbFB/N1fSZSHTEajndgX/rGGZTCiBqMDqXC/qTS
 dfvVb+yOmo+pnbnEeWuCecXFplODH92p83pp+nzmMadGUprzadL9smufJlb7+GkD
