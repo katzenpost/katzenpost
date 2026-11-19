@@ -113,8 +113,8 @@ is missing from one of them.
 
 There are two Debian packages:
 
-- `kpclientd`, for users: the client daemon, its `kpclientd.toml` and `thinclient.toml`
-  configured for namenlos, and its systemd system and user units;
+- `kpclientd`, for users: the client daemon, the namenlos `client.toml` (fetched from kno when
+  the package is built), `thinclient.toml`, and its systemd system and user units;
 - `katzenpost`, for operators: every other binary with a `kp` prefix, with kpserver,
   kpauthority and kpreplica as systemd template units, shipped disabled.
 

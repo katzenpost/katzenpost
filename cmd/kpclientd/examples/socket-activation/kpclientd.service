@@ -6,7 +6,7 @@ After=kpclientd.socket
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/kpclientd -c %E/katzenpost/kpclientd.toml
+ExecStart=/usr/bin/kpclientd -c %E/katzenpost/client.toml
 Restart=on-failure
 RestartSec=5s
 NoNewPrivileges=true

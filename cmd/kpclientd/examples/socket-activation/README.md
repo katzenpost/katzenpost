@@ -35,7 +35,7 @@ say. `Accept=yes` sockets are not supported.
 
     mkdir -p ~/.config/systemd/user ~/.config/katzenpost
     cp kpclientd.socket kpclientd.service ~/.config/systemd/user/
-    cp /path/to/client.toml ~/.config/katzenpost/kpclientd.toml
+    cp /path/to/client.toml ~/.config/katzenpost/
     systemctl --user daemon-reload
     systemctl --user enable --now kpclientd.socket
 

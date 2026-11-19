@@ -2,7 +2,7 @@ name: Release
 
 # A v* tag builds the kpclientd .deb and publishes it, with SHA256SUMS, on the
 # GitHub release for that tag. A pull request touching this file or the
-# package script only builds the debs.
+# package scripts only builds the debs.
 on:
   push:
     tags: ['v*']
@@ -10,6 +10,7 @@ on:
     paths:
       - .github/workflows/release.yml
       - packaging/debian/kpclientd-deb.sh
+      - packaging/debian/client-toml.sh
 
 permissions:
   contents: read

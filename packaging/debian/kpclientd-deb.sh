@@ -1,6 +1,7 @@
 #!/bin/sh
 # Build dist/kpclientd_<version>_<arch>.deb: the client daemon alone, with its
-# configs and units, versioned from the top entry of debian/changelog.
+# configs and units, versioned from the top entry of debian/changelog. The
+# namenlos client.toml is fetched from kno, so the build needs the network.
 set -eu
 umask 022
 
@@ -22,8 +23,11 @@ go build -trimpath -buildvcs=false -o "$stage/kpclientd" \
     -ldflags "-s -w -X github.com/katzenpost/katzenpost/common.BuildVersion=$version" \
     ./cmd/kpclientd
 
+packaging/debian/client-toml.sh "$stage/client.toml"
+"$stage/kpclientd" -c "$stage/client.toml" --validate-only >/dev/null
+
 install -D -m0755 "$stage/kpclientd" "$pkg/usr/bin/kpclientd"
-install -D -m0644 debian/kpclientd.toml "$pkg/etc/katzenpost/kpclientd.toml"
+install -D -m0644 "$stage/client.toml" "$pkg/etc/katzenpost/client.toml"
 install -D -m0644 debian/thinclient.toml "$pkg/etc/katzenpost/thinclient.toml"
 install -D -m0644 debian/katzenpost.kpclientd.service \
     "$pkg/usr/lib/systemd/system/kpclientd.service"
@@ -54,10 +58,10 @@ Description: Katzenpost thin client daemon
  tools, so the two packages conflict.
  .
  It gets a system and a user unit, both shipped disabled and unstarted.
- kpclientd.toml and thinclient.toml in /etc/katzenpost hold no secrets
+ client.toml and thinclient.toml in /etc/katzenpost hold no secrets
  and are conffiles; editing them points the daemon at another network.
 EOF
-printf '/etc/katzenpost/kpclientd.toml\n/etc/katzenpost/thinclient.toml\n' \
+printf '/etc/katzenpost/client.toml\n/etc/katzenpost/thinclient.toml\n' \
     > "$pkg/DEBIAN/conffiles"
 cat > "$pkg/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
