@@ -11,6 +11,7 @@ license=('AGPL-3.0-only')
 depends=('glibc' 'openssl')
 makedepends=('go')
 conflicts=('katzenpost')
+options=('!debug')
 backup=('etc/katzenpost/client.toml' 'etc/katzenpost/thinclient.toml')
 # The namenlos client config; kno is its source of truth. Bump the commit and
 # checksum together with the ones in flake.nix to pick up a newer one.

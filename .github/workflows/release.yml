@@ -1,8 +1,8 @@
 name: Release
 
-# A v* tag builds the kpclientd .deb and publishes it, with SHA256SUMS, on the
-# GitHub release for that tag. A pull request touching this file or the
-# package scripts only builds the debs.
+# A v* tag builds the kpclientd .deb and Arch package and publishes them, with
+# SHA256SUMS, on the GitHub release for that tag. A pull request touching this
+# file or the package scripts only builds the packages.
 on:
   push:
     tags: ['v*']
@@ -11,6 +11,7 @@ on:
       - .github/workflows/release.yml
       - packaging/debian/kpclientd-deb.sh
       - packaging/debian/client-toml.sh
+      - packaging/arch/kpclientd/PKGBUILD
 
 permissions:
   contents: read
@@ -36,8 +37,26 @@ jobs:
           name: kpclientd-${{ matrix.runner }}
           path: dist/kpclientd_*.deb
 
+  # x86_64 only: Arch has no official arm64 image. The PKGBUILD takes pkgver
+  # from debian/changelog, which the deb job checks against the tag.
+  kpclientd-arch:
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm --needed base-devel go git
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      # makepkg refuses to run as root.
+      - run: |
+          useradd -m builder
+          chown -R builder .
+          su builder -c "cd '$PWD/packaging/arch/kpclientd' && makepkg --noconfirm"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kpclientd-arch
+          path: packaging/arch/kpclientd/kpclientd-*.pkg.tar.zst
+
   release:
-    needs: kpclientd-deb
+    needs: [kpclientd-deb, kpclientd-arch]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -53,7 +72,7 @@ jobs:
           pattern: kpclientd-*
           merge-multiple: true
           path: dist
-      - run: (cd dist && sha256sum kpclientd_*.deb > SHA256SUMS)
+      - run: (cd dist && sha256sum kpclientd_*.deb kpclientd-*.pkg.tar.zst > SHA256SUMS)
       # The notes are the body of the top debian/changelog entry.
       - run: awk 'NR > 1 && /^ -- /{exit} NR > 1' debian/changelog > notes.md
       - run: |

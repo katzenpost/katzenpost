@@ -10,6 +10,7 @@ pkgbase = kpclientd
 	depends = glibc
 	depends = openssl
 	conflicts = katzenpost
+	options = !debug
 	backup = etc/katzenpost/client.toml
 	backup = etc/katzenpost/thinclient.toml
 	source = client.toml::https://raw.githubusercontent.com/katzenpost/kno/674153cece50dac36c95ebaee34af9b6eba1e27f/data/networks/namenlos/.generated/configs/client.toml
