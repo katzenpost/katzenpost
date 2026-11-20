@@ -16,7 +16,7 @@ done
 test -x /usr/bin/ping
 dpkg-query -S /usr/bin/ping | grep -q iputils-ping
 
-test -f /etc/katzenpost/kpclientd.toml
+kpclientd -c /etc/katzenpost/client.toml --validate-only >/dev/null
 test -f /etc/katzenpost/thinclient.toml
 for d in server authority replica; do
     test -d "/etc/katzenpost/$d" \

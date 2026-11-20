@@ -24,6 +24,6 @@ Description: Katzenpost mix network
  .
  An instance named foo reads /etc/katzenpost/<role>/foo.toml and keeps its
  state in /var/lib/katzenpost/<role>/foo, mode 0700, so two instances
- never share a directory. kpclientd.toml and thinclient.toml hold no
+ never share a directory. client.toml and thinclient.toml hold no
  secrets and are conffiles; editing them points the client daemon at
  another network.

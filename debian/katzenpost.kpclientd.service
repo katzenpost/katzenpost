@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 DynamicUser=yes
-ExecStart=/usr/bin/kpclientd -c /etc/katzenpost/kpclientd.toml
+ExecStart=/usr/bin/kpclientd -c /etc/katzenpost/client.toml
 StateDirectory=kpclientd
 Restart=on-failure
 RestartSec=5s

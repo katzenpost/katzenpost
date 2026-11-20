@@ -1,0 +1,19 @@
+pkgbase = kpclientd
+	pkgdesc = Katzenpost thin client daemon
+	pkgver = 0.0.111
+	pkgrel = 1
+	url = https://katzenpost.network/
+	arch = x86_64
+	arch = aarch64
+	license = AGPL-3.0-only
+	makedepends = go
+	depends = glibc
+	depends = openssl
+	conflicts = katzenpost
+	options = !debug
+	backup = etc/katzenpost/client.toml
+	backup = etc/katzenpost/thinclient.toml
+	source = client.toml::https://raw.githubusercontent.com/katzenpost/kno/674153cece50dac36c95ebaee34af9b6eba1e27f/data/networks/namenlos/.generated/configs/client.toml
+	sha256sums = 8b8a522e3edf39fcf0ac9eb4cb21f4cfaadd7e0af2149ac801c7a46d0924d041
+
+pkgname = kpclientd
