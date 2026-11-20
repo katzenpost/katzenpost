@@ -1,0 +1,44 @@
+# Builds kpclientd from the katzenpost tree this file sits in, with the same
+# files as the kpclientd .deb (packaging/debian/kpclientd-deb.sh).
+# Run makepkg in this directory.
+pkgname=kpclientd
+pkgver=0.0.111
+pkgrel=1
+pkgdesc='Katzenpost thin client daemon'
+arch=('x86_64' 'aarch64')
+url='https://katzenpost.network/'
+license=('AGPL-3.0-only')
+depends=('glibc' 'openssl')
+makedepends=('go')
+conflicts=('katzenpost')
+backup=('etc/katzenpost/client.toml' 'etc/katzenpost/thinclient.toml')
+# The namenlos client config; kno is its source of truth. Bump the commit and
+# checksum together with the ones in flake.nix to pick up a newer one.
+_kno=674153cece50dac36c95ebaee34af9b6eba1e27f
+source=("client.toml::https://raw.githubusercontent.com/katzenpost/kno/$_kno/data/networks/namenlos/.generated/configs/client.toml")
+sha256sums=('8b8a522e3edf39fcf0ac9eb4cb21f4cfaadd7e0af2149ac801c7a46d0924d041')
+
+_root=$(realpath "$startdir/../../..")
+
+pkgver() {
+  sed -n '1s/^katzenpost (\([^)]*\)).*/\1/p' "$_root/debian/changelog"
+}
+
+build() {
+  cd "$_root"
+  export CGO_CPPFLAGS="$CPPFLAGS" CGO_CFLAGS="$CFLAGS" CGO_CXXFLAGS="$CXXFLAGS" CGO_LDFLAGS="$LDFLAGS"
+  export GOFLAGS='-buildmode=pie -trimpath -buildvcs=false -mod=readonly -modcacherw'
+  go build -o "$srcdir/kpclientd" \
+    -ldflags "-linkmode=external -X github.com/katzenpost/katzenpost/common.BuildVersion=$pkgver" \
+    ./cmd/kpclientd
+  "$srcdir/kpclientd" -c "$srcdir/client.toml" --validate-only >/dev/null
+}
+
+package() {
+  cd "$_root"
+  install -Dm0755 "$srcdir/kpclientd" "$pkgdir/usr/bin/kpclientd"
+  install -Dm0644 "$srcdir/client.toml" "$pkgdir/etc/katzenpost/client.toml"
+  install -Dm0644 debian/thinclient.toml "$pkgdir/etc/katzenpost/thinclient.toml"
+  install -Dm0644 debian/katzenpost.kpclientd.service "$pkgdir/usr/lib/systemd/system/kpclientd.service"
+  install -Dm0644 debian/katzenpost.kpclientd.user.service "$pkgdir/usr/lib/systemd/user/kpclientd.service"
+}
