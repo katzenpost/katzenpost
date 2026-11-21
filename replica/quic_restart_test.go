@@ -20,9 +20,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/quic/common"
-	"github.com/katzenpost/katzenpost/replica/config"
 )
 
 const (
@@ -33,12 +31,12 @@ const (
 func runQuicRestartChild(t *testing.T, addr string) {
 	identityPrivateKey, err := signpem.FromPrivatePEMFile(os.Getenv(quicRestartChildKey), signschemes.ByName(quicRestartScheme))
 	require.NoError(t, err)
-	backend, err := log.New("", "ERROR", false)
-	require.NoError(t, err)
 	quicKeys, err := common.NewEpochKeys(filepath.Join(filepath.Dir(os.Getenv(quicRestartChildKey)), "quic"), common.CurrentEpoch, nil)
 	require.NoError(t, err)
-	server := &Server{cfg: &config.Config{}, logBackend: backend, identityPrivateKey: identityPrivateKey, quicKeys: quicKeys}
-	_, err = newListener(server, 0, "quic://"+addr)
+	// The listener newListener opens, without its accept loop: this bare child
+	// has no wire config, so a connection the loop reached would be closed by
+	// the child itself, racing the kill, instead of being reset by the restart.
+	_, err = common.ListenWithEpochKeys(addr, identityPrivateKey, quicKeys, nil)
 	require.NoError(t, err)
 	fmt.Println("listening")
 	time.Sleep(time.Minute)
@@ -104,8 +102,8 @@ func TestQuicListenerRestartResetsOldConnections(t *testing.T) {
 	startQuicRestartChild(t, addr, identityPrivateKeyFile)
 
 	restarted := time.Now()
-	_, err = conn.Write(make([]byte, 512))
-	require.NoError(t, err)
+	// The Write only prompts a packet to the new listener; it may itself see the reset.
+	conn.Write(make([]byte, 512))
 	qc := conn.(*common.QuicConn)
 	select {
 	case <-qc.Conn.Context().Done():
