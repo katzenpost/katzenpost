@@ -80,12 +80,13 @@ func TestRedialAfterDrop(t *testing.T) {
 	require.NoError(t, err)
 	node := hash.Sum256(svc.MixDescriptor.IdentityKey)
 
-	n.DropGatewayLinks()
-
 	// The daemon redials 2s after a drop and backs off to 17s after a
 	// failed dial, so 15s is enough only if the first redial succeeds.
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
+	require.True(t, n.DropGatewayLinks(15*time.Second), "daemon did not redial the gateway")
+
+	// The daemon may not yet see its side of the new link up; a packet
+	// sent before then is lost and the ARQ resends it only after 20s.
+	ctx := testCtx(t)
 	payload := []byte("after the drop")
 	reply, err := c.StartResendingMessage(ctx, &node, svc.RecipientQueueID, payload)
 	require.NoError(t, err)
