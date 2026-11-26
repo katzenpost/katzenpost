@@ -5,6 +5,7 @@ package server
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
@@ -21,7 +22,11 @@ import (
 
 func TestRestoreContinuesPastBadDocument(t *testing.T) {
 	scheme := signSchemes.ByName(testSchemeName)
+	// Start mid-epoch: restorePersistence reads the epoch again, and a rollover between the two reads moves its window.
+	savedEpoch := epochtime.Epoch
+	t.Cleanup(func() { epochtime.Epoch = savedEpoch })
 	now, _, _ := epochtime.Now()
+	epochtime.Epoch = time.Now().Add(-(time.Duration(now)*epochtime.Period() + epochtime.Period()/2))
 	mix := newRestoreNode(t, scheme)
 	replica := newRestoreNode(t, scheme)
 	path := filepath.Join(t.TempDir(), "persistence.db")
