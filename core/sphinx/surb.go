@@ -18,6 +18,7 @@ package sphinx
 
 import (
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -73,6 +74,10 @@ func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.No
 
 	if len(surb) != s.geometry.SURBLength {
 		return nil, nil, errors.New("sphinx: invalid packet, truncated SURB")
+	}
+	// A short reply would be distinguishable from a forward packet on the wire.
+	if len(payload) != s.geometry.ForwardPayloadLength {
+		return nil, nil, fmt.Errorf("sphinx: invalid payload length: %d, expected %d", len(payload), s.geometry.ForwardPayloadLength)
 	}
 
 	// Deserialize the SURB.

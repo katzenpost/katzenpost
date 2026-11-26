@@ -194,6 +194,10 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 			copy(nextCmd.ID[:], path[i+1].ID[:])
 			copy(nextCmd.MAC[:], mac)
 			riFragment = nextCmd.ToBytes(riFragment)
+			// The slot's tail holds the next hop's KEM ciphertext.
+			if len(riFragment) > s.geometry.PerHopRoutingInfoLength-s.kem.CiphertextSize() {
+				return nil, nil, errors.New("sphinx: invalid commands, oversized serialized block")
+			}
 		}
 		if padLen := s.geometry.PerHopRoutingInfoLength - len(riFragment); padLen > 0 {
 			riFragment = append(riFragment, zeroBytes[:padLen]...)
